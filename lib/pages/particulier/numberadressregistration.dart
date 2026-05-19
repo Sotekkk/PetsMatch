@@ -111,6 +111,8 @@ class _RegisterPhoneAdressInformationPageState
                           child: Stack(children: [
                             Image.asset(
                               'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                               fit: BoxFit.cover,
                               width: UTILS.calculWidth(
                                   211, UTILS.widthReference(context)),
@@ -152,7 +154,7 @@ class _RegisterPhoneAdressInformationPageState
                               fontSize: UTILS.calculWidth(
                                   30, UTILS.widthReference(context)),
                               fontFamily: 'Galey',
-                              color: Color.fromARGB(174, 0, 0, 0),
+                              color: Color(0xFF0C5C6C),
                               fontWeight: FontWeight.w500),
                           textAlign: TextAlign.left,
                         ),
@@ -168,7 +170,7 @@ class _RegisterPhoneAdressInformationPageState
                                   fontSize: UTILS.calculWidth(
                                       15, UTILS.widthReference(context)),
                                   fontFamily: 'Galey',
-                                  color: Color.fromARGB(174, 0, 0, 0),
+                                  color: Color(0xFF0C5C6C),
                                   fontWeight: FontWeight.w500),
                               textAlign: TextAlign.left,
                             ),
@@ -195,7 +197,7 @@ class _RegisterPhoneAdressInformationPageState
                             horizontal: UTILS.calculWidth(
                                 20, UTILS.widthReference(context))),
                         decoration: BoxDecoration(
-                          color: Color.fromARGB(255, 250, 192, 187),
+                          color: Color(0xFFA7C79A),
                           borderRadius: BorderRadius.circular(30),
                           border: Border.all(
                             color: _isPhoneValid ? Colors.transparent : Colors.red,
@@ -204,7 +206,7 @@ class _RegisterPhoneAdressInformationPageState
                         ),
                         child: Theme(
                           data: Theme.of(context).copyWith(
-                            canvasColor: Color.fromARGB(255, 250, 192, 187),
+                            canvasColor: Color(0xFFA7C79A),
                           ),
                           child: Row(
                             children: <Widget>[
@@ -326,8 +328,7 @@ class _RegisterPhoneAdressInformationPageState
                           child: ElevatedButton(
                             onPressed: _validateAndContinue,
                             style: ElevatedButton.styleFrom(
-                                backgroundColor: Color.fromARGB(255, 250, 192,
-                                    187)), // Couleur de fond du bouton
+                                backgroundColor: Color(0xFF6E9E57)), // Couleur de fond du bouton
                             child: Text(
                               'CONTINUER',
                               style: TextStyle(
@@ -415,7 +416,7 @@ class _PlacesSearchWidgetState extends State<PlacesSearchWidget> {
         width: UTILS.calculWidth(372, UTILS.widthReference(context)),
         height: _suggestions.isNotEmpty ? UTILS.calculHeight(200, UTILS.heightReference(context)) : 55,
         decoration: BoxDecoration(
-          color: Color.fromARGB(255, 250, 192, 187),
+          color: Color(0xFFA7C79A),
           borderRadius: BorderRadius.circular(30.0),
           border: Border.all(
             color: widget.isValid ? Colors.transparent : Colors.red,

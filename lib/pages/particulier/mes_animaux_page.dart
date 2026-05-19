@@ -23,7 +23,7 @@ class MesAnimauxPage extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton(
         heroTag: 'add_animal_page_fab',
-        backgroundColor: const Color(0xFFFF8484),
+        backgroundColor: const Color(0xFF6E9E57),
         child: const Icon(Icons.add, color: Colors.white),
         onPressed: () => Navigator.push(
           context,
@@ -245,7 +245,7 @@ class _EmojiAvatar extends StatelessWidget {
       width: 64,
       height: 64,
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF0EE),
+        color: const Color(0xFFEEF5EA),
         borderRadius: BorderRadius.circular(50),
       ),
       child: Center(child: Text(emoji, style: const TextStyle(fontSize: 30))),
@@ -377,7 +377,7 @@ class AnimalFormPageState extends State<AnimalFormPage> {
               child: const Text('Enregistrer',
                   style: TextStyle(
                       fontFamily: 'Galey',
-                      color: Color(0xFFFF8484),
+                      color: const Color(0xFF6E9E57),
                       fontWeight: FontWeight.w700)),
             ),
         ],
@@ -398,7 +398,7 @@ class AnimalFormPageState extends State<AnimalFormPage> {
                     children: [
                       CircleAvatar(
                         radius: 52,
-                        backgroundColor: const Color(0xFFFFF0EE),
+                        backgroundColor: const Color(0xFFEEF5EA),
                         backgroundImage: _imageFile != null
                             ? FileImage(_imageFile!) as ImageProvider
                             : (_existingPhotoUrl != null &&
@@ -408,12 +408,12 @@ class AnimalFormPageState extends State<AnimalFormPage> {
                         child: (_imageFile == null &&
                                 (_existingPhotoUrl == null ||
                                     _existingPhotoUrl!.isEmpty))
-                            ? const Icon(Icons.pets, size: 40, color: Color(0xFFFF8484))
+                            ? const Icon(Icons.pets, size: 40, color: const Color(0xFF6E9E57))
                             : null,
                       ),
                       CircleAvatar(
                         radius: 14,
-                        backgroundColor: const Color(0xFFFF8484),
+                        backgroundColor: const Color(0xFF6E9E57),
                         child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
                       ),
                     ],

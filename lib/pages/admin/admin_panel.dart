@@ -26,9 +26,9 @@ class _AdminPanelState extends State<AdminPanel> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFF1E3),
+      backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(
-        backgroundColor: const Color.fromARGB(255, 250, 192, 187),
+        backgroundColor: const Color(0xFFA7C79A),
         elevation: 0,
         title: const Text(
           'Administration PetsMatch',
@@ -58,8 +58,8 @@ class _AdminPanelState extends State<AdminPanel> {
       ),
       body: _pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
-        backgroundColor: const Color(0xFFFFF1E3),
-        selectedItemColor: const Color.fromARGB(255, 200, 100, 80),
+        backgroundColor: const Color(0xFFF8F8F6),
+        selectedItemColor: const Color(0xFF6E9E57),
         unselectedItemColor: Colors.grey,
         currentIndex: _selectedIndex,
         onTap: (index) => setState(() => _selectedIndex = index),

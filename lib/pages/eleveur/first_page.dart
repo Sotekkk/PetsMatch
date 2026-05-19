@@ -84,6 +84,8 @@ class _RegisterEleveurInformationPageState
                           child: Stack(children: [
                             Image.asset(
                               'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                               fit: BoxFit.cover,
                               width: UTILS.calculWidth(
                                   211, UTILS.widthReference(context)),
@@ -121,7 +123,7 @@ class _RegisterEleveurInformationPageState
                               fontSize: UTILS.calculWidth(
                                   30, UTILS.widthReference(context)),
                               fontFamily: 'Galey',
-                              color: const Color.fromARGB(174, 0, 0, 0),
+                              color: const Color(0xFF0C5C6C),
                               fontWeight: FontWeight.w500),
                           textAlign: TextAlign.left,
                         ),
@@ -137,7 +139,7 @@ class _RegisterEleveurInformationPageState
                                   fontSize: UTILS.calculWidth(
                                       15, UTILS.widthReference(context)),
                                   fontFamily: 'Galey',
-                                  color: const Color.fromARGB(174, 0, 0, 0),
+                                  color: const Color(0xFF0C5C6C),
                                   fontWeight: FontWeight.w500),
                               textAlign: TextAlign.left,
                             ),
@@ -171,7 +173,7 @@ class _RegisterEleveurInformationPageState
                                     12.0, UTILS.heightReference(context)),
                                 horizontal: UTILS.calculWidth(
                                     15.0, UTILS.widthReference(context))),
-                            fillColor: Color.fromARGB(255, 250, 192, 187),
+                            fillColor: Color(0xFFA7C79A),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(
                                   UTILS.calculWidth(
@@ -194,7 +196,7 @@ class _RegisterEleveurInformationPageState
                                   UTILS.calculWidth(
                                       30.0, UTILS.widthReference(context))),
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187),
+                                  color: Color(0xFFA7C79A),
                                   width: UTILS.calculWidth(
                                       2.0, UTILS.widthReference(context))),
                             ),
@@ -234,7 +236,7 @@ class _RegisterEleveurInformationPageState
                                     12.0, UTILS.heightReference(context)),
                                 horizontal: UTILS.calculWidth(
                                     15.0, UTILS.widthReference(context))),
-                            fillColor: Color.fromARGB(255, 250, 192, 187),
+                            fillColor: Color(0xFFA7C79A),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(
                                   UTILS.calculWidth(
@@ -257,7 +259,7 @@ class _RegisterEleveurInformationPageState
                                   UTILS.calculWidth(
                                       30.0, UTILS.widthReference(context))),
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187),
+                                  color: Color(0xFFA7C79A),
                                   width: UTILS.calculWidth(
                                       2.0, UTILS.widthReference(context))),
                             ),
@@ -296,7 +298,7 @@ class _RegisterEleveurInformationPageState
                                     12.0, UTILS.heightReference(context)),
                                 horizontal: UTILS.calculWidth(
                                     20.0, UTILS.widthReference(context))),
-                            fillColor: Color.fromARGB(255, 250, 192, 187),
+                            fillColor: Color(0xFFA7C79A),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(
                                   UTILS.calculWidth(
@@ -319,7 +321,7 @@ class _RegisterEleveurInformationPageState
                                   UTILS.calculWidth(
                                       30.0, UTILS.widthReference(context))),
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187),
+                                  color: Color(0xFFA7C79A),
                                   width: UTILS.calculWidth(
                                       2.0, UTILS.widthReference(context))),
                             ),
@@ -388,7 +390,7 @@ class _RegisterEleveurInformationPageState
                             onPressed: _validateAndContinue,
                             style: ElevatedButton.styleFrom(
                                 backgroundColor:
-                                    Color.fromARGB(255, 250, 192, 187)),
+                                    Color(0xFFA7C79A)),
                             child: Text(
                               'CONTINUER',
                               style: TextStyle(

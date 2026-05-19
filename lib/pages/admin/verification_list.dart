@@ -12,11 +12,11 @@ class VerificationList extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            color: const Color(0xFFFFF1E3),
+            color: const Color(0xFFF8F8F6),
             child: const TabBar(
-              labelColor: Color.fromARGB(255, 200, 100, 80),
+              labelColor: Color(0xFF6E9E57),
               unselectedLabelColor: Colors.grey,
-              indicatorColor: Color.fromARGB(255, 200, 100, 80),
+              indicatorColor: Color(0xFF6E9E57),
               tabs: [
                 Tab(text: 'En attente'),
                 Tab(text: 'Approuvés'),
@@ -193,7 +193,7 @@ class _VerificationCard extends StatelessWidget {
                         nameElevage,
                         style: const TextStyle(
                           fontSize: 13,
-                          color: Color.fromARGB(255, 200, 100, 80),
+                          color: Color(0xFF6E9E57),
                           fontFamily: 'Galey',
                         ),
                       ),
@@ -217,7 +217,7 @@ class _VerificationCard extends StatelessWidget {
                     Row(
                       children: [
                         if (isElevage)
-                          _TypeChip(label: 'Éleveur', color: Colors.purple),
+                          _TypeChip(label: 'Éleveur', color: Color(0xFF0C5C6C)),
                         if (isPro)
                           _TypeChip(label: 'Pro', color: Colors.blue),
                         if (status == 'rejected' &&

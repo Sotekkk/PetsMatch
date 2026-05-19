@@ -137,6 +137,8 @@ class _RegisterParticulierInformationPageState
           child: Stack(children: [
             Image.asset(
               'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
               fit: BoxFit.cover,
               width: UTILS.calculWidth(211, UTILS.widthReference(context)),
               height: UTILS.calculHeight(104,
@@ -171,7 +173,7 @@ class _RegisterParticulierInformationPageState
           style: TextStyle(
               fontSize: UTILS.calculWidth(30, UTILS.widthReference(context)),
               fontFamily: 'Galey',
-              color: const Color.fromARGB(174, 0, 0, 0),
+              color: const Color(0xFF0C5C6C),
               fontWeight: FontWeight.w500),
           textAlign: TextAlign.left,
         ),
@@ -186,7 +188,7 @@ class _RegisterParticulierInformationPageState
                   fontSize:
                       UTILS.calculWidth(15, UTILS.widthReference(context)),
                   fontFamily: 'Galey',
-                  color: const Color.fromARGB(174, 0, 0, 0),
+                  color: const Color(0xFF0C5C6C),
                   fontWeight: FontWeight.w500),
               textAlign: TextAlign.left,
             ),
@@ -235,8 +237,7 @@ class _RegisterParticulierInformationPageState
                             onTap: () {},
                             child: CircleAvatar(
                               radius: 12, // Taille du cercle derrière l'icône
-                              backgroundColor: const Color.fromARGB(255, 255,
-                                  178, 173), // Couleur du fond du cercle
+                              backgroundColor: const Color(0xFF6E9E57), // Couleur du fond du cercle
                               child: Icon(Icons.edit,
                                   size: 18,
                                   color: Colors.black), // L'icône de croix
@@ -257,8 +258,7 @@ class _RegisterParticulierInformationPageState
                             },
                             child: CircleAvatar(
                               radius: 12, // Taille du cercle derrière l'icône
-                              backgroundColor: const Color.fromARGB(255, 255,
-                                  178, 173), // Couleur du fond du cercle
+                              backgroundColor: const Color(0xFF6E9E57), // Couleur du fond du cercle
                               child: Icon(Icons.close,
                                   size: 18,
                                   color: Colors.black), // L'icône de croix
@@ -317,7 +317,7 @@ class _RegisterParticulierInformationPageState
                         filled: true,
                         contentPadding: EdgeInsets.symmetric(
                             vertical: 12.0, horizontal: 15.0),
-                        fillColor: Color.fromARGB(255, 250, 192, 187),
+                        fillColor: Color(0xFFA7C79A),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(50.0),
                           borderSide: BorderSide(color: Colors.transparent),
@@ -337,7 +337,7 @@ class _RegisterParticulierInformationPageState
                           borderRadius: BorderRadius.circular(30.0),
                           borderSide: BorderSide(
                               color: _isNomValid
-                                  ? Color.fromARGB(255, 250, 192, 187)
+                                  ? Color(0xFFA7C79A)
                                   : Colors.red,
                               width:
                                   2.0), // Couleur de la bordure lorsque le champ est sélectionné
@@ -375,7 +375,7 @@ class _RegisterParticulierInformationPageState
                         filled: true,
                         contentPadding: EdgeInsets.symmetric(
                             vertical: 12.0, horizontal: 15.0),
-                        fillColor: Color.fromARGB(255, 250, 192, 187),
+                        fillColor: Color(0xFFA7C79A),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(50.0),
                           borderSide: BorderSide(color: Colors.transparent),
@@ -395,7 +395,7 @@ class _RegisterParticulierInformationPageState
                           borderRadius: BorderRadius.circular(30.0),
                           borderSide: BorderSide(
                               color: _isPrenomValid
-                                  ? Color.fromARGB(255, 250, 192, 187)
+                                  ? Color(0xFFA7C79A)
                                   : Colors.red,
                               width:
                                   2.0), // Couleur de la bordure lorsque le champ est sélectionné
@@ -436,7 +436,7 @@ class _RegisterParticulierInformationPageState
             filled: true,
             contentPadding:
                 EdgeInsets.symmetric(vertical: 12.0, horizontal: 20.0),
-            fillColor: Color.fromARGB(255, 250, 192, 187),
+            fillColor: Color(0xFFA7C79A),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(50.0),
               borderSide: BorderSide(color: Colors.transparent),
@@ -455,7 +455,7 @@ class _RegisterParticulierInformationPageState
               borderRadius: BorderRadius.circular(30.0),
               borderSide: BorderSide(
                   color: _isDateNaissanceValid
-                      ? Color.fromARGB(255, 250, 192, 187)
+                      ? Color(0xFFA7C79A)
                       : Colors.red,
                   width:
                       2.0), // Couleur de la bordure lorsque le champ est sélectionné

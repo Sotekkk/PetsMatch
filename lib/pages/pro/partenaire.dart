@@ -137,6 +137,8 @@ class _PrestatairePageState extends State<PrestatairePage> {
             child: Stack(children: [
               Image.asset(
                 'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                 fit: BoxFit.cover,
                 width: UTILS.calculWidth(211, UTILS.widthReference(context)),
                 height: UTILS.calculHeight(104, UTILS.heightReference(context)),
@@ -178,7 +180,7 @@ class _PrestatairePageState extends State<PrestatairePage> {
                   width: UTILS.calculWidth(360, UTILS.widthReference(context)),
                   height: UTILS.calculHeight(53, UTILS.heightReference(context)),
                   decoration: BoxDecoration(
-                    color: Color.fromARGB(255, 252, 207, 200),
+                    color: Color(0xFFEEF5EA),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: TextField(
@@ -221,7 +223,7 @@ class _PrestatairePageState extends State<PrestatairePage> {
                     decoration: BoxDecoration(
                       color: selectedProfession == profession
                           ? Color(0xFF1E2025) // Couleur sélectionnée
-                          : Color.fromARGB(255, 252, 207, 200), // Couleur non sélectionnée
+                          : Color(0xFFEEF5EA), // Couleur non sélectionnée
                       borderRadius: BorderRadius.circular(15),
                     ),
                     child: Row(
@@ -388,7 +390,7 @@ class _PrestatairePageState extends State<PrestatairePage> {
                     width: UTILS.calculWidth(382, UTILS.widthReference(context)),
                     height: UTILS.calculHeight(60, UTILS.heightReference(context)),
                     decoration: BoxDecoration(
-                      color: Color(0xFFFCCFC8),
+                      color: const Color(0xFFEEF5EA),
                       borderRadius: BorderRadius.circular(15.0),
                     ),
                     child: Row(

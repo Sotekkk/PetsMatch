@@ -10,7 +10,7 @@ class ServicesPage extends StatelessWidget {
       label: 'Vétérinaires',
       subtitle: 'Liste, avis & RDV',
       color: Color(0xFFE8F5E9),
-      iconColor: Color(0xFF43A047),
+      iconColor: const Color(0xFF6E9E57),
       page: VeterinairesPag(),
     ),
     _ServiceCategory(
@@ -65,7 +65,7 @@ class ServicesPage extends StatelessWidget {
             expandedHeight: 110,
             floating: false,
             pinned: true,
-            backgroundColor: const Color.fromARGB(255, 30, 32, 37),
+            backgroundColor: const Color(0xFF1F2A2E),
             automaticallyImplyLeading: false,
             flexibleSpace: FlexibleSpaceBar(
               centerTitle: false,

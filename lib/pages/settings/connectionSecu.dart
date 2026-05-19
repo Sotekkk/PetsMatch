@@ -81,6 +81,8 @@ class _SecuConnectionSettingState extends State<SecuConnectionSetting> {
                   children: [
                     Image.asset(
                       'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                       fit: BoxFit.cover,
                       width: UTILS.calculWidth(211, UTILS.widthReference(context)),
                       height: UTILS.calculHeight(104, UTILS.heightReference(context)),
@@ -282,6 +284,8 @@ class _QuestionPageState extends State<QuestionPage> {
                   children: [
                     Image.asset(
                       'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                       fit: BoxFit.cover,
                       width:
                           UTILS.calculWidth(211, UTILS.widthReference(context)),
@@ -371,7 +375,7 @@ class _QuestionPageState extends State<QuestionPage> {
             vertical: UTILS.calculHeight(12.0, UTILS.heightReference(context)),
             horizontal: UTILS.calculWidth(15.0, UTILS.widthReference(context)),
           ),
-          fillColor: Color.fromARGB(255, 250, 192, 187),
+          fillColor: Color(0xFFA7C79A),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(UTILS.calculWidth(50.0, UTILS.widthReference(context))),
             borderSide: BorderSide(color: Colors.transparent),
@@ -382,7 +386,7 @@ class _QuestionPageState extends State<QuestionPage> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(UTILS.calculWidth(30.0, UTILS.widthReference(context))),
-            borderSide: BorderSide(color: Color.fromARGB(255, 250, 192, 187), width: UTILS.calculWidth(2.0, UTILS.widthReference(context))),
+            borderSide: BorderSide(color: Color(0xFFA7C79A), width: UTILS.calculWidth(2.0, UTILS.widthReference(context))),
           ),
           labelStyle: TextStyle(
             fontFamily: 'Galey',

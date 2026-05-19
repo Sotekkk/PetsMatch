@@ -310,7 +310,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                     child: Text(
                       _isExpanded ? 'Réduire...' : 'En savoir plus...',
                       style: TextStyle(
-                        color: Color.fromARGB(255, 255, 132, 132),
+                        color: Color(0xFF6E9E57),
                         fontSize: UTILS.calculWidth(
                             14, UTILS.widthReference(context)),
                       ),

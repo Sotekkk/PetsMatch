@@ -202,8 +202,8 @@ class _UserElevageFeedState extends State<UserElevageFeed>
             ),
             bottom: TabBar(
               controller: _tabController,
-              indicatorColor: const Color(0xFFFF8484),
-              labelColor: const Color(0xFFFF8484),
+              indicatorColor: const Color(0xFF6E9E57),
+              labelColor: const Color(0xFF6E9E57),
               unselectedLabelColor: Colors.grey,
               labelStyle: const TextStyle(
                   fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
@@ -247,7 +247,7 @@ class _UserElevageFeedState extends State<UserElevageFeed>
                 ),
                 CircleAvatar(
                   radius: 14,
-                  backgroundColor: const Color(0xFFFFB2AD),
+                  backgroundColor: const Color(0xFF6E9E57),
                   child: const Icon(Icons.edit, size: 16, color: Colors.black),
                 ),
               ],
@@ -390,7 +390,7 @@ class _UserElevageFeedState extends State<UserElevageFeed>
           _ElevageActionCard(
             icon: Icons.pets,
             color: const Color(0xFFE8F5E9),
-            iconColor: const Color(0xFF43A047),
+            iconColor: const Color(0xFF6E9E57),
             title: 'Gestion élevage',
             subtitle: 'Gérer vos animaux et reproductions',
             onTap: () => Navigator.push(context,

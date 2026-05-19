@@ -200,8 +200,8 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
             ),
             bottom: TabBar(
               controller: _tabController,
-              indicatorColor: const Color(0xFFFF8484),
-              labelColor: const Color(0xFFFF8484),
+              indicatorColor: const Color(0xFF6E9E57),
+              labelColor: const Color(0xFF6E9E57),
               unselectedLabelColor: Colors.grey,
               labelStyle: const TextStyle(
                   fontFamily: 'Galey',
@@ -246,7 +246,7 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
                   ),
                   CircleAvatar(
                     radius: 14,
-                    backgroundColor: const Color(0xFFFFB2AD),
+                    backgroundColor: const Color(0xFF6E9E57),
                     child:
                         const Icon(Icons.edit, size: 16, color: Colors.black),
                   ),
@@ -345,7 +345,7 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
           bottom: 90,
           child: FloatingActionButton(
             heroTag: 'add_animal_feed_fab',
-            backgroundColor: const Color(0xFFFF8484),
+            backgroundColor: const Color(0xFF6E9E57),
             child: const Icon(Icons.add, color: Colors.white),
             onPressed: () => Navigator.push(
               context,
@@ -416,7 +416,7 @@ class _SaveButton extends StatelessWidget {
       width: double.infinity,
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFFF8484),
+          backgroundColor: const Color(0xFF6E9E57),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           padding: const EdgeInsets.symmetric(vertical: 13),
@@ -490,7 +490,7 @@ class _AnimalCard extends StatelessWidget {
                     : Container(
                         width: 64,
                         height: 64,
-                        color: const Color(0xFFFFF0EE),
+                        color: const Color(0xFFEEF5EA),
                         child: Center(
                           child: Text(_speciesEmoji(species),
                               style: const TextStyle(fontSize: 30)),

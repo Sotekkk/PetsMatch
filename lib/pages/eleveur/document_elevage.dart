@@ -103,6 +103,8 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage>
                           child: Stack(children: [
                             Image.asset(
                               'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                               fit: BoxFit.cover,
                               width: UTILS.calculWidth(
                                   211, UTILS.widthReference(context)),
@@ -140,7 +142,7 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage>
                               fontSize: UTILS.calculWidth(
                                   30, UTILS.widthReference(context)),
                               fontFamily: 'Galey',
-                              color: const Color.fromARGB(174, 0, 0, 0),
+                              color: const Color(0xFF0C5C6C),
                               fontWeight: FontWeight.w500),
                           textAlign: TextAlign.left,
                         ),
@@ -156,7 +158,7 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage>
                                   fontSize: UTILS.calculWidth(
                                       15, UTILS.widthReference(context)),
                                   fontFamily: 'Galey',
-                                  color: const Color.fromARGB(174, 0, 0, 0),
+                                  color: const Color(0xFF0C5C6C),
                                   fontWeight: FontWeight.w500),
                               textAlign: TextAlign.left,
                             ),
@@ -176,16 +178,16 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage>
                           width: UTILS.calculWidth(
                               355, UTILS.widthReference(context)),
                           child: DropdownButtonFormField<String>(
-                            dropdownColor: Colors.pink[100],
+                            dropdownColor: Color(0xFFEEF5EA),
                             decoration: InputDecoration(
                               enabledBorder: UnderlineInputBorder(
                                 borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187),
+                                  color: Color(0xFFA7C79A),
                                 ),
                               ),
                               focusedBorder: UnderlineInputBorder(
                                 borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187),
+                                  color: Color(0xFFA7C79A),
                                 ),
                               ),
                               labelText: 'Catégorie Professionnel',
@@ -217,16 +219,16 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage>
                           width: UTILS.calculWidth(
                               355, UTILS.widthReference(context)),
                           child: DropdownButtonFormField<String>(
-                            dropdownColor: Colors.pink[100],
+                            dropdownColor: Color(0xFFEEF5EA),
                             decoration: InputDecoration(
                               enabledBorder: UnderlineInputBorder(
                                 borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187),
+                                  color: Color(0xFFA7C79A),
                                 ),
                               ),
                               focusedBorder: UnderlineInputBorder(
                                 borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187),
+                                  color: Color(0xFFA7C79A),
                                 ),
                               ),
                               labelText: 'Profession',
@@ -294,7 +296,7 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage>
                             onPressed: _validateAndContinue,
                             style: ElevatedButton.styleFrom(
                                 backgroundColor:
-                                    Color.fromARGB(255, 250, 192, 187)),
+                                    Color(0xFFA7C79A)),
                             child: Text(
                               'CONTINUER',
                               style: TextStyle(
@@ -449,7 +451,7 @@ class _DocumentManagerState extends State<DocumentManager> {
                   horizontal:
                       UTILS.calculWidth(15.0, UTILS.widthReference(context)),
                 ),
-                fillColor: Color.fromARGB(255, 250, 192, 187),
+                fillColor: Color(0xFFA7C79A),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(30.0),
                   borderSide: BorderSide(
@@ -461,7 +463,7 @@ class _DocumentManagerState extends State<DocumentManager> {
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(30.0),
                   borderSide: BorderSide(
-                    color: Color.fromARGB(255, 250, 192, 187),
+                    color: Color(0xFFA7C79A),
                     width:
                         2.0, // Couleur de la bordure lorsque le champ est sélectionné
                   ),
@@ -496,7 +498,7 @@ class _DocumentManagerState extends State<DocumentManager> {
                 ),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Color.fromARGB(255, 252, 207, 200),
+                backgroundColor: Color(0xFFEEF5EA),
               ),
             ),
           ),
@@ -558,7 +560,7 @@ class _DocumentManagerState extends State<DocumentManager> {
                   horizontal:
                       UTILS.calculWidth(15.0, UTILS.widthReference(context)),
                 ),
-                fillColor: Color.fromARGB(255, 250, 192, 187),
+                fillColor: Color(0xFFA7C79A),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(
                     UTILS.calculWidth(50.0, UTILS.widthReference(context)),
@@ -576,7 +578,7 @@ class _DocumentManagerState extends State<DocumentManager> {
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(30.0),
                   borderSide: BorderSide(
-                    color: Color.fromARGB(255, 250, 192, 187),
+                    color: Color(0xFFA7C79A),
                     width:
                         2.0, // Couleur de la bordure lorsque le champ est sélectionné
                   ),
@@ -623,7 +625,7 @@ class _DocumentManagerState extends State<DocumentManager> {
                   ),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Color.fromARGB(255, 252, 207, 200),
+                  backgroundColor: Color(0xFFEEF5EA),
                 ),
               ),
             ),

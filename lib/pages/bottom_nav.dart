@@ -69,7 +69,7 @@ class _BottomNavState extends State<BottomNav> {
             // Panel admin
             ListTile(
               leading: const Icon(Icons.admin_panel_settings,
-                  color: Color.fromARGB(255, 200, 100, 80)),
+                  color: Color(0xFF6E9E57)),
               title: const Text('Panel Admin',
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500)),
               onTap: () {
@@ -162,7 +162,7 @@ class _BottomNavState extends State<BottomNav> {
               right: 0,
               child: SafeArea(
                 child: Container(
-                  color: const Color.fromARGB(230, 200, 100, 80),
+                  color: const Color(0xE66E9E57),
                   padding: const EdgeInsets.symmetric(
                       horizontal: 12, vertical: 4),
                   child: Row(
@@ -201,8 +201,8 @@ class _BottomNavState extends State<BottomNav> {
           ? FloatingActionButton.small(
               heroTag: 'admin_fab',
               backgroundColor: _previewRole.isNotEmpty
-                  ? const Color.fromARGB(255, 200, 100, 80)
-                  : const Color.fromARGB(255, 200, 100, 80),
+                  ? const Color(0xFF6E9E57)
+                  : const Color(0xFF6E9E57),
               tooltip: 'Admin',
               onPressed: _showAdminMenu,
               child: Icon(
@@ -217,7 +217,7 @@ class _BottomNavState extends State<BottomNav> {
       bottomNavigationBar: Container(
         height: UTILS.calculHeight(102, UTILS.heightReference(context)),
         decoration: const BoxDecoration(
-          color: Color.fromARGB(255, 30, 32, 37),
+          color: Color(0xFF1F2A2E),
           boxShadow: [
             BoxShadow(
               color: Colors.black26,
@@ -255,7 +255,7 @@ class _BottomNavState extends State<BottomNav> {
               ),
             ],
             currentIndex: _selectedIndex.clamp(0, 5),
-            selectedItemColor: const Color.fromARGB(255, 255, 132, 132),
+            selectedItemColor: const Color(0xFF6E9E57),
             unselectedItemColor: Colors.grey,
             onTap: _onItemTapped,
             backgroundColor: Colors.transparent,
@@ -285,18 +285,18 @@ class _PreviewTile extends StatelessWidget {
     return ListTile(
       leading: Icon(icon,
           color: active
-              ? const Color.fromARGB(255, 200, 100, 80)
+              ? const Color(0xFF6E9E57)
               : Colors.black54),
       title: Text(label,
           style: TextStyle(
               fontFamily: 'Galey',
               fontWeight: FontWeight.w500,
               color: active
-                  ? const Color.fromARGB(255, 200, 100, 80)
+                  ? const Color(0xFF6E9E57)
                   : Colors.black87)),
       trailing: active
           ? const Icon(Icons.check_circle,
-              color: Color.fromARGB(255, 200, 100, 80), size: 20)
+              color: Color(0xFF6E9E57), size: 20)
           : null,
       onTap: onTap,
     );

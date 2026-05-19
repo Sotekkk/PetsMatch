@@ -34,6 +34,8 @@ class _BoardMainPageState extends State<BoardMainPage> {
                     child: Stack(children: [
                       Image.asset(
                         'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                         fit: BoxFit.cover,
                         width: UTILS.calculWidth(
                             211, UTILS.widthReference(context)),
@@ -160,7 +162,7 @@ class UserChoiceButton extends StatelessWidget {
                         fontSize: UTILS.calculWidth(
                             28, UTILS.widthReference(context)),
                         fontFamily: 'Galey',
-                        color: Color.fromARGB(174, 0, 0, 0),
+                        color: Color(0xFF0C5C6C),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -173,7 +175,7 @@ class UserChoiceButton extends StatelessWidget {
                         fontSize: UTILS.calculWidth(
                             18, UTILS.widthReference(context)), // Taille augmentée
                         fontFamily: 'Galey',
-                        color: Color.fromARGB(174, 0, 0, 0),
+                        color: Color(0xFF0C5C6C),
                         fontWeight: FontWeight.w500,
                       ),
                       textAlign: TextAlign.center,
@@ -233,7 +235,7 @@ class UserChoiceButtonSecond extends StatelessWidget {
                         fontSize: UTILS.calculWidth(
                             28, UTILS.widthReference(context)),
                         fontFamily: 'Galey',
-                        color: Color.fromARGB(174, 0, 0, 0),
+                        color: Color(0xFF0C5C6C),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -246,7 +248,7 @@ class UserChoiceButtonSecond extends StatelessWidget {
                         fontSize: UTILS.calculWidth(
                             18, UTILS.widthReference(context)), // Taille augmentée
                         fontFamily: 'Galey',
-                        color: Color.fromARGB(174, 0, 0, 0),
+                        color: Color(0xFF0C5C6C),
                         fontWeight: FontWeight.w500,
                       ),
                       textAlign: TextAlign.center,
@@ -321,7 +323,7 @@ class UserChoiceButtonThird extends StatelessWidget {
                         fontSize: UTILS.calculWidth(
                             28, UTILS.widthReference(context)),
                         fontFamily: 'Galey',
-                        color: Color.fromARGB(174, 0, 0, 0),
+                        color: Color(0xFF0C5C6C),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -334,7 +336,7 @@ class UserChoiceButtonThird extends StatelessWidget {
                         fontSize: UTILS.calculWidth(
                             18, UTILS.widthReference(context)), // Taille augmentée
                         fontFamily: 'Galey',
-                        color: Color.fromARGB(174, 0, 0, 0),
+                        color: Color(0xFF0C5C6C),
                         fontWeight: FontWeight.w500,
                       ),
                       textAlign: TextAlign.center,
@@ -393,7 +395,7 @@ class UserChoiceButtonFour extends StatelessWidget {
                         fontSize: UTILS.calculWidth(
                             28, UTILS.widthReference(context)),
                         fontFamily: 'Galey',
-                        color: Color.fromARGB(174, 0, 0, 0),
+                        color: Color(0xFF0C5C6C),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -406,7 +408,7 @@ class UserChoiceButtonFour extends StatelessWidget {
                         fontSize: UTILS.calculWidth(
                             18, UTILS.widthReference(context)), // Taille augmentée
                         fontFamily: 'Galey',
-                        color: Color.fromARGB(174, 0, 0, 0),
+                        color: Color(0xFF0C5C6C),
                         fontWeight: FontWeight.w500,
                       ),
                       textAlign: TextAlign.center,

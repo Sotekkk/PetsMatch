@@ -132,7 +132,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color.fromARGB(255, 255, 132, 132)),
+                    backgroundColor: const Color(0xFF6E9E57)),
                 onPressed: () async {
                   Navigator.pop(ctx);
                   await _sendSignalement(motif, detailCtrl.text.trim());
@@ -159,14 +159,14 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
     final allBreeds = [...user.dogBreeds, ...user.catBreeds];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFFF1E3),
+      backgroundColor: const Color(0xFFF8F8F6),
       body: CustomScrollView(
         slivers: [
           // App bar with photo
           SliverAppBar(
             expandedHeight: 220,
             pinned: true,
-            backgroundColor: const Color.fromARGB(255, 250, 192, 187),
+            backgroundColor: const Color(0xFFA7C79A),
             leading: IconButton(
               icon: const Icon(Icons.arrow_back, color: Colors.white),
               onPressed: () => Navigator.pop(context),
@@ -368,7 +368,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                                     color: Colors.black)),
                             style: ElevatedButton.styleFrom(
                               backgroundColor:
-                                  const Color.fromARGB(255, 250, 192, 187),
+                                  const Color(0xFFA7C79A),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(30)),
                               padding:
@@ -385,13 +385,13 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                                   borderRadius: BorderRadius.circular(30)),
                               side: const BorderSide(
                                   color:
-                                      Color.fromARGB(255, 250, 192, 187)),
+                                      Color(0xFFA7C79A)),
                               padding: const EdgeInsets.symmetric(
                                   vertical: 12, horizontal: 16),
                             ),
                             child: const Icon(Icons.phone,
                                 size: 20,
-                                color: Color.fromARGB(255, 200, 100, 80)),
+                                color: Color(0xFF6E9E57)),
                           ),
                         ],
                       ],
@@ -454,7 +454,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                           child: Padding(
                         padding: EdgeInsets.all(24),
                         child: CircularProgressIndicator(
-                            color: Color.fromARGB(255, 250, 192, 187)),
+                            color: Color(0xFFA7C79A)),
                       ));
                     }
 
@@ -540,9 +540,9 @@ class _PlaceholderBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color.fromARGB(255, 250, 192, 187).withOpacity(0.4),
+      color: const Color(0xFFA7C79A).withOpacity(0.4),
       child: const Center(
-        child: Icon(Icons.pets, size: 64, color: Color.fromARGB(255, 250, 192, 187)),
+        child: Icon(Icons.pets, size: 64, color: Color(0xFFA7C79A)),
       ),
     );
   }
@@ -557,9 +557,9 @@ class _SpeciesChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color.fromARGB(255, 250, 192, 187).withOpacity(0.25),
+        color: const Color(0xFFA7C79A).withOpacity(0.25),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color.fromARGB(255, 250, 192, 187)),
+        border: Border.all(color: const Color(0xFFA7C79A)),
       ),
       child: Text(label,
           style: const TextStyle(

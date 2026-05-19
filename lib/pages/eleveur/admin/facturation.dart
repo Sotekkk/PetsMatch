@@ -638,6 +638,8 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                   child: Stack(children: [
                     Image.asset(
                       'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                       fit: BoxFit.cover,
                       width:
                           UTILS.calculWidth(211, UTILS.widthReference(context)),
@@ -694,7 +696,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                           fontSize: UTILS.calculWidth(
                               30, UTILS.widthReference(context)),
                           fontFamily: 'Galey',
-                          color: const Color.fromARGB(174, 0, 0, 0),
+                          color: const Color(0xFF0C5C6C),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -720,7 +722,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                         )),
@@ -740,7 +742,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                         )),
@@ -765,7 +767,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                         )),
@@ -785,7 +787,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                         )),
@@ -805,7 +807,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                         )),
@@ -822,7 +824,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                           fontSize: UTILS.calculWidth(
                               30, UTILS.widthReference(context)),
                           fontFamily: 'Galey',
-                          color: const Color.fromARGB(174, 0, 0, 0),
+                          color: const Color(0xFF0C5C6C),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -848,7 +850,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                         )),
@@ -868,7 +870,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                         )),
@@ -893,7 +895,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                         )),
@@ -913,7 +915,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                         )),
@@ -933,7 +935,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                         )),
@@ -951,7 +953,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                           fontSize: UTILS.calculWidth(
                               30, UTILS.widthReference(context)),
                           fontFamily: 'Galey',
-                          color: const Color.fromARGB(174, 0, 0, 0),
+                          color: const Color(0xFF0C5C6C),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -977,7 +979,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                         )),
@@ -1187,7 +1189,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                           ),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Color.fromARGB(255, 252, 207, 200),
+                          backgroundColor: Color(0xFFEEF5EA),
                         ),
                       ),
                     ),
@@ -1286,7 +1288,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                           ),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Color.fromARGB(255, 252, 207, 200),
+                          backgroundColor: Color(0xFFEEF5EA),
                         ),
                       ),
                     ),
@@ -1309,7 +1311,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                           onSaved: (value) {
@@ -1344,7 +1346,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                               ),
                               enabledBorder: UnderlineInputBorder(
                                 borderSide: BorderSide(
-                                    color: Color.fromARGB(255, 250, 192, 187)),
+                                    color: Color(0xFFA7C79A)),
                               ),
                             ),
                             keyboardType: TextInputType.number,
@@ -1368,7 +1370,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                           onChanged: (value) {
@@ -1392,7 +1394,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                         )),
@@ -1416,7 +1418,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Color.fromARGB(255, 252, 207, 200),
+                    backgroundColor: Color(0xFFEEF5EA),
                   ),
                 ),
               )),
@@ -1432,13 +1434,13 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     return DropdownButtonFormField<Country>(
       value: selectedCountry,
       isExpanded: true,
-      dropdownColor: Colors.pink[100], // Couleur de fond de la liste déroulante
+      dropdownColor: Color(0xFFEEF5EA), // Couleur de fond de la liste déroulante
       decoration: InputDecoration(
         enabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: Color.fromARGB(255, 250, 192, 187)),
+          borderSide: BorderSide(color: Color(0xFFA7C79A)),
         ),
         focusedBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: Color.fromARGB(255, 250, 192, 187)),
+          borderSide: BorderSide(color: Color(0xFFA7C79A)),
         ),
         labelText: 'Pays',
         labelStyle: TextStyle(
@@ -1479,13 +1481,13 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     return DropdownButtonFormField<Country>(
       value: selectedCountry1,
       isExpanded: true,
-      dropdownColor: Colors.pink[100], // Couleur de fond de la liste déroulante
+      dropdownColor: Color(0xFFEEF5EA), // Couleur de fond de la liste déroulante
       decoration: InputDecoration(
         enabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: Color.fromARGB(255, 250, 192, 187)),
+          borderSide: BorderSide(color: Color(0xFFA7C79A)),
         ),
         focusedBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: Color.fromARGB(255, 250, 192, 187)),
+          borderSide: BorderSide(color: Color(0xFFA7C79A)),
         ),
         labelText: 'Pays',
         labelStyle: TextStyle(

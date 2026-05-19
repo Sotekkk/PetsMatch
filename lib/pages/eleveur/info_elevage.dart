@@ -144,6 +144,8 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
                           child: Stack(children: [
                             Image.asset(
                               'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                               fit: BoxFit.cover,
                               width: UTILS.calculWidth(
                                   211, UTILS.widthReference(context)),
@@ -182,7 +184,7 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
                                 fontSize: UTILS.calculWidth(
                                     30, UTILS.widthReference(context)),
                                 fontFamily: 'Galey',
-                                color: const Color.fromARGB(174, 0, 0, 0),
+                                color: const Color(0xFF0C5C6C),
                                 fontWeight: FontWeight.w500),
                             textAlign: TextAlign.left,
                           ),
@@ -196,7 +198,7 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
                                 fontSize: UTILS.calculWidth(
                                     30, UTILS.widthReference(context)),
                                 fontFamily: 'Galey',
-                                color: const Color.fromARGB(174, 0, 0, 0),
+                                color: const Color(0xFF0C5C6C),
                                 fontWeight: FontWeight.w500),
                             textAlign: TextAlign.left,
                           ),
@@ -212,7 +214,7 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
                                   fontSize: UTILS.calculWidth(
                                       15, UTILS.widthReference(context)),
                                   fontFamily: 'Galey',
-                                  color: const Color.fromARGB(174, 0, 0, 0),
+                                  color: const Color(0xFF0C5C6C),
                                   fontWeight: FontWeight.w500),
                               textAlign: TextAlign.left,
                             ),
@@ -273,8 +275,7 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
                                                   UTILS
                                                       .widthReference(context)),
                                               backgroundColor:
-                                                  const Color.fromARGB(
-                                                      255, 255, 178, 173),
+                                                  const Color(0xFF6E9E57),
                                               child: Icon(Icons.edit,
                                                   size: UTILS.calculWidth(
                                                       18,
@@ -300,8 +301,7 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
                                                   UTILS
                                                       .widthReference(context)),
                                               backgroundColor:
-                                                  const Color.fromARGB(
-                                                      255, 255, 178, 173),
+                                                  const Color(0xFF6E9E57),
                                               child: Icon(Icons.close,
                                                   size: UTILS.calculWidth(
                                                       18,
@@ -507,13 +507,13 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
                             horizontal: UTILS.calculWidth(
                                 20, UTILS.widthReference(context))),
                         decoration: BoxDecoration(
-                          color: Color.fromARGB(255, 250, 192, 187),
+                          color: Color(0xFFA7C79A),
                           borderRadius: BorderRadius.circular(UTILS.calculWidth(
                               30.0, UTILS.widthReference(context))),
                         ),
                         child: Theme(
                           data: Theme.of(context).copyWith(
-                            canvasColor: Color.fromARGB(255, 250, 192, 187),
+                            canvasColor: Color(0xFFA7C79A),
                           ),
                           child: Row(
                             children: <Widget>[
@@ -635,7 +635,7 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
                             onPressed: _validateAndContinue,
                             style: ElevatedButton.styleFrom(
                                 backgroundColor:
-                                    Color.fromARGB(255, 250, 192, 187)),
+                                    Color(0xFFA7C79A)),
                             child: Text(
                               'CONTINUER',
                               style: TextStyle(
@@ -723,7 +723,7 @@ class _PlacesSearchWidgetElevageState extends State<PlacesSearchWidgetElevage> {
             ? UTILS.calculHeight(196, UTILS.heightReference(context))
             : UTILS.calculHeight(57, UTILS.heightReference(context)),
         decoration: BoxDecoration(
-          color: Color.fromARGB(255, 250, 192, 187),
+          color: Color(0xFFA7C79A),
           borderRadius: BorderRadius.circular(
               UTILS.calculWidth(30.0, UTILS.widthReference(context))),
           border: Border.all(

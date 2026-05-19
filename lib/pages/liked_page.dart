@@ -152,6 +152,8 @@ class _LikesPageState extends State<LikesPage> {
                           fit: BoxFit.cover,
                           width: MediaQuery.of(context).size.width * 0.4,
                           height: MediaQuery.of(context).size.height * 0.2,
+                        color: const Color(0xFFA7C79A),
+                        colorBlendMode: BlendMode.srcIn,
                         ),
                         Positioned(
                           top: MediaQuery.of(context).size.height * 0.075,
@@ -249,7 +251,7 @@ class _LikesPageState extends State<LikesPage> {
                                       right: 10,
                                       child: Icon(
                                         Icons.favorite,
-                                        color: Color.fromARGB(255, 255, 77, 77),
+                                        color: Color(0xFF6E9E57),
                                       ),
                                     ),
                                   ],

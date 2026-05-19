@@ -100,7 +100,7 @@ class _AllPetRegisterState extends State<AllPetRegister> {
     return Scaffold(
       body: RefreshIndicator(
         color: Colors.white,
-        backgroundColor: const Color.fromARGB(255, 255, 132, 132),
+        backgroundColor: const Color(0xFF6E9E57),
         onRefresh: _fetchPets,
         child: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -115,6 +115,8 @@ class _AllPetRegisterState extends State<AllPetRegister> {
                         children: [
                           Image.asset(
                             'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                             fit: BoxFit.cover,
                             width: UTILS.calculWidth(
                                 211, UTILS.widthReference(context)),
@@ -169,18 +171,18 @@ class _AllPetRegisterState extends State<AllPetRegister> {
                             borderSide: BorderSide.none,
                           ),
                           filled: true,
-                          fillColor: const Color.fromARGB(50, 250, 192, 187),
+                          fillColor: const Color(0x33A7C79A),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(13.0),
                             borderSide: const BorderSide(
-                              color: Color.fromARGB(255, 250, 192, 187),
+                              color: Color(0xFFA7C79A),
                               width: 2.0,
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(13.0),
                             borderSide: const BorderSide(
-                              color: Color.fromARGB(255, 250, 192, 187),
+                              color: Color(0xFFA7C79A),
                               width: 2.0,
                             ),
                           ),

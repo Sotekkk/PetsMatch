@@ -74,6 +74,8 @@ Veuillez traiter ce signalement sous 24h conformément aux CGU.
                           UTILS.calculWidth(151, UTILS.widthReference(context)),
                       height: UTILS.calculHeight(
                           141, UTILS.heightReference(context)),
+                    color: const Color(0xFFA7C79A),
+                    colorBlendMode: BlendMode.srcIn,
                     ),
                     Positioned(
                       top: UTILS.calculHeight(

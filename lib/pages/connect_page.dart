@@ -31,6 +31,8 @@ class WelcomePage extends StatelessWidget {
                         141,
                         UTILS.heightReference(
                             context)), // Hauteur fixe pour le Stack
+                  color: const Color(0xFFA7C79A),
+                  colorBlendMode: BlendMode.srcIn,
                   ),
                   Positioned(
                     top: UTILS.calculHeight(53, UTILS.heightReference(context)),

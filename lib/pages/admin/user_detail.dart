@@ -54,7 +54,7 @@ class _UserDetailState extends State<UserDetail> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFFFFF1E3),
+        backgroundColor: const Color(0xFFF8F8F6),
         title: Text(
           'Modifier $label',
           style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500),
@@ -64,7 +64,7 @@ class _UserDetailState extends State<UserDetail> {
           autofocus: true,
           decoration: InputDecoration(
             filled: true,
-            fillColor: const Color.fromARGB(255, 250, 192, 187),
+            fillColor: const Color(0xFFA7C79A),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
@@ -79,7 +79,7 @@ class _UserDetailState extends State<UserDetail> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-                backgroundColor: const Color.fromARGB(255, 250, 192, 187)),
+                backgroundColor: const Color(0xFFA7C79A)),
             onPressed: () {
               Navigator.pop(ctx);
               _saveField(field, controller.text.trim());
@@ -96,7 +96,7 @@ class _UserDetailState extends State<UserDetail> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFFFFF1E3),
+        backgroundColor: const Color(0xFFF8F8F6),
         title: Text(
           current ? 'Désactiver $label ?' : 'Activer $label ?',
           style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500),
@@ -132,9 +132,9 @@ class _UserDetailState extends State<UserDetail> {
     final ppElevageUrl = _data['profilePictureUrlElevage'] ?? '';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFFF1E3),
+      backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(
-        backgroundColor: const Color.fromARGB(255, 250, 192, 187),
+        backgroundColor: const Color(0xFFA7C79A),
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
         title: const Text(
@@ -162,7 +162,7 @@ class _UserDetailState extends State<UserDetail> {
                           backgroundImage:
                               ppUrl.isNotEmpty ? NetworkImage(ppUrl) : null,
                           backgroundColor:
-                              const Color.fromARGB(255, 250, 192, 187),
+                              const Color(0xFFA7C79A),
                           child: ppUrl.isEmpty
                               ? const Icon(Icons.person,
                                   size: 48, color: Colors.white)
@@ -385,7 +385,7 @@ class _SectionTitle extends StatelessWidget {
           fontFamily: 'Galey',
           fontWeight: FontWeight.w500,
           fontSize: 16,
-          color: Color.fromARGB(255, 200, 100, 80),
+          color: Color(0xFF6E9E57),
         ),
       ),
     );

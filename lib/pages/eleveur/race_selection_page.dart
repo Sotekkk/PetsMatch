@@ -84,7 +84,7 @@ class _RaceSelectionPageState extends State<RaceSelectionPage> {
             _AddTypeRow(
               icon: Icons.pets,
               label: 'Chien',
-              color: const Color(0xFF43A047),
+              color: const Color(0xFF6E9E57),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(context,
@@ -128,7 +128,7 @@ class _RaceSelectionPageState extends State<RaceSelectionPage> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'add_race_fab',
-        backgroundColor: const Color(0xFFFF8484),
+        backgroundColor: const Color(0xFF6E9E57),
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text('Ajouter',
             style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
@@ -403,7 +403,7 @@ class _AnimalByRacePageState extends State<AnimalByRacePage> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'add_animal_race_fab',
-        backgroundColor: const Color(0xFFFF8484),
+        backgroundColor: const Color(0xFF6E9E57),
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text('Ajouter',
             style: TextStyle(fontFamily: 'Galey', color: Colors.white)),

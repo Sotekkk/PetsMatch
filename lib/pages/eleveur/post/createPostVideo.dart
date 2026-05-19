@@ -220,7 +220,7 @@ class _NewVideoPostPageState extends State<NewVideoPostPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color.fromARGB(255, 255, 241, 227), // Fond du Scaffold
+      backgroundColor: Color(0xFFF8F8F6), // Fond du Scaffold
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -255,7 +255,7 @@ class _NewVideoPostPageState extends State<NewVideoPostPage> {
               style: TextStyle(
                   fontFamily: 'Galey',
                   fontWeight: FontWeight.w500,
-                  color: Color.fromARGB(255, 250, 192, 187)), // Ajuster si nécessaire
+                  color: Color(0xFFA7C79A)), // Ajuster si nécessaire
             ),
           ),
         ],
@@ -266,7 +266,7 @@ class _NewVideoPostPageState extends State<NewVideoPostPage> {
             children: [
               Container(
                 height: UTILS.calculHeight(428, UTILS.heightReference(context)),
-                color: Color.fromARGB(255, 255, 241, 227),
+                color: Color(0xFFF8F8F6),
                 child: _selectedVideoFile != null
                     ? Stack(
                         children: [

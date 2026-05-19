@@ -1027,6 +1027,8 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                   child: Stack(children: [
                     Image.asset(
                       'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                       fit: BoxFit.cover,
                       width:
                           UTILS.calculWidth(211, UTILS.widthReference(context)),
@@ -1079,7 +1081,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                       fontSize:
                           UTILS.calculWidth(25, UTILS.widthReference(context)),
                       fontFamily: 'Galey',
-                      color: const Color.fromARGB(174, 0, 0, 0),
+                      color: const Color(0xFF0C5C6C),
                       fontWeight: FontWeight.w500),
                 ),
                 initiallyExpanded: true,
@@ -1105,7 +1107,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                       fontSize:
                           UTILS.calculWidth(25, UTILS.widthReference(context)),
                       fontFamily: 'Galey',
-                      color: const Color.fromARGB(174, 0, 0, 0),
+                      color: const Color(0xFF0C5C6C),
                       fontWeight: FontWeight.w500),
                 ),
                 initiallyExpanded: false,
@@ -1137,7 +1139,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                       fontSize:
                           UTILS.calculWidth(25, UTILS.widthReference(context)),
                       fontFamily: 'Galey',
-                      color: const Color.fromARGB(174, 0, 0, 0),
+                      color: const Color(0xFF0C5C6C),
                       fontWeight: FontWeight.w500),
                 ),
                 initiallyExpanded: false,
@@ -1152,7 +1154,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                     children: [
                       Expanded(
                         child: CheckboxListTile(
-                          activeColor: Color.fromARGB(255, 250, 192, 187),
+                          activeColor: Color(0xFFA7C79A),
                           title: Text("Chien"),
                           value: selectedAnimal == "chien",
                           onChanged: (value) {
@@ -1164,7 +1166,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                       ),
                       Expanded(
                         child: CheckboxListTile(
-                          activeColor: Color.fromARGB(255, 250, 192, 187),
+                          activeColor: Color(0xFFA7C79A),
                           title: Text("Chiot"),
                           value: selectedAnimal == "chiot",
                           onChanged: (value) {
@@ -1180,7 +1182,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                     children: [
                       Expanded(
                         child: CheckboxListTile(
-                          activeColor: Color.fromARGB(255, 250, 192, 187),
+                          activeColor: Color(0xFFA7C79A),
                           title: Text("Chat"),
                           value: selectedAnimal == "chat",
                           onChanged: (value) {
@@ -1192,7 +1194,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                       ),
                       Expanded(
                         child: CheckboxListTile(
-                          activeColor: Color.fromARGB(255, 250, 192, 187),
+                          activeColor: Color(0xFFA7C79A),
                           title: Text("Chaton"),
                           value: selectedAnimal == "chaton",
                           onChanged: (value) {
@@ -1211,7 +1213,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                     children: [
                       Expanded(
                         child: CheckboxListTile(
-                          activeColor: Color.fromARGB(255, 250, 192, 187),
+                          activeColor: Color(0xFFA7C79A),
                           title: Text("Né(e) le"),
                           value: !isAnimalANaitre,
                           onChanged: (value) {
@@ -1228,7 +1230,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                       ),
                       Expanded(
                         child: CheckboxListTile(
-                          activeColor: Color.fromARGB(255, 250, 192, 187),
+                          activeColor: Color(0xFFA7C79A),
                           title: Text("À naître"),
                           value: isAnimalANaitre,
                           onChanged: (value) {
@@ -1263,7 +1265,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                           readOnly: true,
@@ -1277,7 +1279,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                     children: [
                       Expanded(
                         child: CheckboxListTile(
-                          activeColor: Color.fromARGB(255, 250, 192, 187),
+                          activeColor: Color(0xFFA7C79A),
                           title: Text("LOF"),
                           value: isLOF,
                           onChanged: (value) {
@@ -1289,7 +1291,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                       ),
                       Expanded(
                         child: CheckboxListTile(
-                          activeColor: Color.fromARGB(255, 250, 192, 187),
+                          activeColor: Color(0xFFA7C79A),
                           title: Text("LOOF"),
                           value: isLOOF,
                           onChanged: (value) {
@@ -1311,7 +1313,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
 
                   // Trois nouvelles cases
                   CheckboxListTile(
-                    activeColor: Color.fromARGB(255, 250, 192, 187),
+                    activeColor: Color(0xFFA7C79A),
                     title: Text("Non inscrit à un Livre des origines"),
                     value: isNonInscritOrigine,
                     onChanged: (value) {
@@ -1321,7 +1323,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                     },
                   ),
                   CheckboxListTile(
-                    activeColor: Color.fromARGB(255, 250, 192, 187),
+                    activeColor: Color(0xFFA7C79A),
                     title: Text("N'appartient pas à une race"),
                     value: isNonRace,
                     onChanged: (value) {
@@ -1331,7 +1333,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                     },
                   ),
                   CheckboxListTile(
-                    activeColor: Color.fromARGB(255, 250, 192, 187),
+                    activeColor: Color(0xFFA7C79A),
                     title: Text("Apparence de race"),
                     value: isApparenceRace,
                     onChanged: (value) {
@@ -1350,7 +1352,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                     children: [
                       Expanded(
                         child: CheckboxListTile(
-                          activeColor: Color.fromARGB(255, 250, 192, 187),
+                          activeColor: Color(0xFFA7C79A),
                           title: Text("Mâle"),
                           value: selectedSexe == "M",
                           onChanged: (value) {
@@ -1362,7 +1364,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                       ),
                       Expanded(
                         child: CheckboxListTile(
-                          activeColor: Color.fromARGB(255, 250, 192, 187),
+                          activeColor: Color(0xFFA7C79A),
                           title: Text("Femelle"),
                           value: selectedSexe == "F",
                           onChanged: (value) {
@@ -1411,7 +1413,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                     children: [
                       Expanded(
                         child: CheckboxListTile(
-                          activeColor: Color.fromARGB(255, 250, 192, 187),
+                          activeColor: Color(0xFFA7C79A),
                           title: Text("TVA applicable"),
                           value: isTvaApplicable,
                           onChanged: (value) {
@@ -1464,7 +1466,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                     children: [
                       Expanded(
                         child: CheckboxListTile(
-                          activeColor: Color.fromARGB(255, 250, 192, 187),
+                          activeColor: Color(0xFFA7C79A),
                           title: Text("Par carte bancaire"),
                           value: selectedPaymentMethod == "carte",
                           onChanged: (value) {
@@ -1477,7 +1479,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                       ),
                       Expanded(
                         child: CheckboxListTile(
-                          activeColor: Color.fromARGB(255, 250, 192, 187),
+                          activeColor: Color(0xFFA7C79A),
                           title: Text("En espèces"),
                           value: selectedPaymentMethod == "espece",
                           onChanged: (value) {
@@ -1491,7 +1493,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                     ],
                   ),
                   CheckboxListTile(
-                    activeColor: Color.fromARGB(255, 250, 192, 187),
+                    activeColor: Color(0xFFA7C79A),
                     title: Text("Par chèque n°........ encaissé à réception"),
                     value: selectedPaymentMethod == "cheque_reception",
                     onChanged: (value) {
@@ -1504,7 +1506,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                   if (selectedPaymentMethod == "cheque_reception")
                     _buildTextField("Numéro de chèque", chequeNumeroController),
                   CheckboxListTile(
-                    activeColor: Color.fromARGB(255, 250, 192, 187),
+                    activeColor: Color(0xFFA7C79A),
                     title: Text(
                         "Par chèque n°........ à encaisser le ....... (dans un délai inférieur à 6 mois)"),
                     value: selectedPaymentMethod == "cheque_delai",
@@ -1534,7 +1536,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                           readOnly: true,
@@ -1543,7 +1545,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                         )),
                   ],
                   CheckboxListTile(
-                    activeColor: Color.fromARGB(255, 250, 192, 187),
+                    activeColor: Color(0xFFA7C79A),
                     title: Text(
                         "Par virement bancaire effectué avant le ....... sous peine de nullité de la réservation"),
                     value: selectedPaymentMethod == "virement",
@@ -1572,7 +1574,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                             ),
                             enabledBorder: UnderlineInputBorder(
                               borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187)),
+                                  color: Color(0xFFA7C79A)),
                             ),
                           ),
                           readOnly: true,
@@ -1606,7 +1608,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                           ),
                           enabledBorder: UnderlineInputBorder(
                             borderSide: BorderSide(
-                                color: Color.fromARGB(255, 250, 192, 187)),
+                                color: Color(0xFFA7C79A)),
                           ),
                         ),
                         readOnly: true,
@@ -1630,7 +1632,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                           ),
                           enabledBorder: UnderlineInputBorder(
                             borderSide: BorderSide(
-                                color: Color.fromARGB(255, 250, 192, 187)),
+                                color: Color(0xFFA7C79A)),
                           ),
                         ),
                         readOnly: true,
@@ -1658,7 +1660,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
                           ),
                           enabledBorder: UnderlineInputBorder(
                             borderSide: BorderSide(
-                                color: Color.fromARGB(255, 250, 192, 187)),
+                                color: Color(0xFFA7C79A)),
                           ),
                         ),
                         readOnly: true,
@@ -1722,13 +1724,13 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
     return DropdownButtonFormField<Country>(
       value: selectedCountry,
       isExpanded: true,
-      dropdownColor: Colors.pink[100], // Couleur de fond de la liste déroulante
+      dropdownColor: Color(0xFFEEF5EA), // Couleur de fond de la liste déroulante
       decoration: InputDecoration(
         enabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: Color.fromARGB(255, 250, 192, 187)),
+          borderSide: BorderSide(color: Color(0xFFA7C79A)),
         ),
         focusedBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: Color.fromARGB(255, 250, 192, 187)),
+          borderSide: BorderSide(color: Color(0xFFA7C79A)),
         ),
         labelText: 'Pays',
         labelStyle: TextStyle(
@@ -1769,13 +1771,13 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
     return DropdownButtonFormField<Country>(
       value: selectedCountry1,
       isExpanded: true,
-      dropdownColor: Colors.pink[100], // Couleur de fond de la liste déroulante
+      dropdownColor: Color(0xFFEEF5EA), // Couleur de fond de la liste déroulante
       decoration: InputDecoration(
         enabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: Color.fromARGB(255, 250, 192, 187)),
+          borderSide: BorderSide(color: Color(0xFFA7C79A)),
         ),
         focusedBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: Color.fromARGB(255, 250, 192, 187)),
+          borderSide: BorderSide(color: Color(0xFFA7C79A)),
         ),
         labelText: 'Pays',
         labelStyle: TextStyle(
@@ -1832,7 +1834,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
               ),
               enabledBorder: UnderlineInputBorder(
                 borderSide:
-                    BorderSide(color: Color.fromARGB(255, 250, 192, 187)),
+                    BorderSide(color: Color(0xFFA7C79A)),
               ),
             ),
             readOnly: readOnly,

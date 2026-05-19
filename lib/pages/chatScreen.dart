@@ -216,7 +216,7 @@ class _ChatScreenState extends State<ChatScreen> {
     showDialog(
       context: context,
       builder: (context) => Dialog(
-        backgroundColor: Color.fromARGB(255, 255, 192, 187),
+        backgroundColor: Color(0xFFA7C79A),
         child: Stack(
           children: [
             Positioned.fill(
@@ -522,8 +522,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                       10, UTILS.heightReference(context))),
                                   decoration: BoxDecoration(
                                     color: isCurrentUser
-                                        ? Color.fromARGB(255, 255, 192, 187)
-                                        : Color.fromARGB(255, 175, 192, 187),
+                                        ? Color(0xFFA7C79A)
+                                        : Color(0xFF5F9EAA),
                                     borderRadius: isCurrentUser
                                         ? BorderRadius.only(
                                             topLeft: Radius.circular(
@@ -642,7 +642,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             Container(
-                color: Color.fromARGB(255, 31, 30, 30),
+                color: Color(0xFF1F2A2E),
                 child: Padding(
                   padding: EdgeInsets.all(
                       UTILS.calculHeight(8, UTILS.heightReference(context))),

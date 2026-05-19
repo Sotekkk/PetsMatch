@@ -70,7 +70,7 @@ class _PendingPage extends StatelessWidget {
                         fontSize: UTILS.calculWidth(
                             30, UTILS.widthReference(context)),
                         fontFamily: 'Galey',
-                        color: const Color.fromARGB(174, 0, 0, 0),
+                        color: const Color(0xFF0C5C6C),
                         fontWeight: FontWeight.w500),
                   ),
                 ),
@@ -239,7 +239,7 @@ class _RejectedPage extends StatelessWidget {
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor:
-                        const Color.fromARGB(255, 250, 192, 187),
+                        const Color(0xFFA7C79A),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),
                     ),
@@ -270,6 +270,8 @@ class _Header extends StatelessWidget {
       child: Stack(children: [
         Image.asset(
           'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
           fit: BoxFit.cover,
           width: UTILS.calculWidth(211, UTILS.widthReference(context)),
           height: UTILS.calculHeight(104, UTILS.heightReference(context)),

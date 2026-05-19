@@ -8,8 +8,8 @@ class VeterinairesPag extends StatelessWidget {
     return _ServiceSubPage(
       title: 'Vétérinaires',
       icon: Icons.local_hospital_outlined,
-      iconColor: const Color(0xFF43A047),
-      headerColor: const Color(0xFF43A047),
+      iconColor: const Color(0xFF6E9E57),
+      headerColor: const Color(0xFF6E9E57),
       sections: const [
         _Section(
           icon: Icons.list_alt_outlined,

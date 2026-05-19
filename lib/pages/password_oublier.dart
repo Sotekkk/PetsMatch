@@ -35,7 +35,7 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      backgroundColor: Color(0xFFFFF1E3), // Couleur de fond de la page
+      backgroundColor: Color(0xFFF8F8F6), // Couleur de fond de la page
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0),
         child: Form(
@@ -68,7 +68,7 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
                   hintText: 'Email',
                   hintStyle: TextStyle(color: Colors.black),
                   filled: true,
-                  fillColor: Color.fromARGB(178, 250, 192, 187), // Couleur du champ de texte
+                  fillColor: Color(0xB2A7C79A), // Couleur du champ de texte
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(30.0),
                     borderSide: BorderSide.none,
@@ -89,7 +89,7 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
               ElevatedButton(
                 onPressed: _resetPassword,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Color(0xFFFF8484), // Couleur du bouton
+                  backgroundColor: const Color(0xFF6E9E57), // Couleur du bouton
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30.0),
                   ),
@@ -118,9 +118,9 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
                     child: Text(
                       's\'identifier',
                       style: TextStyle(
-                        color: Color(0xFFFF8484), // Couleur du texte du bouton
+                        color: const Color(0xFF6E9E57), // Couleur du texte du bouton
                         decoration: TextDecoration.underline,
-                        decorationColor: Color(0xFFFF8484),
+                        decorationColor: const Color(0xFF6E9E57),
                       ),
                     ),
                   ),

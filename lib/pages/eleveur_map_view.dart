@@ -221,7 +221,7 @@ class _EleveurMapViewState extends State<EleveurMapView> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             CircularProgressIndicator(
-                color: Color.fromARGB(255, 250, 192, 187)),
+                color: Color(0xFFA7C79A)),
             SizedBox(height: 12),
             Text(
               'Géolocalisation des élevages...',
@@ -281,7 +281,7 @@ class _EleveurMapViewState extends State<EleveurMapView> {
               decoration: BoxDecoration(
                 color: _selectedBreeds.isEmpty
                     ? Colors.white
-                    : const Color.fromARGB(255, 250, 192, 187),
+                    : const Color(0xFFA7C79A),
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: const [
                   BoxShadow(color: Colors.black12, blurRadius: 4)
@@ -521,7 +521,7 @@ class _EleveurSheet extends StatelessWidget {
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor:
-                    const Color.fromARGB(255, 250, 192, 187),
+                    const Color(0xFFA7C79A),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30)),
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -550,11 +550,11 @@ class _PlaceholderAvatar extends StatelessWidget {
       width: 60,
       height: 60,
       decoration: BoxDecoration(
-        color: const Color.fromARGB(255, 250, 192, 187).withOpacity(0.3),
+        color: const Color(0xFFA7C79A).withOpacity(0.3),
         borderRadius: BorderRadius.circular(10),
       ),
       child: const Icon(Icons.pets,
-          size: 28, color: Color.fromARGB(255, 250, 192, 187)),
+          size: 28, color: Color(0xFFA7C79A)),
     );
   }
 }
@@ -571,12 +571,12 @@ class _Tag extends StatelessWidget {
       decoration: BoxDecoration(
         color: subtle
             ? Colors.grey.shade100
-            : const Color.fromARGB(255, 250, 192, 187).withOpacity(0.25),
+            : const Color(0xFFA7C79A).withOpacity(0.25),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: subtle
               ? Colors.grey.shade300
-              : const Color.fromARGB(255, 250, 192, 187),
+              : const Color(0xFFA7C79A),
         ),
       ),
       child: Text(
@@ -662,7 +662,7 @@ class _BreedFilterSheetState extends State<_BreedFilterSheet> {
                         style: TextStyle(
                             fontFamily: 'Galey',
                             fontWeight: FontWeight.w500,
-                            color: Color.fromARGB(255, 200, 100, 80),
+                            color: Color(0xFF6E9E57),
                             fontSize: 15)),
                   ),
                 ],
@@ -740,7 +740,7 @@ class _BreedFilterSheetState extends State<_BreedFilterSheet> {
                             ? Icons.check_circle
                             : Icons.radio_button_unchecked,
                         color: sel
-                            ? const Color.fromARGB(255, 200, 100, 80)
+                            ? const Color(0xFF6E9E57)
                             : Colors.grey,
                         size: 20),
                     onTap: () => setState(() {

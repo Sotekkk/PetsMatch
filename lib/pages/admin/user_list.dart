@@ -43,7 +43,7 @@ class _UserListState extends State<UserList> {
     return Column(
       children: [
         Container(
-          color: const Color(0xFFFFF1E3),
+          color: const Color(0xFFF8F8F6),
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: TextField(
             onChanged: (v) => setState(() => _search = v.toLowerCase()),
@@ -61,7 +61,7 @@ class _UserListState extends State<UserList> {
           ),
         ),
         Container(
-          color: const Color(0xFFFFF1E3),
+          color: const Color(0xFFF8F8F6),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -83,11 +83,11 @@ class _UserListState extends State<UserList> {
                     selected: selected,
                     onSelected: (_) => setState(() => _filter = f.$1),
                     backgroundColor: Colors.white,
-                    selectedColor: const Color.fromARGB(255, 200, 100, 80),
+                    selectedColor: const Color(0xFF6E9E57),
                     checkmarkColor: Colors.white,
                     side: BorderSide(
                       color: selected
-                          ? const Color.fromARGB(255, 200, 100, 80)
+                          ? const Color(0xFF6E9E57)
                           : Colors.grey.shade300,
                     ),
                   ),
@@ -192,7 +192,7 @@ class _UserCard extends StatelessWidget {
               CircleAvatar(
                 radius: 26,
                 backgroundColor:
-                    const Color.fromARGB(255, 250, 192, 187),
+                    const Color(0xFFA7C79A),
                 child: ClipOval(
                   child: ppUrl.isNotEmpty
                       ? Image.network(
@@ -233,7 +233,7 @@ class _UserCard extends StatelessWidget {
                         if (isAdmin)
                           _Chip(label: 'Admin', color: Colors.deepPurple),
                         if (isElevage)
-                          _Chip(label: 'Éleveur', color: Colors.purple),
+                          _Chip(label: 'Éleveur', color: Color(0xFF0C5C6C)),
                         if (isPro)
                           _Chip(label: 'Pro', color: Colors.blue),
                         if (!isElevage && !isPro && !isAdmin)

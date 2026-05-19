@@ -117,6 +117,8 @@ class _MessagePageState extends State<MessagePage> {
                         UTILS.calculWidth(151, UTILS.widthReference(context)),
                     height:
                         UTILS.calculHeight(141, UTILS.heightReference(context)),
+                  color: const Color(0xFFA7C79A),
+                  colorBlendMode: BlendMode.srcIn,
                   ),
                   Positioned(
                     top: UTILS.calculHeight(53, UTILS.heightReference(context)),
@@ -156,18 +158,18 @@ class _MessagePageState extends State<MessagePage> {
                     borderSide: BorderSide.none,
                   ),
                   filled: true,
-                  fillColor: const Color.fromARGB(50, 250, 192, 187),
+                  fillColor: const Color(0x33A7C79A),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(13.0),
                     borderSide: const BorderSide(
-                      color: Color.fromARGB(255, 250, 192, 187),
+                      color: Color(0xFFA7C79A),
                       width: 2.0,
                     ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(13.0),
                     borderSide: const BorderSide(
-                      color: Color.fromARGB(255, 250, 192, 187),
+                      color: Color(0xFFA7C79A),
                       width: 2.0,
                     ),
                   ),

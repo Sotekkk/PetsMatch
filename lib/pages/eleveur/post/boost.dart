@@ -345,7 +345,7 @@ class _BoostAdPageState extends State<BoostAdPage> {
           '${option.price.toStringAsFixed(2)}€',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        activeColor: Color.fromARGB(255, 255, 132, 132),
+        activeColor: Color(0xFF6E9E57),
         contentPadding: EdgeInsets.symmetric(horizontal: 12),
         controlAffinity: ListTileControlAffinity.leading,
       ),
@@ -359,7 +359,7 @@ class _BoostAdPageState extends State<BoostAdPage> {
       width: UTILS.calculWidth(428, widthRef),
       height: UTILS.calculHeight(133, heightRef),
       decoration: BoxDecoration(
-        color: Color(0xFFFFF1E3),
+        color: Color(0xFFF8F8F6),
         borderRadius: BorderRadius.circular(15),
       ),
       child: Column(
@@ -396,7 +396,7 @@ class _BoostAdPageState extends State<BoostAdPage> {
                   await _savePostAndUploadMedia(context);
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color.fromARGB(255, 255, 132, 132),
+                  backgroundColor: const Color(0xFF6E9E57),
                   foregroundColor: Colors.black,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30),
@@ -422,7 +422,7 @@ class _BoostAdPageState extends State<BoostAdPage> {
       case 'Recommandé':
         return Color.fromARGB(200, 255, 132, 132);
       case 'Urgent':
-        return Colors.purple[100]!;
+        return const Color(0xFFEAF4F6);
       default:
         return Colors.grey;
     }

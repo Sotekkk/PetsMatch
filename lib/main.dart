@@ -367,26 +367,42 @@ class MyApp extends StatelessWidget {
 
           theme: ThemeData(
             colorScheme: ColorScheme.fromSwatch().copyWith(
-              primary: const Color.fromARGB(255, 102, 102, 102),
-              secondary: const Color.fromARGB(255, 102, 102, 102),
+              primary: const Color(0xFF6E9E57),
+              secondary: const Color(0xFF0C5C6C),
             ),
-            dividerColor:
-                Colors.transparent, // Supprime les séparateurs par défaut
-
-            scaffoldBackgroundColor: const Color(0xFFFFF1E3),
+            dividerColor: Colors.transparent,
+            scaffoldBackgroundColor: const Color(0xFFF8F8F6),
             elevatedButtonTheme: ElevatedButtonThemeData(
               style: ElevatedButton.styleFrom(
-                foregroundColor: const Color.fromARGB(255, 255, 241, 227),
+                foregroundColor: Colors.white,
+                backgroundColor: const Color(0xFF6E9E57),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
               ),
             ),
             buttonTheme: const ButtonThemeData(
               splashColor: Colors.transparent,
             ),
-            primaryColor: const Color.fromARGB(255, 255, 241, 227),
-            // Définir la couleur par défaut pour les éléments de la liste
+            primaryColor: const Color(0xFF6E9E57),
             listTileTheme: const ListTileThemeData(
-              iconColor: Colors.purple, // Couleur des icônes dans les ListTile
-              textColor: Colors.black, // Couleur du texte dans les ListTile
+              iconColor: Color(0xFF0C5C6C),
+              textColor: Color(0xFF1F2A2E),
+            ),
+            cardTheme: CardThemeData(
+              color: Colors.white,
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFFA7C79A)),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF6E9E57), width: 2),
+              ),
             ),
           ),
           debugShowCheckedModeBanner: false,

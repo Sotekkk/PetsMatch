@@ -470,6 +470,8 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                         children: [
                           Image.asset(
                             'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                             fit: BoxFit.cover,
                             width: UTILS.calculWidth(
                                 211, UTILS.widthReference(context)),
@@ -613,7 +615,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                             fontSize: UTILS.calculWidth(
                                 30, UTILS.widthReference(context)),
                             fontFamily: 'Galey',
-                            color: const Color.fromARGB(174, 0, 0, 0),
+                            color: const Color(0xFF0C5C6C),
                             fontWeight: FontWeight.w500),
                         textAlign: TextAlign.left,
                       ),
@@ -627,7 +629,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                               labelText: 'Nom de l\'animal (sans affixe)',
                               enabledBorder: UnderlineInputBorder(
                                 borderSide: BorderSide(
-                                    color: Color.fromARGB(255, 250, 192, 187)),
+                                    color: Color(0xFFA7C79A)),
                               ),
                             ),
                           ),
@@ -652,11 +654,11 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                                 enabledBorder: UnderlineInputBorder(
                                   borderSide: BorderSide(
                                       color:
-                                          Color.fromARGB(255, 250, 192, 187)),
+                                          Color(0xFFA7C79A)),
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderSide: BorderSide(
-                                    color: Color.fromARGB(255, 250, 192, 187),
+                                    color: Color(0xFFA7C79A),
                                     width: UTILS.calculWidth(
                                         2, UTILS.widthReference(context)),
                                   ),
@@ -694,12 +696,12 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                               labelText: 'Race du chien',
                               enabledBorder: UnderlineInputBorder(
                                 borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187),
+                                  color: Color(0xFFA7C79A),
                                 ),
                               ),
                               focusedBorder: UnderlineInputBorder(
                                 borderSide: BorderSide(
-                                  color: Color.fromARGB(255, 250, 192, 187),
+                                  color: Color(0xFFA7C79A),
                                 ),
                               ),
                             ),
@@ -718,7 +720,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                           Container(
                             width: UTILS.calculWidth(
                                 355, UTILS.widthReference(context)),
-                            color: Color.fromARGB(255, 250, 192, 187),
+                            color: Color(0xFFA7C79A),
                             child: ConstrainedBox(
                               constraints: BoxConstraints(
                                 maxHeight: 150,
@@ -729,7 +731,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                                 itemCount: _suggestedBreeds.length,
                                 itemBuilder: (context, index) {
                                   return Container(
-                                    color: Color.fromARGB(255, 250, 192, 187),
+                                    color: Color(0xFFA7C79A),
                                     child: ListTile(
                                       contentPadding: EdgeInsets.symmetric(
                                           horizontal: 16.0),
@@ -754,17 +756,17 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                             width: UTILS.calculWidth(
                                 355, UTILS.widthReference(context)),
                             child: DropdownButtonFormField<String>(
-                              dropdownColor: Colors.pink[100],
+                              dropdownColor: Color(0xFFEEF5EA),
                               decoration: InputDecoration(
                                 enabledBorder: UnderlineInputBorder(
                                   borderSide: BorderSide(
                                       color:
-                                          Color.fromARGB(255, 250, 192, 187)),
+                                          Color(0xFFA7C79A)),
                                 ),
                                 focusedBorder: UnderlineInputBorder(
                                   borderSide: BorderSide(
                                       color:
-                                          Color.fromARGB(255, 250, 192, 187)),
+                                          Color(0xFFA7C79A)),
                                 ),
                                 labelText: 'Sexe',
                               ),
@@ -794,7 +796,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                                 enabledBorder: UnderlineInputBorder(
                                   borderSide: BorderSide(
                                       color:
-                                          Color.fromARGB(255, 250, 192, 187)),
+                                          Color(0xFFA7C79A)),
                                 ),
                               ),
                             )),
@@ -812,7 +814,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                                 enabledBorder: UnderlineInputBorder(
                                   borderSide: BorderSide(
                                       color:
-                                          Color.fromARGB(255, 250, 192, 187)),
+                                          Color(0xFFA7C79A)),
                                 ),
                               ),
                             )),
@@ -828,7 +830,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                             fontSize: UTILS.calculWidth(
                                 30, UTILS.widthReference(context)),
                             fontFamily: 'Galey',
-                            color: const Color.fromARGB(174, 0, 0, 0),
+                            color: const Color(0xFF0C5C6C),
                             fontWeight: FontWeight.w500),
                         textAlign: TextAlign.left,
                       ),
@@ -843,7 +845,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                                 enabledBorder: UnderlineInputBorder(
                                   borderSide: BorderSide(
                                       color:
-                                          Color.fromARGB(255, 250, 192, 187)),
+                                          Color(0xFFA7C79A)),
                                 ),
                               ),
                             )),
@@ -878,7 +880,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor:
-                                  Color.fromARGB(255, 252, 207, 200),
+                                  Color(0xFFEEF5EA),
                             ),
                           ),
                         ),
@@ -921,7 +923,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor:
-                                  Color.fromARGB(255, 252, 207, 200),
+                                  Color(0xFFEEF5EA),
                             ),
                           ),
                         ),
@@ -945,7 +947,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                             fontSize: UTILS.calculWidth(
                                 30, UTILS.widthReference(context)),
                             fontFamily: 'Galey',
-                            color: const Color.fromARGB(174, 0, 0, 0),
+                            color: const Color(0xFF0C5C6C),
                             fontWeight: FontWeight.w500),
                         textAlign: TextAlign.left,
                       ),
@@ -960,7 +962,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                                 enabledBorder: UnderlineInputBorder(
                                   borderSide: BorderSide(
                                       color:
-                                          Color.fromARGB(255, 250, 192, 187)),
+                                          Color(0xFFA7C79A)),
                                 ),
                               ),
                             )),
@@ -995,7 +997,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor:
-                                  Color.fromARGB(255, 252, 207, 200),
+                                  Color(0xFFEEF5EA),
                             ),
                           ),
                         ),
@@ -1038,7 +1040,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor:
-                                  Color.fromARGB(255, 252, 207, 200),
+                                  Color(0xFFEEF5EA),
                             ),
                           ),
                         ),
@@ -1063,7 +1065,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                           fontSize: UTILS.calculWidth(
                               30, UTILS.widthReference(context)),
                           fontFamily: 'Galey',
-                          color: const Color.fromARGB(174, 0, 0, 0),
+                          color: const Color(0xFF0C5C6C),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -1193,7 +1195,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                             style: TextStyle(color: Colors.black),
                           ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Color.fromARGB(255, 252, 207, 200),
+                            backgroundColor: Color(0xFFEEF5EA),
                           ),
                         ),
                         SizedBox(
@@ -1296,7 +1298,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                           child: Text('Ajouter un vermifuge',
                               style: TextStyle(color: Colors.black)),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Color.fromARGB(255, 252, 207, 200),
+                            backgroundColor: Color(0xFFEEF5EA),
                           ),
                         ),
                       ],
@@ -1313,7 +1315,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                             fontSize: UTILS.calculWidth(
                                 30, UTILS.widthReference(context)),
                             fontFamily: 'Galey',
-                            color: const Color.fromARGB(174, 0, 0, 0),
+                            color: const Color(0xFF0C5C6C),
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -1395,7 +1397,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                                 style: TextStyle(color: Colors.black)),
                             style: ElevatedButton.styleFrom(
                               backgroundColor:
-                                  Color.fromARGB(255, 252, 207, 200),
+                                  Color(0xFFEEF5EA),
                             ),
                           ),
                           //Divider,
@@ -1550,7 +1552,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                                 style: TextStyle(color: Colors.black)),
                             style: ElevatedButton.styleFrom(
                               backgroundColor:
-                                  Color.fromARGB(255, 252, 207, 200),
+                                  Color(0xFFEEF5EA),
                             ),
                           ),
                         ],
@@ -1576,7 +1578,7 @@ class _DogFicheEditState extends State<DogFicheEdit> {
                           ),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Color.fromARGB(255, 255, 132, 132),
+                          backgroundColor: Color(0xFF6E9E57),
                         ),
                       ),
                     ),

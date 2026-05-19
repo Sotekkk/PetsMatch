@@ -96,7 +96,7 @@ class _EleveurListPageState extends State<EleveurListPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFF1E3),
+      backgroundColor: const Color(0xFFF8F8F6),
       body: Column(
         children: [
           // Header
@@ -107,6 +107,8 @@ class _EleveurListPageState extends State<EleveurListPage> {
               children: [
                 Image.asset(
                   'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                   fit: BoxFit.cover,
                   width: UTILS.calculWidth(211, UTILS.widthReference(context)),
                   height:
@@ -236,11 +238,11 @@ class _EleveurListPageState extends State<EleveurListPage> {
                         _selectedBreeds = [];
                       }),
                       backgroundColor: Colors.white,
-                      selectedColor: const Color.fromARGB(255, 250, 192, 187),
+                      selectedColor: const Color(0xFFA7C79A),
                       checkmarkColor: Colors.black,
                       side: BorderSide(
                         color: selected
-                            ? const Color.fromARGB(255, 250, 192, 187)
+                            ? const Color(0xFFA7C79A)
                             : Colors.grey.shade300,
                       ),
                     ),
@@ -253,12 +255,12 @@ class _EleveurListPageState extends State<EleveurListPage> {
                     decoration: BoxDecoration(
                       color: _selectedBreeds.isEmpty
                           ? Colors.white
-                          : const Color.fromARGB(255, 250, 192, 187),
+                          : const Color(0xFFA7C79A),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                         color: _selectedBreeds.isEmpty
                             ? Colors.grey.shade300
-                            : const Color.fromARGB(255, 250, 192, 187),
+                            : const Color(0xFFA7C79A),
                       ),
                     ),
                     child: Row(
@@ -540,10 +542,10 @@ class _SpeciesChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: const Color.fromARGB(255, 250, 192, 187).withOpacity(0.25),
+        color: const Color(0xFFA7C79A).withOpacity(0.25),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: const Color.fromARGB(255, 250, 192, 187),
+          color: const Color(0xFFA7C79A),
           width: 1,
         ),
       ),
@@ -595,9 +597,9 @@ class _PlaceholderBanner extends StatelessWidget {
       height: 130,
       width: double.infinity,
       color:
-          const Color.fromARGB(255, 250, 192, 187).withOpacity(0.3),
+          const Color(0xFFA7C79A).withOpacity(0.3),
       child: const Icon(Icons.pets,
-          size: 48, color: Color.fromARGB(255, 250, 192, 187)),
+          size: 48, color: Color(0xFFA7C79A)),
     );
   }
 }
@@ -689,7 +691,7 @@ class _BreedFilterSheetState extends State<_BreedFilterSheet> {
                         style: TextStyle(
                             fontFamily: 'Galey',
                             fontWeight: FontWeight.w500,
-                            color: Color.fromARGB(255, 200, 100, 80),
+                            color: Color(0xFF6E9E57),
                             fontSize: 15)),
                   ),
                 ],
@@ -729,7 +731,7 @@ class _BreedFilterSheetState extends State<_BreedFilterSheet> {
                                 style: const TextStyle(
                                     fontFamily: 'Galey', fontSize: 12)),
                             backgroundColor:
-                                const Color.fromARGB(255, 250, 192, 187),
+                                const Color(0xFFA7C79A),
                             deleteIconColor: Colors.black54,
                             onDeleted: () =>
                                 setState(() => _selected.remove(b)),
@@ -756,7 +758,7 @@ class _BreedFilterSheetState extends State<_BreedFilterSheet> {
                     trailing: Icon(
                         sel ? Icons.check_circle : Icons.radio_button_unchecked,
                         color: sel
-                            ? const Color.fromARGB(255, 200, 100, 80)
+                            ? const Color(0xFF6E9E57)
                             : Colors.grey,
                         size: 20),
                     onTap: () => setState(() {

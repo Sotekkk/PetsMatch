@@ -454,7 +454,7 @@ class _FeedPageState extends State<FeedPage> {
     return Scaffold(
       body: RefreshIndicator(
         color: Colors.white,
-        backgroundColor: Color.fromARGB(255, 255, 132, 132),
+        backgroundColor: Color(0xFF6E9E57),
         onRefresh: refreshPosts,
         child: NotificationListener<ScrollNotification>(
           onNotification: (ScrollNotification scrollInfo) {
@@ -1147,7 +1147,7 @@ Veuillez traiter ce signalement sous 24h conformément aux CGU.
                             fontWeight: FontWeight.w500,
                             fontSize: UTILS.calculHeight(
                                 16, UTILS.heightReference(context)),
-                            color: Color.fromARGB(255, 252, 154, 160),
+                            color: Color(0xFFA7C79A),
                           ),
                         ),
                 ),
@@ -1285,8 +1285,7 @@ Veuillez traiter ce signalement sous 24h conformément aux CGU.
                                 ),
                                 ElevatedButton(
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: Color.fromARGB(255, 255,
-                                        192, 187), // Couleur de fond du bouton
+                                    backgroundColor: Color(0xFF6E9E57), // Couleur de fond du bouton
                                   ),
                                   onPressed: () async {
                                     try {
@@ -1460,7 +1459,7 @@ class _ExpandableTextState extends State<ExpandableText> {
             Text(
               '... voir plus',
               style: TextStyle(
-                color: Color.fromARGB(255, 255, 132, 132),
+                color: Color(0xFF6E9E57),
               ),
             ),
         ],

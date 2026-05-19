@@ -23,6 +23,8 @@ class InscriptionChoicePage extends StatelessWidget {
                               context)), // Hauteur fixe pour le Stack
                       child: Stack(children: [
                         Image.asset('assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                           fit: BoxFit.cover,
                           width: UTILS.calculWidth(
                               211, UTILS.widthReference(context)),
@@ -62,7 +64,7 @@ class InscriptionChoicePage extends StatelessWidget {
                         fontSize: UTILS.calculWidth(
                             33, UTILS.widthReference(context)),
                         fontFamily: 'Galey',
-                        color: Color.fromARGB(174, 0, 0, 0),
+                        color: Color(0xFF0C5C6C),
                         fontWeight: FontWeight.w500),
                     textAlign: TextAlign.center,
                   ),
@@ -151,7 +153,7 @@ class UserChoiceButton extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(500),
         // splashColor: Color.fromARGB(255, 255, 255, 255), // Personnalisation de la couleur de l'animation d'onde
-        // highlightColor: Color.fromARGB(255, 255, 241, 227).withOpacity(0.5),
+        // highlightColor: Color(0xFFF8F8F6).withOpacity(0.5),
         onTap: () {
           User_Info.isElevage = false;
           User_Info.isPro = false;
@@ -181,7 +183,7 @@ class UserChoiceButton extends StatelessWidget {
                             fontSize: UTILS.calculWidth(
                                 28, UTILS.widthReference(context)),
                             fontFamily: 'Galey',
-                            color: Color.fromARGB(174, 0, 0, 0),
+                            color: Color(0xFF0C5C6C),
                             fontWeight: FontWeight.w500),
                       ),
                       Center(
@@ -191,7 +193,7 @@ class UserChoiceButton extends StatelessWidget {
                               fontSize: UTILS.calculWidth(
                                   12, UTILS.widthReference(context)),
                               fontFamily: 'Galey',
-                              color: Color.fromARGB(255, 255, 132, 132),
+                              color: Color(0xFF6E9E57),
                               fontWeight: FontWeight.w500),
                           textAlign: TextAlign.center,
                         ),
@@ -255,7 +257,7 @@ class UserChoiceButtonSecond extends StatelessWidget {
                             fontSize: UTILS.calculWidth(
                                 28, UTILS.widthReference(context)),
                             fontFamily: 'Galey',
-                            color: Color.fromARGB(174, 0, 0, 0),
+                            color: Color(0xFF0C5C6C),
                             fontWeight: FontWeight.w500),
                       ),
                       Center(
@@ -265,7 +267,7 @@ class UserChoiceButtonSecond extends StatelessWidget {
                               fontSize: UTILS.calculWidth(
                                   12, UTILS.widthReference(context)),
                               fontFamily: 'Galey',
-                              color: Color.fromARGB(255, 255, 132, 132),
+                              color: Color(0xFF6E9E57),
                               fontWeight: FontWeight.w500),
                           textAlign: TextAlign.center,
                         ),
@@ -307,7 +309,7 @@ class UserChoiceButton3 extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(500),
         // splashColor: Color.fromARGB(255, 255, 255, 255), // Personnalisation de la couleur de l'animation d'onde
-        // highlightColor: Color.fromARGB(255, 255, 241, 227).withOpacity(0.5),
+        // highlightColor: Color(0xFFF8F8F6).withOpacity(0.5),
         onTap: () {
           User_Info.isElevage = false;
           User_Info.isPro = true;
@@ -338,7 +340,7 @@ class UserChoiceButton3 extends StatelessWidget {
                             fontSize: UTILS.calculWidth(
                                 28, UTILS.widthReference(context)),
                             fontFamily: 'Galey',
-                            color: Color.fromARGB(174, 0, 0, 0),
+                            color: Color(0xFF0C5C6C),
                             fontWeight: FontWeight.w500),
                       ),
                       Center(
@@ -348,7 +350,7 @@ class UserChoiceButton3 extends StatelessWidget {
                               fontSize: UTILS.calculWidth(
                                   12, UTILS.widthReference(context)),
                               fontFamily: 'Galey',
-                              color: Color.fromARGB(255, 255, 132, 132),
+                              color: Color(0xFF6E9E57),
                               fontWeight: FontWeight.w500),
                           textAlign: TextAlign.center,
                         ),

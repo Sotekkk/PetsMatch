@@ -109,6 +109,8 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                         fit: BoxFit.cover,
                         width: UTILS.calculWidth(151, UTILS.widthReference(context)),
                         height: UTILS.calculHeight(141, UTILS.heightReference(context)), // Hauteur fixe pour le Stack
+                      color: const Color(0xFFA7C79A),
+                      colorBlendMode: BlendMode.srcIn,
                       ),
                       Positioned(
                         top: UTILS.calculHeight(53, UTILS.heightReference(context)),
@@ -148,7 +150,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                       labelText: 'Email',
                       filled: true,
                       contentPadding: EdgeInsets.symmetric(vertical: 12.0, horizontal: 15.0),
-                      fillColor: Color.fromARGB(255, 250, 192, 187),
+                      fillColor: Color(0xFFA7C79A),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(50.0),
                         borderSide: BorderSide(color: Colors.transparent),
@@ -163,7 +165,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(30.0),
                         borderSide: BorderSide(
-                          color: _emailError ? Colors.red : Color.fromARGB(255, 250, 192, 187),
+                          color: _emailError ? Colors.red : Color(0xFFA7C79A),
                           width: 2.0, // Couleur de la bordure lorsque le champ est sélectionné
                         ),
                       ),
@@ -195,7 +197,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                       labelText: 'Mot de passe',
                       filled: true,
                       contentPadding: EdgeInsets.symmetric(vertical: 12.0, horizontal: 15.0),
-                      fillColor: Color.fromARGB(255, 250, 192, 187),
+                      fillColor: Color(0xFFA7C79A),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(50.0),
                         borderSide: BorderSide(color: Colors.transparent),
@@ -210,7 +212,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(30.0),
                         borderSide: BorderSide(
-                          color: _passwordError ? Colors.red : Color.fromARGB(255, 250, 192, 187),
+                          color: _passwordError ? Colors.red : Color(0xFFA7C79A),
                           width: 2.0,
                         ),
                       ),
@@ -259,7 +261,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                             style: TextStyle(
                               fontFamily: 'Galey',
                               fontWeight: FontWeight.w500,
-                              color: Color.fromARGB(255, 255, 132, 132), // Mettez ici la couleur de votre choix
+                              color: Color(0xFF6E9E57), // Mettez ici la couleur de votre choix
                               decoration: TextDecoration.underline,
                             ),
                           ),
@@ -277,7 +279,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                   child: ElevatedButton(
                     onPressed: _validateAndLogin,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Color.fromARGB(255, 255, 132, 132), // Couleur de fond du bouton
+                      backgroundColor: Color(0xFF6E9E57), // Couleur de fond du bouton
                     ),
                     child: Text(
                       'SE CONNECTER',
@@ -311,7 +313,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                           style: TextStyle(
                             fontFamily: 'Galey',
                             fontWeight: FontWeight.w500,
-                            color: Color.fromARGB(255, 255, 132, 132), // Mettez ici la couleur de votre choix
+                            color: Color(0xFF6E9E57), // Mettez ici la couleur de votre choix
                             decoration: TextDecoration.underline,
                           ),
                         ),
@@ -326,14 +328,14 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                     SizedBox(
                       width: 138, // Largeur du premier divider
                       child: Divider(
-                        color: Color.fromARGB(255, 176, 193, 187),
+                        color: Color(0xFF5F9EAA),
                         thickness: 1,
                       ),
                     ),
                     SizedBox(
                       width: 138, // Largeur du premier divider
                       child: Divider(
-                        color: Color.fromARGB(255, 176, 193, 187),
+                        color: Color(0xFF5F9EAA),
                         thickness: 1,
                       ),
                     ),

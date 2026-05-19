@@ -38,6 +38,8 @@ class _ReproMainPageState extends State<ReproMainPage> {
                               context)), // Hauteur fixe pour le Stack
                       child: Stack(children: [
                         Image.asset('assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                           fit: BoxFit.cover,
                           width: UTILS.calculWidth(211, UTILS.widthReference(context)),
                           height: UTILS.calculHeight(
@@ -126,7 +128,7 @@ class DogButton extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(500),
         // splashColor: Color.fromARGB(255, 255, 255, 255), // Personnalisation de la couleur de l'animation d'onde
-        // highlightColor: Color.fromARGB(255, 255, 241, 227).withOpacity(0.5),
+        // highlightColor: Color(0xFFF8F8F6).withOpacity(0.5),
         onTap: test,
         child: Padding(
           padding: const EdgeInsets.all(0.0),

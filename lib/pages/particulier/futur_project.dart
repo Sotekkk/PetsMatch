@@ -53,6 +53,8 @@ class _FuturProjectRegistrationPageState
                           child: Stack(children: [
                             Image.asset(
                               'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                               fit: BoxFit.cover,
                               width: UTILS.calculWidth(
                                   211, UTILS.widthReference(context)),
@@ -94,7 +96,7 @@ class _FuturProjectRegistrationPageState
                               fontSize: UTILS.calculWidth(
                                   30, UTILS.widthReference(context)),
                               fontFamily: 'Galey',
-                              color: Color.fromARGB(174, 0, 0, 0),
+                              color: Color(0xFF0C5C6C),
                               fontWeight: FontWeight.w500),
                           textAlign: TextAlign.left,
                         ),
@@ -110,7 +112,7 @@ class _FuturProjectRegistrationPageState
                                   fontSize: UTILS.calculWidth(
                                       15, UTILS.widthReference(context)),
                                   fontFamily: 'Galey',
-                                  color: Color.fromARGB(174, 0, 0, 0),
+                                  color: Color(0xFF0C5C6C),
                                   fontWeight: FontWeight.w500),
                               textAlign: TextAlign.left,
                             ),
@@ -201,7 +203,7 @@ class _FuturProjectRegistrationPageState
                             );
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Color.fromARGB(255, 250, 192, 187), // Couleur de fond du bouton
+                          backgroundColor: Color(0xFFA7C79A), // Couleur de fond du bouton
                         ),
                         child: Text(
                           'FINALISER',

@@ -93,6 +93,8 @@ class _FilterPageState extends State<FilterPage> {
           child: Stack(children: [
             Image.asset(
               'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
               fit: BoxFit.cover,
               width: UTILS.calculWidth(211, UTILS.widthReference(context)),
               height: UTILS.calculHeight(104,
@@ -143,7 +145,7 @@ class _FilterPageState extends State<FilterPage> {
               SwitchListTile(
                 title: Text('Chien'),
                 value: filterIsDog,
-                activeTrackColor: Color.fromARGB(255, 250, 192, 187),
+                activeTrackColor: Color(0xFFA7C79A),
                 activeColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveThumbColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveTrackColor: const Color.fromARGB(137, 0, 0, 0),
@@ -156,7 +158,7 @@ class _FilterPageState extends State<FilterPage> {
               SwitchListTile(
                 title: Text('Chat'),
                 value: filterIsCat,
-                activeTrackColor: Color.fromARGB(255, 250, 192, 187),
+                activeTrackColor: Color(0xFFA7C79A),
                 activeColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveThumbColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveTrackColor: const Color.fromARGB(137, 0, 0, 0),
@@ -181,7 +183,7 @@ class _FilterPageState extends State<FilterPage> {
                 SwitchListTile(
                   title: Text('LOF'),
                   value: filterIsLof,
-                  activeTrackColor: Color.fromARGB(255, 250, 192, 187),
+                  activeTrackColor: Color(0xFFA7C79A),
                   activeColor: Color.fromARGB(255, 255, 255, 255),
                   inactiveThumbColor: Color.fromARGB(255, 255, 255, 255),
                   inactiveTrackColor: const Color.fromARGB(137, 0, 0, 0),
@@ -195,7 +197,7 @@ class _FilterPageState extends State<FilterPage> {
                 SwitchListTile(
                   title: Text('LOOF'),
                   value: filterIsLoof,
-                  activeTrackColor: Color.fromARGB(255, 250, 192, 187),
+                  activeTrackColor: Color(0xFFA7C79A),
                   activeColor: Color.fromARGB(255, 255, 255, 255),
                   inactiveThumbColor: Color.fromARGB(255, 255, 255, 255),
                   inactiveTrackColor: const Color.fromARGB(137, 0, 0, 0),
@@ -208,7 +210,7 @@ class _FilterPageState extends State<FilterPage> {
               SwitchListTile(
                 title: Text('Vacciné'),
                 value: filterIsVaccined,
-                activeTrackColor: Color.fromARGB(255, 250, 192, 187),
+                activeTrackColor: Color(0xFFA7C79A),
                 activeColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveThumbColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveTrackColor: const Color.fromARGB(137, 0, 0, 0),
@@ -232,7 +234,7 @@ class _FilterPageState extends State<FilterPage> {
               SwitchListTile(
                 title: Text('Chiot'),
                 value: filterIsPuppy,
-                activeTrackColor: Color.fromARGB(255, 250, 192, 187),
+                activeTrackColor: Color(0xFFA7C79A),
                 activeColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveThumbColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveTrackColor: const Color.fromARGB(137, 0, 0, 0),
@@ -246,7 +248,7 @@ class _FilterPageState extends State<FilterPage> {
               SwitchListTile(
                 title: Text('Adulte'),
                 value: filterIsAdult,
-                activeTrackColor: Color.fromARGB(255, 250, 192, 187),
+                activeTrackColor: Color(0xFFA7C79A),
                 activeColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveThumbColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveTrackColor: const Color.fromARGB(137, 0, 0, 0),
@@ -271,7 +273,7 @@ class _FilterPageState extends State<FilterPage> {
               SwitchListTile(
                 title: Text('Vente'),
                 value: filterIsSell,
-                activeTrackColor: Color.fromARGB(255, 250, 192, 187),
+                activeTrackColor: Color(0xFFA7C79A),
                 activeColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveThumbColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveTrackColor: const Color.fromARGB(137, 0, 0, 0),
@@ -284,7 +286,7 @@ class _FilterPageState extends State<FilterPage> {
               SwitchListTile(
                 title: Text('Saillie'),
                 value: filterIsSailli,
-                activeTrackColor: Color.fromARGB(255, 250, 192, 187),
+                activeTrackColor: Color(0xFFA7C79A),
                 activeColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveThumbColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveTrackColor: const Color.fromARGB(137, 0, 0, 0),
@@ -297,7 +299,7 @@ class _FilterPageState extends State<FilterPage> {
               SwitchListTile(
                 title: Text('Retraite'),
                 value: filterIsRetraite,
-                activeTrackColor: Color.fromARGB(255, 250, 192, 187),
+                activeTrackColor: Color(0xFFA7C79A),
                 activeColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveThumbColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveTrackColor: const Color.fromARGB(137, 0, 0, 0),
@@ -321,7 +323,7 @@ class _FilterPageState extends State<FilterPage> {
               SwitchListTile(
                 title: Text('Mâle'),
                 value: filterIsMale,
-                activeTrackColor: Color.fromARGB(255, 250, 192, 187),
+                activeTrackColor: Color(0xFFA7C79A),
                 activeColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveThumbColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveTrackColor: const Color.fromARGB(137, 0, 0, 0),
@@ -334,7 +336,7 @@ class _FilterPageState extends State<FilterPage> {
               SwitchListTile(
                 title: Text('Femelle'),
                 value: filterIsFemale,
-                activeTrackColor: Color.fromARGB(255, 250, 192, 187),
+                activeTrackColor: Color(0xFFA7C79A),
                 activeColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveThumbColor: Color.fromARGB(255, 255, 255, 255),
                 inactiveTrackColor: const Color.fromARGB(137, 0, 0, 0),
@@ -372,7 +374,7 @@ class _FilterPageState extends State<FilterPage> {
               if (_suggestedTags.isNotEmpty)
                 Container(
                   margin: const EdgeInsets.symmetric(vertical: 4.0),
-                  color: Color.fromARGB(255, 250, 192, 187),
+                  color: Color(0xFFA7C79A),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                       maxHeight: 150,
@@ -382,7 +384,7 @@ class _FilterPageState extends State<FilterPage> {
                       itemCount: _suggestedTags.length,
                       itemBuilder: (context, index) {
                         return Container(
-                          color: Color.fromARGB(255, 250, 192, 187),
+                          color: Color(0xFFA7C79A),
                           child: ListTile(
                             title: Text(_suggestedTags[index]),
                             onTap: () {
@@ -406,7 +408,7 @@ class _FilterPageState extends State<FilterPage> {
                 children: filterTags.map((tag) {
                   return Chip(
                     label: Text(tag),
-                    backgroundColor: Color.fromARGB(255, 250, 192, 187),
+                    backgroundColor: Color(0xFFA7C79A),
                     deleteIcon: Icon(Icons.close),
                     onDeleted: () {
                       setState(() {

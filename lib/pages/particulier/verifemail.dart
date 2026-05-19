@@ -224,6 +224,8 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
                 child: Stack(children: [
                   Image.asset(
                     'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                     fit: BoxFit.cover,
                     width:
                         UTILS.calculWidth(211, UTILS.widthReference(context)),
@@ -270,7 +272,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
                     fontSize:
                         UTILS.calculWidth(30, UTILS.widthReference(context)),
                     fontFamily: 'Galey',
-                    color: Color.fromARGB(174, 0, 0, 0),
+                    color: Color(0xFF0C5C6C),
                     fontWeight: FontWeight.w500),
                 textAlign: TextAlign.left,
               ),

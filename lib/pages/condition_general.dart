@@ -52,6 +52,8 @@ class _ConditionGeneralState extends State<ConditionGeneral>
                     children: [
                       Image.asset(
                         'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                         fit: BoxFit.cover,
                         width: UTILS.calculWidth(
                             211, UTILS.widthReference(context)),
@@ -671,6 +673,8 @@ class _MentionsLegalesState extends State<MentionsLegales> {
                     children: [
                       Image.asset(
                         'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                         fit: BoxFit.cover,
                         width: UTILS.calculWidth(
                             211, UTILS.widthReference(context)),

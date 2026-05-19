@@ -110,7 +110,7 @@ class _ChoicePublicationTypeState extends State<ChoicePublicationType> {
                 ElevatedButton(
                   onPressed: () => Navigator.of(context).pop(),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color.fromARGB(255, 250, 192, 187),
+                    backgroundColor: const Color(0xFFA7C79A),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30)),
                     padding: const EdgeInsets.symmetric(
@@ -142,6 +142,8 @@ class _ChoicePublicationTypeState extends State<ChoicePublicationType> {
           child: Stack(children: [
             Image.asset(
               'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
               fit: BoxFit.cover,
               width: UTILS.calculWidth(211, UTILS.widthReference(context)),
               height: UTILS.calculHeight(104,
@@ -247,7 +249,7 @@ class UserChoiceButton extends StatelessWidget {
                         fontSize: UTILS.calculWidth(
                             28, UTILS.widthReference(context)),
                         fontFamily: 'Galey',
-                        color: Color.fromARGB(174, 0, 0, 0),
+                        color: Color(0xFF0C5C6C),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -327,7 +329,7 @@ class UserChoiceButtonSecond extends StatelessWidget {
                             fontSize: UTILS.calculWidth(
                                 28, UTILS.widthReference(context)),
                             fontFamily: 'Galey',
-                            color: Color.fromARGB(174, 0, 0, 0),
+                            color: Color(0xFF0C5C6C),
                             fontWeight: FontWeight.w500),
                       ),
                       Center(
@@ -337,7 +339,7 @@ class UserChoiceButtonSecond extends StatelessWidget {
                               fontSize: UTILS.calculWidth(
                                   12, UTILS.widthReference(context)),
                               fontFamily: 'Galey',
-                              color: Color.fromARGB(255, 255, 132, 132),
+                              color: Color(0xFF6E9E57),
                               fontWeight: FontWeight.w500),
                           textAlign: TextAlign.center,
                         ),

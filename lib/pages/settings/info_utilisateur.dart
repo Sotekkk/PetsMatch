@@ -216,6 +216,8 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
                   children: [
                     Image.asset(
                       'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                       fit: BoxFit.cover,
                       width:
                           UTILS.calculWidth(211, UTILS.widthReference(context)),
@@ -469,7 +471,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
             vertical: UTILS.calculHeight(12.0, UTILS.heightReference(context)),
             horizontal: UTILS.calculWidth(15.0, UTILS.widthReference(context)),
           ),
-          fillColor: Color.fromARGB(255, 250, 192, 187),
+          fillColor: Color(0xFFA7C79A),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(
                 UTILS.calculWidth(50.0, UTILS.widthReference(context))),
@@ -484,7 +486,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
             borderRadius: BorderRadius.circular(
                 UTILS.calculWidth(30.0, UTILS.widthReference(context))),
             borderSide: BorderSide(
-                color: Color.fromARGB(255, 250, 192, 187),
+                color: Color(0xFFA7C79A),
                 width: UTILS.calculWidth(2.0, UTILS.widthReference(context))),
           ),
           labelStyle: TextStyle(
@@ -519,7 +521,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
             vertical: UTILS.calculHeight(12.0, UTILS.heightReference(context)),
             horizontal: UTILS.calculWidth(15.0, UTILS.widthReference(context)),
           ),
-          fillColor: Color.fromARGB(255, 250, 192, 187),
+          fillColor: Color(0xFFA7C79A),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(
                 UTILS.calculWidth(50.0, UTILS.widthReference(context))),
@@ -534,7 +536,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
             borderRadius: BorderRadius.circular(
                 UTILS.calculWidth(30.0, UTILS.widthReference(context))),
             borderSide: BorderSide(
-                color: Color.fromARGB(255, 250, 192, 187),
+                color: Color(0xFFA7C79A),
                 width: UTILS.calculWidth(2.0, UTILS.widthReference(context))),
           ),
           labelStyle: TextStyle(
@@ -575,7 +577,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
       padding: EdgeInsets.symmetric(
           horizontal: UTILS.calculWidth(20, UTILS.widthReference(context))),
       decoration: BoxDecoration(
-        color: Color.fromARGB(255, 250, 192, 187),
+        color: Color(0xFFA7C79A),
         borderRadius: BorderRadius.circular(30),
         border: Border.all(
           color: isValid ? Colors.transparent : Colors.red,
@@ -584,7 +586,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
       ),
       child: Theme(
         data: Theme.of(context)
-            .copyWith(canvasColor: Color.fromARGB(255, 250, 192, 187)),
+            .copyWith(canvasColor: Color(0xFFA7C79A)),
         child: Row(
           children: <Widget>[
             Expanded(
@@ -665,7 +667,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
             padding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: const Color.fromARGB(255, 250, 192, 187),
+              color: const Color(0xFFA7C79A),
               borderRadius: BorderRadius.circular(30),
             ),
             child: Row(
@@ -705,7 +707,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
                     ),
                     backgroundColor: Colors.white,
                     side: const BorderSide(
-                        color: Color.fromARGB(255, 250, 192, 187)),
+                        color: Color(0xFFA7C79A)),
                     deleteIconColor: Colors.grey,
                     onDeleted: () {
                       final updated = List<String>.from(selected)
@@ -755,7 +757,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
           vertical: UTILS.calculHeight(12.0, UTILS.heightReference(context)),
           horizontal: UTILS.calculWidth(12.0, UTILS.widthReference(context)),
         ),
-        fillColor: const Color.fromARGB(255, 250, 192, 187),
+        fillColor: const Color(0xFFA7C79A),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(
               UTILS.calculWidth(30.0, UTILS.widthReference(context))),
@@ -770,7 +772,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
           borderRadius: BorderRadius.circular(
               UTILS.calculWidth(30.0, UTILS.widthReference(context))),
           borderSide: BorderSide(
-              color: const Color.fromARGB(255, 250, 192, 187),
+              color: const Color(0xFFA7C79A),
               width: UTILS.calculWidth(2.0, UTILS.widthReference(context))),
         ),
         labelStyle: TextStyle(
@@ -798,12 +800,12 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
             const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: value
-              ? const Color.fromARGB(255, 250, 192, 187)
+              ? const Color(0xFFA7C79A)
               : Colors.grey.shade100,
           borderRadius: BorderRadius.circular(30),
           border: Border.all(
             color: value
-                ? const Color.fromARGB(255, 250, 192, 187)
+                ? const Color(0xFFA7C79A)
                 : Colors.grey.shade300,
             width: 1.5,
           ),
@@ -915,7 +917,7 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
                       style: TextStyle(
                         fontFamily: 'Galey',
                         fontWeight: FontWeight.w500,
-                        color: Color.fromARGB(255, 200, 100, 80),
+                        color: Color(0xFF6E9E57),
                         fontSize: 16,
                       ),
                     ),
@@ -986,7 +988,7 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
                     ),
                     trailing: isSelected
                         ? const Icon(Icons.check_circle,
-                            color: Color.fromARGB(255, 200, 100, 80),
+                            color: Color(0xFF6E9E57),
                             size: 20)
                         : const Icon(Icons.radio_button_unchecked,
                             color: Colors.grey, size: 20),

@@ -142,7 +142,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color.fromARGB(255, 255, 241, 227),
+      backgroundColor: Color(0xFFF8F8F6),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -189,7 +189,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
               style: TextStyle(
                 fontFamily: 'Galey',
                 fontWeight: FontWeight.w500,
-                color: Color.fromARGB(255, 250, 192, 187),
+                color: Color(0xFFA7C79A),
               ),
             ),
           ),
@@ -236,7 +236,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                         border: OutlineInputBorder(),
                         enabledBorder: OutlineInputBorder(
                           borderSide: BorderSide(
-                            color: Color.fromARGB(255, 250, 192, 187),
+                            color: Color(0xFFA7C79A),
                             width: 2.0,
                           ),
                         ),
@@ -276,7 +276,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                         labelText: 'Titre de la publication',
                         enabledBorder: UnderlineInputBorder(
                           borderSide: BorderSide(
-                              color: Color.fromARGB(255, 250, 192, 187)),
+                              color: Color(0xFFA7C79A)),
                         ),
                       ),
                     )),
@@ -302,7 +302,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                     labelText: 'Prix de l\'animal en €',
                     enabledBorder: UnderlineInputBorder(
                       borderSide:
-                          BorderSide(color: Color.fromARGB(255, 250, 192, 187)),
+                          BorderSide(color: Color(0xFFA7C79A)),
                     ),
                   ),
                 ),
@@ -333,7 +333,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                           _fetchData();
                         });
                       },
-                      activeColor: Color.fromARGB(255, 250, 192, 187),
+                      activeColor: Color(0xFFA7C79A),
                     ),
                     Text('Chien'),
                     Checkbox(
@@ -345,7 +345,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                           _fetchData();
                         });
                       },
-                      activeColor: Color.fromARGB(255, 250, 192, 187),
+                      activeColor: Color(0xFFA7C79A),
                     ),
                     Text('Chat'),
                   ],
@@ -366,7 +366,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                 ),
               if (User_Info.isElevage)
                 CheckboxListTile(
-                  activeColor: Color.fromARGB(255, 250, 192, 187),
+                  activeColor: Color(0xFFA7C79A),
                   title: Text("+ 8 semaines"),
                   value: _isMoreThanEightWeeks,
                   onChanged: (value) {
@@ -379,7 +379,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                 ),
               if (User_Info.isElevage)
                 CheckboxListTile(
-                  activeColor: Color.fromARGB(255, 250, 192, 187),
+                  activeColor: Color(0xFFA7C79A),
                   title: Text("- 8 semaines"),
                   value: !_isMoreThanEightWeeks && !_isAdult,
                   onChanged: (value) {
@@ -392,7 +392,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                 ),
               if (User_Info.isElevage)
                 CheckboxListTile(
-                  activeColor: Color.fromARGB(255, 250, 192, 187),
+                  activeColor: Color(0xFFA7C79A),
                   title: Text("Adulte"),
                   value: _isAdult,
                   onChanged: (value) {
@@ -434,11 +434,11 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                         ),
                         enabledBorder: UnderlineInputBorder(
                           borderSide: BorderSide(
-                              color: Color.fromARGB(255, 250, 192, 187)),
+                              color: Color(0xFFA7C79A)),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderSide: BorderSide(
-                            color: Color.fromARGB(255, 250, 192, 187),
+                            color: Color(0xFFA7C79A),
                             width: UTILS.calculWidth(
                                 2, UTILS.widthReference(context)),
                           ),
@@ -489,7 +489,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                           _isRetraite = !value;
                         });
                       },
-                      activeColor: Color.fromARGB(255, 250, 192, 187),
+                      activeColor: Color(0xFFA7C79A),
                     ),
                     Text('Vente'),
                     Checkbox(
@@ -501,7 +501,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                           _isRetraite = !value;
                         });
                       },
-                      activeColor: Color.fromARGB(255, 250, 192, 187),
+                      activeColor: Color(0xFFA7C79A),
                     ),
                     Text('Saillie'),
                     Checkbox(
@@ -513,7 +513,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                           _isRetraite = value;
                         });
                       },
-                      activeColor: Color.fromARGB(255, 250, 192, 187),
+                      activeColor: Color(0xFFA7C79A),
                     ),
                     Text('Retraite'),
                   ],
@@ -547,7 +547,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                             }
                           });
                         },
-                        activeColor: Color.fromARGB(255, 250, 192, 187),
+                        activeColor: Color(0xFFA7C79A),
                       ),
                       Text(_isDogSelected ? 'LOF' : 'LOOF'),
                       Checkbox(
@@ -561,7 +561,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                             }
                           });
                         },
-                        activeColor: Color.fromARGB(255, 250, 192, 187),
+                        activeColor: Color(0xFFA7C79A),
                       ),
                       Text(_isDogSelected ? 'Non LOF' : 'Non LOOF'),
                     ],
@@ -580,7 +580,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                           fontWeight: FontWeight.w500,
                           fontSize: UTILS.calculWidth(
                               16, UTILS.widthReference(context)))),
-                  activeColor: Color.fromARGB(255, 250, 192, 187),
+                  activeColor: Color(0xFFA7C79A),
                   controlAffinity: ListTileControlAffinity.leading,
                 ),
               if (_hasGenealogie)
@@ -594,7 +594,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                       border: OutlineInputBorder(),
                       enabledBorder: OutlineInputBorder(
                         borderSide: BorderSide(
-                          color: Color.fromARGB(255, 250, 192, 187),
+                          color: Color(0xFFA7C79A),
                         ),
                       ),
                     ),
@@ -625,7 +625,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                           _fetchData();
                         });
                       },
-                      activeColor: Color.fromARGB(255, 250, 192, 187),
+                      activeColor: Color(0xFFA7C79A),
                     ),
                     Text('Mâle'),
                     Checkbox(
@@ -636,7 +636,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                           _fetchData();
                         });
                       },
-                      activeColor: Color.fromARGB(255, 250, 192, 187),
+                      activeColor: Color(0xFFA7C79A),
                     ),
                     Text('Femelle'),
                   ],
@@ -667,7 +667,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                         labelText: 'Numéro de puce',
                         enabledBorder: UnderlineInputBorder(
                           borderSide: BorderSide(
-                              color: Color.fromARGB(255, 250, 192, 187)),
+                              color: Color(0xFFA7C79A)),
                         ),
                       ),
                     )),
@@ -690,20 +690,20 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                 SizedBox(
                   width: UTILS.calculWidth(355, UTILS.widthReference(context)),
                   child: DropdownButtonFormField<String>(
-                    dropdownColor: Colors.pink[100],
+                    dropdownColor: Color(0xFFEEF5EA),
                     value: _selectedAnimal,
                     decoration: InputDecoration(
                       labelText:
                           'Sélectionnez ${_isMoreThanEightWeeks || _isAdult ? "l\'animal" : "la mère"}',
                       border: UnderlineInputBorder(
                         borderSide: BorderSide(
-                          color: Color.fromARGB(255, 250, 192, 187),
+                          color: Color(0xFFA7C79A),
                           width: 2.0,
                         ),
                       ),
                       enabledBorder: UnderlineInputBorder(
                         borderSide: BorderSide(
-                          color: Color.fromARGB(255, 250, 192, 187),
+                          color: Color(0xFFA7C79A),
                         ),
                       ),
                     ),
@@ -770,7 +770,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                         labelText: 'Nombre d’animaux dans la portée',
                         enabledBorder: UnderlineInputBorder(
                           borderSide: BorderSide(
-                              color: Color.fromARGB(255, 250, 192, 187)),
+                              color: Color(0xFFA7C79A)),
                         ),
                       ),
                     )),
@@ -804,7 +804,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                               enabledBorder: UnderlineInputBorder(
                                   borderSide: BorderSide(
                                       color:
-                                          Color.fromARGB(255, 250, 192, 187))),
+                                          Color(0xFFA7C79A))),
                               labelText: 'Veuillez ajouter une race',
                             ),
                             onChanged: (value) {
@@ -830,7 +830,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                 if (_suggestedTags.isNotEmpty && _addedTags.length < 8)
                   Container(
                     margin: const EdgeInsets.symmetric(vertical: 4.0),
-                    color: Color.fromARGB(255, 250, 192, 187),
+                    color: Color(0xFFA7C79A),
                     child: ConstrainedBox(
                       constraints: BoxConstraints(
                         maxHeight: 150,
@@ -840,8 +840,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                         itemCount: _suggestedTags.length,
                         itemBuilder: (context, index) {
                           return Container(
-                            color: Color.fromARGB(255, 250, 192,
-                                187), // Set the background color here
+                            color: Color(0xFFEEF5EA), // Set the background color here
                             child: ListTile(
                               title: Text(_suggestedTags[index]),
                               onTap: () {
@@ -865,7 +864,7 @@ class _DetailsPostCreationState extends State<DetailsPostCreation> {
                   children: _addedTags.map((tag) {
                     return Chip(
                       label: Text(tag),
-                      backgroundColor: Color.fromARGB(255, 250, 192, 187),
+                      backgroundColor: Color(0xFFA7C79A),
                       deleteIcon: Icon(Icons.close),
                       onDeleted: () {
                         setState(() {

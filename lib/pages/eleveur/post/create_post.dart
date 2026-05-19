@@ -107,7 +107,7 @@ class _NewPostPageState extends State<NewPostPage> {
               style: TextStyle(
                 fontFamily: 'Galey',
                 fontWeight: FontWeight.w500,
-                color: Color.fromARGB(255, 255, 192, 187),
+                color: Color(0xFFA7C79A),
               ),
             ),
           ),
@@ -178,7 +178,7 @@ class _NewPostPageState extends State<NewPostPage> {
                     '${_selectedImages.length}/$_maxImages - Ajouter des images'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _selectedImages.length < _maxImages
-                      ? Color.fromARGB(255, 255, 192, 187)
+                      ? Color(0xFFA7C79A)
                       : Colors.grey.shade300,
                   foregroundColor: Colors.black,
                   disabledBackgroundColor: Colors.grey.shade300,

@@ -181,6 +181,8 @@ class _ElevageSelectGestionPageState extends State<ElevageSelectGestionPage> {
                 child: Stack(children: [
                   Image.asset(
                     'assets/deco/arrondi_rose_2.png',
+              color: const Color(0xFFA7C79A),
+              colorBlendMode: BlendMode.srcIn,
                     fit: BoxFit.cover,
                     width:
                         UTILS.calculWidth(211, UTILS.widthReference(context)),
@@ -257,7 +259,7 @@ class _ElevageSelectGestionPageState extends State<ElevageSelectGestionPage> {
                       onPressed: _isProcessing ? null : _subscribe,
                       style: ElevatedButton.styleFrom(
                         backgroundColor:
-                            Color.fromARGB(255, 255, 192, 187), // Couleur d
+                            Color(0xFFA7C79A), // Couleur d
                       ),
                       child: Text(
                         "S'abonner à 18€ TTC par mois",
@@ -276,7 +278,7 @@ class _ElevageSelectGestionPageState extends State<ElevageSelectGestionPage> {
                       onPressed: _isProcessing ? null : _cancelSubscription,
                       style: ElevatedButton.styleFrom(
                         backgroundColor:
-                            Color.fromARGB(255, 255, 192, 187), // Couleur d
+                            Color(0xFFA7C79A), // Couleur d
                       ),
                       child: Text(
                         "Annuler l'abonnement",
@@ -351,7 +353,7 @@ class DogCatMenu extends StatelessWidget {
                             20, UTILS.widthReference(context)),
                         fontFamily: 'Galey',
                         color: isEnabled
-                            ? Color.fromARGB(174, 0, 0, 0)
+                            ? Color(0xFF0C5C6C)
                             : Colors.grey, // Texte grisé si désactivé
                         fontWeight: FontWeight.w500,
                       ),
@@ -367,7 +369,7 @@ class DogCatMenu extends StatelessWidget {
                             18, UTILS.widthReference(context)), // Taille augmentée
                         fontFamily: 'Galey',
                         color: isEnabled
-                            ? Color.fromARGB(174, 0, 0, 0)
+                            ? Color(0xFF0C5C6C)
                             : Colors.grey, // Texte grisé si désactivé
                         fontWeight: FontWeight.w500,
                       ),
@@ -432,7 +434,7 @@ class ReproMenu extends StatelessWidget {
                             20, UTILS.widthReference(context)),
                         fontFamily: 'Galey',
                         color: isEnabled
-                            ? Color.fromARGB(174, 0, 0, 0)
+                            ? Color(0xFF0C5C6C)
                             : Colors.grey, // Texte grisé si désactivé
                         fontWeight: FontWeight.w500,
                       ),
@@ -447,7 +449,7 @@ class ReproMenu extends StatelessWidget {
                             18, UTILS.widthReference(context)), // Taille augmentée
                         fontFamily: 'Galey',
                         color: isEnabled
-                            ? Color.fromARGB(174, 0, 0, 0)
+                            ? Color(0xFF0C5C6C)
                             : Colors.grey, // Texte grisé si désactivé
                         fontWeight: FontWeight.w500,
                       ),
