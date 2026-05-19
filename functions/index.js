@@ -1,0 +1,14 @@
+
+const stripeFunctions = require("./stripe");
+const testFunctions = require("./stripe");
+
+// Export your Stripe functions
+exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
+exports.helloWorld = testFunctions.helloWorld;
+exports.createStripeSubscription = stripeFunctions.createStripeSubscription;
+exports.cancelStripeSubscription = stripeFunctions.cancelStripeSubscription;
+exports.stripeWebhook = stripeFunctions.stripeWebhook;
+exports.sendNotificationOnNewMessage = stripeFunctions.sendNotificationOnNewMessage;
+exports.sendVaccinationReminders = stripeFunctions.sendVaccinationReminders;
+exports.triggerVaccinationReminder = stripeFunctions.triggerVaccinationReminder;
+exports.sendPushNotification = stripeFunctions.sendPushNotification;

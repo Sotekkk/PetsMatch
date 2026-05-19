@@ -1,0 +1,470 @@
+import 'dart:io';
+import 'package:PetsMatch/pages/admin/admin_panel.dart';
+import 'package:PetsMatch/pages/bottom_nav.dart';
+import 'package:PetsMatch/pages/connect_page.dart';
+import 'package:PetsMatch/pages/eleveur/verification_page.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+const AndroidNotificationChannel channel = AndroidNotificationChannel(
+  'high_importance_channel', // Identifiant du canal
+  'High Importance Notifications', // Nom du canal
+  description: 'Ce canal est utilisé pour les notifications importantes.',
+  importance: Importance.high,
+);
+
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
+
+Future<void> setupNotifications() async {
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+}
+
+bool isRequestingPermission = false;
+Future<void> saveFcmTokenToFirestore() async {
+  try {
+    String? token = await FirebaseMessaging.instance.getToken();
+    print("FCM Token : $token");
+
+    if (Platform.isIOS) {
+      String? apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+      if (apnsToken != null) {
+        print("APNS Token: $apnsToken");
+        // Vous pouvez maintenant sauvegarder le token APNS où il est nécessaire
+      } else {
+        print("APNS Token not available yet.");
+      }
+    }
+
+    if (token != null) {
+      User? user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'fcmToken': token,
+          // Optionally save APNS token specifically for iOS devices
+          'apnsToken': Platform.isIOS
+              ? await FirebaseMessaging.instance.getAPNSToken()
+              : null,
+        }, SetOptions(merge: true));
+        print("Token FCM sauvegardé avec succès !");
+      }
+    }
+  } catch (e) {
+    print("Erreur lors de la sauvegarde du token FCM : $e");
+  }
+}
+
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  await setupNotifications();
+  print("Message reçu en arrière-plan : ${message.messageId}");
+}
+
+Future<void> requestPermissions() async {
+  print("Demande de permissions");
+
+  // Demande les permissions pour les notifications
+  NotificationSettings settings =
+      await FirebaseMessaging.instance.requestPermission(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+
+  print("Statut des notifications : ${settings.authorizationStatus}");
+
+  // Demande les autres permissions nécessaires
+  await [
+    Permission.photos,
+    Permission.camera,
+    Permission.storage,
+    Permission.locationWhenInUse
+  ].request();
+}
+
+Future<void> testLocalNotification() async {
+  const AndroidNotificationDetails androidPlatformChannelSpecifics =
+      AndroidNotificationDetails(
+    'high_importance_channel', // ID du canal
+    'Notifications Importantes',
+    channelDescription: 'Test d\'icônes enrichies.',
+    importance: Importance.high,
+    priority: Priority.high,
+    icon: 'ic_notification', // Petite icône monochrome pour la barre d'état
+    largeIcon:
+        DrawableResourceAndroidBitmap('ic_notification'), // Icône enrichie
+  );
+
+  const NotificationDetails notificationDetails =
+      NotificationDetails(android: androidPlatformChannelSpecifics);
+
+  await flutterLocalNotificationsPlugin.show(
+    0,
+    'Nouveau message',
+    'Ceci est une notification avec icône enrichie.',
+    notificationDetails,
+  );
+}
+
+class User_Info {
+  static String firstname = "none";
+  static String lastname = "none";
+  static String dateofbirth = "01/01/2002";
+  static String codeISO = "+33";
+  static String codeISOElevage = "+33";
+  static String phone_number = "0000000000";
+  static String adress = "none";
+  static String rue = "";
+  static String ville = "";
+  static String codePostal = "";
+  static String pays = "France";
+  static String profilePictureUrl =
+      'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60';
+  static String profilePictureUrlElevage =
+      'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60';
+  static bool isElevage = true;
+  static String adressElevage = "";
+  static String rueElevage = "";
+  static String villeElevage = "";
+  static String codePostalElevage = "";
+  static String paysElevage = "France";
+  static String nameElevage = "";
+  static String numeroElevage = "0000000000";
+  static bool isDev = false;
+  static String email = "none";
+  static String password = "none";
+  static bool isValidate = false;
+  static String desc = "";
+  static String descEntreprise = "";
+  static String siret = "";
+  static String numeroTVA = "";
+  static List<Map<String, dynamic>> documentElevage = [];
+  static bool validateAccountElevage = true;
+  static String adoptProject = "";
+  static String uid = "";
+  static bool isPub = false;
+  static bool isPro = false;
+  static String catPro = "";
+  static String professionPro = "";
+  static bool isPartenaire = false;
+  static bool isAdmin = false;
+  static String verificationStatus = 'none';
+  static String kbisUrl = '';
+  static String rejectionReason = '';
+  static bool isDog = false;
+  static bool isCat = false;
+  static List<String> dogBreeds = [];
+  static List<String> catBreeds = [];
+
+  static void updateUserInfo(Map<String, dynamic> data) {
+    firstname = data['firstname'] ?? firstname;
+    lastname = data['lastname'] ?? lastname;
+    dateofbirth = data['dateofbirth'] ?? dateofbirth;
+    codeISO = data['codeISO'] ?? codeISO;
+    phone_number = data['phone_number'] ?? phone_number;
+    adress = data['adress'] ?? adress;
+    rue = data['rue'] ?? rue;
+    ville = data['ville'] ?? ville;
+    codePostal = data['codePostal'] ?? codePostal;
+    pays = data['pays'] ?? pays;
+    profilePictureUrl = data['profilePictureUrl'] ?? profilePictureUrl;
+    isElevage = data['isElevage'] ?? isElevage;
+    nameElevage = data['nameElevage'] ?? nameElevage;
+    adressElevage = data['adressElevage'] ?? adressElevage;
+    rueElevage = data['rueElevage'] ?? rueElevage;
+    villeElevage = data['villeElevage'] ?? villeElevage;
+    codePostalElevage = data['codePostalElevage'] ?? codePostalElevage;
+    paysElevage = data['paysElevage'] ?? paysElevage;
+    numeroElevage = data['numeroElevage'] ?? numeroElevage;
+    isValidate = data['isValidate'] ?? isValidate;
+    isDev = data['isDev'] ?? isDev;
+    email = data['email'] ?? email;
+    password = data['password'] ?? password;
+    desc = data['desc'] ?? desc;
+    descEntreprise = data['descEntreprise'] ?? descEntreprise;
+    documentElevage = List<Map<String, dynamic>>.from(
+        data['documentElevage'] ?? documentElevage);
+    validateAccountElevage =
+        data['validateAccountElevage'] ?? validateAccountElevage;
+    adoptProject = data['adoptProject'] ?? adoptProject;
+    uid = data['uid'] ?? uid;
+    isPub = data['isPud'] ?? isPub;
+    isPro = data['isPro'] ?? isPro;
+    catPro = data['catPro'] ?? catPro;
+    siret = data['siret'] ?? siret;
+    numeroTVA = data['numeroTVA'] ?? numeroTVA;
+    professionPro = data['professionPro'] ?? professionPro;
+    isPartenaire = data['isPartenaire'] ?? isPartenaire;
+    isAdmin = data['isAdmin'] ?? isAdmin;
+    verificationStatus = data['verificationStatus'] ?? verificationStatus;
+    kbisUrl = data['kbisUrl'] ?? kbisUrl;
+    rejectionReason = data['rejectionReason'] ?? rejectionReason;
+    isDog = data['isDog'] ?? isDog;
+    isCat = data['isCat'] ?? isCat;
+    dogBreeds = List<String>.from(data['dogBreeds'] ?? dogBreeds);
+    catBreeds = List<String>.from(data['catBreeds'] ?? catBreeds);
+  }
+}
+
+String getApiKey() {
+  if (Platform.isIOS) {
+    return 'AIzaSyDLJ3f3cu2MChItj0H4un2pdl9o0kCb4QM';
+  } else if (Platform.isAndroid) {
+    return 'AIzaSyCbhS2noQdmSZN6QnOsEjAN73uX5vjl6sI';
+  } else {
+    return 'AIzaSyD2ppVQEWJNom9l9Tk-SejgH11ffoIecjw'; // Par exemple, pour le web
+  }
+}
+
+class UserStatus {
+  static void setOnline() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'isOnline': true,
+        'lastActive': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  static void setOffline() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'isOnline': false,
+        'lastActive': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+}
+
+Future<void> main() async {
+  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: const FirebaseOptions(
+          apiKey: 'AIzaSyCbhS2noQdmSZN6QnOsEjAN73uX5vjl6sI',
+          appId: '1:910914025100:android:c5f292d63d8455805eada9',
+          messagingSenderId: '910914025100',
+          projectId: 'petsmatch-eb96d',
+          storageBucket: 'petsmatch-eb96d.appspot.com',
+        ),
+      );
+    }
+  } on FirebaseException catch (e) {
+    if (e.code == 'duplicate-app') {
+      print("duplicate");
+    } else {
+      rethrow;
+    }
+  }
+
+  // Gestion des messages en arrière-plan
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // Initialiser les notifications locales
+  const AndroidInitializationSettings initializationSettingsAndroid =
+      AndroidInitializationSettings('@mipmap/ic_launcher');
+  final DarwinInitializationSettings initializationSettingsIOS =
+      DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true
+          // Removed onDidReceiveLocalNotification as it might be deprecated or moved.
+          );
+
+  final InitializationSettings initializationSettings = InitializationSettings(
+      android: initializationSettingsAndroid, iOS: initializationSettingsIOS);
+
+  await flutterLocalNotificationsPlugin.initialize(
+    initializationSettings,
+    onDidReceiveNotificationResponse: (NotificationResponse response) async {
+      if (response.payload != null) {
+        print('Notification cliquée avec payload : ${response.payload}');
+        // Naviguer vers une page spécifique avec le paylfluoad
+      }
+    },
+  );
+
+// Écoute des messages en premier plan
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    print("Message reçu en premier plan : ${message.notification?.title}");
+
+    RemoteNotification? notification = message.notification;
+    if (notification != null) {
+      flutterLocalNotificationsPlugin.show(
+        0,
+        notification.title,
+        notification.body,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'high_importance_channel',
+            'High Importance Notifications',
+            importance: Importance.max,
+            priority: Priority.high,
+          ),
+        ),
+        payload: message.data['conversationId'],
+      );
+    }
+  });
+
+  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+    print("Notification cliquée : ${message.data}");
+    // Navigation vers une page spécifique
+  });
+  WidgetsBinding.instance.addObserver(AppLifecycleObserver());
+  await requestPermissions(); // Demande de permission
+
+  await saveFcmTokenToFirestore();
+  await Future.delayed(const Duration(seconds: 1));
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]).then((_) {
+    runApp(MyApp());
+  });
+
+  await Future.delayed(const Duration(seconds: 1));
+  FlutterNativeSplash.remove();
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler: TextScaler.linear(1.0),
+        ),
+        child: MaterialApp(
+          locale:
+              Locale('fr', 'FR'), // Force l'application à utiliser le français
+          supportedLocales: [
+            Locale('en', 'US'),
+            Locale('fr', 'FR'),
+          ],
+
+          localizationsDelegates: [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSwatch().copyWith(
+              primary: const Color.fromARGB(255, 102, 102, 102),
+              secondary: const Color.fromARGB(255, 102, 102, 102),
+            ),
+            dividerColor:
+                Colors.transparent, // Supprime les séparateurs par défaut
+
+            scaffoldBackgroundColor: const Color(0xFFFFF1E3),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                foregroundColor: const Color.fromARGB(255, 255, 241, 227),
+              ),
+            ),
+            buttonTheme: const ButtonThemeData(
+              splashColor: Colors.transparent,
+            ),
+            primaryColor: const Color.fromARGB(255, 255, 241, 227),
+            // Définir la couleur par défaut pour les éléments de la liste
+            listTileTheme: const ListTileThemeData(
+              iconColor: Colors.purple, // Couleur des icônes dans les ListTile
+              textColor: Colors.black, // Couleur du texte dans les ListTile
+            ),
+          ),
+          debugShowCheckedModeBanner: false,
+          home: AuthWrapper(),
+        ));
+  }
+}
+
+class AuthWrapper extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        } else if (snapshot.hasData) {
+          User? user = snapshot.data;
+          if (user != null) {
+            return FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(user.uid)
+                  .get(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                } else if (snapshot.hasData && snapshot.data != null) {
+                  if (snapshot.data!.exists) {
+                    User_Info.updateUserInfo(
+                        snapshot.data!.data() as Map<String, dynamic>);
+                    if (User_Info.isAdmin) {
+                      return AdminPanel();
+                    } else if (User_Info.isValidate) {
+                      return BottomNav();
+                    } else {
+                      return VerificationRegistrationPage();
+                    }
+                  } else {
+                    if (User_Info.isElevage || User_Info.isPro) {
+                      return WelcomePage(); // Si isElevage est vrai
+                    } else {
+                      return WelcomePage(); // Si isElevage est faux
+                    }
+                  }
+                } else {
+                  if (User_Info.isElevage || User_Info.isPro) {
+                    return WelcomePage(); // Si isElevage est vrai
+                  } else {
+                    return WelcomePage(); // Si isElevage est faux
+                  }
+                }
+              },
+            );
+          } else {
+            return WelcomePage(); // Page principale de connection
+          }
+        } else {
+          return WelcomePage(); // Page principale de connexion
+        }
+      },
+    );
+  }
+}
+
+class AppLifecycleObserver extends WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // L'application est ouverte
+      UserStatus.setOnline();
+    } else if (state == AppLifecycleState.paused) {
+      // L'application est en arrière-plan
+      UserStatus.setOffline();
+    }
+  }
+}
