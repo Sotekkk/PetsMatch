@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/choice_publication.dart';
 import 'package:PetsMatch/pages/eleveur/elevage_gestion_select_menu.dart';
-import 'package:PetsMatch/pages/eleveur/pets_menu.dart';
 import 'package:PetsMatch/pages/eleveur/postDetail.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
@@ -396,16 +395,6 @@ class _UserElevageFeedState extends State<UserElevageFeed>
             subtitle: 'Gérer vos animaux et reproductions',
             onTap: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => ElevageSelectGestionPage())),
-          ),
-          const SizedBox(height: 14),
-          _ElevageActionCard(
-            icon: Icons.favorite_outline,
-            color: const Color(0xFFFCE4EC),
-            iconColor: const Color(0xFFE91E63),
-            title: 'Mes animaux',
-            subtitle: 'Gérer la liste de vos animaux',
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => PetsMenu())),
           ),
         ],
       ),

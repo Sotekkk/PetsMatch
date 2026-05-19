@@ -24,7 +24,7 @@ if (flutterVersionName == null) {
 
 android {
     namespace "com.application.petsmatch"
-    compileSdk 35
+    compileSdk 36
     ndkVersion "27.0.12077973"
 
     compileOptions {
@@ -44,8 +44,8 @@ android {
 
     defaultConfig {
         applicationId "com.application.petsmatch"
-        minSdkVersion 23
-        targetSdkVersion 35
+        minSdkVersion flutter.minSdkVersion
+        targetSdkVersion 36
         versionCode 32
         versionName "PetsMatch 1.4.0"
     }

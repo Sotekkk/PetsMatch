@@ -22,6 +22,7 @@ class MesAnimauxPage extends StatelessWidget {
                 fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'add_animal_page_fab',
         backgroundColor: const Color(0xFFFF8484),
         child: const Icon(Icons.add, color: Colors.white),
         onPressed: () => Navigator.push(

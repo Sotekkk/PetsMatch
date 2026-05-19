@@ -144,6 +144,11 @@ class LieuxSympasPage extends StatelessWidget {
           title: 'Événements',
           description: 'Expos, concours et rassemblements animaliers',
         ),
+        _Section(
+          icon: Icons.directions_walk_outlined,
+          title: 'Promenade collective',
+          description: 'Sorties groupées entre propriétaires près de chez vous',
+        ),
       ],
     );
   }

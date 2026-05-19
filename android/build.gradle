@@ -20,7 +20,7 @@ tasks.register("clean", Delete) {
 buildscript {
     ext {
         minSdkVersion = 23
-        kotlin_version = '1.9.24' // Spécifiez la version de Kotlin
+        kotlin_version = '2.3.10'
     }
     repositories {
         google() // Doit être en premier
@@ -28,7 +28,7 @@ buildscript {
         // Autres repositories si nécessaire
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.7.0' // Utilisez la dernière version stable
+        classpath 'com.android.tools.build:gradle:8.11.1'
         classpath "com.google.gms:google-services:4.4.1"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
         // Autres dépendances de classpath pour les plugins Gradle

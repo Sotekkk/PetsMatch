@@ -199,6 +199,7 @@ class _BottomNavState extends State<BottomNav> {
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: User_Info.isAdmin
           ? FloatingActionButton.small(
+              heroTag: 'admin_fab',
               backgroundColor: _previewRole.isNotEmpty
                   ? const Color.fromARGB(255, 200, 100, 80)
                   : const Color.fromARGB(255, 200, 100, 80),

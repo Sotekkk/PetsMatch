@@ -110,10 +110,10 @@ Future<void> testLocalNotification() async {
       NotificationDetails(android: androidPlatformChannelSpecifics);
 
   await flutterLocalNotificationsPlugin.show(
-    0,
-    'Nouveau message',
-    'Ceci est une notification avec icône enrichie.',
-    notificationDetails,
+    id: 0,
+    title: 'Nouveau message',
+    body: 'Ceci est une notification avec icône enrichie.',
+    notificationDetails: notificationDetails,
   );
 }
 
@@ -290,7 +290,7 @@ Future<void> main() async {
       android: initializationSettingsAndroid, iOS: initializationSettingsIOS);
 
   await flutterLocalNotificationsPlugin.initialize(
-    initializationSettings,
+    settings: initializationSettings,
     onDidReceiveNotificationResponse: (NotificationResponse response) async {
       if (response.payload != null) {
         print('Notification cliquée avec payload : ${response.payload}');
@@ -306,10 +306,10 @@ Future<void> main() async {
     RemoteNotification? notification = message.notification;
     if (notification != null) {
       flutterLocalNotificationsPlugin.show(
-        0,
-        notification.title,
-        notification.body,
-        const NotificationDetails(
+        id: 0,
+        title: notification.title,
+        body: notification.body,
+        notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
             'high_importance_channel',
             'High Importance Notifications',

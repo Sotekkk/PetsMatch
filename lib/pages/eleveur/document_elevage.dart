@@ -343,7 +343,7 @@ class _DocumentManagerState extends State<DocumentManager> {
   }
 
   Future<void> pickFile(String category) async {
-    FilePickerResult? pickedFile = await FilePicker.platform.pickFiles();
+    FilePickerResult? pickedFile = await FilePicker.pickFiles();
     if (pickedFile != null) {
       String? fileName = pickedFile.files.single.name;
       File file = File(pickedFile.files.single.path!);

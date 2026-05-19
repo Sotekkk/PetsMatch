@@ -344,6 +344,7 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
           right: 16,
           bottom: 90,
           child: FloatingActionButton(
+            heroTag: 'add_animal_feed_fab',
             backgroundColor: const Color(0xFFFF8484),
             child: const Icon(Icons.add, color: Colors.white),
             onPressed: () => Navigator.push(

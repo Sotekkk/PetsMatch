@@ -1,4 +1,4 @@
-import 'package:PetsMatch/pages/eleveur/pets_menu.dart';
+import 'package:PetsMatch/pages/eleveur/race_selection_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/main.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:flutter/material.dart';
@@ -221,9 +221,9 @@ class _ElevageSelectGestionPageState extends State<ElevageSelectGestionPage> {
                   height:
                       UTILS.calculHeight(58, UTILS.heightReference(context))),
               DogCatMenu(
-                title: 'Menu chien ou chat',
+                title: 'Gestion des animaux',
                 subtitle:
-                    'Optimisez la gestion et le bien-être de votre animal.',
+                    'Gérez les fiches de vos animaux par race.',
                 imagePath: 'assets/page/publication.png',
                 isEnabled: _isSubscribed,
               ),
@@ -318,7 +318,7 @@ class DogCatMenu extends StatelessWidget {
             ? () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => PetsMenu()),
+                  MaterialPageRoute(builder: (context) => const RaceSelectionPage()),
                 );
               }
             : null,

@@ -104,7 +104,7 @@ class _CatFicheState extends State<CatFiche> {
   }
 
   Future<void> pickFilePedigree(String category) async {
-    FilePickerResult? pickedFile = await FilePicker.platform.pickFiles();
+    FilePickerResult? pickedFile = await FilePicker.pickFiles();
     if (pickedFile != null) {
       String? fileName = pickedFile.files.single.name;
       String? filePath = pickedFile.files.single.path;
