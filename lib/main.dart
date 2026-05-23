@@ -14,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'firebase_options.dart';
 
 const AndroidNotificationChannel channel = AndroidNotificationChannel(
   'high_importance_channel', // Identifiant du canal
@@ -273,13 +274,7 @@ Future<void> main() async {
   try {
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
-        options: const FirebaseOptions(
-          apiKey: 'AIzaSyCbhS2noQdmSZN6QnOsEjAN73uX5vjl6sI',
-          appId: '1:910914025100:android:c5f292d63d8455805eada9',
-          messagingSenderId: '910914025100',
-          projectId: 'petsmatch-eb96d',
-          storageBucket: 'petsmatch-eb96d.appspot.com',
-        ),
+        options: DefaultFirebaseOptions.currentPlatform,
       );
     }
   } on FirebaseException catch (e) {

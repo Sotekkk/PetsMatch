@@ -1,18 +1,1 @@
-{
-  "functions": [
-    {
-      "source": "functions",
-      "codebase": "default",
-      "ignore": [
-        "node_modules",
-        ".git",
-        "firebase-debug.log",
-        "firebase-debug.*.log",
-        "*.local"
-      ],
-      "predeploy": [
-        "npm --prefix \"$RESOURCE_DIR\" run lint"
-      ]
-    }
-  ]
-}
+{"functions":[{"source":"functions","codebase":"default","ignore":["node_modules",".git","firebase-debug.log","firebase-debug.*.log","*.local"],"predeploy":["npm --prefix \"$RESOURCE_DIR\" run lint"]}],"flutter":{"platforms":{"android":{"default":{"projectId":"petsmatch-eb96d","appId":"1:910914025100:android:c5f292d63d8455805eada9","fileOutput":"android/app/google-services.json"}},"ios":{"default":{"projectId":"petsmatch-eb96d","appId":"1:910914025100:ios:c05aac393ff6e3aa5eada9","uploadDebugSymbols":false,"fileOutput":"ios/Runner/GoogleService-Info.plist"}},"macos":{"default":{"projectId":"petsmatch-eb96d","appId":"1:910914025100:ios:c05aac393ff6e3aa5eada9","uploadDebugSymbols":false,"fileOutput":"macos/Runner/GoogleService-Info.plist"}},"dart":{"lib/firebase_options.dart":{"projectId":"petsmatch-eb96d","configurations":{"android":"1:910914025100:android:c5f292d63d8455805eada9","ios":"1:910914025100:ios:c05aac393ff6e3aa5eada9","macos":"1:910914025100:ios:c05aac393ff6e3aa5eada9","web":"1:910914025100:web:c1df05a20ece8f495eada9","windows":"1:910914025100:web:2dca2c23a8a5360b5eada9"}}}}}}

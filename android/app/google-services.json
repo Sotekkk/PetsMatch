@@ -1,6 +1,7 @@
 {
   "project_info": {
     "project_number": "910914025100",
+    "firebase_url": "https://petsmatch-eb96d-default-rtdb.europe-west1.firebasedatabase.app",
     "project_id": "petsmatch-eb96d",
     "storage_bucket": "petsmatch-eb96d.appspot.com"
   },
@@ -12,7 +13,12 @@
           "package_name": "com.application.petsmatch"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "910914025100-aqrl52f3g1e0vib0ht89lhimscl6ad0c.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCbhS2noQdmSZN6QnOsEjAN73uX5vjl6sI"
@@ -20,7 +26,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "910914025100-aqrl52f3g1e0vib0ht89lhimscl6ad0c.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "910914025100-2454795sbn5fqlc2ccnlaujghaflofb0.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.application.petsmatch"
+              }
+            }
+          ]
         }
       }
     }
