@@ -1,694 +1,615 @@
 import 'dart:io';
 import 'package:PetsMatch/pages/main_feed.dart';
 import 'package:PetsMatch/pages/user_details_particulier.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:intl/intl.dart';
-import 'package:PetsMatch/utils.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/user_detail_page_feed.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
   final String eleveurId;
+  final String? alerteId;
+  final String? nomAnimal;
+  final bool isNewConversation;
 
-  ChatScreen({required this.conversationId, required this.eleveurId});
+  const ChatScreen({
+    Key? key,
+    required this.conversationId,
+    required this.eleveurId,
+    this.alerteId,
+    this.nomAnimal,
+    this.isNewConversation = false,
+  }) : super(key: key);
 
   @override
   _ChatScreenState createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final String defaultProfilePictureUrl =
-      "https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60";
-  final TextEditingController _controller = TextEditingController();
-  final CollectionReference conversations =
-      FirebaseFirestore.instance.collection('conversations');
-  final ScrollController _scrollController = ScrollController();
+  static const _teal  = Color(0xFF0C5C6C);
+  static const _green = Color(0xFF6E9E57);
+  static const _defaultPp = 'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60';
+
+  final _controller = TextEditingController();
+  final _scrollController = ScrollController();
+  final _conversations = FirebaseFirestore.instance.collection('conversations');
   File? _imageFile;
 
   @override
   void initState() {
     super.initState();
-    markAsRead();
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      }
-    });
-  }
-
-  void markAsRead() async {
-    String currentUserId = FirebaseAuth.instance.currentUser!.uid;
-    DocumentReference conversationRef = FirebaseFirestore.instance
-        .collection('conversations')
-        .doc(widget.conversationId);
-
-    await conversationRef.update({
-      'unreadCount.$currentUserId': 0,
-    });
-  }
-
-  void _scrollToBottomInstant() {
-    if (_scrollController.hasClients) {
-      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    _markAsRead();
+    if (widget.isNewConversation && widget.alerteId != null) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => _sendAlertRefMessage());
     }
+    SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
-  String getFormattedDate(Timestamp timestamp) {
-    DateTime messageDate = timestamp.toDate();
-    DateTime now = DateTime.now();
-    DateTime yesterday = now.subtract(Duration(days: 1));
-
-    if (DateUtils.isSameDay(messageDate, now)) {
-      return 'Aujourd\'hui';
-    } else if (DateUtils.isSameDay(messageDate, yesterday)) {
-      return 'Hier';
-    } else {
-      return DateFormat('dd MMMM yyyy').format(messageDate);
-    }
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
-  void sendMessage(String conversationId, String message, String senderId,
-      {String? imageUrl}) async {
-    if (message.trim().isEmpty && imageUrl == null) {
-      return;
-    }
+  Future<void> _sendAlertRefMessage() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final nom = widget.nomAnimal ?? 'l\'animal';
+    await _sendMessage('Bonjour, j\'ai peut-être aperçu votre animal $nom (réf : ${widget.alerteId!})', uid, alerteId: widget.alerteId);
+  }
 
-    DocumentReference conversationRef = FirebaseFirestore.instance
-        .collection('conversations')
-        .doc(conversationId);
+  void _markAsRead() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await _conversations.doc(widget.conversationId).update({'unreadCount.$uid': 0});
+  }
 
-    await conversationRef.collection('messages').add({
-      'text': message,
+  Future<void> _sendMessage(String text, String senderId, {String? imageUrl, double? lat, double? lng, String? alerteId}) async {
+    if (text.trim().isEmpty && imageUrl == null && lat == null) return;
+    final convRef = _conversations.doc(widget.conversationId);
+    await convRef.collection('messages').add({
+      'text': text,
       'senderId': senderId,
       'timestamp': FieldValue.serverTimestamp(),
       'isRead': false,
       if (imageUrl != null) 'imageUrl': imageUrl,
+      if (lat != null && lng != null) ...{'type': 'location', 'lat': lat, 'lng': lng},
+      if (alerteId != null) 'alerteId': alerteId,
     });
-
-    DocumentSnapshot conversationSnapshot = await conversationRef.get();
-    Map<String, dynamic> conversationData =
-        conversationSnapshot.data() as Map<String, dynamic>;
-    Map<String, dynamic> unreadCount =
-        Map<String, dynamic>.from(conversationData['unreadCount'] ?? {});
-
-    for (String participantId in conversationData['participants']) {
-      if (participantId != senderId) {
-        unreadCount[participantId] = (unreadCount[participantId] ?? 0) + 1;
-      }
+    final snap = await convRef.get();
+    final data = snap.data() as Map<String, dynamic>? ?? {};
+    final unread = Map<String, dynamic>.from(data['unreadCount'] ?? {});
+    for (final p in (data['participants'] as List<dynamic>? ?? [])) {
+      if (p != senderId) unread[p] = (unread[p] ?? 0) + 1;
     }
-
-    await conversationRef.update({
-      'unreadCount': unreadCount,
-      'lastMessage': message,
+    await convRef.update({
+      'unreadCount': unread,
+      'lastMessage': imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : text),
       'timestamp': FieldValue.serverTimestamp(),
     });
-
-    // Force le défilement après l'envoi
-    _scrollToBottomInstant();
+    _scrollToBottom();
   }
 
-  Future<Map<String, dynamic>> getUserInfo(String userId) async {
+  Future<void> _deleteMessage(DocumentSnapshot msg) async {
+    await _conversations.doc(widget.conversationId).collection('messages').doc(msg.id).delete();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Future<Map<String, dynamic>> _getUserInfo(String userId) async {
     try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .get();
-
-      if (!userDoc.exists) {
-        print("User document for $userId does not exist.");
-        return {
-          'name': 'Utilisateur Inconnu',
-          'profilePictureUrl': defaultProfilePictureUrl,
-          'isElevage': false,
-          'isPro': false,
-          'description': '',
-          'adoptionProject': ''
-        };
-      }
-
-      var userData = userDoc.data() as Map<String, dynamic>;
-      print("User data for $userId: $userData");
-
-      bool isElevage = userData['isElevage'] == true;
-      bool isPro = userData['isPro'] == true;
-
+      final doc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
+      if (!doc.exists) return {'name': 'Utilisateur', 'profilePictureUrl': null, 'isElevage': false, 'isPro': false};
+      final d = doc.data() as Map<String, dynamic>;
+      final isElevage = d['isElevage'] == true;
+      final isPro = d['isPro'] == true;
+      final name = isElevage ? (d['nameElevage'] ?? 'Élevage') : '${d['firstname'] ?? ''} ${d['lastname'] ?? ''}'.trim();
+      final rawUrl = isElevage ? d['profilePictureUrlElevage'] : d['profilePictureUrl'];
+      final photoUrl = (rawUrl != null && rawUrl != _defaultPp && (rawUrl as String).startsWith('http')) ? rawUrl as String : null;
+      UserSelected? user;
       if (isElevage || isPro) {
-        try {
-          UserSelected userSelected =
-              UserSelected.fromMap(userData, userDoc.id);
-          return {
-            'user': userSelected,
-            'isElevage': isElevage,
-            'isPro': isPro,
-            'name': userData['nameElevage'] ?? 'Utilisateur Inconnu',
-            'profilePictureUrl': userData['profilePictureUrlElevage'] ??
-                defaultProfilePictureUrl,
-            'description': userData['descEntreprise'] ?? '',
-          };
-        } catch (e) {
-          print("Error creating UserSelected for $userId: $e");
-          return {
-            'name': 'Utilisateur Inconnu',
-            'profilePictureUrl': defaultProfilePictureUrl,
-            'isElevage': isElevage,
-            'isPro': isPro,
-            'description': '',
-            'adoptionProject': ''
-          };
-        }
-      } else {
-        return {
-          'name':
-              '${userData['firstname'] ?? ''} ${userData['lastname'] ?? ''}',
-          'profilePictureUrl':
-              userData['profilePictureUrl'] ?? defaultProfilePictureUrl,
-          'isElevage': false,
-          'isPro': false,
-          'description': userData['desc'] ?? '',
-          'adoptionProject': userData['adoptProject'] ?? ''
-        };
+        user = UserSelected.fromMap(d, userId);
       }
-    } catch (e) {
-      print("Error retrieving user info for $userId: $e");
-      return {
-        'name': 'Utilisateur Inconnu',
-        'profilePictureUrl': defaultProfilePictureUrl,
-        'isElevage': false,
-        'isPro': false,
-        'description': '',
-        'adoptionProject': ''
-      };
+      return {'name': name, 'profilePictureUrl': photoUrl, 'isElevage': isElevage, 'isPro': isPro, 'user': user, 'description': d['desc'] ?? '', 'adoptionProject': d['adoptProject'] ?? ''};
+    } catch (_) {
+      return {'name': 'Utilisateur', 'profilePictureUrl': null, 'isElevage': false, 'isPro': false};
     }
   }
 
-  void _navigateToUserDetails(Map<String, dynamic> userInfo) {
-    if (userInfo['isElevage'] || userInfo['isPro']) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => UserDetailPageFeed(
-            user: userInfo['user'] as UserSelected,
-          ),
-        ),
-      );
+  void _navigateToUser(Map<String, dynamic> userInfo) {
+    if (userInfo['user'] != null) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => UserDetailPageFeed(user: userInfo['user'] as UserSelected)));
     } else {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => UserParticulierFeedDetails(
-            profilePictureUrl: userInfo['profilePictureUrl'],
-            description: userInfo['description'],
-            adoptionProject: userInfo['adoptionProject'],
-            name: userInfo['name'],
-          ),
-        ),
-      );
+      Navigator.push(context, MaterialPageRoute(builder: (_) => UserParticulierFeedDetails(
+        profilePictureUrl: userInfo['profilePictureUrl'],
+        description: userInfo['description'],
+        adoptionProject: userInfo['adoptionProject'],
+        name: userInfo['name'],
+      )));
     }
   }
 
-  void _showFullScreenImage(BuildContext context, String imageUrl) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Color(0xFFA7C79A),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: Image.network(imageUrl, fit: BoxFit.contain),
-            ),
-            Positioned(
-              top: 10,
-              right: 10,
-              child: IconButton(
-                icon: Icon(Icons.close, color: Colors.white),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _sendImage() async {
-    PermissionStatus photoPermissionStatus = await Permission.photos.status;
-
-    if (photoPermissionStatus.isDenied ||
-        photoPermissionStatus.isPermanentlyDenied) {
-      photoPermissionStatus = await Permission.photos.request();
-    }
-
-    if (photoPermissionStatus.isGranted) {
-      final picker = ImagePicker();
-      final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-
-      if (pickedFile != null) {
-        String fileName = DateTime.now().millisecondsSinceEpoch.toString();
-        Reference storageRef =
-            FirebaseStorage.instance.ref().child('chat_images').child(fileName);
-
-        UploadTask uploadTask = storageRef.putFile(File(pickedFile.path));
-        TaskSnapshot snapshot = await uploadTask;
-        String downloadUrl = await snapshot.ref.getDownloadURL();
-
-        sendMessage(
-            widget.conversationId, '', FirebaseAuth.instance.currentUser!.uid,
-            imageUrl: downloadUrl);
-      } else {
-        print('Aucun fichier sélectionné.');
-      }
-    } else if (photoPermissionStatus.isPermanentlyDenied) {
-      print(
-          'Permission d\'accès aux photos refusée définitivement. Redirection vers les paramètres.');
-      openAppSettings();
-    } else {
-      print('Permission d\'accès à la galerie refusée ou limitée.');
-    }
+  Future<void> _pickImage() async {
+    final file = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (file == null) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final ref = FirebaseStorage.instance.ref().child('chat_images/${DateTime.now().millisecondsSinceEpoch}');
+    final snap = await ref.putFile(File(file.path));
+    final url = await snap.ref.getDownloadURL();
+    _sendMessage('', uid, imageUrl: url);
   }
 
   Future<void> _takePhoto() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.camera);
-
-    if (pickedFile != null) {
-      setState(() {
-        _imageFile = File(pickedFile.path);
-      });
-      _showPreviewDialog();
-    }
+    final file = await ImagePicker().pickImage(source: ImageSource.camera);
+    if (file == null) return;
+    setState(() => _imageFile = File(file.path));
+    _showImagePreview();
   }
 
-  void _showPreviewDialog() {
+  void _showImagePreview() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.black,
-        content: _imageFile == null
-            ? Text("Pas d'image sélectionnée",
-                style: TextStyle(color: Colors.white))
-            : Image.file(_imageFile!),
+      builder: (_) => AlertDialog(
+        backgroundColor: Colors.black87,
+        contentPadding: const EdgeInsets.all(12),
+        content: _imageFile == null ? const SizedBox() : ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Image.file(_imageFile!),
+        ),
         actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _takePhoto();
-            },
-            child: Text("Reprendre", style: TextStyle(color: Colors.white)),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
           TextButton(
             onPressed: () async {
-              Navigator.of(context).pop();
-              if (_imageFile != null) {
-                String fileName =
-                    DateTime.now().millisecondsSinceEpoch.toString();
-                Reference storageRef = FirebaseStorage.instance
-                    .ref()
-                    .child('chat_images')
-                    .child(fileName);
-
-                UploadTask uploadTask = storageRef.putFile(_imageFile!);
-                TaskSnapshot snapshot = await uploadTask;
-                String downloadUrl = await snapshot.ref.getDownloadURL();
-
-                sendMessage(widget.conversationId, '',
-                    FirebaseAuth.instance.currentUser!.uid,
-                    imageUrl: downloadUrl);
-              }
+              Navigator.pop(context);
+              if (_imageFile == null) return;
+              final uid = FirebaseAuth.instance.currentUser?.uid;
+              if (uid == null) return;
+              final ref = FirebaseStorage.instance.ref().child('chat_images/${DateTime.now().millisecondsSinceEpoch}');
+              final snap = await ref.putFile(_imageFile!);
+              final url = await snap.ref.getDownloadURL();
+              _sendMessage('', uid, imageUrl: url);
             },
-            child: Text("Envoyer", style: TextStyle(color: Colors.white)),
+            child: const Text('Envoyer', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  String formatTimestamp(Timestamp? timestamp) {
-    if (timestamp == null) {
-      return 'N/A';
-    } else {
-      return DateFormat('HH:mm').format(timestamp.toDate());
+  Future<void> _shareLocation() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Activez la localisation')));
+      return;
+    }
+    LocationPermission perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+    if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) return;
+    final confirm = await showDialog<bool>(context: context, builder: (_) => AlertDialog(
+      title: const Text('Partager ma position', style: TextStyle(fontFamily: 'Galey')),
+      content: const Text('Envoyer vos coordonnées GPS actuelles ?', style: TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Envoyer', style: TextStyle(color: _teal))),
+      ],
+    ));
+    if (confirm != true) return;
+    try {
+      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      if (!mounted) return;
+      _sendMessage('', uid, lat: pos.latitude, lng: pos.longitude);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur GPS : $e')));
     }
   }
 
-  void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollController
-            .animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        )
-            .then((_) {
-          // Vérifiez à nouveau après un délai si nous sommes vraiment en bas
-          if (_scrollController.offset <
-              _scrollController.position.maxScrollExtent) {
-            Future.delayed(const Duration(milliseconds: 100), () {
-              _scrollController.animateTo(
-                _scrollController.position.maxScrollExtent,
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOut,
-              );
-            });
-          }
-        });
-      });
-    }
+  void _showFullImage(String url) {
+    showDialog(context: context, builder: (_) => Dialog(
+      backgroundColor: Colors.black,
+      insetPadding: EdgeInsets.zero,
+      child: Stack(fit: StackFit.loose, children: [
+        Positioned.fill(child: InteractiveViewer(child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain))),
+        Positioned(top: 12, right: 12, child: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        )),
+      ]),
+    ));
+  }
+
+  void _showMessageOptions(DocumentSnapshot msg) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (msg['senderId'] != uid) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          ListTile(
+            leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+            title: const Text('Supprimer le message', style: TextStyle(fontFamily: 'Galey', color: Colors.redAccent)),
+            onTap: () {
+              Navigator.pop(context);
+              _deleteMessage(msg);
+            },
+          ),
+        ]),
+      ),
+    );
+  }
+
+  String _formatDate(Timestamp? ts) {
+    if (ts == null) return '';
+    final dt = ts.toDate();
+    final now = DateTime.now();
+    if (DateUtils.isSameDay(dt, now)) return 'Aujourd\'hui';
+    if (DateUtils.isSameDay(dt, now.subtract(const Duration(days: 1)))) return 'Hier';
+    return DateFormat('dd MMMM yyyy', 'fr').format(dt);
+  }
+
+  String _formatTime(Timestamp? ts) {
+    if (ts == null) return '';
+    return DateFormat('HH:mm').format(ts.toDate());
   }
 
   @override
   Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F0),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        shadowColor: Colors.black,
-        surfaceTintColor: Colors.transparent,
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
         elevation: 0,
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(1.0), // Hauteur du trait
-          child: Container(
-            color: Color.fromARGB(57, 0, 0, 0), // Couleur du trait
-            height: 3.0, // Épaisseur du trait
-          ),
-        ),
+        titleSpacing: 0,
         title: FutureBuilder<Map<String, dynamic>>(
-          future: getUserInfo(widget.eleveurId),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return CircularProgressIndicator();
-            }
-            if (snapshot.hasError || !snapshot.hasData) {
-              return Text('Erreur');
-            }
-            var userInfo = snapshot.data!;
+          future: _getUserInfo(widget.eleveurId),
+          builder: (_, snap) {
+            final info = snap.data ?? {'name': '...', 'profilePictureUrl': null};
+            final name = info['name'] as String? ?? '...';
+            final photoUrl = info['profilePictureUrl'] as String?;
             return GestureDetector(
-              onTap: () => _navigateToUserDetails(userInfo),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: const Color(0xFFA7C79A),
-                    backgroundImage: (userInfo['profilePictureUrl'] != null &&
-                            userInfo['profilePictureUrl'] != defaultProfilePictureUrl)
-                        ? NetworkImage(userInfo['profilePictureUrl']!) as ImageProvider
-                        : null,
-                    child: (userInfo['profilePictureUrl'] == null ||
-                            userInfo['profilePictureUrl'] == defaultProfilePictureUrl)
-                        ? const Icon(Icons.person, color: Colors.white)
-                        : null,
-                  ),
-                  SizedBox(
-                      width:
-                          UTILS.calculWidth(10, UTILS.widthReference(context))),
-                  Text(userInfo['name'] ?? 'Utilisateur Inconnu'),
-                ],
-              ),
+              onTap: snap.hasData ? () => _navigateToUser(snap.data!) : null,
+              child: Row(children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: const Color(0xFF5B9EAA),
+                  backgroundImage: photoUrl != null ? CachedNetworkImageProvider(photoUrl) : null,
+                  child: photoUrl == null ? const Icon(Icons.person, color: Colors.white, size: 18) : null,
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: Text(name,
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16),
+                    maxLines: 1, overflow: TextOverflow.ellipsis)),
+              ]),
             );
           },
         ),
       ),
-      body: Container(
-        color: Colors.transparent,
-        child: Column(
-          children: [
-            Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: conversations
-                    .doc(widget.conversationId)
-                    .collection('messages')
-                    .orderBy('timestamp')
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Center(child: CircularProgressIndicator());
-                  }
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return Center(child: Text('Aucun message'));
-                  }
+      body: Column(children: [
+        // ── Messages list ──────────────────────────────────────────────────
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: _conversations.doc(widget.conversationId).collection('messages').orderBy('timestamp').snapshots(),
+            builder: (_, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: _teal));
+              }
+              final msgs = snap.data?.docs ?? [];
+              if (msgs.isEmpty) {
+                return Center(child: Text('Aucun message',
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)));
+              }
 
-                  var messages = snapshot.data!.docs;
-                  String currentUserId = FirebaseAuth.instance.currentUser!.uid;
+              // Mark as read
+              for (final m in msgs) {
+                final data = m.data() as Map<String, dynamic>;
+                if (data['senderId'] != uid && data['isRead'] == false) {
+                  m.reference.update({'isRead': true}).catchError((_) {});
+                }
+              }
 
-                  for (var message in messages) {
-                    if (message['senderId'] != currentUserId &&
-                        message['isRead'] == false) {
-                      FirebaseFirestore.instance
-                          .runTransaction((transaction) async {
-                        DocumentSnapshot freshSnap =
-                            await transaction.get(message.reference);
-                        transaction
-                            .update(freshSnap.reference, {'isRead': true});
-                      });
-                    }
-                  }
+              WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _scrollToBottom();
-                  });
+              String? lastReadId;
+              for (int i = msgs.length - 1; i >= 0; i--) {
+                final d = msgs[i].data() as Map<String, dynamic>;
+                if (d['senderId'] == uid && d['isRead'] == true) {
+                  lastReadId = msgs[i].id;
+                  break;
+                }
+              }
 
-                  return ListView.builder(
-                    controller: _scrollController,
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      var message = messages[index];
-                      bool isCurrentUser = message['senderId'] == currentUserId;
-                      Timestamp? timestamp = message['timestamp'] as Timestamp?;
+              return ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                itemCount: msgs.length,
+                itemBuilder: (_, i) {
+                  final msg = msgs[i];
+                  final data = msg.data() as Map<String, dynamic>;
+                  final isMe = data['senderId'] == uid;
+                  final ts = data['timestamp'] as Timestamp?;
+                  final prevTs = i > 0 ? (msgs[i-1].data() as Map<String, dynamic>)['timestamp'] as Timestamp? : null;
+                  final showDate = i == 0 || _formatDate(ts) != _formatDate(prevTs);
 
-                      // Identifier le dernier message lu
-                      String? lastReadMessageId;
-                      for (int i = messages.length - 1; i >= 0; i--) {
-                        var msg = messages[i];
-                        if (msg['senderId'] == currentUserId &&
-                            msg['isRead'] == true) {
-                          lastReadMessageId = msg.id;
-                          break;
-                        }
-                      }
-
-                      // Gestion des dates
-                      String formattedDate;
-                      if (timestamp != null) {
-                        formattedDate = getFormattedDate(timestamp);
-                      } else {
-                        // Gérer le cas où timestamp est null
-                        formattedDate = "Date non disponible";
-                        print("Timestamp est null");
-                      }
-                      String? previousDate;
-                      if (index > 0) {
-                        previousDate = getFormattedDate(
-                            messages[index - 1]['timestamp'] as Timestamp);
-                      }
-                      bool showDateSeparator = (previousDate != formattedDate);
-
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Ajouter un séparateur de date
-                          if (showDateSeparator)
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 8.0),
-                              child: Center(
-                                child: Text(
-                                  formattedDate,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.grey[600],
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (showDate)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                            ),
-
-                          // Affichage du message
-                          Align(
-                            alignment: isCurrentUser
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
-                            child: Column(
-                              crossAxisAlignment: isCurrentUser
-                                  ? CrossAxisAlignment.end
-                                  : CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  margin: EdgeInsets.symmetric(
-                                    vertical: UTILS.calculHeight(
-                                        5, UTILS.heightReference(context)),
-                                    horizontal: UTILS.calculWidth(
-                                        8, UTILS.widthReference(context)),
-                                  ),
-                                  padding: EdgeInsets.all(UTILS.calculHeight(
-                                      10, UTILS.heightReference(context))),
-                                  decoration: BoxDecoration(
-                                    color: isCurrentUser
-                                        ? Color(0xFFA7C79A)
-                                        : Color(0xFF5F9EAA),
-                                    borderRadius: isCurrentUser
-                                        ? BorderRadius.only(
-                                            topLeft: Radius.circular(
-                                                UTILS.calculHeight(
-                                                    10,
-                                                    UTILS.heightReference(
-                                                        context))),
-                                            topRight: Radius.circular(
-                                                UTILS.calculHeight(
-                                                    10,
-                                                    UTILS.heightReference(
-                                                        context))),
-                                            bottomLeft: Radius.circular(
-                                                UTILS.calculHeight(
-                                                    10,
-                                                    UTILS.heightReference(
-                                                        context))),
-                                          )
-                                        : BorderRadius.only(
-                                            topLeft: Radius.circular(
-                                                UTILS.calculHeight(
-                                                    10,
-                                                    UTILS.heightReference(
-                                                        context))),
-                                            topRight: Radius.circular(
-                                                UTILS.calculHeight(
-                                                    10,
-                                                    UTILS.heightReference(
-                                                        context))),
-                                            bottomRight: Radius.circular(
-                                                UTILS.calculHeight(
-                                                    10,
-                                                    UTILS.heightReference(
-                                                        context))),
-                                          ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      if ((message['text'] ?? '').isNotEmpty)
-                                        Text(
-                                          message['text'] ?? '',
-                                          style: TextStyle(
-                                            color: isCurrentUser
-                                                ? const Color.fromARGB(
-                                                    255, 0, 0, 0)
-                                                : Colors.black,
-                                          ),
-                                        ),
-                                      if (message.data() != null &&
-                                          (message.data()
-                                                  as Map<String, dynamic>)
-                                              .containsKey('imageUrl') &&
-                                          (message['imageUrl'] ?? '')
-                                              .isNotEmpty)
-                                        GestureDetector(
-                                          onTap: () => _showFullScreenImage(
-                                              context,
-                                              message['imageUrl'] ?? ''),
-                                          child: Image.network(
-                                            message['imageUrl'] ?? '',
-                                            width: UTILS.calculWidth(
-                                                MediaQuery.of(context)
-                                                        .size
-                                                        .width /
-                                                    3,
-                                                UTILS.widthReference(context)),
-                                            height: UTILS.calculHeight(
-                                                MediaQuery.of(context)
-                                                        .size
-                                                        .height /
-                                                    3,
-                                                UTILS.heightReference(context)),
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
-                                      SizedBox(
-                                          height: UTILS.calculHeight(5,
-                                              UTILS.heightReference(context))),
-                                      Text(
-                                        formatTimestamp(timestamp),
-                                        style: TextStyle(
-                                          color: isCurrentUser
-                                              ? const Color.fromARGB(
-                                                  179, 0, 0, 0)
-                                              : Colors.black54,
-                                          fontSize: UTILS.calculHeight(10,
-                                              UTILS.heightReference(context)),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (isCurrentUser &&
-                                    message.id == lastReadMessageId)
-                                  Padding(
-                                    padding: EdgeInsets.only(top: 5),
-                                    child: Text(
-                                      'Vu',
-                                      style: TextStyle(
-                                        color: Colors.black,
-                                        fontSize: UTILS.calculHeight(
-                                            10, UTILS.heightReference(context)),
-                                      ),
-                                    ),
-                                  ),
-                              ],
+                              child: Text(_formatDate(ts),
+                                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                             ),
                           ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-            Container(
-                color: Color(0xFF1F2A2E),
-                child: Padding(
-                  padding: EdgeInsets.all(
-                      UTILS.calculHeight(8, UTILS.heightReference(context))),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        color: Colors.white,
-                        icon: Icon(Icons.photo),
-                        onPressed: _sendImage,
-                      ),
-                      IconButton(
-                        color: Colors.white,
-                        icon: Icon(Icons.camera),
-                        onPressed: _takePhoto,
-                      ),
-                      Expanded(
-                        child: TextField(
-                          style: TextStyle(color: Colors.white),
-                          controller: _controller,
-                          decoration: InputDecoration(
-                              focusColor: Colors.white,
-                              fillColor: Colors.white,
-                              hintText: 'Entrer votre message...',
-                              hintStyle: TextStyle(color: Colors.white)),
                         ),
-                      ),
-                      IconButton(
-                        color: Colors.white,
-                        icon: Icon(Icons.send_rounded),
-                        onPressed: () {
-                          sendMessage(widget.conversationId, _controller.text,
-                              FirebaseAuth.instance.currentUser!.uid);
-                          _controller.clear();
-                          _scrollToBottom(); // Ensure it scrolls after sending
-                        },
+                      _MessageBubble(
+                        data: data,
+                        isMe: isMe,
+                        time: _formatTime(ts),
+                        isLastRead: isMe && msg.id == lastReadId,
+                        onLongPress: () => _showMessageOptions(msg),
+                        onImageTap: (url) => _showFullImage(url),
                       ),
                     ],
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        // ── Input bar ──────────────────────────────────────────────────────
+        Container(
+          color: Colors.white,
+          padding: EdgeInsets.fromLTRB(8, 8, 8, MediaQuery.of(context).padding.bottom + 8),
+          child: Row(children: [
+            // Attachments
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.add_circle_outline, color: _teal, size: 26),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              onSelected: (v) {
+                if (v == 'photo') _pickImage();
+                else if (v == 'camera') _takePhoto();
+                else if (v == 'location') _shareLocation();
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'photo', child: Row(children: [Icon(Icons.photo_outlined, size: 18), SizedBox(width: 10), Text('Galerie', style: TextStyle(fontFamily: 'Galey'))])),
+                PopupMenuItem(value: 'camera', child: Row(children: [Icon(Icons.camera_alt_outlined, size: 18), SizedBox(width: 10), Text('Appareil photo', style: TextStyle(fontFamily: 'Galey'))])),
+                PopupMenuItem(value: 'location', child: Row(children: [Icon(Icons.location_on_outlined, size: 18), SizedBox(width: 10), Text('Ma position', style: TextStyle(fontFamily: 'Galey'))])),
+              ],
+            ),
+            // Text field
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF2F2F2),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: TextField(
+                  controller: _controller,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                  maxLines: 4,
+                  minLines: 1,
+                  decoration: const InputDecoration(
+                    hintText: 'Votre message...',
+                    hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey, fontSize: 14),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    border: InputBorder.none,
                   ),
-                )),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            // Send button
+            GestureDetector(
+              onTap: () {
+                final text = _controller.text.trim();
+                if (text.isEmpty) return;
+                final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                _sendMessage(text, uid);
+                _controller.clear();
+              },
+              child: Container(
+                width: 42, height: 42,
+                decoration: const BoxDecoration(color: _teal, shape: BoxShape.circle),
+                child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+              ),
+            ),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+// ── Message bubble ─────────────────────────────────────────────────────────────
+
+class _MessageBubble extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final bool isMe;
+  final String time;
+  final bool isLastRead;
+  final VoidCallback onLongPress;
+  final void Function(String url) onImageTap;
+
+  const _MessageBubble({
+    required this.data,
+    required this.isMe,
+    required this.time,
+    required this.isLastRead,
+    required this.onLongPress,
+    required this.onImageTap,
+  });
+
+  static const _teal  = Color(0xFF0C5C6C);
+  static const _green = Color(0xFF6E9E57);
+
+  @override
+  Widget build(BuildContext context) {
+    final text       = (data['text'] as String?) ?? '';
+    final imageUrl   = (data['imageUrl'] as String?);
+    final isLocation = data['type'] == 'location';
+
+    return GestureDetector(
+      onLongPress: isMe ? onLongPress : null,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Column(
+          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (!isMe) const SizedBox(width: 4),
+                Flexible(
+                  child: Container(
+                    constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
+                    margin: EdgeInsets.only(
+                      left: isMe ? 48 : 4,
+                      right: isMe ? 4 : 48,
+                    ),
+                    padding: imageUrl != null || isLocation
+                        ? const EdgeInsets.all(4)
+                        : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isMe ? _teal : Colors.white,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(18),
+                        topRight: const Radius.circular(18),
+                        bottomLeft: Radius.circular(isMe ? 18 : 4),
+                        bottomRight: Radius.circular(isMe ? 4 : 18),
+                      ),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 4, offset: const Offset(0, 2))],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (imageUrl != null)
+                          GestureDetector(
+                            onTap: () => onImageTap(imageUrl),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: CachedNetworkImage(
+                                imageUrl: imageUrl,
+                                width: 200, height: 200,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) => Container(
+                                    width: 200, height: 200,
+                                    color: Colors.grey.shade200,
+                                    child: const Center(child: CircularProgressIndicator(strokeWidth: 2))),
+                              ),
+                            ),
+                          ),
+                        if (isLocation)
+                          _LocationCard(
+                            lat: (data['lat'] as num).toDouble(),
+                            lng: (data['lng'] as num).toDouble(),
+                            isMe: isMe,
+                          ),
+                        if (text.isNotEmpty)
+                          Padding(
+                            padding: imageUrl != null ? const EdgeInsets.fromLTRB(8, 6, 8, 2) : EdgeInsets.zero,
+                            child: Text(text,
+                                style: TextStyle(
+                                    fontFamily: 'Galey',
+                                    fontSize: 14,
+                                    color: isMe ? Colors.white : const Color(0xFF1F2A2E))),
+                          ),
+                        const SizedBox(height: 2),
+                        Text(time,
+                            style: TextStyle(
+                                fontFamily: 'Galey',
+                                fontSize: 10,
+                                color: isMe ? Colors.white60 : Colors.grey.shade400)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (isLastRead)
+              Padding(
+                padding: const EdgeInsets.only(right: 8, top: 2),
+                child: Text('Vu',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade400)),
+              ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Location card ──────────────────────────────────────────────────────────────
+
+class _LocationCard extends StatelessWidget {
+  final double lat;
+  final double lng;
+  final bool isMe;
+  const _LocationCard({required this.lat, required this.lng, required this.isMe});
+
+  Future<void> _openMaps() async {
+    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _openMaps,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isMe ? Colors.white.withOpacity(0.15) : const Color(0xFFEEF5EA),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.location_on, color: isMe ? Colors.white : const Color(0xFF6E9E57), size: 20),
+          const SizedBox(width: 8),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Position GPS partagée',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13,
+                    color: isMe ? Colors.white : const Color(0xFF1F2A2E))),
+            Text('Appuyer pour ouvrir Maps',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                    color: isMe ? Colors.white70 : Colors.grey.shade600)),
+          ]),
+        ]),
       ),
     );
   }

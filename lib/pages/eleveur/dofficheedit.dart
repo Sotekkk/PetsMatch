@@ -2,7 +2,7 @@ import 'package:PetsMatch/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:PetsMatch/utils/image_pick.dart';
 import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -159,14 +159,8 @@ class _DogFicheEditState extends State<DogFicheEdit> {
   }
 
   Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-
-    if (pickedFile != null) {
-      setState(() {
-        _image = File(pickedFile.path);
-      });
-    }
+    final f = await pickAndCropSquare();
+    if (f != null) setState(() => _image = f);
   }
 
   Future<String> _uploadFile(File file, String uid, String fileName) async {

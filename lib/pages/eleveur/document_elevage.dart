@@ -1,656 +1,454 @@
-// ignore_for_file: prefer_const_constructors
-
-import 'package:PetsMatch/animation/delayed_animation.dart';
+import 'dart:io';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/desc_entreprise.dart';
-import 'package:PetsMatch/pages/particulier/description_page.dart';
-import 'package:PetsMatch/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/services.dart';
-import 'dart:io';
 import 'package:file_picker/file_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:intl/intl.dart';
 
 class RegisterDocumentElevage extends StatefulWidget {
   const RegisterDocumentElevage({super.key});
-
   @override
-  State<RegisterDocumentElevage> createState() =>
-      _RegisterDocumentElevageState();
+  State<RegisterDocumentElevage> createState() => _RegisterDocumentElevageState();
 }
 
-class _RegisterDocumentElevageState extends State<RegisterDocumentElevage>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  bool _isSiretUploaded = false;
-  String? selectedCategory;
-  String? selectedProfession;
+class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
+  static const _green = Color(0xFF6E9E57);
+  static const _teal = Color(0xFF0C5C6C);
+  static const _bg = Color(0xFFF8F8F6);
 
-  final Map<String, List<String>> professionsByCategory = {
+  final _siretCtrl = TextEditingController();
+  final _tvaCtrl = TextEditingController();
+  final _acacedCtrl = TextEditingController();
+
+  DateTime? _acacedDate;
+  bool _uploading = false;
+  bool _siretUploaded = false;
+  bool _acacedUploaded = false;
+  String? _siretDocUrl;
+  String? _acacedDocUrl;
+  String? _siretDocName;
+  String? _acacedDocName;
+  String? _selectedCategory;
+  String? _selectedProfession;
+
+  static const Map<String, List<String>> _professions = {
     'Prestataire': [
-      'Educateurs comportementalistes',
-      'Handleurs',
-      'Mushers',
-      // 'Pension canine',
-      'Promeneurs de chiens',
-      'Petsitter',
-      // 'Refuge',
-      'Toiletteur',
+      'Educateurs comportementalistes', 'Handleurs', 'Mushers',
+      'Promeneurs de chiens', 'Petsitter', 'Toiletteur',
     ],
-    'Santé animal': [
-      'Vétérinaire',
-      'Auxiliaire de santé',
-      'Spécialistes de santé',
-    ],
+    'Santé animal': ['Vétérinaire', 'Auxiliaire de santé', 'Spécialistes de santé'],
   };
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this);
-  }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _siretCtrl.dispose();
+    _tvaCtrl.dispose();
+    _acacedCtrl.dispose();
     super.dispose();
   }
 
-  void _validateAndContinue() {
-    if (User_Info.isPro) {
-      if (_isSiretUploaded && 
-          selectedCategory != null &&
-          selectedProfession != null && User_Info.siret.isNotEmpty ) {
-        User_Info.catPro = selectedCategory!;
-        User_Info.professionPro = selectedProfession!;
+  DateTime? get _acacedExpiration {
+    if (_acacedDate == null) return null;
+    return DateTime(_acacedDate!.year + 10, _acacedDate!.month, _acacedDate!.day);
+  }
 
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (context) => DescProEntreprise()),
-        );
-      } else {
-        final snackBar = SnackBar(
-          content: Text(
-              "Le document Siret, le numéro Siret, la catégorie professionnelle et la profession sont obligatoires."),
-        );
-        ScaffoldMessenger.of(context).showSnackBar(snackBar);
+  Color get _acacedColor {
+    final exp = _acacedExpiration;
+    if (exp == null) return Colors.grey;
+    final now = DateTime.now();
+    if (exp.isBefore(now)) return Colors.red;
+    if (exp.difference(now).inDays < 180) return const Color(0xFFE8A500);
+    return _green;
+  }
+
+  String get _acacedStatusLabel {
+    final exp = _acacedExpiration;
+    if (exp == null) return '';
+    final now = DateTime.now();
+    if (exp.isBefore(now)) return 'Expiré';
+    if (exp.difference(now).inDays < 180) return 'Expire bientôt';
+    return 'Valide';
+  }
+
+  Future<String> _uploadToFirebase(File file, String path) async {
+    final ref = FirebaseStorage.instance.ref().child(path);
+    final snap = await ref.putFile(file);
+    return snap.ref.getDownloadURL();
+  }
+
+  Future<void> _pickSiret() async {
+    final result = await FilePicker.pickFiles(
+        type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'png', 'jpeg']);
+    if (result?.files.single.path == null) return;
+    setState(() => _uploading = true);
+    try {
+      final file = File(result!.files.single.path!);
+      final url = await _uploadToFirebase(file, 'documentElevage/Siret/${file.path.split('/').last}');
+      setState(() {
+        _siretDocUrl = url;
+        _siretDocName = result.files.single.name;
+        _siretUploaded = true;
+        User_Info.kbisUrl = url;
+        User_Info.documentElevage.removeWhere((d) => d['category'] == 'Siret');
+        User_Info.documentElevage.add({'name': _siretDocName, 'category': 'Siret', 'url': url, 'uploaded': true});
+      });
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur upload: $e')));
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _pickAcaced() async {
+    final result = await FilePicker.pickFiles(
+        type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'png', 'jpeg']);
+    if (result?.files.single.path == null) return;
+    setState(() => _uploading = true);
+    try {
+      final file = File(result!.files.single.path!);
+      final url = await _uploadToFirebase(file, 'documentElevage/Acaced/${file.path.split('/').last}');
+      setState(() {
+        _acacedDocUrl = url;
+        _acacedDocName = result.files.single.name;
+        _acacedUploaded = true;
+        User_Info.documentElevage.removeWhere((d) => d['category'] == 'Acaced_ou_autre');
+        User_Info.documentElevage.add({'name': _acacedDocName, 'category': 'Acaced_ou_autre', 'url': url, 'uploaded': true});
+      });
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur upload: $e')));
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _acacedDate ?? DateTime.now(),
+      firstDate: DateTime(1990),
+      lastDate: DateTime.now(),
+      builder: (ctx, child) => Theme(
+        data: ThemeData.light().copyWith(colorScheme: const ColorScheme.light(primary: _green)),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _acacedDate = picked);
+  }
+
+  void _validateAndContinue() {
+    User_Info.siret = _siretCtrl.text.trim();
+    User_Info.numeroTVA = _tvaCtrl.text.trim();
+
+    if (User_Info.isPro) {
+      if (!_siretUploaded || _siretCtrl.text.trim().isEmpty ||
+          _selectedCategory == null || _selectedProfession == null) {
+        _showError('SIRET (numéro + document), catégorie et profession sont obligatoires.');
+        return;
       }
+      User_Info.catPro = _selectedCategory!;
+      User_Info.professionPro = _selectedProfession!;
     } else {
-      if (_isSiretUploaded && User_Info.siret.isNotEmpty) {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (context) => DescProEntreprise()),
-        );
-      } else {
-        final snackBar = SnackBar(
-          content: Text("Le document Siret et le numéro siret sont obligatoire."),
-        );
-        ScaffoldMessenger.of(context).showSnackBar(snackBar);
+      if (!_siretUploaded || _siretCtrl.text.trim().isEmpty) {
+        _showError('Le numéro SIRET et son justificatif sont obligatoires.');
+        return;
+      }
+      if (User_Info.isElevage) {
+        final acacedRequired = User_Info.isDog || User_Info.isCat;
+        if (acacedRequired && (_acacedCtrl.text.trim().isEmpty || _acacedDate == null || !_acacedUploaded)) {
+          _showError('L\'ACACED est obligatoire pour les éleveurs de chiens et de chats.');
+          return;
+        }
+        User_Info.acacedNumero = _acacedCtrl.text.trim();
+        User_Info.acacedDateObtention = _acacedDate!.toIso8601String();
+        User_Info.acacedDocUrl = _acacedDocUrl ?? '';
       }
     }
+
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const DescProEntreprise()));
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg, style: const TextStyle(fontFamily: 'Galey'))));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        body: SingleChildScrollView(
-            child: Center(
-                child: DelayedAnimation(
-                    delay: 0,
-                    child: Column(children: [
-                      SizedBox(
-                          width: UTILS.widthReference(context),
-                          height: UTILS.calculHeight(
-                              104, UTILS.heightReference(context)),
-                          child: Stack(children: [
-                            Image.asset(
-                              'assets/deco/arrondi_rose_2.png',
-              color: const Color(0xFFA7C79A),
-              colorBlendMode: BlendMode.srcIn,
-                              fit: BoxFit.cover,
-                              width: UTILS.calculWidth(
-                                  211, UTILS.widthReference(context)),
-                              height: UTILS.calculHeight(
-                                  104, UTILS.heightReference(context)),
-                            ),
-                            Positioned(
-                              top: UTILS.calculHeight(
-                                  53, UTILS.heightReference(context)),
-                              left: 0,
-                              right: 0,
-                              child: Align(
-                                alignment: Alignment.center,
-                                child: Text(
-                                  'INSCRIPTION',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontFamily: 'Galey',
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: UTILS.calculWidth(
-                                        20, UTILS.widthReference(context)),
-                                  ),
-                                ),
-                              ),
-                            )
-                          ])),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              14, UTILS.heightReference(context))),
-                      Align(
-                        alignment: Alignment(-0.8, 0),
-                        child: Text(
-                          'Documents élevage',
-                          style: TextStyle(
-                              fontSize: UTILS.calculWidth(
-                                  30, UTILS.widthReference(context)),
-                              fontFamily: 'Galey',
-                              color: const Color(0xFF0C5C6C),
-                              fontWeight: FontWeight.w500),
-                          textAlign: TextAlign.left,
-                        ),
-                      ),
-                      Align(
-                          alignment: Alignment(0.1, 0),
-                          child: SizedBox(
-                            width: UTILS.calculWidth(
-                                379, UTILS.widthReference(context)),
-                            child: Text(
-                              '',
-                              style: TextStyle(
-                                  fontSize: UTILS.calculWidth(
-                                      15, UTILS.widthReference(context)),
-                                  fontFamily: 'Galey',
-                                  color: const Color(0xFF0C5C6C),
-                                  fontWeight: FontWeight.w500),
-                              textAlign: TextAlign.left,
-                            ),
-                          )),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              10, UTILS.heightReference(context))),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              286, UTILS.heightReference(context)),
-                          width: UTILS.calculWidth(
-                              286, UTILS.widthReference(context)),
-                          child:
-                              Image.asset('assets/page/document_elevage.png')),
-                      if (User_Info.isPro)
-                        SizedBox(
-                          width: UTILS.calculWidth(
-                              355, UTILS.widthReference(context)),
-                          child: DropdownButtonFormField<String>(
-                            dropdownColor: Color(0xFFEEF5EA),
-                            decoration: InputDecoration(
-                              enabledBorder: UnderlineInputBorder(
-                                borderSide: BorderSide(
-                                  color: Color(0xFFA7C79A),
-                                ),
-                              ),
-                              focusedBorder: UnderlineInputBorder(
-                                borderSide: BorderSide(
-                                  color: Color(0xFFA7C79A),
-                                ),
-                              ),
-                              labelText: 'Catégorie Professionnel',
-                            ),
-                            items: ['Prestataire', 'Santé animal']
-                                .map((String value) {
-                              return DropdownMenuItem<String>(
-                                value: value,
-                                child: Text(value),
-                              );
-                            }).toList(),
-                            onChanged: (String? newValue) {
-                              setState(() {
-                                selectedCategory = newValue;
-                                selectedProfession =
-                                    null; // Reset profession when category changes
-                              });
-                            },
-                            value:
-                                selectedCategory, // Ensure value is reset properly
-                          ),
-                        ),
-                      SizedBox(
-                        height: UTILS.calculHeight(
-                            10, UTILS.heightReference(context)),
-                      ),
-                      if (User_Info.isPro && selectedCategory != null)
-                        SizedBox(
-                          width: UTILS.calculWidth(
-                              355, UTILS.widthReference(context)),
-                          child: DropdownButtonFormField<String>(
-                            dropdownColor: Color(0xFFEEF5EA),
-                            decoration: InputDecoration(
-                              enabledBorder: UnderlineInputBorder(
-                                borderSide: BorderSide(
-                                  color: Color(0xFFA7C79A),
-                                ),
-                              ),
-                              focusedBorder: UnderlineInputBorder(
-                                borderSide: BorderSide(
-                                  color: Color(0xFFA7C79A),
-                                ),
-                              ),
-                              labelText: 'Profession',
-                            ),
-                            items: professionsByCategory[selectedCategory]!
-                                .map((String value) {
-                              return DropdownMenuItem<String>(
-                                value: value,
-                                child: Text(value),
-                              );
-                            }).toList(),
-                            onChanged: (String? newValue) {
-                              setState(() {
-                                selectedProfession = newValue;
-                              });
-                            },
-                            value:
-                                selectedProfession, // Ensure value is reset properly
-                          ),
-                        ),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              15, UTILS.heightReference(context))),
-                      DocumentManager(
-                        onSiretUploaded: (bool uploaded) {
-                          setState(() {
-                            _isSiretUploaded = uploaded;
-                          });
-                        },
-                      ),
-                      Align(
-                        alignment: Alignment.center,
-                        child: InkWell(
-                          onTap: () {
-                            Navigator.pop(context);
-                          },
-                          child: RichText(
-                            text: const TextSpan(
-                              text: "",
-                              style: TextStyle(color: Colors.black),
-                              children: <TextSpan>[
-                                TextSpan(
-                                  text: 'RETOUR',
-                                  style: TextStyle(
-                                    fontFamily: 'Galey',
-                                    fontWeight: FontWeight.w500,
-                                    color: Color.fromARGB(255, 0, 0, 0),
-                                    decoration: TextDecoration.underline,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              19, UTILS.heightReference(context))),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              66, UTILS.heightReference(context)),
-                          width: UTILS.calculWidth(
-                              367, UTILS.widthReference(context)),
-                          child: ElevatedButton(
-                            onPressed: _validateAndContinue,
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    Color(0xFFA7C79A)),
-                            child: Text(
-                              'CONTINUER',
-                              style: TextStyle(
-                                fontFamily: 'Galey',
-                                fontWeight: FontWeight.w500,
-                                color: Color.fromARGB(255, 0, 0, 0),
-                                fontSize: UTILS.calculWidth(
-                                    17, UTILS.widthReference(context)),
-                              ),
-                            ),
-                          )),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              15.6, UTILS.heightReference(context))),
-                      Image.asset(
-                        'assets/deco/arrondi_green_deco_2.png',
-                        fit: BoxFit.cover,
-                        width: UTILS.calculWidth(
-                            233, UTILS.widthReference(context)),
-                        height: UTILS.calculHeight(
-                            52, UTILS.heightReference(context)),
-                      ),
-                    ])))));
-  }
-}
-
-class DocumentManager extends StatefulWidget {
-  final Function(bool) onSiretUploaded;
-
-  DocumentManager({required this.onSiretUploaded});
-
-  @override
-  _DocumentManagerState createState() => _DocumentManagerState();
-}
-
-class _DocumentManagerState extends State<DocumentManager> {
-  double containerHeight = 350;
-  bool _isSiretValid = true; // Indicateur pour valider le SIRET
-  TextEditingController controllerSiret = TextEditingController();
-  TextEditingController controllerTVA = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    containerHeight = User_Info.isPro ? 350 : 500;
-  }
-
-  Future<void> pickFile(String category) async {
-    FilePickerResult? pickedFile = await FilePicker.pickFiles();
-    if (pickedFile != null) {
-      String? fileName = pickedFile.files.single.name;
-      File file = File(pickedFile.files.single.path!);
-
-      // Upload the file to Firebase Storage
-      String fileUrl = await uploadFileToFirebase(file, category);
-
-      setState(() {
-        User_Info.documentElevage.add({
-          'name': fileName,
-          'category': category,
-          'url': fileUrl,
-          'uploaded': false
-        });
-        updateContainerHeight();
-        if (category == 'Siret') {
-          widget.onSiretUploaded(true);
-          User_Info.kbisUrl = fileUrl;
-        }
-      });
-    }
-  }
-
-  Future<String> uploadFileToFirebase(File file, String category) async {
-    final ref = FirebaseStorage.instance
-        .ref()
-        .child('documentElevage/$category/${file.path.split('/').last}');
-    var uploadTask = ref.putFile(file);
-
-    final snapshot = await uploadTask;
-    final fileUrl = await snapshot.ref.getDownloadURL();
-
-    return fileUrl;
-  }
-
-  void updateContainerHeight() {
-    setState(() {
-      if (User_Info.documentElevage.length == 0 ||
-          User_Info.documentElevage.length == 1) {
-        containerHeight = User_Info.isPro ? 350 : 500;
-      } else {
-        containerHeight = User_Info.isPro
-            ? 350.0
-            : 500.0 + 50.0 * User_Info.documentElevage.length.toDouble();
-      }
-    });
-  }
-  void _validateTva() {
-     setState(() {
-        User_Info.numeroTVA = controllerTVA.text;
-    });
-  }
-
-  // Validation pour le champ Siret
-  void _validateSiret() {
-    setState(() {
-      _isSiretValid = controllerSiret.text.isNotEmpty ||
-          User_Info.documentElevage.any((doc) => doc['category'] == 'Siret');
-        User_Info.siret = controllerSiret.text;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height:
-          UTILS.calculHeight(containerHeight, UTILS.heightReference(context)),
-      child: Column(
-        children: [
-          Align(
-            alignment: Alignment(-0.8, 0),
-            child: Text(
-              'Siret',
-              textAlign: TextAlign.left,
-              style: TextStyle(
-                fontFamily: 'Galey',
-                color: Color.fromARGB(193, 30, 30, 30),
-                fontWeight: FontWeight.w500,
-                fontSize: UTILS.calculWidth(20, UTILS.widthReference(context)),
-              ),
-            ),
-          ),
-          SizedBox(
-              height: UTILS.calculHeight(13, UTILS.heightReference(context))),
-
-          // Champ Numéro Siret
-          SizedBox(
-            height: UTILS.calculHeight(53, UTILS.heightReference(context)),
-            width: UTILS.calculWidth(367, UTILS.widthReference(context)),
-            child: TextFormField(
-              keyboardType: TextInputType.number,
-              controller: controllerSiret,
-              cursorColor: Colors.black,
-              onChanged: (value) =>
-                  _validateSiret(), // Valider à chaque changement
-              decoration: InputDecoration(
-                labelText: 'Numéro Siret',
-                
-                filled: true,
-                contentPadding: EdgeInsets.symmetric(
-                  vertical:
-                      UTILS.calculHeight(12.0, UTILS.heightReference(context)),
-                  horizontal:
-                      UTILS.calculWidth(15.0, UTILS.widthReference(context)),
-                ),
-                fillColor: Color(0xFFA7C79A),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30.0),
-                  borderSide: BorderSide(
-                    color: Colors.transparent,
-                    width:
-                        2.0, // Couleur de la bordure lorsque le champ est inactif
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30.0),
-                  borderSide: BorderSide(
-                    color: Color(0xFFA7C79A),
-                    width:
-                        2.0, // Couleur de la bordure lorsque le champ est sélectionné
-                  ),
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(
-                    UTILS.calculWidth(50.0, UTILS.widthReference(context)),
-                  ),
-                  borderSide: BorderSide(color: Colors.transparent),
-                ),
-              ),
-            ),
-          ),
-          SizedBox(
-              height: UTILS.calculHeight(13, UTILS.heightReference(context))),
-
-          // Bouton pour ajouter un fichier Siret
-          SizedBox(
-            height: UTILS.calculHeight(53, UTILS.heightReference(context)),
-            width: UTILS.calculWidth(372, UTILS.widthReference(context)),
-            child: ElevatedButton(
-              onPressed: () => pickFile('Siret'),
-              child: Text(
-                '📁 Joindre un fichier Siret',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Galey',
-                  color: Color.fromARGB(255, 0, 0, 0),
-                  fontWeight: FontWeight.w500,
-                  fontSize:
-                      UTILS.calculWidth(18, UTILS.widthReference(context)),
-                ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFFEEF5EA),
-              ),
-            ),
-          ),
-
-          // Affichage des documents Siret
-          if (User_Info.documentElevage
-              .any((doc) => doc['category'] == 'Siret'))
-            ...User_Info.documentElevage
-                .where((doc) => doc['category'] == 'Siret')
-                .map((doc) => ListTile(
-                      title: Text(doc['name']),
-                      trailing: IconButton(
-                        icon: Icon(Icons.delete, color: Colors.red),
-                        onPressed: () {
-                          setState(() {
-                            widget.onSiretUploaded(false);
-                            User_Info.documentElevage.remove(doc);
-                            updateContainerHeight();
-                          });
-                        },
-                      ),
-                    ))
-                .toList(),
-
-          SizedBox(
-              height: UTILS.calculHeight(23, UTILS.heightReference(context))),
-
-          // Champ Numéro TVA (optionnel)
-          Align(
-            alignment: Alignment(-0.65, 0),
-            child: Text(
-              'Numéro TVA (Optionel)',
-              textAlign: TextAlign.left,
-              style: TextStyle(
-                fontFamily: 'Galey',
-                color: Color.fromARGB(193, 30, 30, 30),
-                fontWeight: FontWeight.w500,
-                fontSize: UTILS.calculWidth(20, UTILS.widthReference(context)),
-              ),
-            ),
-          ),
-          SizedBox(
-              height: UTILS.calculHeight(13, UTILS.heightReference(context))),
-          SizedBox(
-            height: UTILS.calculHeight(53, UTILS.heightReference(context)),
-            width: UTILS.calculWidth(367, UTILS.widthReference(context)),
-            child: TextFormField(
-              keyboardType: TextInputType.number,
-              controller: controllerTVA,
-              cursorColor: Colors.black,
-               onChanged: (value) =>
-                  _validateTva(), // Valider à chaque changement
-              decoration: InputDecoration(
-                labelText: 'Numéro TVA',
-                filled: true,
-                contentPadding: EdgeInsets.symmetric(
-                  vertical:
-                      UTILS.calculHeight(12.0, UTILS.heightReference(context)),
-                  horizontal:
-                      UTILS.calculWidth(15.0, UTILS.widthReference(context)),
-                ),
-                fillColor: Color(0xFFA7C79A),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(
-                    UTILS.calculWidth(50.0, UTILS.widthReference(context)),
-                  ),
-                  borderSide: BorderSide(color: Colors.transparent),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30.0),
-                  borderSide: BorderSide(
-                    color: Colors.transparent,
-                    width:
-                        2.0, // Couleur de la bordure lorsque le champ est inactif
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30.0),
-                  borderSide: BorderSide(
-                    color: Color(0xFFA7C79A),
-                    width:
-                        2.0, // Couleur de la bordure lorsque le champ est sélectionné
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          SizedBox(
-              height: UTILS.calculHeight(13, UTILS.heightReference(context))),
-
-          // Champs et bouton Acaced pour isElevage
-          if (User_Info.isElevage) ...[
-            Align(
-              alignment: Alignment(-0.62, 0),
-              child: Text(
-                'Acaced ou équivalent',
-                textAlign: TextAlign.left,
-                style: TextStyle(
-                  fontFamily: 'Galey',
-                  color: Color.fromARGB(193, 30, 30, 30),
-                  fontWeight: FontWeight.w500,
-                  fontSize:
-                      UTILS.calculWidth(20, UTILS.widthReference(context)),
-                ),
-              ),
-            ),
-            SizedBox(
-                height: UTILS.calculHeight(13, UTILS.heightReference(context))),
-            SizedBox(
-              height: UTILS.calculHeight(53, UTILS.heightReference(context)),
-              width: UTILS.calculWidth(372, UTILS.widthReference(context)),
-              child: ElevatedButton(
-                onPressed: () => pickFile('Acaced_ou_autre'),
-                child: Text(
-                  '📁 Joindre un fichier',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: 'Galey',
-                    color: Color.fromARGB(255, 0, 0, 0),
-                    fontWeight: FontWeight.w500,
-                    fontSize:
-                        UTILS.calculWidth(18, UTILS.widthReference(context)),
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Color(0xFFEEF5EA),
-                ),
-              ),
-            ),
-
-            // Affichage des documents Acaced
-            if (User_Info.documentElevage
-                .any((doc) => doc['category'] == 'Acaced_ou_autre'))
-              ...User_Info.documentElevage
-                  .where((doc) => doc['category'] == 'Acaced_ou_autre')
-                  .map((doc) => ListTile(
-                        title: Text(doc['name']),
-                        trailing: IconButton(
-                          icon: Icon(Icons.delete, color: Colors.red),
-                          onPressed: () {
-                            setState(() {
-                              User_Info.documentElevage.remove(doc);
-                              updateContainerHeight();
-                            });
-                          },
-                        ),
-                      ))
-                  .toList(),
-          ],
-        ],
+      backgroundColor: _bg,
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        title: const Text('Documents', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(24),
+          child: _StepBar(current: 3, total: 4),
+        ),
       ),
+      body: Stack(children: [
+        SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+            // ── SIRET ───────────────────────────────────────────────────────────
+            _sectionTitle('SIRET *'),
+            const SizedBox(height: 8),
+            _card([
+              _textField('Numéro SIRET', _siretCtrl, inputType: TextInputType.number),
+              _uploadTile(
+                label: 'Joindre le justificatif SIRET',
+                uploaded: _siretUploaded,
+                fileName: _siretDocName,
+                onTap: _pickSiret,
+                onRemove: () => setState(() {
+                  _siretUploaded = false; _siretDocName = null; _siretDocUrl = null;
+                  User_Info.documentElevage.removeWhere((d) => d['category'] == 'Siret');
+                  User_Info.kbisUrl = '';
+                }),
+              ),
+            ]),
+            const SizedBox(height: 20),
+
+            // ── TVA ─────────────────────────────────────────────────────────────
+            _sectionTitle('Numéro TVA (optionnel)'),
+            const SizedBox(height: 8),
+            _card([_textField('Numéro TVA', _tvaCtrl, inputType: TextInputType.number)]),
+            const SizedBox(height: 20),
+
+            // ── ACACED (éleveur seulement) ───────────────────────────────────────
+            if (User_Info.isElevage) ...[
+              _sectionTitle(User_Info.isDog || User_Info.isCat ? 'ACACED ou équivalent *' : 'ACACED ou équivalent (optionnel)'),
+              const SizedBox(height: 4),
+              const Text(
+                'Certificat de capacité animaux domestiques — valable 10 ans',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+              ),
+              const SizedBox(height: 10),
+              _card([
+                _textField('Numéro ACACED', _acacedCtrl),
+                const SizedBox(height: 4),
+                _datePicker(),
+                if (_acacedDate != null) ...[
+                  const SizedBox(height: 12),
+                  _validityBadge(),
+                ],
+                const SizedBox(height: 10),
+                _uploadTile(
+                  label: 'Joindre le document ACACED',
+                  uploaded: _acacedUploaded,
+                  fileName: _acacedDocName,
+                  onTap: _pickAcaced,
+                  onRemove: () => setState(() {
+                    _acacedUploaded = false; _acacedDocName = null; _acacedDocUrl = null;
+                    User_Info.documentElevage.removeWhere((d) => d['category'] == 'Acaced_ou_autre');
+                  }),
+                ),
+              ]),
+              const SizedBox(height: 20),
+            ],
+
+            // ── Catégorie PRO ────────────────────────────────────────────────────
+            if (User_Info.isPro) ...[
+              _sectionTitle('Catégorie professionnelle *'),
+              const SizedBox(height: 8),
+              _card([
+                _dropdownField(
+                  label: 'Catégorie',
+                  value: _selectedCategory,
+                  items: _professions.keys.toList(),
+                  onChanged: (v) => setState(() { _selectedCategory = v; _selectedProfession = null; }),
+                ),
+                if (_selectedCategory != null)
+                  _dropdownField(
+                    label: 'Profession',
+                    value: _selectedProfession,
+                    items: _professions[_selectedCategory]!,
+                    onChanged: (v) => setState(() => _selectedProfession = v),
+                  ),
+              ]),
+              const SizedBox(height: 20),
+            ],
+
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _uploading ? null : _validateAndContinue,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _green,
+                  disabledBackgroundColor: Colors.grey.shade300,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text('CONTINUER',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Colors.white)),
+              ),
+            ),
+          ]),
+        ),
+        if (_uploading)
+          const ColoredBox(color: Colors.black26,
+              child: Center(child: CircularProgressIndicator(color: _green))),
+      ]),
     );
   }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  Widget _sectionTitle(String title) => Padding(
+    padding: const EdgeInsets.only(bottom: 2),
+    child: Text(title,
+        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+            fontSize: 16, color: Color(0xFF1F2A2E))),
+  );
+
+  Widget _card(List<Widget> children) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+  );
+
+  Widget _textField(String label, TextEditingController ctrl, {TextInputType? inputType}) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: TextFormField(
+          controller: ctrl,
+          keyboardType: inputType,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _green, width: 1.5)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            isDense: true,
+          ),
+        ),
+      );
+
+  Widget _uploadTile({
+    required String label, required bool uploaded, String? fileName,
+    required VoidCallback onTap, required VoidCallback onRemove,
+  }) =>
+      GestureDetector(
+        onTap: uploaded ? null : onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          decoration: BoxDecoration(
+            border: Border.all(color: uploaded ? _green : const Color(0xFFE4E7E2)),
+            borderRadius: BorderRadius.circular(10),
+            color: uploaded ? _green.withOpacity(0.06) : Colors.transparent,
+          ),
+          child: Row(children: [
+            Icon(uploaded ? Icons.check_circle_outline : Icons.upload_file_outlined,
+                size: 18, color: uploaded ? _green : _teal),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                uploaded ? (fileName ?? 'Document chargé ✓') : label,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    color: uploaded ? _green : const Color(0xFF6F767B)),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (uploaded)
+              GestureDetector(
+                onTap: onRemove,
+                child: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+              ),
+          ]),
+        ),
+      );
+
+  Widget _datePicker() => GestureDetector(
+    onTap: _pickDate,
+    child: InputDecorator(
+      decoration: InputDecoration(
+        labelText: 'Date d\'obtention',
+        labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        isDense: true,
+        suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18, color: _green),
+      ),
+      child: Text(
+        _acacedDate != null ? DateFormat('dd/MM/yyyy').format(_acacedDate!) : 'Sélectionner',
+        style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+            color: _acacedDate != null ? const Color(0xFF1F2A2E) : Colors.grey),
+      ),
+    ),
+  );
+
+  Widget _validityBadge() {
+    final exp = _acacedExpiration!;
+    final color = _acacedColor;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.shield_outlined, size: 14, color: color),
+        const SizedBox(width: 6),
+        Text(
+          '$_acacedStatusLabel — expire le ${DateFormat('dd/MM/yyyy').format(exp)}',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: color, fontWeight: FontWeight.w600),
+        ),
+      ]),
+    );
+  }
+
+  Widget _dropdownField({
+    required String label, required String? value,
+    required List<String> items, required ValueChanged<String?> onChanged,
+  }) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: DropdownButtonFormField<String>(
+          value: value,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E)),
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _green, width: 1.5)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            isDense: true,
+          ),
+          items: items.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+          onChanged: onChanged,
+        ),
+      );
+}
+
+class _StepBar extends StatelessWidget {
+  final int current;
+  final int total;
+  const _StepBar({required this.current, required this.total});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+    child: Row(
+      children: List.generate(total, (i) => Expanded(
+        child: Container(
+          height: 3,
+          margin: EdgeInsets.only(right: i < total - 1 ? 4 : 0),
+          decoration: BoxDecoration(
+            color: i < current ? Colors.white : Colors.white38,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+      )),
+    ),
+  );
 }

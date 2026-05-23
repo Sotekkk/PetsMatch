@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:PetsMatch/pages/admin/admin_panel.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
@@ -139,6 +140,8 @@ class User_Info {
   static String villeElevage = "";
   static String codePostalElevage = "";
   static String paysElevage = "France";
+  static String departementElevage = "";
+  static String regionElevage = "";
   static String nameElevage = "";
   static String numeroElevage = "0000000000";
   static bool isDev = false;
@@ -166,6 +169,10 @@ class User_Info {
   static bool isCat = false;
   static List<String> dogBreeds = [];
   static List<String> catBreeds = [];
+  static String acacedNumero = "";
+  static String acacedDateObtention = "";
+  static String acacedDocUrl = "";
+  static List<String> especesElevees = [];
 
   static void updateUserInfo(Map<String, dynamic> data) {
     firstname = data['firstname'] ?? firstname;
@@ -186,6 +193,8 @@ class User_Info {
     villeElevage = data['villeElevage'] ?? villeElevage;
     codePostalElevage = data['codePostalElevage'] ?? codePostalElevage;
     paysElevage = data['paysElevage'] ?? paysElevage;
+    departementElevage = data['departementElevage'] ?? departementElevage;
+    regionElevage = data['regionElevage'] ?? regionElevage;
     numeroElevage = data['numeroElevage'] ?? numeroElevage;
     isValidate = data['isValidate'] ?? isValidate;
     isDev = data['isDev'] ?? isDev;
@@ -207,13 +216,22 @@ class User_Info {
     professionPro = data['professionPro'] ?? professionPro;
     isPartenaire = data['isPartenaire'] ?? isPartenaire;
     isAdmin = data['isAdmin'] ?? isAdmin;
+    acacedNumero = data['acacedNumero'] ?? acacedNumero;
+    acacedDateObtention = data['acacedDateObtention'] ?? acacedDateObtention;
+    acacedDocUrl = data['acacedDocUrl'] ?? acacedDocUrl;
     verificationStatus = data['verificationStatus'] ?? verificationStatus;
     kbisUrl = data['kbisUrl'] ?? kbisUrl;
     rejectionReason = data['rejectionReason'] ?? rejectionReason;
     isDog = data['isDog'] ?? isDog;
     isCat = data['isCat'] ?? isCat;
-    dogBreeds = List<String>.from(data['dogBreeds'] ?? dogBreeds);
-    catBreeds = List<String>.from(data['catBreeds'] ?? catBreeds);
+    dogBreeds = _safeStringList(data['dogBreeds'], dogBreeds);
+    catBreeds = _safeStringList(data['catBreeds'], catBreeds);
+    especesElevees = _safeStringList(data['especesElevees'], especesElevees);
+  }
+
+  static List<String> _safeStringList(dynamic raw, List<String> fallback) {
+    if (raw is! List) return fallback;
+    return raw.whereType<String>().toList();
   }
 }
 
@@ -272,8 +290,16 @@ Future<void> main() async {
     }
   }
 
+  // Supabase
+  await Supabase.initialize(
+    url: 'https://zyvpngcvzrkdytypjlyq.supabase.co',
+    anonKey: 'sb_publishable_a48hAJ3vGsQsgWVUbkReYQ_J71heKGK',
+  );
+
   // Gestion des messages en arrière-plan
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  try {
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  } catch (_) {}
 
   // Initialiser les notifications locales
   const AndroidInitializationSettings initializationSettingsAndroid =
@@ -289,15 +315,16 @@ Future<void> main() async {
   final InitializationSettings initializationSettings = InitializationSettings(
       android: initializationSettingsAndroid, iOS: initializationSettingsIOS);
 
-  await flutterLocalNotificationsPlugin.initialize(
-    settings: initializationSettings,
-    onDidReceiveNotificationResponse: (NotificationResponse response) async {
-      if (response.payload != null) {
-        print('Notification cliquée avec payload : ${response.payload}');
-        // Naviguer vers une page spécifique avec le paylfluoad
-      }
-    },
-  );
+  try {
+    await flutterLocalNotificationsPlugin.initialize(
+      settings: initializationSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) async {
+        if (response.payload != null) {
+          print('Notification cliquée avec payload : ${response.payload}');
+        }
+      },
+    );
+  } catch (_) {}
 
 // Écoute des messages en premier plan
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
@@ -327,9 +354,13 @@ Future<void> main() async {
     // Navigation vers une page spécifique
   });
   WidgetsBinding.instance.addObserver(AppLifecycleObserver());
-  await requestPermissions(); // Demande de permission
+  try {
+    await requestPermissions();
+  } catch (_) {}
 
-  await saveFcmTokenToFirestore();
+  try {
+    await saveFcmTokenToFirestore();
+  } catch (_) {}
   await Future.delayed(const Duration(seconds: 1));
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -438,9 +469,7 @@ class AuthWrapper extends StatelessWidget {
                   if (snapshot.data!.exists) {
                     User_Info.updateUserInfo(
                         snapshot.data!.data() as Map<String, dynamic>);
-                    if (User_Info.isAdmin) {
-                      return AdminPanel();
-                    } else if (User_Info.isValidate) {
+                    if (User_Info.isAdmin || User_Info.isValidate) {
                       return BottomNav();
                     } else {
                       return VerificationRegistrationPage();

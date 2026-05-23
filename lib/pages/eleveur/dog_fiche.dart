@@ -3,7 +3,7 @@ import 'package:PetsMatch/animation/delayed_animation.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/all_register_pet.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:PetsMatch/utils/image_pick.dart';
 import 'dart:io';
 import 'package:PetsMatch/utils.dart';
 import 'package:flutter/material.dart';
@@ -129,14 +129,8 @@ class _DogFicheState extends State<DogFiche> {
   }
 
   Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-
-    if (pickedFile != null) {
-      setState(() {
-        _image = File(pickedFile.path);
-      });
-    }
+    final f = await pickAndCropSquare();
+    if (f != null) setState(() => _image = f);
   }
 
   bool _viensDeVotreElevage = true;

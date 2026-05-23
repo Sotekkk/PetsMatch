@@ -1,472 +1,289 @@
-import 'package:PetsMatch/animation/delayed_animation.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/info_elevage.dart';
 import 'package:PetsMatch/pages/particulier/description_page.dart';
-import 'package:PetsMatch/pages/particulier/verifemail.dart';
-import 'package:PetsMatch/utils.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 class RegisterSecurity extends StatefulWidget {
   const RegisterSecurity({super.key});
-
   @override
   State<RegisterSecurity> createState() => _RegisterSecurityState();
 }
 
 class _RegisterSecurityState extends State<RegisterSecurity> {
-  final TextEditingController email = TextEditingController();
-  final TextEditingController password = TextEditingController();
-  final TextEditingController verifPassword = TextEditingController();
+  final _emailCtrl    = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _verifCtrl    = TextEditingController();
 
-  bool _passwordVisible = false;
-  bool _passwordVisible2 = false;
-  bool _isEmailValid = true;
-  bool _isPasswordValid = true;
-  bool _isVerifPasswordValid = true;
+  bool _showPass  = false;
+  bool _showPass2 = false;
+
+  bool _emailOk  = true;
+  bool _passOk   = true;
+  bool _verifOk  = true;
+
+  static const _green = Color(0xFF6E9E57);
+  static const _teal  = Color(0xFF0C5C6C);
+  static const _bg    = Color(0xFFF8F8F6);
 
   @override
   void dispose() {
-    email.dispose();
-    password.dispose();
-    verifPassword.dispose();
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    _verifCtrl.dispose();
     super.dispose();
   }
 
-  // void _validateAndContinue() async {
-  //   setState(() {
-  //     _isEmailValid = email.text.trim().isNotEmpty;
-  //     _isPasswordValid = password.text.trim().isNotEmpty && password.text.length >= 6;
-  //     _isVerifPasswordValid = verifPassword.text.trim().isNotEmpty && verifPassword.text == password.text;
-  //   });
+  int _strength(String p) {
+    int s = 0;
+    if (p.length >= 8)                        s++;
+    if (RegExp(r'[A-Z]').hasMatch(p))         s++;
+    if (RegExp(r'[a-z]').hasMatch(p))         s++;
+    if (RegExp(r'[0-9]').hasMatch(p))         s++;
+    if (RegExp(r'[\W]').hasMatch(p))          s++;
+    return s;
+  }
 
-  //   if (_isEmailValid && _isPasswordValid && _isVerifPasswordValid) {
-  //     try {
-  //       UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-  //         email: email.text,
-  //         password: password.text,
-  //       );
+  void _continue() {
+    final e = _emailCtrl.text.trim();
+    final p = _passwordCtrl.text;
+    final v = _verifCtrl.text;
+    setState(() {
+      _emailOk = e.isNotEmpty && e.contains('@');
+      _passOk  = p.length >= 6;
+      _verifOk = v == p && v.isNotEmpty;
+    });
+    if (!_emailOk || !_passOk || !_verifOk) return;
 
-  //       User? user = userCredential.user;
-  //       if (user != null && !user.emailVerified) {
-  //         await user.sendEmailVerification();
-
-  //         Navigator.of(context).push(
-  //           MaterialPageRoute(
-  //             builder: (context) => VerifyEmailPage(email: email.text),
-  //           ),
-  //         );
-  //       }
-  //     } on FirebaseAuthException catch (e) {
-  //       print(e.message);
-  //     }
-  //   }
-  // }
-
-  int _calculatePasswordStrength(String password) {
-    int strength = 0;
-    if (password.length >= 8) strength++;
-    if (RegExp(r'[A-Z]').hasMatch(password)) strength++;
-    if (RegExp(r'[a-z]').hasMatch(password)) strength++;
-    if (RegExp(r'[0-9]').hasMatch(password)) strength++;
-    if (RegExp(r'[\W]').hasMatch(password)) strength++;
-    return strength;
+    User_Info.email    = e;
+    User_Info.password = p;
+    final isEleveur = User_Info.isElevage || User_Info.isPro;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => isEleveur
+            ? const RegisterElevageInformation()
+            : DescriptionRegistrationPage(),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final isEleveur = User_Info.isElevage || User_Info.isPro;
+    final str = _strength(_passwordCtrl.text);
+
     return Scaffold(
-        body: SingleChildScrollView(
-            child: Center(
-                child: DelayedAnimation(
-                    delay: 0,
-                    child: Column(children: [
-                      SizedBox(
-                          width: UTILS.widthReference(context),
-                          height: UTILS.calculHeight(
-                              104, UTILS.heightReference(context)),
-                          child: Stack(children: [
-                            Image.asset(
-                              'assets/deco/arrondi_rose_2.png',
-              color: const Color(0xFFA7C79A),
-              colorBlendMode: BlendMode.srcIn,
-                              fit: BoxFit.cover,
-                              width: UTILS.calculWidth(
-                                  211, UTILS.widthReference(context)),
-                              height: UTILS.calculHeight(
-                                  104, UTILS.heightReference(context)),
-                            ),
-                            Positioned(
-                              top: UTILS.calculHeight(
-                                  53, UTILS.heightReference(context)),
-                              left: 0,
-                              right: 0,
-                              child: Align(
-                                alignment: Alignment.center,
-                                child: Text(
-                                  'INSCRIPTION',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontFamily: 'Galey',
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: UTILS.calculWidth(
-                                        20, UTILS.widthReference(context)),
-                                  ),
-                                ),
-                              ),
-                            )
-                          ])),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              14, UTILS.heightReference(context))),
-                      Align(
-                        alignment: Alignment(-0.8, 0),
-                        child: Text(
-                          'Sécurité',
-                          style: TextStyle(
-                              fontSize: UTILS.calculWidth(
-                                  30, UTILS.widthReference(context)),
-                              fontFamily: 'Galey',
-                              color: Color(0xFF0C5C6C),
-                              fontWeight: FontWeight.w500),
-                          textAlign: TextAlign.left,
-                        ),
-                      ),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              10, UTILS.heightReference(context))),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              286, UTILS.heightReference(context)),
-                          width: UTILS.calculWidth(
-                              286, UTILS.widthReference(context)),
-                          child: Image.asset('assets/page/password.png')),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              28, UTILS.heightReference(context))),
-                      SizedBox(
-                        height: UTILS.calculHeight(
-                            53, UTILS.heightReference(context)),
-                        width: UTILS.calculWidth(
-                            372, UTILS.widthReference(context)),
-                        child: TextFormField(
-                          controller: email,
-                          cursorColor: Colors.black,
-                          decoration: InputDecoration(
-                            labelText: 'Email',
-                            filled: true,
-                            contentPadding: EdgeInsets.symmetric(
-                                vertical: UTILS.calculHeight(
-                                    12.0, UTILS.heightReference(context)),
-                                horizontal: UTILS.calculWidth(
-                                    15.0, UTILS.widthReference(context))),
-                            fillColor: Color(0xFFA7C79A),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(
-                                  UTILS.calculWidth(
-                                      50.0, UTILS.widthReference(context))),
-                              borderSide: BorderSide(color: Colors.transparent),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(
-                                  UTILS.calculWidth(
-                                      30.0, UTILS.widthReference(context))),
-                              borderSide: BorderSide(
-                                  color: _isEmailValid
-                                      ? Colors.transparent
-                                      : Colors.red,
-                                  width: UTILS.calculWidth(
-                                      2.0, UTILS.widthReference(context))),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(
-                                  UTILS.calculWidth(
-                                      30.0, UTILS.widthReference(context))),
-                              borderSide: BorderSide(
-                                  color: Color(0xFFA7C79A),
-                                  width: UTILS.calculWidth(
-                                      2.0, UTILS.widthReference(context))),
-                            ),
-                            labelStyle: TextStyle(
-                              fontFamily: 'Galey',
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black,
-                              fontSize: UTILS.calculWidth(
-                                  18, UTILS.widthReference(context)),
-                            ),
-                            prefixIcon: Padding(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: UTILS.calculWidth(
-                                      15.0, UTILS.widthReference(context))),
-                              child: Icon(Icons.person),
-                            ),
-                          ),
-                          keyboardType: TextInputType.emailAddress,
-                        ),
-                      ),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              22, UTILS.heightReference(context))),
-                      SizedBox(
-                        height: UTILS.calculHeight(
-                            53, UTILS.heightReference(context)),
-                        width: UTILS.calculWidth(
-                            372, UTILS.widthReference(context)),
-                        child: TextFormField(
-                          cursorColor: Colors.black,
-                          controller: password,
-                          obscureText: !_passwordVisible,
-                          decoration: InputDecoration(
-                            labelText: 'Mot de passe',
-                            filled: true,
-                            contentPadding: EdgeInsets.symmetric(
-                                vertical: UTILS.calculHeight(
-                                    12.0, UTILS.heightReference(context)),
-                                horizontal: UTILS.calculWidth(
-                                    15.0, UTILS.widthReference(context))),
-                            fillColor: Color(0xFFA7C79A),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(
-                                  UTILS.calculWidth(
-                                      50.0, UTILS.widthReference(context))),
-                              borderSide: BorderSide(color: Colors.transparent),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(
-                                  UTILS.calculWidth(
-                                      30.0, UTILS.widthReference(context))),
-                              borderSide: BorderSide(
-                                  color: _isPasswordValid
-                                      ? Colors.transparent
-                                      : Colors.red,
-                                  width: UTILS.calculWidth(
-                                      2.0, UTILS.widthReference(context))),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(
-                                  UTILS.calculWidth(
-                                      30.0, UTILS.widthReference(context))),
-                              borderSide: BorderSide(
-                                  color: Color(0xFFA7C79A),
-                                  width: UTILS.calculWidth(
-                                      2.0, UTILS.widthReference(context))),
-                            ),
-                            labelStyle: TextStyle(
-                              fontFamily: 'Galey',
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black,
-                              fontSize: UTILS.calculWidth(
-                                  18, UTILS.widthReference(context)),
-                            ),
-                            prefixIcon: const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 15.0),
-                              child: Icon(Icons.lock),
-                            ),
-                            suffixIcon: IconButton(
-                              iconSize: UTILS.calculWidth(
-                                  20.0, UTILS.widthReference(context)),
-                              icon: Icon(
-                                _passwordVisible
-                                    ? Icons.visibility
-                                    : Icons.visibility_off,
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  _passwordVisible = !_passwordVisible;
-                                });
-                              },
-                            ),
-                          ),
-                          keyboardType: TextInputType.text,
-                          onChanged: (value) {
-                            setState(() {});
-                          },
-                        ),
-                      ),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              10, UTILS.heightReference(context))),
-                      Container(
-                        width: UTILS.calculWidth(
-                            372, UTILS.widthReference(context)),
-                        child: LinearProgressIndicator(
-                          value: _calculatePasswordStrength(password.text) / 5,
-                          backgroundColor: Color.fromARGB(0, 255, 255, 255),
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            _calculatePasswordStrength(password.text) < 2
-                                ? Colors.red
-                                : _calculatePasswordStrength(password.text) < 4
-                                    ? Colors.orange
-                                    : Colors.green,
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              22, UTILS.heightReference(context))),
-                      SizedBox(
-                        height: UTILS.calculHeight(
-                            53, UTILS.heightReference(context)),
-                        width: UTILS.calculWidth(
-                            372, UTILS.widthReference(context)),
-                        child: TextFormField(
-                          controller: verifPassword,
-                          cursorColor: Colors.black,
-                          obscureText: !_passwordVisible2,
-                          decoration: InputDecoration(
-                            labelText: 'Confirmer votre mot de passe',
-                            filled: true,
-                            contentPadding: EdgeInsets.symmetric(
-                                vertical: UTILS.calculHeight(
-                                    12.0, UTILS.heightReference(context)),
-                                horizontal: UTILS.calculWidth(
-                                    15.0, UTILS.widthReference(context))),
-                            fillColor: Color(0xFFA7C79A),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(
-                                  UTILS.calculWidth(
-                                      50.0, UTILS.widthReference(context))),
-                              borderSide: BorderSide(color: Colors.transparent),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(
-                                  UTILS.calculWidth(
-                                      30.0, UTILS.widthReference(context))),
-                              borderSide: BorderSide(
-                                  color: _isVerifPasswordValid
-                                      ? Colors.transparent
-                                      : Colors.red,
-                                  width: UTILS.calculWidth(
-                                      2.0, UTILS.widthReference(context))),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(
-                                  UTILS.calculWidth(
-                                      30.0, UTILS.widthReference(context))),
-                              borderSide: BorderSide(
-                                  color: Color(0xFFA7C79A),
-                                  width: UTILS.calculWidth(
-                                      2.0, UTILS.widthReference(context))),
-                            ),
-                            labelStyle: TextStyle(
-                              fontFamily: 'Galey',
-                              fontWeight: FontWeight.w500,
-                              color: Colors.black,
-                              fontSize: UTILS.calculWidth(
-                                  18, UTILS.widthReference(context)),
-                            ),
-                            prefixIcon: const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 15.0),
-                              child: Icon(Icons.lock),
-                            ),
-                            suffixIcon: IconButton(
-                              iconSize: UTILS.calculWidth(
-                                  20.0, UTILS.widthReference(context)),
-                              icon: Icon(
-                                _passwordVisible2
-                                    ? Icons.visibility
-                                    : Icons.visibility_off,
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  _passwordVisible2 = !_passwordVisible2;
-                                });
-                              },
-                            ),
-                          ),
-                          keyboardType: TextInputType.text,
-                        ),
-                      ),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              49, UTILS.heightReference(context))),
-                      Align(
-                        alignment: Alignment.center,
-                        child: InkWell(
-                          onTap: () {
-                            Navigator.pop(context);
-                          },
-                          child: RichText(
-                            text: const TextSpan(
-                              text: "",
-                              style: TextStyle(color: Colors.black),
-                              children: <TextSpan>[
-                                TextSpan(
-                                  text: 'RETOUR',
-                                  style: TextStyle(
-                                    fontFamily: 'Galey',
-                                    fontWeight: FontWeight.w500,
-                                    color: Color.fromARGB(255, 0, 0, 0),
-                                    decoration: TextDecoration.underline,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              19, UTILS.heightReference(context))),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              66, UTILS.heightReference(context)),
-                          width: UTILS.calculWidth(
-                              367, UTILS.widthReference(context)),
-                          child: ElevatedButton(
-                            onPressed: () {
-                              setState(() {
-                                  _isEmailValid = email.text.trim().isNotEmpty;
-                                  _isPasswordValid = password.text.trim().isNotEmpty && password.text.length >= 6;
-                                  _isVerifPasswordValid = verifPassword.text.trim().isNotEmpty && verifPassword.text == password.text;
-                              });
-                              if (_isEmailValid &&
-                                  _isPasswordValid &&
-                                  _isVerifPasswordValid) {
-                                  User_Info.email = email.text;
-                                  User_Info.password = password.text;
-                                  if (User_Info.isElevage || User_Info.isPro) {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (context) =>
-                                            RegisterElevageInformation(),
-                                      ),
-                                    );
-                                  } else {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (context) =>
-                                            DescriptionRegistrationPage(),
-                                      ),
-                                    );
-                                  }
-                              }
-                            },
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    Color(0xFFA7C79A)),
-                            child: Text(
-                              'CONTINUER',
-                              style: TextStyle(
-                                fontFamily: 'Galey',
-                                fontWeight: FontWeight.w500,
-                                color: Color.fromARGB(255, 0, 0, 0),
-                                fontSize: UTILS.calculWidth(
-                                    17, UTILS.widthReference(context)),
-                              ),
-                            ),
-                          )),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              18.5, UTILS.heightReference(context))),
-                      Image.asset(
-                        'assets/deco/arrondi_green_deco_2.png',
-                        fit: BoxFit.cover,
-                        width: UTILS.calculWidth(
-                            233, UTILS.widthReference(context)),
-                        height: UTILS.calculHeight(
-                            52, UTILS.heightReference(context)),
-                      ),
-                    ])))));
+      backgroundColor: _bg,
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        title: const Text('Inscription',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(24),
+          child: _StepBar(current: isEleveur ? 2 : 3, total: isEleveur ? 4 : 3),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Sécurité du compte',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                  fontSize: 20, color: Color(0xFF1F2A2E))),
+          const SizedBox(height: 6),
+          Text('Renseignez votre email et créez un mot de passe sécurisé.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+          const SizedBox(height: 24),
+
+          // ── Email ─────────────────────────────────────────────────────────────
+          _card([
+            _field(
+              ctrl: _emailCtrl,
+              label: 'Email',
+              icon: Icons.email_outlined,
+              keyboard: TextInputType.emailAddress,
+              valid: _emailOk,
+              error: 'Email invalide',
+            ),
+          ]),
+          const SizedBox(height: 16),
+
+          // ── Mot de passe ──────────────────────────────────────────────────────
+          _card([
+            _passField(
+              ctrl: _passwordCtrl,
+              label: 'Mot de passe',
+              show: _showPass,
+              valid: _passOk,
+              error: 'Minimum 6 caractères',
+              onToggle: () => setState(() => _showPass = !_showPass),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            // Barre de force
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: str / 5.0,
+                minHeight: 4,
+                backgroundColor: Colors.grey.shade200,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  str < 2 ? Colors.red : str < 4 ? const Color(0xFFE9A825) : _green,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              str < 2 ? 'Mot de passe faible'
+                  : str < 4 ? 'Mot de passe moyen'
+                  : 'Mot de passe fort',
+              style: TextStyle(
+                fontFamily: 'Galey', fontSize: 11,
+                color: str < 2 ? Colors.red : str < 4 ? const Color(0xFFE9A825) : _green,
+              ),
+            ),
+            const SizedBox(height: 14),
+            _passField(
+              ctrl: _verifCtrl,
+              label: 'Confirmer le mot de passe',
+              show: _showPass2,
+              valid: _verifOk,
+              error: 'Les mots de passe ne correspondent pas',
+              onToggle: () => setState(() => _showPass2 = !_showPass2),
+            ),
+          ]),
+          const SizedBox(height: 32),
+
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _continue,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _green,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('CONTINUER',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 16, color: Colors.white)),
+            ),
+          ),
+        ]),
+      ),
+    );
   }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  Widget _card(List<Widget> children) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+  );
+
+  Widget _field({
+    required TextEditingController ctrl,
+    required String label,
+    required IconData icon,
+    TextInputType keyboard = TextInputType.text,
+    bool valid = true,
+    String error = '',
+    void Function(String)? onChanged,
+  }) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          TextFormField(
+            controller: ctrl,
+            keyboardType: keyboard,
+            onChanged: onChanged,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              labelText: label,
+              labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+              prefixIcon: Icon(icon, size: 18, color: const Color(0xFF6F767B)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: valid ? const Color(0xFFE4E7E2) : Colors.red)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: _green, width: 1.5)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              isDense: true,
+            ),
+          ),
+          if (!valid)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, left: 4),
+              child: Text(error, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.red)),
+            ),
+        ]),
+      );
+
+  Widget _passField({
+    required TextEditingController ctrl,
+    required String label,
+    required bool show,
+    required VoidCallback onToggle,
+    bool valid = true,
+    String error = '',
+    void Function(String)? onChanged,
+  }) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        TextFormField(
+          controller: ctrl,
+          obscureText: !show,
+          onChanged: onChanged,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+            prefixIcon: const Icon(Icons.lock_outline, size: 18, color: Color(0xFF6F767B)),
+            suffixIcon: IconButton(
+              icon: Icon(show ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                  size: 18, color: const Color(0xFF6F767B)),
+              onPressed: onToggle,
+              padding: EdgeInsets.zero,
+            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: valid ? const Color(0xFFE4E7E2) : Colors.red)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _green, width: 1.5)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            isDense: true,
+          ),
+        ),
+        if (!valid)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 4),
+            child: Text(error, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.red)),
+          ),
+      ]);
+}
+
+class _StepBar extends StatelessWidget {
+  final int current;
+  final int total;
+  const _StepBar({required this.current, required this.total});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+    child: Row(
+      children: List.generate(total, (i) => Expanded(
+        child: Container(
+          height: 3,
+          margin: EdgeInsets.only(right: i < total - 1 ? 4 : 0),
+          decoration: BoxDecoration(
+            color: i < current ? Colors.white : Colors.white38,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+      )),
+    ),
+  );
 }

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:PetsMatch/utils/image_pick.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -164,14 +164,8 @@ class _CatFicheState extends State<CatFiche> {
   }
 
   Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-
-    if (pickedFile != null) {
-      setState(() {
-        _image = File(pickedFile.path);
-      });
-    }
+    final f = await pickAndCropSquare();
+    if (f != null) setState(() => _image = f);
   }
 
   void _handleCheckboxChange(bool? value) {

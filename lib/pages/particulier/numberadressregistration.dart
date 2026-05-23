@@ -1,14 +1,10 @@
-import 'package:PetsMatch/animation/delayed_animation.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/particulier/securityregister.dart';
-import 'package:PetsMatch/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:google_maps_webservice/places.dart';
-
-import 'dart:io';
 
 class Country {
   final String name;
@@ -27,8 +23,7 @@ class Country {
 }
 
 Future<List<Country>> loadCountries() async {
-  final String response =
-      await rootBundle.loadString('assets/CountryCodes.json');
+  final String response = await rootBundle.loadString('assets/CountryCodes.json');
   final data = await json.decode(response) as List;
   return data.map((item) => Country.fromJson(item)).toList();
 }
@@ -42,17 +37,20 @@ class RegisterPhoneAdressInformationPage extends StatefulWidget {
 }
 
 class _RegisterPhoneAdressInformationPageState
-    extends State<RegisterPhoneAdressInformationPage>
-    with SingleTickerProviderStateMixin {
+    extends State<RegisterPhoneAdressInformationPage> {
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
-  String _selectedCountryCode = '+33'; // France par défaut
+  String _selectedCountryCode = '+33';
 
-  late List<Country> countries = [];
+  List<Country> countries = [];
   Country? selectedCountry;
 
   bool _isPhoneValid = true;
   bool _isAddressValid = true;
+
+  static const _green = Color(0xFF6E9E57);
+  static const _teal = Color(0xFF0C5C6C);
+  static const _bg = Color(0xFFF8F8F6);
 
   @override
   void initState() {
@@ -60,13 +58,15 @@ class _RegisterPhoneAdressInformationPageState
     loadCountries().then((list) {
       setState(() {
         countries = list;
-        selectedCountry = countries[0];
+        selectedCountry = countries.isNotEmpty ? countries[0] : null;
       });
     });
   }
 
   @override
   void dispose() {
+    _phoneController.dispose();
+    _addressController.dispose();
     super.dispose();
   }
 
@@ -75,304 +75,208 @@ class _RegisterPhoneAdressInformationPageState
       _isPhoneValid = _phoneController.text.trim().isNotEmpty;
       _isAddressValid = _addressController.text.trim().isNotEmpty;
     });
+    if (!_isPhoneValid || !_isAddressValid) return;
 
-    if (_isPhoneValid && _isAddressValid) {
-      User_Info.phone_number = _phoneController.text;
-      User_Info.codeISO = _selectedCountryCode;
-      User_Info.adress = _addressController.text;
+    User_Info.phone_number = _phoneController.text;
+    User_Info.codeISO = _selectedCountryCode;
+    User_Info.adress = _addressController.text;
 
-      if (User_Info.phone_number.isNotEmpty &&
-          User_Info.phone_number != "0000000000" &&
-          User_Info.adress.isNotEmpty &&
-          User_Info.adress != "none") {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (context) => RegisterSecurity()),
-        );
-      } else {
-        print("pas possible");
-      }
-    }
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const RegisterSecurity()));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        resizeToAvoidBottomInset: true,
-        body: SingleChildScrollView(
-            reverse: true,
-            child: Center(
-                child: Column(children: [
-                      SizedBox(
-                          width: UTILS.widthReference(context),
-                          height: UTILS.calculHeight(
-                              104,
-                              UTILS.heightReference(
-                                  context)), // Hauteur fixe pour le Stack
-                          child: Stack(children: [
-                            Image.asset(
-                              'assets/deco/arrondi_rose_2.png',
-              color: const Color(0xFFA7C79A),
-              colorBlendMode: BlendMode.srcIn,
-                              fit: BoxFit.cover,
-                              width: UTILS.calculWidth(
-                                  211, UTILS.widthReference(context)),
-                              height: UTILS.calculHeight(
-                                  104,
-                                  UTILS.heightReference(
-                                      context)), // Hauteur fixe pour le Stack
-                            ),
-                            Positioned(
-                              top: UTILS.calculHeight(
-                                  53, UTILS.heightReference(context)),
-                              left: 0,
-                              right:
-                                  0, // Assurez-vous que left et right sont définis à 0 pour permettre au texte de centrer exactement
-                              child: Align(
-                                alignment: Alignment.center,
-                                child: Text(
-                                  'INSCRIPTION',
-                                  textAlign: TextAlign
-                                      .center, // Assurez-vous d'utiliser textAlign pour garantir que le texte est centré à l'intérieur du Text widget.
-                                  style: TextStyle(
-                                    fontFamily: 'Galey',
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: UTILS.calculWidth(
-                                        20, UTILS.widthReference(context)),
-                                  ),
-                                ),
-                              ),
-                            )
-                          ])),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              14, UTILS.heightReference(context))),
-                      Align(
-                        alignment: Alignment(-0.8, 0),
-                        child: Text(
-                          'Information',
-                          style: TextStyle(
-                              fontSize: UTILS.calculWidth(
-                                  30, UTILS.widthReference(context)),
-                              fontFamily: 'Galey',
-                              color: Color(0xFF0C5C6C),
-                              fontWeight: FontWeight.w500),
-                          textAlign: TextAlign.left,
-                        ),
-                      ),
-                      Align(
-                          alignment: Alignment(0.1, 0),
-                          child: SizedBox(
-                            width: UTILS.calculWidth(
-                                379, UTILS.widthReference(context)),
-                            child: Text(
-                              'Veuillez entrer vos informations',
-                              style: TextStyle(
-                                  fontSize: UTILS.calculWidth(
-                                      15, UTILS.widthReference(context)),
-                                  fontFamily: 'Galey',
-                                  color: Color(0xFF0C5C6C),
-                                  fontWeight: FontWeight.w500),
-                              textAlign: TextAlign.left,
-                            ),
-                          )),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              10, UTILS.heightReference(context))),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              286, UTILS.heightReference(context)),
-                          width: UTILS.calculWidth(
-                              286, UTILS.widthReference(context)),
-                          child: Image.asset(
-                              'assets/page/register_with_number.png')),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              37, UTILS.heightReference(context))),
-                      Container(
-                        width: UTILS.calculWidth(
-                            372, UTILS.widthReference(context)),
-                        height: UTILS.calculHeight(
-                            53, UTILS.heightReference(context)),
-                        padding: EdgeInsets.symmetric(
-                            horizontal: UTILS.calculWidth(
-                                20, UTILS.widthReference(context))),
-                        decoration: BoxDecoration(
-                          color: Color(0xFFA7C79A),
-                          borderRadius: BorderRadius.circular(30),
-                          border: Border.all(
-                            color: _isPhoneValid ? Colors.transparent : Colors.red,
-                            width: 2.0,
-                          ),
-                        ),
-                        child: Theme(
-                          data: Theme.of(context).copyWith(
-                            canvasColor: Color(0xFFA7C79A),
-                          ),
-                          child: Row(
-                            children: <Widget>[
-                              Expanded(
-                                flex: 1,
-                                child: DropdownButton<Country>(
-                                  value: selectedCountry,
-                                  icon: Icon(Icons.arrow_drop_down),
-                                  underline: Container(),
-                                  onChanged: (Country? newValue) {
-                                    setState(() {
-                                      selectedCountry = newValue!;
-                                      _selectedCountryCode = selectedCountry?.dialCode as String;
-                                    });
-                                  },
-                                  items: countries
-                                      .map<DropdownMenuItem<Country>>(
-                                          (Country country) {
-                                    return DropdownMenuItem<Country>(
-                                      value: country,
-                                      child: Row(
-                                        children: <Widget>[
-                                          Image.asset(
-                                              'assets/country/${country.code.toLowerCase()}.png',
-                                              width: UTILS.calculWidth(
-                                                  19,
-                                                  UTILS
-                                                      .widthReference(context)),
-                                              height: UTILS.calculHeight(
-                                                  20,
-                                                  UTILS.heightReference(
-                                                      context)),
-                                              errorBuilder:
-                                                  (BuildContext context,
-                                                      Object exception,
-                                                      StackTrace? stackTrace) {
-                                            return Icon(Icons.flag);
-                                          }),
-                                          SizedBox(
-                                              width: UTILS.calculWidth(
-                                                  10,
-                                                  UTILS.widthReference(
-                                                      context))),
-                                          Text(country.dialCode),
-                                        ],
-                                      ),
-                                    );
-                                  }).toList(),
-                                ),
-                              ),
-                              SizedBox(
-                                  width: UTILS.calculWidth(
-                                      18, UTILS.widthReference(context))),
-                              Expanded(
-                                flex: 2,
-                                child: TextField(
-                                  controller: _phoneController,
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.digitsOnly
+      backgroundColor: _bg,
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        title: const Text('Inscription',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(24),
+          child: const _StepBar(current: 2, total: 3),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Vos coordonnées',
+              style: TextStyle(
+                  fontFamily: 'Galey',
+                  fontWeight: FontWeight.w700,
+                  fontSize: 20,
+                  color: Color(0xFF1F2A2E))),
+          const SizedBox(height: 6),
+          Text('Renseignez votre numéro de téléphone et votre adresse.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+          const SizedBox(height: 24),
+
+          // ── Téléphone ─────────────────────────────────────────────────────────
+          _card([
+            Text('Numéro de téléphone',
+                style: TextStyle(
+                    fontFamily: 'Galey',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700)),
+            const SizedBox(height: 10),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(
+                    color: _isPhoneValid ? const Color(0xFFE4E7E2) : Colors.red),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  // Country code dropdown
+                  if (countries.isNotEmpty)
+                    IntrinsicWidth(
+                      child: DropdownButtonHideUnderline(
+                        child: ButtonTheme(
+                          alignedDropdown: true,
+                          child: DropdownButton<Country>(
+                            value: selectedCountry,
+                            icon: const Icon(Icons.keyboard_arrow_down,
+                                size: 18, color: Color(0xFF6F767B)),
+                            isDense: true,
+                            onChanged: (Country? v) {
+                              setState(() {
+                                selectedCountry = v!;
+                                _selectedCountryCode = v.dialCode;
+                              });
+                            },
+                            items: countries.map((c) {
+                              return DropdownMenuItem<Country>(
+                                value: c,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Image.asset(
+                                      'assets/country/${c.code.toLowerCase()}.png',
+                                      width: 20,
+                                      height: 14,
+                                      errorBuilder: (_, __, ___) =>
+                                          const Icon(Icons.flag, size: 18),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(c.dialCode,
+                                        style: const TextStyle(
+                                            fontFamily: 'Galey', fontSize: 13)),
                                   ],
-                                  decoration: InputDecoration(
-                                    border: InputBorder.none,
-                                    hintText: 'Numéro de téléphone',
-                                  ),
-                                  onChanged: (value) {
-                                    print("Numéro modifié : ${selectedCountry?.dialCode}$value");
-                                  },
                                 ),
-                              ),
-                            ],
+                              );
+                            }).toList(),
                           ),
                         ),
                       ),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              14, UTILS.heightReference(context))),
-                      PlacesSearchWidget(controller: _addressController, isValid: _isAddressValid),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              123, UTILS.heightReference(context))),
-                      Align(
-                        alignment:
-                            Alignment.center, // Alignez le bouton à droite
-                        child: InkWell(
-                          onTap: () {
-                            Navigator.pop(context);
-                          },
-                          child: RichText(
-                            text: const TextSpan(
-                              text: "",
-                              style: TextStyle(color: Colors.black),
-                              children: <TextSpan>[
-                                TextSpan(
-                                  text: 'RETOUR',
-                                  style: TextStyle(
-                                    fontFamily: 'Galey',
-                                    fontWeight: FontWeight.w500,
-                                    color: Color.fromARGB(255, 0, 0,
-                                        0), // Mettez ici la couleur de votre choix
-                                    decoration: TextDecoration.underline,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(_selectedCountryCode,
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                    ),
+                  Container(width: 1, height: 36, color: const Color(0xFFE4E7E2)),
+                  Expanded(
+                    child: TextField(
+                      controller: _phoneController,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        isDense: true,
+                        hintText: 'Numéro de téléphone',
+                        hintStyle: TextStyle(
+                            fontFamily: 'Galey',
+                            fontSize: 13,
+                            color: Color(0xFF6F767B)),
                       ),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              19,
-                              UTILS.heightReference(
-                                  context))), // Espace entre les champs de texte et la date de naissance
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              66, UTILS.heightReference(context)),
-                          width: UTILS.calculWidth(
-                              367, UTILS.widthReference(context)),
-                          child: ElevatedButton(
-                            onPressed: _validateAndContinue,
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: Color(0xFF6E9E57)), // Couleur de fond du bouton
-                            child: Text(
-                              'CONTINUER',
-                              style: TextStyle(
-                                fontFamily: 'Galey',
-                                fontWeight: FontWeight.w500,
-                                color: Color.fromARGB(255, 0, 0, 0),
-                                fontSize: UTILS.calculWidth(
-                                    17, UTILS.widthReference(context)),
-                              ),
-                            ),
-                            // Personnaliser le style du bouton
-                          )),
-                      SizedBox(
-                          height: UTILS.calculHeight(
-                              9.5, UTILS.heightReference(context))),
-                      Image.asset(
-                        'assets/deco/arrondi_green_deco_2.png',
-                        fit: BoxFit.cover,
-                        width: UTILS.calculWidth(
-                            233, UTILS.widthReference(context)),
-                        height: UTILS.calculHeight(
-                            52,
-                            UTILS.heightReference(
-                                context)), // Hauteur fixe pour l'image
-                      ), // Espac
-                    ]))));
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (!_isPhoneValid)
+              const Padding(
+                padding: EdgeInsets.only(top: 4, left: 4),
+                child: Text('Numéro requis',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.red)),
+              ),
+          ]),
+          const SizedBox(height: 16),
+
+          // ── Adresse ───────────────────────────────────────────────────────────
+          _card([
+            Text('Adresse',
+                style: TextStyle(
+                    fontFamily: 'Galey',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700)),
+            const SizedBox(height: 10),
+            PlacesSearchWidget(
+                controller: _addressController, isValid: _isAddressValid),
+          ]),
+          const SizedBox(height: 32),
+
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _validateAndContinue,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _green,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('CONTINUER',
+                  style: TextStyle(
+                      fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      color: Colors.white)),
+            ),
+          ),
+        ]),
+      ),
+    );
   }
+
+  Widget _card(List<Widget> children) => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 6,
+                offset: const Offset(0, 2))
+          ],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+      );
 }
 
 class PlacesSearchWidget extends StatefulWidget {
   final TextEditingController controller;
   final bool isValid;
 
-  PlacesSearchWidget({required this.controller, required this.isValid});
+  const PlacesSearchWidget({super.key, required this.controller, required this.isValid});
 
   @override
   _PlacesSearchWidgetState createState() => _PlacesSearchWidgetState();
 }
 
 class _PlacesSearchWidgetState extends State<PlacesSearchWidget> {
-  GoogleMapsPlaces _places = GoogleMapsPlaces(apiKey: getApiKey());
+  final GoogleMapsPlaces _places = GoogleMapsPlaces(apiKey: getApiKey());
   List<Prediction> _suggestions = [];
-  double _containerHeight = 50;
   String _lastText = '';
+
+  static const _green = Color(0xFF6E9E57);
 
   @override
   void initState() {
@@ -380,16 +284,12 @@ class _PlacesSearchWidgetState extends State<PlacesSearchWidget> {
     widget.controller.addListener(_onSearchChanged);
   }
 
-  _onSearchChanged() {
+  void _onSearchChanged() {
     final text = widget.controller.text;
-    if (text == _lastText) return; // ignore cursor/selection changes
+    if (text == _lastText) return;
     _lastText = text;
-
     if (text.isEmpty) {
-      setState(() {
-        _suggestions = [];
-        _containerHeight = 50;
-      });
+      setState(() => _suggestions = []);
     } else {
       _getSuggestions(text);
     }
@@ -399,70 +299,87 @@ class _PlacesSearchWidgetState extends State<PlacesSearchWidget> {
     final response = await _places.autocomplete(input);
     if (!mounted) return;
     if (response.isOkay) {
-      setState(() {
-        _suggestions = response.predictions;
-        _containerHeight = 200;
-      });
-    } else {
-      print('Failed to fetch suggestions');
+      setState(() => _suggestions = response.predictions);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: AnimatedContainer(
-        duration: Duration(milliseconds: 500), // Durée de l'animation pour la transition de hauteur
-        width: UTILS.calculWidth(372, UTILS.widthReference(context)),
-        height: _suggestions.isNotEmpty ? UTILS.calculHeight(200, UTILS.heightReference(context)) : 55,
-        decoration: BoxDecoration(
-          color: Color(0xFFA7C79A),
-          borderRadius: BorderRadius.circular(30.0),
-          border: Border.all(
-            color: widget.isValid ? Colors.transparent : Colors.red,
-            width: 2.0,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          controller: widget.controller,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          decoration: InputDecoration(
+            hintText: 'Entrez votre adresse',
+            hintStyle:
+                const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+            prefixIcon: const Icon(Icons.place_outlined, size: 18, color: Color(0xFF6F767B)),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(
+                    color: widget.isValid ? const Color(0xFFE4E7E2) : Colors.red)),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _green, width: 1.5)),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            isDense: true,
           ),
         ),
-        child: Column(
-          children: [
-            TextFormField(
-              cursorColor: Colors.black,
-              controller: widget.controller,
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: Colors.transparent,
-                border: InputBorder.none,
-                hintText: 'Entrez l\'adresse',
-                prefixIcon: Icon(Icons.place),
-              ),
+        if (!widget.isValid)
+          const Padding(
+            padding: EdgeInsets.only(top: 4, left: 4),
+            child: Text('Adresse requise',
+                style:
+                    TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.red)),
+          ),
+        if (_suggestions.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE4E7E2)),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3))
+              ],
             ),
-            Expanded(
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                itemCount: _suggestions.length > 3 ? 3 : _suggestions.length,
-                itemBuilder: (context, index) {
-                  return ListTile(
-                    dense: true,
-                    leading: Icon(Icons.place),
-                    title: Text(_suggestions[index].description ?? 'Adresse non disponible'),
-                    onTap: () {
-                      final description = _suggestions[index].description ?? '';
-                      _lastText = description;
-                      widget.controller.text = description;
-                      User_Info.adress = description;
-                      FocusScope.of(context).unfocus();
-                      setState(() {
-                        _suggestions = [];
-                        _containerHeight = 50;
-                      });
-                    },
-                  );
-                },
-              ),
+            child: ListView.separated(
+              padding: EdgeInsets.zero,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _suggestions.length > 4 ? 4 : _suggestions.length,
+              separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFF0F0F0)),
+              itemBuilder: (context, index) {
+                return ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.place_outlined, size: 18, color: Color(0xFF6F767B)),
+                  title: Text(
+                    _suggestions[index].description ?? '',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                  ),
+                  onTap: () {
+                    final desc = _suggestions[index].description ?? '';
+                    _lastText = desc;
+                    widget.controller.text = desc;
+                    User_Info.adress = desc;
+                    FocusScope.of(context).unfocus();
+                    setState(() => _suggestions = []);
+                  },
+                );
+              },
             ),
-          ],
-        ),
-      ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -472,4 +389,30 @@ class _PlacesSearchWidgetState extends State<PlacesSearchWidget> {
     _places.dispose();
     super.dispose();
   }
+}
+
+class _StepBar extends StatelessWidget {
+  final int current;
+  final int total;
+  const _StepBar({required this.current, required this.total});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+        child: Row(
+          children: List.generate(
+            total,
+            (i) => Expanded(
+              child: Container(
+                height: 3,
+                margin: EdgeInsets.only(right: i < total - 1 ? 4 : 0),
+                decoration: BoxDecoration(
+                  color: i < current ? Colors.white : Colors.white38,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
 }

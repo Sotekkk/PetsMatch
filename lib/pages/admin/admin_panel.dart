@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/admin/supabase_migration_page.dart';
 import 'package:PetsMatch/pages/admin/user_list.dart';
 import 'package:PetsMatch/pages/admin/verification_list.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
@@ -167,7 +168,22 @@ class _DashboardTabState extends State<_DashboardTab> {
               ),
             ],
           ),
-          const SizedBox(height: 30),
+          const SizedBox(height: 20),
+
+          // Migration Supabase
+          ListTile(
+            tileColor: const Color(0xFF0C5C6C).withValues(alpha: 0.08),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            leading: const Icon(Icons.cloud_upload_outlined, color: Color(0xFF0C5C6C)),
+            title: const Text('Migration Supabase',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            subtitle: const Text('Exporter Firestore → Supabase',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            trailing: const Icon(Icons.chevron_right, color: Color(0xFF0C5C6C)),
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => const SupabaseMigrationPage())),
+          ),
+          const SizedBox(height: 20),
 
           // Expirations à venir
           Text(

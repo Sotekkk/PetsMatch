@@ -1,5 +1,6 @@
 
 const stripeFunctions = require("./stripe");
+const alertesFunctions = require("./alertes");
 const testFunctions = require("./stripe");
 
 // Export your Stripe functions
@@ -12,3 +13,6 @@ exports.sendNotificationOnNewMessage = stripeFunctions.sendNotificationOnNewMess
 exports.sendVaccinationReminders = stripeFunctions.sendVaccinationReminders;
 exports.triggerVaccinationReminder = stripeFunctions.triggerVaccinationReminder;
 exports.sendPushNotification = stripeFunctions.sendPushNotification;
+
+// Alertes perdus
+exports.notifyUsersNearLostAnimal = alertesFunctions.notifyUsersNearLostAnimal;

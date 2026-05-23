@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
 
@@ -299,9 +299,8 @@ class AnimalFormPageState extends State<AnimalFormPage> {
   }
 
   Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final file = await picker.pickImage(source: ImageSource.gallery);
-    if (file != null) setState(() => _imageFile = File(file.path));
+    final f = await pickAndCropSquare();
+    if (f != null) setState(() => _imageFile = f);
   }
 
   Future<String?> _uploadImage() async {

@@ -4,13 +4,14 @@ import 'package:PetsMatch/pages/eleveur/info_elevage.dart';
 import 'package:PetsMatch/pages/eleveur/verification_page.dart';
 import 'package:PetsMatch/pages/particulier/description_page.dart';
 import 'package:PetsMatch/utils.dart';
+import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 class VerifyEmailPage extends StatefulWidget {
   final String email;
@@ -117,11 +118,66 @@ Future<Object> registerElevage(String email, String password) async {
       'catPro': User_Info.catPro,
       'professionPro': User_Info.professionPro,
       'isPartenaire': User_Info.isPartenaire,
+      'acacedNumero': User_Info.acacedNumero,
+      'acacedDateObtention': User_Info.acacedDateObtention,
+      'acacedDocUrl': User_Info.acacedDocUrl,
+      'isDog': User_Info.isDog,
+      'isCat': User_Info.isCat,
+      'dogBreeds': User_Info.dogBreeds,
+      'catBreeds': User_Info.catBreeds,
+      'especesElevees': User_Info.especesElevees,
+
+      // Adresse de l'élevage (dénormalisée pour les filtres)
+      'rueElevage':          User_Info.rueElevage,
+      'codePostalElevage':   User_Info.codePostalElevage,
+      'villeElevage':        User_Info.villeElevage,
+      'paysElevage':         User_Info.paysElevage,
+      'city':                User_Info.villeElevage,
+      ...() {
+        final geo = FrenchGeo.fromPostalCode(User_Info.codePostalElevage);
+        return {
+          'departementElevage': geo?.departement ?? '',
+          'regionElevage':      geo?.region      ?? '',
+        };
+      }(),
 
       'CGU': true,
       'mentionlegal': true,
       // Ajouter d'autres champs comme nécessaire
     });
+
+    // Sync to Supabase users table
+    try {
+      await Supabase.instance.client.from('users').upsert({
+        'uid':                 uid,
+        'firstname':           User_Info.firstname,
+        'lastname':            User_Info.lastname,
+        'email':               User_Info.email,
+        'phone_number':        User_Info.phone_number,
+        'code_iso':            User_Info.codeISO,
+        'adress':              User_Info.adress,
+        'rue':                 User_Info.rue,
+        'ville':               User_Info.ville,
+        'code_postal':         User_Info.codePostal,
+        'pays':                User_Info.pays,
+        'profile_picture_url': User_Info.profilePictureUrl,
+        'is_elevage':          User_Info.isElevage,
+        'is_validate':         User_Info.isValidate,
+        'name_elevage':        User_Info.nameElevage,
+        'adress_elevage':      User_Info.adressElevage,
+        'rue_elevage':         User_Info.rueElevage,
+        'ville_elevage':       User_Info.villeElevage,
+        'code_postal_elevage': User_Info.codePostalElevage,
+        'pays_elevage':        User_Info.paysElevage,
+        'is_pub':              User_Info.isPub,
+        'is_pro':              User_Info.isPro,
+        'is_partenaire':       User_Info.isPartenaire,
+        'is_admin':            User_Info.isAdmin,
+        'is_dev':              User_Info.isDev,
+      });
+    } catch (e) {
+      print("Supabase user sync error: $e");
+    }
 
     return uid; // Succès de l'enregistrement
   } catch (e) {

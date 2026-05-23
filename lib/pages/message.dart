@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'chatscreen.dart';
+import 'chatScreen.dart';
 
 class MessagePage extends StatefulWidget {
   @override
@@ -16,7 +16,7 @@ class _MessagePageState extends State<MessagePage> {
   String _searchText = "";
 
   // Cache pour les utilisateurs et les conversations
-  final Map<String, Map<String, String>> _userCache = {};
+  final Map<String, Map<String, String?>> _userCache = {};
   final Map<String, Map<String, dynamic>> _conversationCache = {};
   List<String> _blockedUsers = [];
 
@@ -28,7 +28,7 @@ class _MessagePageState extends State<MessagePage> {
         _searchText = _searchController.text.toLowerCase();
       });
     });
-    loadBlockedUsers().then((_) => setState(() {}));
+    loadBlockedUsers().then((_) { if (mounted) setState(() {}); });
   }
 
   Future<void> loadBlockedUsers() async {
@@ -42,7 +42,7 @@ class _MessagePageState extends State<MessagePage> {
     }
   }
 
-  Future<Map<String, String>> getUserInfo(String userId) async {
+  Future<Map<String, String?>> getUserInfo(String userId) async {
     // Vérifie si les données sont en cache
     if (_userCache.containsKey(userId)) {
       return _userCache[userId]!;
@@ -229,7 +229,7 @@ class _MessagePageState extends State<MessagePage> {
                         return const SizedBox(); // Ignore la conversation bloquée
                       }
 
-                      return FutureBuilder<Map<String, String>>(
+                      return FutureBuilder<Map<String, String?>>(
                         future: getUserInfo(otherParticipantId),
                         builder: (context, userInfoSnapshot) {
                           if (!userInfoSnapshot.hasData) {

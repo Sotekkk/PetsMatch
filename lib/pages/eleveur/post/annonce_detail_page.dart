@@ -1,0 +1,1311 @@
+import 'dart:io';
+import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
+import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
+import 'package:PetsMatch/pages/main_feed.dart' show UserSelected;
+import 'package:PetsMatch/pages/user_detail_page_feed.dart';
+import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:carousel_slider/carousel_slider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
+// ── Palette partagée ─────────────────────────────────────────────────────────
+const _teal  = Color(0xFF0C5C6C);
+const _green = Color(0xFF6E9E57);
+const _dark  = Color(0xFF1F2A2E);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Page principale
+// ─────────────────────────────────────────────────────────────────────────────
+
+class AnnonceDetailPage extends StatefulWidget {
+  final String annonceId;
+  final Map<String, dynamic>? initialData;
+  const AnnonceDetailPage({super.key, required this.annonceId, this.initialData});
+  @override
+  State<AnnonceDetailPage> createState() => _AnnonceDetailPageState();
+}
+
+class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
+  int _photoIndex = 0;
+  Map<String, dynamic>? _eleveurData;
+  bool _eleveurLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final uid = widget.initialData?['uidEleveur'] as String?;
+    if (uid != null) { _eleveurLoaded = true; _loadEleveur(uid); }
+    // Track view — skip if the viewer is the owner
+    final me = FirebaseAuth.instance.currentUser?.uid;
+    if (me != null && me != uid) {
+      FirebaseFirestore.instance
+          .collection('annonces').doc(widget.annonceId)
+          .update({'vues': FieldValue.increment(1)}).catchError((_) {});
+    }
+  }
+
+  Future<void> _loadEleveur(String uid) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if (mounted) setState(() => _eleveurData = doc.data());
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('annonces').doc(widget.annonceId).snapshots(),
+      builder: (context, snap) {
+        final data = snap.hasData && (snap.data?.exists ?? false)
+            ? (snap.data!.data() as Map<String, dynamic>)
+            : (widget.initialData ?? <String, dynamic>{});
+
+        if (!_eleveurLoaded) {
+          final uid = data['uidEleveur'] as String?;
+          if (uid != null) { _eleveurLoaded = true; _loadEleveur(uid); }
+        }
+
+        final isOwner   = FirebaseAuth.instance.currentUser?.uid == data['uidEleveur'];
+        final photos    = List<String>.from(data['photos'] ?? []);
+        final espece    = (data['espece'] as String?) ?? '';
+        final race      = (data['race'] as String?) ?? '';
+        final titre     = (data['titre'] as String?) ?? '';
+        final type      = (data['type'] as String?) ?? 'animal';
+        final typeVente = (data['typeVente'] as String?) ?? 'vente';
+        final desc      = (data['description'] as String?) ?? '';
+        final registreType = (data['registreType'] as String?) ?? '';
+        final displayTitle = titre.isNotEmpty ? titre
+            : race.isNotEmpty ? race : speciesLabel(espece);
+
+        return Scaffold(
+          backgroundColor: const Color(0xFFF5F5F0),
+          body: Stack(children: [
+            CustomScrollView(slivers: [
+              // ── AppBar avec photo ────────────────────────────────────────
+              SliverAppBar(
+                pinned: true,
+                expandedHeight: photos.isNotEmpty ? 300 : 0,
+                backgroundColor: _teal,
+                foregroundColor: Colors.white,
+                title: Text(displayTitle,
+                    style: const TextStyle(fontFamily: 'Galey',
+                        fontWeight: FontWeight.w700, fontSize: 16),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                flexibleSpace: photos.isNotEmpty
+                    ? FlexibleSpaceBar(
+                        background: _PhotoCarousel(
+                          photos: photos, espece: espece,
+                          currentIndex: _photoIndex,
+                          onChanged: (i) => setState(() => _photoIndex = i),
+                        ))
+                    : null,
+                actions: [
+                  if (isOwner)
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      tooltip: 'Modifier',
+                      onPressed: () => Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => CreateAnnoncePage(
+                              annonceId: widget.annonceId, initialData: data))),
+                    ),
+                ],
+              ),
+              // ── Contenu ──────────────────────────────────────────────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _HeaderCard(data: data),
+                      const SizedBox(height: 12),
+                      if (desc.isNotEmpty)
+                        ...[_DescCard(desc: desc), const SizedBox(height: 12)],
+                      if (type == 'portee')
+                        ...[_PorteeCard(data: data), const SizedBox(height: 12)],
+                      if (type != 'portee')
+                        ...[_AnimalCard(data: data), const SizedBox(height: 12)],
+                      if (typeVente == 'saillie')
+                        ...[_SaillieCard(data: data), const SizedBox(height: 12)],
+                      _ParentsCard(data: data),
+                      const SizedBox(height: 12),
+                      _SanteCard(data: data),
+                      if (registreType.isNotEmpty)
+                        ...[const SizedBox(height: 12),
+                            _PedigreeCard(data: data, espece: espece)],
+                      const SizedBox(height: 12),
+                      _EleveurCard(
+                        eleveurData: _eleveurData,
+                        uidEleveur: (data['uidEleveur'] as String?) ?? '',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ]),
+            // ── Barre basse ──────────────────────────────────────────────
+            Positioned(
+              bottom: 0, left: 0, right: 0,
+              child: _BottomBar(
+                isOwner: isOwner,
+                annonceId: widget.annonceId,
+                data: data,
+                uidEleveur: (data['uidEleveur'] as String?) ?? '',
+              ),
+            ),
+          ]),
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Carousel photos
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PhotoCarousel extends StatelessWidget {
+  final List<String> photos;
+  final String espece;
+  final int currentIndex;
+  final ValueChanged<int> onChanged;
+  const _PhotoCarousel({required this.photos, required this.espece,
+      required this.currentIndex, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (_, constraints) {
+      final h = constraints.maxHeight > 0 ? constraints.maxHeight : 300.0;
+      return Stack(fit: StackFit.expand, children: [
+        CarouselSlider(
+          options: CarouselOptions(
+            height: h,
+            viewportFraction: 1.0,
+            enableInfiniteScroll: photos.length > 1,
+            onPageChanged: (i, _) => onChanged(i),
+          ),
+          items: photos.map((url) => CachedNetworkImage(
+            imageUrl: url, fit: BoxFit.cover, width: double.infinity,
+            placeholder: (_, __) => Container(color: const Color(0xFFEEF5EA)),
+            errorWidget: (_, __, ___) => Container(
+                color: const Color(0xFFEEF5EA),
+                child: Center(child: speciesIcon(espece, 40, _green))),
+          )).toList(),
+        ),
+        // Dégradé haut
+        Positioned(top: 0, left: 0, right: 0, height: 90,
+          child: DecoratedBox(decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter, end: Alignment.bottomCenter,
+              colors: [Colors.black45, Colors.transparent])))),
+        // Dégradé bas
+        Positioned(bottom: 0, left: 0, right: 0, height: 60,
+          child: DecoratedBox(decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.bottomCenter, end: Alignment.topCenter,
+              colors: [Colors.black45, Colors.transparent])))),
+        // Compteur
+        if (photos.length > 1)
+          Positioned(bottom: 14, right: 14,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(color: Colors.black54,
+                  borderRadius: BorderRadius.circular(12)),
+              child: Text('${currentIndex + 1}/${photos.length}',
+                  style: const TextStyle(color: Colors.white, fontSize: 11,
+                      fontFamily: 'Galey', fontWeight: FontWeight.w600)))),
+        // Dots
+        if (photos.length > 1)
+          Positioned(bottom: 16, left: 0, right: 0,
+            child: Row(mainAxisAlignment: MainAxisAlignment.center,
+              children: photos.asMap().entries.map((e) => AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: currentIndex == e.key ? 20 : 7, height: 7,
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  color: currentIndex == e.key
+                      ? Colors.white : Colors.white.withValues(alpha: 0.45)),
+              )).toList())),
+      ]);
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Carte titre / prix / statut
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _HeaderCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+  const _HeaderCard({required this.data});
+
+  Color _statutColor(String s) => switch (s) {
+    'disponible' => _green,
+    'reserve'    => const Color(0xFFF59E0B),
+    'vendu' || 'cede' => Colors.blueGrey,
+    _ => Colors.redAccent,
+  };
+
+  String _statutLabel(String s) => switch (s) {
+    'disponible' => 'Disponible',
+    'reserve' => 'Réservé',
+    'vendu'   => 'Vendu',
+    'cede'    => 'Cédé',
+    'expire'  => 'Expiré',
+    _ => s,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final espece    = (data['espece'] as String?) ?? '';
+    final race      = (data['race'] as String?) ?? '';
+    final titre     = (data['titre'] as String?) ?? '';
+    final type      = (data['type'] as String?) ?? 'animal';
+    final typeVente = (data['typeVente'] as String?) ?? 'vente';
+    final statut    = (data['statut'] as String?) ?? 'disponible';
+    final prix      = (data['prix'] as num?)?.toDouble();
+    final prixMin   = (data['prixMinPortee'] as num?)?.toDouble();
+    final prixMax   = (data['prixMaxPortee'] as num?)?.toDouble();
+    final prixNeg   = data['prixNegociable'] as bool? ?? false;
+    final createdAt = data['createdAt'] as Timestamp?;
+    final fmt = DateFormat('dd/MM/yyyy');
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDeco(),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          speciesIcon(espece, 13, _teal), const SizedBox(width: 5),
+          Text(race.isNotEmpty ? race : speciesLabel(espece),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  color: _teal, fontWeight: FontWeight.w600)),
+          const Spacer(),
+          if (createdAt != null)
+            Text('Publié le ${fmt.format(createdAt.toDate())}',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                    color: Colors.grey.shade400)),
+        ]),
+        const SizedBox(height: 8),
+        Text(titre.isNotEmpty ? titre : race.isNotEmpty ? race : speciesLabel(espece),
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800,
+                fontSize: 20, color: _dark)),
+        const SizedBox(height: 10),
+        Wrap(spacing: 8, runSpacing: 6, children: [
+          _Badge(type == 'portee' ? 'Portée' : 'Animal individuel',
+              type == 'portee' ? _teal : _green),
+          _Badge(
+            typeVente == 'vente' ? 'Vente'
+                : typeVente == 'adoption' ? 'Adoption' : 'Saillie',
+            typeVente == 'vente' ? const Color(0xFF6366F1)
+                : typeVente == 'adoption' ? _green : const Color(0xFFEC4899),
+          ),
+          _Badge(_statutLabel(statut), _statutColor(statut)),
+        ]),
+        const SizedBox(height: 14),
+        if (typeVente == 'vente') ...[
+          if (type == 'portee' && (prixMin != null || prixMax != null))
+            Row(crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic, children: [
+              Text(
+                prixMin != null && prixMax != null
+                    ? '${prixMin.toInt()} – ${prixMax.toInt()} €'
+                    : prixMin != null
+                        ? 'Dès ${prixMin.toInt()} €'
+                        : "Jusqu'à ${prixMax!.toInt()} €",
+                style: const TextStyle(fontFamily: 'Galey',
+                    fontWeight: FontWeight.w800, fontSize: 26, color: _dark)),
+              const SizedBox(width: 8),
+              const Text('par bébé', style: TextStyle(fontFamily: 'Galey',
+                  fontSize: 12, color: Color(0xFF6F767B))),
+            ])
+          else if (prix != null)
+            Row(crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic, children: [
+              Text('${prix.toStringAsFixed(0)} €',
+                  style: const TextStyle(fontFamily: 'Galey',
+                      fontWeight: FontWeight.w800, fontSize: 28, color: _dark)),
+              if (prixNeg) ...[
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                  decoration: BoxDecoration(color: _green.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8)),
+                  child: const Text('Négociable',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                          color: _green, fontWeight: FontWeight.w600))),
+              ],
+            ]),
+        ] else if (typeVente == 'adoption')
+          const Text('Adoption / Don',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800,
+                  fontSize: 22, color: _green))
+        else if (typeVente == 'saillie')
+          const Text('Saillie',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800,
+                  fontSize: 22, color: Color(0xFF5B8648))),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Description
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DescCard extends StatelessWidget {
+  final String desc;
+  const _DescCard({required this.desc});
+  @override
+  Widget build(BuildContext context) => _sectionCard('Description',
+      Icons.description_outlined, [
+    Text(desc, style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+        color: _dark, height: 1.6)),
+  ]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Portée + bébés
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PorteeCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+  const _PorteeCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final dateNaissance = data['dateNaissance'] as Timestamp?;
+    final nombreBebes = (data['nombreBebes'] as num?)?.toInt() ?? 0;
+    final animaux = List<Map<String, dynamic>>.from(data['animauxPortee'] ?? []);
+    final fmt = DateFormat('dd/MM/yyyy');
+
+    String ageStr = '';
+    if (dateNaissance != null) {
+      final age = DateTime.now().difference(dateNaissance.toDate());
+      final weeks = (age.inDays / 7).floor();
+      ageStr = weeks <= 0 ? 'À naître'
+          : weeks < 4 ? '$weeks sem.'
+          : weeks < 52 ? '${(weeks / 4.33).floor()} mois'
+          : '${(weeks / 52).floor()} an${(weeks / 52).floor() > 1 ? 's' : ''}';
+    }
+
+    final disponibles =
+        animaux.where((a) => a['statut'] == 'disponible').length;
+    final prixMin = (data['prixMinPortee'] as num?)?.toDouble();
+    final prixMax = (data['prixMaxPortee'] as num?)?.toDouble();
+
+    return _sectionCard('Portée', Icons.group_outlined, [
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        _InfoChip(Icons.pets_outlined,
+            '$nombreBebes bébé${nombreBebes > 1 ? 's' : ''}'),
+        if (disponibles > 0)
+          _InfoChip(Icons.check_circle_outline,
+              '$disponibles disponible${disponibles > 1 ? 's' : ''}', _green),
+        if (dateNaissance != null)
+          _InfoChip(Icons.calendar_today_outlined,
+              ageStr.isNotEmpty ? ageStr : fmt.format(dateNaissance.toDate())),
+        if (prixMin != null || prixMax != null)
+          _InfoChip(Icons.euro_outlined,
+            prixMin != null && prixMax != null
+                ? '${prixMin.toInt()} – ${prixMax.toInt()} €'
+                : prixMin != null
+                    ? 'À partir de ${prixMin.toInt()} €'
+                    : "Jusqu'à ${prixMax!.toInt()} €",
+            const Color(0xFF6366F1)),
+      ]),
+      if (animaux.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        const Text('Bébés',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                fontSize: 13, color: _dark)),
+        const SizedBox(height: 10),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2, crossAxisSpacing: 10,
+            mainAxisSpacing: 10, childAspectRatio: 0.85),
+          itemCount: animaux.length,
+          itemBuilder: (_, i) => _BabyCard(animal: animaux[i]),
+        ),
+      ],
+    ]);
+  }
+}
+
+class _BabyCard extends StatelessWidget {
+  final Map<String, dynamic> animal;
+  const _BabyCard({required this.animal});
+
+  @override
+  Widget build(BuildContext context) {
+    final photos = List<String>.from(animal['photos'] ?? []);
+    final statut = (animal['statut'] as String?) ?? 'disponible';
+    final statusColor = statut == 'disponible' ? _green
+        : statut == 'reserve' ? const Color(0xFFF59E0B) : Colors.blueGrey;
+    final statutLabel = statut == 'disponible' ? 'Disponible'
+        : statut == 'reserve' ? 'Réservé' : 'Vendu';
+
+    Widget photo;
+    if (photos.isNotEmpty) {
+      final p = photos.first;
+      photo = p.startsWith('http')
+          ? CachedNetworkImage(imageUrl: p, fit: BoxFit.cover, width: double.infinity)
+          : Image.file(File(p), fit: BoxFit.cover, width: double.infinity);
+    } else {
+      photo = Container(color: const Color(0xFFEEF5EA),
+          child: const Center(child: Icon(Icons.pets, color: _green, size: 32)));
+    }
+
+    final prix = (animal['prix'] as num?)?.toDouble();
+
+    return GestureDetector(
+      onTap: () => showModalBottomSheet(
+        context: context, isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _BabyDetailSheet(animal: animal)),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 4, offset: const Offset(0, 2))],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+            child: Stack(fit: StackFit.expand, children: [
+              photo,
+              Positioned(top: 6, right: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(color: Colors.black45,
+                      borderRadius: BorderRadius.circular(8)),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.photo_library_outlined, color: Colors.white, size: 10),
+                    SizedBox(width: 3),
+                    Text('Voir', style: TextStyle(color: Colors.white,
+                        fontSize: 9, fontFamily: 'Galey')),
+                  ]))),
+            ]))),
+          Padding(padding: const EdgeInsets.all(8), child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(
+              (animal['nom'] as String?)?.isNotEmpty == true
+                  ? animal['nom'] as String : 'Bébé',
+              style: const TextStyle(fontFamily: 'Galey',
+                  fontWeight: FontWeight.w700, fontSize: 13, color: _dark),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(
+              '${animal['sexe'] == 'male' ? '♂' : '♀'}'
+              '${(animal['couleur'] as String?)?.isNotEmpty == true ? ' · ${animal['couleur']}' : ''}',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                  color: Color(0xFF6F767B))),
+            const SizedBox(height: 4),
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6)),
+                child: Text(statutLabel, style: TextStyle(fontFamily: 'Galey',
+                    fontSize: 10, fontWeight: FontWeight.w700, color: statusColor))),
+              if (prix != null) ...[
+                const Spacer(),
+                Text('${prix.toInt()} €', style: const TextStyle(
+                    fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 12, color: _dark)),
+              ],
+            ]),
+          ])),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─── Détail bébé ──────────────────────────────────────────────────────────────
+
+class _BabyDetailSheet extends StatefulWidget {
+  final Map<String, dynamic> animal;
+  const _BabyDetailSheet({required this.animal});
+  @override
+  State<_BabyDetailSheet> createState() => _BabyDetailSheetState();
+}
+
+class _BabyDetailSheetState extends State<_BabyDetailSheet> {
+  int _photoIndex = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final animal = widget.animal;
+    final photos = List<String>.from(animal['photos'] ?? []);
+    final nom    = (animal['nom'] as String?)?.isNotEmpty == true
+        ? animal['nom'] as String : 'Bébé';
+    final sexe   = animal['sexe'] == 'male' ? '♂ Mâle' : '♀ Femelle';
+    final couleur = (animal['couleur'] as String?) ?? '';
+    final desc    = (animal['description'] as String?) ?? '';
+    final prix    = (animal['prix'] as num?)?.toDouble();
+    final statut  = (animal['statut'] as String?) ?? 'disponible';
+    final statusColor = statut == 'disponible' ? _green
+        : statut == 'reserve' ? const Color(0xFFF59E0B) : Colors.blueGrey;
+    final statutLabel = statut == 'disponible' ? 'Disponible'
+        : statut == 'reserve' ? 'Réservé' : 'Vendu';
+
+    Widget photoArea;
+    final sqSize = MediaQuery.of(context).size.width;
+
+    Widget _squareImage(String p) => Container(
+      color: const Color(0xFFEEF5EA),
+      child: p.startsWith('http')
+          ? CachedNetworkImage(imageUrl: p, fit: BoxFit.contain,
+              width: sqSize, height: sqSize)
+          : Image.file(File(p), fit: BoxFit.contain,
+              width: sqSize, height: sqSize),
+    );
+
+    if (photos.isEmpty) {
+      photoArea = SizedBox(width: sqSize, height: sqSize,
+          child: Container(color: const Color(0xFFEEF5EA),
+              child: const Center(child: Icon(Icons.pets, color: _green, size: 64))));
+    } else if (photos.length == 1) {
+      photoArea = SizedBox(width: sqSize, height: sqSize,
+          child: _squareImage(photos.first));
+    } else {
+      photoArea = SizedBox(width: sqSize, height: sqSize,
+        child: Stack(children: [
+          CarouselSlider(
+            options: CarouselOptions(height: sqSize, viewportFraction: 1.0,
+                onPageChanged: (i, _) => setState(() => _photoIndex = i)),
+            items: photos.map((p) => _squareImage(p)).toList(),
+          ),
+          Positioned(bottom: 10, left: 0, right: 0,
+            child: Row(mainAxisAlignment: MainAxisAlignment.center,
+              children: photos.asMap().entries.map((e) => AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: _photoIndex == e.key ? 18 : 6, height: 6,
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(3),
+                  color: _photoIndex == e.key
+                      ? Colors.white : Colors.white.withValues(alpha: 0.5)),
+              )).toList())),
+          // Counter
+          Positioned(top: 10, right: 10,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(color: Colors.black45,
+                  borderRadius: BorderRadius.circular(12)),
+              child: Text('${_photoIndex + 1}/${photos.length}',
+                  style: const TextStyle(color: Colors.white, fontSize: 11,
+                      fontFamily: 'Galey', fontWeight: FontWeight.w600)))),
+        ]));
+    }
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.72,
+      decoration: const BoxDecoration(color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      child: Column(children: [
+        Container(margin: const EdgeInsets.symmetric(vertical: 10), width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2))),
+        Expanded(child: SingleChildScrollView(child: Column(children: [
+          ClipRRect(borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+            child: photoArea),
+          Padding(padding: const EdgeInsets.all(16), child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+              Expanded(child: Text(nom, style: const TextStyle(fontFamily: 'Galey',
+                  fontWeight: FontWeight.w800, fontSize: 20, color: _dark))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8)),
+                child: Text(statutLabel, style: TextStyle(fontFamily: 'Galey',
+                    fontSize: 12, fontWeight: FontWeight.w700, color: statusColor))),
+            ]),
+            const SizedBox(height: 10),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              _InfoChip(animal['sexe'] == 'male' ? Icons.male : Icons.female,
+                  sexe, animal['sexe'] == 'male' ? _teal : const Color(0xFFEC4899)),
+              if (couleur.isNotEmpty) _InfoChip(Icons.palette_outlined, couleur),
+              if (prix != null) _InfoChip(Icons.euro_outlined,
+                  '${prix.toInt()} €', const Color(0xFF6366F1)),
+            ]),
+            if (desc.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Text('Description', style: TextStyle(fontFamily: 'Galey',
+                  fontWeight: FontWeight.w700, fontSize: 13, color: Colors.grey.shade600)),
+              const SizedBox(height: 6),
+              Text(desc, style: const TextStyle(fontFamily: 'Galey',
+                  fontSize: 14, color: _dark, height: 1.5)),
+            ],
+            const SizedBox(height: 16),
+          ])),
+        ]))),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Animal individuel
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AnimalCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+  const _AnimalCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final sexe       = (data['sexe'] as String?) ?? '';
+    final couleur    = (data['couleur'] as String?) ?? '';
+    final dateNaiss  = data['dateNaissanceAnimal'] as Timestamp?;
+    final sterilise  = data['sterilise'] as bool? ?? false;
+
+    String ageStr = '';
+    if (dateNaiss != null) {
+      final age = DateTime.now().difference(dateNaiss.toDate());
+      final years  = (age.inDays / 365).floor();
+      final months = ((age.inDays % 365) / 30).floor();
+      ageStr = years > 0
+          ? '$years an${years > 1 ? 's' : ''}'
+          : months > 0 ? '$months mois' : '${age.inDays} jours';
+    }
+
+    return _sectionCard('Animal', Icons.cruelty_free_outlined, [
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        if (sexe.isNotEmpty) _InfoChip(
+          sexe == 'male' ? Icons.male : Icons.female,
+          sexe == 'male' ? 'Mâle' : 'Femelle',
+          sexe == 'male' ? _teal : const Color(0xFFEC4899)),
+        if (couleur.isNotEmpty) _InfoChip(Icons.palette_outlined, couleur),
+        if (ageStr.isNotEmpty) _InfoChip(Icons.cake_outlined, ageStr),
+        if (sterilise) _InfoChip(Icons.cut_outlined, 'Stérilisé(e)', Colors.orange),
+      ]),
+    ]);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Saillie conditions
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SaillieCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+  const _SaillieCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final prix = (data['sailliePrix'] as String?) ?? '';
+    final cond = (data['saillieConditions'] as String?) ?? '';
+
+    return _sectionCard('Conditions de saillie', Icons.handshake_outlined, [
+      if (prix.isNotEmpty) ...[
+        Row(children: [
+          const Icon(Icons.euro, size: 16, color: _teal),
+          const SizedBox(width: 6),
+          Text(prix.contains('€') ? prix : '$prix €',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                  fontSize: 18, color: _dark)),
+        ]),
+        if (cond.isNotEmpty) const SizedBox(height: 10),
+      ],
+      if (cond.isNotEmpty)
+        Text(cond, style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+            color: _dark, height: 1.5)),
+      if (prix.isEmpty && cond.isEmpty)
+        Text('Conditions à préciser',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                color: Colors.grey.shade400, fontStyle: FontStyle.italic)),
+    ]);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Parents (mère + père) avec photos
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ParentsCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+  const _ParentsCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final mereNom      = (data['mereNom'] as String?) ?? '';
+    final merePuce     = (data['merePuce'] as String?) ?? '';
+    final mereRegistre = (data['mereRegistre'] as String?) ?? '';
+    final merePhoto    = data['merePhotoUrl'] as String?;
+    final pereNom      = (data['pereNom'] as String?) ?? '';
+    final perePuce     = (data['perePuce'] as String?) ?? '';
+    final pereRegistre = (data['pereRegistre'] as String?) ?? '';
+    final perePhoto    = data['perePhotoUrl'] as String?;
+
+    final hasParents = mereNom.isNotEmpty || pereNom.isNotEmpty
+        || merePhoto != null || perePhoto != null;
+    if (!hasParents) return const SizedBox.shrink();
+
+    return _sectionCard('Parents', Icons.family_restroom_outlined, [
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: _ParentColumn(
+          sexe: 'femelle', label: 'Mère',
+          color: const Color(0xFFEC4899),
+          nom: mereNom, puce: merePuce,
+          registre: mereRegistre, photoUrl: merePhoto)),
+        const SizedBox(width: 12),
+        Expanded(child: _ParentColumn(
+          sexe: 'male', label: 'Père',
+          color: _teal,
+          nom: pereNom, puce: perePuce,
+          registre: pereRegistre, photoUrl: perePhoto)),
+      ]),
+    ]);
+  }
+}
+
+class _ParentColumn extends StatelessWidget {
+  final String sexe, label, nom, puce, registre;
+  final Color color;
+  final String? photoUrl;
+  const _ParentColumn({
+    required this.sexe, required this.label, required this.color,
+    required this.nom, required this.puce, required this.registre,
+    this.photoUrl,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasData = nom.isNotEmpty || photoUrl != null;
+    final tappable = photoUrl != null || nom.isNotEmpty;
+
+    return GestureDetector(
+      onTap: tappable ? () => showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _ParentDetailSheet(
+          sexe: sexe, label: label, color: color,
+          nom: nom, puce: puce, registre: registre,
+          photoUrl: photoUrl,
+        ),
+      ) : null,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.18)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(sexe == 'femelle' ? Icons.female : Icons.male, color: color, size: 16),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(fontFamily: 'Galey',
+                fontWeight: FontWeight.w700, fontSize: 13, color: color)),
+            const Spacer(),
+            if (tappable)
+              Icon(Icons.open_in_new, size: 13, color: color.withValues(alpha: 0.5)),
+          ]),
+          const SizedBox(height: 8),
+          // Photo parent (thumbnail)
+          if (photoUrl != null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: CachedNetworkImage(
+                imageUrl: photoUrl!, height: 100, width: double.infinity,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => Container(
+                    height: 100, color: const Color(0xFFEEF5EA)),
+                errorWidget: (_, __, ___) => Container(
+                    height: 100,
+                    color: const Color(0xFFEEF5EA),
+                    child: Center(child: Icon(
+                        sexe == 'femelle' ? Icons.female : Icons.male,
+                        color: color.withValues(alpha: 0.4), size: 36))),
+              )),
+            const SizedBox(height: 8),
+          ],
+          if (!hasData)
+            Text('Non renseigné', style: TextStyle(fontFamily: 'Galey',
+                fontSize: 12, color: Colors.grey.shade400,
+                fontStyle: FontStyle.italic))
+          else ...[
+            if (nom.isNotEmpty)
+              Text(nom, style: const TextStyle(fontFamily: 'Galey',
+                  fontWeight: FontWeight.w600, fontSize: 13, color: _dark)),
+            if (puce.isNotEmpty) ...[
+              const SizedBox(height: 3),
+              Text('Puce : $puce', style: TextStyle(fontFamily: 'Galey',
+                  fontSize: 11, color: Colors.grey.shade500)),
+            ],
+            if (registre.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6)),
+                child: Text(registre, style: TextStyle(fontFamily: 'Galey',
+                    fontSize: 10, fontWeight: FontWeight.w700, color: color))),
+            ],
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Détail parent (photo en carré + infos)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ParentDetailSheet extends StatelessWidget {
+  final String sexe, label, nom, puce, registre;
+  final Color color;
+  final String? photoUrl;
+  const _ParentDetailSheet({
+    required this.sexe, required this.label, required this.color,
+    required this.nom, required this.puce, required this.registre,
+    this.photoUrl,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final sqSize = MediaQuery.of(context).size.width;
+
+    return Container(
+      decoration: const BoxDecoration(color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // Handle
+        Container(margin: const EdgeInsets.symmetric(vertical: 10),
+            width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2))),
+        // Photo carré
+        if (photoUrl != null)
+          ClipRRect(
+            borderRadius: BorderRadius.zero,
+            child: SizedBox(width: sqSize, height: sqSize,
+              child: Container(
+                color: const Color(0xFFEEF5EA),
+                child: CachedNetworkImage(
+                  imageUrl: photoUrl!, fit: BoxFit.contain,
+                  width: sqSize, height: sqSize,
+                  placeholder: (_, __) => Container(
+                      color: const Color(0xFFEEF5EA)),
+                  errorWidget: (_, __, ___) => Center(
+                      child: Icon(
+                          sexe == 'femelle' ? Icons.female : Icons.male,
+                          color: color.withValues(alpha: 0.4), size: 64)),
+                ),
+              ),
+            ),
+          )
+        else
+          Container(width: sqSize, height: 160, color: const Color(0xFFEEF5EA),
+              child: Center(child: Icon(
+                  sexe == 'femelle' ? Icons.female : Icons.male,
+                  color: color.withValues(alpha: 0.35), size: 64))),
+        // Infos
+        Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Icon(sexe == 'femelle' ? Icons.female : Icons.male,
+                  color: color, size: 20),
+              const SizedBox(width: 8),
+              Text(label, style: TextStyle(fontFamily: 'Galey',
+                  fontWeight: FontWeight.w800, fontSize: 18, color: color)),
+              if (nom.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Text('· $nom', style: const TextStyle(fontFamily: 'Galey',
+                    fontWeight: FontWeight.w700, fontSize: 18, color: _dark)),
+              ],
+            ]),
+            if (puce.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Row(children: [
+                const Icon(Icons.qr_code_outlined, size: 15, color: _teal),
+                const SizedBox(width: 6),
+                Text('Numéro de puce : $puce',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                        color: _dark)),
+              ]),
+            ],
+            if (registre.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8)),
+                child: Text(registre, style: TextStyle(fontFamily: 'Galey',
+                    fontSize: 13, fontWeight: FontWeight.w700, color: color))),
+            ],
+            const SizedBox(height: 16),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Santé
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SanteCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+  const _SanteCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final vaccines      = data['vaccines']      as bool? ?? false;
+    final vermifuge     = data['vermifuge']      as bool? ?? false;
+    final identification = data['identification'] as bool? ?? false;
+    final bilanSante    = data['bilanSante']     as bool? ?? false;
+    final semaines      = (data['semaines'] as num?)?.toInt();
+    final typeVente     = (data['typeVente'] as String?) ?? '';
+
+    return _sectionCard('Santé & Conformité', Icons.health_and_safety_outlined, [
+      _HealthRow(Icons.vaccines_outlined,           'Vacciné(e)',                   vaccines),
+      _HealthRow(Icons.medication_outlined,         'Vermifugé(e)',                 vermifuge),
+      _HealthRow(Icons.qr_code_outlined,            'Pucé(e) / Tatoué(e)',          identification),
+      _HealthRow(Icons.medical_services_outlined,   'Bilan de santé vétérinaire',   bilanSante),
+      if (semaines != null && typeVente != 'saillie') ...[
+        const SizedBox(height: 10),
+        Row(children: [
+          const Icon(Icons.schedule_outlined, size: 16, color: _teal),
+          const SizedBox(width: 8),
+          Text('Cession à partir de $semaines semaines',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _dark)),
+          if (semaines < 8) ...[
+            const SizedBox(width: 6),
+            const Icon(Icons.warning_amber_rounded, size: 14, color: Colors.orange),
+            const SizedBox(width: 3),
+            const Text('min. légal : 8 sem.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.orange)),
+          ],
+        ]),
+      ],
+    ]);
+  }
+}
+
+class _HealthRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool checked;
+  const _HealthRow(this.icon, this.label, this.checked);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(children: [
+      Icon(checked ? Icons.check_circle : Icons.cancel_outlined,
+          color: checked ? _green : Colors.grey.shade300, size: 18),
+      const SizedBox(width: 10),
+      Icon(icon, size: 15, color: Colors.grey.shade400),
+      const SizedBox(width: 7),
+      Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+          color: checked ? _dark : Colors.grey.shade400)),
+    ]),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pedigree
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PedigreeCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final String espece;
+  const _PedigreeCard({required this.data, required this.espece});
+
+  String get _registreLabel => switch (espece) {
+    'chien' => 'LOF', 'chat' => 'LOOF', 'cheval' => 'SIRE', _ => 'Registre',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final registreType = (data['registreType'] as String?) ?? '';
+    final numRegistre  = (data['numeroRegistre'] as String?) ?? '';
+    final clubPedigree = (data['clubPedigree'] as String?) ?? '';
+    final studbook     = (data['studbook'] as String?) ?? '';
+
+    return _sectionCard('Pedigree & $_registreLabel', Icons.account_tree_outlined, [
+      if (registreType.isNotEmpty) ...[
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+              color: _teal.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _teal.withValues(alpha: 0.2))),
+          child: Text(registreType, style: const TextStyle(fontFamily: 'Galey',
+              fontWeight: FontWeight.w700, fontSize: 13, color: _teal))),
+        const SizedBox(height: 10),
+      ],
+      if (numRegistre.isNotEmpty)
+        _InfoRow('N° inscription', numRegistre),
+      if (studbook.isNotEmpty)
+        _InfoRow('Studbook', studbook),
+      if (clubPedigree.isNotEmpty)
+        _InfoRow('Club de race', clubPedigree),
+    ]);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Éleveur
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _EleveurCard extends StatelessWidget {
+  final Map<String, dynamic>? eleveurData;
+  final String uidEleveur;
+  const _EleveurCard({this.eleveurData, required this.uidEleveur});
+
+  @override
+  Widget build(BuildContext context) {
+    if (eleveurData == null) return const SizedBox.shrink();
+    final name     = (eleveurData!['nameElevage'] ?? eleveurData!['firstname'] ?? 'Éleveur') as String;
+    final photoUrl = (eleveurData!['profilePictureUrlElevage'] ?? eleveurData!['profilePictureUrl']) as String?;
+    final ville    = (eleveurData!['villeElevage'] ?? eleveurData!['ville'] ?? '') as String;
+
+    void goToProfile() {
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => UserDetailPageFeed(
+          user: UserSelected.fromMap(eleveurData!, uidEleveur)),
+      ));
+    }
+
+    return Container(
+      decoration: _cardDeco(),
+      child: Column(children: [
+        // ── Profil row (tappable) ───────────────────────────────────────
+        InkWell(
+          onTap: goToProfile,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(children: [
+              CircleAvatar(
+                radius: 28, backgroundColor: const Color(0xFFEEF5EA),
+                backgroundImage: photoUrl != null
+                    ? CachedNetworkImageProvider(photoUrl) : null,
+                child: photoUrl == null
+                    ? const Icon(Icons.pets, color: _green, size: 24) : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(name, style: const TextStyle(fontFamily: 'Galey',
+                    fontWeight: FontWeight.w700, fontSize: 15, color: _dark),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 3),
+                Row(children: [
+                  const Icon(Icons.verified, color: _green, size: 13),
+                  const SizedBox(width: 4),
+                  const Text('Éleveur vérifié', style: TextStyle(fontFamily: 'Galey',
+                      fontSize: 12, color: _green, fontWeight: FontWeight.w500)),
+                ]),
+                if (ville.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Row(children: [
+                    Icon(Icons.location_on_outlined, size: 12, color: Colors.grey.shade400),
+                    const SizedBox(width: 3),
+                    Text(ville, style: TextStyle(fontFamily: 'Galey',
+                        fontSize: 11, color: Colors.grey.shade500)),
+                  ]),
+                ],
+              ])),
+              const SizedBox(width: 8),
+              Text('Voir le profil', style: TextStyle(fontFamily: 'Galey',
+                  fontSize: 12, color: _teal, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 2),
+              const Icon(Icons.chevron_right, color: _teal, size: 18),
+            ]),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Barre basse CTA
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _BottomBar extends StatefulWidget {
+  final bool isOwner;
+  final String annonceId;
+  final Map<String, dynamic> data;
+  final String uidEleveur;
+  const _BottomBar({
+    required this.isOwner, required this.annonceId,
+    required this.data, required this.uidEleveur,
+  });
+  @override
+  State<_BottomBar> createState() => _BottomBarState();
+}
+
+class _BottomBarState extends State<_BottomBar> {
+  bool _loading = false;
+
+  Future<void> _openChat() async {
+    if (widget.uidEleveur.isEmpty) return;
+    setState(() => _loading = true);
+    // Track contact click
+    FirebaseFirestore.instance
+        .collection('annonces').doc(widget.annonceId)
+        .update({'contacts': FieldValue.increment(1)}).catchError((_) {});
+    try {
+      final me = FirebaseAuth.instance.currentUser!.uid;
+      final sorted = [me, widget.uidEleveur]..sort();
+      final participantIds = sorted.join('_');
+      final snap = await FirebaseFirestore.instance
+          .collection('conversations')
+          .where('participantIds', isEqualTo: participantIds)
+          .limit(1).get();
+      final ref = snap.docs.isEmpty
+          ? await FirebaseFirestore.instance.collection('conversations').add({
+              'participants': [me, widget.uidEleveur],
+              'participantIds': participantIds,
+              'lastMessage': '',
+              'timestamp': FieldValue.serverTimestamp(),
+            })
+          : snap.docs.first.reference;
+      if (mounted) Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ChatScreen(
+              conversationId: ref.id, eleveurId: widget.uidEleveur)));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+          16, 12, 16, MediaQuery.of(context).padding.bottom + 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        boxShadow: [BoxShadow(
+            color: Colors.black12, blurRadius: 12, offset: Offset(0, -3))],
+      ),
+      child: widget.isOwner
+          ? OutlinedButton.icon(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => CreateAnnoncePage(
+                      annonceId: widget.annonceId, initialData: widget.data))),
+              icon: const Icon(Icons.edit_outlined, size: 18, color: _teal),
+              label: const Text('Modifier l\'annonce',
+                  style: TextStyle(fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700, fontSize: 15, color: _teal)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: _teal),
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ))
+          : ElevatedButton(
+              onPressed: _loading ? null : _openChat,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _teal, foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                elevation: 0,
+              ),
+              child: _loading
+                  ? const SizedBox(width: 22, height: 22,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Icon(Icons.chat_outlined, size: 18),
+                      SizedBox(width: 8),
+                      Text('Contacter l\'éleveur', style: TextStyle(
+                          fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                    ]),
+            ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Widgets partagés
+// ─────────────────────────────────────────────────────────────────────────────
+
+BoxDecoration _cardDeco() => BoxDecoration(
+  color: Colors.white,
+  borderRadius: BorderRadius.circular(16),
+  boxShadow: [BoxShadow(
+      color: Colors.black.withValues(alpha: 0.05),
+      blurRadius: 8, offset: const Offset(0, 2))],
+);
+
+Widget _sectionCard(String title, IconData icon, List<Widget> children) =>
+    Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDeco(),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(icon, color: _teal, size: 18), const SizedBox(width: 8),
+          Text(title, style: const TextStyle(fontFamily: 'Galey',
+              fontWeight: FontWeight.w700, fontSize: 14, color: _teal)),
+        ]),
+        const SizedBox(height: 12),
+        ...children,
+      ]),
+    );
+
+class _Badge extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _Badge(this.label, this.color);
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8)),
+    child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+        fontWeight: FontWeight.w700, color: color)),
+  );
+}
+
+class _InfoChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color? color;
+  const _InfoChip(this.icon, this.label, [this.color]);
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(color: const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE5E7EB))),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 14, color: color ?? _teal),
+      const SizedBox(width: 5),
+      Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+          fontWeight: FontWeight.w600, color: color ?? _dark)),
+    ]),
+  );
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label, value;
+  const _InfoRow(this.label, this.value);
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 7),
+    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SizedBox(width: 120,
+        child: Text(label, style: TextStyle(fontFamily: 'Galey',
+            fontSize: 12, color: Colors.grey.shade500))),
+      Expanded(child: Text(value, style: const TextStyle(fontFamily: 'Galey',
+          fontWeight: FontWeight.w600, fontSize: 12, color: _dark))),
+    ]),
+  );
+}

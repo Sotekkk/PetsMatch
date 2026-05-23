@@ -126,6 +126,16 @@ class FrenchGeo {
     return null;
   }
 
+  /// Retourne la liste triée des noms de départements appartenant à une région.
+  static List<String> departmentsInRegion(String region) {
+    return _departments.values
+        .where((d) => d.region == region)
+        .map((d) => d.name)
+        .toSet()
+        .toList()
+      ..sort();
+  }
+
   /// Formate l'adresse complète d'un élevage pour l'affichage.
   /// Retourne les parties non vides : ville, département, région, pays.
   static String formatLocation(Map<String, dynamic> data) {
