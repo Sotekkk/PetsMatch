@@ -68,17 +68,14 @@ class _MessagePageState extends State<MessagePage> {
           ? (userData['nameElevage'] ?? 'Elevage Inconnu')
           : '${userData['firstname'] ?? ''} ${userData['lastname'] ?? ''}';
 
-      // Récupération de l'image avec remplacement si nécessaire
-      String profilePictureUrl = userData['isElevage'] == true
-          ? (userData['profilePictureUrlElevage'] ??
-              'assets/logo/default_pp.png')
-          : (userData['profilePictureUrl'] ?? 'assets/logo/default_pp.png');
-
-      // Remplace tout chemin local par l'URL distante
-      if (!profilePictureUrl.startsWith('http')) {
-        profilePictureUrl =
-            'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60';
-      }
+      // Récupération de l'image (null si pas de photo définie)
+      String? rawUrl = userData['isElevage'] == true
+          ? userData['profilePictureUrlElevage']
+          : userData['profilePictureUrl'];
+      const _defaultPp = 'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60';
+      String? profilePictureUrl = (rawUrl != null && rawUrl.startsWith('http') && rawUrl != _defaultPp)
+          ? rawUrl
+          : null;
 
       // Ajoute les données dans le cache
       _userCache[userId] = {
@@ -92,8 +89,7 @@ class _MessagePageState extends State<MessagePage> {
     // Valeurs par défaut si l'utilisateur n'existe pas
     return {
       'name': 'Utilisateur Inconnu',
-      'profilePictureUrl':
-          'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60',
+      'profilePictureUrl': null,
     };
   }
 
@@ -252,10 +248,13 @@ class _MessagePageState extends State<MessagePage> {
 
                           return ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: Colors.black,
-                              backgroundImage: CachedNetworkImageProvider(
-                                userInfo['profilePictureUrl']!,
-                              ),
+                              backgroundColor: const Color(0xFFA7C79A),
+                              backgroundImage: userInfo['profilePictureUrl'] != null
+                                  ? CachedNetworkImageProvider(userInfo['profilePictureUrl']!)
+                                  : null,
+                              child: userInfo['profilePictureUrl'] == null
+                                  ? const Icon(Icons.person, color: Colors.white)
+                                  : null,
                             ),
                             title: Text(
                               userInfo['name']!,

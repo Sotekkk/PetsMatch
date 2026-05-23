@@ -1,5 +1,7 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/admin/admin_panel.dart';
+import 'package:PetsMatch/pages/eleveur/eleveur_nav.dart';
+import 'package:PetsMatch/pages/particulier/particulier_nav.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/message.dart';
@@ -24,6 +26,10 @@ class _BottomNavState extends State<BottomNav> {
   bool get _asElevage =>
       _previewRole == 'eleveur' ||
       (_previewRole.isEmpty && (User_Info.isElevage || User_Info.isPro));
+
+  bool get _asParticulier =>
+      _previewRole == 'particulier' ||
+      (_previewRole.isEmpty && !User_Info.isElevage && !User_Info.isPro);
 
   Widget _getPage(int index) {
     switch (index) {
@@ -148,8 +154,53 @@ class _BottomNavState extends State<BottomNav> {
     );
   }
 
+  Widget _previewBanner(String label) => Positioned(
+        top: 0, left: 0, right: 0,
+        child: SafeArea(
+          child: Container(
+            color: const Color(0xE66E9E57),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(
+              children: [
+                const Icon(Icons.visibility, color: Colors.white, size: 14),
+                const SizedBox(width: 6),
+                Text('Vue : $label',
+                    style: const TextStyle(
+                        color: Colors.white, fontFamily: 'Galey',
+                        fontSize: 12, fontWeight: FontWeight.w500)),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => setState(() { _previewRole = ''; _selectedIndex = 0; }),
+                  child: const Icon(Icons.close, color: Colors.white, size: 16),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
+    // Éleveurs : navigation dédiée 3 icônes + tiroir
+    if (_asElevage) {
+      return Stack(
+        children: [
+          EleveurNav(onAdminTap: User_Info.isAdmin ? _showAdminMenu : null),
+          if (_previewRole == 'eleveur') _previewBanner('Éleveur'),
+        ],
+      );
+    }
+
+    // Particuliers : navigation dédiée 3 icônes + tiroir
+    if (_asParticulier) {
+      return Stack(
+        children: [
+          ParticulierNav(onAdminTap: User_Info.isAdmin ? _showAdminMenu : null),
+          if (_previewRole == 'particulier') _previewBanner('Particulier'),
+        ],
+      );
+    }
+
     return Scaffold(
       body: Stack(
         children: [

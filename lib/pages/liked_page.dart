@@ -508,12 +508,13 @@ class _PostWidgetLikeState extends State<PostWidgetLike> {
                           }
                         },
                         child: CircleAvatar(
-                          backgroundColor: Colors.black,
+                          backgroundColor: const Color(0xFFA7C79A),
                           backgroundImage: profilePictureUrlElevage != null
-                              ? NetworkImage(profilePictureUrlElevage!)
-                              : AssetImage(
-                                      'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60')
-                                  as ImageProvider,
+                              ? NetworkImage(profilePictureUrlElevage!) as ImageProvider
+                              : null,
+                          child: profilePictureUrlElevage == null
+                              ? const Icon(Icons.person, color: Colors.white)
+                              : null,
                         ),
                       ),
                       SizedBox(

@@ -1,175 +1,176 @@
-import 'package:PetsMatch/animation/delayed_animation.dart';
 import 'package:PetsMatch/pages/inscription_main.dart';
 import 'package:PetsMatch/pages/login_page.dart';
-import 'package:PetsMatch/utils.dart';
 import 'package:flutter/material.dart';
 
 class WelcomePage extends StatelessWidget {
+  const WelcomePage({super.key});
+
+  static const _teal = Color(0xFF0C5C6C);
+  static const _green = Color(0xFF6E9E57);
+  static const _bg = Color(0xFFF8F8F6);
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        body: Center(
-            child: DelayedAnimation(
-      delay: 0,
-      child: Container(
-        child: SingleChildScrollView(
-        child: Column(
-          children: [
-            SizedBox(
-                width: UTILS.widthReference(context),
-                height: UTILS.calculHeight(
-                    141,
-                    UTILS.heightReference(
-                        context)), // Hauteur fixe pour le Stack
-                child: Stack(children: [
-                  Image.asset(
-                    'assets/deco/arrondideco.png',
-                    fit: BoxFit.cover,
-                    width:
-                        UTILS.calculWidth(151, UTILS.widthReference(context)),
-                    height: UTILS.calculHeight(
-                        141,
-                        UTILS.heightReference(
-                            context)), // Hauteur fixe pour le Stack
-                  color: const Color(0xFFA7C79A),
-                  colorBlendMode: BlendMode.srcIn,
+      backgroundColor: _bg,
+      body: Column(
+        children: [
+          // ── En-tête teal ──────────────────────────────────────────────────────
+          Container(
+            width: double.infinity,
+            color: _teal,
+            padding: EdgeInsets.fromLTRB(
+                24, MediaQuery.of(context).padding.top + 32, 24, 32),
+            child: Column(children: [
+              Image.asset(
+                'assets/Banniere_petsmatch.png',
+                width: double.infinity,
+                height: 110,
+                fit: BoxFit.contain,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Connecter · Prendre soin · Partager',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontFamily: 'Galey',
+                    fontSize: 14,
+                    color: Colors.white70),
+              ),
+            ]),
+          ),
+
+          // ── Corps ─────────────────────────────────────────────────────────────
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 40, 24, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Bienvenue',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontFamily: 'Galey',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 26,
+                        color: Color(0xFF1F2A2E)),
                   ),
-                  Positioned(
-                    top: UTILS.calculHeight(53, UTILS.heightReference(context)),
-                    left: 0,
-                    right:
-                        0, // Assurez-vous que left et right sont définis à 0 pour permettre au texte de centrer exactement
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: Text(
-                        'BIENVENUE',
-                        textAlign: TextAlign
-                            .center, // Assurez-vous d'utiliser textAlign pour garantir que le texte est centré à l'intérieur du Text widget.
+                  const SizedBox(height: 8),
+                  Text(
+                    'Rejoignez la communauté des passionnés d\'animaux.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontFamily: 'Galey',
+                        fontSize: 14,
+                        color: Colors.grey.shade500),
+                  ),
+                  const SizedBox(height: 40),
+
+                  // Bouton Se connecter
+                  ElevatedButton(
+                    onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const LoginPage())),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _teal,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                      elevation: 0,
+                    ),
+                    child: const Text('SE CONNECTER',
                         style: TextStyle(
-                          fontFamily: 'Galey',
-                          fontWeight: FontWeight.w500,
-                          fontSize: UTILS.calculWidth(
-                              20, UTILS.widthReference(context)),
-                        ),
-                      ),
+                            fontFamily: 'Galey',
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                            color: Colors.white)),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Bouton S'inscrire
+                  OutlinedButton(
+                    onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const InscriptionChoicePage())),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: _green, width: 2),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
                     ),
-                  )
-                ])),
+                    child: const Text("S'INSCRIRE",
+                        style: TextStyle(
+                            fontFamily: 'Galey',
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                            color: _green)),
+                  ),
 
-            // Ajoutez votre image ici
-            SizedBox(
-                height: UTILS.calculHeight(340, UTILS.heightReference(context)),
-                width: UTILS.calculWidth(340, UTILS.widthReference(context)),
-                child: Image.asset('assets/page/welcome_page_logo.png')),
+                  const SizedBox(height: 32),
+                  Row(children: [
+                    Expanded(
+                        child: Divider(color: Colors.grey.shade300, height: 1)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text('ou',
+                          style: TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 13,
+                              color: Colors.grey.shade400)),
+                    ),
+                    Expanded(
+                        child: Divider(color: Colors.grey.shade300, height: 1)),
+                  ]),
+                  const SizedBox(height: 24),
 
-            Text(
-              'Compagnons choisis',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Galey',
-                color: Color.fromARGB(194, 30, 28, 31),
-                fontWeight: FontWeight.w500,
-                fontSize: UTILS.calculWidth(33, UTILS.widthReference(context)),
+                  // Infos rapides
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _InfoChip(icon: Icons.pets, label: 'Éleveurs certifiés'),
+                      _InfoChip(icon: Icons.verified_outlined, label: 'Annonces vérifiées'),
+                      _InfoChip(icon: Icons.favorite_border, label: 'Communauté'),
+                    ],
+                  ),
+                ],
               ),
             ),
-            SizedBox(
-                height: UTILS.calculHeight(12, UTILS.heightReference(context))),
-            Text(
-              'Bonheur promis',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Galey',
-                fontWeight: FontWeight.w500,
-                color: Color.fromARGB(194, 30, 28, 31),
-                fontSize: UTILS.calculWidth(33, UTILS.widthReference(context)),
-              ),
-            ),
-            SizedBox(
-                height: UTILS.calculHeight(72, UTILS.heightReference(context))),
-            SizedBox(
-                height: UTILS.calculHeight(61, UTILS.heightReference(context)),
-                width: UTILS.calculWidth(325, UTILS.widthReference(context)),
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (context) => LoginPage()),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Color.fromARGB(
-                        255, 255, 132, 132), // Couleur de fond du bouton
-                  ),
-                  child: Text(
-                    'SE CONNECTER',
-                    style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w500,
-                      color: Color.fromARGB(255, 255, 255, 255),
-                      fontSize:
-                          UTILS.calculWidth(17, UTILS.widthReference(context)),
-                    ),
-                  ),
-                  // Personnaliser le style du bouton
-                )),
-            SizedBox(
-                height: UTILS.calculHeight(18, UTILS.heightReference(context))),
-
-            SizedBox(
-                height: UTILS.calculHeight(61, UTILS.heightReference(context)),
-                width: UTILS.calculWidth(325, UTILS.widthReference(context)),
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).push(MaterialPageRoute(
-                        builder: (context) => InscriptionChoicePage()));
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Color.fromARGB(
-                        255, 255, 192, 187), // Couleur de fond du bouton
-                  ),
-
-                  child: Text(
-                    'S\'INSCRIRE',
-                    style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w500,
-                      color: Color.fromARGB(255, 0, 0, 0),
-                      fontSize:
-                          UTILS.calculWidth(17, UTILS.widthReference(context)),
-                    ),
-                  ),
-
-                  // Personnaliser le style du bouton
-                )),
-            SizedBox(
-                height:
-                    UTILS.calculHeight(9.9, UTILS.heightReference(context))),
-
-            SizedBox(
-                width: UTILS.widthReference(context),
-                height: UTILS.calculHeight(
-                    115,
-                    UTILS.heightReference(
-                        context)), // Hauteur fixe pour le Stack
-                child: Stack(children: [
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Image.asset(
-                      'assets/deco/arrondi_green_deco.png',
-                      fit: BoxFit.cover,
-                      width:
-                          UTILS.calculWidth(115, UTILS.widthReference(context)),
-                      height: UTILS.calculHeight(
-                          115,
-                          UTILS.heightReference(
-                              context)), // Hauteur fixe pour le Stack
-                    ),
-                  )
-                ])),
-          ],
-        ),
-        ),
+          ),
+        ],
       ),
-    )));
+    );
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _InfoChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE8F0E4),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, size: 22, color: const Color(0xFF6E9E57)),
+      ),
+      const SizedBox(height: 6),
+      SizedBox(
+        width: 90,
+        child: Text(label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontFamily: 'Galey',
+                fontSize: 11,
+                color: Colors.grey.shade600)),
+      ),
+    ]);
   }
 }

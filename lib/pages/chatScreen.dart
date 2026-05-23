@@ -392,10 +392,15 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Row(
                 children: [
                   CircleAvatar(
-                    backgroundColor: Colors.black,
-                    backgroundImage: NetworkImage(
-                      userInfo['profilePictureUrl'] ?? defaultProfilePictureUrl,
-                    ),
+                    backgroundColor: const Color(0xFFA7C79A),
+                    backgroundImage: (userInfo['profilePictureUrl'] != null &&
+                            userInfo['profilePictureUrl'] != defaultProfilePictureUrl)
+                        ? NetworkImage(userInfo['profilePictureUrl']!) as ImageProvider
+                        : null,
+                    child: (userInfo['profilePictureUrl'] == null ||
+                            userInfo['profilePictureUrl'] == defaultProfilePictureUrl)
+                        ? const Icon(Icons.person, color: Colors.white)
+                        : null,
                   ),
                   SizedBox(
                       width:

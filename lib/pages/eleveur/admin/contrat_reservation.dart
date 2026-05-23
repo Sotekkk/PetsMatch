@@ -1,115 +1,798 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:PetsMatch/utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:flutter/services.dart';
-import 'dart:typed_data';
-import 'package:http/http.dart' as http;
-import 'package:intl/intl.dart';
 
-class ContratReservationPage extends StatefulWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// Page principale : espace contrats
+// ─────────────────────────────────────────────────────────────────────────────
+
+class ContratReservationPage extends StatelessWidget {
+  const ContratReservationPage({super.key});
+
+  static const _teal = Color(0xFF0C5C6C);
+  static const _green = Color(0xFF6E9E57);
+  static const _bg = Color(0xFFF8F8F6);
+
   @override
-  _ContratReservationPageState createState() => _ContratReservationPageState();
-}
-
-
-class Country {
-  final String name;
-  final String dialCode;
-  final String code;
-
-  Country({required this.name, required this.dialCode, required this.code});
-
-  factory Country.fromJson(Map<String, dynamic> json) {
-    return Country(
-      name: json['name'],
-      dialCode: json['dial_code'],
-      code: json['code'],
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _bg,
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        title: const Text('Contrats',
+            style: TextStyle(
+                fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+      ),
+      body: const _ContratsBody(),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: _green,
+        icon: const Icon(Icons.upload_file_outlined, color: Colors.white),
+        label: const Text('Ajouter',
+            style: TextStyle(
+                fontFamily: 'Galey',
+                fontWeight: FontWeight.w600,
+                color: Colors.white)),
+        onPressed: () => _ContratsBody.uploadContrat(context),
+      ),
     );
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Corps de la page
+// ─────────────────────────────────────────────────────────────────────────────
 
-class _ContratReservationPageState extends State<ContratReservationPage> {
+class _ContratsBody extends StatelessWidget {
+  const _ContratsBody();
+
+  // Types de contrat modèles
+  static const _modeles = [
+    (type: 'reservation', label: 'Réservation', icon: Icons.pets_outlined,
+     color: Color(0xFFE0F2F1), desc: 'Arrhes, conditions, disponibilité'),
+    (type: 'vente', label: 'Vente', icon: Icons.handshake_outlined,
+     color: Color(0xFFE8F5E9), desc: 'Transfert de propriété, garanties'),
+    (type: 'saillie', label: 'Saillie extérieure', icon: Icons.favorite_border,
+     color: Color(0xFFFCE4EC), desc: 'Conditions de la saillie, honoraires'),
+  ];
+
+  static String _uid() => FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  // ── Upload ────────────────────────────────────────────────────────────────
+
+  static Future<void> uploadContrat(BuildContext context) async {
+    // Sélection du fichier
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    if (file.bytes == null) return;
+
+    // Choix du type via bottom sheet
+    if (!context.mounted) return;
+    final type = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _TypePickerSheet(),
+    );
+    if (type == null) return;
+    if (!context.mounted) return;
+
+    // Nom du document
+    String nom = file.name.replaceAll(RegExp(r'\.[^\.]+$'), '');
+    final nomCtrl = TextEditingController(text: nom);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nommer le document',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: TextField(
+          controller: nomCtrl,
+          autofocus: true,
+          style: const TextStyle(fontFamily: 'Galey'),
+          decoration: InputDecoration(
+            hintText: 'Nom du contrat',
+            hintStyle:
+                const TextStyle(fontFamily: 'Galey', color: Color(0xFF6F767B)),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide:
+                    const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler',
+                  style: TextStyle(fontFamily: 'Galey', color: Colors.grey))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6E9E57)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Enregistrer',
+                style: TextStyle(
+                    fontFamily: 'Galey',
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    nom = nomCtrl.text.trim().isEmpty ? file.name : nomCtrl.text.trim();
+
+    // Upload Firebase Storage
+    if (!context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final ext = file.extension ?? 'pdf';
+      final storagePath =
+          'contrats/${_uid()}/${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+      final ref = FirebaseStorage.instance.ref().child(storagePath);
+      await ref.putData(file.bytes!);
+      final url = await ref.getDownloadURL();
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_uid())
+          .collection('contrats')
+          .add({
+        'nom': nom,
+        'type': type,
+        'fileName': file.name,
+        'ext': ext,
+        'url': url,
+        'storagePath': storagePath,
+        'dateUpload': FieldValue.serverTimestamp(),
+      });
+
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Document enregistré',
+              style: TextStyle(fontFamily: 'Galey'))));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+          content: Text('Erreur : $e',
+              style: const TextStyle(fontFamily: 'Galey'))));
+    }
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // ── Modèles ──────────────────────────────────────────────────────────
+        const Text('Modèles de contrats',
+            style: TextStyle(
+                fontFamily: 'Galey',
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+                color: Color(0xFF1F2A2E))),
+        const SizedBox(height: 4),
+        Text('Générez un contrat pré-rempli depuis l\'application.',
+            style: TextStyle(
+                fontFamily: 'Galey',
+                fontSize: 12,
+                color: Colors.grey.shade500)),
+        const SizedBox(height: 12),
+        ..._modeles.map((m) => _ModeleCard(
+              type: m.type,
+              label: m.label,
+              icon: m.icon,
+              color: m.color,
+              desc: m.desc,
+            )),
+
+        const SizedBox(height: 28),
+
+        // ── Contrats stockés ─────────────────────────────────────────────────
+        const Text('Documents stockés',
+            style: TextStyle(
+                fontFamily: 'Galey',
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+                color: Color(0xFF1F2A2E))),
+        const SizedBox(height: 4),
+        Text('Contrats signés, scannés ou importés.',
+            style: TextStyle(
+                fontFamily: 'Galey',
+                fontSize: 12,
+                color: Colors.grey.shade500)),
+        const SizedBox(height: 12),
+
+        StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('users')
+              .doc(_uid())
+              .collection('contrats')
+              .orderBy('dateUpload', descending: true)
+              .snapshots(),
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Center(
+                  child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator()));
+            }
+            final docs = snap.data?.docs ?? [];
+            if (docs.isEmpty) {
+              return _EmptyState();
+            }
+            return Column(
+              children: docs
+                  .map((d) => _ContratCard(
+                      doc: d,
+                      onDelete: () => _deleteContrat(context, d)))
+                  .toList(),
+            );
+          },
+        ),
+      ]),
+    );
+  }
+
+  Future<void> _deleteContrat(
+      BuildContext context, DocumentSnapshot doc) async {
+    final data = doc.data() as Map<String, dynamic>;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer ?',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text('Supprimer « ${data['nom'] ?? 'ce document'} » ?',
+            style: const TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler',
+                  style: TextStyle(fontFamily: 'Galey', color: Colors.grey))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Supprimer',
+                  style: TextStyle(
+                      fontFamily: 'Galey', color: Colors.redAccent))),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final path = data['storagePath'] as String?;
+      if (path != null && path.isNotEmpty) {
+        await FirebaseStorage.instance.ref().child(path).delete();
+      }
+      await doc.reference.delete();
+    } catch (_) {}
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Widgets
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ModeleCard extends StatelessWidget {
+  final String type;
+  final String label;
+  final IconData icon;
+  final Color color;
+  final String desc;
+
+  const _ModeleCard({
+    required this.type,
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.desc,
+  });
+
+  static const _teal = Color(0xFF0C5C6C);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2))
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _open(context),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                    color: color, borderRadius: BorderRadius.circular(10)),
+                child: Icon(icon, size: 22, color: _teal),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(label,
+                          style: const TextStyle(
+                              fontFamily: 'Galey',
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              color: Color(0xFF1F2A2E))),
+                      const SizedBox(height: 2),
+                      Text(desc,
+                          style: TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 12,
+                              color: Colors.grey.shade500)),
+                    ]),
+              ),
+              const Icon(Icons.arrow_forward_ios_rounded,
+                  size: 14, color: Color(0xFF6F767B)),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _open(BuildContext context) {
+    if (type == 'reservation') {
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const _ContratReservationFormPage()));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Bientôt disponible',
+                style: TextStyle(fontFamily: 'Galey'))),
+      );
+    }
+  }
+}
+
+class _ContratCard extends StatelessWidget {
+  final DocumentSnapshot doc;
+  final VoidCallback onDelete;
+
+  const _ContratCard({required this.doc, required this.onDelete});
+
+  static const _typeLabels = {
+    'reservation': 'Réservation',
+    'vente': 'Vente',
+    'saillie': 'Saillie',
+    'autre': 'Autre',
+  };
+
+  static const _typeColors = {
+    'reservation': Color(0xFFE0F2F1),
+    'vente': Color(0xFFE8F5E9),
+    'saillie': Color(0xFFFCE4EC),
+    'autre': Color(0xFFF3E5F5),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final data = doc.data() as Map<String, dynamic>;
+    final nom = data['nom'] ?? 'Document';
+    final type = data['type'] ?? 'autre';
+    final ext = (data['ext'] ?? 'pdf').toLowerCase();
+    final url = data['url'] as String?;
+    final ts = data['dateUpload'] as Timestamp?;
+    final date = ts != null
+        ? DateFormat('dd/MM/yyyy').format(ts.toDate())
+        : '—';
+
+    final isPdf = ext == 'pdf';
+    final isImage = ['jpg', 'jpeg', 'png'].contains(ext);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2))
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: url != null ? () => _view(context, url, nom, isPdf, isImage) : null,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _typeColors[type] ?? const Color(0xFFF3E5F5),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  isPdf
+                      ? Icons.picture_as_pdf_outlined
+                      : isImage
+                          ? Icons.image_outlined
+                          : Icons.insert_drive_file_outlined,
+                  size: 22,
+                  color: const Color(0xFF0C5C6C),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(nom,
+                          style: const TextStyle(
+                              fontFamily: 'Galey',
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              color: Color(0xFF1F2A2E)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 4),
+                      Row(children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _typeColors[type] ?? const Color(0xFFF3E5F5),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                              _typeLabels[type] ?? 'Autre',
+                              style: const TextStyle(
+                                  fontFamily: 'Galey',
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF0C5C6C))),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(date,
+                            style: TextStyle(
+                                fontFamily: 'Galey',
+                                fontSize: 11,
+                                color: Colors.grey.shade400)),
+                      ]),
+                    ]),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline,
+                    size: 20, color: Colors.redAccent),
+                onPressed: onDelete,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _view(BuildContext context, String url, String nom, bool isPdf, bool isImage) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _DocumentViewer(
+          url: url, nom: nom, isPdf: isPdf, isImage: isImage),
+    );
+  }
+}
+
+class _DocumentViewer extends StatelessWidget {
+  final String url;
+  final String nom;
+  final bool isPdf;
+  final bool isImage;
+
+  const _DocumentViewer(
+      {required this.url,
+      required this.nom,
+      required this.isPdf,
+      required this.isImage});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 16),
+        Icon(
+          isPdf
+              ? Icons.picture_as_pdf
+              : isImage
+                  ? Icons.image
+                  : Icons.insert_drive_file,
+          size: 48,
+          color: const Color(0xFF0C5C6C),
+        ),
+        const SizedBox(height: 12),
+        Text(nom,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                fontFamily: 'Galey',
+                fontWeight: FontWeight.w700,
+                fontSize: 16)),
+        const SizedBox(height: 20),
+        if (isPdf)
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0C5C6C),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12))),
+              icon: const Icon(Icons.print_outlined,
+                  color: Colors.white, size: 18),
+              label: const Text('Imprimer / Partager',
+                  style: TextStyle(
+                      fontFamily: 'Galey',
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white)),
+              onPressed: () async {
+                Navigator.pop(context);
+                try {
+                  final resp = await http.get(Uri.parse(url));
+                  await Printing.sharePdf(
+                      bytes: resp.bodyBytes, filename: '$nom.pdf');
+                } catch (_) {}
+              },
+            ),
+          ),
+        if (isImage) ...[
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6E9E57),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12))),
+              icon:
+                  const Icon(Icons.open_in_new, color: Colors.white, size: 18),
+              label: const Text('Voir l\'image',
+                  style: TextStyle(
+                      fontFamily: 'Galey',
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white)),
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => Scaffold(
+                      appBar: AppBar(
+                          backgroundColor: const Color(0xFF0C5C6C),
+                          foregroundColor: Colors.white,
+                          title: Text(nom,
+                              style: const TextStyle(
+                                  fontFamily: 'Galey', fontSize: 16))),
+                      body: InteractiveViewer(
+                        child: Center(
+                          child: Image.network(url, fit: BoxFit.contain),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFFE4E7E2)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
+            icon: const Icon(Icons.copy_outlined,
+                size: 16, color: Color(0xFF6F767B)),
+            label: const Text('Copier le lien',
+                style: TextStyle(
+                    fontFamily: 'Galey',
+                    color: Color(0xFF6F767B),
+                    fontWeight: FontWeight.w500)),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: url));
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Lien copié',
+                      style: TextStyle(fontFamily: 'Galey'))));
+            },
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _TypePickerSheet extends StatelessWidget {
+  static const _types = [
+    (value: 'reservation', label: 'Réservation', icon: Icons.pets_outlined),
+    (value: 'vente', label: 'Vente', icon: Icons.handshake_outlined),
+    (value: 'saillie', label: 'Saillie extérieure', icon: Icons.favorite_border),
+    (value: 'autre', label: 'Autre', icon: Icons.insert_drive_file_outlined),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 16),
+        const Text('Type de contrat',
+            style: TextStyle(
+                fontFamily: 'Galey',
+                fontWeight: FontWeight.w700,
+                fontSize: 16)),
+        const SizedBox(height: 16),
+        ..._types.map((t) => ListTile(
+              leading: Icon(t.icon, color: const Color(0xFF0C5C6C)),
+              title: Text(t.label,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 15)),
+              onTap: () => Navigator.pop(context, t.value),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            )),
+      ]),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 6,
+              offset: const Offset(0, 2))
+        ],
+      ),
+      child: Column(children: [
+        Icon(Icons.folder_open_outlined,
+            size: 48, color: Colors.grey.shade300),
+        const SizedBox(height: 12),
+        const Text('Aucun document stocké',
+            style: TextStyle(
+                fontFamily: 'Galey',
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: Color(0xFF1F2A2E))),
+        const SizedBox(height: 4),
+        Text('Utilisez le bouton + pour importer\nun contrat signé ou scanné.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontFamily: 'Galey',
+                fontSize: 12,
+                color: Colors.grey.shade400)),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Formulaire contrat de réservation (existant, accessible depuis le modèle)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ContratReservationFormPage extends StatefulWidget {
+  const _ContratReservationFormPage();
+
+  @override
+  State<_ContratReservationFormPage> createState() =>
+      _ContratReservationFormPageState();
+}
+
+class _ContratReservationFormPageState
+    extends State<_ContratReservationFormPage> {
   final _formKey = GlobalKey<FormState>();
 
-  // Controllers pour les informations de l'éleveur et du client
-  TextEditingController nomElevageController = TextEditingController();
-  TextEditingController adresseElevageController = TextEditingController();
-  final TextEditingController codeISOElevageController = TextEditingController();
-  final TextEditingController codeISOClientController = TextEditingController();
-  TextEditingController telephoneElevageController = TextEditingController();
-  TextEditingController siretController = TextEditingController();
-  TextEditingController numeroTVAController = TextEditingController();
-  List<Country> countries = [];
-  Country? selectedCountry;
-  Country? selectedCountry1;
-  TextEditingController nomClientController = TextEditingController();
-  TextEditingController adresseClientController = TextEditingController();
-  TextEditingController codePostalVilleController = TextEditingController();
-  TextEditingController telephoneClientController = TextEditingController();
-  TextEditingController emailClientController = TextEditingController();
-  TextEditingController siretClientController = TextEditingController();
-
-  TextEditingController numeroDossierController = TextEditingController();
-  TextEditingController raceController = TextEditingController();
-  TextEditingController apparenceRaceController = TextEditingController();
-
-  TextEditingController dateController = TextEditingController();
-  TextEditingController nomMediateurController = TextEditingController();
+  final nomElevageController = TextEditingController();
+  final adresseElevageController = TextEditingController();
+  final codeISOElevageController = TextEditingController(text: '+33');
+  final codeISOClientController = TextEditingController(text: '+33');
+  final telephoneElevageController = TextEditingController();
+  final siretController = TextEditingController();
+  final numeroTVAController = TextEditingController();
+  final nomClientController = TextEditingController();
+  final adresseClientController = TextEditingController();
+  final codePostalVilleController = TextEditingController();
+  final telephoneClientController = TextEditingController();
+  final emailClientController = TextEditingController();
+  final siretClientController = TextEditingController();
+  final numeroDossierController = TextEditingController();
+  final raceController = TextEditingController();
+  final apparenceRaceController = TextEditingController();
+  final dateController = TextEditingController();
+  final nomMediateurController = TextEditingController();
+  final couleurRobeController = TextEditingController();
+  final numeroPuceController = TextEditingController();
+  final infoComplementaireController = TextEditingController();
+  final prixHTController = TextEditingController();
+  final prixTTCController = TextEditingController();
+  final tvaController = TextEditingController(text: '20.0');
+  final arrhesController = TextEditingController();
+  final disponibiliteDebutController = TextEditingController();
+  final disponibiliteFinController = TextEditingController();
+  final nombreMoisController = TextEditingController();
+  final lieuSignatureController = TextEditingController();
+  final dateSignatureController = TextEditingController();
+  final chequeNumeroController = TextEditingController();
+  final chequeDateEncaissementController = TextEditingController();
+  final virementDateController = TextEditingController();
 
   String? logoUrl;
   bool isAnimalANaitre = false;
   String? selectedAnimal;
   DateTime? selectedDate;
-
   bool isLOF = false;
   bool isLOOF = false;
-
-  // Nouvelles cases à cocher
   bool isNonInscritOrigine = false;
   bool isNonRace = false;
   bool isApparenceRace = false;
   bool _isUpdatingHT = false;
   bool _isUpdatingTTC = false;
-  // Champs supplémentaires : sexe, couleur de robe, numéro de puce, informations complémentaires
   String? selectedSexe;
-  TextEditingController couleurRobeController = TextEditingController();
-  TextEditingController numeroPuceController = TextEditingController();
-  TextEditingController infoComplementaireController = TextEditingController();
-
-  // Champs pour le prix
-  TextEditingController prixHTController = TextEditingController();
-  TextEditingController prixTTCController = TextEditingController();
-  TextEditingController tvaController =
-      TextEditingController(text: "20.0"); // Par défaut 20%
-  bool isTvaApplicable = false; // Si la TVA est applicable ou non
-
-  // Champs pour le montant des arrhes
-  TextEditingController arrhesController = TextEditingController();
-
-  // Champs pour les dates de disponibilité
-  TextEditingController disponibiliteDebutController = TextEditingController();
-  TextEditingController disponibiliteFinController = TextEditingController();
-
-  // Champ pour le nombre de mois (réservation reportable)
-  TextEditingController nombreMoisController = TextEditingController();
-
-  // Modes de paiement
+  bool isTvaApplicable = false;
   String? selectedPaymentMethod;
-  TextEditingController chequeNumeroController = TextEditingController();
-  TextEditingController chequeDateEncaissementController =
-      TextEditingController();
-  TextEditingController virementDateController = TextEditingController();
-  // Nouveaux champs pour le lieu et la date
-  TextEditingController lieuSignatureController = TextEditingController();
-  TextEditingController dateSignatureController = TextEditingController();
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  static const _teal = Color(0xFF0C5C6C);
+  static const _green = Color(0xFF6E9E57);
+  static const _bg = Color(0xFFF8F8F6);
 
   @override
   void initState() {
@@ -117,1732 +800,394 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
     prixHTController.addListener(_onHTChanged);
     prixTTCController.addListener(_onTTCChanged);
     _loadUserData();
-    _loadCountries();
-
   }
 
   @override
   void dispose() {
-    // Retirer les écouteurs quand la page est détruite pour éviter les fuites de mémoire
-    prixHTController.removeListener(_onHTChanged);
-    prixTTCController.removeListener(_onTTCChanged);
-
-    prixHTController.dispose();
-    prixTTCController.dispose();
+    for (final c in [
+      nomElevageController, adresseElevageController, codeISOElevageController,
+      codeISOClientController, telephoneElevageController, siretController,
+      numeroTVAController, nomClientController, adresseClientController,
+      codePostalVilleController, telephoneClientController, emailClientController,
+      siretClientController, numeroDossierController, raceController,
+      apparenceRaceController, dateController, nomMediateurController,
+      couleurRobeController, numeroPuceController, infoComplementaireController,
+      prixHTController, prixTTCController, tvaController, arrhesController,
+      disponibiliteDebutController, disponibiliteFinController,
+      nombreMoisController, lieuSignatureController, dateSignatureController,
+      chequeNumeroController, chequeDateEncaissementController,
+      virementDateController,
+    ]) c.dispose();
     super.dispose();
   }
-  Future<void> _loadCountries() async {
-    final String response =
-        await rootBundle.loadString('assets/CountryCodes.json');
-    final List<dynamic> data = json.decode(response);
-    setState(() {
-      countries = data.map((e) => Country.fromJson(e)).toList();
-         // Si le code ISO est déjà défini, sélectionner le pays correspondant
-      if (codeISOClientController.text.isNotEmpty) {
-        selectedCountry1 = countries.firstWhere(
-          (country) => country.code == codeISOClientController.text,
-          orElse: () => countries[0],
-        );
-      } else {
-        selectedCountry1 = countries[0]; // Valeur par défaut
-        codeISOClientController.text = "+33";
-      }
-    });
-  }
-  // Fonction pour charger les informations de l'éleveur depuis Firebase
+
   Future<void> _loadUserData() async {
-    final User? user = _auth.currentUser;
-    if (user != null) {
-      final String uid = user.uid;
-
-      final DocumentSnapshot userDoc =
-          await FirebaseFirestore.instance.collection('users').doc(uid).get();
-
-      if (userDoc.exists) {
-        final data = userDoc.data() as Map<String, dynamic>?;
-        if (data != null) {
-          setState(() {
-            nomElevageController.text = data['nameElevage'] ?? '';
-            adresseElevageController.text = data['adressElevage'] ?? '';
-            codeISOElevageController.text = data['codeISOElevage'] ?? '+33';
-            telephoneElevageController.text = data['numeroElevage'] ?? '';
-            siretController.text = data['siret'] ?? '';
-            numeroTVAController.text = data['numeroTVA'] ?? '';
-            logoUrl = data['profilePictureUrlElevage'] ?? '';
-          });
-        }
-      }
-       if (codeISOElevageController.text.isNotEmpty) {
-        selectedCountry = countries.firstWhere(
-          (country) => country.code == codeISOElevageController.text,
-          orElse: () => countries[0],
-        );
-      } else {
-        selectedCountry = countries[0]; // Valeur par défaut
-      }
-    }
-  }
-
-  // Fonction pour sélectionner une date pour les champs de disponibilité
-  Future<void> _selectDate(
-      BuildContext context, TextEditingController controller) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (picked != null) {
-      setState(() {
-        controller.text = DateFormat('dd/MM/yyyy').format(picked);
-      });
-    }
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+    final data = doc.data() ?? {};
+    setState(() {
+      nomElevageController.text = data['nameElevage'] ?? '';
+      adresseElevageController.text = data['adressElevage'] ?? '';
+      codeISOElevageController.text = data['codeISOElevage'] ?? '+33';
+      telephoneElevageController.text = data['numeroElevage'] ?? '';
+      siretController.text = data['siret'] ?? '';
+      numeroTVAController.text = data['numeroTVA'] ?? '';
+      logoUrl = data['profilePictureUrlElevage'];
+    });
   }
 
   void _onHTChanged() {
-    if (!_isUpdatingTTC &&
-        isTvaApplicable &&
-        prixHTController.text.isNotEmpty) {
+    if (!_isUpdatingTTC && isTvaApplicable && prixHTController.text.isNotEmpty) {
       _isUpdatingHT = true;
-      double prixHT = double.tryParse(prixHTController.text) ?? 0.0;
-      double tva = double.tryParse(tvaController.text) ?? 20.0;
-      double prixTTC = prixHT * (1 + tva / 100);
-      prixTTCController.text = prixTTC.toStringAsFixed(2);
+      final ht = double.tryParse(prixHTController.text) ?? 0;
+      final tva = double.tryParse(tvaController.text) ?? 20;
+      prixTTCController.text = (ht * (1 + tva / 100)).toStringAsFixed(2);
       _isUpdatingHT = false;
     }
   }
 
-  // Fonction pour mettre à jour le prix HT lorsque le prix TTC change
   void _onTTCChanged() {
-    if (!_isUpdatingHT &&
-        isTvaApplicable &&
-        prixTTCController.text.isNotEmpty) {
+    if (!_isUpdatingHT && isTvaApplicable && prixTTCController.text.isNotEmpty) {
       _isUpdatingTTC = true;
-      double prixTTC = double.tryParse(prixTTCController.text) ?? 0.0;
-      double tva = double.tryParse(tvaController.text) ?? 20.0;
-      double prixHT = prixTTC / (1 + tva / 100);
-      prixHTController.text = prixHT.toStringAsFixed(2);
+      final ttc = double.tryParse(prixTTCController.text) ?? 0;
+      final tva = double.tryParse(tvaController.text) ?? 20;
+      prixHTController.text = (ttc / (1 + tva / 100)).toStringAsFixed(2);
       _isUpdatingTTC = false;
     }
   }
 
-// Fonction pour sélectionner une date avec un minimum de 8 jours dans le futur
-  Future<void> _selectDateWithMinimumDays(
-      BuildContext context, TextEditingController controller) async {
-    // La date actuelle + 8 jours
-    final DateTime minDate = DateTime.now().add(Duration(days: 8));
-
-    final DateTime? picked = await showDatePicker(
+  Future<void> _selectDate(TextEditingController ctrl) async {
+    final picked = await showDatePicker(
       context: context,
-      initialDate: minDate,
-      firstDate: minDate, // Empêche la sélection d'une date avant le minDate
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2000),
       lastDate: DateTime(2100),
+      builder: (ctx, child) => Theme(
+        data: ThemeData.light().copyWith(
+            colorScheme: const ColorScheme.light(primary: _teal)),
+        child: child!,
+      ),
     );
     if (picked != null) {
-      setState(() {
-        controller.text = DateFormat('dd/MM/yyyy').format(picked);
-      });
+      ctrl.text = DateFormat('dd/MM/yyyy').format(picked);
     }
   }
 
-  // Fonction pour générer le PDF avec les informations fournies
-  Future<void> _generateReservationContractPdf() async {
+  Future<void> _generatePdf() async {
     final pdf = pw.Document();
     Uint8List? logoBytes;
-
-    // Calculer la date de retour sous 8 jours
-    final DateTime retourDate = DateTime.now().add(Duration(days: 8));
-    final String retourDateFormatted =
-        DateFormat('dd/MM/yyyy').format(retourDate);
-
-    // Télécharger le logo de l'éleveur si disponible
     if (logoUrl != null && logoUrl!.isNotEmpty) {
       try {
-        final response = await http.get(Uri.parse(logoUrl!));
-        if (response.statusCode == 200) {
-          logoBytes = response.bodyBytes;
-        }
-      } catch (e) {
-        print('Erreur lors du téléchargement du logo: $e');
-      }
+        final r = await http.get(Uri.parse(logoUrl!));
+        if (r.statusCode == 200) logoBytes = r.bodyBytes;
+      } catch (_) {}
     }
-
-    // Charger le logo de PetsMatch depuis les assets
     final petsMatchLogo = pw.MemoryImage(
-        (await rootBundle.load("assets/logofacture.png")).buffer.asUint8List());
+        (await rootBundle.load('assets/Logo_petsmatch_fond_blanc.png')).buffer.asUint8List());
     final font = await PdfGoogleFonts.robotoRegular();
 
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (pw.Context context) {
-          return pw.Stack(
+    pdf.addPage(pw.Page(
+      pageFormat: PdfPageFormat.a4,
+      build: (pw.Context ctx) => pw.Stack(children: [
+        pw.Center(child: pw.Opacity(opacity: 0.15,
+            child: pw.Image(petsMatchLogo, width: 400, height: 400))),
+        pw.Positioned(bottom: 0, left: 0, right: 0,
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
-              pw.Center(
-                child: pw.Opacity(
-                  opacity: 0.2,
-                  child: pw.Image(petsMatchLogo, width: 400, height: 400),
-                ),
-              ),
-              pw.SizedBox(height: 0),
-
-              // Footer avec logo et informations de contact
-              pw.Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Logo en bas à gauche
-                    pw.Image(
-                      petsMatchLogo,
-                      width: 50,
-                      height: 50,
-                    ),
-                    // Informations de contact en bas à droite
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          "Édité par PETSMATCH",
-                          style: pw.TextStyle(
-                            fontSize: 8,
-                            font: font,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                        pw.Text(
-                          "Société par Actions Simplifiée (SAS) déclarée conformément au Code du travail",
-                          style: pw.TextStyle(fontSize: 7, font: font),
-                        ),
-                        pw.Text(
-                          "15 la ville marchand - 22210 PLUMIEUX - Tél 07 81 03 49 84",
-                          style: pw.TextStyle(fontSize: 7, font: font),
-                        ),
-                        pw.Text(
-                          "petsmatch.contact@gmail.com - www.petsmatchapp.com",
-                          style: pw.TextStyle(fontSize: 7, font: font),
-                        ),
-                        pw.Text(
-                          "N° SIRET 93134481600018 - NAF 7010Z",
-                          style: pw.TextStyle(fontSize: 7, font: font),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Row(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      if (logoBytes != null)
-                        pw.Image(pw.MemoryImage(logoBytes!),
-                            width: 70, height: 70),
-                      pw.SizedBox(width: 20),
-                      pw.Expanded(
-                        flex: 2,
-                        child: _buildEleveurInfo(font),
-                      ),
-                      pw.Expanded(
-                        flex: 1,
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.center,
-                          children: [
-                            pw.Text(
-                              "CONTRAT",
-                              style: pw.TextStyle(
-                                fontSize: 24,
-                                fontWeight: pw.FontWeight.bold,
-                                font: font,
-                              ),
-                              textAlign: pw.TextAlign.center,
-                            ),
-                            pw.Text(
-                              "DE",
-                              style: pw.TextStyle(
-                                fontSize: 18,
-                                font: font,
-                              ),
-                              textAlign: pw.TextAlign.center,
-                            ),
-                            pw.Text(
-                              "RÉSERVATION",
-                              style: pw.TextStyle(
-                                fontSize: 20,
-                                fontWeight: pw.FontWeight.bold,
-                                font: font,
-                              ),
-                              textAlign: pw.TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  pw.SizedBox(height: 20),
-                  _buildClientInfo(font),
-                  pw.SizedBox(height: 15),
-                  pw.Text(
-                    "Soumet la réservation d'un ${selectedAnimal ?? '..................................'} Né(e) le ${isAnimalANaitre ? 'À naître' : (selectedDate != null ? DateFormat('dd/MM/yyyy').format(selectedDate!) : '.................')}",
-                    style: pw.TextStyle(
-                      fontSize: 8,
-                      font: font,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                  pw.SizedBox(height: 5),
-                  // Sexe de l'animal
-                  pw.Row(
-                    children: [
-                      pw.Text(
-                        "Sexe: ",
-                        style: pw.TextStyle(
-                          fontSize: 8,
-                          font: font,
-                        ),
-                      ),
-                      pw.Container(
-                        width: 7,
-                        height: 7,
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(),
-                        ),
-                        child: selectedSexe == "M"
-                            ? pw.Center(
-                                child: pw.Text(
-                                'X',
-                                style: pw.TextStyle(
-                                  fontSize: 7,
-                                  font: font,
-                                ),
-                              ))
-                            : pw.Container(),
-                      ),
-                      pw.Text(
-                        "  Mâle",
-                        style: pw.TextStyle(
-                          fontSize: 8,
-                          font: font,
-                        ),
-                      ),
-                      pw.SizedBox(width: 20),
-                      pw.Container(
-                        width: 7,
-                        height: 7,
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(),
-                        ),
-                        child: selectedSexe == "F"
-                            ? pw.Center(
-                                child: pw.Text(
-                                'X',
-                                style: pw.TextStyle(
-                                  fontSize: 7,
-                                  font: font,
-                                ),
-                              ))
-                            : pw.Container(),
-                      ),
-                      pw.Text(
-                        "  Femelle",
-                        style: pw.TextStyle(
-                          fontSize: 8,
-                          font: font,
-                        ),
-                      ),
-                    ],
-                  ),
-                  pw.SizedBox(height: 5),
-                  // Couleur de la robe
-                  pw.Text(
-                    "Couleur de la Robe: ${couleurRobeController.text.isNotEmpty ? couleurRobeController.text : '....................................................................'}",
-                    style: pw.TextStyle(font: font, fontSize: 8),
-                  ),
-                  pw.SizedBox(height: 5),
-                  // Numéro de puce
-                  pw.Text(
-                    "Identifié(e) par le numéro de puce: ${numeroPuceController.text.isNotEmpty ? numeroPuceController.text : '....................................................................'}",
-                    style: pw.TextStyle(font: font, fontSize: 8),
-                  ),
-                  pw.SizedBox(height: 5),
-                  pw.Row(
-                    children: [
-                      pw.Text(
-                        "LOF: ",
-                        style: pw.TextStyle(
-                          fontSize: 8,
-                          font: font,
-                        ),
-                      ),
-                      pw.Container(
-                        width: 7,
-                        height: 7,
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(),
-                        ),
-                        child: isLOF
-                            ? pw.Center(
-                                child: pw.Text(
-                                'X',
-                                style: pw.TextStyle(
-                                  fontSize: 7,
-                                  font: font,
-                                ),
-                              ))
-                            : pw.Container(),
-                      ),
-                      pw.SizedBox(width: 20),
-                      pw.Text(
-                        "LOOF: ",
-                        style: pw.TextStyle(
-                          fontSize: 8,
-                          font: font,
-                        ),
-                      ),
-                      pw.Container(
-                        width: 7,
-                        height: 7,
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(),
-                        ),
-                        child: isLOOF
-                            ? pw.Center(
-                                child: pw.Text(
-                                'X',
-                                style: pw.TextStyle(
-                                  fontSize: 7,
-                                  font: font,
-                                ),
-                              ))
-                            : pw.Container(),
-                      ),
-                      pw.SizedBox(width: 20),
-                      pw.Text(
-                        "(Ce chien/chat est/sera de race car inscrit au Livre des Origines Français ou au Livre Officiel des Origines Félines)",
-                        style: pw.TextStyle(
-                          fontSize: 7,
-                          fontStyle: pw.FontStyle.italic,
-                          font: font,
-                        ),
-                      ),
-                    ],
-                  ),
-                  pw.SizedBox(height: 5),
-                  pw.Text(
-                    "Dossier n°: ${numeroDossierController.text.isNotEmpty ? numeroDossierController.text : '....................................................................'}",
-                    style: pw.TextStyle(font: font, fontSize: 8),
-                  ),
-                  pw.SizedBox(height: 5),
-                  pw.Text(
-                    "Race: ${raceController.text.isNotEmpty ? raceController.text : '....................................................................'}",
-                    style: pw.TextStyle(font: font, fontSize: 8),
-                  ),
-                  pw.SizedBox(height: 5),
-
-                  // Informations complémentaires
-
-                  pw.Row(
-                    children: [
-                      pw.Container(
-                        width: 7,
-                        height: 7,
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(),
-                        ),
-                        child: isNonInscritOrigine
-                            ? pw.Center(
-                                child: pw.Text(
-                                'X',
-                                style: pw.TextStyle(
-                                  fontSize: 7,
-                                  font: font,
-                                ),
-                              ))
-                            : pw.Container(),
-                      ),
-                      pw.Text(
-                        " Non inscrit à un Livre des origines: ",
-                        style: pw.TextStyle(
-                          fontSize: 8,
-                          font: font,
-                        ),
-                      ),
-                      pw.SizedBox(width: 20),
-                      pw.Container(
-                        width: 7,
-                        height: 7,
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(),
-                        ),
-                        child: isNonRace
-                            ? pw.Center(
-                                child: pw.Text(
-                                'X',
-                                style: pw.TextStyle(
-                                  fontSize: 7,
-                                  font: font,
-                                ),
-                              ))
-                            : pw.Container(),
-                      ),
-                      pw.Text(
-                        " N'appartient pas à une race: ",
-                        style: pw.TextStyle(
-                          fontSize: 8,
-                          font: font,
-                        ),
-                      ),
-                      pw.SizedBox(width: 20),
-                      pw.Container(
-                        width: 7,
-                        height: 7,
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(),
-                        ),
-                        child: isApparenceRace
-                            ? pw.Center(
-                                child: pw.Text(
-                                'X',
-                                style: pw.TextStyle(
-                                  fontSize: 7,
-                                  font: font,
-                                ),
-                              ))
-                            : pw.Container(),
-                      ),
-                      pw.Text(
-                        " Apparence de race: ",
-                        style: pw.TextStyle(
-                          fontSize: 8,
-                          font: font,
-                        ),
-                      ),
-                      if (isApparenceRace)
-                        pw.Text(
-                          " ${apparenceRaceController.text.isNotEmpty ? apparenceRaceController.text : '....................................................................'}",
-                          style: pw.TextStyle(font: font, fontSize: 8),
-                        ),
-                    ],
-                  ),
-                  pw.SizedBox(height: 5),
-
-                  pw.Text(
-                    "Informations complémentaires: ${infoComplementaireController.text.isNotEmpty ? infoComplementaireController.text : '.......................................................................................................................................................................................................................................................................................'}",
-                    style: pw.TextStyle(font: font, fontSize: 8),
-                  ),
-                  pw.SizedBox(height: 15),
-
-                  // Affichage du prix
-                  _buildPrixSection(font),
-                  pw.SizedBox(height: 5),
-
-                  // Mention légale
-                  pw.Text(
-                    "Pas d'escompte en cas de paiement anticipé (Article L 441-9 du code du commerce).",
-                    style: pw.TextStyle(font: font, fontSize: 8),
-                  ),
-                  pw.SizedBox(height: 5),
-
-                  // Montant des arrhes
-                  pw.Text(
-                    "Je m'engage à verser à titre d'arrhes la somme de ${arrhesController.text.isNotEmpty ? arrhesController.text : '....................................................................'} €.",
-                    style: pw.TextStyle(font: font, fontSize: 8),
-                  ),
-
-                  // Mode de paiement
-                  _buildPaymentMethodSection(font),
-
-                  pw.SizedBox(height: 5),
-
-                  // Date de disponibilité
-                  pw.Text(
-                    "Date de disponibilité*: du ${disponibiliteDebutController.text.isNotEmpty ? disponibiliteDebutController.text : '.................'} au ${disponibiliteFinController.text.isNotEmpty ? disponibiliteFinController.text : '.................'} (date butoir) (article L.1657 du code civil).",
-                    style: pw.TextStyle(font: font, fontSize: 8),
-                  ),
-
-                  // Texte associé à l'étoile
-                  pw.SizedBox(height: 5),
-                  pw.Text(
-                    "*A défaut de solde payé ou d'enlèvement du chiot/chaton à cette échéance, l'acheteur sera considéré comme renonçant à l'achat et les arrhes seront acquises au vendeur sans autre formalité.",
-                    style: pw.TextStyle(
-                        font: font,
-                        fontSize: 8,
-                        fontStyle: pw.FontStyle.italic),
-                  ),
-
-                  // CONDITIONS GÉNÉRALES DE RÉSERVATION (encadré gris)
-                  pw.SizedBox(height: 5),
-                  pw.Container(
-                    padding: pw.EdgeInsets.all(10),
-                    decoration: pw.BoxDecoration(
-                      border: pw.Border.all(
-                          color: PdfColors.black), // Bordure noire
-                      color: PdfColors.grey, // Fond gris clair
-                    ),
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          "CONDITIONS GÉNÉRALES DE RÉSERVATION :",
-                          style: pw.TextStyle(
-                            fontWeight: pw.FontWeight.bold,
-                            font: font,
-                            fontSize: 8,
-                            color: PdfColors.black, // Texte en noir
-                          ),
-                        ),
-                        pw.SizedBox(height: 5),
-                        pw.Text(
-                          "Animal destiné à usage de compagnie et d'agrément conformément à l'article L. 214-6 du code rural.",
-                          style: pw.TextStyle(
-                              font: font, fontSize: 7, color: PdfColors.black),
-                        ),
-                        pw.Text(
-                          "Arrhes : somme versée d'avance pour la réservation d'un chiot/chaton.",
-                          style: pw.TextStyle(
-                              font: font, fontSize: 7, color: PdfColors.black),
-                        ),
-                        pw.Text(
-                          "Le droit de rétractation n'est pas applicable dans le cadre de la présente réservation.",
-                          style: pw.TextStyle(
-                              font: font, fontSize: 7, color: PdfColors.black),
-                        ),
-                        pw.Text(
-                          "En cas d'annulation de la réservation à l'initiative de l'acquéreur, les arrhes sont conservées par le vendeur (article L.214-1 du code de la consommation).",
-                          style: pw.TextStyle(
-                              font: font, fontSize: 7, color: PdfColors.black),
-                        ),
-                        pw.Text(
-                          "L'acquéreur accepte, au regard du fait que la réservation porte sur un être vivant, que cette réservation puisse faire l'objet d'un report d'une portée à une autre dans la limite de ${nombreMoisController.text.isNotEmpty ? nombreMoisController.text : '.................'} mois à compter de la date apposée sur cet acte.",
-                          style: pw.TextStyle(
-                              font: font, fontSize: 7, color: PdfColors.black),
-                        ),
-                        pw.Text(
-                          "En cas de problème sur la portée initialement prévue, le vendeur s'engage à prévenir rapidement l'acquéreur.",
-                          style: pw.TextStyle(
-                              font: font, fontSize: 7, color: PdfColors.black),
-                        ),
-                        pw.Text(
-                          "Par dérogation aux dispositions de l'article 1583 du code civil, la vente ne sera considérée comme parfaite qu'au jour de la signature du contrat de vente et de la remise concomitante de l'animal.",
-                          style: pw.TextStyle(
-                              font: font, fontSize: 7, color: PdfColors.black),
-                        ),
-                        pw.Text(
-                          "Cette vente future sera régie par les seules dispositions des articles L.213-1 et suivants du code rural.",
-                          style: pw.TextStyle(
-                              font: font, fontSize: 7, color: PdfColors.black),
-                        ),
-                        pw.Text(
-                          "Validité : le présent bon de réservation, accompagné du versement des arrhes, doit être renvoyé au vendeur sous 8 jours, sous peine de nullité.",
-                          style: pw.TextStyle(
-                              font: font, fontSize: 7, color: PdfColors.black),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Texte concernant le médiateur
-                  pw.SizedBox(height: 5),
-                  pw.Text(
-                    "Dans le cadre de l'obligation de désignation d'un médiateur, le vendeur désigne le médiateur : ${nomMediateurController.text.isNotEmpty ? nomMediateurController.text : '........................'}",
-                    style: pw.TextStyle(
-                      font: font,
-                      fontSize: 8, // Police de taille 8
-                      color: PdfColors.black,
-                    ),
-                  ),
-
-                  // Phrase ajoutée pour la date de retour du contrat
-                  pw.SizedBox(height: 5),
-                  // Utilisez la date sélectionnée dans le champ du formulaire
-                  pw.Text(
-                    "Le contrat doit être retourné signé avant le ${disponibiliteDebutController.text.isNotEmpty ? disponibiliteDebutController.text : '..............'} (sous 8 jours) sous peine de nullité.",
-                    style: pw.TextStyle(
-                      font: font,
-                      fontSize: 8,
-                      color: PdfColors.black,
-                    ),
-                  ),
-                  pw.SizedBox(height: 5),
-
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment
-                        .center, // Centre le contenu de la row
-                    children: [
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment
-                            .center, // Centre le texte de la colonne
-                        children: [
-                          pw.Text(
-                            "Signature du vendeur",
-                            style: pw.TextStyle(
-                              fontWeight: pw.FontWeight.bold,
-                              fontSize: 10,
-                              font: font,
-                            ),
-                          ),
-                          pw.SizedBox(
-                              height:
-                                  20), // Compense la hauteur de la mention manuscrite
-                        ],
-                      ),
-                      pw.SizedBox(
-                          width:
-                              100), // Ajoute un espacement entre les deux signatures
-
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment
-                            .center, // Centre le texte de la colonne
-                        children: [
-                          pw.Text(
-                            "Signature de l'acquéreur",
-                            style: pw.TextStyle(
-                              fontWeight: pw.FontWeight.bold,
-                              fontSize: 10,
-                              font: font,
-                            ),
-                          ),
-                          pw.SizedBox(
-                              height:
-                                  5), // Ajoute un espace avant la mention manuscrite
-                          pw.Text(
-                            "Mention manuscrite < Bon pour accord. Lu, approuvé et compris >\n- Ne pas oublier de parapher au verso",
-                            style: pw.TextStyle(
-                              font: font,
-                              fontSize:
-                                  6, // Police de taille 6 pour cette mention
-                            ),
-                            textAlign: pw.TextAlign
-                                .center, // Centre le texte de la mention manuscrite
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+              pw.Image(petsMatchLogo, width: 40, height: 40),
+              pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                pw.Text('Édité par PETSMATCH', style: pw.TextStyle(fontSize: 7, font: font, fontWeight: pw.FontWeight.bold)),
+                pw.Text('15 la ville marchand - 22210 PLUMIEUX - Tél 07 81 03 49 84', style: pw.TextStyle(fontSize: 6, font: font)),
+                pw.Text('petsmatch.contact@gmail.com - www.petsmatchapp.com', style: pw.TextStyle(fontSize: 6, font: font)),
+                pw.Text('N° SIRET 93134481600018 - NAF 7010Z', style: pw.TextStyle(fontSize: 6, font: font)),
+              ]),
             ],
-          );
-        },
-      ),
-    );
-    final ByteData imageData =
-        await rootBundle.load('assets/loi-contrat-reservation.png');
-    final Uint8List imageBytes = imageData.buffer.asUint8List();
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (pw.Context context) {
-          return pw.FullPage(
-            ignoreMargins: true,
-            child: pw.Image(
-              pw.MemoryImage(imageBytes),
-              fit: pw.BoxFit.cover, // L'image recouvre toute la page
-            ),
-          );
-        },
-      ),
-    );
-    await Printing.layoutPdf(
-        onLayout: (PdfPageFormat format) async => pdf.save());
-  }
-
-  // Fonction pour afficher les informations du prix dans le PDF
-  pw.Widget _buildPrixSection(pw.Font font) {
-    double prixHT = double.tryParse(prixHTController.text) ?? 0.0;
-    double prixTTC = double.tryParse(prixTTCController.text) ?? 0.0;
-    double tva = double.tryParse(tvaController.text) ?? 20.0;
-
-    if (isTvaApplicable) {
-      return pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            "Dont le prix a été fixé à $prixHT € HT + ${prixTTC - prixHT} € de TVA (${tva.toStringAsFixed(2)}%) = $prixTTC € T.T.C.",
-            style: pw.TextStyle(font: font, fontSize: 8),
           ),
-        ],
-      );
-    } else {
-      return pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            "Dont le prix a été fixé à $prixHT € NET (TVA non applicable, article 293 B du Code général des impôts).",
-            style: pw.TextStyle(font: font, fontSize: 8),
-          ),
-        ],
-      );
-    }
-  }
-
-  // Fonction pour afficher les informations de l'éleveur dans le PDF
-  pw.Widget _buildEleveurInfo(pw.Font font) {
-    List<pw.Widget> eleveurWidgets = [];
-
-    if (nomElevageController.text.isNotEmpty) {
-      eleveurWidgets.add(
-          pw.Text(nomElevageController.text, style: pw.TextStyle(font: font)));
-    }
-    if (adresseElevageController.text.isNotEmpty) {
-      eleveurWidgets.add(pw.Text(adresseElevageController.text,
-          style: pw.TextStyle(font: font)));
-    }
-    if (codeISOElevageController.text.isNotEmpty &&
-        telephoneElevageController.text.isNotEmpty) {
-      eleveurWidgets.add(pw.Text(
-          '${codeISOElevageController.text} ${telephoneElevageController.text}',
-          style: pw.TextStyle(font: font)));
-    }
-    if (siretController.text.isNotEmpty) {
-      eleveurWidgets.add(pw.Text('SIRET: ${siretController.text}',
-          style: pw.TextStyle(font: font)));
-    }
-    if (numeroTVAController.text.isNotEmpty) {
-      eleveurWidgets.add(pw.Text('TVA: ${numeroTVAController.text}',
-          style: pw.TextStyle(font: font)));
-    }
-
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: eleveurWidgets,
-    );
-  }
-
-  // Fonction pour afficher les informations du client dans le PDF
-  pw.Widget _buildClientInfo(pw.Font font) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        _buildLineWithText(
-            "Je soussigné(e) ",
-            nomClientController.text.isNotEmpty
-                ? nomClientController.text
-                : '........................................',
-            font),
-        pw.SizedBox(height: 5),
-        _buildLineWithText(
-            "Adresse",
-            adresseClientController.text.isNotEmpty
-                ? adresseClientController.text
-                : '........................................',
-            font),
-        pw.SizedBox(height: 5),
-        _buildLineWithText(
-            "Code Postal et Ville",
-            codePostalVilleController.text.isNotEmpty
-                ? codePostalVilleController.text
-                : '........................................',
-            font),
-        pw.SizedBox(height: 5),
-        pw.Row(
-          children: [
-         _buildLineWithText(
-              "Téléphone",
-              codeISOClientController.text.isNotEmpty
-                  ? "${codeISOClientController.text} ${telephoneClientController.text}"
-                  : '...................................................',
-              font,
-            ),
-
-            pw.SizedBox(width: 20),
-            _buildLineWithText(
-                "Email",
-                emailClientController.text.isNotEmpty
-                    ? emailClientController.text
-                    : '................................................................',
-                font),
-          ],
         ),
-        pw.SizedBox(height: 5),
-        _buildLineWithText(
-            "SIRET (si professionel)",
-            siretClientController.text.isNotEmpty
-                ? siretClientController.text
-                : '........................................',
-            font),
-      ],
-    );
-  }
+        pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+          pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+            if (logoBytes != null) pw.Image(pw.MemoryImage(logoBytes), width: 60, height: 60),
+            pw.SizedBox(width: 16),
+            pw.Expanded(flex: 2, child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(nomElevageController.text, style: pw.TextStyle(font: font, fontSize: 9)),
+                pw.Text(adresseElevageController.text, style: pw.TextStyle(font: font, fontSize: 9)),
+                pw.Text('${codeISOElevageController.text} ${telephoneElevageController.text}', style: pw.TextStyle(font: font, fontSize: 9)),
+                if (siretController.text.isNotEmpty) pw.Text('SIRET: ${siretController.text}', style: pw.TextStyle(font: font, fontSize: 9)),
+              ],
+            )),
+            pw.Expanded(flex: 1, child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              children: [
+                pw.Text('CONTRAT', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, font: font)),
+                pw.Text('DE', style: pw.TextStyle(fontSize: 14, font: font)),
+                pw.Text('RÉSERVATION', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, font: font)),
+              ],
+            )),
+          ]),
+          pw.SizedBox(height: 16),
+          pw.Text('Je soussigné(e) ${nomClientController.text}', style: pw.TextStyle(font: font, fontSize: 8)),
+          pw.Text('Adresse: ${adresseClientController.text}', style: pw.TextStyle(font: font, fontSize: 8)),
+          pw.Text('CP/Ville: ${codePostalVilleController.text}  Tél: ${codeISOClientController.text} ${telephoneClientController.text}  Email: ${emailClientController.text}', style: pw.TextStyle(font: font, fontSize: 8)),
+          pw.SizedBox(height: 10),
+          pw.Text('Soumet la réservation d\'un ${selectedAnimal ?? '........'} né(e) le ${isAnimalANaitre ? "À naître" : dateController.text}', style: pw.TextStyle(font: font, fontSize: 8, fontWeight: pw.FontWeight.bold)),
+          pw.Text('Race: ${raceController.text}  Sexe: ${selectedSexe ?? '—'}  Couleur: ${couleurRobeController.text}  Puce: ${numeroPuceController.text}', style: pw.TextStyle(font: font, fontSize: 8)),
+          pw.SizedBox(height: 10),
+          isTvaApplicable
+            ? pw.Text('Prix: ${prixHTController.text} € HT + TVA ${tvaController.text}% = ${prixTTCController.text} € TTC', style: pw.TextStyle(font: font, fontSize: 8))
+            : pw.Text('Prix: ${prixHTController.text} € NET (TVA non applicable, art. 293B CGI)', style: pw.TextStyle(font: font, fontSize: 8)),
+          pw.Text('Arrhes: ${arrhesController.text} €', style: pw.TextStyle(font: font, fontSize: 8)),
+          pw.Text('Disponibilité: du ${disponibiliteDebutController.text} au ${disponibiliteFinController.text}', style: pw.TextStyle(font: font, fontSize: 8)),
+          pw.SizedBox(height: 10),
+          pw.Container(
+            padding: pw.EdgeInsets.all(8),
+            decoration: pw.BoxDecoration(border: pw.Border.all(), color: PdfColors.grey200),
+            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              pw.Text('CONDITIONS GÉNÉRALES DE RÉSERVATION', style: pw.TextStyle(font: font, fontSize: 7, fontWeight: pw.FontWeight.bold)),
+              pw.Text('Le droit de rétractation n\'est pas applicable. Les arrhes sont conservées en cas d\'annulation par l\'acquéreur.', style: pw.TextStyle(font: font, fontSize: 6)),
+              pw.Text('Report possible sur ${nombreMoisController.text.isNotEmpty ? nombreMoisController.text : "..."} mois. Validité : 8 jours après signature.', style: pw.TextStyle(font: font, fontSize: 6)),
+            ]),
+          ),
+          pw.SizedBox(height: 10),
+          pw.Text('Médiateur: ${nomMediateurController.text}', style: pw.TextStyle(font: font, fontSize: 8)),
+          pw.SizedBox(height: 20),
+          pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly, children: [
+            pw.Column(children: [
+              pw.Text('Signature du vendeur', style: pw.TextStyle(font: font, fontSize: 9, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 40),
+            ]),
+            pw.Column(children: [
+              pw.Text('Signature de l\'acquéreur', style: pw.TextStyle(font: font, fontSize: 9, fontWeight: pw.FontWeight.bold)),
+              pw.Text('Mention manuscrite : « Bon pour accord. Lu, approuvé et compris »', style: pw.TextStyle(font: font, fontSize: 6)),
+            ]),
+          ]),
+        ]),
+      ]),
+    ));
 
-  // Fonction pour formater une ligne de texte dans le PDF avec un label et une donnée
-  pw.Widget _buildLineWithText(String label, String value, pw.Font font) {
-    return pw.Row(
-      children: [
-        pw.Text("$label: ",
-            style: pw.TextStyle(
-                fontWeight: pw.FontWeight.bold, font: font, fontSize: 8)),
-        pw.Text(value, style: pw.TextStyle(font: font, fontSize: 8)),
-      ],
-    );
-  }
+    // Page 2 : texte légal
+    try {
+      final imgData = await rootBundle.load('assets/loi-contrat-reservation.png');
+      pdf.addPage(pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (ctx) => pw.FullPage(
+          ignoreMargins: true,
+          child: pw.Image(pw.MemoryImage(imgData.buffer.asUint8List()), fit: pw.BoxFit.cover),
+        ),
+      ));
+    } catch (_) {}
 
-  // Fonction pour afficher la section du mode de paiement dans le PDF
-  pw.Widget _buildPaymentMethodSection(pw.Font font) {
-    if (selectedPaymentMethod == "carte" || selectedPaymentMethod == "espece") {
-      return pw.Text(
-        "Mode de paiement: ${selectedPaymentMethod == "carte" ? "Carte bancaire" : "Espèces"}",
-        style: pw.TextStyle(font: font, fontSize: 8),
-      );
-    } else if (selectedPaymentMethod == "cheque_reception") {
-      return pw.Text(
-        "Mode de paiement: Chèque n°${chequeNumeroController.text} encaissé à réception.",
-        style: pw.TextStyle(font: font, fontSize: 8),
-      );
-    } else if (selectedPaymentMethod == "cheque_delai") {
-      return pw.Text(
-        "Mode de paiement: Chèque n°${chequeNumeroController.text} à encaisser le ${chequeDateEncaissementController.text} (dans un délai inférieur à 6 mois).",
-        style: pw.TextStyle(font: font, fontSize: 8),
-      );
-    } else if (selectedPaymentMethod == "virement") {
-      return pw.Text(
-        "Mode de paiement: Virement bancaire à effectuer avant le ${virementDateController.text} sous peine de nullité de la réservation.",
-        style: pw.TextStyle(font: font, fontSize: 8),
-      );
-    }
-    return pw.Container();
+    await Printing.layoutPdf(onLayout: (_) async => pdf.save());
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // appBar: AppBar(title: Text('Contrat de Réservation')),
+      backgroundColor: _bg,
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        title: const Text('Contrat de Réservation',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+      ),
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(0.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                  width: UTILS.widthReference(context),
-                  height: UTILS.calculHeight(
-                      105,
-                      UTILS.heightReference(
-                          context)), // Hauteur fixe pour le Stack
-                  child: Stack(children: [
-                    Image.asset(
-                      'assets/deco/arrondi_rose_2.png',
-              color: const Color(0xFFA7C79A),
-              colorBlendMode: BlendMode.srcIn,
-                      fit: BoxFit.cover,
-                      width:
-                          UTILS.calculWidth(211, UTILS.widthReference(context)),
-                      height: UTILS.calculHeight(
-                          104,
-                          UTILS.heightReference(
-                              context)), // Hauteur fixe pour le Stack
-                    ),
-                    Positioned(
-                        top: UTILS.calculHeight(
-                            42, UTILS.heightReference(context)),
-                        left: UTILS.calculWidth(
-                            10, UTILS.widthReference(context)),
-                        child: IconButton(
-                          icon: Icon(Icons.arrow_back,
-                              color: Colors.black), // Icône de la flèche noire
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                          },
-                        )),
-                    Positioned(
-                      top: UTILS.calculHeight(
-                          53, UTILS.heightReference(context)),
-                      left: 0,
-                      right:
-                          0, // Assurez-vous que left et right sont définis à 0 pour permettre au texte de centrer exactement
-                      child: Align(
-                        alignment: Alignment.center,
-                        child: Text(
-                          'CONTRAT DE RÉSERVATION',
-                          textAlign: TextAlign
-                              .center, // Assurez-vous d'utiliser textAlign pour garantir que le texte est centré à l'intérieur du Text widget.
-                          style: TextStyle(
-                            fontFamily: 'Galey',
-                            fontWeight: FontWeight.w500,
-                            fontSize: UTILS.calculWidth(
-                                20, UTILS.widthReference(context)),
-                          ),
-                        ),
-                      ),
-                    )
-                  ])),
-              SizedBox(height: 20),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-              // Menu déroulant pour les informations de l'éleveur
-              ExpansionTile(
-                title: Text(
-                  "Informations Éleveur",
-                  style: TextStyle(
-                      fontSize:
-                          UTILS.calculWidth(25, UTILS.widthReference(context)),
-                      fontFamily: 'Galey',
-                      color: const Color(0xFF0C5C6C),
-                      fontWeight: FontWeight.w500),
+            _section('Informations éleveur', initiallyExpanded: true, children: [
+              _field('Nom de l\'élevage', nomElevageController),
+              _field('Adresse', adresseElevageController),
+              _field('Téléphone', telephoneElevageController),
+              _field('SIRET', siretController),
+              _field('Numéro de TVA', numeroTVAController),
+            ]),
+
+            _section('Informations client', children: [
+              _field('Nom et prénom', nomClientController),
+              _field('Adresse', adresseClientController),
+              _field('Code postal et ville', codePostalVilleController),
+              _field('Téléphone', telephoneClientController),
+              _field('Email', emailClientController),
+              _field('SIRET (si professionnel)', siretClientController),
+            ]),
+
+            _section('Animal & réservation', children: [
+              const SizedBox(height: 8),
+              // Type animal
+              Wrap(spacing: 8, children: ['chien', 'chiot', 'chat', 'chaton'].map((a) =>
+                ChoiceChip(
+                  label: Text(a[0].toUpperCase() + a.substring(1),
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                          color: selectedAnimal == a ? Colors.white : Colors.black87)),
+                  selected: selectedAnimal == a,
+                  selectedColor: _green,
+                  onSelected: (_) => setState(() => selectedAnimal = a),
                 ),
-                initiallyExpanded: true,
-                children: <Widget>[
-                  _buildTextField("Nom de l'élevage", nomElevageController),
-                  _buildTextField("Adresse", adresseElevageController),
-                  // _buildTextField("Code ISO", codeISOElevageController),
-                    SizedBox(
-                      width:
-                          UTILS.calculWidth(355, UTILS.widthReference(context)),
-                      child: _buildDropdownWithFlagsEnterprise(),
-                    ),
-                  _buildTextField("Téléphone", telephoneElevageController),
-                  _buildTextField("SIRET", siretController),
-                  _buildTextField("Numéro de TVA", numeroTVAController),
-                ],
-              ),
-              //Divider,
-              ExpansionTile(
-                title: Text(
-                  "Information Client",
-                  style: TextStyle(
-                      fontSize:
-                          UTILS.calculWidth(25, UTILS.widthReference(context)),
-                      fontFamily: 'Galey',
-                      color: const Color(0xFF0C5C6C),
-                      fontWeight: FontWeight.w500),
+              ).toList()),
+              const SizedBox(height: 12),
+              Row(children: [
+                _checkBox('Né(e) le', !isAnimalANaitre, (v) => setState(() { isAnimalANaitre = !v!; })),
+                _checkBox('À naître', isAnimalANaitre, (v) => setState(() { isAnimalANaitre = v!; })),
+              ]),
+              if (!isAnimalANaitre) _dateField('Date de naissance', dateController),
+              Row(children: [
+                _checkBox('LOF', isLOF, (v) => setState(() => isLOF = v!)),
+                _checkBox('LOOF', isLOOF, (v) => setState(() => isLOOF = v!)),
+              ]),
+              _field('N° de dossier', numeroDossierController),
+              _field('Race', raceController),
+              Row(children: [
+                _checkBox('Mâle', selectedSexe == 'M', (v) => setState(() => selectedSexe = v! ? 'M' : null)),
+                _checkBox('Femelle', selectedSexe == 'F', (v) => setState(() => selectedSexe = v! ? 'F' : null)),
+              ]),
+              _field('Couleur de robe', couleurRobeController),
+              _field('Numéro de puce', numeroPuceController),
+              _field('Informations complémentaires', infoComplementaireController),
+            ]),
+
+            _section('Prix & arrhes', children: [
+              _field('Prix HT (€)', prixHTController, type: TextInputType.number),
+              Row(children: [
+                _checkBox('TVA applicable', isTvaApplicable, (v) {
+                  setState(() {
+                    isTvaApplicable = v!;
+                    if (!isTvaApplicable) { prixTTCController.clear(); tvaController.text = ''; }
+                    else { tvaController.text = '20.0'; _onHTChanged(); }
+                  });
+                }),
+              ]),
+              if (isTvaApplicable) ...[
+                _field('Taux TVA (%)', tvaController, type: TextInputType.number),
+                _field('Prix TTC (€)', prixTTCController, type: TextInputType.number),
+              ],
+              _field('Montant des arrhes (€)', arrhesController, type: TextInputType.number),
+            ]),
+
+            _section('Paiement & dates', children: [
+              Wrap(spacing: 8, runSpacing: 4, children: [
+                {'value': 'carte', 'label': 'Carte'},
+                {'value': 'espece', 'label': 'Espèces'},
+                {'value': 'cheque_reception', 'label': 'Chèque (réception)'},
+                {'value': 'cheque_delai', 'label': 'Chèque (différé)'},
+                {'value': 'virement', 'label': 'Virement'},
+              ].map((m) => ChoiceChip(
+                label: Text(m['label']!, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    color: selectedPaymentMethod == m['value'] ? Colors.white : Colors.black87)),
+                selected: selectedPaymentMethod == m['value'],
+                selectedColor: _teal,
+                onSelected: (_) => setState(() => selectedPaymentMethod = m['value']),
+              )).toList()),
+              if (selectedPaymentMethod == 'cheque_reception' || selectedPaymentMethod == 'cheque_delai')
+                _field('Numéro de chèque', chequeNumeroController),
+              if (selectedPaymentMethod == 'cheque_delai')
+                _dateField('Date d\'encaissement', chequeDateEncaissementController),
+              if (selectedPaymentMethod == 'virement')
+                _dateField('Date limite virement', virementDateController),
+              const SizedBox(height: 8),
+              _dateField('Disponibilité début', disponibiliteDebutController),
+              _dateField('Date butoir', disponibiliteFinController),
+              _field('Report (mois max)', nombreMoisController, type: TextInputType.number),
+              _field('Médiateur', nomMediateurController),
+              _field('Lieu de signature', lieuSignatureController),
+              _dateField('Date de signature', dateSignatureController),
+            ]),
+
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _teal,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
-                initiallyExpanded: false,
-                children: <Widget>[
-                  _buildTextField(
-                      "Nom et prénom du client", nomClientController),
-                  _buildTextField("Adresse du client", adresseClientController),
-                  _buildTextField(
-                      "Code Postal et Ville", codePostalVilleController),
-                  SizedBox(
-                      width:
-                          UTILS.calculWidth(355, UTILS.widthReference(context)),
-                      child: _buildDropdownWithFlagsClient(),
-                  ),
-                  _buildTextField(
-                      "Téléphone du client", telephoneClientController),
-                  _buildTextField("Email du client", emailClientController),
-                  _buildTextField(
-                      "SIRET (si Professionnel)", siretClientController),
-                ],
-              ),
-              // Formulaire pour les informations du client
-
-              //Divider,
-              ExpansionTile(
-                title: Text(
-                  "Informations Réservation",
-                  style: TextStyle(
-                      fontSize:
-                          UTILS.calculWidth(25, UTILS.widthReference(context)),
-                      fontFamily: 'Galey',
-                      color: const Color(0xFF0C5C6C),
-                      fontWeight: FontWeight.w500),
-                ),
-                initiallyExpanded: false,
-                children: <Widget>[
-                  SizedBox(height: 20),
-                  Text("Informations de l'animal",
-                      style: TextStyle(
-                          fontSize: UTILS.calculWidth(
-                              18, UTILS.widthReference(context)),
-                          fontWeight: FontWeight.bold)),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: CheckboxListTile(
-                          activeColor: Color(0xFFA7C79A),
-                          title: Text("Chien"),
-                          value: selectedAnimal == "chien",
-                          onChanged: (value) {
-                            setState(() {
-                              selectedAnimal = value == true ? "chien" : null;
-                            });
-                          },
-                        ),
-                      ),
-                      Expanded(
-                        child: CheckboxListTile(
-                          activeColor: Color(0xFFA7C79A),
-                          title: Text("Chiot"),
-                          value: selectedAnimal == "chiot",
-                          onChanged: (value) {
-                            setState(() {
-                              selectedAnimal = value == true ? "chiot" : null;
-                            });
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: CheckboxListTile(
-                          activeColor: Color(0xFFA7C79A),
-                          title: Text("Chat"),
-                          value: selectedAnimal == "chat",
-                          onChanged: (value) {
-                            setState(() {
-                              selectedAnimal = value == true ? "chat" : null;
-                            });
-                          },
-                        ),
-                      ),
-                      Expanded(
-                        child: CheckboxListTile(
-                          activeColor: Color(0xFFA7C79A),
-                          title: Text("Chaton"),
-                          value: selectedAnimal == "chaton",
-                          onChanged: (value) {
-                            setState(() {
-                              selectedAnimal = value == true ? "chaton" : null;
-                            });
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  //Divider,
-
-                  // Né(e) le / À naître
-                  Row(
-                    children: [
-                      Expanded(
-                        child: CheckboxListTile(
-                          activeColor: Color(0xFFA7C79A),
-                          title: Text("Né(e) le"),
-                          value: !isAnimalANaitre,
-                          onChanged: (value) {
-                            setState(() {
-                              isAnimalANaitre = !(value == true);
-                              if (!isAnimalANaitre) {
-                                _selectDate(context, dateController);
-                              } else {
-                                dateController.clear();
-                              }
-                            });
-                          },
-                        ),
-                      ),
-                      Expanded(
-                        child: CheckboxListTile(
-                          activeColor: Color(0xFFA7C79A),
-                          title: Text("À naître"),
-                          value: isAnimalANaitre,
-                          onChanged: (value) {
-                            setState(() {
-                              isAnimalANaitre = value == true;
-                              if (isAnimalANaitre) {
-                                dateController.clear();
-                              }
-                            });
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Champ de sélection de la date
-                  if (!isAnimalANaitre)
-                    SizedBox(
-                        width: UTILS.calculWidth(
-                            355, UTILS.widthReference(context)),
-                        child: TextFormField(
-                          controller: dateController,
-                          decoration: InputDecoration(
-                            labelText: "Date de naissance",
-                            hintText: 'JJ/MM/AAAA',
-                            filled: false,
-                            fillColor: const Color.fromARGB(0, 2, 1, 1),
-                            labelStyle: TextStyle(
-                              fontFamily: 'Galey',
-                              fontWeight: FontWeight.w500,
-                              color: Color.fromARGB(255, 0, 0, 0),
-                            ),
-                            enabledBorder: UnderlineInputBorder(
-                              borderSide: BorderSide(
-                                  color: Color(0xFFA7C79A)),
-                            ),
-                          ),
-                          readOnly: true,
-                          onTap: () => _selectDate(context, dateController),
-                        )),
-
-                  //Divider,
-
-                  // Cases à cocher LOF et LOOF
-                  Row(
-                    children: [
-                      Expanded(
-                        child: CheckboxListTile(
-                          activeColor: Color(0xFFA7C79A),
-                          title: Text("LOF"),
-                          value: isLOF,
-                          onChanged: (value) {
-                            setState(() {
-                              isLOF = value ?? false;
-                            });
-                          },
-                        ),
-                      ),
-                      Expanded(
-                        child: CheckboxListTile(
-                          activeColor: Color(0xFFA7C79A),
-                          title: Text("LOOF"),
-                          value: isLOOF,
-                          onChanged: (value) {
-                            setState(() {
-                              isLOOF = value ?? false;
-                            });
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  //Divider,
-
-                  // Numéro de dossier et race
-                  _buildTextField("Numéro de dossier", numeroDossierController),
-                  _buildTextField("Race de l'animal", raceController),
-
-                  //Divider,
-
-                  // Trois nouvelles cases
-                  CheckboxListTile(
-                    activeColor: Color(0xFFA7C79A),
-                    title: Text("Non inscrit à un Livre des origines"),
-                    value: isNonInscritOrigine,
-                    onChanged: (value) {
-                      setState(() {
-                        isNonInscritOrigine = value ?? false;
-                      });
-                    },
-                  ),
-                  CheckboxListTile(
-                    activeColor: Color(0xFFA7C79A),
-                    title: Text("N'appartient pas à une race"),
-                    value: isNonRace,
-                    onChanged: (value) {
-                      setState(() {
-                        isNonRace = value ?? false;
-                      });
-                    },
-                  ),
-                  CheckboxListTile(
-                    activeColor: Color(0xFFA7C79A),
-                    title: Text("Apparence de race"),
-                    value: isApparenceRace,
-                    onChanged: (value) {
-                      setState(() {
-                        isApparenceRace = value ?? false;
-                      });
-                    },
-                  ),
-                  if (isApparenceRace)
-                    _buildTextField(
-                        "Race (si apparence)", apparenceRaceController),
-
-                  // Sélection du sexe de l'animal
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: CheckboxListTile(
-                          activeColor: Color(0xFFA7C79A),
-                          title: Text("Mâle"),
-                          value: selectedSexe == "M",
-                          onChanged: (value) {
-                            setState(() {
-                              selectedSexe = value == true ? "M" : null;
-                            });
-                          },
-                        ),
-                      ),
-                      Expanded(
-                        child: CheckboxListTile(
-                          activeColor: Color(0xFFA7C79A),
-                          title: Text("Femelle"),
-                          value: selectedSexe == "F",
-                          onChanged: (value) {
-                            setState(() {
-                              selectedSexe = value == true ? "F" : null;
-                            });
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  //Divider,
-
-                  // Couleur de la robe
-                  _buildTextField("Couleur de la Robe", couleurRobeController),
-                  //Divider,
-
-                  // Numéro de puce
-                  _buildTextField("Identifié(e) par le numéro de puce",
-                      numeroPuceController),
-                  //Divider,
-
-                  // Informations complémentaires
-                  _buildTextField("Informations complémentaires",
-                      infoComplementaireController),
-
-                  //Divider,
-
-                  // Champs pour la gestion du prix HT et TTC
-                  SizedBox(height: 20),
-
-                  Text("Prix de la réservation",
-                      style: TextStyle(
-                          fontSize: UTILS.calculWidth(
-                              18, UTILS.widthReference(context)),
-                          fontWeight: FontWeight.bold)),
-
-                  // Champ Prix HT
-                  _buildTextField("Prix HT", prixHTController),
-
-                  // Champ Prix TTC, uniquement si TVA est applicable
-                  if (isTvaApplicable)
-                    _buildTextField("Prix TTC", prixTTCController),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: CheckboxListTile(
-                          activeColor: Color(0xFFA7C79A),
-                          title: Text("TVA applicable"),
-                          value: isTvaApplicable,
-                          onChanged: (value) {
-                            setState(() {
-                              isTvaApplicable = value ?? false;
-                              if (!isTvaApplicable) {
-                                prixTTCController.clear();
-                                tvaController.text = ""; // Retirer la TVA
-                              } else {
-                                tvaController.text = "20.0"; // Par défaut 20%
-                                _onHTChanged(); // Recalcule le TTC avec le taux de TVA par défaut
-                              }
-                            });
-                          },
-                        ),
-                      ),
-
-                      // Champ Pourcentage TVA, uniquement si TVA est applicable
-                      if (isTvaApplicable)
-                        Expanded(
-                          child: _buildTextField(
-                              "Pourcentage de TVA (%)", tvaController),
-                        ),
-                    ],
-                  ),
-
-                  //Divider,
-                  SizedBox(height: 20),
-
-                  // Mention légale
-                  Text("Arrhes",
-                      style: TextStyle(
-                          fontSize: UTILS.calculWidth(
-                              18, UTILS.widthReference(context)),
-                          fontWeight: FontWeight.bold)),
-
-                  // Montant des arrhes
-                  _buildTextField("Montant des arrhes (€)", arrhesController),
-
-                  //Divider,
-                  SizedBox(height: 20),
-
-                  // Modes de paiement
-                  Text("Mode de paiement:",
-                      style: TextStyle(
-                          fontSize: UTILS.calculWidth(
-                              18, UTILS.widthReference(context)),
-                          fontWeight: FontWeight.bold)),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: CheckboxListTile(
-                          activeColor: Color(0xFFA7C79A),
-                          title: Text("Par carte bancaire"),
-                          value: selectedPaymentMethod == "carte",
-                          onChanged: (value) {
-                            setState(() {
-                              selectedPaymentMethod =
-                                  value == true ? "carte" : null;
-                            });
-                          },
-                        ),
-                      ),
-                      Expanded(
-                        child: CheckboxListTile(
-                          activeColor: Color(0xFFA7C79A),
-                          title: Text("En espèces"),
-                          value: selectedPaymentMethod == "espece",
-                          onChanged: (value) {
-                            setState(() {
-                              selectedPaymentMethod =
-                                  value == true ? "espece" : null;
-                            });
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  CheckboxListTile(
-                    activeColor: Color(0xFFA7C79A),
-                    title: Text("Par chèque n°........ encaissé à réception"),
-                    value: selectedPaymentMethod == "cheque_reception",
-                    onChanged: (value) {
-                      setState(() {
-                        selectedPaymentMethod =
-                            value == true ? "cheque_reception" : null;
-                      });
-                    },
-                  ),
-                  if (selectedPaymentMethod == "cheque_reception")
-                    _buildTextField("Numéro de chèque", chequeNumeroController),
-                  CheckboxListTile(
-                    activeColor: Color(0xFFA7C79A),
-                    title: Text(
-                        "Par chèque n°........ à encaisser le ....... (dans un délai inférieur à 6 mois)"),
-                    value: selectedPaymentMethod == "cheque_delai",
-                    onChanged: (value) {
-                      setState(() {
-                        selectedPaymentMethod =
-                            value == true ? "cheque_delai" : null;
-                      });
-                    },
-                  ),
-                  if (selectedPaymentMethod == "cheque_delai") ...[
-                    _buildTextField("Numéro de chèque", chequeNumeroController),
-                    SizedBox(
-                        width: UTILS.calculWidth(
-                            355, UTILS.widthReference(context)),
-                        child: TextFormField(
-                          controller: chequeDateEncaissementController,
-                          decoration: InputDecoration(
-                            labelText: "Date d'encaissement",
-                            hintText: 'JJ/MM/AAAA',
-                            filled: false,
-                            fillColor: const Color.fromARGB(0, 2, 1, 1),
-                            labelStyle: TextStyle(
-                              fontFamily: 'Galey',
-                              fontWeight: FontWeight.w500,
-                              color: Color.fromARGB(255, 0, 0, 0),
-                            ),
-                            enabledBorder: UnderlineInputBorder(
-                              borderSide: BorderSide(
-                                  color: Color(0xFFA7C79A)),
-                            ),
-                          ),
-                          readOnly: true,
-                          onTap: () => _selectDate(
-                              context, chequeDateEncaissementController),
-                        )),
-                  ],
-                  CheckboxListTile(
-                    activeColor: Color(0xFFA7C79A),
-                    title: Text(
-                        "Par virement bancaire effectué avant le ....... sous peine de nullité de la réservation"),
-                    value: selectedPaymentMethod == "virement",
-                    onChanged: (value) {
-                      setState(() {
-                        selectedPaymentMethod =
-                            value == true ? "virement" : null;
-                      });
-                    },
-                  ),
-                  if (selectedPaymentMethod == "virement")
-                    SizedBox(
-                        width: UTILS.calculWidth(
-                            355, UTILS.widthReference(context)),
-                        child: TextFormField(
-                          controller: virementDateController,
-                          decoration: InputDecoration(
-                            labelText: "Date du virement",
-                            hintText: 'JJ/MM/AAAA',
-                            filled: false,
-                            fillColor: const Color.fromARGB(0, 2, 1, 1),
-                            labelStyle: TextStyle(
-                              fontFamily: 'Galey',
-                              fontWeight: FontWeight.w500,
-                              color: Color.fromARGB(255, 0, 0, 0),
-                            ),
-                            enabledBorder: UnderlineInputBorder(
-                              borderSide: BorderSide(
-                                  color: Color(0xFFA7C79A)),
-                            ),
-                          ),
-                          readOnly: true,
-                          onTap: () =>
-                              _selectDate(context, virementDateController),
-                        )),
-
-                  //Divider,
-                  SizedBox(height: 20),
-
-                  // Dates de disponibilité
-                  Text("Date de disponibilité",
-                      style: TextStyle(
-                          fontSize: UTILS.calculWidth(
-                              18, UTILS.widthReference(context)),
-                          fontWeight: FontWeight.bold)),
-                  SizedBox(
-                      width:
-                          UTILS.calculWidth(355, UTILS.widthReference(context)),
-                      child: TextFormField(
-                        controller: disponibiliteDebutController,
-                        decoration: InputDecoration(
-                          labelText: "Date de début",
-                          hintText: 'JJ/MM/AAAA',
-                          filled: false,
-                          fillColor: const Color.fromARGB(0, 2, 1, 1),
-                          labelStyle: TextStyle(
-                            fontFamily: 'Galey',
-                            fontWeight: FontWeight.w500,
-                            color: Color.fromARGB(255, 0, 0, 0),
-                          ),
-                          enabledBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(
-                                color: Color(0xFFA7C79A)),
-                          ),
-                        ),
-                        readOnly: true,
-                        onTap: () =>
-                            _selectDate(context, disponibiliteDebutController),
-                      )),
-                  SizedBox(
-                      width:
-                          UTILS.calculWidth(355, UTILS.widthReference(context)),
-                      child: TextFormField(
-                        controller: disponibiliteFinController,
-                        decoration: InputDecoration(
-                          labelText: "Date butoir",
-                          hintText: 'JJ/MM/AAAA',
-                          filled: false,
-                          fillColor: const Color.fromARGB(0, 2, 1, 1),
-                          labelStyle: TextStyle(
-                            fontFamily: 'Galey',
-                            fontWeight: FontWeight.w500,
-                            color: Color.fromARGB(255, 0, 0, 0),
-                          ),
-                          enabledBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(
-                                color: Color(0xFFA7C79A)),
-                          ),
-                        ),
-                        readOnly: true,
-                        onTap: () =>
-                            _selectDate(context, disponibiliteFinController),
-                      )),
-
-                  // Champ pour le nombre de mois pour le report de réservation
-                  _buildTextField("Nombre de mois pour report de réservation",
-                      nombreMoisController),
-                  SizedBox(
-                      width:
-                          UTILS.calculWidth(355, UTILS.widthReference(context)),
-                      child: TextFormField(
-                        controller: disponibiliteDebutController,
-                        decoration: InputDecoration(
-                          labelText: "Date de retour du contrat",
-                          hintText: 'JJ/MM/AAAA',
-                          filled: false,
-                          fillColor: const Color.fromARGB(0, 2, 1, 1),
-                          labelStyle: TextStyle(
-                            fontFamily: 'Galey',
-                            fontWeight: FontWeight.w500,
-                            color: Color.fromARGB(255, 0, 0, 0),
-                          ),
-                          enabledBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(
-                                color: Color(0xFFA7C79A)),
-                          ),
-                        ),
-                        readOnly: true,
-                        onTap: () => _selectDateWithMinimumDays(
-                            context, disponibiliteDebutController),
-                      )),
-                  //Divider,
-                  SizedBox(height: 20),
-
-                  Text("Médiateur",
-                      style: TextStyle(
-                          fontSize: UTILS.calculWidth(
-                              18, UTILS.widthReference(context)),
-                          fontWeight: FontWeight.bold)),
-                  // Champ pour le nom du médiateur
-                  _buildTextField("Nom du médiateur", nomMediateurController),
-                  //Divider,
-                  SizedBox(height: 20),
-
-                  Text("Signature",
-                      style: TextStyle(
-                          fontSize: UTILS.calculWidth(
-                              18, UTILS.widthReference(context)),
-                          fontWeight: FontWeight.bold)),
-                  _buildTextField("Lieu de signature", lieuSignatureController),
-                  _buildTextField("Date de signature", dateSignatureController,
-                      readOnly: true,
-                      onTap: () =>
-                          _selectDate(context, dateSignatureController)),
-                ],
-              ),
-              // Sélection de l'animal
-
-              SizedBox(height: 20),
-              Center(
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Color.fromARGB(
-                        255, 255, 192, 187), // Couleur de fond du bouton
-                  ),
-                  onPressed: () {
-                    if (_formKey.currentState!.validate()) {
-                      _generateReservationContractPdf();
-                    }
-                  },
-                  child: Text(
-                    "Imprimer ou enregistrer le contrat",
-                    style: TextStyle(color: Colors.black),
-                  ),
-                ),
-              ),
-              SizedBox(height: 20),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDropdownWithFlagsEnterprise() {
-    return DropdownButtonFormField<Country>(
-      value: selectedCountry,
-      isExpanded: true,
-      dropdownColor: Color(0xFFEEF5EA), // Couleur de fond de la liste déroulante
-      decoration: InputDecoration(
-        enabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: Color(0xFFA7C79A)),
-        ),
-        focusedBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: Color(0xFFA7C79A)),
-        ),
-        labelText: 'Pays',
-        labelStyle: TextStyle(
-          fontFamily: 'Galey',
-          fontWeight: FontWeight.w500,
-          color: Colors.black,
-        ),
-      ),
-      icon: Icon(Icons.arrow_drop_down),
-      onChanged: (Country? newValue) {
-        setState(() {
-          selectedCountry = newValue;
-          codeISOElevageController.text =
-              newValue!.code; // Mettre à jour le code ISO
-        });
-      },
-      items: countries.map<DropdownMenuItem<Country>>((Country country) {
-        return DropdownMenuItem<Country>(
-          value: country,
-          child: Row(
-            children: [
-              Image.asset(
-                'assets/country/${country.code.toLowerCase()}.png',
-                width: 30,
-                height: 20,
-                errorBuilder: (context, error, stackTrace) => Icon(Icons.flag,
-                    size: 30), // Icône par défaut si le drapeau est introuvable
-              ),
-              SizedBox(width: 10),
-              Text('${country.name} (${country.dialCode})'),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-   Widget _buildDropdownWithFlagsClient() {
-    return DropdownButtonFormField<Country>(
-      value: selectedCountry1,
-      isExpanded: true,
-      dropdownColor: Color(0xFFEEF5EA), // Couleur de fond de la liste déroulante
-      decoration: InputDecoration(
-        enabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: Color(0xFFA7C79A)),
-        ),
-        focusedBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: Color(0xFFA7C79A)),
-        ),
-        labelText: 'Pays',
-        labelStyle: TextStyle(
-          fontFamily: 'Galey',
-          fontWeight: FontWeight.w500,
-          color: Colors.black,
-        ),
-      ),
-      icon: Icon(Icons.arrow_drop_down),
-      onChanged: (Country? newValue) {
-        setState(() {
-          selectedCountry1 = newValue;
-          codeISOClientController.text =
-              newValue!.code; // Mettre à jour le code ISO
-        });
-      },
-      items: countries.map<DropdownMenuItem<Country>>((Country country) {
-        return DropdownMenuItem<Country>(
-          value: country,
-          child: Row(
-            children: [
-              Image.asset(
-                'assets/country/${country.code.toLowerCase()}.png',
-                width: 30,
-                height: 20,
-                errorBuilder: (context, error, stackTrace) => Icon(Icons.flag,
-                    size: 30), // Icône par défaut si le drapeau est introuvable
-              ),
-              SizedBox(width: 10),
-              Text('${country.name} (${country.dialCode})'),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-  // Fonction pour générer un champ de texte avec label et controller
-  Widget _buildTextField(String label, TextEditingController controller,
-      {bool readOnly = false, VoidCallback? onTap}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: SizedBox(
-          width: UTILS.calculWidth(355, UTILS.widthReference(context)),
-          child: TextFormField(
-            controller: controller,
-            decoration: InputDecoration(
-              labelText: label,
-              filled: false,
-              fillColor: const Color.fromARGB(0, 2, 1, 1),
-              labelStyle: TextStyle(
-                fontFamily: 'Galey',
-                fontWeight: FontWeight.w500,
-                color: Color.fromARGB(255, 0, 0, 0),
-              ),
-              enabledBorder: UnderlineInputBorder(
-                borderSide:
-                    BorderSide(color: Color(0xFFA7C79A)),
+                icon: const Icon(Icons.print_outlined, color: Colors.white),
+                label: const Text('Générer le contrat PDF',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 15, color: Colors.white)),
+                onPressed: _generatePdf,
               ),
             ),
-            readOnly: readOnly,
-            onTap: onTap,
-            validator: (value) {
-              return null; // Validation si nécessaire
-            },
-          )),
+          ]),
+        ),
+      ),
     );
   }
+
+  Widget _section(String title, {bool initiallyExpanded = false, required List<Widget> children}) =>
+    Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          title: Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0C5C6C))),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: children,
+        ),
+      ),
+    );
+
+  Widget _field(String label, TextEditingController ctrl, {TextInputType? type}) =>
+    Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: TextFormField(
+        controller: ctrl,
+        keyboardType: type,
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _green, width: 1.5)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          isDense: true,
+        ),
+      ),
+    );
+
+  Widget _dateField(String label, TextEditingController ctrl) =>
+    Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: TextFormField(
+        controller: ctrl,
+        readOnly: true,
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+          suffixIcon: const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF6F767B)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _green, width: 1.5)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          isDense: true,
+        ),
+        onTap: () => _selectDate(ctrl),
+      ),
+    );
+
+  Widget _checkBox(String label, bool value, ValueChanged<bool?> onChanged) =>
+    Expanded(child: Material(
+      color: Colors.transparent,
+      child: CheckboxListTile(
+        dense: true,
+        activeColor: _green,
+        title: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        value: value,
+        onChanged: onChanged,
+        contentPadding: EdgeInsets.zero,
+      ),
+    ));
 }

@@ -1030,16 +1030,15 @@ Veuillez traiter ce signalement sous 24h conformément aux CGU.
                         }
                       },
                       child: CircleAvatar(
-                        backgroundColor: Colors.black,
-                        backgroundImage: (widget
-                                        .post['profilePictureUrlElevage'] !=
-                                    null &&
-                                widget.post['profilePictureUrlElevage'] !=
-                                    'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60')
-                            ? NetworkImage(
-                                widget.post['profilePictureUrlElevage'])
-                            : NetworkImage(
-                                'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60'),
+                        backgroundColor: const Color(0xFFA7C79A),
+                        backgroundImage: (widget.post['profilePictureUrlElevage'] != null &&
+                                widget.post['profilePictureUrlElevage'] != 'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60')
+                            ? NetworkImage(widget.post['profilePictureUrlElevage']) as ImageProvider
+                            : null,
+                        child: (widget.post['profilePictureUrlElevage'] == null ||
+                                widget.post['profilePictureUrlElevage'] == 'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60')
+                            ? const Icon(Icons.person, color: Colors.white)
+                            : null,
                       ),
                     ),
                     SizedBox(
