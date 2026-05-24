@@ -108,11 +108,39 @@ exports.notifyUsersNearLostAnimal = functions
                 if (user.fcmToken) {
                     fcmMessages.push({
                         token: user.fcmToken,
-                        notification: {title: notifTitle, body: notifBody},
-                        data: {type: "alerte_perdu", alerteId: alerteId || ""},
+
+                        notification: {
+                            title: notifTitle,
+                            body: notifBody,
+                        },
+
+                        data: {
+                            type: "alerte_perdu",
+                            alerteId: alerteId || "",
+                        },
+
                         android: {
                             priority: "high",
-                            notification: {channelId: "alertes_perdus", sound: "default"},
+                            notification: {
+                                channelId: "alertes_perdus",
+                                sound: "default",
+                            },
+                        },
+
+                        apns: {
+                            headers: {
+                                "apns-priority": "10",
+                            },
+                            payload: {
+                                aps: {
+                                    alert: {
+                                        title: notifTitle,
+                                        body: notifBody,
+                                    },
+                                    sound: "default",
+                                    badge: 1,
+                                },
+                            },
                         },
                     });
                 }
