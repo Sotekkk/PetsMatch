@@ -108,8 +108,8 @@
 
 | Statut | Fonctionnalité |
 |---|---|
-| ⬜ | Prise de photo directe depuis la caméra (en plus de la galerie) pour les photos animal ET les documents |
-| ⬜ | Recherche dans la liste animaux par nom ou numéro de puce (barre de recherche avec loupe) |
+| ✅ | Prise de photo directe depuis la caméra (en plus de la galerie) pour les photos animal ET les documents |
+| ✅ | Recherche dans la liste animaux par nom ou numéro de puce (barre de recherche avec loupe) |
 
 ### 4.3 Formulaire portée
 
@@ -188,7 +188,7 @@
 | ✅ | Mes annonces |
 | 🔶 | Fix onglet annonces profil éleveur (mauvaises annonces affichées) |
 | ⬜ | Photo annonce : carrée à la création ✅ — format rectangle adapté + zoom centré sur l'animal dans le feed (sans rogner) |
-| ⬜ | Clic long sur annonce dans "mes dernières annonces" (accueil éleveur) → menu Supprimer avec confirmation |
+| ✅ | Clic long sur annonce dans "mes dernières annonces" (accueil éleveur) → menu Supprimer avec confirmation |
 | ⬜ | Likes sur annonce / sur bébé de portée |
 | ⬜ | Notification éleveur lors d'un like |
 | ⬜ | Favoris : voir les annonces likées |

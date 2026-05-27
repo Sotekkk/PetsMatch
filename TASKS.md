@@ -20,17 +20,15 @@
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
-| A01 | Fiche animal (app) — prise de photo directe (caméra) en plus de la galerie, pour photos ET documents | Haute | App | `animal_fiche.dart`, `portee_form_page.dart` |
 | A02 | Animaux perdus — clic sur alerte page d'accueil → ouvrir la gestion de l'alerte directement | Haute | App + Web | `particulier_home.dart`, `eleveur_home.dart`, page d'accueil web |
 | A03 | Animaux perdus — clic long sur alerte → menu "Supprimer" / "Animal retrouvé" (avec confirmation) | Haute | App + Web | `animaux_perdus_page.dart`, page web équivalente |
-| A04 | Mes annonces (éleveur, accueil) — clic long → "Supprimer" avec confirmation | Haute | App | `eleveur_home.dart` (section dernières annonces) |
 | A05 | Registre entrée/sortie — auto-fill provenance avec infos éleveur (nom + adresse) | Haute | App + Web | `registre_entree_sortie.dart`, `elevage/registre-entree-sortie/page.tsx` |
+
 | A06 | Registre entrée/sortie — auto-fill infos mère depuis fiche animal si mère = animal de l'élevage | Haute | App + Web | `registre_entree_sortie.dart`, page web |
 | A07 | Suivi repro — saillie → gestation automatique avec date de mise bas prévue | Haute | App + Web | À créer `suivi_repro.dart` + page web |
 | A08 | Suivi repro — champ "Gestation confirmée" (oui/non) + alerte rappel confirmation selon espèce | Haute | App + Web | À créer `suivi_repro.dart` |
 | A09 | Suivi repro — saillie extérieure : accès infos mâle (photo, nom, puce, race) depuis éleveur externe | Moyenne | App + Web | À créer `suivi_repro.dart` + table `saillie_acces` |
 | A10 | Annonces — photo carrée à la création (déjà OK) + affichage rectangle adapté centré dans le feed sans rogner | Haute | App + Web | `annonces_feed_page.dart`, feed web |
-| A11 | Mes animaux éleveur — barre de recherche par nom ou numéro de puce | Moyenne | App + Web | `mes_animaux.dart`, `mes-animaux/page.tsx` |
 | A12 | Admin — algorithme de validation automatique profils éleveurs (détection spam, cohérence données) | Haute | App + Web | `admin_panel.dart`, `verification_detail.dart` |
 | A13 | Admin — algorithme modération annonces (filtre contenu, cohérence espèce/race/prix) | Haute | App + Web | Panel admin |
 
@@ -90,6 +88,9 @@
 
 | Tâche | Date | Repo | Fichiers modifiés |
 |---|---|---|---|
+| A01 — Photo/document : bottom sheet caméra + galerie (animal, portée, alerte perdue) | 2026-05 | App | `animal_fiche.dart`, `portee_form_page.dart`, `alerte_perdu_form_page.dart` |
+| A04 — Clic long mes annonces (accueil éleveur) → Supprimer avec confirmation | 2026-05 | App | `eleveur_home.dart` |
+| A11 — Barre de recherche (nom + puce) dans mes animaux éleveur | 2026-05 | App + Web | `mes_animaux.dart`, `mes-animaux/page.tsx` |
 | Fiche animal — section pedigree (type par espèce, document upload) | 2026-05 | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
 | Portée — champs par animal (type_poil, taille, poids, stérilisé, passeport, notes) | 2026-05 | App + Web | `portee_form_page.dart`, `mes-animaux/portee/page.tsx` |
 | Portée — photo par animal avec crop | 2026-05 | App + Web | `portee_form_page.dart`, `mes-animaux/portee/page.tsx` |

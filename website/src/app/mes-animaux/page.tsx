@@ -134,6 +134,9 @@ export default function MesAnimauxPage() {
   const [anciensEspece, setAnciensEspece] = useState('tous');
   const [anciensStatut, setAnciensStatut] = useState('tous');
 
+  // Recherche
+  const [search, setSearch] = useState('');
+
   // UI state
   const [filterOpen, setFilterOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -184,6 +187,8 @@ export default function MesAnimauxPage() {
     ? [...new Set(presents.filter(a => a.espece === filtreEspece).map(a => a.race).filter(Boolean))] as string[]
     : [];
 
+  const searchLower = search.toLowerCase().trim();
+
   // Filtrage présents
   const filteredPresents = presents.filter(a => {
     if (filtreEspece !== 'tous' && a.espece !== filtreEspece) return false;
@@ -194,6 +199,11 @@ export default function MesAnimauxPage() {
     }
     if (filtreRace && a.race !== filtreRace) return false;
     if (filtrePortee && !a.portee_id) return false;
+    if (searchLower) {
+      const nom  = (a.nom            ?? '').toLowerCase();
+      const puce = (a.identification ?? '').toLowerCase();
+      if (!nom.includes(searchLower) && !puce.includes(searchLower)) return false;
+    }
     return true;
   });
 
@@ -201,6 +211,11 @@ export default function MesAnimauxPage() {
   const filteredAnciens = anciens.filter(a => {
     if (anciensEspece !== 'tous' && a.espece !== anciensEspece) return false;
     if (anciensStatut !== 'tous' && a.statut !== anciensStatut) return false;
+    if (searchLower) {
+      const nom  = (a.nom            ?? '').toLowerCase();
+      const puce = (a.identification ?? '').toLowerCase();
+      if (!nom.includes(searchLower) && !puce.includes(searchLower)) return false;
+    }
     return true;
   });
 
@@ -303,6 +318,25 @@ export default function MesAnimauxPage() {
           ))}
         </div>
       )}
+
+      {/* Barre de recherche */}
+      <div className="relative mb-3">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6E9E57]">🔍</span>
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Nom ou numéro de puce..."
+          className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-gray-200 bg-[#F8F8F6] text-sm focus:outline-none focus:border-[#6E9E57] transition-colors"
+          style={{ fontFamily: 'Galey, sans-serif' }}
+        />
+        {search && (
+          <button onClick={() => setSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm">
+            ✕
+          </button>
+        )}
+      </div>
 
       {/* Barre filtres */}
       <div className="flex items-center gap-2 mb-4">

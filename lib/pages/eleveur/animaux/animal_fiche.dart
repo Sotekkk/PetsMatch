@@ -5,6 +5,7 @@ import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -383,7 +384,52 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   }
 
   Future<void> _pickPhoto() async {
-    final f = await pickAndCropSquare();
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          const Text('Choisir une photo',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
+          const SizedBox(height: 16),
+          ListTile(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            tileColor: const Color(0xFF6E9E57).withOpacity(0.07),
+            leading: Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(color: const Color(0xFF6E9E57).withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.camera_alt_outlined, color: Color(0xFF6E9E57)),
+            ),
+            title: const Text('Prendre une photo', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            subtitle: const Text('Ouvrir la caméra', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+            onTap: () => Navigator.pop(context, ImageSource.camera),
+          ),
+          const SizedBox(height: 10),
+          ListTile(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            tileColor: const Color(0xFF0C5C6C).withOpacity(0.07),
+            leading: Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(color: const Color(0xFF0C5C6C).withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.photo_library_outlined, color: Color(0xFF0C5C6C)),
+            ),
+            title: const Text('Choisir depuis la galerie', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            subtitle: const Text('Sélectionner une photo existante', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+            onTap: () => Navigator.pop(context, ImageSource.gallery),
+          ),
+        ]),
+      ),
+    );
+    if (source == null) return;
+    final f = await pickAndCropSquare(source: source);
     if (f != null) setState(() => _photoFile = f);
   }
 
@@ -443,12 +489,81 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       if (ok != true || text.isEmpty) return;
       docNom = text;
     }
-    final result = await FilePicker.pickFiles(
-        type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'png', 'jpeg']);
-    if (result?.files.single.path == null || !mounted) return;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          const Text('Ajouter un document',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
+          const SizedBox(height: 16),
+          ListTile(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            tileColor: const Color(0xFF6E9E57).withOpacity(0.07),
+            leading: Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(color: const Color(0xFF6E9E57).withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.camera_alt_outlined, color: Color(0xFF6E9E57)),
+            ),
+            title: const Text('Photographier le document', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            subtitle: const Text('Ouvrir la caméra', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+            onTap: () => Navigator.pop(context, 'camera'),
+          ),
+          const SizedBox(height: 10),
+          ListTile(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            tileColor: const Color(0xFF0C5C6C).withOpacity(0.07),
+            leading: Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(color: const Color(0xFF0C5C6C).withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.photo_library_outlined, color: Color(0xFF0C5C6C)),
+            ),
+            title: const Text('Choisir depuis la galerie', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            subtitle: const Text('Sélectionner une image', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+            onTap: () => Navigator.pop(context, 'gallery'),
+          ),
+          const SizedBox(height: 10),
+          ListTile(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            tileColor: const Color(0xFF5F9EAA).withOpacity(0.07),
+            leading: Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(color: const Color(0xFF5F9EAA).withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.insert_drive_file_outlined, color: Color(0xFF5F9EAA)),
+            ),
+            title: const Text('Importer un fichier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            subtitle: const Text('PDF, JPG, PNG...', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+            onTap: () => Navigator.pop(context, 'file'),
+          ),
+        ]),
+      ),
+    );
+    if (choice == null || !mounted) return;
+
+    File? docFile;
+    if (choice == 'camera' || choice == 'gallery') {
+      final source = choice == 'camera' ? ImageSource.camera : ImageSource.gallery;
+      final picked = await ImagePicker().pickImage(source: source, imageQuality: 85);
+      if (picked == null || !mounted) return;
+      docFile = File(picked.path);
+    } else {
+      final result = await FilePicker.pickFiles(
+          type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'png', 'jpeg']);
+      if (result?.files.single.path == null || !mounted) return;
+      docFile = File(result!.files.single.path!);
+    }
+    if (!mounted) return;
     setState(() => _saving = true);
     try {
-      final url = await _uploadFile(File(result!.files.single.path!), 'documents');
+      final url = await _uploadFile(docFile, 'documents');
       if (mounted) setState(() => _documents.add({'nom': docNom, 'url': url, 'type': type}));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e')));

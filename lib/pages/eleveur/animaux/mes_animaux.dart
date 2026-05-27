@@ -66,6 +66,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   DateTime? _anciensDtDebut;
   DateTime? _anciensDtFin;
 
+  String _search = '';
+  final TextEditingController _searchController = TextEditingController();
+
   late TabController _tabController;
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   List<Map<String, dynamic>> _animauxData = [];
@@ -102,6 +105,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -509,6 +513,47 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     }
   }
 
+  Widget _buildSearchField() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: TextField(
+        controller: _searchController,
+        onChanged: (v) => setState(() => _search = v.trim().toLowerCase()),
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+        decoration: InputDecoration(
+          hintText: 'Nom ou numéro de puce...',
+          hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFB0B8C1)),
+          prefixIcon: const Icon(Icons.search, color: Color(0xFF6E9E57), size: 20),
+          suffixIcon: _search.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.close, size: 18, color: Color(0xFF6F767B)),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _search = '');
+                  },
+                )
+              : null,
+          filled: true,
+          fillColor: const Color(0xFFF8F8F6),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5),
+          ),
+        ),
+      ),
+    );
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────────
 
   @override
@@ -588,6 +633,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
   Widget _buildPresentsTab() {
     return Column(children: [
+      _buildSearchField(),
       if (_presentsFilterCount > 0) _buildPresentsFiltersRow(),
       Expanded(child: _buildPresentsList()),
     ]);
@@ -647,6 +693,11 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       if (_filterRace.isNotEmpty &&
           (data['race'] ?? '').toString().toLowerCase() != _filterRace.toLowerCase()) return false;
       if (_filterPortee && (data['portee_id'] == null || (data['portee_id'] as String).isEmpty)) return false;
+      if (_search.isNotEmpty) {
+        final nom  = (data['nom']            ?? '').toString().toLowerCase();
+        final puce = (data['identification'] ?? '').toString().toLowerCase();
+        if (!nom.contains(_search) && !puce.contains(_search)) return false;
+      }
       return true;
     }).toList()
       ..sort((a, b) => (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString()));
@@ -808,6 +859,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
   Widget _buildAnciensTab() {
     return Column(children: [
+      _buildSearchField(),
       if (_anciensFilterCount > 0) _buildAnciensFiltersRow(),
       Expanded(child: _buildAnciensList()),
     ]);
@@ -868,6 +920,11 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         if (_anciensDtDebut != null && dt.isBefore(_anciensDtDebut!)) return false;
         if (_anciensDtFin != null &&
             dt.isAfter(_anciensDtFin!.add(const Duration(days: 1)))) return false;
+      }
+      if (_search.isNotEmpty) {
+        final nom  = (data['nom']            ?? '').toString().toLowerCase();
+        final puce = (data['identification'] ?? '').toString().toLowerCase();
+        if (!nom.contains(_search) && !puce.contains(_search)) return false;
       }
       return true;
     }).toList()

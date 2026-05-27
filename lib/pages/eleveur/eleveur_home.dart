@@ -328,6 +328,35 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
     ]);
   }
 
+  Future<void> _confirmDeleteAnnonce(String annonceId) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Supprimer l\'annonce',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('Cette annonce sera supprimée définitivement. Confirmer ?',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler',
+                style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6F767B))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await Supabase.instance.client.from('annonces').delete().eq('id', annonceId);
+    _loadData();
+  }
+
   Widget _buildRecentPosts() {
     if (_recentAnnonces.isEmpty) {
       return Container(
@@ -371,6 +400,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
           onTap: () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => AnnonceDetailPage(
                   annonceId: data['id'] as String, initialData: data))),
+          onLongPress: () => _confirmDeleteAnnonce(data['id'] as String),
           child: Container(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(12),
