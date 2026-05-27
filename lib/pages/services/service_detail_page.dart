@@ -1,0 +1,487 @@
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
+
+class ServiceDetailPage extends StatefulWidget {
+  final String proUid;
+  final String categoryLabel;
+  final Color categoryColor;
+
+  const ServiceDetailPage({
+    super.key,
+    required this.proUid,
+    required this.categoryLabel,
+    required this.categoryColor,
+  });
+
+  @override
+  State<ServiceDetailPage> createState() => _ServiceDetailPageState();
+}
+
+class _ServiceDetailPageState extends State<ServiceDetailPage>
+    with SingleTickerProviderStateMixin {
+  final _supa = Supabase.instance.client;
+  Map<String, dynamic>? _proData;
+  bool _loading = true;
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _loadPro();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadPro() async {
+    try {
+      final row = await _supa
+          .from('users')
+          .select()
+          .eq('uid', widget.proUid)
+          .maybeSingle();
+      if (mounted) setState(() { _proData = row; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  String get _nomStructure =>
+      _proData?['name_elevage'] ?? _proData?['firstname'] ?? 'Professionnel';
+
+  String get _profession =>
+      _proData?['profession_pro'] ?? widget.categoryLabel;
+
+  String get _description =>
+      _proData?['desc_entreprise'] ?? 'Aucune description disponible.';
+
+  String get _ville => _proData?['ville_elevage'] ?? _proData?['ville'] ?? '';
+
+  bool get _acceptNewClients {
+    final raw = _proData?['accept_new_clients'];
+    if (raw is bool) return raw;
+    if (raw is String) return raw.toLowerCase() != 'false' && raw != '0';
+    return true;
+  }
+
+  List<String> get _especes {
+    final raw = _proData?['especes_acceptees'];
+    if (raw is List) return List<String>.from(raw);
+    return [];
+  }
+
+  Map<String, String> get _horaires {
+    final raw = _proData?['horaires'];
+    if (raw is Map) {
+      return Map<String, String>.from(
+        raw.map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')),
+      );
+    }
+    return {};
+  }
+
+  List<Map<String, dynamic>> get _certifications {
+    final raw = _proData?['certifications'];
+    if (raw is List) {
+      return List<Map<String, dynamic>>.from(
+        raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)),
+      );
+    }
+    return [];
+  }
+
+  String get _tarifs => _proData?['tarifs'] ?? '';
+  String get _siteWeb => _proData?['site_web'] ?? '';
+  String get _instagram => _proData?['instagram'] ?? '';
+  String get _facebook => _proData?['facebook'] ?? '';
+  String get _photoUrl => _proData?['profile_picture_url'] ?? '';
+  int get _rayon {
+    final raw = _proData?['rayon_intervention'];
+    if (raw is int) return raw;
+    return int.tryParse(raw?.toString() ?? '') ?? 0;
+  }
+
+  Future<void> _launch(String url) async {
+    final uri = Uri.parse(url.startsWith('http') ? url : 'https://$url');
+    if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F8F8),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF6E9E57)))
+          : _proData == null
+              ? _emptyState()
+              : NestedScrollView(
+                  headerSliverBuilder: (ctx, _) => [
+                    _buildAppBar(),
+                    SliverToBoxAdapter(child: _buildHeader()),
+                    SliverToBoxAdapter(child: _buildTabBar()),
+                  ],
+                  body: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      SingleChildScrollView(
+                        padding: const EdgeInsets.only(bottom: 100),
+                        child: _buildPresentation(),
+                      ),
+                      SingleChildScrollView(
+                        padding: const EdgeInsets.only(bottom: 100),
+                        child: _buildHoraires(),
+                      ),
+                    ],
+                  ),
+                ),
+      bottomNavigationBar: _proData == null ? null : _buildBottomBar(),
+    );
+  }
+
+  Widget _emptyState() {
+    return Center(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.person_search_outlined, size: 64, color: Colors.grey.shade300),
+        const SizedBox(height: 12),
+        Text('Profil introuvable', style: TextStyle(fontFamily: 'Galey', fontSize: 16, color: Colors.grey.shade500)),
+      ]),
+    );
+  }
+
+  SliverAppBar _buildAppBar() {
+    return SliverAppBar(
+      expandedHeight: 200,
+      pinned: true,
+      backgroundColor: const Color(0xFF1E2025),
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+        onPressed: () => Navigator.pop(context),
+      ),
+      flexibleSpace: FlexibleSpaceBar(
+        background: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (_photoUrl.isNotEmpty)
+              Image.network(_photoUrl, fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _gradientBg())
+            else
+              _gradientBg(),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _gradientBg() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [widget.categoryColor.withValues(alpha: 0.8), const Color(0xFF1E2025)],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_nomStructure,
+                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 22, color: Color(0xFF1E2025))),
+                    const SizedBox(height: 4),
+                    Text(_profession,
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: widget.categoryColor, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              _statusBadge(),
+            ],
+          ),
+          if (_ville.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(children: [
+              Icon(Icons.location_on_outlined, size: 15, color: Colors.grey.shade500),
+              const SizedBox(width: 4),
+              Text(_ville, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+              if (_rayon > 0) ...[
+                Text(' · ', style: TextStyle(color: Colors.grey.shade400)),
+                Text('$_rayon km', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+              ],
+            ]),
+          ],
+          if (_especes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: _especes.map((e) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: widget.categoryColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(e, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: widget.categoryColor, fontWeight: FontWeight.w600)),
+              )).toList(),
+            ),
+          ],
+          // Réseaux sociaux
+          if (_siteWeb.isNotEmpty || _instagram.isNotEmpty || _facebook.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Row(children: [
+              if (_siteWeb.isNotEmpty)
+                _socialBtn(Icons.language_outlined, 'Site web', () => _launch(_siteWeb)),
+              if (_instagram.isNotEmpty)
+                _socialBtn(Icons.camera_alt_outlined, 'Instagram', () => _launch('https://instagram.com/${_instagram.replaceAll('@', '')}')),
+              if (_facebook.isNotEmpty)
+                _socialBtn(Icons.facebook_outlined, 'Facebook', () => _launch(_facebook)),
+            ]),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _statusBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: _acceptNewClients ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        _acceptNewClients ? '✓ Disponible' : 'Complet',
+        style: TextStyle(
+          fontFamily: 'Galey',
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: _acceptNewClients ? const Color(0xFF388E3C) : const Color(0xFFF57C00),
+        ),
+      ),
+    );
+  }
+
+  Widget _socialBtn(IconData icon, String label, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 14),
+        label: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFF1E2025),
+          side: const BorderSide(color: Color(0xFFDDDDDD)),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabBar() {
+    return Container(
+      color: Colors.white,
+      child: TabBar(
+        controller: _tabController,
+        labelColor: widget.categoryColor,
+        unselectedLabelColor: Colors.grey,
+        indicatorColor: widget.categoryColor,
+        labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
+        tabs: const [
+          Tab(text: 'Présentation'),
+          Tab(text: 'Horaires'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPresentation() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Description
+          _card(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _sectionTitle('À propos'),
+              const SizedBox(height: 8),
+              Text(_description, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5, color: Color(0xFF444444))),
+            ],
+          )),
+
+          // Tarifs
+          if (_tarifs.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _card(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionTitle('Tarifs'),
+                const SizedBox(height: 8),
+                Text(_tarifs, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5, color: Color(0xFF444444))),
+              ],
+            )),
+          ],
+
+          // Certifications
+          if (_certifications.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _card(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionTitle('Certifications'),
+                const SizedBox(height: 8),
+                ..._certifications.map((c) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(children: [
+                    Icon(Icons.verified_outlined, size: 18, color: widget.categoryColor),
+                    const SizedBox(width: 8),
+                    Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(c['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+                        if ((c['numero']?.toString() ?? '').isNotEmpty)
+                          Text('N° ${c['numero']}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                      ],
+                    )),
+                  ]),
+                )),
+              ],
+            )),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHoraires() {
+    const jours = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: _card(child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle('Horaires d\'ouverture'),
+          const SizedBox(height: 12),
+          if (_horaires.isEmpty)
+            Text('Non renseignés', style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500))
+          else
+            ...jours.map((j) {
+              final h = _horaires[j] ?? '';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(children: [
+                  SizedBox(width: 90, child: Text(j, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13))),
+                  Text(h.isNotEmpty ? h : 'Fermé',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                        color: h.isNotEmpty ? const Color(0xFF444444) : Colors.grey.shade400)),
+                ]),
+              );
+            }),
+        ],
+      )),
+    );
+  }
+
+  Widget _buildBottomBar() {
+    return Container(
+      padding: EdgeInsets.fromLTRB(16, 12, 16, MediaQuery.of(context).padding.bottom + 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        boxShadow: [BoxShadow(color: Color(0x14000000), blurRadius: 12, offset: Offset(0, -3))],
+      ),
+      child: Row(children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Messagerie bientôt disponible', style: TextStyle(fontFamily: 'Galey')),
+                behavior: SnackBarBehavior.floating),
+            ),
+            icon: const Icon(Icons.message_outlined, size: 18),
+            label: const Text('Contacter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF1E2025),
+              side: const BorderSide(color: Color(0xFFDDDDDD)),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton.icon(
+            onPressed: _acceptNewClients
+                ? () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => RdvBookingPage(
+                      proUid: widget.proUid,
+                      proName: _nomStructure,
+                      categoryColor: widget.categoryColor,
+                    )))
+                : null,
+            icon: const Icon(Icons.calendar_month_outlined, size: 18),
+            label: Text(
+              _acceptNewClients ? 'Prendre RDV' : 'Complet',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: widget.categoryColor,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: Colors.grey.shade300,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _card({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _sectionTitle(String t) {
+    return Text(t, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1E2025)));
+  }
+}

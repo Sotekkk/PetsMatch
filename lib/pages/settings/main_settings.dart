@@ -1,4 +1,7 @@
+import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
+import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/settings/about_us.dart';
 import 'package:PetsMatch/pages/settings/connectionSecu.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
@@ -6,8 +9,6 @@ import 'package:PetsMatch/pages/settings/parametre_config.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -133,11 +134,30 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                 icon: Icons.account_circle,
                 text: 'Information utilisateur',
                 onTap: () {
-                  // Naviguer vers la page des informations utilisateur
                   Navigator.of(context).push(MaterialPageRoute(
                       builder: (context) => InfoUserSettings()));
                 },
               ),
+              if (User_Info.isPro) ...[
+                buildSettingsOption(
+                  context,
+                  icon: Icons.business_center_outlined,
+                  text: 'Mon profil professionnel',
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (context) => const ProProfileEditPage()));
+                  },
+                ),
+                buildSettingsOption(
+                  context,
+                  icon: Icons.calendar_month_outlined,
+                  text: 'Mon agenda RDV',
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (context) => const ProAgendaPage()));
+                  },
+                ),
+              ],
               buildSettingsOption(
                 context,
                 icon: Icons.security,

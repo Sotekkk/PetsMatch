@@ -52,15 +52,11 @@
 | T14 | Notifications animaux perdus — fix iOS (alertes non reçues) | Haute | App | Roadmap §I.C |
 | T15 | Animaux perdus — carte synchronisée avec filtres liste | Moyenne | App + Web | Roadmap §I.B |
 
-### Services & Communauté — **[prénom collègue]**
+### Services & Communauté — **Nabil**
 > Spec complète : `SPEC_PRO_SERVICES.md`
 
 | # | Tâche | Priorité | App / Web | Fichiers de départ |
 |---|---|---|---|---|
-| S01 | Profil pro — enrichir champs (rayon, espèces, horaires, certifications) | Haute | App + Web | `settings/info_utilisateur.dart`, `profil/page.tsx` |
-| S02 | Annuaire services — brancher les onTap "bientôt disponible" + créer pages détail | Haute | App + Web | `services/veterinaires_page.dart` → créer `service_detail_page.dart` |
-| S03 | Page Services web (absente) — créer miroir de l'app | Haute | Web | `src/app/services/page.tsx` à créer + `Header.tsx` |
-| S04 | Agenda RDV — tables BDD + UI pro + UI client | Haute | App + Web | Créer `lib/pages/pro/pro_agenda.dart` |
 | S05 | Accès carnet santé animal (permissions pro) | Haute | App + Web | Créer table `animal_acces_pro` |
 | S06 | Envoi ordonnances / comptes rendus | Moyenne | App + Web | Créer table `ordonnances` + `comptes_rendus` |
 | S07 | Registre pension (entrée/sortie) | Moyenne | App + Web | Réutiliser logique `registre_entree_sortie` |
@@ -81,6 +77,18 @@
 | # | Tâche | Priorité | Fichiers probables | Notes |
 |---|---|---|---|---|
 | W01 | Contrats — modèle de base modifiable | Moyenne | `elevage/contrats/page.tsx` (à créer) | Roadmap §IV |
+
+---
+
+## Terminé — Nabil (S01, S02, S03, S04)
+
+| Tâche | Date | Repo | Fichiers modifiés |
+|---|---|---|---|
+| S01 — Profil pro : champs BDD + UI (rayon, espèces, horaires, certifications, réseaux, accept_new_clients) | 2026-05-27 | App | `lib/main.dart`, `lib/pages/pro/pro_profile_edit.dart`, `lib/pages/settings/main_settings.dart` |
+| S02 — Annuaire services : brancher onTap + service_detail_page + service_list_page + stubs communauté | 2026-05-27 | App | `services/veterinaires_page.dart`, `service_detail_page.dart`, `service_list_page.dart`, stubs animal_friendly/evenements/promenades/forum/groupes |
+| S03 — Page Services web + lien Header nav + drawers éleveur & particulier | 2026-05-27 | Web | `website/src/app/services/page.tsx`, `website/src/components/Header.tsx` |
+| S04 — Agenda RDV : UI pro (pro_agenda.dart — 3 onglets demandes/à venir/historique + notes) + UI client (rdv_booking_page.dart — date/heure/animal/motif) + detail page profil pro (service_detail_page.dart) | 2026-05-27 | App | `pro_agenda.dart`, `rdv_booking_page.dart`, `service_detail_page.dart`, `service_list_page.dart` |
+| Fix — Badge "Éleveur vérifié" → "Professionnel" pour pros ; navigation profil → ProProfileEditPage si isPro ; cat_pro + is_pro auto-inféré à la sauvegarde | 2026-05-27 | App | `eleveur_nav.dart`, `eleveur_home.dart`, `user_elevage_feed.dart`, `pro_profile_edit.dart` |
 
 ---
 

@@ -8,6 +8,7 @@ import 'package:PetsMatch/pages/eleveur/choice_publication.dart';
 import 'package:PetsMatch/pages/eleveur/elevage_gestion_select_menu.dart';
 import 'package:PetsMatch/pages/eleveur/postDetail.dart';
 import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
+import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:flutter/material.dart';
@@ -189,7 +190,7 @@ class _UserElevageFeedState extends State<UserElevageFeed>
                       IconButton(
                         icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.white),
                         onPressed: () => Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => ProfilEleveurEditPage())),
+                            MaterialPageRoute(builder: (_) => User_Info.isPro ? const ProProfileEditPage() : ProfilEleveurEditPage())),
                       ),
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_vert, size: 18, color: Colors.white),
@@ -543,7 +544,7 @@ class _UserElevageFeedState extends State<UserElevageFeed>
               label: const Text('Modifier mon profil',
                   style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
               onPressed: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => ProfilEleveurEditPage())),
+                  MaterialPageRoute(builder: (_) => User_Info.isPro ? const ProProfileEditPage() : ProfilEleveurEditPage())),
             ),
           ),
         ],
