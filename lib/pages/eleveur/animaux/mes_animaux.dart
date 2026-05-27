@@ -1,4 +1,5 @@
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/portee_form_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -54,9 +55,10 @@ class MesAnimauxPage extends StatefulWidget {
 class _MesAnimauxPageState extends State<MesAnimauxPage>
     with SingleTickerProviderStateMixin {
   // Présents filters
-  String _filterEspece = 'tous';
-  String _filterSexe   = 'tous';
-  String _filterRace   = '';
+  String _filterEspece  = 'tous';
+  String _filterSexe    = 'tous';
+  String _filterRace    = '';
+  bool   _filterPortee  = false;
 
   // Anciens filters
   String    _anciensEspece = 'tous';
@@ -108,6 +110,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (_filterEspece != 'tous') c++;
     if (_filterSexe != 'tous')   c++;
     if (_filterRace.isNotEmpty)  c++;
+    if (_filterPortee)           c++;
     return c;
   }
 
@@ -188,11 +191,11 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                         fontSize: 17, color: Color(0xFF1F2A2E))),
                 const Spacer(),
-                if (tmpEspece != 'tous' || tmpSexe != 'tous' || tmpRace.isNotEmpty)
+                if (tmpEspece != 'tous' || tmpSexe != 'tous' || tmpRace.isNotEmpty || _filterPortee)
                   TextButton(
                     onPressed: () {
                       setSheet(() { tmpEspece = 'tous'; tmpSexe = 'tous'; tmpRace = ''; });
-                      setState(() { _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = ''; });
+                      setState(() { _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = ''; _filterPortee = false; });
                     },
                     style: TextButton.styleFrom(padding: EdgeInsets.zero),
                     child: const Text('Réinitialiser',
@@ -265,6 +268,35 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                   );
                 }).toList()),
               ],
+              const SizedBox(height: 18),
+              const Text('Portée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                  fontSize: 13, color: Color(0xFF6F767B))),
+              const SizedBox(height: 10),
+              GestureDetector(
+                onTap: () {
+                  setSheet(() {});
+                  setState(() => _filterPortee = !_filterPortee);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: _filterPortee ? const Color(0xFF0C5C6C) : Colors.transparent,
+                    border: Border.all(
+                        color: _filterPortee ? const Color(0xFF0C5C6C) : Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.diversity_3, size: 13,
+                        color: _filterPortee ? Colors.white : const Color(0xFF0C5C6C)),
+                    const SizedBox(width: 5),
+                    Text('Portées uniquement',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                            color: _filterPortee ? Colors.white : Colors.black87,
+                            fontWeight: _filterPortee ? FontWeight.w600 : FontWeight.normal)),
+                  ]),
+                ),
+              ),
               const SizedBox(height: 8),
             ]),
           );
@@ -537,7 +569,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       ),
       floatingActionButton: isPresents
           ? FloatingActionButton(
-              onPressed: () => _openFiche(context, null),
+              onPressed: () => _showAddSheet(context),
               backgroundColor: _green,
               child: const Icon(Icons.add, color: Colors.white),
             )
@@ -590,6 +622,14 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               onRemove: () => setState(() => _filterRace = ''),
             ),
           ],
+          if (_filterPortee) ...[
+            const SizedBox(width: 6),
+            _ActiveChip(
+              label: 'Portées',
+              color: const Color(0xFF0C5C6C),
+              onRemove: () => setState(() => _filterPortee = false),
+            ),
+          ],
         ]),
       ),
     );
@@ -606,6 +646,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       if (_filterSexe != 'tous' && data['sexe'] != _filterSexe) return false;
       if (_filterRace.isNotEmpty &&
           (data['race'] ?? '').toString().toLowerCase() != _filterRace.toLowerCase()) return false;
+      if (_filterPortee && (data['portee_id'] == null || (data['portee_id'] as String).isEmpty)) return false;
       return true;
     }).toList()
       ..sort((a, b) => (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString()));
@@ -625,7 +666,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           const SizedBox(height: 16),
           if (_presentsFilterCount == 0)
             ElevatedButton.icon(
-              onPressed: () => _openFiche(context, null),
+              onPressed: () => _showAddSheet(context),
               icon: const Icon(Icons.add),
               label: const Text('Ajouter un animal', style: TextStyle(fontFamily: 'Galey')),
               style: ElevatedButton.styleFrom(
@@ -634,7 +675,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           else
             TextButton(
               onPressed: () => setState(() {
-                _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = '';
+                _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = ''; _filterPortee = false;
               }),
               child: const Text('Réinitialiser les filtres',
                   style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6E9E57))),
@@ -642,6 +683,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         ]),
       );
     }
+
+    // Vue groupée par portée
+    if (_filterPortee) return _buildPorteeGroupedView(docs);
 
     return GridView.builder(
       padding: const EdgeInsets.all(16),
@@ -659,6 +703,103 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           data: data,
           onTap: () => _openFiche(context, data['id'] as String?, data: data),
         );
+      },
+    );
+  }
+
+  Widget _buildPorteeGroupedView(List<Map<String, dynamic>> docs) {
+    final fmt = DateFormat('dd/MM/yyyy');
+    // Grouper par portee_id
+    final Map<String, List<Map<String, dynamic>>> groups = {};
+    for (final d in docs) {
+      final pid = (d['portee_id'] as String?) ?? '';
+      if (pid.isEmpty) continue;
+      groups.putIfAbsent(pid, () => []).add(d);
+    }
+    // Trier les groupes par date de naissance décroissante
+    final sortedKeys = groups.keys.toList()
+      ..sort((a, b) {
+        final da = DateTime.tryParse(groups[a]!.first['date_naissance'] as String? ?? '') ?? DateTime(0);
+        final db = DateTime.tryParse(groups[b]!.first['date_naissance'] as String? ?? '') ?? DateTime(0);
+        return db.compareTo(da);
+      });
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: sortedKeys.length,
+      itemBuilder: (_, gi) {
+        final pid      = sortedKeys[gi];
+        final members  = groups[pid]!;
+        final first    = members.first;
+        final dn       = DateTime.tryParse(first['date_naissance'] as String? ?? '');
+        final race     = (first['race'] as String?) ?? '';
+        final espece   = (first['espece'] as String?) ?? '';
+
+        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (gi > 0) const SizedBox(height: 20),
+          // Header portée
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: _teal.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _teal.withOpacity(0.2)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.diversity_3, size: 18, color: _teal),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(
+                    [
+                      'Portée',
+                      if (race.isNotEmpty) race,
+                      if (espece.isNotEmpty) '· ${speciesLabel(espece)}',
+                    ].join(' '),
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 13, color: _teal),
+                  ),
+                  if (dn != null)
+                    Text('Nés le ${fmt.format(dn)}',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                            color: Color(0xFF5F9EAA))),
+                ]),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: _teal.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text('${members.length}',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 13, color: _teal)),
+              ),
+            ]),
+          ),
+          // Grille animaux de la portée
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 0.68,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            itemCount: members.length,
+            itemBuilder: (_, i) {
+              final data = members[i];
+              return _AnimalCard(
+                id: data['id'] as String? ?? '',
+                data: data,
+                showPorteeBadge: true,
+                onTap: () => _openFiche(context, data['id'] as String?, data: data),
+              );
+            },
+          ),
+        ]);
       },
     );
   }
@@ -793,6 +934,55 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       ),
     )).then((_) => _loadAnimaux());
   }
+
+  void _showAddSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 20),
+          const Text('Ajouter des animaux',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                  fontSize: 17, color: Color(0xFF1F2A2E))),
+          const SizedBox(height: 20),
+          _AddOptionTile(
+            icon: Icons.pets,
+            color: _green,
+            title: 'Ajouter un animal',
+            subtitle: 'Fiche individuelle complète',
+            onTap: () {
+              Navigator.pop(context);
+              _openFiche(context, null);
+            },
+          ),
+          const SizedBox(height: 12),
+          _AddOptionTile(
+            icon: Icons.diversity_3,
+            color: _teal,
+            title: 'Charger une portée',
+            subtitle: 'Créer plusieurs animaux d\'un coup\navec parents communs',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => const PorteeFormPage(),
+              )).then((created) {
+                if (created == true) _loadAnimaux();
+              });
+            },
+          ),
+        ]),
+      ),
+    );
+  }
 }
 
 // ─── Card animal ──────────────────────────────────────────────────────────────
@@ -802,11 +992,13 @@ class _AnimalCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final VoidCallback onTap;
   final bool showStatut;
+  final bool showPorteeBadge;
   const _AnimalCard({
     required this.id,
     required this.data,
     required this.onTap,
     this.showStatut = false,
+    this.showPorteeBadge = false,
   });
 
   @override
@@ -858,6 +1050,23 @@ class _AnimalCard extends StatelessWidget {
                             style: const TextStyle(color: Colors.white, fontSize: 9,
                                 fontFamily: 'Galey', fontWeight: FontWeight.w600),
                           ),
+                        ),
+                      ),
+                    if (showPorteeBadge && (data['portee_id'] as String? ?? '').isNotEmpty)
+                      Positioned(
+                        top: 6, left: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0C5C6C).withOpacity(0.85),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.diversity_3, size: 8, color: Colors.white),
+                            SizedBox(width: 3),
+                            Text('Portée', style: TextStyle(color: Colors.white, fontSize: 8,
+                                fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                          ]),
                         ),
                       ),
                   ],
@@ -934,6 +1143,55 @@ class _SexeChip extends StatelessWidget {
             fontFamily: 'Galey', fontSize: 13,
             color: active ? Colors.white : Colors.black87,
             fontWeight: active ? FontWeight.w600 : FontWeight.normal)),
+      ),
+    );
+  }
+}
+
+class _AddOptionTile extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  const _AddOptionTile({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Row(children: [
+          Container(
+            width: 48, height: 48,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(width: 14),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                fontSize: 15, color: color)),
+            const SizedBox(height: 3),
+            Text(subtitle, style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
+                color: Color(0xFF6F767B))),
+          ])),
+          Icon(Icons.chevron_right, color: color.withOpacity(0.6)),
+        ]),
       ),
     );
   }

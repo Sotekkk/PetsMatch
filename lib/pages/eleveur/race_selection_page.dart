@@ -238,7 +238,7 @@ class _RaceCard extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                   fontSize: 15)),
           subtitle: Text(
-            '${group.count} animal${group.count > 1 ? 'x' : ''} · ${group.isDog ? 'Chien' : 'Chat'}',
+            '${group.count} animal${group.count > 1 ? 'aux' : ''} · ${group.isDog ? 'Chien' : 'Chat'}',
             style: TextStyle(
                 fontFamily: 'Galey',
                 fontSize: 12,

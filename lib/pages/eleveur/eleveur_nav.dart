@@ -9,6 +9,7 @@ import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
@@ -193,7 +194,7 @@ class _EleveurNavState extends State<EleveurNav> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnnoncesFeedPage(initialTypeFilter: 'vente'),
+                          builder: (_) => const TrouverCompagnonPage(),
                         ));
                       },
                     ),

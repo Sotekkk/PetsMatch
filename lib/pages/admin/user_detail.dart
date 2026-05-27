@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class UserDetail extends StatefulWidget {
   final String uid;
@@ -124,6 +126,118 @@ class _UserDetailState extends State<UserDetail> {
     );
   }
 
+  Future<void> _deleteUser() async {
+    // ── 1re confirmation ──────────────────────────────────────────────────────
+    final step1 = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFFF8F8F6),
+        title: const Text('⚠️ Supprimer ce profil ?',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.red)),
+        content: Text(
+          'Seront supprimés définitivement :\n\n'
+          '• Compte Firebase Authentication\n'
+          '• Données personnelles\n'
+          '• Tous les animaux et portées\n'
+          '• Toutes les annonces\n'
+          '• Tous les documents et fichiers\n\n'
+          'Utilisateur : ${_data['email'] ?? widget.uid}',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Continuer →', style: TextStyle(color: Colors.white, fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    if (step1 != true || !mounted) return;
+
+    // ── 2e confirmation — saisir "SUPPRIMER" ──────────────────────────────────
+    final ctrl = TextEditingController();
+    final step2 = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          backgroundColor: const Color(0xFFF8F8F6),
+          title: const Text('Confirmation finale',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Tapez SUPPRIMER pour confirmer :',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              onChanged: (_) => setS(() {}),
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.red),
+              decoration: InputDecoration(
+                filled: true, fillColor: const Color(0xFFFFEBEE),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                hintText: 'SUPPRIMER',
+              ),
+            ),
+          ]),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ctrl.text == 'SUPPRIMER' ? Colors.red : Colors.grey.shade300,
+              ),
+              onPressed: ctrl.text == 'SUPPRIMER' ? () => Navigator.pop(ctx, true) : null,
+              child: const Text('Supprimer définitivement',
+                  style: TextStyle(color: Colors.white, fontFamily: 'Galey', fontSize: 12)),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (step2 != true || !mounted) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final adminUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+      // Appelle l'Edge Function Supabase (Firebase Auth + Supabase cascade)
+      final res = await Supabase.instance.client.functions.invoke(
+        'delete-user',
+        body: {'uid': widget.uid, 'adminUid': adminUid},
+      );
+      final resData = res.data as Map<String, dynamic>?;
+      if (res.status != 200 || resData?['success'] != true) {
+        final errs = (resData?['errors'] as List?)?.join(', ') ?? resData?['error'] ?? 'Erreur serveur';
+        throw Exception(errs);
+      }
+
+      // Supprime le document Firestore
+      await FirebaseFirestore.instance.collection('users').doc(widget.uid).delete();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profil supprimé définitivement.'), backgroundColor: Colors.green),
+        );
+        Navigator.pop(context, 'deleted');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final name =
@@ -145,6 +259,13 @@ class _UserDetailState extends State<UserDetail> {
             color: Colors.black,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_forever, color: Colors.red),
+            tooltip: 'Supprimer le profil',
+            onPressed: _isLoading ? null : _deleteUser,
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

@@ -166,12 +166,14 @@ class _UserCard extends StatelessWidget {
     final isValidate = data['isValidate'] == true;
 
     return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => UserDetail(uid: uid, data: data),
-        ),
-      ),
+      onTap: () async {
+        final result = await Navigator.push<dynamic>(
+          context,
+          MaterialPageRoute(builder: (_) => UserDetail(uid: uid, data: data)),
+        );
+        // Si le profil a été supprimé, recharger la liste
+        // StreamBuilder se rafraîchit automatiquement via Firestore snapshot
+      },
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(
