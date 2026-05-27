@@ -154,7 +154,7 @@ export default function CreerAnnoncePage() {
 
   function thumbUrl(url: string) {
     if (!url.includes('/storage/v1/object/public/')) return url;
-    return url.replace('/storage/v1/object/', '/storage/v1/render/image/') + '?width=80&quality=70&resize=cover';
+    return url.replace('/storage/v1/object/', '/storage/v1/render/image/') + '?width=80&quality=70&resize=contain';
   }
 
   // ── My animals loaders
@@ -419,10 +419,12 @@ export default function CreerAnnoncePage() {
         ) : animals.map(a => (
           <button key={a.id} type="button" onClick={() => onSelect(a)}
             className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[#E8F4F6] text-left border-b border-gray-50 last:border-0 transition-colors">
-            <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100">
-              {a.photo_url && (
+            <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
+              {a.photo_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={thumbUrl(a.photo_url)} alt="" className="w-full h-full object-cover" />
+                <img src={thumbUrl(a.photo_url)} alt="" className="w-full h-full object-contain" />
+              ) : (
+                <span className="text-gray-300 text-lg">🐾</span>
               )}
             </div>
             <div className="min-w-0">
@@ -873,10 +875,12 @@ export default function CreerAnnoncePage() {
                     ) : babyPickerAnimals.map(a => (
                       <button key={a.id} type="button" onClick={() => selectBabyAnimal(a)}
                         className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[#E8F4F6] text-left border-b border-gray-50 last:border-0 transition-colors">
-                        <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100">
-                          {a.photo_url && (
+                        <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
+                          {a.photo_url ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={thumbUrl(a.photo_url)} alt="" className="w-full h-full object-cover" />
+                            <img src={thumbUrl(a.photo_url)} alt="" className="w-full h-full object-contain" />
+                          ) : (
+                            <span className="text-gray-300 text-sm">🐾</span>
                           )}
                         </div>
                         <div className="min-w-0">

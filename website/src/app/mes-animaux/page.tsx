@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -19,6 +19,7 @@ interface Animal {
   statut?: string;
   date_entree?: string;
   date_sortie?: string;
+  portee_id?: string;
 }
 
 const SPECIES = [
@@ -63,7 +64,7 @@ function Chip({
   );
 }
 
-function AnimalCard({ a, tab }: { a: Animal; tab: 'presents' | 'anciens' }) {
+function AnimalCard({ a, tab, showPorteeBadge = false }: { a: Animal; tab: 'presents' | 'anciens'; showPorteeBadge?: boolean }) {
   const espColor = SPECIES.find(s => s.value === a.espece)?.color ?? '#6F767B';
   const isMale   = (a.sexe ?? '').toLowerCase().startsWith('m');
   const isFemale = (a.sexe ?? '').toLowerCase().startsWith('f');
@@ -72,7 +73,6 @@ function AnimalCard({ a, tab }: { a: Animal; tab: 'presents' | 'anciens' }) {
   return (
     <Link href={`/mes-animaux/${a.id}`}
       className="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-all group block">
-      {/* Photo */}
       <div className="aspect-square relative overflow-hidden"
         style={{ background: espColor + '18' }}>
         {photo
@@ -87,8 +87,12 @@ function AnimalCard({ a, tab }: { a: Animal; tab: 'presents' | 'anciens' }) {
             {a.statut === 'decede' ? 'Décédé' : 'Sorti'}
           </span>
         )}
+        {showPorteeBadge && a.portee_id && (
+          <span className="absolute top-2 left-2 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg bg-[#0C5C6C]/85">
+            🐣 Portée
+          </span>
+        )}
       </div>
-      {/* Infos */}
       <div className="p-3">
         <p className="font-bold text-[#1F2A2E] text-sm truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
           {a.nom ?? 'Sans nom'}
@@ -124,13 +128,26 @@ export default function MesAnimauxPage() {
   const [filtreEspece, setFiltreEspece] = useState('tous');
   const [filtreSexe, setFiltreSexe] = useState('tous');
   const [filtreRace, setFiltreRace] = useState('');
+  const [filtrePortee, setFiltrePortee] = useState(false);
 
   // Filtres anciens
   const [anciensEspece, setAnciensEspece] = useState('tous');
   const [anciensStatut, setAnciensStatut] = useState('tous');
 
-  // Filter panel open
+  // UI state
   const [filterOpen, setFilterOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setAddMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
@@ -176,6 +193,7 @@ export default function MesAnimauxPage() {
       if (filtreSexe === 'femelle' && !s.startsWith('f')) return false;
     }
     if (filtreRace && a.race !== filtreRace) return false;
+    if (filtrePortee && !a.portee_id) return false;
     return true;
   });
 
@@ -189,12 +207,31 @@ export default function MesAnimauxPage() {
   const currentList = tab === 'presents' ? filteredPresents : filteredAnciens;
 
   const activeFilterCount = tab === 'presents'
-    ? (filtreEspece !== 'tous' ? 1 : 0) + (filtreSexe !== 'tous' ? 1 : 0) + (filtreRace ? 1 : 0)
+    ? (filtreEspece !== 'tous' ? 1 : 0) + (filtreSexe !== 'tous' ? 1 : 0) + (filtreRace ? 1 : 0) + (filtrePortee ? 1 : 0)
     : (anciensEspece !== 'tous' ? 1 : 0) + (anciensStatut !== 'tous' ? 1 : 0);
+
+  // Groupement par portée
+  const porteeGroups: Map<string, Animal[]> = new Map();
+  if (filtrePortee) {
+    for (const a of filteredPresents) {
+      if (!a.portee_id) continue;
+      const group = porteeGroups.get(a.portee_id) ?? [];
+      group.push(a);
+      porteeGroups.set(a.portee_id, group);
+    }
+    // Trier les groupes par date de naissance décroissante
+    const sorted = [...porteeGroups.entries()].sort((a, b) => {
+      const da = new Date(a[1][0]?.date_naissance ?? '').getTime();
+      const db = new Date(b[1][0]?.date_naissance ?? '').getTime();
+      return db - da;
+    });
+    porteeGroups.clear();
+    for (const [k, v] of sorted) porteeGroups.set(k, v);
+  }
 
   function resetFilters() {
     if (tab === 'presents') {
-      setFiltreEspece('tous'); setFiltreSexe('tous'); setFiltreRace('');
+      setFiltreEspece('tous'); setFiltreSexe('tous'); setFiltreRace(''); setFiltrePortee(false);
     } else {
       setAnciensEspece('tous'); setAnciensStatut('tous');
     }
@@ -213,10 +250,41 @@ export default function MesAnimauxPage() {
           </p>
         </div>
         {isEleveur && (
-          <Link href="/mes-animaux/ajouter"
-            className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white text-sm font-semibold px-4 py-2 rounded-full transition-colors">
-            + Ajouter
-          </Link>
+          <div className="relative" ref={addMenuRef}>
+            <button
+              onClick={() => setAddMenuOpen(v => !v)}
+              className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white text-sm font-semibold px-4 py-2 rounded-full transition-colors flex items-center gap-1">
+              + Ajouter
+              <svg className={`w-3 h-3 transition-transform ${addMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {addMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-60 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden z-20">
+                <Link href="/mes-animaux/ajouter"
+                  onClick={() => setAddMenuOpen(false)}
+                  className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl"
+                    style={{ background: '#6E9E5720' }}>🐾</div>
+                  <div>
+                    <p className="text-sm font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Ajouter un animal</p>
+                    <p className="text-xs text-gray-400">Fiche individuelle</p>
+                  </div>
+                </Link>
+                <div className="h-px bg-gray-100 mx-3" />
+                <Link href="/mes-animaux/portee"
+                  onClick={() => setAddMenuOpen(false)}
+                  className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl"
+                    style={{ background: '#0C5C6C20' }}>🐣</div>
+                  <div>
+                    <p className="text-sm font-semibold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>Charger une portée</p>
+                    <p className="text-xs text-gray-400">Plusieurs animaux d&apos;un coup</p>
+                  </div>
+                </Link>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -298,6 +366,12 @@ export default function MesAnimauxPage() {
                   </div>
                 </div>
               )}
+              {/* Portée */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Portée</p>
+                <Chip label="🐣 Portées uniquement" active={filtrePortee}
+                  color="#0C5C6C" onClick={() => setFiltrePortee(v => !v)} />
+              </div>
             </>
           ) : (
             <>
@@ -343,6 +417,36 @@ export default function MesAnimauxPage() {
               ? 'Ajoutez votre premier animal'
               : 'Modifiez les filtres pour voir plus de résultats'}
           </p>
+        </div>
+      ) : filtrePortee && porteeGroups.size > 0 ? (
+        <div className="space-y-6">
+          {[...porteeGroups.entries()].map(([pid, members]) => {
+            const first = members[0];
+            const dn = first.date_naissance ? new Date(first.date_naissance).toLocaleDateString('fr-FR') : null;
+            const race = first.race ?? '';
+            const espece = first.espece ?? '';
+            const espColor = SPECIES.find(s => s.value === espece)?.color ?? '#0C5C6C';
+            return (
+              <div key={pid}>
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl mb-3"
+                  style={{ background: '#0C5C6C0D', border: '1px solid #0C5C6C30' }}>
+                  <span className="text-lg">🐣</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      Portée {race && <span>{race}</span>} {espece && <span>· {SPECIES_EMOJI[espece] ?? ''} {speciesLabel(espece)}</span>}
+                    </p>
+                    {dn && <p className="text-xs text-[#5F9EAA]">Nés le {dn}</p>}
+                  </div>
+                  <span className="text-xs font-bold text-[#0C5C6C] bg-[#0C5C6C20] px-2 py-0.5 rounded-full">
+                    {members.length}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {members.map(a => <AnimalCard key={a.id} a={a} tab={tab} showPorteeBadge />)}
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
