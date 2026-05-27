@@ -99,6 +99,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   String? _activeAlerteId;
   String? _alerteStatut;
 
+  List<Map<String, dynamic>> _mesMales = [];
+  List<Map<String, dynamic>> _mesFemelles = [];
+
   Map<String, List<String>> _allBreeds = {};
 
   List<String> get _currentBreeds {
@@ -115,6 +118,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     if (widget.preselectedEspece != null) _espece = widget.preselectedEspece!;
     _fillFromData(widget.initialData); // pre-fill instantly from cached data
     _loadBreeds();
+    _loadMesAnimaux();
     if (widget.animalId != null) {
       _loadActiveAlerte();
       _refreshFromSupabase(); // then silently refresh with latest Supabase data
@@ -170,6 +174,23 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           _alerteStatut   = res[0]['statut'] as String?;
         });
       }
+    } catch (_) {}
+  }
+
+  Future<void> _loadMesAnimaux() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final males = await _supa.from('animaux')
+          .select('id, nom, identification, race, photo_url')
+          .eq('uid_eleveur', uid).eq('sexe', 'male').order('nom');
+      final femelles = await _supa.from('animaux')
+          .select('id, nom, identification, race, photo_url, date_naissance')
+          .eq('uid_eleveur', uid).eq('sexe', 'femelle').order('nom');
+      if (mounted) setState(() {
+        _mesMales = List<Map<String, dynamic>>.from(males);
+        _mesFemelles = List<Map<String, dynamic>>.from(femelles);
+      });
     } catch (_) {}
   }
 
@@ -678,7 +699,7 @@ class _IdentiteTab extends StatelessWidget {
                 const SizedBox(height: 12),
                 _card([
                   _pedigreeSection(context),
-                  _genealogieSection(),
+                  _genealogieSection(context),
                 ]),
                 const SizedBox(height: 12),
                 _contactsUrgenceSection(context),
@@ -1344,7 +1365,84 @@ class _IdentiteTab extends StatelessWidget {
     );
   }
 
-  Widget _genealogieSection() {
+  void _showParentPicker(
+    BuildContext context,
+    List<Map<String, dynamic>> animaux,
+    TextEditingController nomCtrl,
+    TextEditingController puceCtrl, {
+    bool isMere = false,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.5,
+        maxChildSize: 0.85,
+        builder: (_, sc) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(children: [
+            const SizedBox(height: 10),
+            Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 14),
+            Text('Choisir la ${isMere ? 'mère' : 'père'}',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
+            const SizedBox(height: 8),
+            if (animaux.isEmpty)
+              const Expanded(child: Center(child: Text('Aucun animal trouvé', style: TextStyle(color: Colors.grey))))
+            else
+              Expanded(
+                child: ListView.separated(
+                  controller: sc,
+                  itemCount: animaux.length,
+                  separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade100),
+                  itemBuilder: (_, i) {
+                    final a = animaux[i];
+                    final photoUrl = a['photo_url'] as String?;
+                    final subtitle = [a['race'], a['identification'] != null ? '#${a['identification']}' : null]
+                        .whereType<String>().join(' · ');
+                    return ListTile(
+                      leading: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: photoUrl != null
+                            ? CachedNetworkImage(imageUrl: photoUrl, width: 40, height: 40, fit: BoxFit.cover)
+                            : Container(width: 40, height: 40,
+                                decoration: BoxDecoration(
+                                  color: isMere ? const Color(0xFFEEF5EA) : const Color(0xFFE8F4F8),
+                                  borderRadius: BorderRadius.circular(8)),
+                                child: Icon(Icons.pets, color: isMere ? const Color(0xFF6E9E57) : const Color(0xFF0C5C6C), size: 20)),
+                      ),
+                      title: Text(a['nom'] ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                      subtitle: subtitle.isNotEmpty ? Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF6F767B))) : null,
+                      onTap: () {
+                        nomCtrl.text = a['nom'] ?? '';
+                        puceCtrl.text = a['identification'] ?? '';
+                        if (isMere) {
+                          final dn = a['date_naissance'] as String?;
+                          final race = a['race'] as String?;
+                          s.setState(() {
+                            if (dn != null && dn.isNotEmpty) s._dateNaissanceMere = DateTime.tryParse(dn);
+                            if (race != null && race.isNotEmpty) s._raceMereCtrl.text = race;
+                          });
+                        }
+                        Navigator.pop(context);
+                      },
+                    );
+                  },
+                ),
+              ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _genealogieSection(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Padding(
         padding: EdgeInsets.only(bottom: 10),
@@ -1356,6 +1454,13 @@ class _IdentiteTab extends StatelessWidget {
         FaIcon(FontAwesomeIcons.mars, size: 14, color: Colors.blue.shade300),
         const SizedBox(width: 6),
         const Text('Père', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+        const Spacer(),
+        if (s._mesMales.isNotEmpty)
+          GestureDetector(
+            onTap: () => _showParentPicker(context, s._mesMales, s._nomPereCtrl, s._pucePereCtrl),
+            child: const Text('Choisir parmi mes animaux',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF0C5C6C), fontWeight: FontWeight.w600)),
+          ),
       ]),
       const SizedBox(height: 6),
       Row(children: [
@@ -1369,6 +1474,13 @@ class _IdentiteTab extends StatelessWidget {
         FaIcon(FontAwesomeIcons.venus, size: 14, color: Colors.pink.shade300),
         const SizedBox(width: 6),
         const Text('Mère', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+        const Spacer(),
+        if (s._mesFemelles.isNotEmpty)
+          GestureDetector(
+            onTap: () => _showParentPicker(context, s._mesFemelles, s._nomMereCtrl, s._puceMereCtrl, isMere: true),
+            child: const Text('Choisir parmi mes animaux',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6E9E57), fontWeight: FontWeight.w600)),
+          ),
       ]),
       const SizedBox(height: 6),
       Row(children: [

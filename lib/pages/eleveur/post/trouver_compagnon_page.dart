@@ -154,7 +154,7 @@ class _TrouverCompagnonPageState extends State<TrouverCompagnonPage> {
                   )
                 else
                   SizedBox(
-                    height: 200,
+                    height: 220,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: _annonces.length,

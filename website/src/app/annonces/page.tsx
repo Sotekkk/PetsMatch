@@ -11,9 +11,11 @@ interface Annonce {
   titre?: string;
   espece?: string;
   race?: string;
+  type?: string;
   type_vente?: string;
   photos?: string[];
   prix?: number;
+  saillie_prix?: number;
   prix_min_portee?: number;
   prix_max_portee?: number;
   ville_eleveur?: string;
@@ -66,7 +68,7 @@ export default function AnnoncesPage() {
   useEffect(() => {
     supabase
       .from('annonces')
-      .select('id, titre, espece, race, type_vente, photos, prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at')
+      .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at')
       .eq('statut', 'disponible')
       .order('created_at', { ascending: false })
       .then(({ data }) => {
@@ -339,9 +341,17 @@ function AnnonceCard({ annonce: a }: { annonce: Annonce }) {
   const photos = (a.photos as unknown as string[]) ?? [];
   const photo = photos[0];
   const isSaillie = a.type_vente === 'saillie';
-  const prix = isSaillie
-    ? (a.prix_min_portee != null && a.prix_max_portee != null ? `${a.prix_min_portee} – ${a.prix_max_portee} €` : null)
-    : (a.prix != null ? `${a.prix} €` : null);
+  const isPortee = a.type === 'portee';
+  let prix: string | null = null;
+  if (isSaillie) {
+    prix = a.saillie_prix != null ? `${a.saillie_prix} €` : null;
+  } else if (isPortee) {
+    const parts = ([a.prix_min_portee, a.prix_max_portee] as (number | undefined)[]).filter((v): v is number => v != null);
+    if (parts.length === 2 && parts[0] !== parts[1]) prix = `${parts[0]} – ${parts[1]} €`;
+    else if (parts.length > 0) prix = `${parts[0]} €`;
+  } else {
+    prix = a.prix != null ? `${a.prix} €` : null;
+  }
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
@@ -351,8 +361,8 @@ function AnnonceCard({ annonce: a }: { annonce: Annonce }) {
         ) : (
           <div className="w-full h-full flex items-center justify-center text-5xl">🐾</div>
         )}
-        <span className={`absolute top-2 left-2 text-white text-xs font-semibold px-2 py-0.5 rounded-full ${isSaillie ? 'bg-purple-500' : 'bg-[#6E9E57]'}`}>
-          {isSaillie ? 'Saillie' : 'Compagnon'}
+        <span className={`absolute top-2 left-2 text-white text-xs font-semibold px-2 py-0.5 rounded-full ${isSaillie ? 'bg-purple-500' : isPortee ? 'bg-amber-500' : 'bg-[#6E9E57]'}`}>
+          {isSaillie ? 'Saillie' : isPortee ? 'Portée' : 'Compagnon'}
         </span>
       </div>
       <div className="p-4">

@@ -39,6 +39,10 @@ const TYPES_POIL = ['Court','Mi-long','Long','Frisé','Fil de soie','Ras'];
 const PROV_QUALITES = ['naissance','eleveur','particulier','refuge','importation','autre'];
 const DEST_QUALITES = ['eleveur','particulier','refuge','autre'];
 const CAUSES_MORT = ['maladie','accident','naturelle','inconnue'];
+const PROV_FR: Record<string,string> = { naissance:"Naissance dans l'élevage", eleveur:'Éleveur', particulier:'Particulier', refuge:'Refuge / Association', importation:'Importation', autre:'Autre' };
+const DEST_FR: Record<string,string> = { eleveur:'Éleveur', particulier:'Particulier', refuge:'Refuge', autre:'Autre' };
+const MORT_FR: Record<string,string> = { maladie:'Maladie', accident:'Accident', naturelle:'Mort naturelle', inconnue:'Inconnue' };
+const STATUT_FR: Record<string,{label:string;color:string}> = { present:{label:'Présent',color:'text-green-700 bg-green-100'}, sorti:{label:'Sorti',color:'text-blue-700 bg-blue-100'}, decede:{label:'Décédé',color:'text-red-600 bg-red-100'} };
 
 const PEDIGREE_CONFIG: Record<string, { label: string; types: string[] }> = {
   chien:  { label: 'LOF (Livre des Origines Français)', types: ['LOF', 'Non-LOF'] },
@@ -482,6 +486,12 @@ export default function AnimalFichePage() {
   const [photoUploading, setPhotoUploading] = useState(false);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [nomElevage, setNomElevage] = useState('');
+  const [adresseElevage, setAdresseElevage] = useState('');
+  const [mesFemelles, setMesFemelles] = useState<{id:string;nom:string;identification?:string;race?:string;photo_url?:string;date_naissance?:string}[]>([]);
+  const [showMerePicker, setShowMerePicker] = useState(false);
+  const [mesMales, setMesMales] = useState<{id:string;nom:string;identification?:string;race?:string;photo_url?:string}[]>([]);
+  const [showPerePicker, setShowPerePicker] = useState(false);
 
   // ── Chargement
   const loadAnimal = useCallback(async () => {
@@ -523,6 +533,27 @@ export default function AnimalFichePage() {
 
   useEffect(() => { loadBreeds(animal.espece ?? 'chien').then(setBreeds); }, [animal.espece]);
   useEffect(() => { loadAnimal(); loadHealth(); loadRepro(); loadAlerte(); }, [loadAnimal, loadHealth, loadRepro, loadAlerte]);
+  useEffect(() => {
+    if (!user || !isEleveur) return;
+    supabase.from('users').select('name_elevage, rue_elevage, ville_elevage').eq('uid', user.uid).maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setNomElevage((data as {name_elevage?:string}).name_elevage ?? '');
+          const parts = [(data as {rue_elevage?:string;ville_elevage?:string}).rue_elevage, (data as {ville_elevage?:string}).ville_elevage].filter(Boolean);
+          setAdresseElevage(parts.join(', '));
+        }
+      });
+  }, [user, isEleveur]);
+
+  useEffect(() => {
+    if (!user || !isEleveur) return;
+    supabase.from('animaux').select('id, nom, identification, race, photo_url, date_naissance')
+      .eq('uid_eleveur', user.uid).eq('sexe', 'femelle').order('nom')
+      .then(({ data }) => setMesFemelles((data ?? []) as {id:string;nom:string;identification?:string;race?:string;photo_url?:string;date_naissance?:string}[]));
+    supabase.from('animaux').select('id, nom, identification, race, photo_url')
+      .eq('uid_eleveur', user.uid).eq('sexe', 'male').order('nom')
+      .then(({ data }) => setMesMales((data ?? []) as {id:string;nom:string;identification?:string;race?:string;photo_url?:string}[]));
+  }, [user, isEleveur]);
 
   // ── Sauvegarde identité
   async function saveAnimal() {
@@ -544,6 +575,18 @@ export default function AnimalFichePage() {
         nom_mere: animal.nom_mere, puce_mere: animal.puce_mere, race_mere: animal.race_mere,
         contacts_urgence: animal.contacts_urgence,
         photo_url: animal.photo_url,
+        statut: animal.statut || 'present',
+        date_entree: animal.date_entree || undefined,
+        provenance_qualite: animal.provenance_qualite || undefined,
+        provenance_nom: animal.provenance_nom || undefined,
+        provenance_adresse: animal.provenance_adresse || undefined,
+        importation_ref: animal.importation_ref || undefined,
+        date_naissance_mere: animal.date_naissance_mere || undefined,
+        date_sortie: animal.date_sortie || undefined,
+        destinataire_qualite: animal.destinataire_qualite || undefined,
+        destinataire_nom: animal.destinataire_nom || undefined,
+        destinataire_adresse: animal.destinataire_adresse || undefined,
+        cause_mort: animal.cause_mort || undefined,
       };
 
       if (isNew || !id) {
@@ -1005,11 +1048,29 @@ export default function AnimalFichePage() {
               <h3 className="font-bold text-[#1F2A2E] text-sm uppercase tracking-wide" style={{ fontFamily:'Galey,sans-serif' }}>Généalogie</h3>
               {editing ? (
                 <div className="grid grid-cols-2 gap-3">
+                  {mesMales.length > 0 && (
+                    <div className="col-span-2 flex items-center justify-between pt-1">
+                      <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">♂ Père</span>
+                      <button type="button" onClick={() => setShowPerePicker(true)}
+                        className="text-xs text-[#0C5C6C] font-semibold hover:text-[#094F5D]">
+                        Choisir parmi mes animaux
+                      </button>
+                    </div>
+                  )}
                   <Field label="Nom du père" value={animal.nom_pere??''} onChange={v=>set('nom_pere',v)} />
                   <Field label="Puce père" value={animal.puce_pere??''} onChange={v=>set('puce_pere',v)} />
                   <div className="col-span-2">
                     <Field label="Race du père" value={animal.race_pere??''} onChange={v=>set('race_pere',v)} />
                   </div>
+                  {mesFemelles.length > 0 && (
+                    <div className="col-span-2 flex items-center justify-between pt-1">
+                      <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">♀ Mère</span>
+                      <button type="button" onClick={() => setShowMerePicker(true)}
+                        className="text-xs text-[#6E9E57] font-semibold hover:text-[#5A8A45]">
+                        Choisir parmi mes animaux
+                      </button>
+                    </div>
+                  )}
                   <Field label="Nom de la mère" value={animal.nom_mere??''} onChange={v=>set('nom_mere',v)} />
                   <Field label="Puce mère" value={animal.puce_mere??''} onChange={v=>set('puce_mere',v)} />
                   <div className="col-span-2">
@@ -1079,63 +1140,124 @@ export default function AnimalFichePage() {
           )}
 
           {/* Registre Entrée/Sortie (éleveur) */}
-          {isEleveur && !isNew && (
+          {isEleveur && (
             <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
               <button onClick={()=>setShowRegistre(!showRegistre)}
                 className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors">
                 <span className="text-xl">📂</span>
                 <span className="flex-1 text-left font-semibold text-sm text-[#1F2A2E]" style={{ fontFamily:'Galey,sans-serif' }}>Registre Entrée / Sortie</span>
+                {!showRegistre && animal.statut && (
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full mr-1 ${STATUT_FR[animal.statut]?.color ?? ''}`}>
+                    {STATUT_FR[animal.statut]?.label}
+                  </span>
+                )}
                 <svg className={`w-4 h-4 text-gray-400 transition-transform ${showRegistre?'rotate-180':''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
                 </svg>
               </button>
               {showRegistre && (
                 <div className="border-t border-gray-100 p-4 space-y-4">
-                  {/* Statut */}
-                  <div>
-                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 block">Statut</label>
-                    <div className="flex gap-2">
-                      {[{v:'present',l:'Présent',c:'#6E9E57'},{v:'sorti',l:'Sorti',c:'#0C5C6C'},{v:'decede',l:'Décédé',c:'#EF4444'}].map(s=>(
-                        <button key={s.v} onClick={()=>set('statut',s.v)}
-                          style={animal.statut===s.v ? {backgroundColor:s.c,borderColor:s.c,color:'#fff'} : {borderColor:'#d1d5db',color:s.c}}
-                          className="flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors">
-                          {s.l}
-                        </button>
+                  {!editing ? (
+                    /* ── Vue lecture seule ── */
+                    <div className="space-y-2">
+                      {(() => {
+                        const st = STATUT_FR[animal.statut ?? 'present'];
+                        return <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${st.color}`}>{st.label}</span>;
+                      })()}
+                      {[
+                        { label:"Date d'entrée", value: animal.date_entree ? new Date(animal.date_entree).toLocaleDateString('fr-FR') : undefined },
+                        { label:'Provenance', value: PROV_FR[animal.provenance_qualite??''] },
+                        { label:'Fournisseur', value: animal.provenance_nom },
+                        { label:'Adresse', value: animal.provenance_adresse },
+                        { label:'Réf. import.', value: animal.importation_ref },
+                        ...(animal.provenance_qualite === 'naissance' ? [
+                          { label:'Puce mère', value: animal.puce_mere },
+                          { label:'Race mère', value: animal.race_mere },
+                        ] : []),
+                        { label:'Naissance mère', value: animal.date_naissance_mere ? new Date(animal.date_naissance_mere).toLocaleDateString('fr-FR') : undefined },
+                        ...(animal.statut==='sorti' ? [
+                          { label:'Date de sortie', value: animal.date_sortie ? new Date(animal.date_sortie).toLocaleDateString('fr-FR') : undefined },
+                          { label:'Destinataire', value: DEST_FR[animal.destinataire_qualite??''] },
+                          { label:'Nom destinataire', value: animal.destinataire_nom },
+                          { label:'Adresse dest.', value: animal.destinataire_adresse },
+                        ] : []),
+                        ...(animal.statut==='decede' ? [
+                          { label:'Date de décès', value: animal.date_sortie ? new Date(animal.date_sortie).toLocaleDateString('fr-FR') : undefined },
+                          { label:'Cause', value: MORT_FR[animal.cause_mort??''] },
+                        ] : []),
+                      ].filter(r=>r.value).map(r=>(
+                        <div key={r.label} className="flex gap-2 text-sm">
+                          <span className="text-gray-400 w-36 flex-shrink-0">{r.label}</span>
+                          <span className="text-[#1F2A2E] font-medium">{r.value}</span>
+                        </div>
                       ))}
                     </div>
-                  </div>
-                  {/* Entrée */}
-                  <Field label="Date d'entrée" value={animal.date_entree??''} onChange={v=>set('date_entree',v)} type="date" />
-                  <SelectField label="Qualité du fournisseur" value={animal.provenance_qualite??''} onChange={v=>set('provenance_qualite',v)}
-                    options={[{value:'',label:'—'}, ...PROV_QUALITES.map(q=>({value:q,label:q.charAt(0).toUpperCase()+q.slice(1)}))]} />
-                  <Field label="Nom / Origine" value={animal.provenance_nom??''} onChange={v=>set('provenance_nom',v)} />
-                  <Field label="Adresse fournisseur" value={animal.provenance_adresse??''} onChange={v=>set('provenance_adresse',v)} />
-                  {animal.provenance_qualite === 'importation' && (
-                    <Field label="Référence d'importation" value={animal.importation_ref??''} onChange={v=>set('importation_ref',v)} />
-                  )}
-                  <Field label="Date de naissance de la mère" value={animal.date_naissance_mere??''} onChange={v=>set('date_naissance_mere',v)} type="date" />
-                  {/* Sortie */}
-                  {animal.statut === 'sorti' && (
+                  ) : (
+                    /* ── Mode édition ── */
                     <>
-                      <Field label="Date de sortie" value={animal.date_sortie??''} onChange={v=>set('date_sortie',v)} type="date" />
-                      <SelectField label="Qualité du destinataire" value={animal.destinataire_qualite??''} onChange={v=>set('destinataire_qualite',v)}
-                        options={[{value:'',label:'—'}, ...DEST_QUALITES.map(q=>({value:q,label:q.charAt(0).toUpperCase()+q.slice(1)}))]} />
-                      <Field label="Nom du destinataire" value={animal.destinataire_nom??''} onChange={v=>set('destinataire_nom',v)} />
-                      <Field label="Adresse destinataire" value={animal.destinataire_adresse??''} onChange={v=>set('destinataire_adresse',v)} />
+                      {/* Statut */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 block">Statut</label>
+                        <div className="flex gap-2">
+                          {[{v:'present',l:'Présent',c:'#6E9E57'},{v:'sorti',l:'Sorti',c:'#0C5C6C'},{v:'decede',l:'Décédé',c:'#EF4444'}].map(s=>(
+                            <button key={s.v} onClick={()=>set('statut',s.v)}
+                              style={animal.statut===s.v ? {backgroundColor:s.c,borderColor:s.c,color:'#fff'} : {borderColor:'#d1d5db',color:s.c}}
+                              className="flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors">
+                              {s.l}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Entrée */}
+                      <Field label="Date d'entrée" value={animal.date_entree??''} onChange={v=>set('date_entree',v)} type="date" />
+                      <SelectField label="Qualité du fournisseur" value={animal.provenance_qualite??''}
+                        onChange={v => {
+                          set('provenance_qualite', v);
+                          if (v === 'naissance') {
+                            if (!animal.provenance_nom && nomElevage) set('provenance_nom', nomElevage);
+                            if (!animal.provenance_adresse && adresseElevage) set('provenance_adresse', adresseElevage);
+                            if (!animal.date_entree && animal.date_naissance) set('date_entree', animal.date_naissance.substring(0, 10));
+                          }
+                        }}
+                        options={[{value:'',label:'—'}, ...PROV_QUALITES.map(q=>({value:q,label:PROV_FR[q]??q}))]} />
+                      <Field label="Nom / Élevage fournisseur" value={animal.provenance_nom??''} onChange={v=>set('provenance_nom',v)} />
+                      <Field label="Adresse fournisseur" value={animal.provenance_adresse??''} onChange={v=>set('provenance_adresse',v)} />
+                      {animal.provenance_qualite === 'naissance' && (animal.nom_mere || animal.puce_mere) && (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#F0F8EE] border border-[#A7C79A] text-sm">
+                          <span className="text-[#6E9E57]">♀</span>
+                          <span className="text-[#4A7A3A]">Mère : {animal.nom_mere || '—'}{animal.puce_mere ? ` · Puce ${animal.puce_mere}` : ''}</span>
+                        </div>
+                      )}
+                      {animal.provenance_qualite === 'importation' && (
+                        <Field label="Référence d'importation" value={animal.importation_ref??''} onChange={v=>set('importation_ref',v)} />
+                      )}
+                      <Field label="Date de naissance de la mère" value={animal.date_naissance_mere??''} onChange={v=>set('date_naissance_mere',v)} type="date" />
+                      {/* Sortie */}
+                      {animal.statut === 'sorti' && (
+                        <>
+                          <Field label="Date de sortie" value={animal.date_sortie??''} onChange={v=>set('date_sortie',v)} type="date" />
+                          <SelectField label="Qualité du destinataire" value={animal.destinataire_qualite??''} onChange={v=>set('destinataire_qualite',v)}
+                            options={[{value:'',label:'—'}, ...DEST_QUALITES.map(q=>({value:q,label:DEST_FR[q]??q}))]} />
+                          <Field label="Nom du destinataire" value={animal.destinataire_nom??''} onChange={v=>set('destinataire_nom',v)} />
+                          <Field label="Adresse destinataire" value={animal.destinataire_adresse??''} onChange={v=>set('destinataire_adresse',v)} />
+                        </>
+                      )}
+                      {/* Décès */}
+                      {animal.statut === 'decede' && (
+                        <>
+                          <Field label="Date de décès" value={animal.date_sortie??''} onChange={v=>set('date_sortie',v)} type="date" />
+                          <SelectField label="Cause du décès" value={animal.cause_mort??''} onChange={v=>set('cause_mort',v)}
+                            options={[{value:'',label:'—'}, ...CAUSES_MORT.map(c=>({value:c,label:MORT_FR[c]??c}))]} />
+                        </>
+                      )}
+                      {!isNew && (
+                        <button onClick={saveRegistre}
+                          className="w-full py-2.5 bg-[#0C5C6C] hover:bg-[#094F5D] text-white text-sm font-semibold rounded-xl transition-colors">
+                          Enregistrer le registre
+                        </button>
+                      )}
                     </>
                   )}
-                  {/* Décès */}
-                  {animal.statut === 'decede' && (
-                    <>
-                      <Field label="Date de décès" value={animal.date_sortie??''} onChange={v=>set('date_sortie',v)} type="date" />
-                      <SelectField label="Cause du décès" value={animal.cause_mort??''} onChange={v=>set('cause_mort',v)}
-                        options={[{value:'',label:'—'}, ...CAUSES_MORT.map(c=>({value:c,label:c.charAt(0).toUpperCase()+c.slice(1)}))]} />
-                    </>
-                  )}
-                  <button onClick={saveRegistre}
-                    className="w-full py-2.5 bg-[#0C5C6C] hover:bg-[#094F5D] text-white text-sm font-semibold rounded-xl transition-colors">
-                    Enregistrer le registre
-                  </button>
                 </div>
               )}
             </div>
@@ -1323,6 +1445,75 @@ export default function AnimalFichePage() {
           updateRepro={updateRepro}
           deleteRepro={deleteRepro}
         />
+      )}
+
+      {showPerePicker && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
+          onClick={() => setShowPerePicker(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[70vh] overflow-hidden shadow-2xl"
+            onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-gray-100">
+              <h3 className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Choisir le père</h3>
+            </div>
+            <div className="overflow-y-auto max-h-[55vh]">
+              {mesMales.map(m => (
+                <button key={m.id} type="button"
+                  onClick={() => {
+                    set('nom_pere', m.nom);
+                    set('puce_pere', m.identification ?? '');
+                    set('race_pere', m.race ?? '');
+                    setShowPerePicker(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-blue-50 transition-colors text-left border-b border-gray-50">
+                  <div className="w-10 h-10 rounded-xl overflow-hidden bg-blue-50 flex-shrink-0 flex items-center justify-center">
+                    {m.photo_url
+                      ? <img src={m.photo_url} alt="" className="w-full h-full object-cover" />
+                      : <span className="text-lg">♂</span>}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm text-[#1F2A2E]">{m.nom}</p>
+                    <p className="text-xs text-gray-400">{[m.race, m.identification ? `#${m.identification}` : null].filter(Boolean).join(' · ')}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showMerePicker && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
+          onClick={() => setShowMerePicker(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[70vh] overflow-hidden shadow-2xl"
+            onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-gray-100">
+              <h3 className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Choisir la mère</h3>
+            </div>
+            <div className="overflow-y-auto max-h-[55vh]">
+              {mesFemelles.map(f => (
+                <button key={f.id} type="button"
+                  onClick={() => {
+                    set('nom_mere', f.nom);
+                    set('puce_mere', f.identification ?? '');
+                    set('race_mere', f.race ?? '');
+                    if (f.date_naissance) set('date_naissance_mere', f.date_naissance.substring(0, 10));
+                    setShowMerePicker(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#F0F8EE] transition-colors text-left border-b border-gray-50">
+                  <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#EEF5EA] flex-shrink-0 flex items-center justify-center">
+                    {f.photo_url
+                      ? <img src={f.photo_url} alt="" className="w-full h-full object-cover" />
+                      : <span className="text-lg">♀</span>}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm text-[#1F2A2E]">{f.nom}</p>
+                    <p className="text-xs text-gray-400">{[f.race, f.identification ? `#${f.identification}` : null].filter(Boolean).join(' · ')}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {cropSrc && (

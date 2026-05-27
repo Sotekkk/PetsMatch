@@ -26,6 +26,8 @@ interface Animal {
   destinataire_adresse?: string;
   cause_mort?: string;
   importation_ref?: string;
+  nom_mere?: string;
+  puce_mere?: string;
 }
 
 const ESPECE_LABELS: Record<string, string> = {
@@ -76,7 +78,7 @@ export default function RegistreEntreeSortiePage() {
     try {
       const { data } = await supabase
         .from('animaux')
-        .select('id, nom, espece, race, sexe, identification, date_naissance, photo_url, statut, date_entree, date_sortie, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, importation_ref')
+        .select('id, nom, espece, race, sexe, identification, date_naissance, photo_url, statut, date_entree, date_sortie, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, importation_ref, nom_mere, puce_mere')
         .eq('uid_eleveur', user.uid)
         .order('date_entree', { ascending: false });
       setAnimaux((data as Animal[]) ?? []);
@@ -308,6 +310,19 @@ function EditRegistreForm({ animal, uid, onClose, onSaved }: {
   const [destAdresse, setDestAdresse] = useState(animal.destinataire_adresse ?? '');
   const [causeMort, setCauseMort] = useState(animal.cause_mort ?? '');
   const [saving, setSaving] = useState(false);
+  const [nomElevage, setNomElevage] = useState('');
+  const [adresseElevage, setAdresseElevage] = useState('');
+
+  useEffect(() => {
+    supabase.from('users').select('name_elevage, rue_elevage, ville_elevage').eq('uid', uid).maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setNomElevage((data as { name_elevage?: string }).name_elevage ?? '');
+          const parts = [(data as { rue_elevage?: string; ville_elevage?: string }).rue_elevage, (data as { ville_elevage?: string }).ville_elevage].filter(Boolean);
+          setAdresseElevage(parts.join(', '));
+        }
+      });
+  }, [uid]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -353,7 +368,15 @@ function EditRegistreForm({ animal, uid, onClose, onSaved }: {
 
       <div>
         <label className={labelCls}>Qualité du fournisseur</label>
-        <select value={provQualite} onChange={(e) => setProvQualite(e.target.value)} className={inputCls}>
+        <select value={provQualite} onChange={(e) => {
+          const v = e.target.value;
+          setProvQualite(v);
+          if (v === 'naissance') {
+            if (!provNom && nomElevage) setProvNom(nomElevage);
+            if (!provAdresse && adresseElevage) setProvAdresse(adresseElevage);
+            if (!dateEntree && animal.date_naissance) setDateEntree(animal.date_naissance.substring(0, 10));
+          }
+        }} className={inputCls}>
           <option value="">—</option>
           {Object.entries(PROV_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
@@ -366,6 +389,14 @@ function EditRegistreForm({ animal, uid, onClose, onSaved }: {
         <label className={labelCls}>Adresse fournisseur</label>
         <input value={provAdresse} onChange={(e) => setProvAdresse(e.target.value)} className={inputCls} />
       </div>
+      {provQualite === 'naissance' && (animal.nom_mere || animal.puce_mere) && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#F0F8EE] border border-[#A7C79A] text-sm">
+          <span className="text-[#6E9E57]">♀</span>
+          <span className="text-[#4A7A3A]">
+            Mère : {animal.nom_mere || '—'}{animal.puce_mere ? ` · Puce ${animal.puce_mere}` : ''}
+          </span>
+        </div>
+      )}
       {provQualite === 'importation' && (
         <div>
           <label className={labelCls}>Référence importation</label>

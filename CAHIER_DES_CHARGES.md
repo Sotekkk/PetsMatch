@@ -161,8 +161,8 @@
 |---|---|
 | ✅ | Saisie entrée/sortie (date, motif, provenance/destination) |
 | ✅ | Auto-fill depuis portée (provenance nom + adresse élevage) |
-| ⬜ | Auto-fill infos éleveur pour toute nouvelle entrée (provenance = élevage par défaut) |
-| ⬜ | Auto-fill infos mère depuis fiche animal si mère = animal de l'élevage |
+| ✅ | Auto-fill infos éleveur pour toute nouvelle entrée (provenance = élevage par défaut) |
+| ✅ | Auto-fill infos mère depuis fiche animal si mère = animal de l'élevage |
 | ⬜ | Import Excel `[Web]` |
 | ⬜ | - [ ] |
 

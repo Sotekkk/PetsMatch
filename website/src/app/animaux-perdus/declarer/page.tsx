@@ -256,7 +256,7 @@ export default function DeclarerPerduPage() {
               : <span className="text-4xl">🐾</span>}
             <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors" />
           </button>
-          <p className="text-xs text-gray-400">Cliquer pour ajouter une photo</p>
+          <p className="text-xs text-gray-400">{photoPreview ? 'Cliquer pour changer la photo' : 'Cliquer pour ajouter une photo'}</p>
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFileChange} />
         </div>
 

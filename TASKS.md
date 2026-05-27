@@ -22,9 +22,6 @@
 |---|---|---|---|---|
 | A02 | Animaux perdus — clic sur alerte page d'accueil → ouvrir la gestion de l'alerte directement | Haute | App + Web | `particulier_home.dart`, `eleveur_home.dart`, page d'accueil web |
 | A03 | Animaux perdus — clic long sur alerte → menu "Supprimer" / "Animal retrouvé" (avec confirmation) | Haute | App + Web | `animaux_perdus_page.dart`, page web équivalente |
-| A05 | Registre entrée/sortie — auto-fill provenance avec infos éleveur (nom + adresse) | Haute | App + Web | `registre_entree_sortie.dart`, `elevage/registre-entree-sortie/page.tsx` |
-
-| A06 | Registre entrée/sortie — auto-fill infos mère depuis fiche animal si mère = animal de l'élevage | Haute | App + Web | `registre_entree_sortie.dart`, page web |
 | A07 | Suivi repro — saillie → gestation automatique avec date de mise bas prévue | Haute | App + Web | À créer `suivi_repro.dart` + page web |
 | A08 | Suivi repro — champ "Gestation confirmée" (oui/non) + alerte rappel confirmation selon espèce | Haute | App + Web | À créer `suivi_repro.dart` |
 | A09 | Suivi repro — saillie extérieure : accès infos mâle (photo, nom, puce, race) depuis éleveur externe | Moyenne | App + Web | À créer `suivi_repro.dart` + table `saillie_acces` |
@@ -98,6 +95,16 @@
 | Admin — suppression profil complet (Firebase Auth + Supabase cascade) | 2026-05 | App + Supabase | `user_detail.dart`, `user_list.dart`, `supabase/functions/delete-user/index.ts` |
 | Fix typo "animalaux" → "animaux" | 2026-05 | App + Web | `portee/page.tsx`, `portee_form_page.dart`, `race_selection_page.dart` |
 | Fiche animal — champs importation_ref, date_naissance_mere, catégories documents | 2026-05 | Web | `mes-animaux/[id]/page.tsx` |
+| A05 — Registre entrée/sortie : auto-fill provenance nom+adresse éleveur au choix "Naissance" | 2026-05 | App + Web | `registre_entree_sortie.dart`, `elevage/registre-entree-sortie/page.tsx` |
+| A06 — Registre entrée/sortie : affichage infos mère (nom + puce) si animal né dans l'élevage | 2026-05 | App + Web | `registre_entree_sortie.dart`, `elevage/registre-entree-sortie/page.tsx` |
+| Fix overflow "Dernières annonces" page Trouver un compagnon | 2026-05 | App | `trouver_compagnon_page.dart` |
+| Fix affichage prix portée (tranches min/max) et saillie dans page liste annonces | 2026-05 | Web | `annonces/page.tsx` |
+| Registre fiche animal — visible à la création + vue lecture seule (statut badge + tous champs) | 2026-05 | Web | `mes-animaux/[id]/page.tsx` |
+| A05/A06 étendu fiche animal — auto-fill naissance + date_entree depuis date_naissance + puce/race mère visible | 2026-05 | Web | `mes-animaux/[id]/page.tsx` |
+| Alerte perdue — photo de l'animal pré-remplie par défaut, texte "Changer" adaptatif | 2026-05 | Web | `animaux-perdus/declarer/page.tsx` |
+| Sélecteur parent (père + mère) depuis mes animaux dans fiche animal | 2026-05 | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
+| Sélecteur mère — auto-fill race mère + date naissance mère depuis la fiche de la mère sélectionnée | 2026-05 | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
+| Registre vue lecture — affichage puce mère + race mère quand provenance = naissance | 2026-05 | Web | `mes-animaux/[id]/page.tsx` |
 
 ---
 

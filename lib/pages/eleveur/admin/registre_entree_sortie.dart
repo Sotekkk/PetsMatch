@@ -527,6 +527,8 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
   late final TextEditingController _destinataireAdresseCtrl;
   String       _causeMort = '';
   bool _saving = false;
+  String? _nomElevage;
+  String? _adresseElevage;
 
   final _fmt = DateFormat('dd/MM/yyyy');
 
@@ -545,6 +547,7 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
     _destinataireNomCtrl= TextEditingController(text: d['destinataire_nom'] as String? ?? '');
     _destinataireAdresseCtrl = TextEditingController(text: d['destinataire_adresse'] as String? ?? '');
     _causeMort          = d['cause_mort'] as String? ?? '';
+    _loadEleveurProfile();
   }
 
   @override
@@ -555,6 +558,51 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
     _destinataireNomCtrl.dispose();
     _destinataireAdresseCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadEleveurProfile() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final profil = await Supabase.instance.client
+          .from('users')
+          .select('name_elevage, rue_elevage, ville_elevage')
+          .eq('uid', uid)
+          .maybeSingle();
+      if (profil != null && mounted) {
+        final rue    = profil['rue_elevage']   as String? ?? '';
+        final ville  = profil['ville_elevage'] as String? ?? '';
+        final adresse = [rue, ville].where((s) => s.isNotEmpty).join(', ');
+        setState(() {
+          _nomElevage     = profil['name_elevage'] as String?;
+          _adresseElevage = adresse.isNotEmpty ? adresse : null;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Widget _buildMereInfo() {
+    final nomMere  = widget.animalData['nom_mere']  as String? ?? '';
+    final puceMere = widget.animalData['puce_mere'] as String? ?? '';
+    if (nomMere.isEmpty && puceMere.isEmpty) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F8EE),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFA7C79A)),
+      ),
+      child: Row(children: [
+        const Icon(Icons.female, size: 16, color: Color(0xFF6E9E57)),
+        const SizedBox(width: 8),
+        Expanded(child: Text(
+          'Mère : ${nomMere.isNotEmpty ? nomMere : '—'}'
+          '${puceMere.isNotEmpty ? ' · Puce $puceMere' : ''}',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF4A7A3A)),
+        )),
+      ]),
+    );
   }
 
   Future<void> _pickDate(DateTime? current, ValueChanged<DateTime> onPicked) async {
@@ -681,12 +729,28 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
                     const ['', 'naissance', 'eleveur', 'particulier', 'refuge', 'importation', 'autre'],
                     const ['—', 'Naissance dans l\'élevage', 'Éleveur', 'Particulier',
                         'Refuge / Association', 'Importation', 'Autre'],
-                    (v) => setState(() => _provenanceQualite = v ?? ''),
+                    (v) {
+                      setState(() => _provenanceQualite = v ?? '');
+                      if (v == 'naissance') {
+                        if (_provenanceNomCtrl.text.isEmpty && (_nomElevage?.isNotEmpty ?? false)) {
+                          _provenanceNomCtrl.text = _nomElevage!;
+                        }
+                        if (_provenanceAdresseCtrl.text.isEmpty && (_adresseElevage?.isNotEmpty ?? false)) {
+                          _provenanceAdresseCtrl.text = _adresseElevage!;
+                        }
+                        if (_dateEntree == null) {
+                          final dn = widget.animalData['date_naissance'] as String?;
+                          final parsed = dn != null ? DateTime.tryParse(dn) : null;
+                          if (parsed != null) setState(() => _dateEntree = parsed);
+                        }
+                      }
+                    },
                   ),
                   const SizedBox(height: 10),
                   _textField('Nom / Élevage du fournisseur', _provenanceNomCtrl),
                   const SizedBox(height: 10),
                   _textField('Adresse du fournisseur', _provenanceAdresseCtrl),
+                  if (_provenanceQualite == 'naissance') _buildMereInfo(),
                   if (_provenanceQualite == 'importation') ...[
                     const SizedBox(height: 10),
                     _textField('Référence justificatif importation', _importationRefCtrl),
