@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class MesAnnoncesPage extends StatefulWidget {
   const MesAnnoncesPage({super.key});
@@ -88,44 +89,53 @@ class _AnnoncesList extends StatelessWidget {
   final String filter;
   const _AnnoncesList({required this.uid, required this.filter});
 
+  static Timestamp? _ts(dynamic v) {
+    if (v == null) return null;
+    try { return Timestamp.fromDate(DateTime.parse(v.toString())); } catch (_) { return null; }
+  }
+
+  static Map<String, dynamic> _norm(Map<String, dynamic> row) => {
+    ...row,
+    'uidEleveur':    row['uid_eleveur'],
+    'typeVente':     row['type_vente'],
+    'prixMinPortee': row['prix_min_portee'],
+    'prixMaxPortee': row['prix_max_portee'],
+    'animauxPortee': row['animaux_portee'] ?? [],
+    'nombreBebes':   row['nombre_bebes'],
+    'createdAt':     _ts(row['created_at']),
+    'expiresAt':     _ts(row['expires_at']),
+  };
+
   @override
   Widget build(BuildContext context) {
     if (uid == null) return const Center(child: Text('Non connecté'));
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('annonces')
-          .where('uidEleveur', isEqualTo: uid)
-          .snapshots(),
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: Supabase.instance.client.from('annonces')
+          .stream(primaryKey: ['id'])
+          .eq('uid_eleveur', uid!)
+          .order('created_at', ascending: false),
       builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
           return const Center(child: CircularProgressIndicator(color: Color(0xFF0C5C6C)));
         }
         if (snap.hasError) {
           return Center(child: Text('Erreur : ${snap.error}',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.redAccent)));
         }
-        var docs = List.from(snap.data?.docs ?? []);
-        docs.sort((a, b) {
-          final aT = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-          final bT = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-          if (aT == null && bT == null) return 0;
-          if (aT == null) return 1;
-          if (bT == null) return -1;
-          return bT.compareTo(aT);
-        });
+        var rows = (snap.data ?? []).map(_norm).toList();
 
-        docs = docs.where((d) {
-          final s = (d.data() as Map<String, dynamic>)['statut'] ?? '';
+        rows = rows.where((d) {
+          final s = (d['statut'] as String?) ?? '';
           switch (filter) {
             case 'actives':   return s == 'disponible' || s == 'reserve';
             case 'pause':     return s == 'pause';
             case 'terminees': return s == 'vendu' || s == 'cede' || s == 'expire';
-            default:          return s != 'supprime'; // 'all': tout sauf supprimé
+            default:          return s != 'supprime';
           }
         }).toList();
 
-        if (docs.isEmpty) {
+        if (rows.isEmpty) {
           return Center(
             child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               Icon(Icons.campaign_outlined, size: 64, color: Colors.grey.shade300),
@@ -146,12 +156,9 @@ class _AnnoncesList extends StatelessWidget {
 
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-          itemCount: docs.length,
-          itemBuilder: (context, i) {
-            final doc  = docs[i];
-            final data = doc.data() as Map<String, dynamic>;
-            return _AnnonceCard(id: doc.id as String, data: data);
-          },
+          itemCount: rows.length,
+          itemBuilder: (context, i) => _AnnonceCard(
+              id: rows[i]['id'] as String, data: rows[i]),
         );
       },
     );
@@ -189,7 +196,7 @@ class _AnnonceCard extends StatelessWidget {
   Future<void> _togglePause(BuildContext context, String statut) async {
     final next = statut == 'pause' ? 'disponible' : 'pause';
     try {
-      await FirebaseFirestore.instance.collection('annonces').doc(id).update({'statut': next});
+      await Supabase.instance.client.from('annonces').update({'statut': next}).eq('id', id);
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -221,7 +228,7 @@ class _AnnonceCard extends StatelessWidget {
     );
     if (ok == true) {
       try {
-        await FirebaseFirestore.instance.collection('annonces').doc(id).update({'statut': 'supprime'});
+        await Supabase.instance.client.from('annonces').update({'statut': 'supprime'}).eq('id', id);
       } catch (e) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

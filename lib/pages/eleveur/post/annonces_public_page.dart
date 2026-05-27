@@ -4,11 +4,13 @@ import 'package:PetsMatch/main.dart' show getApiKey;
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_map_page.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_maps_webservice/places.dart';
 import 'package:intl/intl.dart';
 
@@ -173,11 +175,23 @@ class _AnnoncesPublicPageState extends State<AnnoncesPublicPage> {
         elevation: 0,
         actions: [
           IconButton(
+            icon: const Icon(Icons.play_circle_outline_rounded),
+            tooltip: 'Fil d\'actualité',
+            onPressed: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => const AnnoncesFeedPage())),
+          ),
+          IconButton(
             icon: const Icon(Icons.map_outlined),
             tooltip: 'Voir carte',
             onPressed: () => Navigator.push(context, MaterialPageRoute(
                 builder: (_) => AnnoncesMapPage(
-                    typeFilter: widget.typeFilter))),
+                    typeFilter: widget.typeFilter,
+                    espece: _espece,
+                    race: _raceText,
+                    pays: _pays,
+                    region: _region,
+                    departement: _departement,
+                    ville: _ville))),
           ),
         ],
         bottom: PreferredSize(
@@ -838,15 +852,36 @@ class _AnnoncesList extends StatelessWidget {
   final bool isSaillie;
   const _AnnoncesList({required this.matches, required this.isSaillie});
 
+  static Timestamp? _ts(dynamic v) {
+    if (v == null) return null;
+    try { return Timestamp.fromDate(DateTime.parse(v.toString())); } catch (_) { return null; }
+  }
+
+  static Map<String, dynamic> _norm(Map<String, dynamic> row) => {
+    ...row,
+    'uidEleveur':         row['uid_eleveur'],
+    'nomEleveur':         row['nom_eleveur'],
+    'villeEleveur':       row['ville_eleveur'],
+    'paysEleveur':        row['pays_eleveur'],
+    'regionEleveur':      row['region_eleveur'],
+    'departementEleveur': row['departement_eleveur'],
+    'typeVente':          row['type_vente'],
+    'prixMinPortee':      row['prix_min_portee'],
+    'prixMaxPortee':      row['prix_max_portee'],
+    'nombreBebes':        row['nombre_bebes'],
+    'animauxPortee':      row['animaux_portee'] ?? [],
+    'createdAt':          _ts(row['created_at']),
+  };
+
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('annonces')
-          .where('statut', isEqualTo: 'disponible')
-          .snapshots(),
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: Supabase.instance.client.from('annonces')
+          .stream(primaryKey: ['id'])
+          .eq('statut', 'disponible')
+          .order('created_at', ascending: false),
       builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
           return const Center(child: CircularProgressIndicator(
               color: Color(0xFF0C5C6C)));
         }
@@ -856,20 +891,9 @@ class _AnnoncesList extends StatelessWidget {
                   color: Colors.redAccent)));
         }
 
-        var docs = List.from(snap.data?.docs ?? []);
-        docs.sort((a, b) {
-          final aT = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-          final bT = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-          if (aT == null && bT == null) return 0;
-          if (aT == null) return 1;
-          if (bT == null) return -1;
-          return bT.compareTo(aT);
-        });
-        docs = docs
-            .where((d) => matches(d.data() as Map<String, dynamic>))
-            .toList();
+        final rows = (snap.data ?? []).map(_norm).where(matches).toList();
 
-        if (docs.isEmpty) {
+        if (rows.isEmpty) {
           return Center(child: Column(
               mainAxisAlignment: MainAxisAlignment.center, children: [
             Icon(isSaillie
@@ -890,12 +914,9 @@ class _AnnoncesList extends StatelessWidget {
 
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          itemCount: docs.length,
-          itemBuilder: (context, i) {
-            final doc  = docs[i];
-            final data = doc.data() as Map<String, dynamic>;
-            return _AnnonceCard(id: doc.id as String, data: data);
-          },
+          itemCount: rows.length,
+          itemBuilder: (context, i) => _AnnonceCard(
+              id: rows[i]['id'] as String, data: rows[i]),
         );
       },
     );

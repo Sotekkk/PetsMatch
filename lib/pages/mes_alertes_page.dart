@@ -370,8 +370,8 @@ class _UpdateLocationSheetState extends State<_UpdateLocationSheet> {
         if (c.types.contains('street_number')) num   = c.longName;
         if (c.types.contains('route'))         route = c.longName;
         if (c.types.contains('postal_code'))   cp    = c.longName;
-        if (c.types.contains('locality') ||
-            c.types.contains('administrative_area_level_2')) ville = c.longName;
+        if (c.types.contains('locality'))      ville = c.longName;
+        else if (c.types.contains('administrative_area_level_2') && ville.isEmpty) ville = c.longName;
       }
       final loc = det.result.geometry?.location;
       setState(() {
@@ -398,7 +398,7 @@ class _UpdateLocationSheetState extends State<_UpdateLocationSheet> {
       setState(() {
         _rueCtrl.text   = m.street ?? '';
         _cpCtrl.text    = m.postalCode ?? '';
-        _villeCtrl.text = m.locality ?? m.subAdministrativeArea ?? '';
+        _villeCtrl.text = m.locality ?? m.subLocality ?? '';
         _searchCtrl.text = [_rueCtrl.text, _cpCtrl.text, _villeCtrl.text].where((s) => s.isNotEmpty).join(', ');
       });
     } catch (_) {

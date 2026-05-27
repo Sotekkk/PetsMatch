@@ -6,10 +6,13 @@ import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart' show speciesIcon, speciesLabel;
+import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/particulier/user_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
+import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 
 class ParticulierHomePage extends StatefulWidget {
@@ -32,6 +35,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
   List<Map<String, dynamic>> _animaux = [];
   List<Map<String, dynamic>> _alertesPubliques = [];
   bool _loadingAlertes = false;
+  List<Map<String, dynamic>> _annonces = [];
 
   @override
   void initState() {
@@ -52,6 +56,12 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
           .select()
           .eq('uid_proprietaire', uid)
           .eq('statut', 'perdu');
+      final annonces = await _supa
+          .from('annonces')
+          .select('id, titre, espece, race, photos, prix, prix_min_portee, prix_max_portee, type, type_vente, ville_eleveur')
+          .eq('statut', 'disponible')
+          .order('created_at', ascending: false)
+          .limit(6);
 
       if (!mounted) return;
       setState(() {
@@ -59,6 +69,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
         _animaux = List<Map<String, dynamic>>.from(animaux as List);
         _nbAnimaux = _animaux.length;
         _nbAlertes = (alertesMes as List).length;
+        _annonces = List<Map<String, dynamic>>.from(annonces as List);
         _loading = false;
       });
       _loadAlertesPubliques();
@@ -202,7 +213,9 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
                     const SizedBox(height: 16),
                     _buildAlerteBanner(),
                   ],
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 24),
+                  _buildAnnoncesSection(),
+                  const SizedBox(height: 24),
                   _buildAnimauxPerdusSection(),
                 ]),
               ),
@@ -229,32 +242,25 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
   }
 
   Widget _buildQuickAccess() {
-    final tiles = [
-      _QuickTileData(
+    return Column(children: [
+      _QuickTileWide(
         icon: Icons.location_searching,
         label: 'Mes Alertes',
+        subtitle: 'Animaux déclarés perdus',
         color: Colors.orange.shade700,
         onTap: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const MesAlertesPage())),
       ),
-      _QuickTileData(
-        icon: Icons.campaign_outlined,
-        label: 'Annonces',
+      const SizedBox(height: 10),
+      _QuickTileWide(
+        icon: Icons.pets,
+        label: 'Trouver un compagnon',
+        subtitle: 'Feed · Recherche · Carte',
         color: _teal,
         onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const AnnoncesPublicPage(typeFilter: 'compagnon'))),
+            MaterialPageRoute(builder: (_) => const TrouverCompagnonPage())),
       ),
-    ];
-
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 1.8,
-      mainAxisSpacing: 10,
-      crossAxisSpacing: 10,
-      children: tiles.map((t) => _QuickTile(data: t)).toList(),
-    );
+    ]);
   }
 
   Widget _buildMesAnimauxSection() {
@@ -300,6 +306,62 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
             },
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildAnnoncesSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(children: [
+              const Icon(Icons.campaign_outlined, color: _teal, size: 18),
+              const SizedBox(width: 6),
+              const Text('Trouver un compagnon',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 16, color: Color(0xFF1F2A2E))),
+            ]),
+            TextButton(
+              onPressed: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const AnnoncesPublicPage())),
+              child: Text('Voir tout',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_annonces.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Center(child: Text('Aucune annonce disponible',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                    color: Colors.grey.shade500))),
+          )
+        else
+          SizedBox(
+            height: 190,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _annonces.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (_, i) => _AnnonceMiniCard(
+                annonce: _annonces[i],
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => AnnonceDetailPage(
+                    annonceId: _annonces[i]['id'] as String,
+                    initialData: _annonces[i],
+                  ),
+                )),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -726,4 +788,142 @@ class _PerduMiniCard extends StatelessWidget {
         child: Center(
             child: Icon(Icons.pets, color: Colors.orange.shade200, size: 28)),
       );
+}
+
+// ── Bouton accès rapide pleine largeur ────────────────────────────────────────
+
+class _QuickTileWide extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+  const _QuickTileWide({
+    required this.icon, required this.label, required this.subtitle,
+    required this.color, required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(14),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 6, offset: const Offset(0, 3))],
+      ),
+      child: Row(children: [
+        Container(
+          width: 48, height: 48,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: color, size: 26),
+        ),
+        const SizedBox(width: 14),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: const TextStyle(
+              fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+          Text(subtitle, style: TextStyle(
+              fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+        ])),
+        Icon(Icons.play_arrow_rounded, color: color, size: 22),
+      ]),
+    ),
+  );
+}
+
+// ── Mini-carte annonce ────────────────────────────────────────────────────────
+
+class _AnnonceMiniCard extends StatelessWidget {
+  final Map<String, dynamic> annonce;
+  final VoidCallback onTap;
+  const _AnnonceMiniCard({required this.annonce, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final titre    = (annonce['titre'] as String?) ?? '';
+    final espece   = (annonce['espece'] as String?) ?? '';
+    final race     = (annonce['race'] as String?) ?? '';
+    final photos   = List<String>.from(annonce['photos'] ?? []);
+    final isSaillie = annonce['type_vente'] == 'saillie';
+    final isPortee  = annonce['type'] == 'portee';
+    final ville    = (annonce['ville_eleveur'] as String?) ?? '';
+
+    final prixRaw = isPortee
+        ? (annonce['prix_min_portee'] ?? annonce['prix_max_portee'])
+        : annonce['prix'];
+    final prix = prixRaw != null ? '${(prixRaw as num).toInt()} €' : null;
+
+    final displayTitle = titre.isNotEmpty ? titre
+        : (race.isNotEmpty ? race : speciesLabel(espece));
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 130,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 6, offset: const Offset(0, 2))],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: Stack(fit: StackFit.expand, children: [
+                photos.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: photos.first, fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(color: const Color(0xFFEEF5EA)),
+                        errorWidget: (_, __, ___) => Container(color: const Color(0xFFEEF5EA)))
+                    : Container(color: const Color(0xFFEEF5EA),
+                        child: Center(child: speciesIcon(espece, 32, const Color(0xFF6E9E57)))),
+                Positioned(top: 5, left: 5,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isSaillie
+                          ? const Color(0xFF8B5CF6)
+                          : isPortee ? const Color(0xFFF59E0B) : const Color(0xFF6E9E57),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      isSaillie ? 'Saillie' : isPortee ? 'Portée' : 'Compagnon',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 8,
+                          color: Colors.white, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(displayTitle,
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 11, color: Color(0xFF1F2A2E)),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (prix != null)
+                Text(prix, style: const TextStyle(fontFamily: 'Galey',
+                    fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF0C5C6C))),
+              if (ville.isNotEmpty)
+                Text('📍 $ville',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 9,
+                        color: Color(0xFF9CA3AF)),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
 }

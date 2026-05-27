@@ -40,6 +40,7 @@ class UserSelected {
   final String codePostalElevage;
   final String paysElevage;
   final String siret;
+  final String bannerUrl;
 
   UserSelected({
     required this.uid,
@@ -63,6 +64,7 @@ class UserSelected {
     this.codePostalElevage = '',
     this.paysElevage = '',
     this.siret = '',
+    this.bannerUrl = '',
   });
 
   factory UserSelected.fromMap(Map<String, dynamic> data, String documentId) {
@@ -88,6 +90,7 @@ class UserSelected {
       codePostalElevage: data['codePostalElevage'] ?? '',
       paysElevage: data['paysElevage'] ?? '',
       siret: data['siret'] ?? '',
+      bannerUrl: data['bannerUrl'] ?? '',
     );
   }
 }
@@ -853,6 +856,7 @@ class _PostWidgetState extends State<PostWidget> {
         'participantIds': participantIds,
         'lastMessage': '',
         'timestamp': FieldValue.serverTimestamp(),
+        'categorie': 'annonces',
       });
     } else {
       conversationRef = conversationSnapshot.docs.first.reference;

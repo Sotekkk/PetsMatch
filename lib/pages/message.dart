@@ -11,9 +11,30 @@ class MessagePage extends StatefulWidget {
   _MessagePageState createState() => _MessagePageState();
 }
 
+const _catKeys = [null, 'animaux-perdus', 'annonces', 'communaute'];
+const _catLabels = ['Tous', 'Perdus', 'Annonces', 'Communauté'];
+const _catEmojis = ['💬', '🐾', '📢', '🌿'];
+
+const _catBadgeColor = {
+  'animaux-perdus': Color(0xFFFED7AA),
+  'annonces':       Color(0xFFDBEAFE),
+  'communaute':     Color(0xFFD1FAE5),
+};
+const _catBadgeText = {
+  'animaux-perdus': Color(0xFFC2410C),
+  'annonces':       Color(0xFF1D4ED8),
+  'communaute':     Color(0xFF166534),
+};
+const _catBadgeLabel = {
+  'animaux-perdus': '🐾 Perdus',
+  'annonces':       '📢 Annonces',
+  'communaute':     '🌿 Communauté',
+};
+
 class _MessagePageState extends State<MessagePage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchText = "";
+  int _catIndex = 0;
 
   // Cache pour les utilisateurs et les conversations
   final Map<String, Map<String, String?>> _userCache = {};
@@ -137,41 +158,64 @@ class _MessagePageState extends State<MessagePage> {
                 ],
               ),
             ),
-            SizedBox(
-                height: UTILS.calculHeight(8, UTILS.heightReference(context))),
+            SizedBox(height: UTILS.calculHeight(8, UTILS.heightReference(context))),
             SizedBox(
               width: UTILS.calculWidth(364, UTILS.widthReference(context)),
               height: UTILS.calculHeight(45, UTILS.heightReference(context)),
               child: TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  prefixIcon: Icon(Icons.search),
+                  prefixIcon: const Icon(Icons.search),
                   hintText: 'Recherche',
-                  contentPadding:
-                      EdgeInsets.symmetric(vertical: 5.0, horizontal: 15.0),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(13),
-                    borderSide: BorderSide.none,
-                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 5.0, horizontal: 15.0),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(13), borderSide: BorderSide.none),
                   filled: true,
                   fillColor: const Color(0x33A7C79A),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(13.0),
-                    borderSide: const BorderSide(
-                      color: Color(0xFFA7C79A),
-                      width: 2.0,
-                    ),
+                    borderSide: const BorderSide(color: Color(0xFFA7C79A), width: 2.0),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(13.0),
-                    borderSide: const BorderSide(
-                      color: Color(0xFFA7C79A),
-                      width: 2.0,
-                    ),
+                    borderSide: const BorderSide(color: Color(0xFFA7C79A), width: 2.0),
                   ),
                 ),
               ),
             ),
+            // Catégories
+            SizedBox(height: UTILS.calculHeight(8, UTILS.heightReference(context))),
+            SizedBox(
+              height: 34,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: _catKeys.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, i) {
+                  final isActive = _catIndex == i;
+                  return GestureDetector(
+                    onTap: () => setState(() => _catIndex = i),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isActive ? const Color(0xFF0C5C6C) : const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${_catEmojis[i]}  ${_catLabels[i]}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isActive ? Colors.white : const Color(0xFF6B7280),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            SizedBox(height: UTILS.calculHeight(4, UTILS.heightReference(context))),
             // Liste des messages
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
@@ -187,7 +231,30 @@ class _MessagePageState extends State<MessagePage> {
                     return const Center(child: Text('Aucun message'));
                   }
 
-                  var conversations = snapshot.data!.docs;
+                  final activeCat = _catKeys[_catIndex];
+                  var conversations = snapshot.data!.docs.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    if (activeCat != null) {
+                      final cat = data['categorie'] as String?;
+                      if (cat != activeCat) return false;
+                    }
+                    return true;
+                  }).toList();
+
+                  if (conversations.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(_catEmojis[_catIndex], style: const TextStyle(fontSize: 40)),
+                          const SizedBox(height: 8),
+                          Text('Aucun message dans\n${_catLabels[_catIndex]}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 14)),
+                        ],
+                      ),
+                    );
+                  }
 
                   return ListView.builder(
                     itemCount: conversations.length,
@@ -196,27 +263,19 @@ class _MessagePageState extends State<MessagePage> {
                       var conversationData =
                           conversation.data() as Map<String, dynamic>;
                       String conversationId = conversation.id;
+                      final categorie = conversationData['categorie'] as String?;
 
-                      // Si la conversation est déjà en cache, l'utiliser
                       if (!_conversationCache.containsKey(conversationId)) {
                         _conversationCache[conversationId] = {
                           'lastMessage': conversationData['lastMessage'] ?? '',
-                          'timestamp':
-                              conversationData['timestamp'] as Timestamp?,
-                          'unreadCount': conversationData['unreadCount']
-                                  [currentUserId] ??
-                              0,
+                          'timestamp': conversationData['timestamp'] as Timestamp?,
+                          'unreadCount': (conversationData['unreadCount'] as Map<String, dynamic>?)?[currentUserId] ?? 0,
                         };
                       }
 
-                      var lastMessage =
-                          _conversationCache[conversationId]!['lastMessage'];
-                      var timestamp =
-                          _conversationCache[conversationId]!['timestamp']
-                              as Timestamp?;
-                      var unreadCount =
-                          _conversationCache[conversationId]!['unreadCount']
-                              as int;
+                      var lastMessage = _conversationCache[conversationId]!['lastMessage'];
+                      var timestamp = _conversationCache[conversationId]!['timestamp'] as Timestamp?;
+                      var unreadCount = _conversationCache[conversationId]!['unreadCount'] as int;
 
                       var participantIds =
                           (conversationData['participants'] as List<dynamic>)
@@ -226,23 +285,20 @@ class _MessagePageState extends State<MessagePage> {
 
                       String otherParticipantId = participantIds[0];
                       if (_blockedUsers.contains(otherParticipantId)) {
-                        return const SizedBox(); // Ignore la conversation bloquée
+                        return const SizedBox();
                       }
 
                       return FutureBuilder<Map<String, String?>>(
                         future: getUserInfo(otherParticipantId),
                         builder: (context, userInfoSnapshot) {
                           if (!userInfoSnapshot.hasData) {
-                            // Si aucune donnée en cache, ne rien afficher
                             return const SizedBox();
                           }
 
                           var userInfo = userInfoSnapshot.data!;
 
                           if (_searchText.isNotEmpty &&
-                              !userInfo['name']!
-                                  .toLowerCase()
-                                  .contains(_searchText)) {
+                              !userInfo['name']!.toLowerCase().contains(_searchText)) {
                             return const SizedBox();
                           }
 
@@ -256,47 +312,51 @@ class _MessagePageState extends State<MessagePage> {
                                   ? const Icon(Icons.person, color: Colors.white)
                                   : null,
                             ),
-                            title: Text(
-                              userInfo['name']!,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color:
-                                    unreadCount > 0 ? Colors.red : Colors.black,
-                              ),
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    userInfo['name']!,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: unreadCount > 0 ? Colors.red : Colors.black,
+                                    ),
+                                  ),
+                                ),
+                                if (categorie != null && _catBadgeLabel.containsKey(categorie))
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 4),
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: _catBadgeColor[categorie],
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      _catBadgeLabel[categorie]!,
+                                      style: TextStyle(fontSize: 10, color: _catBadgeText[categorie], fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                              ],
                             ),
                             subtitle: Text(
                               lastMessage,
-                              style: TextStyle(
-                                color:
-                                    unreadCount > 0 ? Colors.red : Colors.black,
-                              ),
+                              style: TextStyle(color: unreadCount > 0 ? Colors.red : Colors.black),
                             ),
                             trailing: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 if (timestamp != null)
                                   Text(
-                                    DateFormat('HH:mm')
-                                        .format(timestamp.toDate()),
-                                    style: TextStyle(
-                                      color: unreadCount > 0
-                                          ? Colors.red
-                                          : Colors.black,
-                                    ),
+                                    DateFormat('HH:mm').format(timestamp.toDate()),
+                                    style: TextStyle(color: unreadCount > 0 ? Colors.red : Colors.black),
                                   ),
                                 if (unreadCount > 0)
                                   Container(
                                     padding: const EdgeInsets.all(4.0),
-                                    decoration: const BoxDecoration(
-                                      color: Colors.red,
-                                      shape: BoxShape.circle,
-                                    ),
+                                    decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
                                     child: Text(
-                                      unreadCount > 9
-                                          ? '9+'
-                                          : unreadCount.toString(),
-                                      style: const TextStyle(
-                                          color: Colors.white, fontSize: 12),
+                                      unreadCount > 9 ? '9+' : unreadCount.toString(),
+                                      style: const TextStyle(color: Colors.white, fontSize: 12),
                                     ),
                                   ),
                               ],

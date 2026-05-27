@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
+import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
@@ -75,7 +76,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     _animalId = widget.animalId;
     _fillFromData(widget.initialData);
     _loadBreeds();
-    if (_animalId != null) { _loadHealthRecords(); _loadActiveAlerte(); }
+    if (_animalId != null) { _loadHealthRecords(); _loadActiveAlerte(); _refreshFromSupabase(); }
   }
 
   @override
@@ -88,6 +89,13 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     _notesCtrl.dispose();
     _descCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshFromSupabase() async {
+    try {
+      final data = await _supa.from('animaux').select('*').eq('id', _animalId!).single();
+      if (mounted) setState(() => _fillFromData(Map<String, dynamic>.from(data)));
+    } catch (_) {}
   }
 
   void _fillFromData(Map<String, dynamic>? d) {
@@ -161,9 +169,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   Future<String?> _uploadPhoto() async {
     if (_photoFile == null) return _photoUrl;
-    final name = 'animals/${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final snapshot = await FirebaseStorage.instance.ref().child(name).putFile(_photoFile!);
-    return await snapshot.ref.getDownloadURL();
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+    final name = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+    return uploadPhoto(_photoFile!, 'animaux/$uid/$name');
   }
 
   Future<void> _save() async {

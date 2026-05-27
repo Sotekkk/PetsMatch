@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/message.dart';
@@ -166,7 +167,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnnoncesPublicPage(typeFilter: 'compagnon'),
+                          builder: (_) => const AnnoncesFeedPage(initialTypeFilter: 'vente'),
                         ));
                       },
                     ),

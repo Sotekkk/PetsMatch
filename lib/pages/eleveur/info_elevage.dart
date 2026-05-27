@@ -3,10 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/document_elevage.dart';
+import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_webservice/places.dart';
 
 // ── Données espèces (pour l'inscription) ────────────────────────────────────
@@ -60,6 +61,7 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
   final Map<String, TextEditingController> _breedSearchCtrl = {}; // recherche races chien/chat
 
   File? _imageFile;
+  File? _bannerFile;
   bool _uploading = false;
   String _countryCode = '+33';
 
@@ -167,6 +169,11 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
     if (f != null) setState(() => _imageFile = f);
   }
 
+  Future<void> _pickBanner() async {
+    final f = await pickAndCropBanner();
+    if (f != null) setState(() => _bannerFile = f);
+  }
+
   // ── Espèces ───────────────────────────────────────────────────────────────
 
   void _toggleEspece(String esp) {
@@ -237,11 +244,14 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
 
     setState(() => _uploading = true);
     try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
       if (_imageFile != null) {
-        final name = _imageFile!.path.split('/').last;
-        final ref  = FirebaseStorage.instance.ref().child('files/$name');
-        final snap = await ref.putFile(_imageFile!);
-        User_Info.profilePictureUrlElevage = await snap.ref.getDownloadURL();
+        User_Info.profilePictureUrlElevage =
+            await uploadPhoto(_imageFile!, 'profiles/$uid/photo.jpg');
+      }
+      if (_bannerFile != null) {
+        User_Info.bannerUrl =
+            await uploadPhoto(_bannerFile!, 'profiles/$uid/banner.jpg');
       }
 
       User_Info.nameElevage        = nom;
@@ -295,36 +305,96 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
           padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-            // ── Photo ───────────────────────────────────────────────────────
-            Center(
-              child: GestureDetector(
-                onTap: _pickImage,
-                child: Stack(children: [
-                  CircleAvatar(
-                    radius: 50,
-                    backgroundColor: const Color(0xFFEEF5EA),
-                    backgroundImage: _imageFile != null ? FileImage(_imageFile!) : null,
-                    child: _imageFile == null
-                        ? const Icon(Icons.pets, size: 40, color: Color(0xFF6E9E57))
-                        : null,
-                  ),
-                  Positioned(
-                    bottom: 0, right: 0,
-                    child: CircleAvatar(
-                      radius: 14,
-                      backgroundColor: _green,
-                      child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
+            // ── Photos bannière + profil ────────────────────────────────────
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // Bannière
+                  GestureDetector(
+                    onTap: _pickBanner,
+                    child: Container(
+                      height: 130,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF0C5C6C), Color(0xFF6E9E57)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: _bannerFile != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Image.file(_bannerFile!, fit: BoxFit.cover,
+                                  width: double.infinity, height: 130),
+                            )
+                          : const Center(
+                              child: Icon(Icons.add_photo_alternate_outlined,
+                                  color: Colors.white54, size: 36)),
                     ),
                   ),
-                ]),
+                  // Label bannière
+                  Positioned(
+                    bottom: 8, right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black45,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text('Bannière (16:9)',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Photo de profil chevauchant la bannière
+            Transform.translate(
+              offset: const Offset(0, -24),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child: GestureDetector(
+                  onTap: _pickImage,
+                  child: Stack(children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 3),
+                        color: const Color(0xFFEEF5EA),
+                      ),
+                      child: ClipOval(
+                        child: _imageFile != null
+                            ? Image.file(_imageFile!, fit: BoxFit.cover)
+                            : const Icon(Icons.pets, size: 36, color: Color(0xFF6E9E57)),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 0, right: 0,
+                      child: CircleAvatar(
+                        radius: 13,
+                        backgroundColor: _green,
+                        child: const Icon(Icons.camera_alt, size: 13, color: Colors.white),
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
+            Transform.translate(
+              offset: const Offset(0, -16),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child: Text('Photo de profil (optionnel)',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
               ),
             ),
             const SizedBox(height: 8),
-            Center(
-              child: Text("Photo de l'élevage (optionnel)",
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
-            ),
-            const SizedBox(height: 24),
 
             // ── Nom ─────────────────────────────────────────────────────────
             _sectionTitle(User_Info.isPro ? 'Nom de la société *' : "Nom de l'élevage *"),

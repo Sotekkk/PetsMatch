@@ -1,6 +1,6 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/particulier/numberadressregistration.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'dart:io';
@@ -19,6 +19,7 @@ class _RegisterParticulierInformationPageState
   final _dobCtrl = TextEditingController();
 
   File? _imageFile;
+  String? _imageUrl;
   bool _isImagePickerActive = false;
 
   bool _nomOk = true;
@@ -52,10 +53,10 @@ class _RegisterParticulierInformationPageState
 
   Future<void> _uploadImage() async {
     if (_imageFile == null) return;
-    final path = 'files/${_imageFile!.uri.pathSegments.last}';
-    final ref = FirebaseStorage.instance.ref().child(path);
-    final snapshot = await ref.putFile(_imageFile!);
-    User_Info.profilePictureUrl = await snapshot.ref.getDownloadURL();
+    try {
+      final name = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      _imageUrl = await uploadPhoto(_imageFile!, 'profiles/$name');
+    } catch (_) {}
   }
 
   void _continue() {

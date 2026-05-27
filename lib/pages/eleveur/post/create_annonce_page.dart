@@ -4,11 +4,12 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
+import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/services.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
@@ -56,16 +57,22 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   String? _mereAnimalId;
   String? _merePhotoUrl;
   File?   _merePhotoFile;
-  final _mereNomCtrl  = TextEditingController();
-  final _merePuceCtrl = TextEditingController();
+  final _mereNomCtrl    = TextEditingController();
+  final _merePuceCtrl   = TextEditingController();
+  final _mereRaceCtrl   = TextEditingController();
+  final _mereCouleurCtrl = TextEditingController();
+  final _mereDescCtrl   = TextEditingController();
   String _mereRegistre = '';
 
   // ── Père ──────────────────────────────────────────────────────────────────────
   String? _pereAnimalId;
   String? _perePhotoUrl;
   File?   _perePhotoFile;
-  final _pereNomCtrl  = TextEditingController();
-  final _perePuceCtrl = TextEditingController();
+  final _pereNomCtrl    = TextEditingController();
+  final _perePuceCtrl   = TextEditingController();
+  final _pereRaceCtrl   = TextEditingController();
+  final _pereCouleurCtrl = TextEditingController();
+  final _pereDescCtrl   = TextEditingController();
   String _pereRegistre = '';
 
   // ── Pedigree ──────────────────────────────────────────────────────────────────
@@ -164,13 +171,19 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _animauxPortee = List<Map<String, dynamic>>.from(d['animauxPortee'] ?? []);
     _mereAnimalId  = d['mereAnimalId'];
     _merePhotoUrl  = d['merePhotoUrl'];
-    _mereNomCtrl.text  = d['mereNom']  ?? '';
-    _merePuceCtrl.text = d['merePuce'] ?? '';
+    _mereNomCtrl.text     = d['mereNom']           ?? '';
+    _merePuceCtrl.text    = d['merePuce']          ?? '';
+    _mereRaceCtrl.text    = d['mereRace']          ?? '';
+    _mereCouleurCtrl.text = d['mereCouleur']       ?? '';
+    _mereDescCtrl.text    = d['mereDescription']   ?? '';
     _mereRegistre = d['mereRegistre'] ?? '';
     _pereAnimalId  = d['pereAnimalId'];
     _perePhotoUrl  = d['perePhotoUrl'];
-    _pereNomCtrl.text  = d['pereNom']  ?? '';
-    _perePuceCtrl.text = d['perePuce'] ?? '';
+    _pereNomCtrl.text     = d['pereNom']           ?? '';
+    _perePuceCtrl.text    = d['perePuce']          ?? '';
+    _pereRaceCtrl.text    = d['pereRace']          ?? '';
+    _pereCouleurCtrl.text = d['pereCouleur']       ?? '';
+    _pereDescCtrl.text    = d['pereDescription']   ?? '';
     _pereRegistre = d['pereRegistre'] ?? '';
     _registreType = d['registreType'] ?? '';
     _numRegistreCtrl.text  = d['numeroRegistre'] ?? '';
@@ -198,7 +211,8 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _raceFocusNode.dispose();
     for (final c in [
       _raceCtrl, _titreCtrl, _descCtrl, _prixCtrl,
-      _mereNomCtrl, _merePuceCtrl, _pereNomCtrl, _perePuceCtrl,
+      _mereNomCtrl, _merePuceCtrl, _mereRaceCtrl, _mereCouleurCtrl, _mereDescCtrl,
+      _pereNomCtrl, _perePuceCtrl, _pereRaceCtrl, _pereCouleurCtrl, _pereDescCtrl,
       _numRegistreCtrl, _clubPedigreeCtrl, _studbookCtrl, _couleurCtrl,
       _sailliePrixCtrl, _saillieCondCtrl, _prixMinPorteeCtrl, _prixMaxPorteeCtrl,
     ]) c.dispose();
@@ -279,9 +293,12 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       builder: (_) => _AnimalPickerSheet(espece: _espece, sexeFilter: 'femelle'),
     );
     if (r != null && mounted) setState(() {
-      _mereAnimalId    = r['id'];
-      _mereNomCtrl.text  = r['nom'] ?? '';
-      _merePuceCtrl.text = r['identification'] ?? '';
+      _mereAnimalId         = r['id'];
+      _mereNomCtrl.text     = r['nom']            ?? '';
+      _merePuceCtrl.text    = r['identification'] ?? '';
+      _mereRaceCtrl.text    = r['race']           ?? '';
+      _mereCouleurCtrl.text = r['couleur']        ?? '';
+      _mereDescCtrl.text    = r['description']    ?? '';
       _merePhotoUrl    = r['photoUrl'];
       _merePhotoFile   = null;
     });
@@ -293,9 +310,12 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       builder: (_) => _AnimalPickerSheet(espece: _espece, sexeFilter: 'male'),
     );
     if (r != null && mounted) setState(() {
-      _pereAnimalId    = r['id'];
-      _pereNomCtrl.text  = r['nom'] ?? '';
-      _perePuceCtrl.text = r['identification'] ?? '';
+      _pereAnimalId         = r['id'];
+      _pereNomCtrl.text     = r['nom']            ?? '';
+      _perePuceCtrl.text    = r['identification'] ?? '';
+      _pereRaceCtrl.text    = r['race']           ?? '';
+      _pereCouleurCtrl.text = r['couleur']        ?? '';
+      _pereDescCtrl.text    = r['description']    ?? '';
       _perePhotoUrl    = r['photoUrl'];
       _perePhotoFile   = null;
     });
@@ -325,10 +345,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   // ── Upload ────────────────────────────────────────────────────────────────────
 
   Future<String> _uploadFile(File file, String folder) async {
-    final name = '${DateTime.now().millisecondsSinceEpoch}_${file.path.split(RegExp(r'[/\\]')).last}';
-    final ref = FirebaseStorage.instance.ref().child('$folder/$name');
-    await ref.putFile(file);
-    return ref.getDownloadURL();
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+    final name = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+    return uploadPhoto(file, '$folder/$uid/$name');
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────────
@@ -366,84 +385,102 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       }
 
       final uid = FirebaseAuth.instance.currentUser!.uid;
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      final userData = userDoc.data() ?? {};
-      final data = <String, dynamic>{
-        'uidEleveur':  uid,
-        'nomEleveur':  userData['nameElevage'] ?? userData['firstname'] ?? '',
-        'villeEleveur': userData['villeElevage'] ?? userData['city'] ?? userData['ville'] ?? '',
-        'departementEleveur': () {
-          if ((userData['departementElevage'] as String?)?.isNotEmpty == true) {
-            return userData['departementElevage'] as String;
-          }
-          final cp = (userData['codePostalElevage'] as String?) ?? '';
-          return FrenchGeo.fromPostalCode(cp)?.departement ?? '';
-        }(),
-        'regionEleveur': () {
-          if ((userData['regionElevage'] as String?)?.isNotEmpty == true) {
-            return userData['regionElevage'] as String;
-          }
-          final cp = (userData['codePostalElevage'] as String?) ?? '';
-          return FrenchGeo.fromPostalCode(cp)?.region ?? '';
-        }(),
-        'paysEleveur': userData['paysElevage'] ?? 'France',
-        'type':        _type,
-        'typeVente':   _typeVente,
-        'espece':      _espece,
-        'race':        _raceCtrl.text.trim(),
-        'titre':       _titreCtrl.text.trim(),
-        'description': _descCtrl.text.trim(),
-        'photos':      allPhotos,
-        'prix': _typeVente == 'vente' ? (double.tryParse(_prixCtrl.text) ?? 0) : null,
-        'prixNegociable': _prixNegociable,
-        'statut':    _statut,
-        'dateNaissance': _type == 'portee' && _dateNaissance != null
-            ? Timestamp.fromDate(_dateNaissance!) : null,
-        'nombreBebes':  _type == 'portee' ? _nombreBebes : null,
-        'animauxPortee': _type == 'portee' ? animauxSaved : null,
-        'prixMinPortee': _type == 'portee' ? double.tryParse(_prixMinPorteeCtrl.text) : null,
-        'prixMaxPortee': _type == 'portee' ? double.tryParse(_prixMaxPorteeCtrl.text) : null,
-        'mereAnimalId': _mereAnimalId,
-        'merePhotoUrl': merePhotoUrl,
-        'mereNom':      _mereNomCtrl.text.trim(),
-        'merePuce':     _merePuceCtrl.text.trim(),
-        'mereRegistre': _mereRegistre,
-        'pereAnimalId': _pereAnimalId,
-        'perePhotoUrl': perePhotoUrl,
-        'pereNom':      _pereNomCtrl.text.trim(),
-        'perePuce':     _perePuceCtrl.text.trim(),
-        'pereRegistre': _pereRegistre,
-        'registreType':    _registreType,
-        'numeroRegistre':  _numRegistreCtrl.text.trim(),
-        'clubPedigree':    _clubPedigreeCtrl.text.trim(),
+      final userRow = await Supabase.instance.client
+          .from('users').select().eq('uid', uid).single();
+
+      final nomEleveur = (userRow['name_elevage'] as String?)?.isNotEmpty == true
+          ? userRow['name_elevage'] as String
+          : userRow['firstname'] as String? ?? '';
+      final villeEleveur =
+          (userRow['ville_elevage'] as String?) ?? (userRow['ville'] as String?) ?? '';
+      final departementEleveur = () {
+        final dep = userRow['departement_elevage'] as String?;
+        if (dep != null && dep.isNotEmpty) return dep;
+        final cp = (userRow['code_postal_elevage'] as String?) ?? '';
+        return FrenchGeo.fromPostalCode(cp)?.departement ?? '';
+      }();
+      final regionEleveur = () {
+        final reg = userRow['region_elevage'] as String?;
+        if (reg != null && reg.isNotEmpty) return reg;
+        final cp = (userRow['code_postal_elevage'] as String?) ?? '';
+        return FrenchGeo.fromPostalCode(cp)?.region ?? '';
+      }();
+
+      final now = DateTime.now().toIso8601String();
+      final supaData = <String, dynamic>{
+        'uid_eleveur':          uid,
+        'nom_eleveur':          nomEleveur,
+        'ville_eleveur':        villeEleveur,
+        'departement_eleveur':  departementEleveur,
+        'region_eleveur':       regionEleveur,
+        'pays_eleveur':         userRow['pays_elevage'] ?? 'France',
+        'type':                 _type,
+        'type_vente':           _typeVente,
+        'espece':               _espece,
+        'race':                 _raceCtrl.text.trim(),
+        'titre':                _titreCtrl.text.trim(),
+        'description':          _descCtrl.text.trim(),
+        'photos':               allPhotos,
+        'prix': _typeVente == 'vente' ? double.tryParse(_prixCtrl.text) : null,
+        'prix_negociable':      _prixNegociable,
+        'statut':               _statut,
+        'date_naissance': _type == 'portee' && _dateNaissance != null
+            ? _dateNaissance!.toIso8601String().substring(0, 10) : null,
+        'nombre_bebes':         _type == 'portee' ? _nombreBebes : null,
+        'animaux_portee':       _type == 'portee' ? animauxSaved : null,
+        'prix_min_portee':
+            _type == 'portee' ? double.tryParse(_prixMinPorteeCtrl.text) : null,
+        'prix_max_portee':
+            _type == 'portee' ? double.tryParse(_prixMaxPorteeCtrl.text) : null,
+        'mere_animal_id':       _mereAnimalId,
+        'mere_photo_url':       merePhotoUrl,
+        'mere_nom':             _mereNomCtrl.text.trim(),
+        'mere_puce':            _merePuceCtrl.text.trim(),
+        'mere_identification':  _merePuceCtrl.text.trim(),
+        'mere_race':            _mereRaceCtrl.text.trim(),
+        'mere_couleur':         _mereCouleurCtrl.text.trim(),
+        'mere_description':     _mereDescCtrl.text.trim(),
+        'mere_registre':        _mereRegistre,
+        'pere_animal_id':       _pereAnimalId,
+        'pere_photo_url':       perePhotoUrl,
+        'pere_nom':             _pereNomCtrl.text.trim(),
+        'pere_puce':            _perePuceCtrl.text.trim(),
+        'pere_identification':  _perePuceCtrl.text.trim(),
+        'pere_race':            _pereRaceCtrl.text.trim(),
+        'pere_couleur':         _pereCouleurCtrl.text.trim(),
+        'pere_description':     _pereDescCtrl.text.trim(),
+        'pere_registre':        _pereRegistre,
+        'registre_type':        _registreType,
+        'numero_registre':      _numRegistreCtrl.text.trim(),
+        'club_pedigree':        _clubPedigreeCtrl.text.trim(),
         'studbook': _espece == 'cheval' ? _studbookCtrl.text.trim() : null,
-        'vaccines':       _vaccines,
-        'vermifuge':      _vermifuge,
-        'identification': _identification,
-        'bilanSante':     _bilanSante,
-        'semaines':       _typeVente == 'saillie' ? null : _semaines,
-        'etalonAnimalId': _etalonAnimalId,
+        'vaccines':             _vaccines,
+        'vermifuge':            _vermifuge,
+        'identification':       _identification,
+        'bilan_sante':          _bilanSante,
+        'semaines':             _typeVente == 'saillie' ? null : _semaines,
+        'etalon_animal_id':     _etalonAnimalId,
         'sexe':    _type != 'portee' ? _sexe : null,
         'couleur': _couleurCtrl.text.trim(),
-        'dateNaissanceAnimal': _type != 'portee' && _dateNaissanceAnimal != null
-            ? Timestamp.fromDate(_dateNaissanceAnimal!) : null,
+        'date_naissance_animal': _type != 'portee' && _dateNaissanceAnimal != null
+            ? _dateNaissanceAnimal!.toIso8601String().substring(0, 10) : null,
         'sterilise': _type != 'portee' ? _sterilise : null,
-        'sailliePrix':       _typeVente == 'saillie' ? _sailliePrixCtrl.text.trim() : null,
-        'saillieConditions': _typeVente == 'saillie' ? _saillieCondCtrl.text.trim() : null,
-        'updatedAt': FieldValue.serverTimestamp(),
+        'saillie_prix': _typeVente == 'saillie' ? _sailliePrixCtrl.text.trim() : null,
+        'saillie_conditions':
+            _typeVente == 'saillie' ? _saillieCondCtrl.text.trim() : null,
+        'updated_at': now,
       };
 
-      final col = FirebaseFirestore.instance.collection('annonces');
       if (widget.annonceId != null) {
-        await col.doc(widget.annonceId).update(data);
+        await Supabase.instance.client
+            .from('annonces').update(supaData).eq('id', widget.annonceId!);
       } else {
-        data['createdAt'] = FieldValue.serverTimestamp();
-        // Default duration: 30 days
-        data['expiresAt'] = Timestamp.fromDate(
-            DateTime.now().add(const Duration(days: 30)));
-        data['vues']     = 0;
-        data['contacts'] = 0;
-        await col.add(data);
+        supaData['created_at'] = now;
+        supaData['expires_at'] =
+            DateTime.now().add(const Duration(days: 30)).toIso8601String();
+        supaData['vues']     = 0;
+        supaData['contacts'] = 0;
+        await Supabase.instance.client.from('annonces').insert(supaData);
       }
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -669,7 +706,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
           ClipRRect(borderRadius: BorderRadius.circular(8),
             child: SizedBox(width: 44, height: 44,
               child: photoFile != null ? Image.file(photoFile, fit: BoxFit.cover)
-                  : photoUrl != null ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover)
+                  : photoUrl != null ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.contain)
                   : Container(color: const Color(0xFFEEF5EA),
                       child: const Icon(Icons.add_a_photo_outlined, color: _teal, size: 20)),
             ),
@@ -703,7 +740,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         ClipRRect(borderRadius: BorderRadius.circular(10),
           child: SizedBox(width: 72, height: 72,
             child: file != null ? Image.file(file, fit: BoxFit.cover)
-                : url != null ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover)
+                : url != null ? CachedNetworkImage(imageUrl: url, fit: BoxFit.contain)
                 : Container(color: const Color(0xFFEEF5EA),
                     child: const Icon(Icons.add_a_photo_outlined, color: _teal, size: 26)),
           ),
@@ -724,32 +761,6 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   // ─── Sections ─────────────────────────────────────────────────────────────────
 
   Widget _sectionType() => _card('Type d\'annonce', Icons.campaign_outlined, [
-    _label('Que souhaitez-vous publier ?'),
-    Row(children: [
-      for (final t in [('portee', 'Portée', Icons.group_outlined),
-                       ('animal', 'Animal individuel', Icons.cruelty_free_outlined)])
-        Expanded(child: Padding(
-          padding: EdgeInsets.only(right: t.$1 == 'portee' ? 6 : 0, left: t.$1 == 'animal' ? 6 : 0),
-          child: GestureDetector(onTap: () => setState(() => _type = t.$1),
-            child: AnimatedContainer(duration: const Duration(milliseconds: 150),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(
-                color: _type == t.$1 ? _teal : Colors.transparent,
-                border: Border.all(color: _type == t.$1 ? _teal : Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(12)),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Icon(t.$3, size: 22, color: _type == t.$1 ? Colors.white : Colors.grey),
-                const SizedBox(height: 5),
-                Text(t.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: _type == t.$1 ? Colors.white : Colors.grey),
-                    textAlign: TextAlign.center),
-              ]),
-            ),
-          ),
-        )),
-    ]),
-    const SizedBox(height: 14),
     _label('Type de cession'),
     Wrap(spacing: 8, runSpacing: 6, children: [
       for (final v in [('vente', 'Vente €', Icons.sell_outlined),
@@ -776,8 +787,35 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
           ),
         ),
     ]),
-    if (_typeVente == 'saillie') Padding(
-      padding: const EdgeInsets.only(top: 8),
+    const SizedBox(height: 14),
+    if (_typeVente != 'saillie') ...[
+      _label('Que souhaitez-vous publier ?'),
+      Row(children: [
+        for (final t in [('portee', 'Portée', Icons.group_outlined),
+                         ('animal', 'Animal individuel', Icons.cruelty_free_outlined)])
+          Expanded(child: Padding(
+            padding: EdgeInsets.only(right: t.$1 == 'portee' ? 6 : 0, left: t.$1 == 'animal' ? 6 : 0),
+            child: GestureDetector(onTap: () => setState(() => _type = t.$1),
+              child: AnimatedContainer(duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color: _type == t.$1 ? _teal : Colors.transparent,
+                  border: Border.all(color: _type == t.$1 ? _teal : Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(12)),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(t.$3, size: 22, color: _type == t.$1 ? Colors.white : Colors.grey),
+                  const SizedBox(height: 5),
+                  Text(t.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _type == t.$1 ? Colors.white : Colors.grey),
+                      textAlign: TextAlign.center),
+                ]),
+              ),
+            ),
+          )),
+      ]),
+    ] else Padding(
+      padding: const EdgeInsets.only(top: 0),
       child: Row(children: [
         const Icon(Icons.info_outline, size: 13, color: Color(0xFF6F767B)),
         const SizedBox(width: 5),
@@ -1038,11 +1076,20 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       ),
     ]),
     const SizedBox(height: 10),
+    _label('Nom de la mère'),
+    _textField(_mereNomCtrl, 'Nom'),
+    const SizedBox(height: 10),
     _label('Identification (puce / tatouage)'),
     _textField(_merePuceCtrl, 'Numéro de puce ou tatouage'),
     const SizedBox(height: 10),
-    _label('Nom de la mère'),
-    _textField(_mereNomCtrl, 'Nom'),
+    _label('Race'),
+    _textField(_mereRaceCtrl, 'Race de la mère'),
+    const SizedBox(height: 10),
+    _label('Couleur / Robe'),
+    _textField(_mereCouleurCtrl, 'Ex: Fauve, Tricolore…'),
+    const SizedBox(height: 10),
+    _label('Description'),
+    _textField(_mereDescCtrl, 'Caractère, morphologie…', maxLines: 3),
     const SizedBox(height: 10),
     _label('${_registreLabel()} de la mère'),
     _chips(_registreOptions(), _mereRegistre, (v) => setState(() => _mereRegistre = v)),
@@ -1082,11 +1129,20 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         ),
       ]),
       const SizedBox(height: 10),
+      _label('Nom du père'),
+      _textField(_pereNomCtrl, 'Nom'),
+      const SizedBox(height: 10),
       _label('Identification (puce / tatouage)'),
       _textField(_perePuceCtrl, 'Numéro de puce ou tatouage'),
       const SizedBox(height: 10),
-      _label('Nom du père'),
-      _textField(_pereNomCtrl, 'Nom'),
+      _label('Race'),
+      _textField(_pereRaceCtrl, 'Race du père'),
+      const SizedBox(height: 10),
+      _label('Couleur / Robe'),
+      _textField(_pereCouleurCtrl, 'Ex: Fauve, Tricolore…'),
+      const SizedBox(height: 10),
+      _label('Description'),
+      _textField(_pereDescCtrl, 'Caractère, morphologie…', maxLines: 3),
       const SizedBox(height: 10),
       _label('${_registreLabel()} du père'),
       _chips(_registreOptions(), _pereRegistre, (v) => setState(() => _pereRegistre = v)),
@@ -1180,7 +1236,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
           child: SizedBox(width: 52, height: 52,
             child: photos.isNotEmpty
                 ? (photos.first.startsWith('http')
-                    ? CachedNetworkImage(imageUrl: photos.first, fit: BoxFit.cover)
+                    ? CachedNetworkImage(imageUrl: photos.first, fit: BoxFit.contain)
                     : Image.file(File(photos.first), fit: BoxFit.cover))
                 : Container(color: const Color(0xFFEEF5EA),
                     child: const Icon(Icons.pets, size: 24, color: _green)))),
@@ -1219,25 +1275,23 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   }
 
   Future<void> _addAnimalInline() async {
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-      builder: (_) => _AddAnimalSheet(espece: _espece));
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context, MaterialPageRoute(builder: (_) => _AddAnimalPage(espece: _espece)));
     if (result != null) setState(() => _animauxPortee.add(result));
   }
 
   Future<void> _editAnimalInline(int index, Map<String, dynamic> existing) async {
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-      builder: (_) => _AddAnimalSheet(espece: _espece, initial: existing));
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context, MaterialPageRoute(builder: (_) => _AddAnimalPage(espece: _espece, initial: existing)));
     if (result != null) setState(() => _animauxPortee[index] = result);
   }
 
   Future<void> _linkExistingAnimal() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final snap = await FirebaseFirestore.instance
-        .collection('animaux').where('uidEleveur', isEqualTo: uid).get();
-    final docs = snap.docs.where((d) => d.data()['espece'] == _espece).toList();
+    final docs = await Supabase.instance.client
+        .from('animaux').select()
+        .eq('uid_eleveur', uid).eq('espece', _espece);
     if (!mounted) return;
     if (docs.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
@@ -1258,12 +1312,14 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         Flexible(child: ListView.builder(shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), itemCount: docs.length,
           itemBuilder: (_, i) {
-            final d = docs[i].data(); final isLinked = alreadyLinked.contains(docs[i].id);
+            final d = docs[i];
+            final photoUrl = d['photo_url'] as String?;
+            final isLinked = alreadyLinked.contains(d['id'] as String?);
             return ListTile(
               leading: CircleAvatar(backgroundColor: const Color(0xFFEEF5EA),
-                backgroundImage: d['photoUrl'] != null
-                    ? CachedNetworkImageProvider(d['photoUrl']) : null,
-                child: d['photoUrl'] == null
+                backgroundImage: photoUrl != null
+                    ? CachedNetworkImageProvider(photoUrl) : null,
+                child: photoUrl == null
                     ? const Icon(Icons.pets, color: _green, size: 18) : null),
               title: Text(d['nom'] ?? 'Sans nom',
                   style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
@@ -1274,9 +1330,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
               onTap: isLinked ? null : () {
                 Navigator.pop(ctx);
                 setState(() => _animauxPortee.add({
-                  'animalId': docs[i].id, 'nom': d['nom'] ?? '', 'sexe': d['sexe'] ?? 'male',
+                  'animalId': d['id'], 'nom': d['nom'] ?? '', 'sexe': d['sexe'] ?? 'male',
                   'couleur': d['couleur'] ?? '',
-                  'photos': d['photoUrl'] != null ? [d['photoUrl']] : [],
+                  'photos': photoUrl != null ? [photoUrl] : [],
                   'statut': 'disponible', 'isLinked': true,
                 }));
               });
@@ -1318,18 +1374,17 @@ class _AnimalPickerSheet extends StatelessWidget {
         Expanded(
           child: uid == null
               ? const Center(child: Text('Non connecté'))
-              : FutureBuilder<QuerySnapshot>(
-                  future: FirebaseFirestore.instance
-                      .collection('animaux').where('uidEleveur', isEqualTo: uid).get(),
+              : FutureBuilder<List<Map<String, dynamic>>>(
+                  future: Supabase.instance.client
+                      .from('animaux').select()
+                      .eq('uid_eleveur', uid).eq('espece', espece)
+                      .then((rows) => sexeFilter == null
+                          ? rows
+                          : rows.where((d) => d['sexe'] == sexeFilter).toList()),
                   builder: (context, snap) {
                     if (!snap.hasData) return const Center(
                         child: CircularProgressIndicator(color: _teal));
-                    var docs = snap.data!.docs.where((d) {
-                      final data = d.data() as Map<String, dynamic>;
-                      if (data['espece'] != espece) return false;
-                      if (sexeFilter != null && data['sexe'] != sexeFilter) return false;
-                      return true;
-                    }).toList();
+                    final docs = snap.data!;
                     if (docs.isEmpty) return Center(
                       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                         speciesIcon(espece, 48, Colors.grey.shade300),
@@ -1350,11 +1405,16 @@ class _AnimalPickerSheet extends StatelessWidget {
                       itemCount: docs.length,
                       separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade100),
                       itemBuilder: (_, i) {
-                        final data = docs[i].data() as Map<String, dynamic>;
-                        final dateNaissance = data['dateNaissance'] as Timestamp?;
+                        final d = docs[i];
+                        final photoUrl = d['photo_url'] as String?;
+                        final dateNaissStr = d['date_naissance'] as String?;
+                        DateTime? dateNaiss;
+                        if (dateNaissStr != null) {
+                          try { dateNaiss = DateTime.parse(dateNaissStr); } catch (_) {}
+                        }
                         String ageStr = '';
-                        if (dateNaissance != null) {
-                          final age = DateTime.now().difference(dateNaissance.toDate());
+                        if (dateNaiss != null) {
+                          final age = DateTime.now().difference(dateNaiss);
                           final years = (age.inDays / 365).floor();
                           final months = ((age.inDays % 365) / 30).floor();
                           ageStr = years > 0 ? '$years ans'
@@ -1365,35 +1425,36 @@ class _AnimalPickerSheet extends StatelessWidget {
                           leading: ClipRRect(
                             borderRadius: BorderRadius.circular(10),
                             child: SizedBox(width: 54, height: 54,
-                              child: data['photoUrl'] != null
-                                  ? CachedNetworkImage(imageUrl: data['photoUrl'], fit: BoxFit.cover)
+                              child: photoUrl != null
+                                  ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.contain)
                                   : Container(color: const Color(0xFFEEF5EA),
                                       child: Center(child: speciesIcon(espece, 24, _green)))),
                           ),
-                          title: Text(data['nom'] ?? 'Sans nom', style: const TextStyle(
+                          title: Text(d['nom'] ?? 'Sans nom', style: const TextStyle(
                               fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                           subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text('${data['race'] ?? ''} · ${data['sexe'] == 'male' ? '♂' : '♀'}',
+                            Text('${d['race'] ?? ''} · ${d['sexe'] == 'male' ? '♂' : '♀'}',
                                 style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
                                     color: Color(0xFF6F767B))),
-                            if (ageStr.isNotEmpty || (data['identification'] ?? '').isNotEmpty)
+                            if (ageStr.isNotEmpty || (d['identification'] ?? '').isNotEmpty)
                               Text('${ageStr.isNotEmpty ? ageStr : ''}'
-                                  '${ageStr.isNotEmpty && (data['identification'] ?? '').isNotEmpty ? ' · ' : ''}'
-                                  '${data['identification'] ?? ''}',
+                                  '${ageStr.isNotEmpty && (d['identification'] ?? '').isNotEmpty ? ' · ' : ''}'
+                                  '${d['identification'] ?? ''}',
                                   style: TextStyle(fontFamily: 'Galey', fontSize: 11,
                                       color: Colors.grey.shade500)),
                           ]),
                           trailing: const Icon(Icons.chevron_right, color: _teal),
                           onTap: () => Navigator.pop(context, {
-                            'id':            docs[i].id,
-                            'nom':           data['nom'] ?? '',
-                            'photoUrl':      data['photoUrl'],
-                            'couleur':       data['couleur'] ?? '',
-                            'sexe':          data['sexe'] ?? '',
-                            'race':          data['race'] ?? '',
-                            'identification': data['identification'] ?? '',
-                            'dateNaissance': data['dateNaissance'],
-                            'description':   data['description'] ?? '',
+                            'id':             d['id'],
+                            'nom':            d['nom'] ?? '',
+                            'photoUrl':       photoUrl,
+                            'couleur':        d['couleur'] ?? '',
+                            'sexe':           d['sexe'] ?? '',
+                            'race':           d['race'] ?? '',
+                            'identification': d['identification'] ?? '',
+                            'dateNaissance':  dateNaiss != null
+                                ? Timestamp.fromDate(dateNaiss) : null,
+                            'description':    d['description'] ?? '',
                           }),
                         );
                       },
@@ -1406,17 +1467,17 @@ class _AnimalPickerSheet extends StatelessWidget {
   }
 }
 
-// ─── Sheet ajout / édition bébé ───────────────────────────────────────────────
+// ─── Page ajout / édition bébé ───────────────────────────────────────────────
 
-class _AddAnimalSheet extends StatefulWidget {
+class _AddAnimalPage extends StatefulWidget {
   final String espece;
   final Map<String, dynamic>? initial;
-  const _AddAnimalSheet({required this.espece, this.initial});
+  const _AddAnimalPage({required this.espece, this.initial});
   @override
-  State<_AddAnimalSheet> createState() => _AddAnimalSheetState();
+  State<_AddAnimalPage> createState() => _AddAnimalPageState();
 }
 
-class _AddAnimalSheetState extends State<_AddAnimalSheet> {
+class _AddAnimalPageState extends State<_AddAnimalPage> {
   final _nomCtrl     = TextEditingController();
   final _couleurCtrl = TextEditingController();
   final _prixCtrl    = TextEditingController();
@@ -1428,6 +1489,20 @@ class _AddAnimalSheetState extends State<_AddAnimalSheet> {
 
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
+
+  Future<void> _pickAnimalInfo() async {
+    final r = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+      builder: (_) => _AnimalPickerSheet(espece: widget.espece),
+    );
+    if (r != null && mounted) setState(() {
+      _nomCtrl.text     = r['nom']         ?? '';
+      _couleurCtrl.text = r['couleur']     ?? '';
+      _descCtrl.text    = r['description'] ?? '';
+      _sexe = (r['sexe'] ?? _sexe) as String;
+      // intentionally not importing photos
+    });
+  }
 
   @override
   void initState() {
@@ -1471,103 +1546,110 @@ class _AddAnimalSheetState extends State<_AddAnimalSheet> {
   @override
   Widget build(BuildContext context) {
     final total = _existingPhotos.length + _newPhotos.length;
-    return DraggableScrollableSheet(
-      initialChildSize: 0.78, maxChildSize: 0.95, minChildSize: 0.5,
-      builder: (_, ctrl) => Container(
-        decoration: const BoxDecoration(color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        child: Column(children: [
-          Container(margin: const EdgeInsets.only(top: 10, bottom: 4), width: 40, height: 4,
-              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-          Padding(padding: const EdgeInsets.fromLTRB(20, 6, 12, 10),
-            child: Row(children: [
-              Text(widget.initial != null ? 'Modifier le bébé' : 'Ajouter un bébé',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-              const Spacer(),
-              TextButton(onPressed: () => Navigator.pop(context, _buildResult()),
-                child: Text(widget.initial != null ? 'Mettre à jour' : 'Ajouter',
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _teal))),
-            ])),
-          const Divider(height: 1),
-          Expanded(child: ListView(controller: ctrl, padding: const EdgeInsets.all(20), children: [
-            Text('Photos (max. 4)  •  Format carré',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                    fontWeight: FontWeight.w600, color: Colors.grey.shade500)),
-            const SizedBox(height: 8),
-            SizedBox(height: 84, child: ListView(scrollDirection: Axis.horizontal, children: [
-              ..._existingPhotos.asMap().entries.map((e) => _thumb(
-                  () => setState(() => _existingPhotos.removeAt(e.key)), url: e.value)),
-              ..._newPhotos.asMap().entries.map((e) => _thumb(
-                  () => setState(() => _newPhotos.removeAt(e.key)), file: e.value)),
-              if (total < 4) GestureDetector(onTap: _pickPhoto,
-                child: Container(width: 84, height: 84,
-                  decoration: BoxDecoration(color: const Color(0xFFF8F9FA),
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.add_photo_alternate_outlined, color: _teal, size: 26))),
-            ])),
-            const SizedBox(height: 16),
-            const Text('Nom (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
-            const SizedBox(height: 6),
-            _field(_nomCtrl, 'Nom du bébé'),
-            const SizedBox(height: 14),
-            const Text('Sexe', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
-            const SizedBox(height: 8),
-            Wrap(spacing: 8, children: [
-              for (final s in [('male', '♂ Mâle'), ('femelle', '♀ Femelle')])
-                GestureDetector(onTap: () => setState(() => _sexe = s.$1),
-                  child: AnimatedContainer(duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                    decoration: BoxDecoration(
-                      color: _sexe == s.$1 ? _teal : Colors.transparent,
-                      border: Border.all(color: _sexe == s.$1 ? _teal : Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(20)),
-                    child: Text(s.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: _sexe == s.$1 ? Colors.white : Colors.grey)))),
-            ]),
-            const SizedBox(height: 14),
-            const Text('Couleur / Robe', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
-            const SizedBox(height: 6),
-            _field(_couleurCtrl, 'Ex: Tricolore, Roux, Noir...'),
-            const SizedBox(height: 14),
-            const Text('Prix (€)', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
-            const SizedBox(height: 6),
-            _field(_prixCtrl, 'Ex: 1200', keyboardType: TextInputType.number),
-            const SizedBox(height: 14),
-            const Text('Description', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
-            const SizedBox(height: 6),
-            _field(_descCtrl, 'Caractère, particularités...', maxLines: 3),
-            const SizedBox(height: 14),
-            const Text('Disponibilité', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
-            const SizedBox(height: 8),
-            Wrap(spacing: 8, runSpacing: 6, children: [
-              for (final s in [('disponible', 'Disponible', _green),
-                               ('reserve', 'Réservé', Color(0xFFF59E0B)),
-                               ('vendu', 'Vendu / Cédé', Colors.blueGrey)])
-                GestureDetector(onTap: () => setState(() => _statut = s.$1),
-                  child: AnimatedContainer(duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: _statut == s.$1 ? s.$3 : Colors.transparent,
-                      border: Border.all(color: _statut == s.$1 ? s.$3 : Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(20)),
-                    child: Text(s.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: _statut == s.$1 ? Colors.white : Colors.black87)))),
-            ]),
-            const SizedBox(height: 20),
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        title: Text(widget.initial != null ? 'Modifier le bébé' : 'Ajouter un bébé',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, _buildResult()),
+            child: Text(widget.initial != null ? 'Mettre à jour' : 'Ajouter',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    color: Colors.white, fontSize: 15)),
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Photos (max. 4)  •  Format carré',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  fontWeight: FontWeight.w600, color: Colors.grey.shade500)),
+          const SizedBox(height: 8),
+          SizedBox(height: 84, child: ListView(scrollDirection: Axis.horizontal, children: [
+            ..._existingPhotos.asMap().entries.map((e) => _thumb(
+                () => setState(() => _existingPhotos.removeAt(e.key)), url: e.value)),
+            ..._newPhotos.asMap().entries.map((e) => _thumb(
+                () => setState(() => _newPhotos.removeAt(e.key)), file: e.value)),
+            if (total < 4) GestureDetector(onTap: _pickPhoto,
+              child: Container(width: 84, height: 84,
+                decoration: BoxDecoration(color: const Color(0xFFF8F9FA),
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8)),
+                child: const Icon(Icons.add_photo_alternate_outlined, color: _teal, size: 26))),
           ])),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _pickAnimalInfo,
+            icon: const Icon(Icons.search, size: 16, color: _green),
+            label: const Text('Récupérer les infos d\'un animal',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _green)),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: _green),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+              minimumSize: const Size(double.infinity, 0),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text('Remplit nom, sexe, couleur et description. Les photos sont à ajouter séparément.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade400)),
+          const SizedBox(height: 20),
+          _label('Nom (optionnel)'), _field(_nomCtrl, 'Nom du bébé'),
+          const SizedBox(height: 16),
+          _label('Sexe'),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, children: [
+            for (final s in [('male', '♂ Mâle'), ('femelle', '♀ Femelle')])
+              GestureDetector(onTap: () => setState(() => _sexe = s.$1),
+                child: AnimatedContainer(duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: _sexe == s.$1 ? _teal : Colors.transparent,
+                    border: Border.all(color: _sexe == s.$1 ? _teal : Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(20)),
+                  child: Text(s.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _sexe == s.$1 ? Colors.white : Colors.grey)))),
+          ]),
+          const SizedBox(height: 16),
+          _label('Couleur / Robe'), _field(_couleurCtrl, 'Ex: Tricolore, Roux, Noir...'),
+          const SizedBox(height: 16),
+          _label('Prix (€)'), _field(_prixCtrl, 'Ex: 1200', keyboardType: TextInputType.number),
+          const SizedBox(height: 16),
+          _label('Description'), _field(_descCtrl, 'Caractère, particularités...', maxLines: 4),
+          const SizedBox(height: 16),
+          _label('Disponibilité'),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 6, children: [
+            for (final s in [('disponible', 'Disponible', _green),
+                             ('reserve', 'Réservé', Color(0xFFF59E0B)),
+                             ('vendu', 'Vendu / Cédé', Colors.blueGrey)])
+              GestureDetector(onTap: () => setState(() => _statut = s.$1),
+                child: AnimatedContainer(duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: _statut == s.$1 ? s.$3 : Colors.transparent,
+                    border: Border.all(color: _statut == s.$1 ? s.$3 : Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(20)),
+                  child: Text(s.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _statut == s.$1 ? Colors.white : Colors.black87)))),
+          ]),
+          const SizedBox(height: 40),
         ]),
       ),
     );
   }
+
+  Widget _label(String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Text(text, style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
+        fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
+  );
 
   Widget _thumb(VoidCallback onRemove, {String? url, File? file}) =>
     Stack(children: [
@@ -1587,6 +1669,7 @@ class _AddAnimalSheetState extends State<_AddAnimalSheet> {
     controller: ctrl,
     maxLines: maxLines,
     keyboardType: keyboardType,
+    scrollPadding: const EdgeInsets.only(bottom: 120),
     style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
     decoration: InputDecoration(hintText: hint,
       hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF9CA3AF)),

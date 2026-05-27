@@ -126,6 +126,7 @@ Future<Object> registerElevage(String email, String password) async {
       'dogBreeds': User_Info.dogBreeds,
       'catBreeds': User_Info.catBreeds,
       'especesElevees': User_Info.especesElevees,
+      if (User_Info.bannerUrl.isNotEmpty) 'bannerUrl': User_Info.bannerUrl,
 
       // Adresse de l'élevage (dénormalisée pour les filtres)
       'rueElevage':          User_Info.rueElevage,
@@ -160,6 +161,13 @@ Future<Object> registerElevage(String email, String password) async {
         'ville':               User_Info.ville,
         'code_postal':         User_Info.codePostal,
         'pays':                User_Info.pays,
+        ...() {
+          final geo = FrenchGeo.fromPostalCode(User_Info.codePostal);
+          return {
+            'departement': geo?.departement ?? '',
+            'region':      geo?.region      ?? '',
+          };
+        }(),
         'profile_picture_url': User_Info.profilePictureUrl,
         'is_elevage':          User_Info.isElevage,
         'is_validate':         User_Info.isValidate,
@@ -174,6 +182,9 @@ Future<Object> registerElevage(String email, String password) async {
         'is_partenaire':       User_Info.isPartenaire,
         'is_admin':            User_Info.isAdmin,
         'is_dev':              User_Info.isDev,
+        if (User_Info.bannerUrl.isNotEmpty) 'banner_url': User_Info.bannerUrl,
+        if (User_Info.profilePictureUrlElevage.isNotEmpty)
+          'profile_picture_url_elevage': User_Info.profilePictureUrlElevage,
       });
     } catch (e) {
       print("Supabase user sync error: $e");

@@ -1,15 +1,30 @@
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AnnoncesMapPage extends StatefulWidget {
   final String typeFilter; // 'compagnon' | 'saillie'
-  const AnnoncesMapPage({super.key, this.typeFilter = 'compagnon'});
+  final String espece;
+  final String race;
+  final String pays;
+  final String region;
+  final String departement;
+  final String ville;
+  const AnnoncesMapPage({
+    super.key,
+    this.typeFilter = 'compagnon',
+    this.espece = 'tous',
+    this.race = '',
+    this.pays = '',
+    this.region = '',
+    this.departement = '',
+    this.ville = '',
+  });
 
   @override
   State<AnnoncesMapPage> createState() => _AnnoncesMapPageState();
@@ -35,27 +50,68 @@ class _AnnoncesMapPageState extends State<AnnoncesMapPage> {
     _loadAnnonces();
   }
 
+  static Map<String, dynamic> _norm(Map<String, dynamic> row) => {
+    ...row,
+    '_id':                row['id']?.toString() ?? '',
+    'uidEleveur':         row['uid_eleveur'],
+    'nomEleveur':         row['nom_eleveur'],
+    'villeEleveur':       row['ville_eleveur'],
+    'paysEleveur':        row['pays_eleveur'] ?? 'France',
+    'regionEleveur':      row['region_eleveur'] ?? '',
+    'departementEleveur': row['departement_eleveur'] ?? '',
+    'typeVente':          row['type_vente'],
+    'prixMinPortee':      row['prix_min_portee'],
+    'prixMaxPortee':      row['prix_max_portee'],
+    'nombreBebes':        row['nombre_bebes'],
+    'animauxPortee':      row['animaux_portee'] ?? [],
+  };
+
   Future<void> _loadAnnonces() async {
     setState(() => _status = 'Chargement des annonces...');
 
-    final snapshot = await FirebaseFirestore.instance
-        .collection('annonces')
-        .where('statut', isEqualTo: 'disponible')
-        .get();
+    final rows = await Supabase.instance.client
+        .from('annonces')
+        .select()
+        .eq('statut', 'disponible');
 
     final List<Map<String, dynamic>> result = [];
     final geocodeCache = <String, LatLng?>{};
     int done = 0;
 
-    for (final doc in snapshot.docs) {
-      final data = Map<String, dynamic>.from(doc.data());
-      data['_id'] = doc.id;
+    for (final raw in rows) {
+      final data = _norm(Map<String, dynamic>.from(raw));
 
       // Type filter
+      final typeVente = (data['typeVente'] as String?) ?? '';
       if (_isSaillie) {
-        if ((data['typeVente'] as String?) != 'saillie') continue;
+        if (typeVente != 'saillie') continue;
       } else {
-        if ((data['typeVente'] as String?) == 'saillie') continue;
+        if (typeVente == 'saillie') continue;
+      }
+
+      // Inherited filters from list view
+      if (widget.espece != 'tous') {
+        if ((data['espece'] as String?) != widget.espece) continue;
+      }
+      if (widget.race.isNotEmpty) {
+        final r = ((data['race'] as String?) ?? '').toLowerCase();
+        if (!r.contains(widget.race.toLowerCase())) continue;
+      }
+      if (widget.pays.isNotEmpty) {
+        final p = ((data['paysEleveur'] as String?) ?? '').toLowerCase();
+        if (p.isNotEmpty && !p.contains(widget.pays.toLowerCase())) continue;
+      }
+      if (widget.region.isNotEmpty) {
+        final r = ((data['regionEleveur'] as String?) ?? '').toLowerCase();
+        if (r.isNotEmpty && !r.contains(widget.region.toLowerCase())) continue;
+      }
+      if (widget.departement.isNotEmpty) {
+        final d = ((data['departementEleveur'] as String?) ?? '').toLowerCase();
+        if (d.isNotEmpty && !d.contains(widget.departement.toLowerCase())) continue;
+      }
+      if (widget.ville.isNotEmpty) {
+        final v = ((data['villeEleveur'] as String?) ?? '').toLowerCase();
+        if (!v.contains(widget.ville.toLowerCase())) continue;
       }
 
       // Use stored coordinates or geocode
@@ -68,19 +124,21 @@ class _AnnoncesMapPageState extends State<AnnoncesMapPage> {
           final uid = ((data['uidEleveur'] as String?) ?? '').trim();
           if (uid.isNotEmpty) {
             try {
-              final userDoc = await FirebaseFirestore.instance
-                  .collection('users').doc(uid).get();
-              final ud = userDoc.data() ?? {};
-              final villeElevage = ((ud['villeElevage'] as String?) ?? '').trim();
-              final cpElevage    = ((ud['codePostalElevage'] as String?) ?? '').trim();
-              paysQuery = ((ud['paysElevage'] as String?) ?? 'France').trim();
-              villeQuery = villeElevage.isNotEmpty ? villeElevage : cpElevage;
-              // Backfill denormalized field on the annonce so we don't have to do this again
-              if (villeQuery.isNotEmpty) {
-                FirebaseFirestore.instance
-                    .collection('annonces').doc(doc.id)
-                    .update({'villeEleveur': villeQuery, 'paysEleveur': paysQuery})
-                    .catchError((_) {});
+              final userRow = await Supabase.instance.client
+                  .from('users').select().eq('uid', uid).maybeSingle();
+              if (userRow != null) {
+                final villeElevage = ((userRow['ville_elevage'] as String?) ?? '').trim();
+                final cpElevage    = ((userRow['code_postal_elevage'] as String?) ?? '').trim();
+                paysQuery = ((userRow['pays_elevage'] as String?) ?? 'France').trim();
+                villeQuery = villeElevage.isNotEmpty ? villeElevage : cpElevage;
+                // Backfill denormalized field on the annonce so we don't have to do this again
+                if (villeQuery.isNotEmpty) {
+                  Supabase.instance.client
+                      .from('annonces')
+                      .update({'ville_eleveur': villeQuery, 'pays_eleveur': paysQuery})
+                      .eq('id', data['_id'])
+                      .catchError((_) {});
+                }
               }
             } catch (_) {}
           }
@@ -102,12 +160,12 @@ class _AnnoncesMapPageState extends State<AnnoncesMapPage> {
                   ? LatLng(locs.first.latitude, locs.first.longitude)
                   : null;
               if (geocodeCache[geoKey] != null) {
-                FirebaseFirestore.instance
-                    .collection('annonces').doc(doc.id)
+                Supabase.instance.client
+                    .from('annonces')
                     .update({
                   'lat': geocodeCache[geoKey]!.latitude,
                   'lng': geocodeCache[geoKey]!.longitude,
-                }).catchError((_) {});
+                }).eq('id', data['_id']).catchError((_) {});
               }
             } catch (_) {
               geocodeCache[geoKey] = null;

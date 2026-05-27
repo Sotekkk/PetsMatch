@@ -282,7 +282,16 @@ class _SupabaseMigrationPageState extends State<SupabaseMigrationPage> {
   Future<void> _migrateAnnonces() async {
     _log('📢 Migration annonces...');
     final snap = await _db.collection('annonces').get();
-    final rows = snap.docs.map((d) {
+
+    // Récupère les IDs déjà présents dans Supabase pour ne pas écraser
+    final existing = await _supa.from('annonces').select('id');
+    final existingIds = <String>{
+      for (final r in existing) r['id'].toString()
+    };
+    final newDocs = snap.docs.where((d) => !existingIds.contains(d.id)).toList();
+    _log('  ℹ️ ${existingIds.length} déjà dans Supabase, ${newDocs.length} à importer');
+
+    final rows = newDocs.map((d) {
       final data = _clean(d.data());
       return {
         'id':                   d.id,
@@ -344,8 +353,8 @@ class _SupabaseMigrationPageState extends State<SupabaseMigrationPage> {
     }).where((r) => r['uid_eleveur'] != null).toList();
 
     await _upsert('annonces', rows);
-    setState(() { _done += snap.docs.length; _total += snap.docs.length; });
-    _log('  ✓ ${snap.docs.length} annonces migrées');
+    setState(() { _done += newDocs.length; _total += snap.docs.length; });
+    _log('  ✓ ${rows.length} nouvelles annonces importées (${existingIds.length} ignorées car déjà présentes)');
   }
 
   Future<void> _migrateConversations() async {

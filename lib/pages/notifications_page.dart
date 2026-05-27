@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -77,7 +78,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final type = notif['type'] as String?;
     final data = notif['data'];
     String? alerteId;
-    if (data is Map) alerteId = data['alerteId'] as String?;
+    String? annonceId;
+    if (data is Map) {
+      alerteId  = data['alerteId']  as String?;
+      annonceId = data['annonceId'] as String?;
+    }
 
     _deleteNotif(notif);
 
@@ -85,6 +90,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (type == 'alerte_perdu') {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => AnimauxPerdusPage(initialAlertId: alerteId),
+      ));
+    } else if (type == 'like' && annonceId != null) {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => AnnonceDetailPage(
+          annonceId: annonceId!,
+          initialData: {'_id': annonceId},
+        ),
       ));
     }
   }
@@ -104,16 +116,18 @@ class _NotificationsPageState extends State<NotificationsPage> {
   IconData _iconFor(String? type) {
     switch (type) {
       case 'alerte_perdu': return Icons.location_searching;
-      case 'message': return Icons.chat_bubble_outline;
-      default: return Icons.notifications_outlined;
+      case 'message':      return Icons.chat_bubble_outline;
+      case 'like':         return Icons.favorite;
+      default:             return Icons.notifications_outlined;
     }
   }
 
   Color _colorFor(String? type) {
     switch (type) {
       case 'alerte_perdu': return _orange;
-      case 'message': return _teal;
-      default: return Colors.grey;
+      case 'message':      return _teal;
+      case 'like':         return Colors.redAccent;
+      default:             return Colors.grey;
     }
   }
 

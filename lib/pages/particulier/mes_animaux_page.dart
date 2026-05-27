@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
+import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
 
@@ -305,10 +305,9 @@ class AnimalFormPageState extends State<AnimalFormPage> {
 
   Future<String?> _uploadImage() async {
     if (_imageFile == null) return _existingPhotoUrl;
-    final name = _imageFile!.path.split('/').last;
-    final ref = FirebaseStorage.instance.ref().child('pets/$name');
-    final snapshot = await ref.putFile(_imageFile!);
-    return await snapshot.ref.getDownloadURL();
+    final uid = User_Info.uid.isNotEmpty ? User_Info.uid : 'unknown';
+    final name = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+    return uploadPhoto(_imageFile!, 'animaux/$uid/$name');
   }
 
   Future<void> _save() async {

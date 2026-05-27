@@ -131,6 +131,8 @@ class User_Info {
   static String ville = "";
   static String codePostal = "";
   static String pays = "France";
+  static String departement = "";
+  static String region = "";
   static String profilePictureUrl =
       'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60';
   static String profilePictureUrlElevage =
@@ -174,6 +176,7 @@ class User_Info {
   static String acacedDateObtention = "";
   static String acacedDocUrl = "";
   static List<String> especesElevees = [];
+  static String bannerUrl = '';
 
   static void updateUserInfo(Map<String, dynamic> data) {
     firstname = data['firstname'] ?? firstname;
@@ -186,6 +189,8 @@ class User_Info {
     ville = data['ville'] ?? ville;
     codePostal = data['codePostal'] ?? codePostal;
     pays = data['pays'] ?? pays;
+    departement = data['departement'] ?? departement;
+    region = data['region'] ?? region;
     profilePictureUrl = data['profilePictureUrl'] ?? profilePictureUrl;
     isElevage = data['isElevage'] ?? isElevage;
     nameElevage = data['nameElevage'] ?? nameElevage;
@@ -228,6 +233,7 @@ class User_Info {
     dogBreeds = _safeStringList(data['dogBreeds'], dogBreeds);
     catBreeds = _safeStringList(data['catBreeds'], catBreeds);
     especesElevees = _safeStringList(data['especesElevees'], especesElevees);
+    bannerUrl = data['bannerUrl'] ?? bannerUrl;
   }
 
   static List<String> _safeStringList(dynamic raw, List<String> fallback) {
@@ -373,11 +379,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MediaQuery(
-        data: MediaQuery.of(context).copyWith(
-          textScaler: TextScaler.linear(1.0),
-        ),
-        child: MaterialApp(
+    return MaterialApp(
           locale:
               Locale('fr', 'FR'), // Force l'application à utiliser le français
           supportedLocales: [
@@ -390,6 +392,13 @@ class MyApp extends StatelessWidget {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
+
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(1.0),
+            ),
+            child: child!,
+          ),
 
           theme: ThemeData(
             colorScheme: ColorScheme.fromSwatch().copyWith(
@@ -433,7 +442,7 @@ class MyApp extends StatelessWidget {
           ),
           debugShowCheckedModeBanner: false,
           home: AuthWrapper(),
-        ));
+        );
   }
 }
 

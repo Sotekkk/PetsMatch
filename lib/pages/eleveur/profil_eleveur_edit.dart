@@ -1,13 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
+import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geocoding/geocoding.dart' as geo;
@@ -44,6 +45,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
   bool _loading = true;
   File?   _photoFile;
   String? _photoUrl;
+  File?   _bannerFile;
+  String? _bannerUrl;
   String? _siret;
   String? _acaced;
   DateTime? _acacedDateObtention;
@@ -56,6 +59,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
   Timer? _cpDebounce;
   bool   _loadingPredictions = false;
   bool   _locating = false;
+  double? _profileLat;
+  double? _profileLng;
 
   // ── Espèces ───────────────────────────────────────────────────────────────────
   List<Map<String, dynamic>> _especesElevees = [];
@@ -90,6 +95,18 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
     final d = doc.data() ?? {};
 
+    String? bannerFromFirestore = d['bannerUrl'] as String?;
+
+    // Fallback : si Firestore n'a pas bannerUrl, lire depuis Supabase
+    if (bannerFromFirestore == null || bannerFromFirestore.isEmpty) {
+      try {
+        final row = await Supabase.instance.client
+            .from('users').select('banner_url').eq('uid', uid).maybeSingle();
+        final url = row?['banner_url'] as String?;
+        if (url != null && url.isNotEmpty) bannerFromFirestore = url;
+      } catch (_) {}
+    }
+
     setState(() {
       _prenomCtrl.text     = d['firstname']       ?? User_Info.firstname;
       _nomCtrl.text        = d['lastname']         ?? User_Info.lastname;
@@ -102,7 +119,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       _villeCtrl.text      = d['villeElevage']     ?? User_Info.villeElevage;
       _paysCtrl.text       = (d['paysElevage'] ?? User_Info.paysElevage).isNotEmpty
           ? (d['paysElevage'] ?? User_Info.paysElevage) : 'France';
-      _photoUrl = d['profilePictureUrlElevage'] ?? User_Info.profilePictureUrlElevage;
+      _photoUrl   = d['profilePictureUrlElevage'] ?? User_Info.profilePictureUrlElevage;
+      _bannerUrl  = bannerFromFirestore;
       _siret    = d['siret'];
       _acaced   = d['acaced'];
 
@@ -187,16 +205,19 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       if (c.types.contains('street_number')) num = c.longName;
       if (c.types.contains('route'))         route = c.longName;
       if (c.types.contains('postal_code'))   cp = c.longName;
-      if (c.types.contains('locality') ||
-          c.types.contains('administrative_area_level_2')) ville = c.longName;
+      if (c.types.contains('locality'))      ville = c.longName;
+      else if (c.types.contains('administrative_area_level_2') && ville.isEmpty) ville = c.longName;
       if (c.types.contains('country')) pays = c.longName;
     }
+
+    final loc = det.result.geometry?.location;
 
     setState(() {
       _rueCtrl.text   = [num, route].where((s) => s.isNotEmpty).join(' ');
       _cpCtrl.text    = cp;
       _villeCtrl.text = ville;
       _paysCtrl.text  = pays;
+      if (loc != null) { _profileLat = loc.lat; _profileLng = loc.lng; }
     });
   }
 
@@ -221,7 +242,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       setState(() {
         _rueCtrl.text   = m.street ?? '';
         _cpCtrl.text    = m.postalCode ?? '';
-        _villeCtrl.text = m.locality ?? m.subAdministrativeArea ?? '';
+        _villeCtrl.text = m.locality ?? m.subLocality ?? '';
         _paysCtrl.text  = m.country ?? 'France';
         _addressSearchCtrl.text =
             [_rueCtrl.text, _cpCtrl.text, _villeCtrl.text]
@@ -337,10 +358,12 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
 
       String? photoUrl = _photoUrl;
       if (_photoFile != null) {
-        final name = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-        final ref = FirebaseStorage.instance.ref().child('files/$name');
-        await ref.putFile(_photoFile!);
-        photoUrl = await ref.getDownloadURL();
+        photoUrl = await uploadPhoto(_photoFile!, 'profiles/$uid/photo.jpg');
+      }
+
+      String? bannerUrl = _bannerUrl;
+      if (_bannerFile != null) {
+        bannerUrl = await uploadPhoto(_bannerFile!, 'profiles/$uid/banner.jpg');
       }
 
       final isDog = _hasEspece('chien');
@@ -362,6 +385,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
         'paysElevage':        _paysCtrl.text.trim(),
         'adressElevage':      adresseFull,
         'city':               _villeCtrl.text.trim(),
+        if (_profileLat != null) 'lat': _profileLat,
+        if (_profileLng != null) 'lng': _profileLng,
         ...() {
           final geo = FrenchGeo.fromPostalCode(_cpCtrl.text.trim());
           return {
@@ -375,6 +400,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
         'dogBreeds':          isDog ? _racesFor('chien') : [],
         'catBreeds':          isCat ? _racesFor('chat')  : [],
         if (photoUrl != null) 'profilePictureUrlElevage': photoUrl,
+        if (bannerUrl != null) 'bannerUrl': bannerUrl,
         if (_acacedDateObtention != null)
           'acacedDateObtention': DateFormat('dd/MM/yyyy').format(_acacedDateObtention!),
         if (_acacedDateRenewal != null)
@@ -399,6 +425,27 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       User_Info.dogBreeds = isDog ? _racesFor('chien') : [];
       User_Info.catBreeds = isCat ? _racesFor('chat')  : [];
       if (photoUrl != null) User_Info.profilePictureUrlElevage = photoUrl;
+      if (bannerUrl != null) setState(() => _bannerUrl = bannerUrl);
+
+      // Sync address + geo to Supabase users table
+      try {
+        final supa = Supabase.instance.client;
+        await supa.from('users').upsert({
+          'uid': uid,
+          'firstname':           _prenomCtrl.text.trim(),
+          'lastname':            _nomCtrl.text.trim(),
+          'name_elevage':        _nomElevageCtrl.text.trim(),
+          'rue_elevage':         _rueCtrl.text.trim(),
+          'code_postal_elevage': _cpCtrl.text.trim(),
+          'ville_elevage':       _villeCtrl.text.trim(),
+          'pays_elevage':        _paysCtrl.text.trim(),
+          'adress_elevage':      adresseFull,
+          if (_profileLat != null) 'lat': _profileLat,
+          if (_profileLng != null) 'lng': _profileLng,
+          if (photoUrl != null) 'profile_picture_url_elevage': photoUrl,
+          if (bannerUrl != null) 'banner_url': bannerUrl,
+        }, onConflict: 'uid');
+      } catch (_) {}
 
       // Propagate location fields to all existing announcements
       _syncAnnoncesLocation(
@@ -502,39 +549,97 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     );
   }
 
-  // ── Photo ─────────────────────────────────────────────────────────────────────
+  // ── Photos (bannière + profil) ────────────────────────────────────────────────
   Widget _photoSection() {
-    return Center(
-      child: GestureDetector(
-        onTap: _pickPhoto,
-        child: Stack(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: SizedBox(
-                width: 120, height: 120,
-                child: _photoFile != null
-                    ? Image.file(_photoFile!, fit: BoxFit.cover)
-                    : (_photoUrl != null
-                        ? CachedNetworkImage(imageUrl: _photoUrl!, fit: BoxFit.cover)
-                        : Container(
-                            color: const Color(0xFFEEF5EA),
-                            child: const Icon(Icons.store_outlined, size: 48, color: Color(0xFF6E9E57)),
-                          )),
-              ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Bannière
+        GestureDetector(
+          onTap: _pickBanner,
+          child: Stack(children: [
+            SizedBox(
+              width: double.infinity,
+              height: 130,
+              child: _bannerFile != null
+                  ? Image.file(_bannerFile!, fit: BoxFit.cover)
+                  : (_bannerUrl != null
+                      ? CachedNetworkImage(imageUrl: _bannerUrl!, fit: BoxFit.cover)
+                      : Container(
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Color(0xFF0C5C6C), Color(0xFF6E9E57)],
+                              begin: Alignment.topLeft, end: Alignment.bottomRight,
+                            ),
+                          ),
+                          child: const Center(child: Icon(Icons.landscape, size: 40, color: Colors.white38)),
+                        )),
             ),
             Positioned(
-              bottom: 6, right: 6,
+              right: 8, bottom: 8,
               child: CircleAvatar(
-                radius: 14,
-                backgroundColor: _green,
+                radius: 14, backgroundColor: Colors.black45,
                 child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
               ),
             ),
-          ],
+            const Positioned(
+              left: 8, bottom: 8,
+              child: Text('Bannière', style: TextStyle(color: Colors.white70, fontSize: 11, fontFamily: 'Galey')),
+            ),
+          ]),
         ),
-      ),
+        // Photo profil
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Row(children: [
+            Transform.translate(
+              offset: const Offset(0, -24),
+              child: GestureDetector(
+                onTap: _pickPhoto,
+                child: Stack(children: [
+                  Container(
+                    width: 80, height: 80,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 3),
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8)],
+                    ),
+                    child: ClipOval(
+                      child: _photoFile != null
+                          ? Image.file(_photoFile!, fit: BoxFit.cover)
+                          : (_photoUrl != null
+                              ? CachedNetworkImage(imageUrl: _photoUrl!, fit: BoxFit.cover)
+                              : Container(color: const Color(0xFFEEF5EA),
+                                  child: const Icon(Icons.store_outlined, size: 30, color: Color(0xFF6E9E57)))),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 2, right: 2,
+                    child: CircleAvatar(radius: 12, backgroundColor: _green,
+                        child: const Icon(Icons.camera_alt, size: 12, color: Colors.white)),
+                  ),
+                ]),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text('Photo de profil\n(visible sur votre fiche)',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+            ),
+          ]),
+        ),
+      ]),
     );
+  }
+
+  Future<void> _pickBanner() async {
+    final file = await pickAndCropBanner();
+    if (file != null) setState(() => _bannerFile = file);
   }
 
   // ── Adresse ───────────────────────────────────────────────────────────────────

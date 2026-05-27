@@ -1,15 +1,58 @@
-import 'dart:io';
+import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'dart:convert';
 import 'package:PetsMatch/pages/chatScreen.dart';
+
+// ── Species colors ────────────────────────────────────────────────────────────
+
+const _especeBg = {
+  'chien':  Color(0xFFFFF7ED), 'chat':   Color(0xFFFDF4FF),
+  'cheval': Color(0xFFF0FDF4), 'lapin':  Color(0xFFFFF0F6),
+  'oiseau': Color(0xFFECFEFF), 'nac':    Color(0xFFF5F3FF),
+  'ovin':   Color(0xFFFFFBEB), 'caprin': Color(0xFFF7FEE7),
+  'porcin': Color(0xFFFFF1F2), 'autre':  Color(0xFFF9FAFB),
+};
+const _especeText = {
+  'chien':  Color(0xFFEA580C), 'chat':   Color(0xFF9333EA),
+  'cheval': Color(0xFF16A34A), 'lapin':  Color(0xFFDB2777),
+  'oiseau': Color(0xFF0891B2), 'nac':    Color(0xFF7C3AED),
+  'ovin':   Color(0xFFD97706), 'caprin': Color(0xFF65A30D),
+  'porcin': Color(0xFFE11D48), 'autre':  Color(0xFF6B7280),
+};
+const _especeBorder = {
+  'chien':  Color(0xFFFED7AA), 'chat':   Color(0xFFE9D5FF),
+  'cheval': Color(0xFFBBF7D0), 'lapin':  Color(0xFFFBCFE8),
+  'oiseau': Color(0xFFA5F3FC), 'nac':    Color(0xFFDDD6FE),
+  'ovin':   Color(0xFFFDE68A), 'caprin': Color(0xFFD9F99D),
+  'porcin': Color(0xFFFECDD3), 'autre':  Color(0xFFE5E7EB),
+};
+const _especeEmoji = {
+  'chien': '🐕', 'chat': '🐈', 'cheval': '🐴', 'lapin': '🐇',
+  'oiseau': '🦜', 'nac': '🦎', 'ovin': '🐑', 'caprin': '🐐',
+  'porcin': '🐷', 'autre': '🐾',
+};
+const _especeHue = {
+  'chien':  240.0, 'chat':   300.0, 'cheval': 120.0, 'lapin':  330.0,
+  'oiseau': 180.0, 'nac':    270.0, 'ovin':    60.0, 'caprin':  90.0,
+  'porcin':   0.0, 'autre':   30.0,
+};
+const _breedFiles = {
+  'chien': 'dog_breeds', 'chat': 'cat_breeds', 'cheval': 'horse_breeds',
+  'lapin': 'rabbit_breeds', 'oiseau': 'bird_breeds', 'nac': 'nac_breeds',
+  'ovin': 'sheep_breeds', 'caprin': 'goat_breeds', 'porcin': 'pig_breeds',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class AnimauxPerdusPage extends StatefulWidget {
   final String? initialAlertId;
@@ -32,19 +75,56 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
   // Filtres
   String? _filterEspece;
   String _searchLieu = '';
+  String _filterRace = '';
+  String _filterPays = '';
+  String _filterRegion = '';
+  String _filterDept = '';
+  List<String> _breeds = [];
+  List<String> _raceSuggestions = [];
+  bool _showRaceSugg = false;
+  final _raceFocusNode = FocusNode();
+  final _raceCtrl = TextEditingController();
+  final _lieuCtrl = TextEditingController();
 
   static const _especes = [
     'tous', 'chien', 'chat', 'lapin', 'oiseau', 'nac',
     'cheval', 'ovin', 'caprin', 'porcin', 'autre'
   ];
 
+  static const _regionsByPaysList = <String, List<String>>{
+    'France': [
+      'Île-de-France', 'Auvergne-Rhône-Alpes', 'Bretagne', 'Normandie',
+      'Hauts-de-France', 'Grand Est', 'Pays de la Loire', 'Nouvelle-Aquitaine',
+      'Occitanie', 'Provence-Alpes-Côte d\'Azur', 'Bourgogne-Franche-Comté',
+      'Centre-Val de Loire', 'Corse', 'Guadeloupe', 'Martinique', 'Guyane',
+      'La Réunion', 'Mayotte',
+    ],
+    'Belgique': ['Bruxelles-Capitale', 'Flandre', 'Wallonie'],
+    'Suisse': ['Genève', 'Vaud', 'Zurich', 'Berne', 'Valais', 'Neuchâtel'],
+    'Luxembourg': ['Luxembourg'],
+  };
+
   List<Map<String, dynamic>> get _filtered {
     return _alertes.where((a) {
       if (_filterEspece != null && _filterEspece != 'tous') {
-        if ((a['espece'] as String? ?? '') != _filterEspece) return false;
+        if ((a['espece'] as String? ?? '').toLowerCase() != _filterEspece) return false;
+      }
+      if (_filterRace.isNotEmpty) {
+        final race = (a['race'] as String? ?? '').toLowerCase();
+        if (!race.contains(_filterRace.toLowerCase())) return false;
+      }
+      if (_filterRegion.isNotEmpty) {
+        final depts = FrenchGeo.departmentsInRegion(_filterRegion);
+        final loc = '${a['ville'] ?? ''} ${a['derniere_localisation'] ?? ''}'.toLowerCase();
+        final matchesDept = depts.any((d) => loc.contains(d.toLowerCase()));
+        if (!matchesDept && !loc.contains(_filterRegion.toLowerCase())) return false;
+      }
+      if (_filterDept.isNotEmpty) {
+        final loc = '${a['ville'] ?? ''} ${a['derniere_localisation'] ?? ''}'.toLowerCase();
+        if (!loc.contains(_filterDept.toLowerCase())) return false;
       }
       if (_searchLieu.isNotEmpty) {
-        final loc = (a['derniere_localisation'] as String? ?? '').toLowerCase();
+        final loc = '${a['derniere_localisation'] ?? ''} ${a['ville'] ?? ''}'.toLowerCase();
         if (!loc.contains(_searchLieu.toLowerCase())) return false;
       }
       return true;
@@ -56,13 +136,61 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _load();
+    _loadDefaultVille();
+    _raceFocusNode.addListener(() {
+      if (!_raceFocusNode.hasFocus) setState(() => _showRaceSugg = false);
+    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     _mapController?.dispose();
+    _raceFocusNode.dispose();
+    _raceCtrl.dispose();
+    _lieuCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadDefaultVille() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final row = await Supabase.instance.client
+          .from('users')
+          .select('ville, ville_elevage')
+          .eq('uid', uid)
+          .maybeSingle();
+      if (row != null && mounted) {
+        final v = (row['ville_elevage'] as String?)?.isNotEmpty == true
+            ? row['ville_elevage'] as String
+            : (row['ville'] as String?) ?? '';
+        if (v.isNotEmpty) {
+          _lieuCtrl.text = v;
+          setState(() => _searchLieu = v);
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadBreeds(String espece) async {
+    final file = _breedFiles[espece];
+    if (file == null) { setState(() => _breeds = []); return; }
+    try {
+      final raw = await rootBundle.loadString('assets/$file.json');
+      final list = List<String>.from(json.decode(raw) as List);
+      if (mounted) setState(() => _breeds = list);
+    } catch (_) {
+      if (mounted) setState(() => _breeds = []);
+    }
+  }
+
+  void _onRaceInput(String val) {
+    _filterRace = val;
+    if (val.isEmpty) { setState(() { _raceSuggestions = []; _showRaceSugg = false; }); return; }
+    final q = val.toLowerCase();
+    final matches = _breeds.where((b) => b.toLowerCase().contains(q)).take(6).toList();
+    setState(() { _raceSuggestions = matches; _showRaceSugg = matches.isNotEmpty; });
   }
 
   Future<void> _load() async {
@@ -107,7 +235,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     );
   }
 
-  Future<void> _share(Map<String, dynamic> a) async {
+  void _share(Map<String, dynamic> a) {
     final nom     = (a['nom_animal'] ?? 'Animal') as String;
     final espece  = (a['espece'] ?? '') as String;
     final lieu    = (a['derniere_localisation'] ?? '') as String;
@@ -118,27 +246,23 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     final desc    = (a['description'] as String?) ?? '';
     final contact = (a['contact'] as String?) ?? '';
     final numero  = (a['numero_alerte'] as String?) ?? '';
-    final photoUrl = a['photo_url'] as String?;
 
+    const url = 'https://petsmatch.fr/animaux-perdus';
     final text = [
-      'ANIMAL PERDU — $nom ($espece)${numero.isNotEmpty ? ' [N° $numero]' : ''}',
-      if (lieu.isNotEmpty) 'Dernière localisation : $lieu',
-      if (date.isNotEmpty) 'Disparu le $date',
+      '🚨 ANIMAL PERDU — $nom ($espece)${numero.isNotEmpty ? ' [N° $numero]' : ''}',
+      if (lieu.isNotEmpty) '📍 Dernière localisation : $lieu',
+      if (date.isNotEmpty) '📅 Disparu le $date',
       if (desc.isNotEmpty) desc,
-      if (contact.isNotEmpty) 'Contact : $contact',
-      'Si vous l\'avez vu, signalez-le sur l\'app PetsMatch',
+      if (contact.isNotEmpty) '📞 Contact : $contact',
+      '',
+      'Si vous l\'avez vu, contactez le propriétaire ou signalez sur PetsMatch 🐾\n$url',
     ].join('\n');
 
-    if (photoUrl != null && photoUrl.isNotEmpty) {
-      try {
-        final response = await http.get(Uri.parse(photoUrl));
-        final tempPath = '${Directory.systemTemp.path}/alert_${a['id']}.jpg';
-        await File(tempPath).writeAsBytes(response.bodyBytes);
-        await Share.shareXFiles([XFile(tempPath)], text: text);
-        return;
-      } catch (_) {}
-    }
-    Share.share(text);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ShareSheet(text: text, url: url, nom: 'Animal perdu : $nom'),
+    );
   }
 
   Future<void> _contact(Map<String, dynamic> a) async {
@@ -169,18 +293,24 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
         }
       }
 
-      // Create if not found
+      // Create if not found, or tag existing without category
       bool isNew = false;
       if (conversationId == null) {
-        final nom = a['nom_animal'] as String? ?? 'Animal';
         final docRef = await firestore.collection('conversations').add({
           'participants': [currentUid, ownerId],
           'lastMessage': '',
           'timestamp': FieldValue.serverTimestamp(),
           'unreadCount': {currentUid: 0, ownerId: 0},
+          'categorie': 'animaux-perdus',
         });
         conversationId = docRef.id;
         isNew = true;
+      } else {
+        // Always tag the conversation as animaux-perdus when coming from this context
+        final conv = existing.docs.firstWhere((d) => d.id == conversationId);
+        if (conv.data()['categorie'] != 'animaux-perdus') {
+          await firestore.collection('conversations').doc(conversationId).update({'categorie': 'animaux-perdus'});
+        }
       }
 
       if (!mounted) return;
@@ -282,7 +412,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                 itemCount: list.length,
                 itemBuilder: (_, i) =>
-                    _AlertCard(alerte: list[i], onShare: () => _share(list[i]), onContact: () => _contact(list[i])),
+                    _AlertCard(alerte: list[i], onTap: () => _showAlertDetail(list[i]), onShare: () => _share(list[i]), onContact: () => _contact(list[i])),
               ),
       ),
     ]);
@@ -292,34 +422,29 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      child: Column(children: [
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Lieu search
         SizedBox(
           height: 38,
           child: TextField(
+            controller: _lieuCtrl,
             onChanged: (v) => setState(() => _searchLieu = v),
             style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
             decoration: InputDecoration(
-              hintText: 'Rechercher par ville, lieu…',
-              hintStyle: const TextStyle(
-                  fontFamily: 'Galey', fontSize: 13, color: Colors.grey),
-              prefixIcon: const Icon(Icons.search, size: 18, color: Colors.grey),
-              contentPadding:
-                  const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: BorderSide(color: Colors.grey.shade300)),
-              enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: BorderSide(color: Colors.grey.shade300)),
-              focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: const BorderSide(color: _orange)),
+              hintText: 'Ville ou lieu…',
+              hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey),
+              prefixIcon: const Icon(Icons.location_on_outlined, size: 18, color: Colors.grey),
+              contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.grey.shade300)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.grey.shade300)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: const BorderSide(color: _orange)),
               filled: true,
               fillColor: const Color(0xFFF8F8F8),
             ),
           ),
         ),
         const SizedBox(height: 8),
+        // Espece chips
         SizedBox(
           height: 32,
           child: ListView.separated(
@@ -328,25 +453,31 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
             separatorBuilder: (_, __) => const SizedBox(width: 6),
             itemBuilder: (_, i) {
               final e = _especes[i];
-              final selected = e == 'tous'
+              final isAll = e == 'tous';
+              final selected = isAll
                   ? (_filterEspece == null || _filterEspece == 'tous')
                   : _filterEspece == e;
+              final chipBg = selected
+                  ? (_especeText[e] ?? _orange)
+                  : Colors.grey.shade100;
               return GestureDetector(
-                onTap: () => setState(
-                    () => _filterEspece = (e == 'tous') ? null : e),
+                onTap: () {
+                  setState(() {
+                    _filterEspece = isAll ? null : e;
+                    _filterRace = '';
+                    _raceCtrl.clear();
+                    _raceSuggestions = [];
+                    _showRaceSugg = false;
+                  });
+                  if (!isAll) _loadBreeds(e);
+                },
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: selected ? _orange : Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(color: chipBg, borderRadius: BorderRadius.circular(20)),
                   child: Text(
-                    e[0].toUpperCase() + e.substring(1),
+                    '${_especeEmoji[e] ?? ''}  ${e[0].toUpperCase()}${e.substring(1)}',
                     style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
                         color: selected ? Colors.white : Colors.black87),
                   ),
                 ),
@@ -354,6 +485,95 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
             },
           ),
         ),
+        const SizedBox(height: 8),
+        // Pays / Région / Département
+        Row(children: [
+          Expanded(
+            child: _GeoDropdown(
+              value: _filterPays.isEmpty ? null : _filterPays,
+              hint: 'Pays',
+              items: const ['France', 'Belgique', 'Suisse', 'Luxembourg'],
+              onChanged: (v) => setState(() {
+                _filterPays = v ?? ''; _filterRegion = ''; _filterDept = '';
+              }),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _GeoDropdown(
+              value: _filterRegion.isEmpty ? null : _filterRegion,
+              hint: 'Région',
+              items: _filterPays.isNotEmpty
+                  ? (_regionsByPaysList[_filterPays] ?? [])
+                  : const [],
+              onChanged: (v) => setState(() { _filterRegion = v ?? ''; _filterDept = ''; }),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _GeoDropdown(
+              value: _filterDept.isEmpty ? null : _filterDept,
+              hint: 'Département',
+              items: _filterRegion.isNotEmpty
+                  ? FrenchGeo.departmentsInRegion(_filterRegion)
+                  : const [],
+              onChanged: (v) => setState(() => _filterDept = v ?? ''),
+            ),
+          ),
+        ]),
+        // Race autocomplete (only when espece selected)
+        if (_filterEspece != null && _filterEspece != 'tous') ...[
+          const SizedBox(height: 8),
+          Stack(clipBehavior: Clip.none, children: [
+            SizedBox(
+              height: 38,
+              child: TextField(
+                controller: _raceCtrl,
+                focusNode: _raceFocusNode,
+                onChanged: _onRaceInput,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Race (optionnel)…',
+                  hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey),
+                  prefixIcon: const Icon(Icons.pets, size: 16, color: Colors.grey),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.grey.shade300)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.grey.shade300)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: const BorderSide(color: _orange)),
+                  filled: true,
+                  fillColor: const Color(0xFFF8F8F8),
+                  suffixIcon: _filterRace.isNotEmpty
+                      ? IconButton(icon: const Icon(Icons.clear, size: 16), onPressed: () {
+                          _raceCtrl.clear(); setState(() { _filterRace = ''; _raceSuggestions = []; _showRaceSugg = false; });
+                        })
+                      : null,
+                ),
+              ),
+            ),
+            if (_showRaceSugg)
+              Positioned(
+                top: 40,
+                left: 0,
+                right: 0,
+                child: Material(
+                  elevation: 4,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: _raceSuggestions.map((r) => ListTile(
+                      dense: true,
+                      title: Text(r, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                      onTap: () {
+                        _raceCtrl.text = r;
+                        setState(() { _filterRace = r; _showRaceSugg = false; });
+                        _raceFocusNode.unfocus();
+                      },
+                    )).toList(),
+                  ),
+                ),
+              ),
+          ]),
+        ],
       ]),
     );
   }
@@ -365,14 +585,19 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
       final lat = (a['lat'] as num?)?.toDouble();
       final lng = (a['lng'] as num?)?.toDouble();
       if (lat == null || lng == null) continue;
+      final espece = (a['espece'] as String? ?? '').toLowerCase();
+      final hue = _especeHue[espece] ?? BitmapDescriptor.hueOrange;
       markers.add(Marker(
         markerId: MarkerId(a['id'].toString()),
         position: LatLng(lat, lng),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        icon: BitmapDescriptor.defaultMarkerWithHue(hue),
         infoWindow: InfoWindow(
-          title: '${a['nom_animal']} (${a['espece'] ?? ''})',
-          snippet: a['derniere_localisation'] as String? ?? '',
+          title: '${_especeEmoji[espece] ?? '🐾'} ${a['nom_animal']}',
+          snippet: '${a['espece'] ?? ''}'
+              '${a['race'] != null && (a['race'] as String).isNotEmpty ? ' · ${a['race']}' : ''}'
+              '${a['derniere_localisation'] != null && (a['derniere_localisation'] as String).isNotEmpty ? '\n📍 ${a['derniere_localisation']}' : ''}',
         ),
+        onTap: () => _showAlertDetail(a),
       ));
     }
 
@@ -441,18 +666,19 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
 
 class _AlertCard extends StatelessWidget {
   final Map<String, dynamic> alerte;
+  final VoidCallback onTap;
   final VoidCallback onShare;
   final VoidCallback onContact;
 
-  const _AlertCard({required this.alerte, required this.onShare, required this.onContact});
+  const _AlertCard({required this.alerte, required this.onTap, required this.onShare, required this.onContact});
 
   @override
   Widget build(BuildContext context) {
     final nom      = (alerte['nom_animal'] ?? '') as String;
-    final espece   = (alerte['espece'] ?? '') as String;
+    final espece   = ((alerte['espece'] ?? '') as String).toLowerCase();
     final sexe     = (alerte['sexe'] as String?) ?? '';
     final race     = (alerte['race'] ?? '') as String;
-    final lieu     = (alerte['derniere_localisation'] ?? '') as String;
+    final lieu     = (alerte['derniere_localisation'] ?? alerte['ville'] ?? '') as String;
     final photoUrl = alerte['photo_url'] as String?;
     final desc     = alerte['description'] as String?;
     final contact  = (alerte['contact'] as String?) ?? '';
@@ -462,17 +688,21 @@ class _AlertCard extends StatelessWidget {
         ? DateFormat('dd/MM/yyyy').format(DateTime.parse(dateStr))
         : '';
 
-    return Container(
+    final cardBg     = _especeBg[espece]     ?? Colors.white;
+    final cardBorder = _especeBorder[espece] ?? Colors.orange.shade200;
+    final cardText   = _especeText[espece]   ?? const Color(0xFFE65100);
+    final emoji      = _especeEmoji[espece]  ?? '🐾';
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.orange.shade200, width: 1.2),
+        border: Border.all(color: cardBorder, width: 1.2),
         boxShadow: [
-          BoxShadow(
-              color: Colors.orange.withOpacity(0.06),
-              blurRadius: 8,
-              offset: const Offset(0, 3))
+          BoxShadow(color: cardBorder.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 3))
         ],
       ),
       child: Padding(
@@ -487,9 +717,9 @@ class _AlertCard extends StatelessWidget {
                   ? CachedNetworkImage(
                       imageUrl: photoUrl,
                       fit: BoxFit.cover,
-                      placeholder: (_, __) => _placeholder(),
-                      errorWidget: (_, __, ___) => _placeholder())
-                  : _placeholder(),
+                      placeholder: (_, __) => _placeholder(cardBg, cardText, emoji),
+                      errorWidget: (_, __, ___) => _placeholder(cardBg, cardText, emoji))
+                  : _placeholder(cardBg, cardText, emoji),
             ),
           ),
           const SizedBox(width: 12),
@@ -501,10 +731,10 @@ class _AlertCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
-                      color: Colors.red.shade600,
+                      color: cardText,
                       borderRadius: BorderRadius.circular(20)),
-                  child: const Text('PERDU',
-                      style: TextStyle(
+                  child: Text('$emoji PERDU',
+                      style: const TextStyle(
                           fontFamily: 'Galey',
                           fontSize: 10,
                           color: Colors.white,
@@ -533,8 +763,8 @@ class _AlertCard extends StatelessWidget {
               if (lieu.isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Row(children: [
-                  const Icon(Icons.location_on_outlined,
-                      size: 12, color: Colors.orange),
+                  Icon(Icons.location_on_outlined,
+                      size: 12, color: cardText),
                   const SizedBox(width: 3),
                   Expanded(
                     child: Text(lieu,
@@ -550,10 +780,7 @@ class _AlertCard extends StatelessWidget {
               if (date.isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Text('Disparu le $date',
-                    style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontSize: 11,
-                        color: Colors.orange.shade700)),
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: cardText)),
               ],
               if (desc != null && desc.isNotEmpty) ...[
                 const SizedBox(height: 4),
@@ -581,7 +808,7 @@ class _AlertCard extends StatelessWidget {
               if (numero.isNotEmpty)
                 Text('N° $numero',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 10,
-                        color: Colors.orange.shade400, fontWeight: FontWeight.w600)),
+                        color: cardText.withOpacity(0.7), fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               Row(mainAxisAlignment: MainAxisAlignment.end, children: [
                 OutlinedButton.icon(
@@ -616,13 +843,13 @@ class _AlertCard extends StatelessWidget {
           ),
         ]),
       ),
-    );
+      ),  // Container
+    );  // GestureDetector
   }
 
-  Widget _placeholder() => Container(
-        color: Colors.orange.shade50,
-        child: Center(
-            child: Icon(Icons.pets, color: Colors.orange.shade200, size: 32)),
+  Widget _placeholder(Color bg, Color iconColor, String emoji) => Container(
+        color: bg,
+        child: Center(child: Text(emoji, style: const TextStyle(fontSize: 30))),
       );
 }
 
@@ -635,17 +862,20 @@ class _AlertDetailSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nom     = (alerte['nom_animal'] ?? '') as String;
-    final espece  = (alerte['espece'] ?? '') as String;
-    final race    = (alerte['race'] ?? '') as String;
-    final sexe    = (alerte['sexe'] as String?) ?? '';
-    final lieu    = (alerte['derniere_localisation'] ?? '') as String;
-    final desc    = alerte['description'] as String?;
-    final contact = (alerte['contact'] as String?) ?? '';
-    final numero  = (alerte['numero_alerte'] as String?) ?? '';
+    final nom      = (alerte['nom_animal'] ?? '') as String;
+    final espece   = ((alerte['espece'] ?? '') as String).toLowerCase();
+    final race     = (alerte['race'] ?? '') as String;
+    final sexe     = (alerte['sexe'] as String?) ?? '';
+    final lieu     = (alerte['derniere_localisation'] ?? alerte['ville'] ?? '') as String;
+    final desc     = alerte['description'] as String?;
+    final contact  = (alerte['contact'] as String?) ?? '';
+    final numero   = (alerte['numero_alerte'] as String?) ?? '';
     final photoUrl = alerte['photo_url'] as String?;
-    final dateStr = alerte['date_perte'] as String?;
-    final date    = dateStr != null ? DateFormat('dd/MM/yyyy').format(DateTime.parse(dateStr)) : '';
+    final dateStr  = alerte['date_perte'] as String?;
+    final date     = dateStr != null ? DateFormat('dd/MM/yyyy').format(DateTime.parse(dateStr)) : '';
+    final cardText = _especeText[espece] ?? const Color(0xFFE65100);
+    final cardBg   = _especeBg[espece]   ?? const Color(0xFFFFF7ED);
+    final emoji    = _especeEmoji[espece] ?? '🐾';
 
     return Container(
       decoration: const BoxDecoration(
@@ -665,18 +895,23 @@ class _AlertDetailSheet extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if (photoUrl != null && photoUrl.isNotEmpty)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: CachedNetworkImage(imageUrl: photoUrl, width: 90, height: 90, fit: BoxFit.cover),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 90,
+                height: 90,
+                child: photoUrl != null && photoUrl.isNotEmpty
+                    ? CachedNetworkImage(imageUrl: photoUrl, width: 90, height: 90, fit: BoxFit.cover)
+                    : Container(color: cardBg, child: Center(child: Text(emoji, style: const TextStyle(fontSize: 40)))),
               ),
+            ),
             const SizedBox(width: 14),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(color: Colors.red.shade600, borderRadius: BorderRadius.circular(20)),
-                  child: const Text('PERDU', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
+                  decoration: BoxDecoration(color: cardText, borderRadius: BorderRadius.circular(20)),
+                  child: Text('$emoji PERDU', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -688,14 +923,14 @@ class _AlertDetailSheet extends StatelessWidget {
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
               if (date.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text('Disparu le $date', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.orange.shade700)),
+                Text('Disparu le $date', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: cardText)),
               ],
             ])),
           ]),
           if (lieu.isNotEmpty) ...[
             const SizedBox(height: 12),
             Row(children: [
-              const Icon(Icons.location_on_outlined, size: 16, color: Colors.orange),
+              Icon(Icons.location_on_outlined, size: 16, color: cardText),
               const SizedBox(width: 6),
               Expanded(child: Text(lieu, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF4A5568)))),
             ]),
@@ -715,7 +950,7 @@ class _AlertDetailSheet extends StatelessWidget {
           if (numero.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text('N° $numero', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.orange.shade400, fontWeight: FontWeight.w600)),
+              child: Text('N° $numero', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: cardText.withOpacity(0.7), fontWeight: FontWeight.w600)),
             ),
           const SizedBox(height: 16),
           Row(children: [
@@ -737,14 +972,155 @@ class _AlertDetailSheet extends StatelessWidget {
               icon: const Icon(Icons.share, size: 16),
               label: const Text('Partager', style: TextStyle(fontFamily: 'Galey')),
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.orange.shade700,
-                side: BorderSide(color: Colors.orange.shade300),
+                foregroundColor: cardText,
+                side: BorderSide(color: cardText.withOpacity(0.4)),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ]),
         ],
       ),
+    );
+  }
+}
+
+// ─── Share sheet ──────────────────────────────────────────────────────────────
+
+class _ShareSheet extends StatelessWidget {
+  final String text, url, nom;
+  const _ShareSheet({required this.text, required this.url, required this.nom});
+
+  Future<void> _copy(BuildContext ctx) async {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (ctx.mounted) {
+      Navigator.pop(ctx);
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(content: Text('Lien copié !'), duration: Duration(seconds: 2)));
+    }
+  }
+
+  Future<void> _launch(BuildContext ctx, Uri uri) async {
+    try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
+    if (ctx.mounted) Navigator.pop(ctx);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final encoded  = Uri.encodeComponent(text);
+    final waUrl    = Uri.parse('https://wa.me/?text=$encoded');
+    final smsUrl   = Uri.parse('sms:?body=$encoded');
+    final emailUrl = Uri.parse('mailto:?subject=${Uri.encodeComponent(nom)}&body=$encoded');
+    final safe     = MediaQuery.of(context).padding;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C2E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.fromLTRB(24, 12, 24, safe.bottom + 24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 40, height: 4,
+          decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 16),
+        Text(nom,
+          style: const TextStyle(color: Colors.white, fontFamily: 'Galey',
+              fontWeight: FontWeight.w700, fontSize: 15),
+          maxLines: 1, overflow: TextOverflow.ellipsis),
+        const SizedBox(height: 20),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+          _ShareBtn(
+            icon: const Icon(Icons.link_rounded, color: Colors.white, size: 24),
+            bg: const Color(0xFF3A3A4E),
+            label: 'Copier le lien',
+            onTap: () => _copy(context),
+          ),
+          _ShareBtn(
+            icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Colors.white, size: 24),
+            bg: const Color(0xFF25D366),
+            label: 'WhatsApp',
+            onTap: () => _launch(context, waUrl),
+          ),
+          _ShareBtn(
+            icon: const Icon(Icons.sms_outlined, color: Colors.white, size: 24),
+            bg: const Color(0xFF4A90E2),
+            label: 'SMS',
+            onTap: () => _launch(context, smsUrl),
+          ),
+          _ShareBtn(
+            icon: const Icon(Icons.mail_outline_rounded, color: Colors.white, size: 24),
+            bg: const Color(0xFFEA4335),
+            label: 'Email',
+            onTap: () => _launch(context, emailUrl),
+          ),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _ShareBtn extends StatelessWidget {
+  final Widget icon;
+  final Color bg;
+  final String label;
+  final VoidCallback onTap;
+  const _ShareBtn({required this.icon, required this.bg, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+        width: 56, height: 56,
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)),
+        child: Center(child: icon),
+      ),
+      const SizedBox(height: 6),
+      SizedBox(width: 60,
+        child: Text(label,
+          style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'Galey'),
+          textAlign: TextAlign.center, maxLines: 2)),
+    ]),
+  );
+}
+
+// ── Dropdown géographique compact ─────────────────────────────────────────────
+
+class _GeoDropdown extends StatelessWidget {
+  final String? value;
+  final String hint;
+  final List<String> items;
+  final ValueChanged<String?> onChanged;
+  const _GeoDropdown({
+    required this.value, required this.hint,
+    required this.items, required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      value: (items.contains(value)) ? value : null,
+      isExpanded: true,
+      isDense: true,
+      decoration: InputDecoration(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.grey.shade300)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.grey.shade300)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFFE65100))),
+        filled: true, fillColor: const Color(0xFFF8F8F8),
+      ),
+      hint: Text(hint, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF1F2A2E)),
+      items: [
+        DropdownMenuItem<String>(value: null,
+            child: Text(hint, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey))),
+        ...items.map((s) => DropdownMenuItem(value: s,
+            child: Text(s, style: const TextStyle(fontFamily: 'Galey', fontSize: 12),
+                overflow: TextOverflow.ellipsis))),
+      ],
+      onChanged: items.isEmpty ? null : onChanged,
     );
   }
 }

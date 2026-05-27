@@ -1,596 +1,356 @@
-import 'package:PetsMatch/pages/chatScreen.dart';
-import 'package:PetsMatch/pages/eleveur/postDetail.dart';
-import 'package:PetsMatch/pages/main_feed.dart';
-import 'package:PetsMatch/pages/user_detail_page_feed.dart';
-import 'package:PetsMatch/utils.dart';
+import 'package:PetsMatch/utils/storage_helper.dart' show thumbUrl;
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:video_player/video_player.dart';
-import 'package:carousel_slider/carousel_slider.dart';
-import 'package:video_thumbnail/video_thumbnail.dart';
-import 'package:flutter/services.dart' show Uint8List;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
+
+// ── Modèle ────────────────────────────────────────────────────────────────────
+
+class _SavedItem {
+  final String annonceId;
+  final int?   bebeIndex;
+  final String photo;
+  final String nom;
+  final String? race;
+  final String? espece;
+  final String? sexe;
+  final double? prix;
+  final String? ville;
+  final String? nomEleveur;
+
+  const _SavedItem({
+    required this.annonceId,
+    required this.bebeIndex,
+    required this.photo,
+    required this.nom,
+    this.race, this.espece, this.sexe, this.prix, this.ville, this.nomEleveur,
+  });
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 class LikesPage extends StatefulWidget {
+  const LikesPage({super.key});
   @override
-  _LikesPageState createState() => _LikesPageState();
+  State<LikesPage> createState() => _LikesPageState();
 }
 
-class _LikesPageState extends State<LikesPage> {
-  final Map<String, String> _imageCache = {};
-  List<String> _blockedUserIds = [];
-  Future<void> _loadBlockedUsers() async {
-    final userId = FirebaseAuth.instance.currentUser!.uid;
-    final doc = await FirebaseFirestore.instance
-        .collection('bloquer')
-        .doc(userId)
-        .get();
+class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMixin {
+  static const _teal   = Color(0xFF0C5C6C);
 
-    if (doc.exists && doc.data() != null) {
-      _blockedUserIds = (doc.data() as Map<String, dynamic>).keys.toList();
-    }
-  }
+  final _supa = Supabase.instance.client;
+  final _uid  = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  late final TabController _tabCtrl;
+
+  List<_SavedItem> _favItems   = [];
+  List<_SavedItem> _likeItems  = [];
+  bool _loadingFavs   = false;
+  bool _loadingLikes  = false;
+  bool _loadedFavs    = false;
+  bool _loadedLikes   = false;
 
   @override
   void initState() {
     super.initState();
-    _loadBlockedUsers().then((_) {
-      setState(() {}); // Rafraîchit l'interface après avoir chargé les blocs
+    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl.addListener(() {
+      if (_tabCtrl.indexIsChanging) return;
+      if (_tabCtrl.index == 0 && !_loadedFavs)  _loadTab('favoris');
+      if (_tabCtrl.index == 1 && !_loadedLikes) _loadTab('likes');
     });
+    _loadTab('favoris'); // charger favoris par défaut
   }
 
-  Future<List<Map<String, dynamic>>> _fetchLikedPosts(String userUid) async {
-    final userLikesDoc = await FirebaseFirestore.instance
-        .collection('likedPost')
-        .doc(userUid)
-        .get();
+  @override
+  void dispose() { _tabCtrl.dispose(); super.dispose(); }
 
-    if (!userLikesDoc.exists) {
-      return [];
+  Future<List<_SavedItem>> _fetchFromTable(String table) async {
+    if (_uid.isEmpty) return [];
+    final rows = await _supa
+        .from(table)
+        .select('annonce_id, bebe_index')
+        .eq('user_uid', _uid)
+        .order('created_at', ascending: false);
+
+    if (rows.isEmpty) return [];
+
+    final ids = rows.map((r) => r['annonce_id'] as String).toSet().toList();
+    final annonces = await _supa
+        .from('annonces')
+        .select('id, titre, espece, race, type, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur')
+        .inFilter('id', ids);
+
+    final annonceMap = <String, Map<String, dynamic>>{
+      for (final a in annonces) a['id'] as String: a,
+    };
+
+    final result = <_SavedItem>[];
+    for (final row in rows) {
+      final a = annonceMap[row['annonce_id'] as String];
+      if (a == null) continue;
+      final aPhotos = List<String>.from(a['photos'] ?? []);
+      final bebes   = List<Map<String, dynamic>>.from(a['animaux_portee'] ?? []);
+      final bi      = row['bebe_index'] as int?;
+
+      if (bi != null && bi < bebes.length) {
+        final b     = bebes[bi];
+        final bPh   = List<String>.from(b['photos'] ?? []);
+        final photo = bPh.isNotEmpty ? bPh.first : (aPhotos.isNotEmpty ? aPhotos.first : null);
+        if (photo == null) continue;
+        result.add(_SavedItem(
+          annonceId: row['annonce_id'] as String,
+          bebeIndex: bi, photo: photo,
+          nom:   (b['nom'] as String?)?.isNotEmpty == true ? b['nom'] as String : 'Bébé ${bi + 1}',
+          race:  a['race'] as String?,
+          espece: a['espece'] as String?,
+          sexe:  b['sexe'] as String?,
+          prix:  (b['prix'] as num?)?.toDouble(),
+          ville: a['ville_eleveur'] as String?,
+          nomEleveur: a['nom_eleveur'] as String?,
+        ));
+      } else if (bi == null) {
+        if (aPhotos.isEmpty) continue;
+        final prix = (a['saillie_prix'] as num? ?? a['prix'] as num?)?.toDouble();
+        result.add(_SavedItem(
+          annonceId: row['annonce_id'] as String,
+          bebeIndex: null, photo: aPhotos.first,
+          nom: (a['titre'] as String?)?.isNotEmpty == true
+              ? a['titre'] as String
+              : '${a['espece'] ?? ''} ${a['race'] ?? ''}'.trim(),
+          race:  a['race'] as String?,
+          espece: a['espece'] as String?,
+          sexe:  a['sexe'] as String?,
+          prix:  prix,
+          ville: a['ville_eleveur'] as String?,
+          nomEleveur: a['nom_eleveur'] as String?,
+        ));
+      }
     }
-
-    final userLikedPosts = userLikesDoc.data()!;
-    final likedPostIds = userLikedPosts.entries
-        .where((entry) => entry.value == true)
-        .map((entry) => entry.key)
-        .toList();
-
-    if (likedPostIds.isEmpty) {
-      return [];
-    }
-
-    // Batch fetch posts
-    final postSnapshots = await FirebaseFirestore.instance
-        .collection('post')
-        .where(FieldPath.documentId, whereIn: likedPostIds)
-        .get();
-
-    return postSnapshots.docs.map((doc) {
-      final postData = doc.data();
-      postData['uid'] = doc.id;
-      return postData;
-    }).where((post) {
-      return !_blockedUserIds.contains(post['uidEleveur']);
-    }).toList();
+    return result;
   }
 
-  Future<String> _fetchAndCacheImage(String imageUrl) async {
-    if (_imageCache.containsKey(imageUrl)) {
-      // Return from cache
-      return _imageCache[imageUrl]!;
+  Future<void> _loadTab(String table) async {
+    if (table == 'favoris') {
+      setState(() => _loadingFavs = true);
+      try {
+        final items = await _fetchFromTable('favoris');
+        if (mounted) setState(() { _favItems = items; _loadingFavs = false; _loadedFavs = true; });
+      } catch (_) {
+        if (mounted) setState(() => _loadingFavs = false);
+      }
     } else {
-      // Fetch and add to cache
-      _imageCache[imageUrl] = imageUrl;
-      return imageUrl;
-    }
-  }
-
-  void _showUnLikeDialog(BuildContext context, String userUid, String postUid) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text("Unlike Post"),
-          content: Text("Do you want to unlike this post?"),
-          actions: [
-            TextButton(
-              child: Text("Cancel"),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            TextButton(
-              child: Text("Unlike"),
-              onPressed: () {
-                dislikePost(postUid).then((_) {
-                  Navigator.of(context).pop();
-                  setState(() {}); // Refresh UI
-                });
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> dislikePost(String postId) async {
-    String userId = FirebaseAuth.instance.currentUser!.uid;
-    DocumentReference likeDoc =
-        FirebaseFirestore.instance.collection('likedPost').doc(userId);
-
-    await likeDoc.update({postId: FieldValue.delete()});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final userUid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
-
-    return Scaffold(
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _fetchLikedPosts(userUid),
-        builder: (BuildContext context,
-            AsyncSnapshot<List<Map<String, dynamic>>> snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-          final likedPosts = snapshot.data ?? [];
-          return likedPosts.isEmpty
-              ? Center(child: Text('Aucun post liké'))
-              : Column(
-                  children: [
-                    SizedBox(
-                      width: MediaQuery.of(context).size.width,
-                      height: MediaQuery.of(context).size.height * 0.2,
-                      child: Stack(children: [
-                        Image.asset(
-                          'assets/deco/arrondideco.png',
-                          fit: BoxFit.cover,
-                          width: MediaQuery.of(context).size.width * 0.4,
-                          height: MediaQuery.of(context).size.height * 0.2,
-                        color: const Color(0xFFA7C79A),
-                        colorBlendMode: BlendMode.srcIn,
-                        ),
-                        Positioned(
-                          top: MediaQuery.of(context).size.height * 0.075,
-                          left: 0,
-                          right: 0,
-                          child: Align(
-                            alignment: Alignment.center,
-                            child: Text(
-                              'LIKES',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontFamily: 'Galey',
-                                fontWeight: FontWeight.w500,
-                                fontSize: 20,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ]),
-                    ),
-                    SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment(-0.8, 0),
-                      child: Text(
-                        'Ce que vous avez liké',
-                        textAlign: TextAlign.left,
-                        style: TextStyle(
-                          fontFamily: 'Galey',
-                          color: Color.fromARGB(255, 0, 0, 0),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 20,
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 20),
-                    Expanded(
-                      child: GridView.builder(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
-                          childAspectRatio: 2 / 3,
-                        ),
-                        itemCount: likedPosts.length,
-                        itemBuilder: (context, index) {
-                          final post = likedPosts[index];
-                          final postUid = post['uid'];
-                          final imageUrl = post['mediaStockage'][0]['path'];
-
-                          return GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => PostDetailPage(
-                                      post: post), // Remplacez par votre widget
-                                ),
-                              );
-                            },
-                            onLongPress: () {
-                              _showUnLikeDialog(context, userUid, postUid);
-                            },
-                            child: FutureBuilder<String>(
-                              future: _fetchAndCacheImage(imageUrl),
-                              builder: (context, imageSnapshot) {
-                                if (imageSnapshot.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return Center(
-                                    child: CircularProgressIndicator(),
-                                  );
-                                }
-                                return Stack(
-                                  children: [
-                                    CachedNetworkImage(
-                                      imageUrl: imageSnapshot.data!,
-                                      placeholder: (context, url) => Center(
-                                          child: CircularProgressIndicator()),
-                                      errorWidget: (context, url, error) =>
-                                          Icon(Icons.error),
-                                      imageBuilder: (context, imageProvider) =>
-                                          Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius:
-                                              BorderRadius.circular(10),
-                                          image: DecorationImage(
-                                            image: imageProvider,
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 7,
-                                      right: 10,
-                                      child: Icon(
-                                        Icons.favorite,
-                                        color: Color(0xFF6E9E57),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                );
-        },
-      ),
-    );
-  }
-}
-
-class PostWidgetLike extends StatefulWidget {
-  final Map<String, dynamic> post;
-  final VoidCallback onLikePressed;
-
-  PostWidgetLike({required this.post, required this.onLikePressed});
-
-  @override
-  _PostWidgetLikeState createState() => _PostWidgetLikeState();
-}
-
-class _PostWidgetLikeState extends State<PostWidgetLike> {
-  bool isLiked = false;
-  VideoPlayerController? _videoController;
-  Uint8List? _videoThumbnail;
-  String? nameElevage;
-  String? profilePictureUrlElevage;
-
-  @override
-  void initState() {
-    super.initState();
-    checkIfLiked();
-    fetchElevageInfo();
-    initializeMedia();
-  }
-
-  Future<void> checkIfLiked() async {
-    String? postId = widget.post[
-        'uid']; // Assurez-vous que vous utilisez le bon champ pour l'ID du post
-    if (postId != null && postId.isNotEmpty) {
-      bool liked = await isPostLiked(postId);
-      setState(() {
-        isLiked = liked;
-      });
-    } else {
-      print("Erreur: 'postId' est null ou vide.");
-    }
-  }
-
-  Future<void> fetchElevageInfo() async {
-    String uidEleveur = widget.post['uidEleveur'];
-    DocumentSnapshot userDoc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uidEleveur)
-        .get();
-
-    if (userDoc.exists) {
-      var userData = userDoc.data() as Map<String, dynamic>;
-      setState(() {
-        nameElevage = userData['nameElevage'] ?? 'Nom d\'élevage inconnu';
-        profilePictureUrlElevage = userData['profilePictureUrlElevage'] ??
-            'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60';
-      });
-    }
-  }
-
-  Future<void> initializeMedia() async {
-    for (var media in widget.post['mediaStockage']) {
-      if (!media['isPhoto']) {
-        String videoPath = media['path'];
-        _videoController = VideoPlayerController.network(videoPath)
-          ..initialize().then((_) {
-            if (mounted) {
-              setState(() {});
-              _videoController!.setVolume(media['isMuted'] ? 0 : 1);
-              _videoController!.setLooping(true);
-              _videoController!.play();
-            }
-          });
-        _videoThumbnail = await VideoThumbnail.thumbnailData(
-          video: videoPath,
-          imageFormat: ImageFormat.JPEG,
-          maxWidth: 128,
-          quality: 25,
-        );
+      setState(() => _loadingLikes = true);
+      try {
+        final items = await _fetchFromTable('likes');
+        if (mounted) setState(() { _likeItems = items; _loadingLikes = false; _loadedLikes = true; });
+      } catch (_) {
+        if (mounted) setState(() => _loadingLikes = false);
       }
     }
   }
 
-  Future<void> toggleLike() async {
-    String? postId = widget.post['postId'] ??
-        widget.post['uid']; // Vérifiez une autre clé possible
-    if (postId != null && postId.isNotEmpty) {
-      if (isLiked) {
-        await dislikePost(postId);
+  Future<void> _removeItem(_SavedItem item, String table) async {
+    setState(() {
+      if (table == 'favoris') {
+        _favItems.removeWhere((i) => i.annonceId == item.annonceId && i.bebeIndex == item.bebeIndex);
       } else {
-        await likePost(postId);
+        _likeItems.removeWhere((i) => i.annonceId == item.annonceId && i.bebeIndex == item.bebeIndex);
       }
-      setState(() {
-        isLiked = !isLiked;
-      });
-      widget.onLikePressed();
-    } else {
-      print("Erreur: 'postId' ou 'uid' est null ou vide.");
+    });
+    try {
+      var q = _supa.from(table).delete()
+          .eq('user_uid', _uid)
+          .eq('annonce_id', item.annonceId);
+      if (item.bebeIndex != null) {
+        await q.eq('bebe_index', item.bebeIndex!);
+      } else {
+        await q.isFilter('bebe_index', null);
+      }
+    } catch (_) {
+      // rollback
+      if (table == 'favoris') {
+        _loadTab('favoris');
+      } else {
+        _loadTab('likes');
+      }
     }
   }
 
-  Future<void> openChatWithEleveur() async {
-    String currentUserId = FirebaseAuth.instance.currentUser!.uid;
-    String eleveurId = widget.post['uidEleveur'];
-    List<String> sortedIds = [currentUserId, eleveurId]..sort();
-    String participantIds = sortedIds.join('_');
+  void _openDetail(_SavedItem item) {
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => AnnonceDetailPage(
+        annonceId: item.annonceId,
+        initialData: {'_id': item.annonceId},
+      ),
+    ));
+  }
 
-    QuerySnapshot conversationSnapshot = await FirebaseFirestore.instance
-        .collection('conversations')
-        .where('participantIds', isEqualTo: participantIds)
-        .limit(1)
-        .get();
+  // ── Build ─────────────────────────────────────────────────────────────────
 
-    DocumentReference conversationRef;
-    if (conversationSnapshot.docs.isEmpty) {
-      conversationRef =
-          await FirebaseFirestore.instance.collection('conversations').add({
-        'participants': [currentUserId, eleveurId],
-        'participantIds': participantIds,
-        'lastMessage': '',
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-    } else {
-      conversationRef = conversationSnapshot.docs.first.reference;
-    }
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatScreen(
-            conversationId: conversationRef.id, eleveurId: eleveurId),
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F0),
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        title: const Text('Mes interactions',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        bottom: TabBar(
+          controller: _tabCtrl,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white60,
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13),
+          tabs: const [
+            Tab(icon: Icon(Icons.bookmark, size: 18), text: 'Sauvegardés'),
+            Tab(icon: Icon(Icons.favorite, size: 18), text: 'J\'aime'),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabCtrl,
+        children: [
+          _buildTab(_favItems, _loadingFavs, 'favoris'),
+          _buildTab(_likeItems, _loadingLikes, 'likes'),
+        ],
       ),
     );
   }
 
-  @override
-  void dispose() {
-    if (_videoController != null) {
-      _videoController!.dispose();
-    }
-    super.dispose();
+  Widget _buildTab(List<_SavedItem> items, bool loading, String table) {
+    if (loading) return const Center(child: CircularProgressIndicator(color: _teal));
+    if (items.isEmpty) return _buildEmpty(table);
+    return RefreshIndicator(
+      onRefresh: () => _loadTab(table),
+      color: _teal,
+      child: GridView.builder(
+        padding: const EdgeInsets.all(12),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          childAspectRatio: 0.72,
+        ),
+        itemCount: items.length,
+        itemBuilder: (_, i) => _SavedCard(
+          item: items[i],
+          isFavori: table == 'favoris',
+          onTap:    () => _openDetail(items[i]),
+          onRemove: () => _removeItem(items[i], table),
+        ),
+      ),
+    );
   }
+
+  Widget _buildEmpty(String table) {
+    return Center(
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(
+          table == 'favoris' ? Icons.bookmark_border : Icons.favorite_border,
+          size: 72, color: const Color(0xFFDDE1E4)),
+        const SizedBox(height: 16),
+        Text(
+          table == 'favoris' ? 'Aucun animal sauvegardé' : 'Aucun like pour l\'instant',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 16, color: Color(0xFFADB5BD))),
+        const SizedBox(height: 8),
+        const Text('Utilise le feed pour découvrir et\nsauvegarder des annonces.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFADB5BD))),
+      ]),
+    );
+  }
+}
+
+// ── Carte individuelle ────────────────────────────────────────────────────────
+
+class _SavedCard extends StatelessWidget {
+  final _SavedItem item;
+  final bool isFavori;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  const _SavedCard({required this.item, required this.isFavori, required this.onTap, required this.onRemove});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      child: Stack(
-        children: [
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(children: [
           Positioned.fill(
-            child: widget.post['mediaStockage'] != null &&
-                    widget.post['mediaStockage'].length > 0
-                ? CarouselSlider(
-                    options: CarouselOptions(
-                      height: double.infinity,
-                      viewportFraction: 1.0,
-                      enlargeCenterPage: false,
-                      autoPlay: false,
-                    ),
-                    items: widget.post['mediaStockage'].map<Widget>((media) {
-                      if (media['isPhoto']) {
-                        return Container(
-                          color: Colors.black,
-                          child: Center(
-                            child: Image.network(
-                              media['path'],
-                              fit: BoxFit.contain,
-                            ),
-                          ),
-                        );
-                      } else {
-                        return Container(
-                          color: Colors.black,
-                          child: Center(
-                            child: _videoController != null &&
-                                    _videoController!.value.isInitialized
-                                ? AspectRatio(
-                                    aspectRatio:
-                                        _videoController!.value.aspectRatio,
-                                    child: VideoPlayer(_videoController!),
-                                  )
-                                : _videoThumbnail != null
-                                    ? Image.memory(_videoThumbnail!,
-                                        fit: BoxFit.contain)
-                                    : Center(
-                                        child: CircularProgressIndicator()),
-                          ),
-                        );
-                      }
-                    }).toList(),
-                  )
-                : Container(color: Colors.grey),
+            child: CachedNetworkImage(
+              imageUrl: thumbUrl(item.photo, width: 400, quality: 75),
+              fit: BoxFit.cover,
+              placeholder: (_, __) => Container(color: const Color(0xFFE5E7EB)),
+              errorWidget: (_, __, ___) => Container(
+                color: const Color(0xFFE5E7EB),
+                child: const Icon(Icons.pets, color: Colors.white54, size: 40),
+              ),
+            ),
           ),
-          Positioned(
-            bottom: UTILS.calculHeight(0, UTILS.heightReference(context)),
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: EdgeInsets.all(10),
-              decoration: BoxDecoration(
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [
-                    Colors.black.withOpacity(0.8),
-                    Colors.black.withOpacity(0.0),
-                  ],
+                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Color(0xBB000000)],
+                  stops: [0.5, 1.0],
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () async {
-                          String uidEleveur = widget.post['uidEleveur'];
-                          DocumentSnapshot userDoc = await FirebaseFirestore
-                              .instance
-                              .collection('users')
-                              .doc(uidEleveur)
-                              .get();
-
-                          if (userDoc.exists) {
-                            var userData =
-                                userDoc.data() as Map<String, dynamic>;
-
-                            UserSelected user =
-                                UserSelected.fromMap(userData, userDoc.id);
-
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    UserDetailPageFeed(user: user),
-                              ),
-                            );
-                          } else {
-                            print("L'utilisateur avec cet ID n'existe pas.");
-                          }
-                        },
-                        child: CircleAvatar(
-                          backgroundColor: const Color(0xFFA7C79A),
-                          backgroundImage: profilePictureUrlElevage != null
-                              ? NetworkImage(profilePictureUrlElevage!) as ImageProvider
-                              : null,
-                          child: profilePictureUrlElevage == null
-                              ? const Icon(Icons.person, color: Colors.white)
-                              : null,
-                        ),
-                      ),
-                      SizedBox(
-                          width: UTILS.calculWidth(
-                              10, UTILS.widthReference(context))),
-                      GestureDetector(
-                        onTap: () async {
-                          String uidEleveur = widget.post['uidEleveur'];
-                          DocumentSnapshot userDoc = await FirebaseFirestore
-                              .instance
-                              .collection('users')
-                              .doc(uidEleveur)
-                              .get();
-
-                          if (userDoc.exists) {
-                            var userData =
-                                userDoc.data() as Map<String, dynamic>;
-
-                            UserSelected user =
-                                UserSelected.fromMap(userData, userDoc.id);
-
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    UserDetailPageFeed(user: user),
-                              ),
-                            );
-                          } else {
-                            print("L'utilisateur avec cet ID n'existe pas.");
-                          }
-                        },
-                        child: Text(
-                          nameElevage ?? 'Nom d\'élevage inconnu',
-                          style: TextStyle(
-                            fontFamily: 'Galey',
-                            fontWeight: FontWeight.w500,
-                            fontSize: UTILS.calculHeight(
-                                18, UTILS.heightReference(context)),
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(
-                      height: UTILS.calculHeight(
-                          10, UTILS.heightReference(context))),
-                  ExpandableText(
-                    text: widget.post['desc']!,
-                  ),
+            ),
+          ),
+          Positioned(bottom: 10, left: 10, right: 10,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                if (item.sexe != null) ...[
+                  Text(item.sexe == 'male' ? '♂' : '♀',
+                      style: const TextStyle(color: Colors.white,
+                          fontSize: 13, fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 4),
                 ],
+                Flexible(child: Text(item.nom,
+                    style: const TextStyle(color: Colors.white,
+                        fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14),
+                    maxLines: 1, overflow: TextOverflow.ellipsis)),
+              ]),
+              if (item.race?.isNotEmpty == true)
+                Text(item.race!,
+                    style: const TextStyle(color: Colors.white70,
+                        fontFamily: 'Galey', fontSize: 11),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (item.prix != null)
+                Text('${item.prix!.toInt()} €',
+                    style: const TextStyle(color: Colors.white,
+                        fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+              if (item.nomEleveur?.isNotEmpty == true)
+                Text('🏡 ${item.nomEleveur}',
+                    style: const TextStyle(color: Colors.white60,
+                        fontFamily: 'Galey', fontSize: 10),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+            ]),
+          ),
+          Positioned(top: 8, right: 8,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: Container(
+                width: 32, height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.black45,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  isFavori ? Icons.bookmark : Icons.favorite,
+                  color: isFavori ? Colors.amber : Colors.redAccent,
+                  size: 17,
+                ),
               ),
             ),
           ),
-          Positioned(
-            bottom: UTILS.calculHeight(30, UTILS.heightReference(context)),
-            right: UTILS.calculWidth(5, UTILS.widthReference(context)),
-            child: Column(
-              children: [
-                IconButton(
-                  icon: Icon(
-                    isLiked ? Icons.favorite : Icons.favorite_border,
-                    color: isLiked ? Colors.red : Colors.white,
-                  ),
-                  onPressed: toggleLike,
-                ),
-                IconButton(
-                  icon: Icon(Icons.message),
-                  onPressed: openChatWithEleveur,
-                  color: Colors.white,
-                ),
-              ],
-            ),
-          ),
-        ],
+        ]),
       ),
     );
   }

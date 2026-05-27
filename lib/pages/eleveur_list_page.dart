@@ -765,6 +765,7 @@ class _EleveurCard extends StatelessWidget {
     final nameElevage = (data['nameElevage'] ?? 'Élevage') as String;
     final desc    = (data['descEntreprise'] ?? '') as String;
     final ppUrl   = (data['profilePictureUrlElevage'] ?? '') as String;
+    final bannerUrl = (data['bannerUrl'] ?? '') as String;
     final adress  = FrenchGeo.formatLocation(data).isNotEmpty
         ? FrenchGeo.formatLocation(data)
         : (data['adressElevage'] ?? '').toString().trim();
@@ -809,13 +810,43 @@ class _EleveurCard extends StatelessWidget {
           // Bannière
           ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            child: ppUrl.isNotEmpty
-                ? CachedNetworkImage(
-                    imageUrl: ppUrl,
-                    height: 130, width: double.infinity, fit: BoxFit.cover,
-                    placeholder: (_, __) => const _PlaceholderBanner(),
-                    errorWidget: (_, __, ___) => const _PlaceholderBanner())
-                : const _PlaceholderBanner(),
+            child: Stack(
+              children: [
+                bannerUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: bannerUrl,
+                        height: 130, width: double.infinity, fit: BoxFit.cover,
+                        placeholder: (_, __) => const _PlaceholderBanner(),
+                        errorWidget: (_, __, ___) => const _PlaceholderBanner())
+                    : ppUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: ppUrl,
+                            height: 130, width: double.infinity, fit: BoxFit.cover,
+                            placeholder: (_, __) => const _PlaceholderBanner(),
+                            errorWidget: (_, __, ___) => const _PlaceholderBanner())
+                        : const _PlaceholderBanner(),
+                if (bannerUrl.isNotEmpty && ppUrl.isNotEmpty)
+                  Positioned(
+                    bottom: 8,
+                    left: 12,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 4)],
+                      ),
+                      child: ClipOval(
+                        child: CachedNetworkImage(
+                          imageUrl: ppUrl, fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => const ColoredBox(color: Color(0xFFEEF5EA)),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
           Padding(
             padding: const EdgeInsets.all(14),

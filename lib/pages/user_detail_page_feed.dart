@@ -1,15 +1,15 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
-import 'package:PetsMatch/pages/eleveur/postDetail.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/main_feed.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:carousel_slider/carousel_slider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class UserDetailPageFeed extends StatefulWidget {
@@ -22,6 +22,43 @@ class UserDetailPageFeed extends StatefulWidget {
 
 class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
   bool _loadingChat = false;
+  List<Map<String, dynamic>> _annonces = [];
+  bool _loadingAnnonces = true;
+  late String _bannerUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _bannerUrl = widget.user.bannerUrl;
+    _loadAnnonces();
+    if (_bannerUrl.isEmpty) _loadBannerFromSupabase();
+  }
+
+  Future<void> _loadBannerFromSupabase() async {
+    try {
+      final row = await Supabase.instance.client
+          .from('users')
+          .select('banner_url')
+          .eq('uid', widget.user.uid)
+          .maybeSingle();
+      final url = row?['banner_url'] as String?;
+      if (mounted && url != null && url.isNotEmpty) setState(() => _bannerUrl = url);
+    } catch (_) {}
+  }
+
+  Future<void> _loadAnnonces() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('annonces')
+          .select('id, titre, espece, race, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, type_vente, statut, uid_eleveur, ville_eleveur, created_at')
+          .eq('uid_eleveur', widget.user.uid)
+          .eq('statut', 'disponible')
+          .order('created_at', ascending: false);
+      if (mounted) setState(() { _annonces = List<Map<String, dynamic>>.from(rows as List); _loadingAnnonces = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loadingAnnonces = false);
+    }
+  }
 
   Future<void> _openChat() async {
     setState(() => _loadingChat = true);
@@ -43,6 +80,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
               'participantIds': participantIds,
               'lastMessage': '',
               'timestamp': FieldValue.serverTimestamp(),
+              'categorie': 'communaute',
             })
           : snap.docs.first.reference;
 
@@ -162,11 +200,9 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
       backgroundColor: const Color(0xFFF8F8F6),
       body: CustomScrollView(
         slivers: [
-          // App bar with photo
           SliverAppBar(
-            expandedHeight: 220,
             pinned: true,
-            backgroundColor: const Color(0xFFA7C79A),
+            backgroundColor: const Color(0xFF0C5C6C),
             leading: IconButton(
               icon: const Icon(Icons.arrow_back, color: Colors.white),
               onPressed: () => Navigator.pop(context),
@@ -183,8 +219,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                           .doc(User_Info.uid)
                           .set({user.uid: true}, SetOptions(merge: true));
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Utilisateur bloqué.')),
+                        const SnackBar(content: Text('Utilisateur bloqué.')),
                       );
                       Navigator.pop(context);
                     }
@@ -207,326 +242,316 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                   ],
                 ),
             ],
-            flexibleSpace: FlexibleSpaceBar(
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  user.profilePictureUrlElevage.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: user.profilePictureUrlElevage,
-                          fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) =>
-                              _PlaceholderBanner(),
-                        )
-                      : _PlaceholderBanner(),
-                  // Gradient pour lisibilité
-                  Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.black38],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ),
 
           SliverToBoxAdapter(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Nom + badge + localisation
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              user.nameElevage,
-                              style: const TextStyle(
-                                fontFamily: 'Galey',
-                                fontWeight: FontWeight.w500,
-                                fontSize: 22,
-                              ),
-                            ),
-                          ),
-                          if (user.isValidate)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color:
-                                    const Color(0xFF2E7D32).withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                    color: const Color(0xFF2E7D32)
-                                        .withOpacity(0.4)),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.verified,
-                                      color: Color(0xFF2E7D32), size: 14),
-                                  SizedBox(width: 4),
-                                  Text('PRO Vérifié',
-                                      style: TextStyle(
-                                          color: Color(0xFF2E7D32),
-                                          fontFamily: 'Galey',
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w500)),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                      if (_location.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            const Icon(Icons.location_on,
-                                size: 14, color: Colors.grey),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                _location,
-                                style: const TextStyle(
-                                    fontSize: 13, color: Colors.grey,
-                                    fontFamily: 'Galey'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                      if (user.siret.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Icon(Icons.badge_outlined,
-                                size: 14, color: Colors.grey),
-                            const SizedBox(width: 4),
-                            Text(
-                              'SIRET : ${user.siret}',
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                  fontFamily: 'Galey'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-
-                // Espèces + races
-                if (user.isDog || user.isCat) ...[
-                  const SizedBox(height: 12),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
+                // ── Banner + photo profil (style Facebook) ─────────────────
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (user.isDog) _SpeciesChip(label: '🐶 Chien'),
-                        if (user.isCat) _SpeciesChip(label: '🐱 Chat'),
-                        ...allBreeds.map((r) => _BreedChip(label: r)),
+                        // Bannière paysage
+                        SizedBox(
+                          height: 200,
+                          width: double.infinity,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              _bannerUrl.isNotEmpty
+                                  ? CachedNetworkImage(imageUrl: _bannerUrl, fit: BoxFit.cover,
+                                      errorWidget: (_, __, ___) => _PlaceholderBanner())
+                                  : (user.profilePictureUrlElevage.isNotEmpty
+                                      ? CachedNetworkImage(imageUrl: user.profilePictureUrlElevage, fit: BoxFit.cover,
+                                          color: Colors.black26, colorBlendMode: BlendMode.darken,
+                                          errorWidget: (_, __, ___) => _PlaceholderBanner())
+                                      : _PlaceholderBanner()),
+                              Container(
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                                    colors: [Colors.transparent, Colors.black45],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Section blanche — padding top = 44 (moitié photo) + 8
+                        Container(
+                          color: Colors.white,
+                          width: double.infinity,
+                          padding: const EdgeInsets.fromLTRB(16, 52, 16, 16),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            if (!isOwnProfile && user.numeroElevage.isNotEmpty) ...[
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: OutlinedButton(
+                                  onPressed: () => _callPhone(user.numeroElevage),
+                                  style: OutlinedButton.styleFrom(
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                    side: const BorderSide(color: Color(0xFFA7C79A)),
+                                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
+                                    minimumSize: Size.zero,
+                                  ),
+                                  child: const Icon(Icons.phone, size: 18, color: Color(0xFF6E9E57)),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                            Row(children: [
+                              Expanded(
+                                child: Text(
+                                  user.nameElevage,
+                                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 22, color: Color(0xFF1F2A2E)),
+                                ),
+                              ),
+                              if (user.isValidate)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDCFCE7),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: const Color(0xFF86EFAC)),
+                                  ),
+                                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                                    Icon(Icons.verified, color: Color(0xFF16A34A), size: 13),
+                                    SizedBox(width: 3),
+                                    Text('PRO Vérifié', style: TextStyle(color: Color(0xFF16A34A), fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600)),
+                                  ]),
+                                ),
+                            ]),
+                            if (_location.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Row(children: [
+                                const Icon(Icons.location_on_outlined, size: 13, color: Colors.grey),
+                                const SizedBox(width: 3),
+                                Expanded(child: Text(_location, style: const TextStyle(fontSize: 12, color: Colors.grey, fontFamily: 'Galey'))),
+                              ]),
+                            ],
+                            if (user.siret.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text('🪪 SIRET : ${user.siret}', style: const TextStyle(fontSize: 11, color: Colors.grey, fontFamily: 'Galey')),
+                            ],
+                          ]),
+                        ),
                       ],
                     ),
-                  ),
-                ],
-
-                // Bouton contacter + téléphone
-                if (!isOwnProfile) ...[
-                  const SizedBox(height: 16),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: _loadingChat ? null : _openChat,
-                            icon: _loadingChat
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.black),
-                                  )
-                                : const Icon(Icons.chat_bubble_outline,
-                                    size: 18, color: Colors.black),
-                            label: const Text('Contacter',
-                                style: TextStyle(
-                                    fontFamily: 'Galey',
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.black)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor:
-                                  const Color(0xFFA7C79A),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(30)),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                          ),
+                    // Photo de profil chevauchant la bannière (top: 200 - 44 = 156)
+                    Positioned(
+                      top: 156,
+                      left: 16,
+                      child: Container(
+                        width: 88,
+                        height: 88,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 3),
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 8)],
                         ),
-                        if (user.numeroElevage.isNotEmpty) ...[
-                          const SizedBox(width: 10),
-                          OutlinedButton(
-                            onPressed: () => _callPhone(user.numeroElevage),
-                            style: OutlinedButton.styleFrom(
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(30)),
-                              side: const BorderSide(
-                                  color:
-                                      Color(0xFFA7C79A)),
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: 12, horizontal: 16),
-                            ),
-                            child: const Icon(Icons.phone,
-                                size: 20,
-                                color: Color(0xFF6E9E57)),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-
-                // Description
-                if (user.descEntreprise.isNotEmpty &&
-                    user.descEntreprise !=
-                        'Aucune description disponible') ...[
-                  const SizedBox(height: 20),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      'À propos',
-                      style: const TextStyle(
-                        fontFamily: 'Galey',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16,
+                        child: ClipOval(
+                          child: user.profilePictureUrlElevage.isNotEmpty
+                              ? CachedNetworkImage(imageUrl: user.profilePictureUrlElevage, fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) => _AvatarPlaceholder())
+                              : _AvatarPlaceholder(),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      user.descEntreprise,
-                      style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.black87,
-                          fontFamily: 'Galey'),
-                    ),
-                  ),
-                ],
-
-                // Annonces
-                const SizedBox(height: 24),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    'Annonces',
-                    style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                    ),
-                  ),
+                  ],
                 ),
+
                 const SizedBox(height: 8),
 
-                StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('post')
-                      .where('uidEleveur', isEqualTo: user.uid)
-                      .snapshots(),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData) {
-                      return const Center(
-                          child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: CircularProgressIndicator(
-                            color: Color(0xFFA7C79A)),
-                      ));
-                    }
+                // ── Espèces + races ────────────────────────────────────────
+                if (allBreeds.isNotEmpty || user.isDog || user.isCat) ...[
+                  Container(
+                    color: Colors.white,
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Wrap(spacing: 6, runSpacing: 6, children: [
+                      if (user.isDog) _SpeciesChip(label: '🐶 Chien'),
+                      if (user.isCat) _SpeciesChip(label: '🐱 Chat'),
+                      ...allBreeds.map((r) => _BreedChip(label: r)),
+                    ]),
+                  ),
+                  const SizedBox(height: 8),
+                ],
 
-                    final posts = snapshot.data!.docs.map((doc) {
-                      final d = doc.data() as Map<String, dynamic>;
-                      d['id'] = doc.id;
-                      return d;
-                    }).toList();
-
-                    if (posts.isEmpty) {
-                      return const Padding(
-                        padding: EdgeInsets.fromLTRB(16, 8, 16, 32),
-                        child: Text(
-                          'Aucune annonce pour le moment.',
-                          style: TextStyle(
-                              color: Colors.grey, fontFamily: 'Galey'),
+                // ── Bouton contacter ───────────────────────────────────────
+                if (!isOwnProfile) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _loadingChat ? null : _openChat,
+                        icon: _loadingChat
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.chat_bubble_outline, size: 18),
+                        label: const Text('Contacter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0C5C6C),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                      );
-                    }
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
 
-                    return GridView.builder(
+                // ── À propos ───────────────────────────────────────────────
+                if (user.descEntreprise.isNotEmpty && user.descEntreprise != 'Aucune description disponible') ...[
+                  Container(
+                    color: Colors.white,
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('À propos', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1F2A2E))),
+                      const SizedBox(height: 8),
+                      Text(user.descEntreprise, style: const TextStyle(fontSize: 13, color: Colors.black87, fontFamily: 'Galey', height: 1.5)),
+                    ]),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                // ── Annonces ───────────────────────────────────────────────
+                Container(
+                  color: Colors.white,
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                  child: Row(children: [
+                    const Text('Annonces', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1F2A2E))),
+                    if (_annonces.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Text('${_annonces.length}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
+                    ],
+                  ]),
+                ),
+
+                if (_loadingAnnonces)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator(color: Color(0xFF0C5C6C))),
+                  )
+                else if (_annonces.isEmpty)
+                  Container(
+                    color: Colors.white,
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                    child: const Text('Aucune annonce active pour le moment.', style: TextStyle(color: Colors.grey, fontFamily: 'Galey'), textAlign: TextAlign.center),
+                  )
+                else
+                  Container(
+                    color: Colors.white,
+                    child: GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 100),
-                      itemCount: posts.length,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        crossAxisSpacing: 4,
-                        mainAxisSpacing: 4,
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 100),
+                      itemCount: _annonces.length,
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        childAspectRatio: 0.72,
                       ),
                       itemBuilder: (context, i) {
-                        final post = posts[i];
-                        final media = post['mediaStockage'] as List?;
-                        if (media == null || media.isEmpty) {
-                          return const SizedBox();
+                        final a = _annonces[i];
+                        final photos = (a['photos'] as List?)?.cast<String>() ?? [];
+                        final isSaillie = a['type_vente'] == 'saillie';
+                        final titreRaw = (a['titre'] as String?) ?? '';
+                        final espece = (a['espece'] as String?) ?? '';
+                        final race = (a['race'] as String?) ?? '';
+                        final titre = titreRaw.isNotEmpty ? titreRaw : '$espece $race'.trim();
+                        final ville = (a['ville_eleveur'] as String?) ?? '';
+                        final String? prix;
+                        if (isSaillie) {
+                          prix = a['saillie_prix'] != null ? '${a['saillie_prix']} €' : null;
+                        } else if (a['prix_min_portee'] != null && a['prix_max_portee'] != null) {
+                          prix = '${a['prix_min_portee']} – ${a['prix_max_portee']} €';
+                        } else if (a['prix_min_portee'] != null) {
+                          prix = 'Dès ${a['prix_min_portee']} €';
+                        } else if (a['prix'] != null) {
+                          prix = '${a['prix']} €';
+                        } else {
+                          prix = null;
                         }
+
                         return GestureDetector(
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => PostDetailPage(post: post),
+                          onTap: () => Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => AnnonceDetailPage(annonceId: a['id'] as String, initialData: a))),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))],
                             ),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: media.length > 1
-                                ? CarouselSlider.builder(
-                                    itemCount: media.length,
-                                    itemBuilder: (_, idx, __) =>
-                                        CachedNetworkImage(
-                                      imageUrl: media[idx]['path'],
-                                      fit: BoxFit.cover,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: ClipRRect(
+                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        photos.isNotEmpty
+                                            ? CachedNetworkImage(imageUrl: photos.first, fit: BoxFit.cover,
+                                                errorWidget: (_, __, ___) => _AnnoncePlaceholder(a))
+                                            : _AnnoncePlaceholder(a),
+                                        Positioned(
+                                          top: 6, left: 6,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: isSaillie ? const Color(0xFFA855F7) : const Color(0xFF6E9E57),
+                                              borderRadius: BorderRadius.circular(20),
+                                            ),
+                                            child: Text(
+                                              isSaillie ? 'Saillie' : 'Compagnon',
+                                              style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    options: CarouselOptions(
-                                      viewportFraction: 1,
-                                      aspectRatio: 1,
-                                      enableInfiniteScroll: false,
-                                    ),
-                                  )
-                                : CachedNetworkImage(
-                                    imageUrl: media[0]['path'],
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, __, ___) =>
-                                        Container(color: Colors.grey[200]),
                                   ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.all(8),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        titre.isNotEmpty ? titre : '–',
+                                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF1F2A2E)),
+                                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (espece.isNotEmpty || race.isNotEmpty)
+                                        Text(
+                                          '${espece.isNotEmpty ? espece : ''}${race.isNotEmpty ? ' · $race' : ''}'.trim(),
+                                          style: const TextStyle(fontSize: 10, color: Colors.grey),
+                                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                                        ),
+                                      if (ville.isNotEmpty)
+                                        Text('📍 $ville', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                                      if (prix != null)
+                                        Text(prix, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0C5C6C))),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         );
                       },
-                    );
-                  },
-                ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -540,12 +565,38 @@ class _PlaceholderBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFFA7C79A).withOpacity(0.4),
-      child: const Center(
-        child: Icon(Icons.pets, size: 64, color: Color(0xFFA7C79A)),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF0C5C6C), Color(0xFF6E9E57)],
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+        ),
       ),
+      child: const Center(child: Icon(Icons.pets, size: 48, color: Colors.white38)),
     );
   }
+}
+
+class _AvatarPlaceholder extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => Container(
+    color: const Color(0xFFEEF5EA),
+    child: const Center(child: Icon(Icons.store_outlined, size: 36, color: Color(0xFF6E9E57))),
+  );
+}
+
+class _AnnoncePlaceholder extends StatelessWidget {
+  final Map<String, dynamic> a;
+  const _AnnoncePlaceholder(this.a);
+  @override
+  Widget build(BuildContext context) => Container(
+    color: const Color(0xFFF0F9F0),
+    child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+      const Icon(Icons.pets, color: Color(0xFFA7C79A), size: 24),
+      if ((a['race'] as String?)?.isNotEmpty == true)
+        Padding(padding: const EdgeInsets.only(top: 4), child:
+          Text(a['race'] as String, style: const TextStyle(fontSize: 9, color: Colors.grey), textAlign: TextAlign.center, maxLines: 2)),
+    ])),
+  );
 }
 
 class _SpeciesChip extends StatelessWidget {

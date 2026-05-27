@@ -5,6 +5,7 @@ import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
@@ -29,6 +30,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
   int _postCount = 0;
   int _alerteCount = 0;
   bool _loading = true;
+  List<Map<String, dynamic>> _recentAnnonces = [];
 
   static const _green = Color(0xFF6E9E57);
   static const _teal = Color(0xFF0C5C6C);
@@ -47,11 +49,18 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
       final profileDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
       final animaux = await Supabase.instance.client
           .from('animaux').select('id').eq('uid_eleveur', uid);
-      final annoncesSnap = await FirebaseFirestore.instance
-          .collection('annonces')
-          .where('uidEleveur', isEqualTo: uid)
-          .where('statut', whereIn: ['disponible', 'reserve'])
-          .count().get();
+      final annonces = await Supabase.instance.client
+          .from('annonces')
+          .select('id')
+          .eq('uid_eleveur', uid)
+          .inFilter('statut', ['disponible', 'reserve']);
+      final recent = await Supabase.instance.client
+          .from('annonces')
+          .select('id, titre, espece, race, photos, statut, vues, created_at')
+          .eq('uid_eleveur', uid)
+          .inFilter('statut', ['disponible', 'reserve', 'pause'])
+          .order('created_at', ascending: false)
+          .limit(3);
       final alertes = await Supabase.instance.client
           .from('alertes_perdus')
           .select('id')
@@ -61,7 +70,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
       setState(() {
         _profile = profileDoc.data();
         _animalCount = (animaux as List).length;
-        _postCount = annoncesSnap.count ?? 0;
+        _postCount = (annonces as List).length;
+        _recentAnnonces = List<Map<String, dynamic>>.from(recent);
         _alerteCount = (alertes as List).length;
         _loading = false;
       });
@@ -271,144 +281,153 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AlertePerduFormPage()))),
     ];
 
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      childAspectRatio: 1.6,
-      children: tiles,
-    );
+    return Column(children: [
+      GridView.count(
+        crossAxisCount: 2,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 1.6,
+        children: tiles,
+      ),
+      const SizedBox(height: 12),
+      GestureDetector(
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const TrouverCompagnonPage())),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: _teal.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _teal.withValues(alpha: 0.25)),
+          ),
+          child: Row(children: [
+            Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(
+                color: _teal.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.pets, color: _teal, size: 24),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Trouver un compagnon',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 15, color: Color(0xFF0C5C6C))),
+              SizedBox(height: 2),
+              Text('Feed · Recherche · Carte',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      color: Color(0xFF5F9EAA))),
+            ])),
+            const Icon(Icons.chevron_right, color: Color(0xFF5F9EAA)),
+          ]),
+        ),
+      ),
+    ]);
   }
 
   Widget _buildRecentPosts() {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return const SizedBox.shrink();
+    if (_recentAnnonces.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(children: [
+          Icon(Icons.campaign_outlined, size: 40, color: Colors.grey.shade300),
+          const SizedBox(height: 8),
+          Text('Aucune annonce publiée',
+              style: TextStyle(color: Colors.grey.shade500, fontFamily: 'Galey')),
+          const SizedBox(height: 12),
+          ElevatedButton(
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const CreateAnnoncePage())),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: _teal, foregroundColor: Colors.white),
+            child: const Text('Créer une annonce',
+                style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ]),
+      );
+    }
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('annonces')
-          .where('uidEleveur', isEqualTo: uid)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox.shrink();
-        // Filter + sort client-side (avoids composite index requirement)
-        final docs = snapshot.data!.docs.where((d) {
-          final s = (d.data() as Map<String, dynamic>)['statut'] as String?;
-          return s == 'disponible' || s == 'reserve' || s == 'pause';
-        }).toList()
-          ..sort((a, b) {
-            final aT = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-            final bT = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-            if (aT == null && bT == null) return 0;
-            if (aT == null) return 1;
-            if (bT == null) return -1;
-            return bT.compareTo(aT);
-          });
-        final recent = docs.take(3).toList();
-        if (recent.isEmpty) {
-          return Container(
-            padding: const EdgeInsets.all(20),
+    return Column(
+      children: _recentAnnonces.map((data) {
+        final photos = List<String>.from(data['photos'] ?? []);
+        final statut = (data['statut'] as String?) ?? 'disponible';
+        final espece = (data['espece'] as String?) ?? '';
+        final race   = (data['race']   as String?) ?? '';
+        final titre  = (data['titre']  as String?) ?? '';
+        final vues   = (data['vues']   as num?)?.toInt() ?? 0;
+        final createdAt = data['created_at'] as String?;
+
+        final displayTitle = titre.isNotEmpty ? titre
+            : race.isNotEmpty ? race : speciesLabel(espece);
+
+        return GestureDetector(
+          onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => AnnonceDetailPage(
+                  annonceId: data['id'] as String, initialData: data))),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 6, offset: const Offset(0, 2))],
             ),
-            child: Column(children: [
-              Icon(Icons.campaign_outlined, size: 40, color: Colors.grey.shade300),
-              const SizedBox(height: 8),
-              Text('Aucune annonce publiée',
-                  style: TextStyle(color: Colors.grey.shade500, fontFamily: 'Galey')),
-              const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const CreateAnnoncePage())),
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: _teal, foregroundColor: Colors.white),
-                child: const Text('Créer une annonce',
-                    style: TextStyle(fontFamily: 'Galey')),
-              ),
-            ]),
-          );
-        }
-
-        return Column(
-          children: recent.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final photos = List<String>.from(data['photos'] ?? []);
-            final statut = (data['statut'] as String?) ?? 'disponible';
-            final espece = (data['espece'] as String?) ?? '';
-            final race   = (data['race']   as String?) ?? '';
-            final titre  = (data['titre']  as String?) ?? '';
-            final vues   = (data['vues']   as num?)?.toInt() ?? 0;
-            final createdAt = data['createdAt'] as Timestamp?;
-
-            final displayTitle = titre.isNotEmpty ? titre
-                : race.isNotEmpty ? race : speciesLabel(espece);
-
-            return GestureDetector(
-              onTap: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => AnnonceDetailPage(
-                      annonceId: doc.id, initialData: data))),
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 6, offset: const Offset(0, 2))],
+            child: Row(children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(width: 56, height: 56,
+                  child: photos.isNotEmpty
+                      ? CachedNetworkImage(imageUrl: photos.first,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(color: const Color(0xFFEEF5EA)),
+                          errorWidget: (_, __, ___) => Container(color: const Color(0xFFEEF5EA)))
+                      : Container(color: const Color(0xFFEEF5EA),
+                          child: Center(child: speciesIcon(espece, 24, const Color(0xFFA7C79A)))),
                 ),
-                child: Row(children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: SizedBox(width: 56, height: 56,
-                      child: photos.isNotEmpty
-                          ? CachedNetworkImage(imageUrl: photos.first,
-                              fit: BoxFit.cover,
-                              placeholder: (_, __) => Container(color: const Color(0xFFEEF5EA)),
-                              errorWidget: (_, __, ___) => Container(color: const Color(0xFFEEF5EA)))
-                          : Container(color: const Color(0xFFEEF5EA),
-                              child: Center(child: speciesIcon(espece, 24, const Color(0xFFA7C79A)))),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(displayTitle,
-                          style: const TextStyle(fontFamily: 'Galey',
-                              fontWeight: FontWeight.w600, fontSize: 14),
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: 4),
-                      Row(children: [
-                        _Badge(
-                          statut == 'pause' ? 'En pause'
-                              : statut == 'reserve' ? 'Réservé' : 'En ligne',
-                          statut == 'pause' ? Colors.grey
-                              : statut == 'reserve' ? const Color(0xFFF59E0B)
-                              : _green),
-                        const SizedBox(width: 8),
-                        Icon(Icons.visibility_outlined, size: 12,
-                            color: Colors.grey.shade400),
-                        const SizedBox(width: 2),
-                        Text('$vues',
-                            style: TextStyle(fontFamily: 'Galey',
-                                fontSize: 11, color: Colors.grey.shade400)),
-                      ]),
-                    ],
-                  )),
-                  if (createdAt != null)
-                    Text(DateFormat('dd/MM').format(createdAt.toDate()),
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                            color: Colors.grey.shade400)),
-                ]),
               ),
-            );
-          }).toList(),
+              const SizedBox(width: 12),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(displayTitle,
+                      style: const TextStyle(fontFamily: 'Galey',
+                          fontWeight: FontWeight.w600, fontSize: 14),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 4),
+                  Row(children: [
+                    _Badge(
+                      statut == 'pause' ? 'En pause'
+                          : statut == 'reserve' ? 'Réservé' : 'En ligne',
+                      statut == 'pause' ? Colors.grey
+                          : statut == 'reserve' ? const Color(0xFFF59E0B)
+                          : _green),
+                    const SizedBox(width: 8),
+                    Icon(Icons.visibility_outlined, size: 12,
+                        color: Colors.grey.shade400),
+                    const SizedBox(width: 2),
+                    Text('$vues',
+                        style: TextStyle(fontFamily: 'Galey',
+                            fontSize: 11, color: Colors.grey.shade400)),
+                  ]),
+                ],
+              )),
+              if (createdAt != null)
+                Text(DateFormat('dd/MM').format(DateTime.parse(createdAt)),
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                        color: Colors.grey.shade400)),
+            ]),
+          ),
         );
-      },
+      }).toList(),
     );
   }
 }

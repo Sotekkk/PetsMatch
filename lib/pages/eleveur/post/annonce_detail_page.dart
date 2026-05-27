@@ -9,7 +9,11 @@ import 'package:carousel_slider/carousel_slider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // ── Palette partagée ─────────────────────────────────────────────────────────
 const _teal  = Color(0xFF0C5C6C);
@@ -32,72 +36,148 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   int _photoIndex = 0;
   Map<String, dynamic>? _eleveurData;
   bool _eleveurLoaded = false;
+  Map<String, dynamic>? _annonceData;
+
+  static Timestamp? _isoToTs(dynamic v) {
+    if (v == null) return null;
+    if (v is Timestamp) return v;
+    try { return Timestamp.fromDate(DateTime.parse(v.toString())); } catch (_) { return null; }
+  }
+
+  static Map<String, dynamic> _fromSupabase(Map<String, dynamic> row) => {
+    ...row,
+    'uidEleveur':        row['uid_eleveur'],
+    'nomEleveur':        row['nom_eleveur'],
+    'villeEleveur':      row['ville_eleveur'],
+    'typeVente':         row['type_vente'],
+    'prixNegociable':    row['prix_negociable'] ?? false,
+    'dateNaissance':     _isoToTs(row['date_naissance']),
+    'nombreBebes':       row['nombre_bebes'],
+    'animauxPortee':     row['animaux_portee'] ?? [],
+    'prixMinPortee':     row['prix_min_portee'],
+    'prixMaxPortee':     row['prix_max_portee'],
+    'mereAnimalId':        row['mere_animal_id'],
+    'merePhotoUrl':        row['mere_photo_url'],
+    'mereNom':             row['mere_nom'] ?? '',
+    'merePuce':            row['mere_identification'] ?? row['mere_puce'] ?? '',
+    'mereRace':            row['mere_race'] ?? '',
+    'mereCouleur':         row['mere_couleur'] ?? '',
+    'mereDescription':     row['mere_description'] ?? '',
+    'mereRegistre':        row['mere_registre'] ?? '',
+    'pereAnimalId':        row['pere_animal_id'],
+    'perePhotoUrl':        row['pere_photo_url'],
+    'pereNom':             row['pere_nom'] ?? '',
+    'perePuce':            row['pere_identification'] ?? row['pere_puce'] ?? '',
+    'pereRace':            row['pere_race'] ?? '',
+    'pereCouleur':         row['pere_couleur'] ?? '',
+    'pereDescription':     row['pere_description'] ?? '',
+    'pereRegistre':        row['pere_registre'] ?? '',
+    'registreType':      row['registre_type'] ?? '',
+    'numeroRegistre':    row['numero_registre'] ?? '',
+    'clubPedigree':      row['club_pedigree'] ?? '',
+    'bilanSante':        row['bilan_sante'] ?? false,
+    'etalonAnimalId':    row['etalon_animal_id'],
+    'sailliePrix': row['saillie_prix'] != null
+        ? (row['saillie_prix'] as num).toInt().toString() : '',
+    'saillieConditions': row['saillie_conditions'] ?? '',
+    'dateNaissanceAnimal': _isoToTs(row['date_naissance_animal']),
+    'createdAt':         _isoToTs(row['created_at']),
+    'updatedAt':         _isoToTs(row['updated_at']),
+  };
+
+  static Map<String, dynamic> _normalizeUser(Map<String, dynamic> row) => {
+    ...row,
+    'nameElevage':              row['name_elevage'],
+    'profilePictureUrlElevage': row['profile_picture_url_elevage'],
+    'profilePictureUrl':        row['profile_picture_url'],
+    'villeElevage':             row['ville_elevage'],
+    'descEntreprise':           row['desc_entreprise'],
+    'isPartenaire':             row['is_partenaire'] ?? false,
+    'catPro':                   row['cat_pro'] ?? '',
+    'professionPro':            row['profession_pro'] ?? '',
+    'codeISOElevage':           row['code_iso_elevage'] ?? '',
+    'numeroElevage':            row['numero_elevage'] ?? '',
+    'adressElevage':            row['adress_elevage'] ?? '',
+    'isValidate':               row['is_validate'] ?? false,
+    'isElevage':                row['is_elevage'] ?? false,
+    'isPro':                    row['is_pro'] ?? false,
+    'isDog':                    row['is_dog'] ?? false,
+    'isCat':                    row['is_cat'] ?? false,
+    'dogBreeds':                row['dog_breeds'] ?? [],
+    'catBreeds':                row['cat_breeds'] ?? [],
+    'codePostalElevage':        row['code_postal_elevage'] ?? '',
+    'paysElevage':              row['pays_elevage'] ?? '',
+    'siret':                    row['siret'] ?? '',
+  };
 
   @override
   void initState() {
     super.initState();
-    final uid = widget.initialData?['uidEleveur'] as String?;
+    _loadAnnonce();
+    final uid = widget.initialData?['uidEleveur'] as String?
+        ?? widget.initialData?['uid_eleveur'] as String?;
     if (uid != null) { _eleveurLoaded = true; _loadEleveur(uid); }
-    // Track view — skip if the viewer is the owner
-    final me = FirebaseAuth.instance.currentUser?.uid;
-    if (me != null && me != uid) {
-      FirebaseFirestore.instance
-          .collection('annonces').doc(widget.annonceId)
-          .update({'vues': FieldValue.increment(1)}).catchError((_) {});
-    }
+  }
+
+  Future<void> _loadAnnonce() async {
+    try {
+      final row = await Supabase.instance.client
+          .from('annonces').select().eq('id', widget.annonceId).single();
+      final data = _fromSupabase(row);
+      final me = FirebaseAuth.instance.currentUser?.uid;
+      final uid = data['uidEleveur'] as String?;
+      if (me != null && me != uid) {
+        final currentVues = (row['vues'] as int?) ?? 0;
+        Supabase.instance.client.from('annonces')
+            .update({'vues': currentVues + 1})
+            .eq('id', widget.annonceId).catchError((_) {});
+      }
+      if (!_eleveurLoaded && uid != null) { _eleveurLoaded = true; _loadEleveur(uid); }
+      if (mounted) setState(() => _annonceData = data);
+    } catch (_) {}
   }
 
   Future<void> _loadEleveur(String uid) async {
     try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      if (mounted) setState(() => _eleveurData = doc.data());
+      final row = await Supabase.instance.client
+          .from('users').select().eq('uid', uid).single();
+      if (mounted) setState(() => _eleveurData = _normalizeUser(row));
     } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('annonces').doc(widget.annonceId).snapshots(),
-      builder: (context, snap) {
-        final data = snap.hasData && (snap.data?.exists ?? false)
-            ? (snap.data!.data() as Map<String, dynamic>)
-            : (widget.initialData ?? <String, dynamic>{});
+    final data = _annonceData ?? widget.initialData ?? <String, dynamic>{};
 
-        if (!_eleveurLoaded) {
-          final uid = data['uidEleveur'] as String?;
-          if (uid != null) { _eleveurLoaded = true; _loadEleveur(uid); }
-        }
+    final isOwner   = FirebaseAuth.instance.currentUser?.uid == data['uidEleveur'];
+    final photos    = List<String>.from(data['photos'] ?? []);
+    final espece    = (data['espece'] as String?) ?? '';
+    final race      = (data['race'] as String?) ?? '';
+    final titre     = (data['titre'] as String?) ?? '';
+    final type      = (data['type'] as String?) ?? 'animal';
+    final typeVente = (data['typeVente'] as String?) ?? 'vente';
+    final desc      = (data['description'] as String?) ?? '';
+    final registreType = (data['registreType'] as String?) ?? '';
+    final displayTitle = titre.isNotEmpty ? titre
+        : race.isNotEmpty ? race : speciesLabel(espece);
 
-        final isOwner   = FirebaseAuth.instance.currentUser?.uid == data['uidEleveur'];
-        final photos    = List<String>.from(data['photos'] ?? []);
-        final espece    = (data['espece'] as String?) ?? '';
-        final race      = (data['race'] as String?) ?? '';
-        final titre     = (data['titre'] as String?) ?? '';
-        final type      = (data['type'] as String?) ?? 'animal';
-        final typeVente = (data['typeVente'] as String?) ?? 'vente';
-        final desc      = (data['description'] as String?) ?? '';
-        final registreType = (data['registreType'] as String?) ?? '';
-        final displayTitle = titre.isNotEmpty ? titre
-            : race.isNotEmpty ? race : speciesLabel(espece);
-
-        return Scaffold(
-          backgroundColor: const Color(0xFFF5F5F0),
-          body: Stack(children: [
-            CustomScrollView(slivers: [
-              // ── AppBar avec photo ────────────────────────────────────────
-              SliverAppBar(
-                pinned: true,
-                expandedHeight: photos.isNotEmpty ? 300 : 0,
-                backgroundColor: _teal,
-                foregroundColor: Colors.white,
-                title: Text(displayTitle,
-                    style: const TextStyle(fontFamily: 'Galey',
-                        fontWeight: FontWeight.w700, fontSize: 16),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                flexibleSpace: photos.isNotEmpty
-                    ? FlexibleSpaceBar(
-                        background: _PhotoCarousel(
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F0),
+      body: Stack(children: [
+        CustomScrollView(slivers: [
+          // ── AppBar avec photo ────────────────────────────────────────
+          SliverAppBar(
+            pinned: true,
+            expandedHeight: photos.isNotEmpty ? 300 : 0,
+            backgroundColor: _teal,
+            foregroundColor: Colors.white,
+            title: Text(displayTitle,
+                style: const TextStyle(fontFamily: 'Galey',
+                    fontWeight: FontWeight.w700, fontSize: 16),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            flexibleSpace: photos.isNotEmpty
+                ? FlexibleSpaceBar(
+                    background: _PhotoCarousel(
                           photos: photos, espece: espece,
                           currentIndex: _photoIndex,
                           onChanged: (i) => setState(() => _photoIndex = i),
@@ -159,8 +239,6 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
             ),
           ]),
         );
-      },
-    );
   }
 }
 
@@ -285,6 +363,12 @@ class _HeaderCard extends StatelessWidget {
               style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
                   color: _teal, fontWeight: FontWeight.w600)),
           const Spacer(),
+          if ((data['vues'] as num?) != null && (data['vues'] as num) > 0) ...[
+            Icon(Icons.visibility_outlined, size: 12, color: Colors.grey.shade400),
+            const SizedBox(width: 3),
+            Text('${data['vues']}', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade400)),
+            const SizedBox(width: 10),
+          ],
           if (createdAt != null)
             Text('Publié le ${fmt.format(createdAt.toDate())}',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 11,
@@ -461,7 +545,9 @@ class _BabyCard extends StatelessWidget {
           child: const Center(child: Icon(Icons.pets, color: _green, size: 32)));
     }
 
-    final prix = (animal['prix'] as num?)?.toDouble();
+    final prixRaw = animal['prix'];
+    final prix = prixRaw is num ? prixRaw.toDouble()
+        : prixRaw is String ? double.tryParse(prixRaw) : null;
 
     return GestureDetector(
       onTap: () => showModalBottomSheet(
@@ -550,7 +636,9 @@ class _BabyDetailSheetState extends State<_BabyDetailSheet> {
     final sexe   = animal['sexe'] == 'male' ? '♂ Mâle' : '♀ Femelle';
     final couleur = (animal['couleur'] as String?) ?? '';
     final desc    = (animal['description'] as String?) ?? '';
-    final prix    = (animal['prix'] as num?)?.toDouble();
+    final prixRawSheet = animal['prix'];
+    final prix    = prixRawSheet is num ? prixRawSheet.toDouble()
+        : prixRawSheet is String ? double.tryParse(prixRawSheet) : null;
     final statut  = (animal['statut'] as String?) ?? 'disponible';
     final statusColor = statut == 'disponible' ? _green
         : statut == 'reserve' ? const Color(0xFFF59E0B) : Colors.blueGrey;
@@ -741,10 +829,16 @@ class _ParentsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final mereNom      = (data['mereNom'] as String?) ?? '';
     final merePuce     = (data['merePuce'] as String?) ?? '';
+    final mereRace     = (data['mereRace'] as String?) ?? '';
+    final mereCouleur  = (data['mereCouleur'] as String?) ?? '';
+    final mereDesc     = (data['mereDescription'] as String?) ?? '';
     final mereRegistre = (data['mereRegistre'] as String?) ?? '';
     final merePhoto    = data['merePhotoUrl'] as String?;
     final pereNom      = (data['pereNom'] as String?) ?? '';
     final perePuce     = (data['perePuce'] as String?) ?? '';
+    final pereRace     = (data['pereRace'] as String?) ?? '';
+    final pereCouleur  = (data['pereCouleur'] as String?) ?? '';
+    final pereDesc     = (data['pereDescription'] as String?) ?? '';
     final pereRegistre = (data['pereRegistre'] as String?) ?? '';
     final perePhoto    = data['perePhotoUrl'] as String?;
 
@@ -757,13 +851,15 @@ class _ParentsCard extends StatelessWidget {
         Expanded(child: _ParentColumn(
           sexe: 'femelle', label: 'Mère',
           color: const Color(0xFFEC4899),
-          nom: mereNom, puce: merePuce,
+          nom: mereNom, puce: merePuce, race: mereRace,
+          couleur: mereCouleur, description: mereDesc,
           registre: mereRegistre, photoUrl: merePhoto)),
         const SizedBox(width: 12),
         Expanded(child: _ParentColumn(
           sexe: 'male', label: 'Père',
           color: _teal,
-          nom: pereNom, puce: perePuce,
+          nom: pereNom, puce: perePuce, race: pereRace,
+          couleur: pereCouleur, description: pereDesc,
           registre: pereRegistre, photoUrl: perePhoto)),
       ]),
     ]);
@@ -771,13 +867,14 @@ class _ParentsCard extends StatelessWidget {
 }
 
 class _ParentColumn extends StatelessWidget {
-  final String sexe, label, nom, puce, registre;
+  final String sexe, label, nom, puce, race, couleur, description, registre;
   final Color color;
   final String? photoUrl;
   const _ParentColumn({
     required this.sexe, required this.label, required this.color,
-    required this.nom, required this.puce, required this.registre,
-    this.photoUrl,
+    required this.nom, required this.puce,
+    required this.race, required this.couleur, required this.description,
+    required this.registre, this.photoUrl,
   });
 
   @override
@@ -792,8 +889,9 @@ class _ParentColumn extends StatelessWidget {
         backgroundColor: Colors.transparent,
         builder: (_) => _ParentDetailSheet(
           sexe: sexe, label: label, color: color,
-          nom: nom, puce: puce, registre: registre,
-          photoUrl: photoUrl,
+          nom: nom, puce: puce, race: race,
+          couleur: couleur, description: description,
+          registre: registre, photoUrl: photoUrl,
         ),
       ) : null,
       child: Container(
@@ -818,9 +916,10 @@ class _ParentColumn extends StatelessWidget {
           if (photoUrl != null) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: CachedNetworkImage(
+              child: Container(color: const Color(0xFFEEF5EA),
+                child: CachedNetworkImage(
                 imageUrl: photoUrl!, height: 100, width: double.infinity,
-                fit: BoxFit.cover,
+                fit: BoxFit.contain,
                 placeholder: (_, __) => Container(
                     height: 100, color: const Color(0xFFEEF5EA)),
                 errorWidget: (_, __, ___) => Container(
@@ -829,7 +928,7 @@ class _ParentColumn extends StatelessWidget {
                     child: Center(child: Icon(
                         sexe == 'femelle' ? Icons.female : Icons.male,
                         color: color.withValues(alpha: 0.4), size: 36))),
-              )),
+              ))),
             const SizedBox(height: 8),
           ],
           if (!hasData)
@@ -866,13 +965,14 @@ class _ParentColumn extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ParentDetailSheet extends StatelessWidget {
-  final String sexe, label, nom, puce, registre;
+  final String sexe, label, nom, puce, race, couleur, description, registre;
   final Color color;
   final String? photoUrl;
   const _ParentDetailSheet({
     required this.sexe, required this.label, required this.color,
-    required this.nom, required this.puce, required this.registre,
-    this.photoUrl,
+    required this.nom, required this.puce,
+    required this.race, required this.couleur, required this.description,
+    required this.registre, this.photoUrl,
   });
 
   @override
@@ -929,14 +1029,21 @@ class _ParentDetailSheet extends StatelessWidget {
                     fontWeight: FontWeight.w700, fontSize: 18, color: _dark)),
               ],
             ]),
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              if (race.isNotEmpty)
+                _InfoChip(Icons.pets_outlined, race),
+              if (couleur.isNotEmpty)
+                _InfoChip(Icons.palette_outlined, couleur),
+            ]),
             if (puce.isNotEmpty) ...[
               const SizedBox(height: 10),
               Row(children: [
                 const Icon(Icons.qr_code_outlined, size: 15, color: _teal),
                 const SizedBox(width: 6),
-                Text('Numéro de puce : $puce',
+                Expanded(child: Text('Puce : $puce',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
-                        color: _dark)),
+                        color: _dark))),
               ]),
             ],
             if (registre.isNotEmpty) ...[
@@ -947,6 +1054,15 @@ class _ParentDetailSheet extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8)),
                 child: Text(registre, style: TextStyle(fontFamily: 'Galey',
                     fontSize: 13, fontWeight: FontWeight.w700, color: color))),
+            ],
+            if (description.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Text('Description', style: TextStyle(fontFamily: 'Galey',
+                  fontWeight: FontWeight.w700, fontSize: 13,
+                  color: Colors.grey.shade600)),
+              const SizedBox(height: 6),
+              Text(description, style: const TextStyle(fontFamily: 'Galey',
+                  fontSize: 14, color: _dark, height: 1.5)),
             ],
             const SizedBox(height: 16),
           ]),
@@ -1156,13 +1272,43 @@ class _BottomBar extends StatefulWidget {
 class _BottomBarState extends State<_BottomBar> {
   bool _loading = false;
 
+  void _share() {
+    final data = widget.data;
+    final espece    = (data['espece'] as String?) ?? '';
+    final race      = (data['race'] as String?) ?? '';
+    final titre     = (data['titre'] as String?) ?? '';
+    final typeVente = (data['typeVente'] as String?) ?? '';
+    final prix      = (data['prix'] as num?)?.toInt();
+    final ville     = (data['villeEleveur'] as String?) ?? '';
+    final displayTitle = titre.isNotEmpty ? titre : race.isNotEmpty ? race : espece;
+    final annonceUrl = 'https://petsmatch.fr/annonces/${widget.annonceId}';
+
+    final lines = <String>['🐾 $displayTitle'];
+    if (espece.isNotEmpty || race.isNotEmpty)
+      lines.add([espece, race].where((s) => s.isNotEmpty).join(' · '));
+    if (typeVente == 'vente' && prix != null) lines.add('💰 $prix €');
+    if (typeVente == 'adoption') lines.add('💚 Adoption / Don');
+    if (typeVente == 'saillie') lines.add('💜 Saillie');
+    if (ville.isNotEmpty) lines.add('📍 $ville');
+    lines.addAll(['', 'Voir l\'annonce sur PetsMatch 🐾', annonceUrl]);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ShareSheet(text: lines.join('\n'), url: annonceUrl, nom: displayTitle),
+    );
+  }
+
   Future<void> _openChat() async {
     if (widget.uidEleveur.isEmpty) return;
     setState(() => _loading = true);
     // Track contact click
-    FirebaseFirestore.instance
-        .collection('annonces').doc(widget.annonceId)
-        .update({'contacts': FieldValue.increment(1)}).catchError((_) {});
+    Supabase.instance.client.from('annonces')
+        .select('contacts').eq('id', widget.annonceId).single()
+        .then((r) => Supabase.instance.client.from('annonces')
+            .update({'contacts': ((r['contacts'] as int?) ?? 0) + 1})
+            .eq('id', widget.annonceId))
+        .catchError((_) {});
     try {
       final me = FirebaseAuth.instance.currentUser!.uid;
       final sorted = [me, widget.uidEleveur]..sort();
@@ -1177,6 +1323,7 @@ class _BottomBarState extends State<_BottomBar> {
               'participantIds': participantIds,
               'lastMessage': '',
               'timestamp': FieldValue.serverTimestamp(),
+              'categorie': 'annonces',
             })
           : snap.docs.first.reference;
       if (mounted) Navigator.push(context, MaterialPageRoute(
@@ -1197,38 +1344,55 @@ class _BottomBarState extends State<_BottomBar> {
         boxShadow: [BoxShadow(
             color: Colors.black12, blurRadius: 12, offset: Offset(0, -3))],
       ),
-      child: widget.isOwner
-          ? OutlinedButton.icon(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => CreateAnnoncePage(
-                      annonceId: widget.annonceId, initialData: widget.data))),
-              icon: const Icon(Icons.edit_outlined, size: 18, color: _teal),
-              label: const Text('Modifier l\'annonce',
-                  style: TextStyle(fontFamily: 'Galey',
-                      fontWeight: FontWeight.w700, fontSize: 15, color: _teal)),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: _teal),
-                minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              ))
-          : ElevatedButton(
-              onPressed: _loading ? null : _openChat,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _teal, foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                elevation: 0,
-              ),
-              child: _loading
-                  ? const SizedBox(width: 22, height: 22,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      Icon(Icons.chat_outlined, size: 18),
-                      SizedBox(width: 8),
-                      Text('Contacter l\'éleveur', style: TextStyle(
-                          fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-                    ]),
+      child: Row(children: [
+        Expanded(
+          child: widget.isOwner
+              ? OutlinedButton.icon(
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => CreateAnnoncePage(
+                          annonceId: widget.annonceId, initialData: widget.data))),
+                  icon: const Icon(Icons.edit_outlined, size: 18, color: _teal),
+                  label: const Text('Modifier l\'annonce',
+                      style: TextStyle(fontFamily: 'Galey',
+                          fontWeight: FontWeight.w700, fontSize: 15, color: _teal)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: _teal),
+                    minimumSize: const Size(0, 50),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ))
+              : ElevatedButton(
+                  onPressed: _loading ? null : _openChat,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _teal, foregroundColor: Colors.white,
+                    minimumSize: const Size(0, 50),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
+                  ),
+                  child: _loading
+                      ? const SizedBox(width: 22, height: 22,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.chat_outlined, size: 18),
+                          SizedBox(width: 8),
+                          Text('Contacter l\'éleveur', style: TextStyle(
+                              fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                        ]),
+                ),
+        ),
+        const SizedBox(width: 10),
+        SizedBox(
+          height: 50, width: 50,
+          child: OutlinedButton(
+            onPressed: _share,
+            style: OutlinedButton.styleFrom(
+              padding: EdgeInsets.zero,
+              side: BorderSide(color: Colors.grey.shade300),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
+            child: const Icon(Icons.share_outlined, color: _teal, size: 22),
+          ),
+        ),
+      ]),
     );
   }
 }
@@ -1306,6 +1470,95 @@ class _InfoRow extends StatelessWidget {
             fontSize: 12, color: Colors.grey.shade500))),
       Expanded(child: Text(value, style: const TextStyle(fontFamily: 'Galey',
           fontWeight: FontWeight.w600, fontSize: 12, color: _dark))),
+    ]),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Share sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ShareSheet extends StatelessWidget {
+  final String text, url, nom;
+  const _ShareSheet({required this.text, required this.url, required this.nom});
+
+  Future<void> _copy(BuildContext ctx) async {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (ctx.mounted) {
+      Navigator.pop(ctx);
+      ScaffoldMessenger.of(ctx).showSnackBar(
+          const SnackBar(content: Text('Lien copié !'), duration: Duration(seconds: 2)));
+    }
+  }
+
+  Future<void> _launch(BuildContext ctx, Uri uri) async {
+    try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
+    if (ctx.mounted) Navigator.pop(ctx);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final encoded  = Uri.encodeComponent(text);
+    final waUrl    = Uri.parse('https://wa.me/?text=$encoded');
+    final smsUrl   = Uri.parse('sms:?body=$encoded');
+    final emailUrl = Uri.parse('mailto:?subject=${Uri.encodeComponent(nom)}&body=$encoded');
+    final safe     = MediaQuery.of(context).padding;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C2E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.fromLTRB(24, 12, 24, safe.bottom + 24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 16),
+        Text(nom,
+            style: const TextStyle(color: Colors.white, fontFamily: 'Galey',
+                fontWeight: FontWeight.w700, fontSize: 15),
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+        const SizedBox(height: 20),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+          _ShareBtn(icon: const Icon(Icons.link_rounded, color: Colors.white, size: 24),
+              bg: const Color(0xFF3A3A4E), label: 'Copier le lien',
+              onTap: () => _copy(context)),
+          _ShareBtn(icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Colors.white, size: 24),
+              bg: const Color(0xFF25D366), label: 'WhatsApp',
+              onTap: () => _launch(context, waUrl)),
+          _ShareBtn(icon: const Icon(Icons.sms_outlined, color: Colors.white, size: 24),
+              bg: const Color(0xFF4A90E2), label: 'SMS',
+              onTap: () => _launch(context, smsUrl)),
+          _ShareBtn(icon: const Icon(Icons.mail_outline_rounded, color: Colors.white, size: 24),
+              bg: const Color(0xFFEA4335), label: 'Email',
+              onTap: () => _launch(context, emailUrl)),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _ShareBtn extends StatelessWidget {
+  final Widget icon;
+  final Color bg;
+  final String label;
+  final VoidCallback onTap;
+  const _ShareBtn({required this.icon, required this.bg, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+        width: 56, height: 56,
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)),
+        child: Center(child: icon),
+      ),
+      const SizedBox(height: 6),
+      SizedBox(width: 60,
+        child: Text(label,
+            style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'Galey'),
+            textAlign: TextAlign.center, maxLines: 2)),
     ]),
   );
 }

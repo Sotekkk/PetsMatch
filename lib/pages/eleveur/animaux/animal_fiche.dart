@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -112,9 +112,23 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _tabs = TabController(length: 3, vsync: this);
     _editing = widget.animalId == null; // new animal → edit mode directly
     if (widget.preselectedEspece != null) _espece = widget.preselectedEspece!;
-    _fillFromData(widget.initialData);
+    _fillFromData(widget.initialData); // pre-fill instantly from cached data
     _loadBreeds();
-    if (widget.animalId != null) _loadActiveAlerte();
+    if (widget.animalId != null) {
+      _loadActiveAlerte();
+      _refreshFromSupabase(); // then silently refresh with latest Supabase data
+    }
+  }
+
+  Future<void> _refreshFromSupabase() async {
+    try {
+      final data = await _supa
+          .from('animaux')
+          .select('*')
+          .eq('id', widget.animalId!)
+          .single();
+      if (mounted) setState(() => _fillFromData(Map<String, dynamic>.from(data)));
+    } catch (_) {}
   }
 
   Future<void> _loadBreeds() async {
@@ -264,7 +278,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     setState(() => _saving = true);
     try {
       String? uploadedUrl = _photoUrl;
-      if (_photoFile != null) uploadedUrl = await _uploadFile(_photoFile!, 'animaux');
+      if (_photoFile != null) {
+        final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+        final name = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+        uploadedUrl = await uploadPhoto(_photoFile!, 'animaux/$uid/$name');
+      }
 
       final uid = FirebaseAuth.instance.currentUser!.uid;
       final id = widget.animalId ?? DateTime.now().millisecondsSinceEpoch.toString();
@@ -359,10 +377,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   }
 
   Future<String> _uploadFile(File file, String folder) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
     final name = '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
-    final ref = FirebaseStorage.instance.ref().child('$folder/$name');
-    await ref.putFile(file);
-    return ref.getDownloadURL();
+    return uploadRawFile(file, '$folder/$uid/$name');
   }
 
   Future<void> _pickPhoto() async {
@@ -604,14 +621,20 @@ class _IdentiteTab extends StatelessWidget {
                     context,
                     MaterialPageRoute(
                       builder: (_) => AlertePerduFormPage(
-                        alerteId:  s._activeAlerteId,
-                        animalId:  s.widget.animalId,
-                        nom:       s._nomCtrl.text,
-                        espece:    s._espece,
-                        race:      s._raceCtrl.text,
-                        sexe:      s._sexe,
-                        couleur:   s._couleurCtrl.text,
-                        photoUrl:  s._photoUrl,
+                        alerteId:       s._activeAlerteId,
+                        animalId:       s.widget.animalId,
+                        nom:            s._nomCtrl.text,
+                        espece:         s._espece,
+                        race:           s._raceCtrl.text,
+                        sexe:           s._sexe,
+                        couleur:        s._couleurCtrl.text,
+                        photoUrl:       s._photoUrl,
+                        identification: s._identCtrl.text,
+                        contactUrgence: s._contactsUrgence.isNotEmpty
+                            ? (s._contactsUrgence.first.tel.text.isNotEmpty
+                                ? s._contactsUrgence.first.tel.text
+                                : s._contactsUrgence.first.nom.text)
+                            : null,
                       ),
                     ),
                   ).then((_) => s._loadActiveAlerte()),
@@ -647,13 +670,19 @@ class _IdentiteTab extends StatelessWidget {
         context,
         MaterialPageRoute(
           builder: (_) => AlertePerduFormPage(
-            animalId: s.widget.animalId,
-            nom:      s._nomCtrl.text,
-            espece:   s._espece,
-            race:     s._raceCtrl.text,
-            sexe:     s._sexe,
-            couleur:  s._couleurCtrl.text,
-            photoUrl: s._photoUrl,
+            animalId:       s.widget.animalId,
+            nom:            s._nomCtrl.text,
+            espece:         s._espece,
+            race:           s._raceCtrl.text,
+            sexe:           s._sexe,
+            couleur:        s._couleurCtrl.text,
+            photoUrl:       s._photoUrl,
+            identification: s._identCtrl.text,
+            contactUrgence: s._contactsUrgence.isNotEmpty
+                ? (s._contactsUrgence.first.tel.text.isNotEmpty
+                    ? s._contactsUrgence.first.tel.text
+                    : s._contactsUrgence.first.nom.text)
+                : null,
           ),
         ),
       ).then((_) => s._loadActiveAlerte()),
@@ -1554,11 +1583,27 @@ class _SuiviReproTab extends StatelessWidget {
         : const [Tab(text: 'Chaleurs'), Tab(text: 'Saillies'), Tab(text: 'Gestations')];
 
     final views = isMale
-        ? [_ReproList(animalId: animalId!, collection: 'saillies', addBuilder: (ctx) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe))]
+        ? [_ReproList(
+            animalId: animalId!, collection: 'saillies',
+            addBuilder: (ctx) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe),
+            editBuilder: (ctx, d) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe, existing: d),
+          )]
         : [
-            _ReproList(animalId: animalId!, collection: 'chaleurs',   addBuilder: (ctx) => _AddChaleursDialog(animalId: animalId!)),
-            _ReproList(animalId: animalId!, collection: 'saillies',   addBuilder: (ctx) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe)),
-            _ReproList(animalId: animalId!, collection: 'gestations', addBuilder: (ctx) => _AddGestationDialog(animalId: animalId!, espece: espece)),
+            _ReproList(
+              animalId: animalId!, collection: 'chaleurs',
+              addBuilder: (ctx) => _AddChaleursDialog(animalId: animalId!),
+              editBuilder: (ctx, d) => _AddChaleursDialog(animalId: animalId!, existing: d),
+            ),
+            _ReproList(
+              animalId: animalId!, collection: 'saillies',
+              addBuilder: (ctx) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe),
+              editBuilder: (ctx, d) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe, existing: d),
+            ),
+            _ReproList(
+              animalId: animalId!, collection: 'gestations',
+              addBuilder: (ctx) => _AddGestationDialog(animalId: animalId!, espece: espece),
+              editBuilder: (ctx, d) => _AddGestationDialog(animalId: animalId!, espece: espece, existing: d),
+            ),
           ];
 
     return DefaultTabController(
@@ -1584,7 +1629,8 @@ class _ReproList extends StatefulWidget {
   final String animalId;
   final String collection;
   final Widget Function(BuildContext) addBuilder;
-  const _ReproList({required this.animalId, required this.collection, required this.addBuilder});
+  final Widget Function(BuildContext, Map<String, dynamic>)? editBuilder;
+  const _ReproList({required this.animalId, required this.collection, required this.addBuilder, this.editBuilder});
   @override
   State<_ReproList> createState() => _ReproListState();
 }
@@ -1647,6 +1693,10 @@ class _ReproListState extends State<_ReproList> {
                     return _SimpleCard(
                       data: d,
                       onDelete: () => _delete(d['id']?.toString() ?? ''),
+                      onEdit: widget.editBuilder != null ? () async {
+                        await showDialog(context: context, builder: (ctx) => widget.editBuilder!(ctx, d));
+                        _refresh();
+                      } : null,
                     );
                   },
                 ),
@@ -1879,7 +1929,8 @@ class _SanteListState extends State<_SanteList> {
 class _SimpleCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final VoidCallback onDelete;
-  const _SimpleCard({required this.data, required this.onDelete});
+  final VoidCallback? onEdit;
+  const _SimpleCard({required this.data, required this.onDelete, this.onEdit});
 
   static const _labels = {
     'nom_partenaire':   'Partenaire',
@@ -1919,7 +1970,12 @@ class _SimpleCard extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Text(date, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
-          IconButton(icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red), onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            if (onEdit != null)
+              IconButton(icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF6E9E57)), onPressed: onEdit, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+            const SizedBox(width: 4),
+            IconButton(icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red), onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+          ]),
         ]),
         ...data.entries
             .where((e) => e.key != 'date' && e.key != 'id' && e.key != 'animal_id' && e.key != 'created_at'
@@ -2417,29 +2473,59 @@ class _AddPoidsDialogState extends State<_AddPoidsDialog> {
 
 class _AddChaleursDialog extends StatefulWidget {
   final String animalId;
-  const _AddChaleursDialog({required this.animalId});
+  final Map<String, dynamic>? existing;
+  const _AddChaleursDialog({required this.animalId, this.existing});
   @override State<_AddChaleursDialog> createState() => _AddChaleursDialogState();
 }
 class _AddChaleursDialogState extends State<_AddChaleursDialog> {
   final _duree = TextEditingController();
   final _notes = TextEditingController();
   DateTime? _date;
+  DateTime? _dateFin;
+
   @override
-  Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter des chaleurs', fields: [
-    _DD('Date début *', _date, (d) => setState(() => _date = d)),
-    _DF('Durée (jours)', _duree, inputType: TextInputType.number),
-    _DF('Notes', _notes, maxLines: 2),
-  ], onSave: () async {
-    if (_date == null) return false;
-    final id = DateTime.now().microsecondsSinceEpoch.toString();
-    await Supabase.instance.client.from('chaleurs').insert({
-      'id': id, 'animal_id': widget.animalId,
-      'date': _date!.toIso8601String(),
-      'duree': _duree.text.trim().isEmpty ? null : _duree.text.trim(),
-      'notes': _notes.text.trim(),
-    });
-    return true;
-  });
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    if (e != null) {
+      _date    = e['date']     != null ? DateTime.tryParse(e['date'])     : null;
+      _dateFin = e['date_fin'] != null ? DateTime.tryParse(e['date_fin']) : null;
+      _duree.text = e['duree']?.toString() ?? '';
+      _notes.text = e['notes'] ?? '';
+    }
+  }
+
+  @override
+  void dispose() { _duree.dispose(); _notes.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) => _BaseDialog(
+    title: widget.existing != null ? 'Modifier les chaleurs' : 'Ajouter des chaleurs',
+    fields: [
+      _DD('Date début *', _date, (d) => setState(() => _date = d)),
+      _DD('Date de fin', _dateFin, (d) => setState(() => _dateFin = d)),
+      _DF('Durée (jours)', _duree, inputType: TextInputType.number),
+      _DF('Notes', _notes, maxLines: 2),
+    ],
+    onSave: () async {
+      if (_date == null) return false;
+      final payload = {
+        'animal_id': widget.animalId,
+        'date': _date!.toIso8601String(),
+        'date_fin': _dateFin?.toIso8601String(),
+        'duree': _duree.text.trim().isEmpty ? null : _duree.text.trim(),
+        'notes': _notes.text.trim(),
+      };
+      if (widget.existing != null) {
+        await Supabase.instance.client.from('chaleurs').update(payload).eq('id', widget.existing!['id']);
+      } else {
+        await Supabase.instance.client.from('chaleurs').insert({
+          'id': DateTime.now().microsecondsSinceEpoch.toString(), ...payload,
+        });
+      }
+      return true;
+    },
+  );
 }
 
 // ─── Durée de gestation par espèce ───────────────────────────────────────────
@@ -2463,7 +2549,8 @@ class _AddSaillieDialog extends StatefulWidget {
   final String animalId;
   final String espece;
   final String sexeAnimal;
-  const _AddSaillieDialog({required this.animalId, required this.espece, required this.sexeAnimal});
+  final Map<String, dynamic>? existing;
+  const _AddSaillieDialog({required this.animalId, required this.espece, required this.sexeAnimal, this.existing});
   @override State<_AddSaillieDialog> createState() => _AddSaillieDialogState();
 }
 
@@ -2473,6 +2560,7 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
   final _notes           = TextEditingController();
   String _methode = 'naturelle';
   DateTime? _date;
+  String? _selectedPartenaireId;
   List<Map<String, String>> _partenaires = [];
   bool _loadingPartenaires = true;
 
@@ -2481,6 +2569,15 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
   @override
   void initState() {
     super.initState();
+    final e = widget.existing;
+    if (e != null) {
+      _date = e['date'] != null ? DateTime.tryParse(e['date']) : null;
+      _nomPartenaire.text   = e['nom_partenaire'] ?? '';
+      _identPartenaire.text = e['ident_partenaire'] ?? '';
+      _methode = e['methode'] ?? 'naturelle';
+      _notes.text = e['notes'] ?? '';
+      _selectedPartenaireId = e['partenaire_animal_id'] as String?;
+    }
     _loadPartenaires();
   }
 
@@ -2489,13 +2586,14 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
     if (uid == null) { if (mounted) setState(() => _loadingPartenaires = false); return; }
     final rows = await Supabase.instance.client
         .from('animaux')
-        .select('nom, identification, espece, sexe')
+        .select('id, nom, identification, espece, sexe')
         .eq('uid_eleveur', uid)
         .eq('espece', widget.espece)
         .eq('sexe', _sexePartenaire);
     if (!mounted) return;
     setState(() {
       _partenaires = (rows as List).map((d) => <String, String>{
+        'id': (d['id'] ?? '') as String,
         'nom': (d['nom'] ?? '') as String,
         'identification': (d['identification'] ?? '') as String,
       }).toList();
@@ -2557,8 +2655,8 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('Ajouter une saillie',
-              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF0C5C6C))),
+          Text(widget.existing != null ? 'Modifier la saillie' : 'Ajouter une saillie',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF0C5C6C))),
           const SizedBox(height: 16),
           ConstrainedBox(
             constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
@@ -2581,12 +2679,19 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
                     spacing: 6, runSpacing: 4,
                     children: _partenaires.map((m) => ActionChip(
                       label: Text(m['nom']!, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                      backgroundColor: const Color(0xFFEEF5EA),
+                      backgroundColor: _selectedPartenaireId == m['id']
+                          ? const Color(0xFF6E9E57)
+                          : const Color(0xFFEEF5EA),
+                      labelStyle: TextStyle(
+                        fontFamily: 'Galey', fontSize: 12,
+                        color: _selectedPartenaireId == m['id'] ? Colors.white : const Color(0xFF1F2A2E),
+                      ),
                       side: const BorderSide(color: Color(0xFF6E9E57), width: 0.8),
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       onPressed: () => setState(() {
                         _nomPartenaire.text   = m['nom']!;
                         _identPartenaire.text = m['identification']!;
+                        _selectedPartenaireId = m['id']!;
                       }),
                     )).toList(),
                   ),
@@ -2624,15 +2729,39 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
             ElevatedButton(
               onPressed: () async {
                 if (_date == null) return;
-                final id = DateTime.now().microsecondsSinceEpoch.toString();
-                await Supabase.instance.client.from('saillies').insert({
-                  'id': id, 'animal_id': widget.animalId,
+                final supa = Supabase.instance.client;
+                final payload = {
+                  'animal_id': widget.animalId,
                   'date': _date!.toIso8601String(),
                   'nom_partenaire': _nomPartenaire.text.trim(),
                   'ident_partenaire': _identPartenaire.text.trim(),
                   'methode': _methode,
                   'notes': _notes.text.trim(),
-                });
+                  'partenaire_animal_id': _selectedPartenaireId,
+                };
+                if (widget.existing != null) {
+                  await supa.from('saillies').update(payload).eq('id', widget.existing!['id']);
+                } else {
+                  final id = DateTime.now().microsecondsSinceEpoch.toString();
+                  await supa.from('saillies').insert({'id': id, ...payload});
+                  // Mise à jour bilatérale si le partenaire est dans mon élevage
+                  if (_selectedPartenaireId != null) {
+                    final animalData = await supa.from('animaux')
+                        .select('nom, identification').eq('id', widget.animalId).maybeSingle();
+                    if (animalData != null) {
+                      await supa.from('saillies').insert({
+                        'id': '${id}_mirror',
+                        'animal_id': _selectedPartenaireId,
+                        'date': _date!.toIso8601String(),
+                        'nom_partenaire': (animalData['nom'] ?? '') as String,
+                        'ident_partenaire': (animalData['identification'] ?? '') as String,
+                        'methode': _methode,
+                        'notes': _notes.text.trim(),
+                        'partenaire_animal_id': widget.animalId,
+                      });
+                    }
+                  }
+                }
                 if (context.mounted) Navigator.pop(context);
               },
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6E9E57), foregroundColor: Colors.white),
@@ -2649,7 +2778,8 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
 class _AddGestationDialog extends StatefulWidget {
   final String animalId;
   final String espece;
-  const _AddGestationDialog({required this.animalId, required this.espece});
+  final Map<String, dynamic>? existing;
+  const _AddGestationDialog({required this.animalId, required this.espece, this.existing});
   @override State<_AddGestationDialog> createState() => _AddGestationDialogState();
 }
 
@@ -2661,6 +2791,21 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
   DateTime? _datePrevue;
   DateTime? _dateNaissance;
   bool _dateOverride = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    if (e != null) {
+      _dateConception = e['date']           != null ? DateTime.tryParse(e['date'])           : null;
+      _datePrevue     = e['date_prevue']    != null ? DateTime.tryParse(e['date_prevue'])    : null;
+      _dateNaissance  = e['date_naissance'] != null ? DateTime.tryParse(e['date_naissance']) : null;
+      _nbAttendu.text = e['nb_attendu']?.toString() ?? '';
+      _nbNes.text     = e['nb_nes']?.toString() ?? '';
+      _notes.text     = e['notes'] ?? '';
+      if (_datePrevue != null) _dateOverride = true;
+    }
+  }
 
   @override
   void dispose() {
@@ -2736,8 +2881,8 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('Ajouter une gestation',
-              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF0C5C6C))),
+          Text(widget.existing != null ? 'Modifier la gestation' : 'Ajouter une gestation',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF0C5C6C))),
           const SizedBox(height: 16),
           ConstrainedBox(
             constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
@@ -2772,16 +2917,22 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
               onPressed: () async {
                 if (_dateConception == null) return;
                 try {
-                  final id = DateTime.now().microsecondsSinceEpoch.toString();
-                  await Supabase.instance.client.from('gestations').insert({
-                    'id': id, 'animal_id': widget.animalId,
+                  final payload = {
+                    'animal_id': widget.animalId,
                     'date': _dateConception!.toIso8601String(),
                     'date_prevue': _datePrevue?.toIso8601String(),
                     'date_naissance': _dateNaissance?.toIso8601String(),
                     'nb_attendu': int.tryParse(_nbAttendu.text),
                     'nb_nes': int.tryParse(_nbNes.text),
                     'notes': _notes.text.trim(),
-                  });
+                  };
+                  if (widget.existing != null) {
+                    await Supabase.instance.client.from('gestations').update(payload).eq('id', widget.existing!['id']);
+                  } else {
+                    await Supabase.instance.client.from('gestations').insert({
+                      'id': DateTime.now().microsecondsSinceEpoch.toString(), ...payload,
+                    });
+                  }
                   if (context.mounted) Navigator.pop(context);
                 } catch (e) {
                   if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(

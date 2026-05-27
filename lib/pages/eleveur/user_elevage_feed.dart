@@ -12,7 +12,7 @@ import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -94,10 +94,9 @@ class _UserElevageFeedState extends State<UserElevageFeed>
   Future<void> _uploadFile() async {
     if (_imageFile == null) return;
     try {
-      final name = _imageFile!.path.split('/').last;
-      final ref = FirebaseStorage.instance.ref().child('files/$name');
-      final snapshot = await ref.putFile(_imageFile!);
-      final url = await snapshot.ref.getDownloadURL();
+      final uid = _auth.currentUser?.uid ?? 'unknown';
+      final name = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final url = await uploadPhoto(_imageFile!, 'profiles/$uid/$name');
       await FirebaseFirestore.instance
           .collection('users')
           .doc(User_Info.uid)
@@ -107,7 +106,7 @@ class _UserElevageFeedState extends State<UserElevageFeed>
         _imageFile = null;
       });
     } catch (e) {
-      print('Erreur upload: $e');
+      debugPrint('Erreur upload: $e');
     }
   }
 
@@ -981,8 +980,8 @@ class _UpdateLocationSheetState extends State<_UpdateLocationSheet> {
         if (c.types.contains('street_number')) num   = c.longName;
         if (c.types.contains('route'))         route = c.longName;
         if (c.types.contains('postal_code'))   cp    = c.longName;
-        if (c.types.contains('locality') ||
-            c.types.contains('administrative_area_level_2')) ville = c.longName;
+        if (c.types.contains('locality'))      ville = c.longName;
+        else if (c.types.contains('administrative_area_level_2') && ville.isEmpty) ville = c.longName;
       }
       final loc = det.result.geometry?.location;
       setState(() {
@@ -1009,7 +1008,7 @@ class _UpdateLocationSheetState extends State<_UpdateLocationSheet> {
       setState(() {
         _rueCtrl.text   = m.street ?? '';
         _cpCtrl.text    = m.postalCode ?? '';
-        _villeCtrl.text = m.locality ?? m.subAdministrativeArea ?? '';
+        _villeCtrl.text = m.locality ?? m.subLocality ?? '';
         _searchCtrl.text = [_rueCtrl.text, _cpCtrl.text, _villeCtrl.text].where((s) => s.isNotEmpty).join(', ');
       });
     } catch (_) {

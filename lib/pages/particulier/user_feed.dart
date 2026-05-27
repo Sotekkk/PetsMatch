@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:PetsMatch/utils/storage_helper.dart';
+import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -143,16 +144,35 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
   Future<void> _saveAdresse() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    final geo = FrenchGeo.fromPostalCode(_cpCtrl.text.trim());
+    final dept = geo?.departement ?? '';
+    final reg  = geo?.region ?? '';
     await FirebaseFirestore.instance.collection('users').doc(uid).update({
-      'rue': _rueCtrl.text.trim(),
+      'rue':        _rueCtrl.text.trim(),
       'codePostal': _cpCtrl.text.trim(),
-      'ville': _villeCtrl.text.trim(),
+      'ville':      _villeCtrl.text.trim(),
+      'departement': dept,
+      'region':      reg,
       if (_profileLat != null) 'lat': _profileLat,
       if (_profileLng != null) 'lng': _profileLng,
     });
+    try {
+      await _supa.from('users').upsert({
+        'uid':         uid,
+        'rue':         _rueCtrl.text.trim(),
+        'code_postal': _cpCtrl.text.trim(),
+        'ville':       _villeCtrl.text.trim(),
+        'departement': dept,
+        'region':      reg,
+        if (_profileLat != null) 'lat': _profileLat,
+        if (_profileLng != null) 'lng': _profileLng,
+      }, onConflict: 'uid');
+    } catch (_) {}
     User_Info.rue = _rueCtrl.text.trim();
     User_Info.codePostal = _cpCtrl.text.trim();
     User_Info.ville = _villeCtrl.text.trim();
+    User_Info.departement = dept;
+    User_Info.region = reg;
     setState(() {
       _adresseModified = false;
       _adresseSearchCtrl.clear();
@@ -194,8 +214,8 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
         if (c.types.contains('street_number')) num   = c.longName;
         if (c.types.contains('route'))         route = c.longName;
         if (c.types.contains('postal_code'))   cp    = c.longName;
-        if (c.types.contains('locality') ||
-            c.types.contains('administrative_area_level_2')) ville = c.longName;
+        if (c.types.contains('locality'))      ville = c.longName;
+        else if (c.types.contains('administrative_area_level_2') && ville.isEmpty) ville = c.longName;
       }
       final loc = det.result.geometry?.location;
       setState(() {
@@ -223,7 +243,7 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
       final m = marks.first;
       _rueCtrl.text   = m.street ?? '';
       _cpCtrl.text    = m.postalCode ?? '';
-      _villeCtrl.text = m.locality ?? m.subAdministrativeArea ?? '';
+      _villeCtrl.text = m.locality ?? m.subLocality ?? '';
       setState(() => _adresseModified = true);
     } catch (_) {
     } finally {
@@ -285,10 +305,8 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
   }
 
   Future<void> _uploadProfilePic() async {
-    final name = _imageFile!.path.split('/').last;
-    final ref = FirebaseStorage.instance.ref().child('files/$name');
-    final snapshot = await ref.putFile(_imageFile!);
-    final url = await snapshot.ref.getDownloadURL();
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+    final url = await uploadPhoto(_imageFile!, 'profiles/$uid/photo.jpg');
     setState(() => _profilePicUrl = url);
     User_Info.profilePictureUrl = url;
     await FirebaseFirestore.instance
@@ -1459,8 +1477,8 @@ class _UpdateLocationSheetState extends State<_UpdateLocationSheet> {
         if (c.types.contains('street_number')) num   = c.longName;
         if (c.types.contains('route'))         route = c.longName;
         if (c.types.contains('postal_code'))   cp    = c.longName;
-        if (c.types.contains('locality') ||
-            c.types.contains('administrative_area_level_2')) ville = c.longName;
+        if (c.types.contains('locality'))      ville = c.longName;
+        else if (c.types.contains('administrative_area_level_2') && ville.isEmpty) ville = c.longName;
       }
       final loc = det.result.geometry?.location;
       setState(() {
@@ -1487,7 +1505,7 @@ class _UpdateLocationSheetState extends State<_UpdateLocationSheet> {
       setState(() {
         _rueCtrl.text   = m.street ?? '';
         _cpCtrl.text    = m.postalCode ?? '';
-        _villeCtrl.text = m.locality ?? m.subAdministrativeArea ?? '';
+        _villeCtrl.text = m.locality ?? m.subLocality ?? '';
         _searchCtrl.text = [_rueCtrl.text, _cpCtrl.text, _villeCtrl.text].where((s) => s.isNotEmpty).join(', ');
       });
     } catch (_) {
