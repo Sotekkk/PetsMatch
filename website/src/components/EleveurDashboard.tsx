@@ -1,0 +1,227 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import Image from 'next/image';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-context';
+
+interface Annonce {
+  id: string;
+  titre?: string;
+  espece?: string;
+  race?: string;
+  photos?: string[];
+  statut?: string;
+  vues?: number;
+  created_at?: string;
+}
+
+const SPECIES_EMOJI: Record<string, string> = {
+  chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐰',
+  oiseau: '🦜', nac: '🦎', ovin: '🐑', caprin: '🐐', porcin: '🐷',
+};
+
+const QUICK_LINKS = [
+  { href: '/mes-animaux',                  label: 'Mes Animaux',            icon: '🐾', bg: 'bg-[#EEF5EA]',   border: 'border-[#6E9E57]/30',   text: 'text-[#5A8A45]' },
+  { href: '/mes-annonces',                 label: 'Mes Annonces',           icon: '📋', bg: 'bg-[#E8F4F6]',   border: 'border-[#0C5C6C]/30',   text: 'text-[#0C5C6C]' },
+  { href: '/annonces/creer',               label: 'Nouvelle annonce',       icon: '➕', bg: 'bg-[#EEF5EA]',   border: 'border-[#6E9E57]/30',   text: 'text-[#5A8A45]' },
+  { href: '/animaux-perdus',               label: 'Animaux perdus',         icon: '🔍', bg: 'bg-amber-50',     border: 'border-amber-200',       text: 'text-amber-700' },
+  { href: '/elevage/registre-sanitaire',   label: 'Registre sanitaire',     icon: '🏥', bg: 'bg-[#E8F4F6]',   border: 'border-[#0C5C6C]/30',   text: 'text-[#0C5C6C]' },
+  { href: '/elevage/registre-entree-sortie', label: 'Entrées / Sorties',   icon: '📂', bg: 'bg-[#E8F4F6]',   border: 'border-[#0C5C6C]/30',   text: 'text-[#0C5C6C]' },
+  { href: '/elevage/facturation',          label: 'Facturation',            icon: '🧾', bg: 'bg-[#EEF5EA]',   border: 'border-[#6E9E57]/30',   text: 'text-[#5A8A45]' },
+  { href: '/elevages',                     label: 'Élevages',               icon: '🏡', bg: 'bg-[#E8F4F6]',   border: 'border-[#0C5C6C]/30',   text: 'text-[#0C5C6C]' },
+];
+
+export default function EleveurDashboard() {
+  const { user, userData } = useAuth();
+  const [animalCount, setAnimalCount] = useState(0);
+  const [alerteCount, setAlerteCount] = useState(0);
+  const [postCount, setPostCount] = useState(0);
+  const [recentAnnonces, setRecentAnnonces] = useState<Annonce[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const displayName = userData?.nameElevage ?? userData?.firstname ?? 'Mon élevage';
+  const city = userData?.villeElevage ?? userData?.ville ?? '';
+  const avatar = userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
+  const isPro = userData?.isPro === true;
+
+  useEffect(() => {
+    if (!user) return;
+    Promise.all([
+      supabase.from('animaux').select('id', { count: 'exact', head: true }).eq('uid_eleveur', user.uid),
+      supabase.from('alertes_perdus').select('id', { count: 'exact', head: true }).eq('uid_proprietaire', user.uid).eq('statut', 'perdu'),
+    ]).then(([animaux, alertes]) => {
+      setAnimalCount(animaux.count ?? 0);
+      setAlerteCount(alertes.count ?? 0);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('annonces')
+      .select('id, titre, espece, race, photos, statut, vues, created_at')
+      .eq('uid_eleveur', user.uid)
+      .in('statut', ['disponible', 'reserve', 'pause'])
+      .order('created_at', { ascending: false })
+      .limit(10)
+      .then(({ data }) => {
+        const docs = (data ?? []) as Annonce[];
+        setPostCount(docs.filter(d => ['disponible', 'reserve'].includes(d.statut ?? '')).length);
+        setRecentAnnonces(docs.slice(0, 3));
+      });
+  }, [user]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <div className="w-8 h-8 border-2 border-[#6E9E57] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-[#F8F8F6] min-h-screen">
+      <div className="bg-gradient-to-br from-[#0C5C6C] to-[#5F9EAA] text-white">
+        <div className="max-w-6xl mx-auto px-4 py-8 flex items-center gap-5">
+          <Link href="/profil" className="flex-shrink-0">
+            <div className="w-20 h-20 rounded-full bg-[#A7C79A] overflow-hidden flex items-center justify-center border-2 border-white/30">
+              {avatar ? (
+                <Image src={avatar} alt="" width={80} height={80} className="object-cover w-full h-full" />
+              ) : (
+                <span className="text-3xl">🐾</span>
+              )}
+            </div>
+          </Link>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-xl font-bold truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+              {displayName}
+            </h1>
+            {city && <p className="text-white/70 text-sm mt-0.5">📍 {city}</p>}
+            <Link href="/profil"
+              className="mt-2 inline-flex items-center gap-1.5 text-xs border border-white/40 rounded-full px-3 py-1 hover:bg-white/10 transition-colors">
+              ✏️ Modifier le profil
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 py-6 space-y-8">
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { value: animalCount, label: 'Animaux', icon: '🐾' },
+            { value: postCount,   label: 'Annonces',  icon: '📋' },
+            { value: isPro ? 'Pro' : 'Éleveur', label: 'Statut', icon: '✅' },
+          ].map((s) => (
+            <div key={s.label} className="bg-white rounded-2xl p-4 flex flex-col items-center shadow-sm">
+              <span className="text-xl mb-1">{s.icon}</span>
+              <span className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                {s.value}
+              </span>
+              <span className="text-xs text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>{s.label}</span>
+            </div>
+          ))}
+        </div>
+
+        {alerteCount > 0 && (
+          <Link href="/animaux-perdus"
+            className="flex items-center gap-4 bg-amber-50 border border-amber-300 rounded-2xl p-4 hover:bg-amber-100 transition-colors">
+            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+              <span className="text-lg">🔍</span>
+            </div>
+            <div className="flex-1">
+              <p className="font-bold text-amber-800 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+                {alerteCount} alerte{alerteCount > 1 ? 's' : ''} active{alerteCount > 1 ? 's' : ''}
+              </p>
+              <p className="text-amber-600 text-xs">Animal{alerteCount > 1 ? 'x' : ''} déclaré{alerteCount > 1 ? 's' : ''} perdu{alerteCount > 1 ? 's' : ''}</p>
+            </div>
+            <span className="text-amber-400 text-lg">›</span>
+          </Link>
+        )}
+
+        <div>
+          <h2 className="text-lg font-bold text-[#1F2A2E] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Accès rapide
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {QUICK_LINKS.map((l) => (
+              <Link key={l.href} href={l.href}
+                className={`${l.bg} border ${l.border} rounded-2xl p-4 flex flex-col gap-2 hover:shadow-md transition-shadow`}>
+                <span className="text-2xl">{l.icon}</span>
+                <span className={`text-sm font-semibold ${l.text}`} style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {l.label}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+              Dernières annonces
+            </h2>
+            <Link href="/mes-annonces" className="text-sm text-[#0C5C6C] font-medium hover:underline">
+              Voir tout →
+            </Link>
+          </div>
+
+          {recentAnnonces.length === 0 ? (
+            <div className="bg-white rounded-2xl p-8 flex flex-col items-center gap-3 shadow-sm">
+              <span className="text-4xl text-gray-200">📋</span>
+              <p className="text-gray-400 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Aucune annonce publiée</p>
+              <Link href="/annonces/creer"
+                className="bg-[#0C5C6C] hover:bg-[#094F5D] text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors">
+                Créer une annonce
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {recentAnnonces.map((a) => {
+                const title = a.titre || a.race || (a.espece ? (SPECIES_EMOJI[a.espece] + ' ' + a.espece) : 'Annonce');
+                const photos = (a.photos as unknown as string[]) ?? [];
+                const statut = a.statut ?? 'disponible';
+                const statutLabel = statut === 'pause' ? 'En pause' : statut === 'reserve' ? 'Réservé' : 'En ligne';
+                const statutColor = statut === 'pause' ? 'bg-gray-100 text-gray-500'
+                  : statut === 'reserve' ? 'bg-amber-100 text-amber-700'
+                  : 'bg-[#EEF5EA] text-[#5A8A45]';
+                const dateStr = a.created_at ? new Date(a.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '';
+
+                return (
+                  <Link key={a.id} href={`/annonces/${a.id}`}
+                    className="flex items-center gap-3 bg-white rounded-2xl p-3 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="w-14 h-14 rounded-xl overflow-hidden bg-[#EEF5EA] flex-shrink-0 flex items-center justify-center">
+                      {photos[0] ? (
+                        <img src={photos[0]} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-2xl">{SPECIES_EMOJI[a.espece ?? ''] ?? '🐾'}</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-[#1F2A2E] text-sm truncate capitalize" style={{ fontFamily: 'Galey, sans-serif' }}>
+                        {title}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statutColor}`}>
+                          {statutLabel}
+                        </span>
+                        {(a.vues ?? 0) > 0 && (
+                          <span className="text-xs text-gray-400">👁 {a.vues}</span>
+                        )}
+                      </div>
+                    </div>
+                    {dateStr && (
+                      <span className="text-xs text-gray-400 flex-shrink-0">{dateStr}</span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

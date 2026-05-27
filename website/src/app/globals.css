@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-teal: #0C5C6C;
+  --color-teal-dark: #094F5D;
+  --color-teal-light: #1a7a8e;
+  --color-green: #6E9E57;
+  --color-green-dark: #5A8A45;
+  --color-green-light: #EEF5EA;
+  --color-dark: #1F2A2E;
+  --color-bg: #F8F8F6;
+}
+
+@font-face {
+  font-family: 'Galey';
+  src: url('/fonts/galeysemibold.ttf') format('truetype');
+  font-weight: 600;
+  font-display: swap;
+}
+
+body {
+  background-color: #F8F8F6;
+  color: #1F2A2E;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+h1, h2, h3, h4 {
+  font-family: 'Galey', 'Inter', system-ui, sans-serif;
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.8); }
+  to   { opacity: 1; transform: scale(1); }
+}

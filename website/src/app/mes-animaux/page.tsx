@@ -1,0 +1,376 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-context';
+import { thumbUrl } from '@/lib/upload-media';
+
+interface Animal {
+  id: string;
+  nom?: string;
+  espece?: string;
+  race?: string;
+  sexe?: string;
+  identification?: string;
+  date_naissance?: string;
+  photo_url?: string;
+  statut?: string;
+  date_entree?: string;
+  date_sortie?: string;
+}
+
+const SPECIES = [
+  { value: 'tous',   label: 'Tous',    color: '#1F2A2E' },
+  { value: 'chien',  label: 'Chiens',  color: '#6E9E57' },
+  { value: 'chat',   label: 'Chats',   color: '#0C5C6C' },
+  { value: 'cheval', label: 'Chevaux', color: '#5B8648' },
+  { value: 'lapin',  label: 'Lapins',  color: '#E08080' },
+  { value: 'ovin',   label: 'Ovins',   color: '#5F9EAA' },
+  { value: 'caprin', label: 'Caprins', color: '#8D6E63' },
+  { value: 'porcin', label: 'Porcins', color: '#E25C5C' },
+  { value: 'nac',    label: 'NAC',     color: '#F4B400' },
+  { value: 'oiseau', label: 'Oiseaux', color: '#26A69A' },
+  { value: 'autre',  label: 'Autres',  color: '#6F767B' },
+];
+
+const SPECIES_EMOJI: Record<string, string> = {
+  chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐰',
+  oiseau: '🦜', nac: '🦎', ovin: '🐑', caprin: '🐐', porcin: '🐷', autre: '🐾',
+};
+
+function speciesLabel(v: string) {
+  return SPECIES.find(s => s.value === v)?.label ?? v;
+}
+
+function formatDate(d?: string) {
+  if (!d) return '';
+  return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+function Chip({
+  label, active, color, onClick, emoji,
+}: { label: string; active: boolean; color: string; onClick: () => void; emoji?: string }) {
+  return (
+    <button
+      onClick={onClick}
+      style={active ? { backgroundColor: color, borderColor: color, color: '#fff' } : { borderColor: '#d1d5db', color: '#374151' }}
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all">
+      {emoji && <span>{emoji}</span>}
+      {label}
+    </button>
+  );
+}
+
+function AnimalCard({ a, tab }: { a: Animal; tab: 'presents' | 'anciens' }) {
+  const espColor = SPECIES.find(s => s.value === a.espece)?.color ?? '#6F767B';
+  const isMale   = (a.sexe ?? '').toLowerCase().startsWith('m');
+  const isFemale = (a.sexe ?? '').toLowerCase().startsWith('f');
+  const photo    = a.photo_url ? thumbUrl(a.photo_url, 400, 75, 'contain') : undefined;
+
+  return (
+    <Link href={`/mes-animaux/${a.id}`}
+      className="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-all group block">
+      {/* Photo */}
+      <div className="aspect-square relative overflow-hidden"
+        style={{ background: espColor + '18' }}>
+        {photo
+          ? <img src={photo} alt={a.nom ?? ''} className="w-full h-full object-contain" />
+          : <div className="w-full h-full flex items-center justify-center text-5xl">
+              {SPECIES_EMOJI[a.espece ?? ''] ?? '🐾'}
+            </div>}
+        {tab === 'anciens' && (a.statut === 'sorti' || a.statut === 'decede') && (
+          <span className={`absolute top-2 right-2 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg ${
+            a.statut === 'decede' ? 'bg-red-500' : 'bg-[#0C5C6C]'
+          }`}>
+            {a.statut === 'decede' ? 'Décédé' : 'Sorti'}
+          </span>
+        )}
+      </div>
+      {/* Infos */}
+      <div className="p-3">
+        <p className="font-bold text-[#1F2A2E] text-sm truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+          {a.nom ?? 'Sans nom'}
+        </p>
+        {a.race && <p className="text-[#6F767B] text-xs truncate mt-0.5">{a.race}</p>}
+        <div className="flex items-center gap-1 mt-2 flex-wrap">
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+            style={{ background: espColor + '20', color: espColor }}>
+            {SPECIES_EMOJI[a.espece ?? ''] ?? '🐾'} {speciesLabel(a.espece ?? '')}
+          </span>
+          {(isMale || isFemale) && (
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#5F9EAA]/20 text-[#5F9EAA]">
+              {isMale ? '♂ Mâle' : '♀ Femelle'}
+            </span>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+export default function MesAnimauxPage() {
+  const { user, userData, loading } = useAuth();
+  const router = useRouter();
+
+  const isEleveur = userData?.isElevage === true;
+
+  const [animaux, setAnimaux] = useState<Animal[]>([]);
+  const [fetching, setFetching] = useState(true);
+  const [tab, setTab] = useState<'presents' | 'anciens'>('presents');
+
+  // Filtres présents
+  const [filtreEspece, setFiltreEspece] = useState('tous');
+  const [filtreSexe, setFiltreSexe] = useState('tous');
+  const [filtreRace, setFiltreRace] = useState('');
+
+  // Filtres anciens
+  const [anciensEspece, setAnciensEspece] = useState('tous');
+  const [anciensStatut, setAnciensStatut] = useState('tous');
+
+  // Filter panel open
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  useEffect(() => {
+    if (!loading && !user) router.push('/connexion');
+  }, [loading, user, router]);
+
+  useEffect(() => {
+    if (!user) return;
+    setFetching(true);
+    const query = isEleveur
+      ? supabase.from('animaux').select('*').eq('uid_eleveur', user.uid).order('nom', { ascending: true })
+      : supabase.from('animaux').select('*').or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`).order('nom', { ascending: true });
+
+    query.then(({ data }) => {
+      setAnimaux((data ?? []) as Animal[]);
+      setFetching(false);
+    });
+  }, [user, isEleveur]);
+
+  if (loading || !user) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
+
+  // Séparer présents / anciens
+  const presents = animaux.filter(a => {
+    const s = a.statut ?? 'present';
+    return s !== 'sorti' && s !== 'decede';
+  });
+  const anciens = animaux.filter(a => a.statut === 'sorti' || a.statut === 'decede');
+
+  // Espèces disponibles dans chaque groupe
+  const especesPresents = [...new Set(presents.map(a => a.espece).filter(Boolean))] as string[];
+  const especesAnciens  = [...new Set(anciens.map(a => a.espece).filter(Boolean))] as string[];
+
+  // Races disponibles selon espèce sélectionnée (présents)
+  const racesDisponibles = filtreEspece !== 'tous'
+    ? [...new Set(presents.filter(a => a.espece === filtreEspece).map(a => a.race).filter(Boolean))] as string[]
+    : [];
+
+  // Filtrage présents
+  const filteredPresents = presents.filter(a => {
+    if (filtreEspece !== 'tous' && a.espece !== filtreEspece) return false;
+    if (filtreSexe !== 'tous') {
+      const s = (a.sexe ?? '').toLowerCase();
+      if (filtreSexe === 'male' && !s.startsWith('m')) return false;
+      if (filtreSexe === 'femelle' && !s.startsWith('f')) return false;
+    }
+    if (filtreRace && a.race !== filtreRace) return false;
+    return true;
+  });
+
+  // Filtrage anciens
+  const filteredAnciens = anciens.filter(a => {
+    if (anciensEspece !== 'tous' && a.espece !== anciensEspece) return false;
+    if (anciensStatut !== 'tous' && a.statut !== anciensStatut) return false;
+    return true;
+  });
+
+  const currentList = tab === 'presents' ? filteredPresents : filteredAnciens;
+
+  const activeFilterCount = tab === 'presents'
+    ? (filtreEspece !== 'tous' ? 1 : 0) + (filtreSexe !== 'tous' ? 1 : 0) + (filtreRace ? 1 : 0)
+    : (anciensEspece !== 'tous' ? 1 : 0) + (anciensStatut !== 'tous' ? 1 : 0);
+
+  function resetFilters() {
+    if (tab === 'presents') {
+      setFiltreEspece('tous'); setFiltreSexe('tous'); setFiltreRace('');
+    } else {
+      setAnciensEspece('tous'); setAnciensStatut('tous');
+    }
+  }
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 py-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Mes Animaux
+          </h1>
+          <p className="text-gray-500 text-sm mt-0.5">
+            {presents.length} présent{presents.length !== 1 ? 's' : ''} · {animaux.length} au total
+          </p>
+        </div>
+        {isEleveur && (
+          <Link href="/mes-animaux/ajouter"
+            className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white text-sm font-semibold px-4 py-2 rounded-full transition-colors">
+            + Ajouter
+          </Link>
+        )}
+      </div>
+
+      {/* Tabs (éleveur uniquement) */}
+      {isEleveur && (
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-4">
+          {(['presents', 'anciens'] as const).map((t) => (
+            <button key={t} onClick={() => { setTab(t); setFilterOpen(false); }}
+              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
+                tab === t ? 'bg-white text-[#0C5C6C] shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}>
+              {t === 'presents'
+                ? `Présents (${presents.length})`
+                : `Anciens (${anciens.length})`}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Barre filtres */}
+      <div className="flex items-center gap-2 mb-4">
+        <button
+          onClick={() => setFilterOpen(!filterOpen)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm font-medium transition-colors ${
+            activeFilterCount > 0
+              ? 'bg-[#0C5C6C] border-[#0C5C6C] text-white'
+              : 'border-gray-300 text-gray-600 hover:border-gray-400'
+          }`}>
+          ⚙️ Filtres
+          {activeFilterCount > 0 && (
+            <span className="bg-white text-[#0C5C6C] rounded-full text-xs w-4 h-4 flex items-center justify-center font-bold">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
+        {activeFilterCount > 0 && (
+          <button onClick={resetFilters}
+            className="text-xs text-[#6E9E57] font-medium hover:underline">
+            Réinitialiser
+          </button>
+        )}
+      </div>
+
+      {/* Panel filtres */}
+      {filterOpen && (
+        <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4 space-y-4">
+          {tab === 'presents' ? (
+            <>
+              {/* Espèce */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Espèce</p>
+                <div className="flex flex-wrap gap-2">
+                  {SPECIES.filter(s => s.value === 'tous' || especesPresents.includes(s.value)).map(sp => (
+                    <Chip key={sp.value} label={sp.label} active={filtreEspece === sp.value}
+                      color={sp.color} onClick={() => { setFiltreEspece(sp.value); setFiltreRace(''); }}
+                      emoji={sp.value !== 'tous' ? (SPECIES_EMOJI[sp.value] ?? '') : undefined} />
+                  ))}
+                </div>
+              </div>
+              {/* Sexe */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Sexe</p>
+                <div className="flex gap-2">
+                  {[{ v: 'tous', l: 'Tous' }, { v: 'male', l: '♂ Mâle' }, { v: 'femelle', l: '♀ Femelle' }].map(s => (
+                    <Chip key={s.v} label={s.l} active={filtreSexe === s.v}
+                      color="#0C5C6C" onClick={() => setFiltreSexe(s.v)} />
+                  ))}
+                </div>
+              </div>
+              {/* Race */}
+              {racesDisponibles.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Race</p>
+                  <div className="flex flex-wrap gap-2">
+                    {racesDisponibles.map(r => (
+                      <Chip key={r} label={r} active={filtreRace === r}
+                        color="#0C5C6C" onClick={() => setFiltreRace(filtreRace === r ? '' : r)} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {/* Espèce anciens */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Espèce</p>
+                <div className="flex flex-wrap gap-2">
+                  {SPECIES.filter(s => s.value === 'tous' || especesAnciens.includes(s.value)).map(sp => (
+                    <Chip key={sp.value} label={sp.label} active={anciensEspece === sp.value}
+                      color={sp.color} onClick={() => setAnciensEspece(sp.value)}
+                      emoji={sp.value !== 'tous' ? (SPECIES_EMOJI[sp.value] ?? '') : undefined} />
+                  ))}
+                </div>
+              </div>
+              {/* Statut anciens */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Motif</p>
+                <div className="flex gap-2">
+                  {[{ v: 'tous', l: 'Tous' }, { v: 'sorti', l: 'Sorti / Vendu' }, { v: 'decede', l: 'Décédé' }].map(s => (
+                    <Chip key={s.v} label={s.l} active={anciensStatut === s.v}
+                      color="#0C5C6C" onClick={() => setAnciensStatut(s.v)} />
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Liste */}
+      {fetching ? (
+        <div className="flex justify-center py-16">
+          <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : currentList.length === 0 ? (
+        <div className="flex flex-col items-center py-20 text-center">
+          <span className="text-5xl mb-4">🐾</span>
+          <p className="text-gray-500 font-medium" style={{ fontFamily: 'Galey, sans-serif' }}>
+            {tab === 'presents' ? 'Aucun animal présent' : 'Aucun ancien animal'}
+          </p>
+          <p className="text-gray-400 text-sm mt-1">
+            {tab === 'presents' && animaux.length === 0
+              ? 'Ajoutez votre premier animal'
+              : 'Modifiez les filtres pour voir plus de résultats'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {currentList.map(a => <AnimalCard key={a.id} a={a} tab={tab} />)}
+        </div>
+      )}
+
+      {/* Liens admin éleveur */}
+      {isEleveur && (
+        <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Link href="/elevage/registre-sanitaire"
+            className="flex items-center gap-3 bg-[#E8F4F6] border border-[#0C5C6C]/20 rounded-2xl p-4 hover:shadow-md transition-shadow">
+            <span className="text-2xl">🏥</span>
+            <div>
+              <p className="font-semibold text-[#0C5C6C] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Registre sanitaire</p>
+              <p className="text-[#0C5C6C]/60 text-xs">Actes vétérinaires</p>
+            </div>
+          </Link>
+          <Link href="/elevage/registre-entree-sortie"
+            className="flex items-center gap-3 bg-[#EEF5EA] border border-[#6E9E57]/20 rounded-2xl p-4 hover:shadow-md transition-shadow">
+            <span className="text-2xl">📂</span>
+            <div>
+              <p className="font-semibold text-[#5A8A45] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Entrées / Sorties</p>
+              <p className="text-[#5A8A45]/60 text-xs">Registre légal</p>
+            </div>
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
