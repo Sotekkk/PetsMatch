@@ -97,6 +97,7 @@ export default function AnimauxPerdusPage() {
   const [view, setView]             = useState<'liste' | 'carte'>('liste');
   const [selectedAlerte, setSelectedAlerte] = useState<Alerte | null>(null);
   const [contacting, setContacting] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   // Filtres
   const [filtreEspece, setFiltreEspece] = useState('tous');
@@ -244,6 +245,35 @@ export default function AnimauxPerdusPage() {
       setContacting(false);
     }
   }, [user, router]);
+
+  // ── Owner actions (A03) ───────────────────────────────────────────────────
+
+  const retrouveAlerte = useCallback(async (id: string) => {
+    if (!confirm('Confirmer que votre animal a été retrouvé ?')) return;
+    setActionLoading(true);
+    try {
+      await supabase.from('alertes_perdus').update({
+        statut: 'retrouve',
+        date_retrouve: new Date().toISOString().substring(0, 10),
+      }).eq('id', id);
+      setAlertes(prev => prev.filter(a => a.id !== id));
+      setSelectedAlerte(null);
+    } finally {
+      setActionLoading(false);
+    }
+  }, []);
+
+  const deleteAlerte = useCallback(async (id: string) => {
+    if (!confirm('Supprimer cette alerte définitivement ?')) return;
+    setActionLoading(true);
+    try {
+      await supabase.from('alertes_perdus').delete().eq('id', id);
+      setAlertes(prev => prev.filter(a => a.id !== id));
+      setSelectedAlerte(null);
+    } finally {
+      setActionLoading(false);
+    }
+  }, []);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -409,7 +439,10 @@ export default function AnimauxPerdusPage() {
           onClose={() => setSelectedAlerte(null)}
           onContactMess={() => contactViaMess(selectedAlerte)}
           contacting={contacting}
+          actionLoading={actionLoading}
           user={user}
+          onRetrouve={() => retrouveAlerte(selectedAlerte.id)}
+          onDelete={() => deleteAlerte(selectedAlerte.id)}
         />
       )}
     </div>
@@ -457,13 +490,16 @@ function AlerteCard({ alerte: a, onClick }: { alerte: Alerte; onClick: () => voi
 // ── Detail modal ──────────────────────────────────────────────────────────────
 
 function AlerteDetailModal({
-  alerte: a, onClose, onContactMess, contacting, user
+  alerte: a, onClose, onContactMess, contacting, actionLoading, user, onRetrouve, onDelete
 }: {
   alerte: Alerte;
   onClose: () => void;
   onContactMess: () => void;
   contacting: boolean;
+  actionLoading: boolean;
   user: { uid: string } | null;
+  onRetrouve: () => void;
+  onDelete: () => void;
 }) {
   const colors   = ESPECE_COLORS[a.espece?.toLowerCase()] ?? ESPECE_COLORS.autre;
   const isOwner  = user?.uid === a.uid_proprietaire;
@@ -599,10 +635,20 @@ function AlerteDetailModal({
             </div>
           )}
           {isOwner && (
-            <a href="/mes-alertes"
-              className="flex items-center justify-center w-full py-3 rounded-xl font-semibold text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
-              Gérer mon alerte →
-            </a>
+            <div className="space-y-2">
+              <button onClick={onRetrouve} disabled={actionLoading}
+                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-[#EEF5EA] text-[#6E9E57] hover:bg-[#DCF0D2] transition-colors disabled:opacity-60">
+                ✅ Animal retrouvé !
+              </button>
+              <button onClick={onDelete} disabled={actionLoading}
+                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-red-50 text-red-600 hover:bg-red-100 transition-colors disabled:opacity-60">
+                🗑 Supprimer l&apos;alerte
+              </button>
+              <a href="/mes-alertes"
+                className="flex items-center justify-center w-full py-2 rounded-xl text-sm border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+                Modifier / Mettre à jour →
+              </a>
+            </div>
           )}
 
           {/* Partager — toujours visible */}

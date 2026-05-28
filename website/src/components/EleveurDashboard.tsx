@@ -36,7 +36,7 @@ const QUICK_LINKS = [
 export default function EleveurDashboard() {
   const { user, userData } = useAuth();
   const [animalCount, setAnimalCount] = useState(0);
-  const [alerteCount, setAlerteCount] = useState(0);
+  const [mesAlertes, setMesAlertes] = useState<{ id: string }[]>([]);
   const [postCount, setPostCount] = useState(0);
   const [recentAnnonces, setRecentAnnonces] = useState<Annonce[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,10 +50,10 @@ export default function EleveurDashboard() {
     if (!user) return;
     Promise.all([
       supabase.from('animaux').select('id', { count: 'exact', head: true }).eq('uid_eleveur', user.uid),
-      supabase.from('alertes_perdus').select('id', { count: 'exact', head: true }).eq('uid_proprietaire', user.uid).eq('statut', 'perdu'),
+      supabase.from('alertes_perdus').select('id').eq('uid_proprietaire', user.uid).eq('statut', 'perdu'),
     ]).then(([animaux, alertes]) => {
       setAnimalCount(animaux.count ?? 0);
-      setAlerteCount(alertes.count ?? 0);
+      setMesAlertes((alertes.data ?? []) as { id: string }[]);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [user]);
@@ -125,17 +125,19 @@ export default function EleveurDashboard() {
           ))}
         </div>
 
-        {alerteCount > 0 && (
-          <Link href="/animaux-perdus"
+        {mesAlertes.length > 0 && (
+          <Link href="/mes-alertes"
             className="flex items-center gap-4 bg-amber-50 border border-amber-300 rounded-2xl p-4 hover:bg-amber-100 transition-colors">
             <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
               <span className="text-lg">🔍</span>
             </div>
             <div className="flex-1">
               <p className="font-bold text-amber-800 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
-                {alerteCount} alerte{alerteCount > 1 ? 's' : ''} active{alerteCount > 1 ? 's' : ''}
+                {mesAlertes.length} alerte{mesAlertes.length > 1 ? 's' : ''} active{mesAlertes.length > 1 ? 's' : ''}
               </p>
-              <p className="text-amber-600 text-xs">Animal{alerteCount > 1 ? 'x' : ''} déclaré{alerteCount > 1 ? 's' : ''} perdu{alerteCount > 1 ? 's' : ''}</p>
+              <p className="text-amber-600 text-xs">
+                {mesAlertes.length === 1 ? 'Gérer votre alerte' : 'Gérer vos alertes'}
+              </p>
             </div>
             <span className="text-amber-400 text-lg">›</span>
           </Link>

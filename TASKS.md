@@ -20,8 +20,6 @@
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
-| A02 | Animaux perdus — clic sur alerte page d'accueil → ouvrir la gestion de l'alerte directement | Haute | App + Web | `particulier_home.dart`, `eleveur_home.dart`, page d'accueil web |
-| A03 | Animaux perdus — clic long sur alerte → menu "Supprimer" / "Animal retrouvé" (avec confirmation) | Haute | App + Web | `animaux_perdus_page.dart`, page web équivalente |
 | A09 | Suivi repro — saillie extérieure : accès infos mâle (photo, nom, puce, race) depuis éleveur externe | Moyenne | App + Web | À créer `suivi_repro.dart` + table `saillie_acces` |
 | A10 | Annonces — photo carrée à la création (déjà OK) + affichage rectangle adapté centré dans le feed sans rogner | Haute | App + Web | `annonces_feed_page.dart`, feed web |
 | A12 | Admin — algorithme de validation automatique profils éleveurs (détection spam, cohérence données) | Haute | App + Web | `admin_panel.dart`, `verification_detail.dart` |
@@ -92,6 +90,8 @@
 
 | Tâche | Date | Repo | Fichiers modifiés |
 |---|---|---|---|
+| A02 — Alerte page d'accueil → gestion directe (1 alerte → fiche, >1 → liste) | 2026-05-28 | App + Web | `particulier_home.dart`, `eleveur_home.dart`, `ParticulierDashboard.tsx`, `EleveurDashboard.tsx` |
+| A03 — Clic long sur alerte → menu "Retrouvé" / "Supprimer" avec confirmation (+ actions propriétaire dans modale web) | 2026-05-28 | App + Web | `animaux_perdus_page.dart`, `animaux-perdus/page.tsx` |
 | A07 — Saillie → gestation automatique avec date mise-bas prévue selon espèce | 2026-05-28 | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` (petsmatch-web + website) |
 | A08 — Gestation confirmée (switch + rappel écho/palpation selon espèce) + badge dans liste | 2026-05-28 | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` (petsmatch-web + website) |
 | Fix — Photos animaux perdus : object-contain + suppression render URL Supabase | 2026-05-28 | Web | `animaux-perdus/page.tsx` (petsmatch-web + website) |

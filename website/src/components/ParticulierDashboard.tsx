@@ -59,7 +59,7 @@ function formatDate(dateStr?: string) {
 export default function ParticulierDashboard() {
   const { user, userData } = useAuth();
   const [animaux, setAnimaux] = useState<Animal[]>([]);
-  const [alertesCount, setAlertesCount] = useState(0);
+  const [mesAlertes, setMesAlertes] = useState<Alerte[]>([]);
   const [alertesPubliques, setAlertesPubliques] = useState<Alerte[]>([]);
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,7 +73,7 @@ export default function ParticulierDashboard() {
     Promise.all([
       supabase.from('animaux').select('id, nom, espece, race, sexe, photo_url')
         .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`),
-      supabase.from('alertes_perdus').select('id', { count: 'exact', head: true })
+      supabase.from('alertes_perdus').select()
         .eq('uid_proprietaire', user.uid).eq('statut', 'perdu'),
       supabase.from('alertes_perdus')
         .select('id, nom_animal, espece, race, derniere_localisation, date_perte, photo_url')
@@ -87,7 +87,7 @@ export default function ParticulierDashboard() {
         .limit(8),
     ]).then(([animauxRes, alertesMesRes, alertesPubliquesRes, annoncesRes]) => {
       setAnimaux(animauxRes.data ?? []);
-      setAlertesCount(alertesMesRes.count ?? 0);
+      setMesAlertes((alertesMesRes.data ?? []) as Alerte[]);
       setAlertesPubliques(alertesPubliquesRes.data ?? []);
       setAnnonces(annoncesRes.data ?? []);
       setLoading(false);
@@ -135,14 +135,14 @@ export default function ParticulierDashboard() {
                 <p className="text-white/70 text-xs">Animal{animaux.length > 1 ? 'x' : ''}</p>
               </div>
             </div>
-            {alertesCount > 0 && (
+            {mesAlertes.length > 0 && (
               <div className="flex items-center gap-2 bg-white/15 rounded-xl px-4 py-2.5">
                 <span className="text-lg">🔍</span>
                 <div>
                   <p className="text-amber-300 font-bold text-lg leading-none" style={{ fontFamily: 'Galey, sans-serif' }}>
-                    {alertesCount}
+                    {mesAlertes.length}
                   </p>
-                  <p className="text-white/70 text-xs">Alerte{alertesCount > 1 ? 's' : ''}</p>
+                  <p className="text-white/70 text-xs">Alerte{mesAlertes.length > 1 ? 's' : ''}</p>
                 </div>
               </div>
             )}
@@ -233,17 +233,19 @@ export default function ParticulierDashboard() {
         </div>
 
         {/* Alerte banner */}
-        {alertesCount > 0 && (
-          <Link href="/animaux-perdus"
+        {mesAlertes.length > 0 && (
+          <Link href="/mes-alertes"
             className="flex items-center gap-4 bg-amber-50 border border-amber-300 rounded-2xl p-4 hover:bg-amber-100 transition-colors">
             <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 text-lg">
               🔍
             </div>
             <div className="flex-1">
               <p className="font-bold text-amber-800 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
-                {alertesCount} alerte{alertesCount > 1 ? 's' : ''} active{alertesCount > 1 ? 's' : ''}
+                {mesAlertes.length} alerte{mesAlertes.length > 1 ? 's' : ''} active{mesAlertes.length > 1 ? 's' : ''}
               </p>
-              <p className="text-amber-600 text-xs">Appuyez pour gérer vos alertes</p>
+              <p className="text-amber-600 text-xs">
+                {mesAlertes.length === 1 ? 'Gérer votre alerte' : 'Gérer vos alertes'}
+              </p>
             </div>
             <span className="text-amber-400 text-lg">›</span>
           </Link>

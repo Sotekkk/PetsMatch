@@ -14,6 +14,7 @@ import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
+import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 
 class ParticulierHomePage extends StatefulWidget {
   const ParticulierHomePage({super.key});
@@ -30,9 +31,9 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
 
   String? _photoUrl;
   int _nbAnimaux = 0;
-  int _nbAlertes = 0;
   bool _loading = true;
   List<Map<String, dynamic>> _animaux = [];
+  List<Map<String, dynamic>> _mesAlertes = [];
   List<Map<String, dynamic>> _alertesPubliques = [];
   bool _loadingAlertes = false;
   List<Map<String, dynamic>> _annonces = [];
@@ -68,7 +69,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
         _photoUrl = (doc.data())?['profilePictureUrl'];
         _animaux = List<Map<String, dynamic>>.from(animaux as List);
         _nbAnimaux = _animaux.length;
-        _nbAlertes = (alertesMes as List).length;
+        _mesAlertes = List<Map<String, dynamic>>.from(alertesMes as List);
         _annonces = List<Map<String, dynamic>>.from(annonces as List);
         _loading = false;
       });
@@ -95,6 +96,22 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
     } catch (_) {
       if (mounted) setState(() => _loadingAlertes = false);
     }
+  }
+
+  Future<void> _editAlerte(Map<String, dynamic> a) async {
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => AlertePerduFormPage(
+        alerteId: a['id'] as String?,
+        animalId: a['animal_id'] as String?,
+        photoUrl: a['photo_url'] as String?,
+        nom:      a['nom_animal'] as String?,
+        espece:   a['espece'] as String?,
+        race:     a['race'] as String?,
+        sexe:     a['sexe'] as String?,
+        couleur:  a['couleur'] as String?,
+      ),
+    ));
+    _load();
   }
 
   void _shareAlerte(Map<String, dynamic> a) {
@@ -209,7 +226,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
                     const SizedBox(height: 20),
                   ],
                   _buildQuickAccess(),
-                  if (_nbAlertes > 0) ...[
+                  if (_mesAlertes.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     _buildAlerteBanner(),
                   ],
@@ -227,15 +244,16 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
   }
 
   Widget _buildStatsRow() {
+    final nb = _mesAlertes.length;
     return Row(
       children: [
         _StatCard(value: '$_nbAnimaux', label: 'Animal${_nbAnimaux > 1 ? 'x' : ''}', icon: Icons.pets),
         const SizedBox(width: 12),
         _StatCard(
-          value: '$_nbAlertes',
-          label: 'Alerte${_nbAlertes > 1 ? 's' : ''} active${_nbAlertes > 1 ? 's' : ''}',
+          value: '$nb',
+          label: 'Alerte${nb > 1 ? 's' : ''} active${nb > 1 ? 's' : ''}',
           icon: Icons.location_searching,
-          highlight: _nbAlertes > 0,
+          highlight: nb > 0,
         ),
       ],
     );
@@ -432,9 +450,15 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
   }
 
   Widget _buildAlerteBanner() {
+    final nb = _mesAlertes.length;
     return GestureDetector(
-      onTap: () => Navigator.push(context,
-          MaterialPageRoute(builder: (_) => const MesAlertesPage())),
+      onTap: () {
+        if (nb == 1) {
+          _editAlerte(_mesAlertes.first);
+        } else {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAlertesPage()));
+        }
+      },
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -455,16 +479,17 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '$_nbAlertes alerte${_nbAlertes > 1 ? 's' : ''} active${_nbAlertes > 1 ? 's' : ''}',
+                    '$nb alerte${nb > 1 ? 's' : ''} active${nb > 1 ? 's' : ''}',
                     style: TextStyle(
                         fontFamily: 'Galey',
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
                         color: Colors.orange.shade800),
                   ),
-                  Text('Appuyez pour gérer vos alertes',
-                      style: TextStyle(
-                          fontFamily: 'Galey', fontSize: 12, color: Colors.orange.shade600)),
+                  Text(
+                    nb == 1 ? 'Appuyez pour gérer votre alerte' : 'Appuyez pour gérer vos alertes',
+                    style: TextStyle(
+                        fontFamily: 'Galey', fontSize: 12, color: Colors.orange.shade600)),
                 ],
               ),
             ),

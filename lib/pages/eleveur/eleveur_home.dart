@@ -30,7 +30,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
   Map<String, dynamic>? _profile;
   int _animalCount = 0;
   int _postCount = 0;
-  int _alerteCount = 0;
+  List<Map<String, dynamic>> _mesAlertes = [];
   bool _loading = true;
   List<Map<String, dynamic>> _recentAnnonces = [];
 
@@ -65,7 +65,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
           .limit(3);
       final alertes = await Supabase.instance.client
           .from('alertes_perdus')
-          .select('id')
+          .select()
           .eq('uid_proprietaire', uid)
           .eq('statut', 'perdu');
       if (!mounted) return;
@@ -74,7 +74,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
         _animalCount = (animaux as List).length;
         _postCount = (annonces as List).length;
         _recentAnnonces = List<Map<String, dynamic>>.from(recent);
-        _alerteCount = (alertes as List).length;
+        _mesAlertes = List<Map<String, dynamic>>.from(alertes as List);
         _loading = false;
       });
     } catch (_) {
@@ -99,7 +99,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
                         _buildStatsRow(),
-                        if (_alerteCount > 0) ...[
+                        if (_mesAlertes.isNotEmpty) ...[
                           const SizedBox(height: 16),
                           _buildAlerteBanner(context),
                         ],
@@ -228,10 +228,32 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
         ));
   }
 
+  Future<void> _editAlerte(Map<String, dynamic> a) async {
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => AlertePerduFormPage(
+        alerteId: a['id'] as String?,
+        animalId: a['animal_id'] as String?,
+        photoUrl: a['photo_url'] as String?,
+        nom:      a['nom_animal'] as String?,
+        espece:   a['espece'] as String?,
+        race:     a['race'] as String?,
+        sexe:     a['sexe'] as String?,
+        couleur:  a['couleur'] as String?,
+      ),
+    ));
+    _loadData();
+  }
+
   Widget _buildAlerteBanner(BuildContext context) {
+    final nb = _mesAlertes.length;
     return GestureDetector(
-      onTap: () => Navigator.push(context,
-          MaterialPageRoute(builder: (_) => const MesAlertesPage())),
+      onTap: () {
+        if (nb == 1) {
+          _editAlerte(_mesAlertes.first);
+        } else {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAlertesPage()));
+        }
+      },
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -249,16 +271,17 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
-                '$_alerteCount alerte${_alerteCount > 1 ? 's' : ''} active${_alerteCount > 1 ? 's' : ''}',
+                '$nb alerte${nb > 1 ? 's' : ''} active${nb > 1 ? 's' : ''}',
                 style: TextStyle(
                     fontFamily: 'Galey',
                     fontWeight: FontWeight.w700,
                     fontSize: 14,
                     color: Colors.orange.shade800),
               ),
-              Text('Animal${_alerteCount > 1 ? 'x' : ''} déclaré${_alerteCount > 1 ? 's' : ''} perdu${_alerteCount > 1 ? 's' : ''}',
-                  style: TextStyle(
-                      fontFamily: 'Galey', fontSize: 12, color: Colors.orange.shade600)),
+              Text(
+                nb == 1 ? 'Appuyez pour gérer votre alerte' : 'Appuyez pour gérer vos alertes',
+                style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 12, color: Colors.orange.shade600)),
             ]),
           ),
           Icon(Icons.chevron_right, color: Colors.orange.shade400),

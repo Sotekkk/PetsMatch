@@ -193,6 +193,69 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     setState(() { _raceSuggestions = matches; _showRaceSugg = matches.isNotEmpty; });
   }
 
+  String? get _currentUid => FirebaseAuth.instance.currentUser?.uid;
+
+  Future<void> _retrouveAlerte(String id) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Animal retrouvé ?',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('Confirmer que votre animal a été retrouvé ?',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler',
+                style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6F767B))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6E9E57), foregroundColor: Colors.white),
+            child: const Text('Confirmer', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await Supabase.instance.client.from('alertes_perdus').update({
+      'statut': 'retrouve',
+      'date_retrouve': DateTime.now().toIso8601String().substring(0, 10),
+    }).eq('id', id);
+    _load();
+  }
+
+  Future<void> _deleteAlerte(String id) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Supprimer l\'alerte ?',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('Cette alerte sera supprimée définitivement.',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler',
+                style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6F767B))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await Supabase.instance.client.from('alertes_perdus').delete().eq('id', id);
+    _load();
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
@@ -411,8 +474,17 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
             : ListView.builder(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                 itemCount: list.length,
-                itemBuilder: (_, i) =>
-                    _AlertCard(alerte: list[i], onTap: () => _showAlertDetail(list[i]), onShare: () => _share(list[i]), onContact: () => _contact(list[i])),
+                itemBuilder: (_, i) {
+                  final isOwn = list[i]['uid_proprietaire'] == _currentUid;
+                  return _AlertCard(
+                    alerte: list[i],
+                    onTap: () => _showAlertDetail(list[i]),
+                    onShare: () => _share(list[i]),
+                    onContact: () => _contact(list[i]),
+                    onRetrouve: isOwn ? () => _retrouveAlerte(list[i]['id'] as String) : null,
+                    onDelete: isOwn ? () => _deleteAlerte(list[i]['id'] as String) : null,
+                  );
+                },
               ),
       ),
     ]);
@@ -669,8 +741,61 @@ class _AlertCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onShare;
   final VoidCallback onContact;
+  final VoidCallback? onRetrouve;
+  final VoidCallback? onDelete;
 
-  const _AlertCard({required this.alerte, required this.onTap, required this.onShare, required this.onContact});
+  const _AlertCard({
+    required this.alerte,
+    required this.onTap,
+    required this.onShare,
+    required this.onContact,
+    this.onRetrouve,
+    this.onDelete,
+  });
+
+  void _showOwnerActions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+                color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+          ),
+          if (onRetrouve != null)
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              leading: const CircleAvatar(
+                backgroundColor: Color(0xFFEEF5EA),
+                child: Icon(Icons.check_circle_outline, color: Color(0xFF6E9E57)),
+              ),
+              title: const Text('Animal retrouvé !',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              onTap: () { Navigator.pop(context); onRetrouve!(); },
+            ),
+          if (onDelete != null)
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              leading: const CircleAvatar(
+                backgroundColor: Color(0xFFFFEBEE),
+                child: Icon(Icons.delete_outline, color: Colors.red),
+              ),
+              title: const Text('Supprimer l\'alerte',
+                  style: TextStyle(
+                      fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.red)),
+              onTap: () { Navigator.pop(context); onDelete!(); },
+            ),
+        ]),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -695,6 +820,9 @@ class _AlertCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
+      onLongPress: (onRetrouve != null || onDelete != null)
+          ? () => _showOwnerActions(context)
+          : null,
       child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
