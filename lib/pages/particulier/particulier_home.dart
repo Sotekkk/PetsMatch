@@ -14,7 +14,6 @@ import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
-import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 
 class ParticulierHomePage extends StatefulWidget {
   const ParticulierHomePage({super.key});
@@ -96,22 +95,6 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
     } catch (_) {
       if (mounted) setState(() => _loadingAlertes = false);
     }
-  }
-
-  Future<void> _editAlerte(Map<String, dynamic> a) async {
-    await Navigator.push(context, MaterialPageRoute(
-      builder: (_) => AlertePerduFormPage(
-        alerteId: a['id'] as String?,
-        animalId: a['animal_id'] as String?,
-        photoUrl: a['photo_url'] as String?,
-        nom:      a['nom_animal'] as String?,
-        espece:   a['espece'] as String?,
-        race:     a['race'] as String?,
-        sexe:     a['sexe'] as String?,
-        couleur:  a['couleur'] as String?,
-      ),
-    ));
-    _load();
   }
 
   void _shareAlerte(Map<String, dynamic> a) {
@@ -452,13 +435,8 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
   Widget _buildAlerteBanner() {
     final nb = _mesAlertes.length;
     return GestureDetector(
-      onTap: () {
-        if (nb == 1) {
-          _editAlerte(_mesAlertes.first);
-        } else {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAlertesPage()));
-        }
-      },
+      onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const MesAlertesPage())),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(

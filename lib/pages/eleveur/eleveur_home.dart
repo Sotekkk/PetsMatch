@@ -228,32 +228,11 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
         ));
   }
 
-  Future<void> _editAlerte(Map<String, dynamic> a) async {
-    await Navigator.push(context, MaterialPageRoute(
-      builder: (_) => AlertePerduFormPage(
-        alerteId: a['id'] as String?,
-        animalId: a['animal_id'] as String?,
-        photoUrl: a['photo_url'] as String?,
-        nom:      a['nom_animal'] as String?,
-        espece:   a['espece'] as String?,
-        race:     a['race'] as String?,
-        sexe:     a['sexe'] as String?,
-        couleur:  a['couleur'] as String?,
-      ),
-    ));
-    _loadData();
-  }
-
   Widget _buildAlerteBanner(BuildContext context) {
     final nb = _mesAlertes.length;
     return GestureDetector(
-      onTap: () {
-        if (nb == 1) {
-          _editAlerte(_mesAlertes.first);
-        } else {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAlertesPage()));
-        }
-      },
+      onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const MesAlertesPage())),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
