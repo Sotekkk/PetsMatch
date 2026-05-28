@@ -52,8 +52,6 @@
 
 | # | Tâche | Priorité | App / Web | Fichiers de départ |
 |---|---|---|---|---|
-| S05 | Accès carnet santé animal (permissions pro) | Haute | App + Web | Créer table `animal_acces_pro` |
-| S06 | Envoi ordonnances / comptes rendus | Moyenne | App + Web | Créer table `ordonnances` + `comptes_rendus` |
 | S07 | Registre pension (entrée/sortie) | Moyenne | App + Web | Réutiliser logique `registre_entree_sortie` |
 | S08 | Animal Friendly — carte + ajout lieu | Haute | App + Web | Créer `lib/pages/animal_friendly/` + `src/app/animal-friendly/` |
 | S09 | Événements — création + inscription + rappels | Moyenne | App + Web | Créer `lib/pages/evenements/` + `src/app/evenements/` |
@@ -75,7 +73,7 @@
 
 ---
 
-## Terminé — Nabil (S01, S02, S03, S04)
+## Terminé — Nabil (S01, S02, S03, S04, S05, S06)
 
 | Tâche | Date | Repo | Fichiers modifiés |
 |---|---|---|---|
@@ -84,6 +82,9 @@
 | S03 — Page Services web + lien Header nav + drawers éleveur & particulier | 2026-05-27 | Web | `website/src/app/services/page.tsx`, `website/src/components/Header.tsx` |
 | S04 — Agenda RDV : UI pro (pro_agenda.dart — 3 onglets demandes/à venir/historique + notes) + UI client (rdv_booking_page.dart — date/heure/animal/motif) + detail page profil pro (service_detail_page.dart) | 2026-05-27 | App | `pro_agenda.dart`, `rdv_booking_page.dart`, `service_detail_page.dart`, `service_list_page.dart` |
 | Fix — Badge "Éleveur vérifié" → "Professionnel" pour pros ; navigation profil → ProProfileEditPage si isPro ; cat_pro + is_pro auto-inféré à la sauvegarde | 2026-05-27 | App | `eleveur_nav.dart`, `eleveur_home.dart`, `user_elevage_feed.dart`, `pro_profile_edit.dart` |
+| S05 — Accès carnet santé animal : `animal_acces_page.dart` (demande + vue carnet), icône agenda RDV confirmé/terminé avec animal | 2026-05-28 | App | `animal_acces_page.dart`, `pro_agenda.dart` |
+| S06 — CR & ordonnances : `compte_rendu_page.dart` (2 onglets texte/URL), icône agenda, sauvegarde `comptes_rendus` + `ordonnances` | 2026-05-28 | App | `compte_rendu_page.dart`, `pro_agenda.dart` |
+| Fix — Nav pro : sections "Mon Élevage" et "Annonces" masquées pour les pros dans le drawer | 2026-05-28 | App | `eleveur_nav.dart` |
 
 ---
 
