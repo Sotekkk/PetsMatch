@@ -470,14 +470,23 @@ export default function FeedPage() {
       onClick={() => shareItem && setShareItem(null)}>
       <div className="relative w-full h-full max-w-sm mx-auto">
 
-        {/* Photo de fond */}
+        {/* Photo fond flouté + photo nette */}
         {currentPhoto && (
-          <Image
-            key={`${itemIndex}-${photoIndex}`}
-            src={currentPhoto} alt={item.nom}
-            fill className="object-contain"
-            priority
-          />
+          <>
+            <Image
+              key={`${itemIndex}-${photoIndex}-bg`}
+              src={currentPhoto} alt=""
+              fill className="object-cover scale-110 blur-2xl opacity-60"
+              aria-hidden="true"
+            />
+            <div className="absolute inset-0 bg-black/30" />
+            <Image
+              key={`${itemIndex}-${photoIndex}`}
+              src={currentPhoto} alt={item.nom}
+              fill className="object-contain relative z-10"
+              priority
+            />
+          </>
         )}
 
         {/* Zones de tap pour changer de photo */}

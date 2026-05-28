@@ -356,9 +356,9 @@ function AnnonceCard({ annonce: a }: { annonce: Annonce }) {
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-      <div className="aspect-square bg-gray-100 relative">
+      <div className="aspect-[4/3] bg-[#F5F5F0] relative">
         {photo ? (
-          <Image src={photo} alt={a.titre ?? ''} fill className="object-cover" />
+          <Image src={photo} alt={a.titre ?? ''} fill className="object-contain" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-5xl">🐾</div>
         )}
