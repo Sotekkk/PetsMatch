@@ -514,7 +514,7 @@ class _PorteeCard extends StatelessWidget {
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2, crossAxisSpacing: 10,
-            mainAxisSpacing: 10, childAspectRatio: 0.85),
+            mainAxisSpacing: 10, childAspectRatio: 0.60),
           itemCount: animaux.length,
           itemBuilder: (_, i) => _BabyCard(animal: animaux[i]),
         ),
@@ -565,22 +565,25 @@ class _BabyCard extends StatelessWidget {
               blurRadius: 4, offset: const Offset(0, 2))],
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-            child: Stack(fit: StackFit.expand, children: [
-              photo,
-              Positioned(top: 6, right: 6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(color: Colors.black45,
-                      borderRadius: BorderRadius.circular(8)),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.photo_library_outlined, color: Colors.white, size: 10),
-                    SizedBox(width: 3),
-                    Text('Voir', style: TextStyle(color: Colors.white,
-                        fontSize: 9, fontFamily: 'Galey')),
-                  ]))),
-            ]))),
+          AspectRatio(
+            aspectRatio: 1.0,
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              child: Stack(fit: StackFit.expand, children: [
+                photo,
+                Positioned(top: 6, right: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(color: Colors.black45,
+                        borderRadius: BorderRadius.circular(8)),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.photo_library_outlined, color: Colors.white, size: 10),
+                      SizedBox(width: 3),
+                      Text('Voir', style: TextStyle(color: Colors.white,
+                          fontSize: 9, fontFamily: 'Galey')),
+                    ]))),
+              ])),
+          ),
           Padding(padding: const EdgeInsets.all(8), child: Column(
             crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(

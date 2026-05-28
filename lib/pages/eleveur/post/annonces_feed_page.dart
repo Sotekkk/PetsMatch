@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' show thumbUrl;
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -30,6 +31,7 @@ class _FeedItem {
   final String? uidEleveur;
   final String? nomEleveur;
   final String? photoEleveur;
+  final bool pedigree;
 
   const _FeedItem({
     required this.annonceId, required this.bebeIndex,
@@ -37,13 +39,14 @@ class _FeedItem {
     this.race, this.espece, this.sexe, this.prix,
     this.statut, this.description, this.ville,
     this.uidEleveur, this.nomEleveur, this.photoEleveur,
+    this.pedigree = false,
   });
 
   _FeedItem withPhoto(String? p) => _FeedItem(
     annonceId: annonceId, bebeIndex: bebeIndex, photos: photos, nom: nom,
     race: race, espece: espece, sexe: sexe, prix: prix, statut: statut,
     description: description, ville: ville, uidEleveur: uidEleveur,
-    nomEleveur: nomEleveur, photoEleveur: p,
+    nomEleveur: nomEleveur, photoEleveur: p, pedigree: pedigree,
   );
 }
 
@@ -72,6 +75,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
           description: b['description'] as String?,
           ville: a['ville_eleveur'] as String?,
           uidEleveur: uid, nomEleveur: nomEleveur,
+          pedigree: b['pedigree'] == true,
         ));
       }
     } else if (aPhotos.isNotEmpty) {
@@ -526,202 +530,218 @@ class _FeedCardState extends State<_FeedCard> with SingleTickerProviderStateMixi
 
     return Stack(children: [
 
-      // Photos
-      PageView.builder(
-        controller: _horizCtrl,
-        itemCount: photos.length,
-        onPageChanged: (i) => setState(() => _photoIndex = i),
-        itemBuilder: (_, pi) => CachedNetworkImage(
-          imageUrl: thumbUrl(photos[pi], width: 800, quality: 80, resize: 'contain'),
-          fit: BoxFit.contain,
-          width: double.infinity, height: double.infinity,
-          placeholder: (_, __) => Container(color: Colors.black),
-          errorWidget: (_, __, ___) => Container(color: const Color(0xFF111111),
-              child: const Center(child: Icon(Icons.pets, color: Colors.white24, size: 60))),
-        ),
-      ),
-
-      // Dégradé
-      Positioned.fill(child: IgnorePointer(child: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter, end: Alignment.bottomCenter,
-            colors: [Color(0x55000000), Colors.transparent, Colors.transparent, Color(0xCC000000)],
-            stops: [0, 0.2, 0.5, 1],
+      // ── Fond flouté plein écran ───────────────────────────────────────────
+      Positioned.fill(
+        child: ImageFiltered(
+          imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+          child: CachedNetworkImage(
+            imageUrl: thumbUrl(photos[_photoIndex], width: 300, quality: 30),
+            fit: BoxFit.cover,
+            width: double.infinity, height: double.infinity,
+            placeholder: (_, __) => Container(color: Colors.black),
           ),
         ),
-      ))),
-
-      // Bouton fermer
-      Positioned(top: safe.top + 8, left: 16,
-        child: _CircleBtn(icon: Icons.close, onTap: widget.onBack)),
-
-      // Flèches photos
-      if (photos.length > 1) ...[
-        if (_photoIndex > 0)
-          Positioned(left: 12, top: 0, bottom: 0,
-            child: Center(child: _CircleBtn(icon: Icons.chevron_left,
-                onTap: () => _horizCtrl.previousPage(
-                    duration: const Duration(milliseconds: 250), curve: Curves.easeInOut)))),
-        if (_photoIndex < photos.length - 1)
-          Positioned(right: 72, top: 0, bottom: 0,
-            child: Center(child: _CircleBtn(icon: Icons.chevron_right,
-                onTap: () => _horizCtrl.nextPage(
-                    duration: const Duration(milliseconds: 250), curve: Curves.easeInOut)))),
-      ],
-
-      // ── Colonne droite TikTok ────────────────────────────────────────────────
-      Positioned(
-        right: 8, bottom: safe.bottom + 100,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-
-          // Photo éleveur → profil
-          GestureDetector(
-            onTap: widget.onEleveurTap,
-            child: Container(
-              width: 44, height: 44,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-                boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 4)],
-              ),
-              child: ClipOval(
-                child: item.photoEleveur?.isNotEmpty == true
-                    ? CachedNetworkImage(imageUrl: item.photoEleveur!,
-                        width: 44, height: 44, fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => _EleveurPhotoPlaceholder())
-                    : _EleveurPhotoPlaceholder(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // ❤️ Like
-          ScaleTransition(
-            scale: _likeScale,
-            child: _ActionIcon(
-              icon: widget.isLiked ? Icons.favorite : Icons.favorite_border,
-              color: widget.isLiked ? Colors.redAccent : Colors.white,
-              label: 'J\'aime',
-              onTap: () { widget.onLike(); _likeAnim.forward(from: 0); },
-            ),
-          ),
-          const SizedBox(height: 6),
-
-          // 🔖 Favoris
-          _ActionIcon(
-            icon: widget.isFavorited ? Icons.bookmark : Icons.bookmark_border,
-            color: widget.isFavorited ? Colors.amber : Colors.white,
-            label: 'Sauvegarder',
-            onTap: widget.onFavorite,
-          ),
-          const SizedBox(height: 6),
-
-          // ✉️ Message
-          _ActionIcon(
-            icon: Icons.mail_outline_rounded,
-            color: Colors.white,
-            label: 'Message',
-            onTap: widget.onMessage,
-          ),
-          const SizedBox(height: 6),
-
-          // ↗ Partager
-          _ActionIcon(
-            icon: Icons.share_outlined,
-            color: Colors.white,
-            label: 'Partager',
-            onTap: widget.onShare,
-          ),
-        ]),
       ),
+      Positioned.fill(child: IgnorePointer(child: Container(color: Colors.black.withValues(alpha: 0.45)))),
 
-      // ── Infos bas (nom → race → ville → description) ─────────────────────────
-      Positioned(
-        bottom: 0, left: 0, right: 66,
-        child: GestureDetector(
-          onTap: item.description?.isNotEmpty == true
-              ? () => setState(() => _descExpanded = !_descExpanded)
-              : null,
-          behavior: HitTestBehavior.opaque,
-          child: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                colors: [Colors.transparent, Colors.black87],
-                stops: [0, 0.55],
+      // ── Layout principal : header + photo carrée ──────────────────────────
+      Column(children: [
+
+        // Header élevage
+        Container(
+          color: Colors.black.withValues(alpha: 0.28),
+          padding: EdgeInsets.fromLTRB(8, safe.top + 6, 16, 12),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+            _CircleBtn(icon: Icons.close, onTap: widget.onBack),
+            const SizedBox(width: 12),
+            GestureDetector(
+              onTap: widget.onEleveurTap,
+              child: Container(
+                width: 46, height: 46,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: ClipOval(child: item.photoEleveur?.isNotEmpty == true
+                    ? CachedNetworkImage(imageUrl: item.photoEleveur!, fit: BoxFit.cover, width: 46, height: 46)
+                    : Container(color: const Color(0xFF0C5C6C),
+                        child: const Icon(Icons.store_outlined, color: Colors.white, size: 20))),
               ),
             ),
-            padding: EdgeInsets.fromLTRB(16, 80, 16, safe.bottom + 14),
+            const SizedBox(width: 12),
+            Expanded(
+              child: GestureDetector(
+                onTap: widget.onEleveurTap,
+                child: Text(
+                  item.nomEleveur ?? '',
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 22, color: Colors.white,
+                    shadows: [Shadow(color: Colors.black54, blurRadius: 8)],
+                  ),
+                ),
+              ),
+            ),
+          ]),
+        ),
+
+        const SizedBox(height: 26),
+
+        // ── Photo carrée (contain + flou derrière) ───────────────────────────
+        AspectRatio(
+          aspectRatio: 1,
+          child: Stack(children: [
+            // Fond flouté derrière la photo
+            Positioned.fill(
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: CachedNetworkImage(
+                  imageUrl: thumbUrl(photos[_photoIndex], width: 200, quality: 20),
+                  fit: BoxFit.cover, width: double.infinity, height: double.infinity,
+                ),
+              ),
+            ),
+            // Photo figée (recadrage original respecté)
+            PageView.builder(
+              controller: _horizCtrl,
+              itemCount: photos.length,
+              onPageChanged: (i) => setState(() => _photoIndex = i),
+              itemBuilder: (_, pi) => CachedNetworkImage(
+                imageUrl: thumbUrl(photos[pi], width: 800, quality: 85, resize: 'contain'),
+                fit: BoxFit.contain,
+                width: double.infinity, height: double.infinity,
+                errorWidget: (_, __, ___) => Container(color: const Color(0xFF111111),
+                    child: const Center(child: Icon(Icons.pets, color: Colors.white24, size: 60))),
+              ),
+            ),
+            // Flèches
+            if (photos.length > 1) ...[
+              if (_photoIndex > 0)
+                Positioned(left: 12, top: 0, bottom: 0,
+                  child: Center(child: _CircleBtn(icon: Icons.chevron_left,
+                      onTap: () => _horizCtrl.previousPage(
+                          duration: const Duration(milliseconds: 250), curve: Curves.easeInOut)))),
+              if (_photoIndex < photos.length - 1)
+                Positioned(right: 12, top: 0, bottom: 0,
+                  child: Center(child: _CircleBtn(icon: Icons.chevron_right,
+                      onTap: () => _horizCtrl.nextPage(
+                          duration: const Duration(milliseconds: 250), curve: Curves.easeInOut)))),
+              Positioned(bottom: 8, left: 16, right: 16,
+                child: Row(children: photos.asMap().entries.map((e) => Expanded(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    height: 2, margin: const EdgeInsets.symmetric(horizontal: 1),
+                    decoration: BoxDecoration(
+                      color: e.key == _photoIndex ? Colors.white : Colors.white54,
+                      borderRadius: BorderRadius.circular(1),
+                    ),
+                  ),
+                )).toList()),
+              ),
+            ],
+          ]),
+        ),
+
+        // ── Infos + boutons (espace restant) ─────────────────────────────────
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 8, 14),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Nom + sexe + prix
+                // Nom + sexe + prix (pleine largeur)
                 Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
                   if (item.sexe != null) ...[
                     Text(item.sexe == 'male' ? '♂' : '♀',
-                        style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 6),
+                        style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(width: 5),
                   ],
                   Expanded(child: Text(item.nom,
                       style: const TextStyle(color: Colors.white, fontFamily: 'Galey',
-                          fontWeight: FontWeight.w700, fontSize: 22),
+                          fontWeight: FontWeight.w700, fontSize: 20),
                       maxLines: 1, overflow: TextOverflow.ellipsis)),
                   if (item.prix != null) ...[
                     const SizedBox(width: 8),
                     Text('${item.prix!.toInt()} €',
                         style: const TextStyle(color: Colors.white, fontFamily: 'Galey',
-                            fontWeight: FontWeight.w700, fontSize: 18)),
+                            fontWeight: FontWeight.w700, fontSize: 16)),
                   ],
                 ]),
-                // Race + ville
-                if (item.race?.isNotEmpty == true || item.ville?.isNotEmpty == true)
-                  Padding(padding: const EdgeInsets.only(top: 3),
-                    child: Row(children: [
-                      if (item.race?.isNotEmpty == true)
-                        Expanded(child: Text(item.race!,
-                            style: const TextStyle(color: Colors.white70, fontFamily: 'Galey', fontSize: 14),
-                            maxLines: 1, overflow: TextOverflow.ellipsis)),
-                      if (item.ville?.isNotEmpty == true)
-                        Text('📍 ${item.ville}',
-                            style: const TextStyle(color: Colors.white54, fontFamily: 'Galey', fontSize: 12)),
-                    ])),
-                // Éleveur
-                if (item.nomEleveur?.isNotEmpty == true)
-                  Padding(padding: const EdgeInsets.only(top: 2),
-                    child: Text('🏡 ${item.nomEleveur}',
-                        style: const TextStyle(color: Colors.white54, fontFamily: 'Galey', fontSize: 11),
-                        maxLines: 1, overflow: TextOverflow.ellipsis)),
-                // Description expandable
-                if (item.description?.isNotEmpty == true) ...[
-                  const SizedBox(height: 8),
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeInOut,
-                    alignment: Alignment.bottomLeft,
-                    child: _descExpanded
-                      ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(item.description!,
-                              style: const TextStyle(color: Colors.white, fontFamily: 'Galey', fontSize: 13,
-                                  shadows: [Shadow(color: Colors.black54, blurRadius: 6)])),
-                          const SizedBox(height: 4),
-                          const Text('↑ Moins', style: TextStyle(color: Colors.white, fontFamily: 'Galey',
-                              fontSize: 12, fontWeight: FontWeight.w700)),
-                        ])
-                      : Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                          Expanded(child: Text(item.description!,
-                              style: const TextStyle(color: Colors.white70, fontFamily: 'Galey', fontSize: 13,
-                                  shadows: [Shadow(color: Colors.black54, blurRadius: 6)]),
-                              maxLines: 2, overflow: TextOverflow.ellipsis)),
-                          const SizedBox(width: 6),
-                          const Text('+ Lire', style: TextStyle(color: Colors.white, fontFamily: 'Galey',
-                              fontSize: 12, fontWeight: FontWeight.w700)),
-                        ]),
+                // Race + LOF + ville (pleine largeur)
+                Padding(padding: const EdgeInsets.only(top: 4),
+                  child: Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                    if (item.race?.isNotEmpty == true)
+                      Text(item.race!,
+                          style: const TextStyle(color: Colors.white70, fontFamily: 'Galey', fontSize: 13),
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: item.pedigree
+                            ? const Color(0xFF0C5C6C).withValues(alpha: 0.85)
+                            : Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: item.pedigree ? const Color(0xFF0C5C6C) : Colors.white30,
+                        ),
+                      ),
+                      child: Text(
+                        item.pedigree ? 'LOF' : 'Non LOF',
+                        style: const TextStyle(color: Colors.white, fontFamily: 'Galey',
+                            fontSize: 11, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    if (item.ville?.isNotEmpty == true)
+                      Text('📍 ${item.ville}',
+                          style: const TextStyle(color: Colors.white54, fontFamily: 'Galey', fontSize: 12)),
+                  ])),
+                const SizedBox(height: 6),
+                // Description (gauche) + boutons (droite) alignés en haut
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: item.description?.isNotEmpty == true
+                          ? GestureDetector(
+                              onTap: () => setState(() => _descExpanded = !_descExpanded),
+                              child: Text(
+                                item.description!,
+                                style: const TextStyle(color: Colors.white70, fontFamily: 'Galey', fontSize: 13,
+                                    shadows: [Shadow(color: Colors.black54, blurRadius: 6)]),
+                                overflow: TextOverflow.fade,
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                      ),
+                      const SizedBox(width: 10),
+                      // ── Boutons actions (niveau description) ───────────────
+                      Column(mainAxisSize: MainAxisSize.min, children: [
+                        ScaleTransition(
+                          scale: _likeScale,
+                          child: _ActionIcon(
+                            icon: widget.isLiked ? Icons.favorite : Icons.favorite_border,
+                            color: widget.isLiked ? Colors.redAccent : Colors.white,
+                            label: 'J\'aime', size: 40,
+                            onTap: () { widget.onLike(); _likeAnim.forward(from: 0); },
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        _ActionIcon(
+                          icon: widget.isFavorited ? Icons.bookmark : Icons.bookmark_border,
+                          color: widget.isFavorited ? Colors.amber : Colors.white,
+                          label: 'Sauvegarder', size: 40, onTap: widget.onFavorite,
+                        ),
+                        const SizedBox(height: 6),
+                        _ActionIcon(icon: Icons.mail_outline_rounded, color: Colors.white, label: 'Message', size: 40, onTap: widget.onMessage),
+                        const SizedBox(height: 6),
+                        _ActionIcon(icon: Icons.share_outlined, color: Colors.white, label: 'Partager', size: 40, onTap: widget.onShare),
+                      ]),
+                    ],
                   ),
-                ],
+                ),
                 const SizedBox(height: 10),
-                // Voir annonce
                 GestureDetector(
                   onTap: widget.onDetail,
                   child: Container(
@@ -736,25 +756,11 @@ class _FeedCardState extends State<_FeedCard> with SingleTickerProviderStateMixi
                             fontWeight: FontWeight.w600, fontSize: 13)),
                   ),
                 ),
-                // Barre photos
-                if (photos.length > 1) ...[
-                  const SizedBox(height: 10),
-                  Row(children: photos.asMap().entries.map((e) => Expanded(
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      height: 2, margin: const EdgeInsets.symmetric(horizontal: 1),
-                      decoration: BoxDecoration(
-                        color: e.key == _photoIndex ? Colors.white : Colors.white30,
-                        borderRadius: BorderRadius.circular(1),
-                      ),
-                    ),
-                  )).toList()),
-                ],
               ],
             ),
           ),
         ),
-      ),
+      ]),
     ]);
   }
 }
@@ -766,18 +772,19 @@ class _ActionIcon extends StatelessWidget {
   final Color color;
   final String label;
   final VoidCallback onTap;
-  const _ActionIcon({required this.icon, required this.color, required this.label, required this.onTap});
+  final double size;
+  const _ActionIcon({required this.icon, required this.color, required this.label, required this.onTap, this.size = 44});
 
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
     child: Container(
-      width: 44, height: 44,
+      width: size, height: size,
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(size / 2),
       ),
-      child: Icon(icon, color: color, size: 24),
+      child: Icon(icon, color: color, size: size * 0.55),
     ),
   );
 }

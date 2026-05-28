@@ -62,7 +62,8 @@ Future<String> uploadRawFile(File file, String storagePath) async {
 
 /// Transform a Supabase Storage URL for thumbnail display.
 /// Returns the original URL if it is not a Supabase Storage URL.
-String thumbUrl(String url, {int width = 600, int quality = 75, String resize = 'cover'}) {
+String thumbUrl(String url, {int width = 600, int? height, int quality = 75, String resize = 'cover'}) {
   if (!url.contains('/storage/v1/object/public/')) return url;
-  return '${url.replaceFirst('/storage/v1/object/', '/storage/v1/render/image/')}?width=$width&quality=$quality&resize=$resize';
+  final h = height != null ? '&height=$height' : '';
+  return '${url.replaceFirst('/storage/v1/object/', '/storage/v1/render/image/')}?width=$width$h&quality=$quality&resize=$resize';
 }

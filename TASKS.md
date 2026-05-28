@@ -141,11 +141,7 @@
 
 - **✅ Supabase migration faite (saillie_prix)** : colonne `saillie_prix float8` + `saillie_conditions text` ajoutées sur `annonces`. Utiliser `float8` (pas `numeric`) pour les colonnes prix — `numeric` est renvoyé en string par PostgREST.
 
-- **⚠️ Supabase migration requise (A08)** : ajouter colonne `gestation_confirmee` sur la table `gestations` :
-  ```sql
-  ALTER TABLE gestations ADD COLUMN IF NOT EXISTS gestation_confirmee boolean DEFAULT false;
-  ```
-  Sans cette colonne, le switch "Gestation confirmée" est silencieusement ignoré (le reste fonctionne).
+- **✅ Supabase migration faite (A08)** : colonne `gestation_confirmee boolean DEFAULT false` ajoutée sur `gestations`. Le switch "Gestation confirmée" fonctionne.
 
 - **Architecture** : Firebase Auth = auth uniquement. Toutes les données métier = Supabase. Ne jamais écrire de nouvelles données dans Firestore.
 - **Firestore résiduel** : `post` (feed social), `conversations` (messagerie), `likedPost`, `bloquer` — à migrer progressivement, ne pas y ajouter de nouvelles features

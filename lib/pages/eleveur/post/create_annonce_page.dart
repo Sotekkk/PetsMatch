@@ -24,6 +24,8 @@ class CreateAnnoncePage extends StatefulWidget {
   State<CreateAnnoncePage> createState() => _CreateAnnoncePageState();
 }
 
+num? _toNum(dynamic v) => v is num ? v : v is String ? num.tryParse(v) : null;
+
 class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   static const _teal = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
@@ -162,14 +164,14 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _photosUrls = List<String>.from(d['photos'] ?? []);
     _titreCtrl.text = d['titre'] ?? '';
     _descCtrl.text  = d['description'] ?? '';
-    _prixCtrl.text  = (d['prix'] as num?)?.toStringAsFixed(0) ?? '';
+    _prixCtrl.text  = _toNum(d['prix'])?.toStringAsFixed(0) ?? '';
     _prixNegociable = d['prix_negociable'] ?? d['prixNegociable'] ?? false;
     _statut = d['statut'] ?? 'disponible';
     // Date naissance portée : Timestamp (Firestore) ou String ISO (Supabase)
     final dnRaw = d['date_naissance'] ?? d['dateNaissance'];
     if (dnRaw is Timestamp) _dateNaissance = dnRaw.toDate();
     else if (dnRaw is String && dnRaw.isNotEmpty) _dateNaissance = DateTime.tryParse(dnRaw);
-    _nombreBebes = ((d['nombre_bebes'] ?? d['nombreBebes']) as num?)?.toInt() ?? 1;
+    _nombreBebes = _toNum(d['nombre_bebes'] ?? d['nombreBebes'])?.toInt() ?? 1;
     _animauxPortee = List<Map<String, dynamic>>.from(d['animaux_portee'] ?? d['animauxPortee'] ?? []);
     _mereAnimalId  = d['mere_animal_id'] ?? d['mereAnimalId'];
     _merePhotoUrl  = d['mere_photo_url'] ?? d['merePhotoUrl'];
@@ -195,9 +197,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _vermifuge      = d['vermifuge']     ?? false;
     _identification = d['identification'] ?? false;
     _bilanSante     = d['bilan_sante'] ?? d['bilanSante'] ?? false;
-    _semaines = (d['semaines'] as num?)?.toInt() ?? 8;
-    _prixMinPorteeCtrl.text = ((d['prix_min_portee'] ?? d['prixMinPortee']) as num?)?.toInt().toString() ?? '';
-    _prixMaxPorteeCtrl.text = ((d['prix_max_portee'] ?? d['prixMaxPortee']) as num?)?.toInt().toString() ?? '';
+    _semaines = _toNum(d['semaines'])?.toInt() ?? 8;
+    _prixMinPorteeCtrl.text = _toNum(d['prix_min_portee'] ?? d['prixMinPortee'])?.toInt().toString() ?? '';
+    _prixMaxPorteeCtrl.text = _toNum(d['prix_max_portee'] ?? d['prixMaxPortee'])?.toInt().toString() ?? '';
     _etalonAnimalId   = d['etalon_animal_id'] ?? d['etalonAnimalId'];
     _sexe = d['sexe'] ?? 'male';
     _couleurCtrl.text     = d['couleur'] ?? '';
@@ -243,8 +245,53 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
 
   // ── Photo helpers ─────────────────────────────────────────────────────────────
 
-  Future<File?> _pickAndCrop() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 90);
+  Future<ImageSource?> _showPhotoSourceSheet() => showModalBottomSheet<ImageSource>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (_) => Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 16),
+        const Text('Ajouter une photo',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
+        const SizedBox(height: 16),
+        ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          tileColor: const Color(0xFF6E9E57).withValues(alpha: 0.07),
+          leading: Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(color: const Color(0xFF6E9E57).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
+            child: const Icon(Icons.camera_alt_outlined, color: Color(0xFF6E9E57)),
+          ),
+          title: const Text('Prendre une photo', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          subtitle: const Text('Ouvrir la caméra', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+          onTap: () => Navigator.pop(context, ImageSource.camera),
+        ),
+        const SizedBox(height: 10),
+        ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          tileColor: const Color(0xFF0C5C6C).withValues(alpha: 0.07),
+          leading: Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(color: const Color(0xFF0C5C6C).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
+            child: const Icon(Icons.photo_library_outlined, color: Color(0xFF0C5C6C)),
+          ),
+          title: const Text('Choisir depuis la galerie', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          subtitle: const Text('Sélectionner une photo existante', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+          onTap: () => Navigator.pop(context, ImageSource.gallery),
+        ),
+      ]),
+    ),
+  );
+
+  Future<File?> _pickAndCrop({ImageSource source = ImageSource.gallery}) async {
+    final picked = await ImagePicker().pickImage(source: source, imageQuality: 90);
     if (picked == null) return null;
     final cropped = await ImageCropper().cropImage(
       sourcePath: picked.path,
@@ -275,7 +322,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
           const SnackBar(content: Text('Maximum 4 photos', style: TextStyle(fontFamily: 'Galey'))));
       return;
     }
-    final f = await _pickAndCrop();
+    final source = await _showPhotoSourceSheet();
+    if (source == null) return;
+    final f = await _pickAndCrop(source: source);
     if (f != null) setState(() => _photosFiles.add(f));
   }
 
@@ -1515,7 +1564,7 @@ class _AddAnimalPageState extends State<_AddAnimalPage> {
     if (d != null) {
       _nomCtrl.text     = d['nom'] ?? '';
       _couleurCtrl.text = d['couleur'] ?? '';
-      _prixCtrl.text    = (d['prix'] as num?)?.toInt().toString() ?? '';
+      _prixCtrl.text    = _toNum(d['prix'])?.toInt().toString() ?? '';
       _descCtrl.text    = d['description'] ?? '';
       _sexe   = d['sexe'] ?? 'male';
       _statut = d['statut'] ?? 'disponible';
