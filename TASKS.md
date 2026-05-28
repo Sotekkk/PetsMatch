@@ -26,16 +26,15 @@
 | A14 | Vue fiche animal pour particuliers — identique à la vue carte profil éleveur | Haute | App + Web | À créer dans profil particulier |
 | A15 | Profil particulier — revoir mise en page (app) | Moyenne | App | `particulier_home.dart`, `info_utilisateur.dart` |
 | A16 | Vue admin dans l'appli web | Haute | Web | `src/app/admin/` à créer |
-| A17 | Fix overflow — cards annonces "Trouver un compagnon" (1 px) + animaux perdus (7.4 px) | Haute | App | `trouver_compagnon_page.dart`, `animaux_perdus_page.dart` |
 | A18 | Espèce âne — ajouter partout (listes espèces, filtres, formulaires) + créer `donkey_breeds.json` | Haute | App + Web | Tous les sélecteurs d'espèce + assets |
 | A19 | Feed — filtre race dynamique selon espèce (liste JSON par espèce) | Haute | App + Web | `annonces_feed_page.dart`, `annonces/feed/page.tsx` |
+| A20 | Carte annonces compagnons — filtres par espèce, race, région, ville, pays, département | Haute | App | `annonces_map_page.dart` |
 
 ### App mobile + Web (synchronisés)
 
 | # | Tâche | Priorité | Repo | Notes |
 |---|---|---|---|---|
 | T03 | Animaux perdus — contact via messagerie (objet auto) | Moyenne | App + Web | Roadmap §I.B |
-| T06 | Fiche animal — onglet suivi repro éleveur (chaleurs, saillie, gestation) | Haute | App + Web | Roadmap §III.A.a |
 | T07 | Carnet de santé — notifications vaccins/antiparasitaires (J-7, J-1, J) | Haute | App | Roadmap §III.A.b |
 | T08 | Fiche animal — courbe de poids (croissance + adulte) | Moyenne | App + Web | Roadmap §III.A.b |
 | T09 | Transfert de propriété animal (vente → email acheteur) | Haute | App + Web | Roadmap §III.A.c |
@@ -110,6 +109,7 @@
 | Fiche animal — champs importation_ref, date_naissance_mere, catégories documents | 2026-05 | Web | `mes-animaux/[id]/page.tsx` |
 | A05 — Registre entrée/sortie : auto-fill provenance nom+adresse éleveur au choix "Naissance" | 2026-05 | App + Web | `registre_entree_sortie.dart`, `elevage/registre-entree-sortie/page.tsx` |
 | A06 — Registre entrée/sortie : affichage infos mère (nom + puce) si animal né dans l'élevage | 2026-05 | App + Web | `registre_entree_sortie.dart`, `elevage/registre-entree-sortie/page.tsx` |
+| A17 — Fix overflow cards annonces Trouver un compagnon (1 px) + animaux perdus home (7.4 px) | 2026-05-28 | App | `trouver_compagnon_page.dart`, `particulier_home.dart` |
 | Fix overflow "Dernières annonces" page Trouver un compagnon | 2026-05 | App | `trouver_compagnon_page.dart` |
 | Fix affichage prix portée (tranches min/max) et saillie dans page liste annonces | 2026-05 | Web | `annonces/page.tsx` |
 | Registre fiche animal — visible à la création + vue lecture seule (statut badge + tous champs) | 2026-05 | Web | `mes-animaux/[id]/page.tsx` |

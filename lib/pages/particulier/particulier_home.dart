@@ -415,7 +415,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
           )
         else
           SizedBox(
-            height: 160,
+            height: 170,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: _alertesPubliques.length,
