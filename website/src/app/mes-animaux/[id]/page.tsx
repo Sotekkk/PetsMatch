@@ -65,6 +65,15 @@ const DOC_TYPES: { value: string; label: string; icon: string }[] = [
 ];
 
 const GESTATION_DUREE: Record<string,number> = { chien:63, chat:65, cheval:340, ovin:150, caprin:150, porcin:114, lapin:31 };
+const CONFIRMATION_INFO: Record<string,string> = {
+  chien:  'Confirmation recommandée par écho vers J+21 à J+28',
+  chat:   'Confirmation recommandée par écho vers J+21 à J+28',
+  cheval: 'Premier contrôle écho vers J+14-16, puis confirmation vers J+42',
+  lapin:  'Confirmation par palpation possible vers J+10-14',
+  ovin:   'Confirmation par écho ou palpation vers J+40-70',
+  caprin: 'Confirmation par écho ou palpation vers J+40-70',
+  porcin: 'Retour en chaleur vers J+21 si gestation non confirmée',
+};
 
 function fmtDate(d?: string | null) {
   if (!d) return '';
@@ -227,6 +236,93 @@ function SaillieForm({ partners, isMale, initial, saving, onSave, onCancel }: {
           className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
         <button type="button" onClick={() => onSave(form)}
           disabled={saving || !form.date || !form.nom_partenaire}
+          className="flex-1 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold hover:bg-[#094F5D] disabled:opacity-50">
+          {saving ? '…' : 'Enregistrer'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Formulaire Gestation ─────────────────────────────────────────────────────
+
+function GestationForm({ espece, initial, saving, onSave, onCancel }: {
+  espece: string;
+  initial?: Record<string, string>;
+  saving: boolean;
+  onSave: (data: Record<string, string>) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [date, setDate] = useState(initial?.date ?? '');
+  const [datePrevue, setDatePrevue] = useState(initial?.date_prevue ?? '');
+  const [dateOverride, setDateOverride] = useState(!!initial?.date_prevue);
+  const [dateNaissance, setDateNaissance] = useState(initial?.date_naissance ?? '');
+  const [nbAttendu, setNbAttendu] = useState(initial?.nb_attendu ?? '');
+  const [nbNes, setNbNes] = useState(initial?.nb_nes ?? '');
+  const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [confirmed, setConfirmed] = useState(initial?.gestation_confirmee === 'true');
+  const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
+  const jours = GESTATION_DUREE[espece] ?? 0;
+
+  function handleDateChange(d: string) {
+    setDate(d);
+    if (d && jours > 0 && !dateOverride) {
+      const prevue = new Date(d);
+      prevue.setDate(prevue.getDate() + jours);
+      setDatePrevue(prevue.toISOString().substring(0, 10));
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Date de conception <span className="text-red-400">*</span></label>
+        <input type="date" value={date} onChange={e => handleDateChange(e.target.value)} className={cls} />
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">
+          Mise-bas estimée{jours > 0 ? ` (auto: ${jours} j)` : ''}
+        </label>
+        <input type="date" value={datePrevue}
+          onChange={e => { setDatePrevue(e.target.value); setDateOverride(true); }}
+          className={`${cls} ${!dateOverride && datePrevue ? 'bg-green-50 border-green-200' : ''}`} />
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Nb attendus</label>
+        <input type="number" value={nbAttendu} onChange={e => setNbAttendu(e.target.value)} className={cls} />
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Date de mise-bas réelle</label>
+        <input type="date" value={dateNaissance} onChange={e => setDateNaissance(e.target.value)} className={cls} />
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Nb nés</label>
+        <input type="number" value={nbNes} onChange={e => setNbNes(e.target.value)} className={cls} />
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Notes</label>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={cls} />
+      </div>
+      <div className="flex items-center gap-3 py-1">
+        <button type="button" onClick={() => setConfirmed(!confirmed)}
+          className={`w-10 h-6 rounded-full transition-colors flex items-center ${confirmed ? 'bg-[#6E9E57] justify-end' : 'bg-gray-200 justify-start'}`}>
+          <span className="w-5 h-5 bg-white rounded-full shadow mx-0.5 block" />
+        </button>
+        <span className="text-sm font-medium text-[#1F2A2E]" style={{ fontFamily: 'Galey,sans-serif' }}>
+          {confirmed ? '✓ Gestation confirmée' : 'Gestation confirmée ?'}
+        </span>
+      </div>
+      {!confirmed && CONFIRMATION_INFO[espece] && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2">
+          <span className="text-amber-500 text-sm">ℹ</span>
+          <p className="text-xs text-amber-700">{CONFIRMATION_INFO[espece]}</p>
+        </div>
+      )}
+      <div className="flex gap-2 pt-1">
+        <button type="button" onClick={onCancel}
+          className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
+        <button type="button" disabled={saving || !date}
+          onClick={() => onSave({ date, date_prevue: datePrevue, date_naissance: dateNaissance, nb_attendu: nbAttendu, nb_nes: nbNes, notes, gestation_confirmee: confirmed ? 'true' : 'false' })}
           className="flex-1 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold hover:bg-[#094F5D] disabled:opacity-50">
           {saving ? '…' : 'Enregistrer'}
         </button>
@@ -399,30 +495,29 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
           </div>
           {reproAdd === 'gestations' && (
             <div className="bg-white rounded-2xl p-4 shadow-sm">
-              <AddHealthForm saving={savingRepro} onCancel={() => setReproAdd(null)}
-                onSave={async d => {
-                  if (d.date && GESTATION_DUREE[espece] && !d.date_prevue) {
-                    const prevue = new Date(d.date);
-                    prevue.setDate(prevue.getDate() + GESTATION_DUREE[espece]);
-                    d.date_prevue = prevue.toISOString().substring(0, 10);
-                  }
-                  await saveRepro('gestations', d);
-                }}
-                fields={gestationFields} />
+              <GestationForm espece={espece} saving={savingRepro} onCancel={() => setReproAdd(null)}
+                onSave={async d => { await saveRepro('gestations', d); }} />
             </div>
           )}
           {gestations.length === 0 && !reproAdd && <p className="text-sm text-gray-400 text-center py-8">Aucune gestation enregistrée</p>}
           {gestations.map(r => (
             <div key={r.id} className="bg-white rounded-2xl p-4 shadow-sm">
               {editId === r.id ? (
-                <AddHealthForm saving={savingRepro} initial={editData} fields={gestationFields}
+                <GestationForm espece={espece} initial={editData} saving={savingRepro}
                   onCancel={() => setEditId(null)}
                   onSave={async d => { await updateRepro('gestations', r.id, d); setEditId(null); }} />
               ) : (
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-xl flex-shrink-0">🤰</div>
                   <div className="flex-1 cursor-pointer" onClick={() => startEdit(r)}>
-                    <p className="font-semibold text-sm">Conception : {fmtDate(String(r.date ?? ''))}</p>
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                      <p className="font-semibold text-sm">Conception : {fmtDate(String(r.date ?? ''))}</p>
+                      {r.gestation_confirmee != null && (
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.gestation_confirmee ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {r.gestation_confirmee ? '✓ Confirmée' : 'À confirmer'}
+                        </span>
+                      )}
+                    </div>
                     {!!r.date_prevue && <p className="text-xs text-gray-600">Mise-bas prévue : {fmtDate(String(r.date_prevue))}</p>}
                     {!!r.date_naissance && <p className="text-xs text-gray-600">Née le : {fmtDate(String(r.date_naissance))}</p>}
                     {!!r.nb_attendu && <p className="text-xs text-gray-400">{String(r.nb_attendu)} attendu(s){r.nb_nes ? ` · ${String(r.nb_nes)} né(s)` : ''}</p>}
@@ -676,7 +771,11 @@ export default function AnimalFichePage() {
   async function saveRepro(table: string, data: Record<string,string>) {
     if (!id) return;
     setSavingRepro(true);
-    await supabase.from(table).insert({ ...data, animal_id: id, id: crypto.randomUUID() });
+    const processed: Record<string, unknown> = { ...data };
+    if ('gestation_confirmee' in processed) {
+      processed.gestation_confirmee = processed.gestation_confirmee === 'true';
+    }
+    await supabase.from(table).insert({ ...processed, animal_id: id, id: crypto.randomUUID() });
     await loadRepro();
     setReproAdd(null);
     setSavingRepro(false);
@@ -691,7 +790,11 @@ export default function AnimalFichePage() {
     if (!id) return;
     setSavingRepro(true);
     try {
-      await supabase.from(table).update(data).eq('id', recordId);
+      const processed: Record<string, unknown> = { ...data };
+      if ('gestation_confirmee' in processed) {
+        processed.gestation_confirmee = processed.gestation_confirmee === 'true';
+      }
+      await supabase.from(table).update(processed).eq('id', recordId);
       await loadRepro();
     } finally {
       setSavingRepro(false);
@@ -714,6 +817,22 @@ export default function AnimalFichePage() {
           notes: data.notes ?? '',
           partenaire_animal_id: id,
         });
+      }
+      // A07 — Gestation automatique pour la femelle
+      if (animal.sexe === 'femelle' && data.date) {
+        const jours = GESTATION_DUREE[animal.espece ?? ''] ?? 0;
+        const gestData: Record<string, unknown> = {
+          id: crypto.randomUUID(),
+          animal_id: id,
+          date: data.date,
+          gestation_confirmee: false,
+        };
+        if (jours > 0) {
+          const prevue = new Date(data.date);
+          prevue.setDate(prevue.getDate() + jours);
+          gestData.date_prevue = prevue.toISOString().substring(0, 10);
+        }
+        await supabase.from('gestations').insert(gestData);
       }
       await loadRepro();
       setReproAdd(null);

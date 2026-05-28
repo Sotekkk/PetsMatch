@@ -73,10 +73,8 @@ function fmtDate(s?: string) {
   return new Date(s).toLocaleDateString('fr-FR');
 }
 
-function thumbUrl(url?: string, width = 400): string | undefined {
-  if (!url) return undefined;
-  if (!url.includes('/storage/v1/object/public/')) return url;
-  return url.replace('/storage/v1/object/', '/storage/v1/render/image/') + `?width=${width}&quality=75&resize=cover`;
+function thumbUrl(url?: string): string | undefined {
+  return url || undefined;
 }
 
 function extractVille(a: Alerte): string {
@@ -428,9 +426,9 @@ function AlerteCard({ alerte: a, onClick }: { alerte: Alerte; onClick: () => voi
   return (
     <div onClick={onClick} className="bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all cursor-pointer group"
       style={{ borderColor: colors.border }}>
-      <div className="aspect-square relative overflow-hidden bg-gray-100">
+      <div className="aspect-square relative overflow-hidden bg-gray-50">
         {thumbUrl(a.photo_url)
-          ? <Image src={thumbUrl(a.photo_url)!} alt={a.nom_animal} fill className="object-cover group-hover:scale-105 transition-transform duration-300" sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" />
+          ? <Image src={thumbUrl(a.photo_url)!} alt={a.nom_animal} fill className="object-contain group-hover:scale-105 transition-transform duration-300" sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" />
           : <div className="w-full h-full flex items-center justify-center text-5xl" style={{ background: colors.bg }}>{ESPECE_EMOJI[a.espece] ?? '🐾'}</div>}
         {/* Badge espèce */}
         <span className="absolute top-2 left-2 text-xs font-bold px-2 py-0.5 rounded-full"
@@ -516,9 +514,9 @@ function AlerteDetailModal({
         onClick={e => e.stopPropagation()}>
 
         {/* Photo */}
-        <div className="relative aspect-video bg-gray-100">
+        <div className="relative aspect-video bg-gray-50">
           {a.photo_url
-            ? <Image src={a.photo_url} alt={a.nom_animal} fill className="object-cover" />
+            ? <Image src={a.photo_url} alt={a.nom_animal} fill className="object-contain" sizes="(max-width: 768px) 100vw, 512px" />
             : <div className="w-full h-full flex items-center justify-center text-8xl" style={{ background: colors.bg }}>{ESPECE_EMOJI[a.espece] ?? '🐾'}</div>}
           <button onClick={onClose}
             className="absolute top-3 right-3 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center text-lg transition-colors">

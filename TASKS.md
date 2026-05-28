@@ -22,8 +22,6 @@
 |---|---|---|---|---|
 | A02 | Animaux perdus — clic sur alerte page d'accueil → ouvrir la gestion de l'alerte directement | Haute | App + Web | `particulier_home.dart`, `eleveur_home.dart`, page d'accueil web |
 | A03 | Animaux perdus — clic long sur alerte → menu "Supprimer" / "Animal retrouvé" (avec confirmation) | Haute | App + Web | `animaux_perdus_page.dart`, page web équivalente |
-| A07 | Suivi repro — saillie → gestation automatique avec date de mise bas prévue | Haute | App + Web | À créer `suivi_repro.dart` + page web |
-| A08 | Suivi repro — champ "Gestation confirmée" (oui/non) + alerte rappel confirmation selon espèce | Haute | App + Web | À créer `suivi_repro.dart` |
 | A09 | Suivi repro — saillie extérieure : accès infos mâle (photo, nom, puce, race) depuis éleveur externe | Moyenne | App + Web | À créer `suivi_repro.dart` + table `saillie_acces` |
 | A10 | Annonces — photo carrée à la création (déjà OK) + affichage rectangle adapté centré dans le feed sans rogner | Haute | App + Web | `annonces_feed_page.dart`, feed web |
 | A12 | Admin — algorithme de validation automatique profils éleveurs (détection spam, cohérence données) | Haute | App + Web | `admin_panel.dart`, `verification_detail.dart` |
@@ -93,6 +91,15 @@
 
 | Tâche | Date | Repo | Fichiers modifiés |
 |---|---|---|---|
+| A07 — Saillie → gestation automatique avec date mise-bas prévue selon espèce | 2026-05-28 | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` (petsmatch-web + website) |
+| A08 — Gestation confirmée (switch + rappel écho/palpation selon espèce) + badge dans liste | 2026-05-28 | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` (petsmatch-web + website) |
+| Fix — Photos animaux perdus : object-contain + suppression render URL Supabase | 2026-05-28 | Web | `animaux-perdus/page.tsx` (petsmatch-web + website) |
+| Inscription web — 3 étapes (rôle → infos perso + adresse Google Places → email/mdp) | 2026-05-28 | Web | `inscription/page.tsx` (petsmatch-web + website) |
+| Fix warnings ListTile/DecoratedBox sur ExpansionTile | 2026-05-28 | App | `animal_fiche.dart`, `contrat_reservation.dart` |
+| Registre E/S fiche animal — info mère (nom+puce) + auto-fill date_entrée + adresse élevage si naissance | 2026-05-28 | App | `animal_fiche.dart` |
+| Registre E/S vue liste + PDF — colonne mère (nom+puce) quand provenance=naissance | 2026-05-28 | App | `registre_entree_sortie.dart` |
+| Profile sync Flutter → Supabase — édition profil particulier (ville, cp, rue, tel) | 2026-05-28 | App | `info_utilisateur.dart` |
+| Google Places autocomplete — ville correcte (locality, pas département) | 2026-05-28 | Web | `profil/page.tsx`, `mes-alertes/page.tsx`, `animaux-perdus/declarer/page.tsx` |
 | A01 — Photo/document : bottom sheet caméra + galerie (animal, portée, alerte perdue) | 2026-05 | App | `animal_fiche.dart`, `portee_form_page.dart`, `alerte_perdu_form_page.dart` |
 | A04 — Clic long mes annonces (accueil éleveur) → Supprimer avec confirmation | 2026-05 | App | `eleveur_home.dart` |
 | A11 — Barre de recherche (nom + puce) dans mes animaux éleveur | 2026-05 | App + Web | `mes_animaux.dart`, `mes-animaux/page.tsx` |
@@ -128,6 +135,12 @@
 ---
 
 ## Notes techniques partagées
+
+- **⚠️ Supabase migration requise (A08)** : ajouter colonne `gestation_confirmee` sur la table `gestations` :
+  ```sql
+  ALTER TABLE gestations ADD COLUMN IF NOT EXISTS gestation_confirmee boolean DEFAULT false;
+  ```
+  Sans cette colonne, le switch "Gestation confirmée" est silencieusement ignoré (le reste fonctionne).
 
 - **Architecture** : Firebase Auth = auth uniquement. Toutes les données métier = Supabase. Ne jamais écrire de nouvelles données dans Firestore.
 - **Firestore résiduel** : `post` (feed social), `conversations` (messagerie), `likedPost`, `bloquer` — à migrer progressivement, ne pas y ajouter de nouvelles features

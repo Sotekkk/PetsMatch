@@ -2230,12 +2230,18 @@ class _SimpleCard extends StatelessWidget {
     'nb_attendu':       'Petits attendus',
     'nb_nes':           'Petits nés',
     'date_conception':  'Date de conception',
-    'date_prevue':      'Date prévue',
-    'date_naissance':   'Date de naissance',
+    'date_prevue':      'Mise-bas prévue',
+    'date_naissance':   'Date de mise-bas réelle',
+  };
+
+  static const _excludedKeys = {
+    'date', 'id', 'animal_id', 'created_at', 'partenaire_animal_id', 'gestation_confirmee',
   };
 
   static String _fmt(String key, dynamic val) {
-    if (val == null || val.toString().isEmpty) return '';
+    if (val == null) return '';
+    if (val is bool) return val ? 'Oui' : 'Non';
+    if (val.toString().isEmpty) return '';
     if (val is String && key.contains('date') && val.isNotEmpty) {
       final dt = DateTime.tryParse(val);
       if (dt != null) return DateFormat('dd/MM/yyyy').format(dt);
@@ -2251,6 +2257,8 @@ class _SimpleCard extends StatelessWidget {
             ? DateFormat('dd/MM/yyyy').format(DateTime.parse(rawDate))
             : rawDate)
         : '';
+    final hasConfirmee = data.containsKey('gestation_confirmee');
+    final confirmee = data['gestation_confirmee'] as bool? ?? false;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -2258,7 +2266,27 @@ class _SimpleCard extends StatelessWidget {
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 5)]),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text(date, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
+          Row(children: [
+            Text(date, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
+            if (hasConfirmee) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: confirmee ? const Color(0xFFEEF5EA) : const Color(0xFFFFF3CD),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: confirmee ? const Color(0xFF6E9E57) : const Color(0xFFFFCC02)),
+                ),
+                child: Text(
+                  confirmee ? '✓ Confirmée' : 'À confirmer',
+                  style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600,
+                    color: confirmee ? const Color(0xFF4A7A3A) : const Color(0xFF9E7000),
+                  ),
+                ),
+              ),
+            ],
+          ]),
           Row(mainAxisSize: MainAxisSize.min, children: [
             if (onEdit != null)
               IconButton(icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF6E9E57)), onPressed: onEdit, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
@@ -2267,7 +2295,7 @@ class _SimpleCard extends StatelessWidget {
           ]),
         ]),
         ...data.entries
-            .where((e) => e.key != 'date' && e.key != 'id' && e.key != 'animal_id' && e.key != 'created_at'
+            .where((e) => !_excludedKeys.contains(e.key)
                 && e.value != null && e.value.toString().isNotEmpty)
             .map((e) {
           final v = _fmt(e.key, e.value);
@@ -2832,6 +2860,19 @@ int _gestationJours(String espece) {
   }
 }
 
+String _confirmationInfo(String espece) {
+  switch (espece) {
+    case 'chien':
+    case 'chat':   return 'Confirmation recommandée par écho vers J+21 à J+28';
+    case 'cheval': return 'Premier contrôle écho vers J+14-16, puis confirmation vers J+42';
+    case 'lapin':  return 'Confirmation par palpation possible vers J+10-14';
+    case 'ovin':
+    case 'caprin': return 'Confirmation par écho ou palpation vers J+40-70';
+    case 'porcin': return 'Retour en chaleur vers J+21 si gestation non confirmée';
+    default:       return 'À confirmer par un professionnel de santé';
+  }
+}
+
 // ─── Dialog Saillie ───────────────────────────────────────────────────────────
 
 class _AddSaillieDialog extends StatefulWidget {
@@ -3050,6 +3091,19 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
                       });
                     }
                   }
+                  // A07 — Gestation automatique pour la femelle
+                  if (widget.sexeAnimal == 'femelle') {
+                    try {
+                      final jours = _gestationJours(widget.espece);
+                      await supa.from('gestations').insert({
+                        'id': '${id}_gest',
+                        'animal_id': widget.animalId,
+                        'date': _date!.toIso8601String(),
+                        if (jours > 0) 'date_prevue': _date!.add(Duration(days: jours)).toIso8601String(),
+                        'gestation_confirmee': false,
+                      });
+                    } catch (_) {}
+                  }
                 }
                 if (context.mounted) Navigator.pop(context);
               },
@@ -3080,6 +3134,7 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
   DateTime? _datePrevue;
   DateTime? _dateNaissance;
   bool _dateOverride = false;
+  bool _gestationConfirmee = false;
 
   @override
   void initState() {
@@ -3092,6 +3147,7 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
       _nbAttendu.text = e['nb_attendu']?.toString() ?? '';
       _nbNes.text     = e['nb_nes']?.toString() ?? '';
       _notes.text     = e['notes'] ?? '';
+      _gestationConfirmee = (e['gestation_confirmee'] as bool?) ?? false;
       if (_datePrevue != null) _dateOverride = true;
     }
   }
@@ -3194,6 +3250,37 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
                     (d) => setState(() => _dateNaissance = d)),
                 _textField('Nb nés', _nbNes, inputType: TextInputType.number),
                 _textField('Notes', _notes, maxLines: 2),
+                const Divider(height: 20),
+                Row(children: [
+                  Icon(Icons.check_circle_outline, size: 18,
+                      color: _gestationConfirmee ? const Color(0xFF6E9E57) : Colors.grey.shade400),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Text('Gestation confirmée',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)))),
+                  Switch.adaptive(
+                    value: _gestationConfirmee,
+                    activeColor: const Color(0xFF6E9E57),
+                    onChanged: (v) => setState(() => _gestationConfirmee = v),
+                  ),
+                ]),
+                if (!_gestationConfirmee)
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF8E1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFFCC02)),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.info_outline, size: 14, color: Color(0xFFE6A817)),
+                      const SizedBox(width: 6),
+                      Expanded(child: Text(
+                        _confirmationInfo(widget.espece),
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFB37A1A)),
+                      )),
+                    ]),
+                  ),
               ]),
             ),
           ),
@@ -3206,7 +3293,7 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
               onPressed: () async {
                 if (_dateConception == null) return;
                 try {
-                  final payload = {
+                  final basePayload = {
                     'animal_id': widget.animalId,
                     'date': _dateConception!.toIso8601String(),
                     'date_prevue': _datePrevue?.toIso8601String(),
@@ -3215,13 +3302,19 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
                     'nb_nes': int.tryParse(_nbNes.text),
                     'notes': _notes.text.trim(),
                   };
+                  final String savedId;
                   if (widget.existing != null) {
-                    await Supabase.instance.client.from('gestations').update(payload).eq('id', widget.existing!['id']);
+                    savedId = widget.existing!['id'].toString();
+                    await Supabase.instance.client.from('gestations').update(basePayload).eq('id', savedId);
                   } else {
-                    await Supabase.instance.client.from('gestations').insert({
-                      'id': DateTime.now().microsecondsSinceEpoch.toString(), ...payload,
-                    });
+                    savedId = DateTime.now().microsecondsSinceEpoch.toString();
+                    await Supabase.instance.client.from('gestations').insert({'id': savedId, ...basePayload});
                   }
+                  // gestation_confirmee — colonne optionnelle (à créer via ALTER TABLE si besoin)
+                  try {
+                    await Supabase.instance.client.from('gestations')
+                        .update({'gestation_confirmee': _gestationConfirmee}).eq('id', savedId);
+                  } catch (_) {}
                   if (context.mounted) Navigator.pop(context);
                 } catch (e) {
                   if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
