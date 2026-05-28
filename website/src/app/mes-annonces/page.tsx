@@ -16,6 +16,7 @@ interface Annonce {
   type_vente?: string;
   photos?: string[];
   prix?: number;
+  saillie_prix?: number;
   prix_min_portee?: number;
   prix_max_portee?: number;
   ville_eleveur?: string;
@@ -56,7 +57,7 @@ export default function MesAnnoncesPage() {
     if (!user) return;
     supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, photos, prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at')
+      .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at')
       .eq('uid_eleveur', user.uid)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
@@ -154,7 +155,10 @@ export default function MesAnnoncesPage() {
             const isPortee = a.type === 'portee';
             const statut = a.statut ?? 'disponible';
             const photos = (a.photos as unknown as string[]) ?? [];
-            const prix = isPortee
+            const sailliePrixNum = a.saillie_prix != null ? Number(a.saillie_prix) : null;
+            const prix = isSaillie
+              ? (sailliePrixNum != null && !isNaN(sailliePrixNum) ? `Saillie · ${Math.round(sailliePrixNum)} €` : 'Saillie')
+              : isPortee
               ? (a.prix_min_portee != null || a.prix_max_portee != null
                   ? [a.prix_min_portee, a.prix_max_portee].filter(v => v != null).join(' – ') + ' €'
                   : null)

@@ -90,6 +90,8 @@
 
 | Tâche | Date | Repo | Fichiers modifiés |
 |---|---|---|---|
+| Fix — Annonces saillie : section "Père" masquée dans le formulaire + section "Parents" masquée dans le détail | 2026-05-28 | App + Web | `create_annonce_page.dart`, `annonce_detail_page.dart`, `annonces/[id]/page.tsx` |
+| Fix — Annonces saillie : prix non affiché (`saillie_prix` mal typé `numeric` → `float8` Supabase, parsing défensif, `_norm()` manquant dans mes-annonces) | 2026-05-28 | App + Web | `create_annonce_page.dart`, `annonces_feed_page.dart`, `annonce_detail_page.dart`, `mes_annonces_page.dart`, `annonces/page.tsx`, `annonces/feed/page.tsx`, `annonces/[id]/page.tsx`, `mes-annonces/page.tsx`, `annonces/creer/page.tsx`, `annonces/[id]/modifier/page.tsx` |
 | A02 — Alerte page d'accueil → gestion directe (1 alerte → fiche, >1 → liste) | 2026-05-28 | App + Web | `particulier_home.dart`, `eleveur_home.dart`, `ParticulierDashboard.tsx`, `EleveurDashboard.tsx` |
 | A03 — Clic long sur alerte → menu "Retrouvé" / "Supprimer" avec confirmation (+ actions propriétaire dans modale web) | 2026-05-28 | App + Web | `animaux_perdus_page.dart`, `animaux-perdus/page.tsx` |
 | A07 — Saillie → gestation automatique avec date mise-bas prévue selon espèce | 2026-05-28 | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` (petsmatch-web + website) |
@@ -136,6 +138,8 @@
 ---
 
 ## Notes techniques partagées
+
+- **✅ Supabase migration faite (saillie_prix)** : colonne `saillie_prix float8` + `saillie_conditions text` ajoutées sur `annonces`. Utiliser `float8` (pas `numeric`) pour les colonnes prix — `numeric` est renvoyé en string par PostgREST.
 
 - **⚠️ Supabase migration requise (A08)** : ajouter colonne `gestation_confirmee` sur la table `gestations` :
   ```sql

@@ -156,53 +156,57 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     final d = widget.initialData;
     if (d == null) return;
     _type      = d['type'] ?? 'portee';
-    _typeVente = d['typeVente'] ?? 'vente';
+    _typeVente = d['type_vente'] ?? d['typeVente'] ?? 'vente';
     _espece    = d['espece'] ?? 'chien';
     _raceCtrl.text = d['race'] ?? '';
     _photosUrls = List<String>.from(d['photos'] ?? []);
     _titreCtrl.text = d['titre'] ?? '';
     _descCtrl.text  = d['description'] ?? '';
     _prixCtrl.text  = (d['prix'] as num?)?.toStringAsFixed(0) ?? '';
-    _prixNegociable = d['prixNegociable'] ?? false;
+    _prixNegociable = d['prix_negociable'] ?? d['prixNegociable'] ?? false;
     _statut = d['statut'] ?? 'disponible';
-    final dn = d['dateNaissance'] as Timestamp?;
-    if (dn != null) _dateNaissance = dn.toDate();
-    _nombreBebes = (d['nombreBebes'] as num?)?.toInt() ?? 1;
-    _animauxPortee = List<Map<String, dynamic>>.from(d['animauxPortee'] ?? []);
-    _mereAnimalId  = d['mereAnimalId'];
-    _merePhotoUrl  = d['merePhotoUrl'];
-    _mereNomCtrl.text     = d['mereNom']           ?? '';
-    _merePuceCtrl.text    = d['merePuce']          ?? '';
-    _mereRaceCtrl.text    = d['mereRace']          ?? '';
-    _mereCouleurCtrl.text = d['mereCouleur']       ?? '';
-    _mereDescCtrl.text    = d['mereDescription']   ?? '';
-    _mereRegistre = d['mereRegistre'] ?? '';
-    _pereAnimalId  = d['pereAnimalId'];
-    _perePhotoUrl  = d['perePhotoUrl'];
-    _pereNomCtrl.text     = d['pereNom']           ?? '';
-    _perePuceCtrl.text    = d['perePuce']          ?? '';
-    _pereRaceCtrl.text    = d['pereRace']          ?? '';
-    _pereCouleurCtrl.text = d['pereCouleur']       ?? '';
-    _pereDescCtrl.text    = d['pereDescription']   ?? '';
-    _pereRegistre = d['pereRegistre'] ?? '';
-    _registreType = d['registreType'] ?? '';
-    _numRegistreCtrl.text  = d['numeroRegistre'] ?? '';
-    _clubPedigreeCtrl.text = d['clubPedigree'] ?? '';
+    // Date naissance portée : Timestamp (Firestore) ou String ISO (Supabase)
+    final dnRaw = d['date_naissance'] ?? d['dateNaissance'];
+    if (dnRaw is Timestamp) _dateNaissance = dnRaw.toDate();
+    else if (dnRaw is String && dnRaw.isNotEmpty) _dateNaissance = DateTime.tryParse(dnRaw);
+    _nombreBebes = ((d['nombre_bebes'] ?? d['nombreBebes']) as num?)?.toInt() ?? 1;
+    _animauxPortee = List<Map<String, dynamic>>.from(d['animaux_portee'] ?? d['animauxPortee'] ?? []);
+    _mereAnimalId  = d['mere_animal_id'] ?? d['mereAnimalId'];
+    _merePhotoUrl  = d['mere_photo_url'] ?? d['merePhotoUrl'];
+    _mereNomCtrl.text     = d['mere_nom']         ?? d['mereNom']         ?? '';
+    _merePuceCtrl.text    = d['mere_puce']         ?? d['merePuce']        ?? '';
+    _mereRaceCtrl.text    = d['mere_race']         ?? d['mereRace']        ?? '';
+    _mereCouleurCtrl.text = d['mere_couleur']      ?? d['mereCouleur']     ?? '';
+    _mereDescCtrl.text    = d['mere_description']  ?? d['mereDescription'] ?? '';
+    _mereRegistre = d['mere_registre'] ?? d['mereRegistre'] ?? '';
+    _pereAnimalId  = d['pere_animal_id'] ?? d['pereAnimalId'];
+    _perePhotoUrl  = d['pere_photo_url'] ?? d['perePhotoUrl'];
+    _pereNomCtrl.text     = d['pere_nom']         ?? d['pereNom']         ?? '';
+    _perePuceCtrl.text    = d['pere_puce']         ?? d['perePuce']        ?? '';
+    _pereRaceCtrl.text    = d['pere_race']         ?? d['pereRace']        ?? '';
+    _pereCouleurCtrl.text = d['pere_couleur']      ?? d['pereCouleur']     ?? '';
+    _pereDescCtrl.text    = d['pere_description']  ?? d['pereDescription'] ?? '';
+    _pereRegistre = d['pere_registre'] ?? d['pereRegistre'] ?? '';
+    _registreType = d['registre_type'] ?? d['registreType'] ?? '';
+    _numRegistreCtrl.text  = d['numero_registre'] ?? d['numeroRegistre'] ?? '';
+    _clubPedigreeCtrl.text = d['club_pedigree']   ?? d['clubPedigree']   ?? '';
     _studbookCtrl.text     = d['studbook'] ?? '';
     _vaccines       = d['vaccines']      ?? false;
     _vermifuge      = d['vermifuge']     ?? false;
     _identification = d['identification'] ?? false;
-    _bilanSante     = d['bilanSante']    ?? false;
+    _bilanSante     = d['bilan_sante'] ?? d['bilanSante'] ?? false;
     _semaines = (d['semaines'] as num?)?.toInt() ?? 8;
-    _prixMinPorteeCtrl.text = (d['prixMinPortee'] as num?)?.toInt().toString() ?? '';
-    _prixMaxPorteeCtrl.text = (d['prixMaxPortee'] as num?)?.toInt().toString() ?? '';
-    _etalonAnimalId   = d['etalonAnimalId'];
+    _prixMinPorteeCtrl.text = ((d['prix_min_portee'] ?? d['prixMinPortee']) as num?)?.toInt().toString() ?? '';
+    _prixMaxPorteeCtrl.text = ((d['prix_max_portee'] ?? d['prixMaxPortee']) as num?)?.toInt().toString() ?? '';
+    _etalonAnimalId   = d['etalon_animal_id'] ?? d['etalonAnimalId'];
     _sexe = d['sexe'] ?? 'male';
     _couleurCtrl.text     = d['couleur'] ?? '';
-    _sailliePrixCtrl.text = d['sailliePrix'] ?? '';
-    _saillieCondCtrl.text = d['saillieConditions'] ?? '';
-    final dna = d['dateNaissanceAnimal'] as Timestamp?;
-    if (dna != null) _dateNaissanceAnimal = dna.toDate();
+    _sailliePrixCtrl.text = (d['saillie_prix'] ?? d['sailliePrix'])?.toString() ?? '';
+    _saillieCondCtrl.text = d['saillie_conditions'] ?? d['saillieConditions'] ?? '';
+    // Date naissance animal : Timestamp (Firestore) ou String ISO (Supabase)
+    final dnaRaw = d['date_naissance_animal'] ?? d['dateNaissanceAnimal'];
+    if (dnaRaw is Timestamp) _dateNaissanceAnimal = dnaRaw.toDate();
+    else if (dnaRaw is String && dnaRaw.isNotEmpty) _dateNaissanceAnimal = DateTime.tryParse(dnaRaw);
     _sterilise = d['sterilise'] ?? false;
   }
 
@@ -465,7 +469,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         'date_naissance_animal': _type != 'portee' && _dateNaissanceAnimal != null
             ? _dateNaissanceAnimal!.toIso8601String().substring(0, 10) : null,
         'sterilise': _type != 'portee' ? _sterilise : null,
-        'saillie_prix': _typeVente == 'saillie' ? _sailliePrixCtrl.text.trim() : null,
+        'saillie_prix': _typeVente == 'saillie' ? double.tryParse(_sailliePrixCtrl.text) : null,
         'saillie_conditions':
             _typeVente == 'saillie' ? _saillieCondCtrl.text.trim() : null,
         'updated_at': now,
@@ -526,10 +530,10 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             _sectionPhotos(),       const SizedBox(height: 12),
             _sectionInfos(),        const SizedBox(height: 12),
             if (_type == 'portee') ...[_sectionPortee(), const SizedBox(height: 12)],
-            if (_type == 'animal' || isSaillie) ...[_sectionAnimal(), const SizedBox(height: 12)],
+            if (_type == 'animal') ...[_sectionAnimal(), const SizedBox(height: 12)],
             if (isSaillie) ...[_sectionSaillie(), const SizedBox(height: 12)],
             if (!isSaillie) ...[_sectionMere(), const SizedBox(height: 12)],
-            _sectionPere(),         const SizedBox(height: 12),
+            if (!isSaillie) ...[_sectionPere(), const SizedBox(height: 12)],
             _sectionPedigree(),     const SizedBox(height: 12),
             _sectionSante(),
             if (_type == 'portee') ...[const SizedBox(height: 12), _sectionAnimauxPortee()],

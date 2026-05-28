@@ -100,6 +100,7 @@ class _AnnoncesList extends StatelessWidget {
     'typeVente':     row['type_vente'],
     'prixMinPortee': row['prix_min_portee'],
     'prixMaxPortee': row['prix_max_portee'],
+    'sailliePrix':   row['saillie_prix'],
     'animauxPortee': row['animaux_portee'] ?? [],
     'nombreBebes':   row['nombre_bebes'],
     'createdAt':     _ts(row['created_at']),
@@ -250,6 +251,8 @@ class _AnnonceCard extends StatelessWidget {
     final prix       = (data['prix'] as num?)?.toDouble();
     final prixMin    = (data['prixMinPortee'] as num?)?.toDouble();
     final prixMax    = (data['prixMaxPortee'] as num?)?.toDouble();
+    final spRaw      = data['sailliePrix'];
+    final sailliePrix = spRaw is num ? spRaw.toDouble() : spRaw is String ? double.tryParse(spRaw) : null;
     final vues       = (data['vues'] as num?)?.toInt() ?? 0;
     final contacts   = (data['contacts'] as num?)?.toInt() ?? 0;
     final createdAt  = data['createdAt'] as Timestamp?;
@@ -273,7 +276,9 @@ class _AnnonceCard extends StatelessWidget {
     } else if (typeVente == 'adoption') {
       prixLabel = 'Adoption';
     } else if (typeVente == 'saillie') {
-      prixLabel = 'Saillie';
+      prixLabel = sailliePrix != null && sailliePrix > 0
+          ? 'Saillie · ${sailliePrix.toInt()} €'
+          : 'Saillie';
     }
 
     // Days remaining

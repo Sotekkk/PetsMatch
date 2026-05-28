@@ -383,7 +383,7 @@ export default function CreerAnnoncePage() {
           prix_max_portee: prixMax ? Number(prixMax) : null,
           animaux_portee: animauxSaved.length > 0 ? animauxSaved : null,
         }),
-        ...(type === 'saillie' && { saillie_prix: sailliePrix || null, saillie_conditions: saillieConditions || null }),
+        ...(type === 'saillie' && { saillie_prix: sailliePrix ? parseFloat(sailliePrix) : null, saillie_conditions: saillieConditions || null }),
         vaccines, vermifuge, identification: identificationSante, bilan_sante: bilanSante,
         semaines: type !== 'saillie' ? semaines : null,
         club_pedigree: clubPedigree || null, numero_registre: numRegistre || null,

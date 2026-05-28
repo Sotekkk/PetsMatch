@@ -344,7 +344,8 @@ function AnnonceCard({ annonce: a }: { annonce: Annonce }) {
   const isPortee = a.type === 'portee';
   let prix: string | null = null;
   if (isSaillie) {
-    prix = a.saillie_prix != null ? `${a.saillie_prix} €` : null;
+    const sp = a.saillie_prix != null ? Number(a.saillie_prix) : null;
+    prix = sp != null && !isNaN(sp) ? `${Math.round(sp)} €` : null;
   } else if (isPortee) {
     const parts = ([a.prix_min_portee, a.prix_max_portee] as (number | undefined)[]).filter((v): v is number => v != null);
     if (parts.length === 2 && parts[0] !== parts[1]) prix = `${parts[0]} – ${parts[1]} €`;

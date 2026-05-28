@@ -85,9 +85,8 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
         }
       });
     } else if (aPhotos.length > 0) {
-      const prix = isSaillie
-        ? (a.saillie_prix ?? null)
-        : (a.prix ?? null);
+      const rawPrix = isSaillie ? a.saillie_prix : a.prix;
+      const prix = rawPrix != null ? Number(rawPrix) : null;
       items.push({
         annonceId: a.id, bebeIndex: null, photos: aPhotos,
         nom: a.titre || `${a.espece ?? ''} ${a.race ?? ''}`.trim(),

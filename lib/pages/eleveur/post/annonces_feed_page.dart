@@ -82,7 +82,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
             : '${a['espece'] ?? ''} ${a['race'] ?? ''}'.trim(),
         race: a['race'] as String?, espece: a['espece'] as String?,
         sexe: a['sexe'] as String?,
-        prix: ((a['saillie_prix'] ?? a['prix']) as num?)?.toDouble(),
+        prix: () { final v = a['saillie_prix'] ?? a['prix']; return v is num ? v.toDouble() : v is String ? double.tryParse(v) : null; }(),
         ville: a['ville_eleveur'] as String?,
         uidEleveur: uid, nomEleveur: nomEleveur,
       ));

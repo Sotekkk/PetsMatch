@@ -78,7 +78,10 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     'bilanSante':        row['bilan_sante'] ?? false,
     'etalonAnimalId':    row['etalon_animal_id'],
     'sailliePrix': row['saillie_prix'] != null
-        ? (row['saillie_prix'] as num).toInt().toString() : '',
+        ? (row['saillie_prix'] is num
+            ? (row['saillie_prix'] as num).toInt().toString()
+            : double.tryParse(row['saillie_prix'].toString())?.toInt().toString() ?? '')
+        : '',
     'saillieConditions': row['saillie_conditions'] ?? '',
     'dateNaissanceAnimal': _isoToTs(row['date_naissance_animal']),
     'createdAt':         _isoToTs(row['created_at']),
@@ -211,8 +214,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                         ...[_AnimalCard(data: data), const SizedBox(height: 12)],
                       if (typeVente == 'saillie')
                         ...[_SaillieCard(data: data), const SizedBox(height: 12)],
-                      _ParentsCard(data: data),
-                      const SizedBox(height: 12),
+                      if (typeVente != 'saillie') ...[_ParentsCard(data: data), const SizedBox(height: 12)],
                       _SanteCard(data: data),
                       if (registreType.isNotEmpty)
                         ...[const SizedBox(height: 12),
