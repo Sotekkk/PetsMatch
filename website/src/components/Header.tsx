@@ -36,6 +36,7 @@ const NAV_ELEVEUR = [
   { href: '/mes-animaux',    label: 'Mes Animaux' },
   { href: '/mes-annonces',   label: 'Mes Annonces' },
   { href: '/animaux-perdus', label: 'Animaux perdus' },
+  { href: '/services',       label: 'Services' },
   { href: '/messages',       label: 'Messages' },
 ];
 
@@ -44,6 +45,7 @@ const NAV_PARTICULIER = [
   { href: '/mes-animaux',    label: 'Mes Animaux' },
   { href: '/annonces',       label: 'Annonces' },
   { href: '/animaux-perdus', label: 'Animaux perdus' },
+  { href: '/services',       label: 'Services' },
   { href: '/messages',       label: 'Messages' },
 ];
 
@@ -78,6 +80,13 @@ const MENU_ELEVEUR = [
       { href: '/animaux-perdus', label: 'Voir les animaux perdus', icon: '🔍' },
     ],
   },
+  {
+    section: 'Services',
+    icon: '🏥',
+    items: [
+      { href: '/services', label: 'Annuaire des services', icon: '🔎' },
+    ],
+  },
 ];
 
 const MENU_PARTICULIER = [
@@ -103,6 +112,13 @@ const MENU_PARTICULIER = [
     items: [
       { href: '/annonces', label: 'Trouver un compagnon', icon: '❤️' },
       { href: '/elevages', label: 'Élevages',             icon: '🏡' },
+    ],
+  },
+  {
+    section: 'Services',
+    icon: '🏥',
+    items: [
+      { href: '/services', label: 'Annuaire des services', icon: '🔎' },
     ],
   },
 ];

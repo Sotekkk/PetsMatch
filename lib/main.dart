@@ -178,6 +178,18 @@ class User_Info {
   static List<String> especesElevees = [];
   static String bannerUrl = '';
 
+  // Champs pro avancés (S01)
+  static int rayonIntervention = 0;
+  static List<String> especesAcceptees = [];
+  static Map<String, String> horaires = {};
+  static String tarifs = '';
+  static String siteWeb = '';
+  static String instagram = '';
+  static String facebook = '';
+  static List<Map<String, dynamic>> certifications = [];
+  static List<String> photosGalerie = [];
+  static bool acceptNewClients = true;
+
   static void updateUserInfo(Map<String, dynamic> data) {
     firstname = data['firstname'] ?? firstname;
     lastname = data['lastname'] ?? lastname;
@@ -234,6 +246,38 @@ class User_Info {
     catBreeds = _safeStringList(data['catBreeds'], catBreeds);
     especesElevees = _safeStringList(data['especesElevees'], especesElevees);
     bannerUrl = data['bannerUrl'] ?? bannerUrl;
+
+    // Champs pro avancés (S01) — parsing défensif
+    final rawRayon = data['rayon_intervention'];
+    if (rawRayon != null) {
+      rayonIntervention = rawRayon is int
+          ? rawRayon
+          : (int.tryParse(rawRayon.toString()) ?? rayonIntervention);
+    }
+    especesAcceptees = _safeStringList(data['especes_acceptees'], especesAcceptees);
+    if (data['horaires'] is Map) {
+      try {
+        horaires = Map<String, String>.from(
+          (data['horaires'] as Map).map((k, v) =>
+              MapEntry(k.toString(), v?.toString() ?? '')),
+        );
+      } catch (_) {}
+    }
+    if (data['tarifs'] is String) tarifs = data['tarifs'] as String;
+    if (data['site_web'] is String) siteWeb = data['site_web'] as String;
+    if (data['instagram'] is String) instagram = data['instagram'] as String;
+    if (data['facebook'] is String) facebook = data['facebook'] as String;
+    if (data['certifications'] is List) {
+      try {
+        certifications = List<Map<String, dynamic>>.from(
+          (data['certifications'] as List).whereType<Map>().map(
+              (e) => Map<String, dynamic>.from(e)),
+        );
+      } catch (_) {}
+    }
+    photosGalerie = _safeStringList(data['photos_galerie'], photosGalerie);
+    final rawAccept = data['accept_new_clients'];
+    if (rawAccept is bool) acceptNewClients = rawAccept;
   }
 
   static List<String> _safeStringList(dynamic raw, List<String> fallback) {

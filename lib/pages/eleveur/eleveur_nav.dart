@@ -14,6 +14,8 @@ import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
+import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/eleveur/user_elevage_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
@@ -266,6 +268,25 @@ class _EleveurNavState extends State<EleveurNav> {
                     ));
                   },
                 ),
+                if (User_Info.isPro) ...[
+                  const Divider(height: 24),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+                    child: Text('Espace pro',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                            fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
+                  ),
+                  _DrawerItem(
+                    icon: Icons.calendar_month_outlined,
+                    label: 'Mon agenda RDV',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const ProAgendaPage(),
+                      ));
+                    },
+                  ),
+                ],
                 const Divider(height: 24),
                 _DrawerItem(
                   icon: Icons.person_outline,
@@ -273,7 +294,9 @@ class _EleveurNavState extends State<EleveurNav> {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const ProfilEleveurEditPage(),
+                      builder: (_) => User_Info.isPro
+                          ? const ProProfileEditPage()
+                          : const ProfilEleveurEditPage(),
                     ));
                   },
                 ),
@@ -347,7 +370,9 @@ class _DrawerHeaderState extends State<_DrawerHeader> {
           GestureDetector(
             onTap: () {
               Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilEleveurEditPage()));
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => User_Info.isPro ? const ProProfileEditPage() : const ProfilEleveurEditPage(),
+              ));
             },
             child: CircleAvatar(
               radius: 28,
@@ -377,8 +402,10 @@ class _DrawerHeaderState extends State<_DrawerHeader> {
                   children: [
                     const Icon(Icons.verified, color: Color(0xFFA7C79A), size: 14),
                     const SizedBox(width: 4),
-                    const Text('Éleveur vérifié',
-                        style: TextStyle(color: Color(0xFFEEF5EA), fontSize: 12, fontFamily: 'Galey')),
+                    Text(
+                      User_Info.isPro ? 'Professionnel' : 'Éleveur vérifié',
+                      style: const TextStyle(color: Color(0xFFEEF5EA), fontSize: 12, fontFamily: 'Galey'),
+                    ),
                   ],
                 ),
               ],

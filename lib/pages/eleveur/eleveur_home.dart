@@ -4,6 +4,7 @@ import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
+import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
@@ -146,7 +147,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
                 children: [
                   GestureDetector(
                     onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const ProfilEleveurEditPage())),
+                        MaterialPageRoute(builder: (_) => User_Info.isPro ? const ProProfileEditPage() : const ProfilEleveurEditPage())),
                     child: CircleAvatar(
                       radius: 38,
                       backgroundColor: const Color(0xFFA7C79A),
@@ -183,7 +184,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
                         const SizedBox(height: 8),
                         OutlinedButton.icon(
                           onPressed: () => Navigator.push(context,
-                              MaterialPageRoute(builder: (_) => const ProfilEleveurEditPage())),
+                              MaterialPageRoute(builder: (_) => User_Info.isPro ? const ProProfileEditPage() : const ProfilEleveurEditPage())),
                           icon: const Icon(Icons.edit_outlined, size: 14, color: Colors.white),
                           label: const Text('Modifier', style: TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'Galey')),
                           style: OutlinedButton.styleFrom(

@@ -1,4 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/services/service_list_page.dart';
+import 'package:PetsMatch/pages/animal_friendly/friendly_map_page.dart';
+import 'package:PetsMatch/pages/evenements/evenements_page.dart';
+import 'package:PetsMatch/pages/promenades/promenades_page.dart';
+import 'package:PetsMatch/pages/communaute/forum_page.dart';
+import 'package:PetsMatch/pages/communaute/groupes_page.dart';
 
 class VeterinairesPag extends StatelessWidget {
   const VeterinairesPag({super.key});
@@ -10,11 +16,17 @@ class VeterinairesPag extends StatelessWidget {
       icon: Icons.local_hospital_outlined,
       iconColor: const Color(0xFF6E9E57),
       headerColor: const Color(0xFF6E9E57),
-      sections: const [
+      sections: [
         _Section(
           icon: Icons.list_alt_outlined,
           title: 'Annuaire',
           description: 'Trouvez un vétérinaire près de chez vous',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Vétérinaires',
+            categoryColor: Color(0xFF6E9E57),
+            categoryIcon: Icons.local_hospital_outlined,
+            catProValues: ['sante', 'veterinaire'],
+          ))),
         ),
         _Section(
           icon: Icons.star_outline,
@@ -25,6 +37,12 @@ class VeterinairesPag extends StatelessWidget {
           icon: Icons.emergency_outlined,
           title: 'Urgences',
           description: 'Vétérinaires disponibles 24h/24',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Urgences vétérinaires',
+            categoryColor: Color(0xFFE53935),
+            categoryIcon: Icons.emergency_outlined,
+            catProValues: ['sante', 'veterinaire'],
+          ))),
         ),
       ],
     );
@@ -41,11 +59,18 @@ class EducationPage extends StatelessWidget {
       icon: Icons.volunteer_activism_outlined,
       iconColor: const Color(0xFFEF6C00),
       headerColor: const Color(0xFFEF6C00),
-      sections: const [
+      sections: [
         _Section(
           icon: Icons.psychology_outlined,
           title: 'Éducateurs / Comportementalistes',
           description: 'Professionnels certifiés en éducation et comportement animal',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Éducateurs',
+            categoryColor: Color(0xFFEF6C00),
+            categoryIcon: Icons.psychology_outlined,
+            catProValues: ['education', 'garde'],
+            professionValues: ['Éducateur comportementaliste', 'Maître-chien', 'Dresseur'],
+          ))),
         ),
         _Section(
           icon: Icons.tips_and_updates_outlined,
@@ -56,11 +81,25 @@ class EducationPage extends StatelessWidget {
           icon: Icons.directions_walk_outlined,
           title: 'Pet sitter / Promeneurs',
           description: 'Garde à domicile et promenades pour votre animal',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Pet sitter & Promeneurs',
+            categoryColor: Color(0xFFEF6C00),
+            categoryIcon: Icons.directions_walk_outlined,
+            catProValues: ['garde'],
+            professionValues: ['Pet sitter', 'Promeneur de chiens'],
+          ))),
         ),
         _Section(
           icon: Icons.house_outlined,
           title: 'Pension pour animaux',
           description: 'Hébergement et garderie lors de vos absences',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Pensions',
+            categoryColor: Color(0xFFEF6C00),
+            categoryIcon: Icons.house_outlined,
+            catProValues: ['garde'],
+            professionValues: ['Pension'],
+          ))),
         ),
       ],
     );
@@ -77,36 +116,77 @@ class SantePage extends StatelessWidget {
       icon: Icons.favorite_outline,
       iconColor: const Color(0xFFE91E63),
       headerColor: const Color(0xFFE91E63),
-      sections: const [
+      sections: [
         _Section(
           icon: Icons.self_improvement_outlined,
           title: 'Ostéopathes',
           description: 'Ostéopathie animale — chiens, chats, chevaux et NAC',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Ostéopathes',
+            categoryColor: Color(0xFFE91E63),
+            categoryIcon: Icons.self_improvement_outlined,
+            catProValues: ['sante'],
+            professionValues: ['Ostéopathe animalier'],
+          ))),
         ),
         _Section(
           icon: Icons.accessibility_new_outlined,
           title: 'Kinésithérapeutes',
           description: 'Rééducation, mobilité et récupération post-opératoire',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Kinésithérapeutes',
+            categoryColor: Color(0xFFE91E63),
+            categoryIcon: Icons.accessibility_new_outlined,
+            catProValues: ['sante'],
+            professionValues: ['Kinésithérapeute animalier'],
+          ))),
         ),
         _Section(
           icon: Icons.eco_outlined,
           title: 'Naturopathes',
           description: 'Médecine naturelle, phytothérapie et aromathérapie',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Naturopathes',
+            categoryColor: Color(0xFFE91E63),
+            categoryIcon: Icons.eco_outlined,
+            catProValues: ['sante'],
+            professionValues: ['Naturopathe animalier'],
+          ))),
         ),
         _Section(
           icon: Icons.spa_outlined,
           title: 'Acupuncteurs',
           description: 'Acupuncture et médecines alternatives pour animaux',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Acupuncteurs',
+            categoryColor: Color(0xFFE91E63),
+            categoryIcon: Icons.spa_outlined,
+            catProValues: ['sante'],
+            professionValues: ['Acupuncteur animalier'],
+          ))),
         ),
         _Section(
           icon: Icons.psychology_alt_outlined,
           title: 'Homéopathes',
           description: 'Traitements homéopathiques adaptés à votre animal',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Homéopathes',
+            categoryColor: Color(0xFFE91E63),
+            categoryIcon: Icons.psychology_alt_outlined,
+            catProValues: ['sante'],
+            professionValues: ['Homéopathe animalier'],
+          ))),
         ),
         _Section(
           icon: Icons.biotech_outlined,
           title: 'Autres thérapeutes',
           description: 'Chiropracteurs, magnétiseurs, énergéticiens animaux',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Autres thérapeutes',
+            categoryColor: Color(0xFFE91E63),
+            categoryIcon: Icons.biotech_outlined,
+            catProValues: ['sante'],
+          ))),
         ),
       ],
     );
@@ -123,31 +203,39 @@ class LieuxSympasPage extends StatelessWidget {
       icon: Icons.park_outlined,
       iconColor: const Color(0xFF1E88E5),
       headerColor: const Color(0xFF1E88E5),
-      sections: const [
+      sections: [
         _Section(
           icon: Icons.grass_outlined,
           title: 'Parcs & espaces verts',
           description: 'Aires de jeux et balades avec votre animal',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(
+            builder: (_) => const FriendlyMapPage(filterCategory: 'Randonnée / Parc'))),
         ),
         _Section(
           icon: Icons.restaurant_menu_outlined,
           title: 'Cafés & restaurants',
           description: 'Établissements acceptant les animaux',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(
+            builder: (_) => const FriendlyMapPage(filterCategory: 'Restaurant / Bar'))),
         ),
         _Section(
           icon: Icons.hotel_outlined,
           title: 'Hôtels & hébergements',
           description: 'Séjours pet-friendly partout en France',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(
+            builder: (_) => const FriendlyMapPage(filterCategory: 'Hôtel / Hébergement'))),
         ),
         _Section(
           icon: Icons.event_outlined,
           title: 'Événements',
           description: 'Expos, concours et rassemblements animaliers',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const EvenementsPage())),
         ),
         _Section(
           icon: Icons.directions_walk_outlined,
           title: 'Promenade collective',
           description: 'Sorties groupées entre propriétaires près de chez vous',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const PromenadePage())),
         ),
       ],
     );
@@ -164,21 +252,42 @@ class ProduitsPage extends StatelessWidget {
       icon: Icons.shopping_bag_outlined,
       iconColor: const Color(0xFF8E24AA),
       headerColor: const Color(0xFF8E24AA),
-      sections: const [
+      sections: [
         _Section(
           icon: Icons.storefront_outlined,
           title: 'Boutiques en ligne & accessoires',
           description: 'Partenaires sélectionnés, jouets et accessoires pour animaux',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Boutiques',
+            categoryColor: Color(0xFF8E24AA),
+            categoryIcon: Icons.storefront_outlined,
+            catProValues: ['referencement'],
+            professionValues: ['Boutique en ligne'],
+          ))),
         ),
         _Section(
           icon: Icons.set_meal_outlined,
           title: 'Aliments & friandises',
           description: 'Croquettes, pâtées et snacks de qualité',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Fournisseurs alimentaires',
+            categoryColor: Color(0xFF8E24AA),
+            categoryIcon: Icons.set_meal_outlined,
+            catProValues: ['referencement'],
+            professionValues: ["Fournisseur d'aliments"],
+          ))),
         ),
         _Section(
           icon: Icons.brush_outlined,
           title: 'Créateurs pour animaux',
           description: 'Créations artisanales, colliers, vêtements et objets personnalisés',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Créateurs',
+            categoryColor: Color(0xFF8E24AA),
+            categoryIcon: Icons.brush_outlined,
+            catProValues: ['referencement'],
+            professionValues: ['Créateur pour animaux'],
+          ))),
         ),
         _Section(
           icon: Icons.local_offer_outlined,
@@ -200,26 +309,30 @@ class CommunautePage extends StatelessWidget {
       icon: Icons.groups_outlined,
       iconColor: const Color(0xFF00ACC1),
       headerColor: const Color(0xFF00ACC1),
-      sections: const [
+      sections: [
         _Section(
           icon: Icons.forum_outlined,
           title: 'Forums',
           description: 'Discussions et entraide entre passionnés',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ForumPage())),
         ),
         _Section(
           icon: Icons.group_outlined,
           title: 'Groupes',
           description: 'Rejoignez des groupes par race ou passion',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const GroupesPage())),
         ),
         _Section(
           icon: Icons.pets,
           title: 'Balade canine',
           description: 'Organisez et rejoignez des balades groupées près de chez vous',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const PromenadePage())),
         ),
         _Section(
           icon: Icons.event_available_outlined,
           title: 'Événements locaux',
           description: 'Rencontres et activités près de chez vous',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const EvenementsPage())),
         ),
         _Section(
           icon: Icons.volunteer_activism_outlined,
@@ -237,11 +350,13 @@ class _Section {
   final IconData icon;
   final String title;
   final String description;
+  final void Function(BuildContext ctx)? onTap;
 
   const _Section({
     required this.icon,
     required this.title,
     required this.description,
+    this.onTap,
   });
 }
 
@@ -296,7 +411,7 @@ class _ServiceSubPage extends StatelessWidget {
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [
-                          headerColor.withOpacity(0.85),
+                          headerColor.withValues(alpha: 0.85),
                           const Color(0xFF1E2025),
                         ],
                       ),
@@ -306,7 +421,7 @@ class _ServiceSubPage extends StatelessWidget {
                     right: -20,
                     top: -10,
                     child: Icon(icon, size: 140,
-                        color: Colors.white.withOpacity(0.07)),
+                        color: Colors.white.withValues(alpha: 0.07)),
                   ),
                 ],
               ),
@@ -347,7 +462,7 @@ class _SectionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 3),
           ),
@@ -359,7 +474,7 @@ class _SectionCard extends StatelessWidget {
           width: 44,
           height: 44,
           decoration: BoxDecoration(
-            color: accentColor.withOpacity(0.1),
+            color: accentColor.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(section.icon, color: accentColor, size: 22),
@@ -380,21 +495,26 @@ class _SectionCard extends StatelessWidget {
             color: Colors.grey.shade600,
           ),
         ),
-        trailing: Icon(Icons.arrow_forward_ios_rounded,
-            size: 14, color: Colors.grey.shade400),
-        onTap: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '${section.title} — bientôt disponible',
-                style: const TextStyle(fontFamily: 'Galey'),
-              ),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: accentColor,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        },
+        trailing: Icon(
+          section.onTap != null
+              ? Icons.arrow_forward_ios_rounded
+              : Icons.lock_clock_outlined,
+          size: 14,
+          color: section.onTap != null ? accentColor : Colors.grey.shade300,
+        ),
+        onTap: section.onTap != null
+            ? () => section.onTap!(context)
+            : () => ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '${section.title} — bientôt disponible',
+                      style: const TextStyle(fontFamily: 'Galey'),
+                    ),
+                    behavior: SnackBarBehavior.floating,
+                    backgroundColor: accentColor,
+                    duration: const Duration(seconds: 2),
+                  ),
+                ),
       ),
     );
   }
