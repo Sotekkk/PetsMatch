@@ -20,7 +20,11 @@ S01–S04 terminés, commités et pushés sur `feature/v2-updates` le 2026-05-27
 - `pro_agenda.dart` : notes dialog — TextFormField+onChanged au lieu de TextEditingController (dispose après close animation = crash)
 - Casts Supabase : `num?.toInt()` pour duree_minutes, `?.toString()` pour les champs texte
 
-**Prochain** : S05 — Accès carnet santé animal (permissions pro), table `animal_acces_pro` à créer dans Supabase.
+**S05** — `animal_acces_page.dart` + icône agenda. Table `animal_acces_pro` créée par Nabil.
+**S06** — `compte_rendu_page.dart` (2 onglets CR/ordo). Tables `ordonnances` + `comptes_rendus` créées par Nabil.
+**Fix nav** — sections "Mon Élevage" et "Annonces" masquées pour les pros dans `eleveur_nav.dart`.
+
+**Prochain** : S07 — Registre pension (entrée/sortie animaux en pension chez un pro).
 
 **Why:** Session de développement intensive, tout testé sur téléphone physique.
 **How to apply:** Reprendre à S05 au prochain démarrage.
