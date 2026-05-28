@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/pages/pro/animal_acces_page.dart';
+import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 
 class ProAgendaPage extends StatefulWidget {
   const ProAgendaPage({super.key});
@@ -234,16 +236,38 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: rdvs.length,
-      itemBuilder: (_, i) => _RdvCard(
-        rdv: rdvs[i],
-        showActions: showActions,
-        showCancel: showCancel,
-        onAccept: () => _updateStatut(rdvs[i]['id'].toString(), 'confirme'),
-        onDecline: () => _updateStatut(rdvs[i]['id'].toString(), 'annule'),
-        onCancel: () => _updateStatut(rdvs[i]['id'].toString(), 'annule'),
-        onDone: () => _updateStatut(rdvs[i]['id'].toString(), 'termine'),
-        onNotes: () => _showNotesDialog(rdvs[i]),
-      ),
+      itemBuilder: (_, i) {
+        final rdv = rdvs[i];
+        final animalId = rdv['animal_id']?.toString();
+        final hasAnimal = animalId != null && animalId.isNotEmpty;
+        final showProTools = !showActions; // confirme + historique uniquement
+        return _RdvCard(
+          rdv: rdv,
+          showActions: showActions,
+          showCancel: showCancel,
+          onAccept:  () => _updateStatut(rdv['id'].toString(), 'confirme'),
+          onDecline: () => _updateStatut(rdv['id'].toString(), 'annule'),
+          onCancel:  () => _updateStatut(rdv['id'].toString(), 'annule'),
+          onDone:    () => _updateStatut(rdv['id'].toString(), 'termine'),
+          onNotes:   () => _showNotesDialog(rdv),
+          onCarnetSante: (showProTools && hasAnimal)
+              ? () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => AnimalAccesPage(
+                    animalId: animalId,
+                    ownerUid: rdv['client_uid']?.toString() ?? '',
+                    categoryColor: _teal,
+                  )))
+              : null,
+          onCompteRendu: showProTools
+              ? () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => CompteRenduPage(
+                    rdv: rdv,
+                    clientName: rdv['_client_name']?.toString() ?? 'Client',
+                    categoryColor: _teal,
+                  )))
+              : null,
+        );
+      },
     );
   }
 }
@@ -259,6 +283,8 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback onCancel;
   final VoidCallback onDone;
   final VoidCallback onNotes;
+  final VoidCallback? onCarnetSante;
+  final VoidCallback? onCompteRendu;
 
   const _RdvCard({
     required this.rdv,
@@ -269,6 +295,8 @@ class _RdvCard extends StatelessWidget {
     required this.onCancel,
     required this.onDone,
     required this.onNotes,
+    this.onCarnetSante,
+    this.onCompteRendu,
   });
 
   @override
@@ -367,6 +395,26 @@ class _RdvCard extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
+              if (onCarnetSante != null) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: onCarnetSante,
+                  icon: const Icon(Icons.medical_information_outlined, size: 20, color: Color(0xFF0C5C6C)),
+                  tooltip: 'Carnet de santé',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+              if (onCompteRendu != null) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: onCompteRendu,
+                  icon: const Icon(Icons.description_outlined, size: 20, color: Color(0xFF6E9E57)),
+                  tooltip: 'CR / Ordonnance',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
               const SizedBox(width: 8),
 
               if (showActions) ...[

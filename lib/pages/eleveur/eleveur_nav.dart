@@ -120,108 +120,110 @@ class _EleveurNavState extends State<EleveurNav> {
                     setState(() => _selectedIndex = 0);
                   },
                 ),
-                _DrawerSection(
-                  icon: Icons.pets,
-                  label: 'Mon Élevage',
-                  children: [
-                    _DrawerSubItem(
-                      label: 'Mes Animaux',
-                      icon: Icons.cruelty_free_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const MesAnimauxPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Facturation',
-                      icon: Icons.receipt_long_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const FacturationPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Contrats',
-                      icon: Icons.description_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => ContratReservationPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Suivi sanitaire',
-                      icon: Icons.health_and_safety_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const RegistreSanitairePage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Entrées / Sorties',
-                      icon: Icons.swap_horiz_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const RegistreEntreeSortiePage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Mes Annonces',
-                      icon: Icons.campaign_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const MesAnnoncesPage(),
-                        ));
-                      },
-                    ),
-                  ],
-                ),
-                _DrawerSection(
-                  icon: Icons.campaign_outlined,
-                  label: 'Annonces',
-                  children: [
-                    _DrawerSubItem(
-                      label: 'Trouver un compagnon',
-                      icon: Icons.pets_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const TrouverCompagnonPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Saillie',
-                      icon: Icons.diversity_1_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnnoncesPublicPage(typeFilter: 'saillie'),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Carte des élevages',
-                      icon: Icons.map_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const EleveurListPage(),
-                        ));
-                      },
-                    ),
-                  ],
-                ),
+                if (!User_Info.isPro) ...[
+                  _DrawerSection(
+                    icon: Icons.pets,
+                    label: 'Mon Élevage',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Mes Animaux',
+                        icon: Icons.cruelty_free_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const MesAnimauxPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Facturation',
+                        icon: Icons.receipt_long_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const FacturationPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Contrats',
+                        icon: Icons.description_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => ContratReservationPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Suivi sanitaire',
+                        icon: Icons.health_and_safety_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const RegistreSanitairePage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Entrées / Sorties',
+                        icon: Icons.swap_horiz_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const RegistreEntreeSortiePage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes Annonces',
+                        icon: Icons.campaign_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const MesAnnoncesPage(),
+                          ));
+                        },
+                      ),
+                    ],
+                  ),
+                  _DrawerSection(
+                    icon: Icons.campaign_outlined,
+                    label: 'Annonces',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Trouver un compagnon',
+                        icon: Icons.pets_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const TrouverCompagnonPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Saillie',
+                        icon: Icons.diversity_1_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const AnnoncesPublicPage(typeFilter: 'saillie'),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Carte des élevages',
+                        icon: Icons.map_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const EleveurListPage(),
+                          ));
+                        },
+                      ),
+                    ],
+                  ),
+                ],
                 _DrawerSection(
                   icon: Icons.search_off_rounded,
                   label: 'Animaux perdus',
