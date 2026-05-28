@@ -171,7 +171,7 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
         (await rootBundle.load('assets/Logo_petsmatch_fond_blanc.png')).buffer.asUint8List());
 
     final headers = ['Nom', 'Espèce', 'Sexe', 'Identification', 'Né(e) le',
-      'Date entrée', 'Provenance', 'Statut', 'Date sortie', 'Destination'];
+      'Date entrée', 'Provenance', 'Mère (nom / puce)', 'Statut', 'Date sortie', 'Destination'];
 
     final rows = docs.map((d) {
       String fmtIso(String key) {
@@ -181,6 +181,11 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
         return dt != null ? fmt.format(dt) : '—';
       }
       final statut = d['statut'] as String? ?? 'present';
+      final nomMere  = d['nom_mere']  as String? ?? '';
+      final puceMere = d['puce_mere'] as String? ?? '';
+      final mereInfo = d['provenance_qualite'] == 'naissance'
+          ? [if (nomMere.isNotEmpty) nomMere, if (puceMere.isNotEmpty) 'Puce $puceMere'].join(' / ')
+          : '—';
       return [
         d['nom'] ?? '—',
         _espLabel(d['espece'] ?? ''),
@@ -189,6 +194,7 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
         fmtIso('date_naissance'),
         fmtIso('date_entree'),
         [d['provenance_nom'], d['provenance_qualite']].where((v) => v != null && v.toString().isNotEmpty).join(' / '),
+        mereInfo.isNotEmpty ? mereInfo : '—',
         statut == 'present' ? 'Présent' : statut == 'sorti' ? 'Sorti' : 'Décédé',
         fmtIso('date_sortie'),
         [d['destinataire_nom'], d['destinataire_adresse']].where((v) => v != null && v.toString().isNotEmpty).join(' / '),
@@ -225,16 +231,17 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
           border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.3),
           cellPadding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
           columnWidths: {
-            0: const pw.FlexColumnWidth(1.4),
-            1: const pw.FlexColumnWidth(0.8),
-            2: const pw.FlexColumnWidth(0.6),
+            0: const pw.FlexColumnWidth(1.2),
+            1: const pw.FlexColumnWidth(0.7),
+            2: const pw.FlexColumnWidth(0.5),
             3: const pw.FlexColumnWidth(1.0),
-            4: const pw.FlexColumnWidth(0.8),
-            5: const pw.FlexColumnWidth(0.8),
-            6: const pw.FlexColumnWidth(1.4),
-            7: const pw.FlexColumnWidth(0.7),
-            8: const pw.FlexColumnWidth(0.8),
-            9: const pw.FlexColumnWidth(1.5),
+            4: const pw.FlexColumnWidth(0.7),
+            5: const pw.FlexColumnWidth(0.7),
+            6: const pw.FlexColumnWidth(1.2),
+            7: const pw.FlexColumnWidth(1.2),
+            8: const pw.FlexColumnWidth(0.6),
+            9: const pw.FlexColumnWidth(0.7),
+            10: const pw.FlexColumnWidth(1.3),
           },
         ),
       ],
@@ -461,6 +468,20 @@ class _EntreeCard extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     'Provenance : ${[data['provenance_nom'], data['provenance_qualite']].where((v) => v != null && v.toString().isNotEmpty).join(' / ')}',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade400),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                // Mère (uniquement si naissance dans l'élevage)
+                if (data['provenance_qualite'] == 'naissance' &&
+                    ((data['nom_mere'] as String? ?? '').isNotEmpty ||
+                     (data['puce_mere'] as String? ?? '').isNotEmpty)) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    'Mère : ${[
+                      if ((data['nom_mere'] as String? ?? '').isNotEmpty) data['nom_mere'] as String,
+                      if ((data['puce_mere'] as String? ?? '').isNotEmpty) 'Puce ${data['puce_mere']}',
+                    ].join(' · ')}',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade400),
                     maxLines: 1, overflow: TextOverflow.ellipsis,
                   ),

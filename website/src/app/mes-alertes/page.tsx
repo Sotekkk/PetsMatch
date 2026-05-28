@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 // ─── Structure Supabase alertes_perdus ────────────────────────────────────────
 interface Alerte {
@@ -233,6 +234,95 @@ export default function MesAlertesPage() {
   );
 }
 
+// ── Champ localisation avec autocomplete Google Places ────────────────────────
+
+function LocationInput({ value, onChange, placeholder = 'Ville, rue, quartier…', inputCls = '' }: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  inputCls?: string;
+}) {
+  const [predictions, setPredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
+  const autocompleteRef = useRef<google.maps.places.AutocompleteService | null>(null);
+  const placesRef = useRef<google.maps.places.PlacesService | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return;
+    setOptions({ key: apiKey, v: 'weekly', language: 'fr' });
+    importLibrary('places').then(() => {
+      autocompleteRef.current = new window.google.maps.places.AutocompleteService();
+      const dummyDiv = document.createElement('div');
+      placesRef.current = new window.google.maps.places.PlacesService(dummyDiv);
+    }).catch(() => {});
+  }, []);
+
+  function handleChange(val: string) {
+    onChange(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (val.trim().length < 3) { setPredictions([]); return; }
+    debounceRef.current = setTimeout(() => {
+      autocompleteRef.current?.getPlacePredictions(
+        { input: val, componentRestrictions: { country: ['fr', 'be', 'ch', 'lu'] }, language: 'fr' } as google.maps.places.AutocompletionRequest,
+        (preds, status) => {
+          if (status === window.google.maps.places.PlacesServiceStatus.OK && preds) {
+            setPredictions(preds);
+          } else {
+            setPredictions([]);
+          }
+        }
+      );
+    }, 400);
+  }
+
+  function selectPrediction(pred: google.maps.places.AutocompletePrediction) {
+    setPredictions([]);
+    placesRef.current?.getDetails(
+      { placeId: pred.place_id, fields: ['address_components'] },
+      (place, status) => {
+        if (status !== window.google.maps.places.PlacesServiceStatus.OK || !place?.address_components) {
+          onChange(pred.description);
+          return;
+        }
+        let num = '', route = '', postalCode = '', city = '';
+        for (const c of place.address_components) {
+          if (c.types.includes('street_number')) num = c.long_name;
+          if (c.types.includes('route')) route = c.long_name;
+          if (c.types.includes('postal_code')) postalCode = c.long_name;
+          if (c.types.includes('locality')) city = c.long_name;
+          else if (c.types.includes('postal_town') && !city) city = c.long_name;
+        }
+        const street = [num, route].filter(Boolean).join(' ');
+        onChange([street, postalCode, city].filter(Boolean).join(', '));
+      }
+    );
+  }
+
+  return (
+    <div className="relative">
+      <input
+        value={value}
+        onChange={e => handleChange(e.target.value)}
+        onBlur={() => setTimeout(() => setPredictions([]), 200)}
+        placeholder={placeholder}
+        className={inputCls || 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white'}
+      />
+      {predictions.length > 0 && (
+        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          {predictions.map(p => (
+            <button key={p.place_id} type="button"
+              onMouseDown={() => selectPrediction(p)}
+              className="w-full text-left px-4 py-2.5 text-sm hover:bg-orange-50 text-gray-700 border-b border-gray-50 last:border-0">
+              📍 {p.description}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Formulaire création / édition ─────────────────────────────────────────────
 
 function AlerteForm({ uid, alerte, onClose, onSaved }: {
@@ -302,7 +392,7 @@ function AlerteForm({ uid, alerte, onClose, onSaved }: {
           <form onSubmit={handleSave} className="space-y-3">
             {/* Nom */}
             <div>
-              <label className={labelCls}>Nom de l'animal *</label>
+              <label className={labelCls}>Nom de l&apos;animal *</label>
               <input value={nom} onChange={e => setNom(e.target.value)} required placeholder="Rex, Luna…" className={inputCls} />
             </div>
 
@@ -352,8 +442,8 @@ function AlerteForm({ uid, alerte, onClose, onSaved }: {
             {/* Localisation */}
             <div>
               <label className={labelCls}>Dernière localisation connue</label>
-              <input value={localisation} onChange={e => setLocalisation(e.target.value)}
-                placeholder="Rue, ville, département…" className={inputCls} />
+              <LocationInput value={localisation} onChange={setLocalisation}
+                placeholder="Rechercher une adresse…" inputCls={inputCls} />
             </div>
 
             {/* Description */}
@@ -420,12 +510,10 @@ function LocationModal({ alerte, onClose, onSaved }: {
         </h3>
         <p className="text-gray-400 text-xs mb-4">{alerte.nom_animal}</p>
         <form onSubmit={handleSave} className="space-y-3">
-          <textarea
+          <LocationInput
             value={localisation}
-            onChange={e => setLocalisation(e.target.value)}
-            rows={2}
-            placeholder="Rue, quartier, ville, département…"
-            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white resize-none"
+            onChange={setLocalisation}
+            placeholder="Rechercher une adresse…"
           />
           <div className="flex gap-3">
             <button type="submit" disabled={saving || !localisation.trim()}

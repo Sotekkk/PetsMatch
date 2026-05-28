@@ -176,6 +176,43 @@ class _AlerteCard extends StatelessWidget {
     required this.onUpdateLocation,
   });
 
+  void _showQuickActions(BuildContext context, bool retrouve) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          if (!retrouve)
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              leading: const CircleAvatar(
+                backgroundColor: Color(0xFFEEF5EA),
+                child: Icon(Icons.check_circle_outline, color: Color(0xFF6E9E57))),
+              title: const Text('Animal retrouvé !',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              onTap: () { Navigator.pop(context); onRetrouve(); },
+            ),
+          ListTile(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            leading: const CircleAvatar(
+              backgroundColor: Color(0xFFFFEBEE),
+              child: Icon(Icons.delete_outline, color: Colors.red)),
+            title: const Text('Supprimer l\'alerte',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.red)),
+            onTap: () { Navigator.pop(context); onDelete(); },
+          ),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final nom      = data['nom_animal'] as String? ?? 'Animal inconnu';
@@ -187,7 +224,9 @@ class _AlerteCard extends StatelessWidget {
     final numero   = data['numero_alerte'] as String?;
     final retrouve = statut == 'retrouve';
 
-    return Container(
+    return GestureDetector(
+      onLongPress: () => _showQuickActions(context, retrouve),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -275,7 +314,7 @@ class _AlerteCard extends StatelessWidget {
           ),
         ]),
       ),
-    );
+    ));  // GestureDetector + Container
   }
 }
 

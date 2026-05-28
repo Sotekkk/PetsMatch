@@ -2,6 +2,7 @@ import 'package:PetsMatch/pages/particulier/numberadressregistration.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:PetsMatch/main.dart';
 import 'dart:convert';
@@ -178,6 +179,27 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
       User_Info.dogBreeds = List<String>.from(_selectedDogBreeds);
       User_Info.catBreeds = List<String>.from(_selectedCatBreeds);
     }
+
+    // Mettre à jour Supabase (synchronisation avec le web)
+    final supa = Supabase.instance.client;
+    final supaPayload = <String, dynamic>{
+      'firstname': _firstnameController.text,
+      'lastname': _lastnameController.text,
+      'date_of_birth': _dobController.text,
+    };
+    if (!User_Info.isElevage && !User_Info.isPro) {
+      supaPayload['phone_number'] = _phoneController.text;
+      supaPayload['ville'] = _villeController.text;
+      supaPayload['code_postal'] = _codePostalController.text;
+    }
+    if (User_Info.isElevage || User_Info.isPro) {
+      supaPayload['name_elevage'] = _elevageNameController.text;
+      supaPayload['rue_elevage'] = _rueElevageController.text;
+      supaPayload['ville_elevage'] = _villeElevageController.text;
+      supaPayload['code_postal_elevage'] = _codePostalElevageController.text;
+      supaPayload['pays_elevage'] = _paysElevageController.text;
+    }
+    await supa.from('users').update(supaPayload).eq('uid', User_Info.uid);
 
     // Afficher un message de confirmation
     ScaffoldMessenger.of(context).showSnackBar(

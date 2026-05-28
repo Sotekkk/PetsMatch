@@ -8,6 +8,7 @@ import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
+import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -229,7 +230,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
   Widget _buildAlerteBanner(BuildContext context) {
     return GestureDetector(
       onTap: () => Navigator.push(context,
-          MaterialPageRoute(builder: (_) => const AnimauxPerdusPage())),
+          MaterialPageRoute(builder: (_) => const MesAlertesPage())),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(

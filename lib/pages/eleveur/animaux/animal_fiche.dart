@@ -82,6 +82,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   String    _destinataireQualite = '';
   final _destinataireAdresseCtrl = TextEditingController();
   String    _causeMort           = ''; // 'maladie' | 'accident' | 'naturelle' | 'inconnue'
+  String? _nomElevage;
+  String? _adresseElevage;
   bool _pedigree = false;
   final _clubRegistreCtrl = TextEditingController();
   DateTime? _dateNaissance;
@@ -119,6 +121,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _fillFromData(widget.initialData); // pre-fill instantly from cached data
     _loadBreeds();
     _loadMesAnimaux();
+    _loadEleveurProfile();
     if (widget.animalId != null) {
       _loadActiveAlerte();
       _refreshFromSupabase(); // then silently refresh with latest Supabase data
@@ -172,6 +175,28 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         setState(() {
           _activeAlerteId = res[0]['id'] as String?;
           _alerteStatut   = res[0]['statut'] as String?;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadEleveurProfile() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final profil = await _supa
+          .from('users')
+          .select('name_elevage, rue_elevage, ville_elevage, code_postal_elevage')
+          .eq('uid', uid)
+          .maybeSingle();
+      if (profil != null && mounted) {
+        final rue   = profil['rue_elevage']          as String? ?? '';
+        final cp    = profil['code_postal_elevage']  as String? ?? '';
+        final ville = profil['ville_elevage']         as String? ?? '';
+        final adresse = [rue, cp, ville].where((s) => s.isNotEmpty).join(', ');
+        setState(() {
+          _nomElevage     = profil['name_elevage'] as String?;
+          _adresseElevage = adresse.isNotEmpty ? adresse : null;
         });
       }
     } catch (_) {}
@@ -1496,11 +1521,14 @@ class _IdentiteTab extends StatelessWidget {
   Widget _registreSection(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
       ),
-      child: Theme(
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: false,
@@ -1553,7 +1581,20 @@ class _IdentiteTab extends StatelessWidget {
               items: ['naissance', 'eleveur', 'particulier', 'refuge', 'importation', 'autre'].map((v) =>
                   DropdownMenuItem(value: v, child: Text(_qualiteLabel(v),
                       style: const TextStyle(fontFamily: 'Galey', fontSize: 13)))).toList(),
-              onChanged: (v) => s.setState(() => s._provenanceQualite = v ?? ''),
+              onChanged: (v) {
+                s.setState(() => s._provenanceQualite = v ?? '');
+                if (v == 'naissance') {
+                  if (s._dateEntree == null && s._dateNaissance != null) {
+                    s.setState(() => s._dateEntree = s._dateNaissance);
+                  }
+                  if (s._provenanceNomCtrl.text.isEmpty && (s._nomElevage?.isNotEmpty ?? false)) {
+                    s._provenanceNomCtrl.text = s._nomElevage!;
+                  }
+                  if (s._provenanceAdresseCtrl.text.isEmpty && (s._adresseElevage?.isNotEmpty ?? false)) {
+                    s._provenanceAdresseCtrl.text = s._adresseElevage!;
+                  }
+                }
+              },
             ),
             const SizedBox(height: 8),
             _inlineField('Nom du fournisseur / Origine', s._provenanceNomCtrl),
@@ -1568,6 +1609,26 @@ class _IdentiteTab extends StatelessWidget {
             const SizedBox(height: 8),
             _dateRegistreField(context, 'Date de naissance de la mère', s._dateNaissanceMere,
                 (d) => s.setState(() => s._dateNaissanceMere = d)),
+            if (s._nomMereCtrl.text.isNotEmpty || s._puceMereCtrl.text.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0F8EE),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFA7C79A)),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.female, size: 16, color: Color(0xFF6E9E57)),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    'Mère : ${s._nomMereCtrl.text.isNotEmpty ? s._nomMereCtrl.text : '—'}'
+                    '${s._puceMereCtrl.text.isNotEmpty ? ' · Puce : ${s._puceMereCtrl.text}' : ''}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF4A7A3A)),
+                  )),
+                ]),
+              ),
+            ],
 
             const SizedBox(height: 14),
 
@@ -1633,6 +1694,7 @@ class _IdentiteTab extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }

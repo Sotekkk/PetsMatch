@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { uploadBlob } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -79,11 +80,29 @@ export default function DeclarerPerduPage() {
   const [userAnimaux, setUserAnimaux] = useState<UserAnimal[]>([]);
   const [showPicker, setShowPicker] = useState(false);
 
+  // Location autocomplete
+  const [locSearch, setLocSearch] = useState('');
+  const [locPredictions, setLocPredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
+  const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
+  const placesService = useRef<google.maps.places.PlacesService | null>(null);
+  const locDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // ── Init ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
   }, [loading, user, router]);
+
+  useEffect(() => {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return;
+    setOptions({ key: apiKey, v: 'weekly', language: 'fr' });
+    importLibrary('places').then(() => {
+      autocompleteService.current = new window.google.maps.places.AutocompleteService();
+      const dummyDiv = document.createElement('div');
+      placesService.current = new window.google.maps.places.PlacesService(dummyDiv);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (user?.email) setContact(user.email);
@@ -109,6 +128,51 @@ export default function DeclarerPerduPage() {
       .order('nom')
       .then(({ data }) => setUserAnimaux((data as UserAnimal[]) ?? []));
   }, [user]);
+
+  // ── Location autocomplete ──────────────────────────────────────────────────
+
+  function onLocChange(val: string) {
+    setLocSearch(val);
+    if (locDebounce.current) clearTimeout(locDebounce.current);
+    if (val.trim().length < 3) { setLocPredictions([]); return; }
+    locDebounce.current = setTimeout(() => {
+      autocompleteService.current?.getPlacePredictions(
+        { input: val, componentRestrictions: { country: ['fr', 'be', 'ch', 'lu'] }, language: 'fr' } as google.maps.places.AutocompletionRequest,
+        (preds, status) => {
+          if (status === window.google.maps.places.PlacesServiceStatus.OK && preds) {
+            setLocPredictions(preds);
+          } else {
+            setLocPredictions([]);
+          }
+        }
+      );
+    }, 400);
+  }
+
+  function selectLocPrediction(pred: google.maps.places.AutocompletePrediction) {
+    setLocPredictions([]);
+    placesService.current?.getDetails(
+      { placeId: pred.place_id, fields: ['address_components'] },
+      (place, status) => {
+        if (status !== window.google.maps.places.PlacesServiceStatus.OK || !place?.address_components) {
+          setLocSearch(pred.description);
+          return;
+        }
+        let num = '', route = '', postalCode = '', city = '';
+        for (const c of place.address_components) {
+          if (c.types.includes('street_number')) num = c.long_name;
+          if (c.types.includes('route')) route = c.long_name;
+          if (c.types.includes('postal_code')) postalCode = c.long_name;
+          if (c.types.includes('locality')) city = c.long_name;
+          else if (c.types.includes('postal_town') && !city) city = c.long_name;
+        }
+        if (city) setVille(city);
+        if (postalCode) setCp(postalCode);
+        if (num || route) setRue([num, route].filter(Boolean).join(' '));
+        setLocSearch([num && route ? `${num} ${route}` : route || num, postalCode, city].filter(Boolean).join(', '));
+      }
+    );
+  }
 
   // ── Breed autocomplete ─────────────────────────────────────────────────────
 
@@ -158,12 +222,12 @@ export default function DeclarerPerduPage() {
   }
 
   async function uploadAlertPhoto(): Promise<string | null> {
-    if (!photoBlob) return photoPreview;
-    try {
-      return await uploadBlob(photoBlob, `alertes/${Date.now()}.jpg`);
-    } catch {
-      return photoPreview;
+    if (!photoBlob) {
+      // Return existing URL only if it's a real persisted URL, never a blob:
+      if (photoPreview && !photoPreview.startsWith('blob:')) return photoPreview;
+      return null;
     }
+    return uploadBlob(photoBlob, `alertes/${user!.uid}/${Date.now()}.jpg`);
   }
 
   // ── Submit ─────────────────────────────────────────────────────────────────
@@ -360,6 +424,27 @@ export default function DeclarerPerduPage() {
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-1">Dernière localisation *</label>
           <div className="space-y-2">
+            {/* Address search with autocomplete */}
+            <div className="relative">
+              <input
+                value={locSearch}
+                onChange={e => onLocChange(e.target.value)}
+                onBlur={() => setTimeout(() => setLocPredictions([]), 200)}
+                placeholder="Rechercher une adresse… (remplit les champs ci-dessous)"
+                className="w-full border border-orange-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-orange-50"
+              />
+              {locPredictions.length > 0 && (
+                <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                  {locPredictions.map(p => (
+                    <button key={p.place_id} type="button"
+                      onMouseDown={() => selectLocPrediction(p)}
+                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-orange-50 text-gray-700 border-b border-gray-50 last:border-0">
+                      📍 {p.description}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <input value={rue} onChange={e => setRue(e.target.value)}
               className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white"
               placeholder="Rue / Voie (optionnel)" />

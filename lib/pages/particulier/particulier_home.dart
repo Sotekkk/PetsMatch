@@ -423,7 +423,8 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
                   _PerduMiniCard(alerte: _alertesPubliques[i],
                       onShare: () => _shareAlerte(_alertesPubliques[i]),
                       onTap: () => Navigator.push(context,
-                          MaterialPageRoute(builder: (_) => const AnimauxPerdusPage()))),
+                          MaterialPageRoute(builder: (_) => AnimauxPerdusPage(
+                              initialAlertId: _alertesPubliques[i]['id'] as String?)))),
             ),
           ),
       ],

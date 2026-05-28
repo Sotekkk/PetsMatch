@@ -315,7 +315,7 @@ export default function ProfilPage() {
   useEffect(() => {
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
     if (!apiKey) return;
-    setOptions({ apiKey, version: 'weekly', language: 'fr' });
+    setOptions({ key: apiKey, v: 'weekly', language: 'fr' });
     importLibrary('places').then(() => {
       autocompleteService.current = new window.google.maps.places.AutocompleteService();
       const dummyDiv = document.createElement('div');
@@ -354,7 +354,7 @@ export default function ProfilPage() {
           if (c.types.includes('route')) route = c.long_name;
           if (c.types.includes('postal_code')) cp = c.long_name;
           if (c.types.includes('locality')) city = c.long_name;
-          else if (c.types.includes('administrative_area_level_2') && !city) city = c.long_name;
+          else if (c.types.includes('postal_town') && !city) city = c.long_name;
         }
         if (city) setVille(city);
         if (cp) setCpParticulier(cp);
@@ -394,7 +394,7 @@ export default function ProfilPage() {
           if (c.types.includes('route')) route = c.long_name;
           if (c.types.includes('postal_code')) postalCode = c.long_name;
           if (c.types.includes('locality')) city = c.long_name;
-          else if (c.types.includes('administrative_area_level_2') && !city) city = c.long_name;
+          else if (c.types.includes('postal_town') && !city) city = c.long_name;
         }
         if (city) setVilleElevage(city);
         if (postalCode) setCp(postalCode);
