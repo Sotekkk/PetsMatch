@@ -21,29 +21,25 @@
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
 | A09 | Suivi repro — saillie extérieure : accès infos mâle (photo, nom, puce, race) depuis éleveur externe | Moyenne | App + Web | À créer `suivi_repro.dart` + table `saillie_acces` |
-| A10 | Annonces — photo carrée à la création (déjà OK) + affichage rectangle adapté centré dans le feed sans rogner | Haute | App + Web | `annonces_feed_page.dart`, feed web |
 | A12 | Admin — algorithme de validation automatique profils éleveurs (détection spam, cohérence données) | Haute | App + Web | `admin_panel.dart`, `verification_detail.dart` |
 | A13 | Admin — algorithme modération annonces (filtre contenu, cohérence espèce/race/prix) | Haute | App + Web | Panel admin |
+| A14 | Vue fiche animal pour particuliers — identique à la vue carte profil éleveur | Haute | App + Web | À créer dans profil particulier |
+| A15 | Profil particulier — revoir mise en page (app) | Moyenne | App | `particulier_home.dart`, `info_utilisateur.dart` |
+| A16 | Vue admin dans l'appli web | Haute | Web | `src/app/admin/` à créer |
+| A17 | Fix overflow — cards annonces "Trouver un compagnon" (1 px) + animaux perdus (7.4 px) | Haute | App | `trouver_compagnon_page.dart`, `animaux_perdus_page.dart` |
+| A18 | Espèce âne — ajouter partout (listes espèces, filtres, formulaires) + créer `donkey_breeds.json` | Haute | App + Web | Tous les sélecteurs d'espèce + assets |
+| A19 | Feed — filtre race dynamique selon espèce (liste JSON par espèce) | Haute | App + Web | `annonces_feed_page.dart`, `annonces/feed/page.tsx` |
 
 ### App mobile + Web (synchronisés)
 
 | # | Tâche | Priorité | Repo | Notes |
 |---|---|---|---|---|
-| T01 | Animaux perdus — formulaire complet (nom depuis mes animaux, race depuis JSON, dernière localisation) | Haute | App + Web | Voir SPEC §7, roadmap §I.A |
-| T02 | Animaux perdus — filtres liste (espèce, race, ville, région) + vue détail | Haute | App + Web | Roadmap §I.B |
 | T03 | Animaux perdus — contact via messagerie (objet auto) | Moyenne | App + Web | Roadmap §I.B |
-| T04 | Messagerie — ajout au menu + redesign liste | Moyenne | App + Web | Roadmap §II |
-| T05 | Messagerie — types de conversation (annonce, perdu, élevage, libre, pro) | Moyenne | App + Web | Roadmap §II |
 | T06 | Fiche animal — onglet suivi repro éleveur (chaleurs, saillie, gestation) | Haute | App + Web | Roadmap §III.A.a |
 | T07 | Carnet de santé — notifications vaccins/antiparasitaires (J-7, J-1, J) | Haute | App | Roadmap §III.A.b |
 | T08 | Fiche animal — courbe de poids (croissance + adulte) | Moyenne | App + Web | Roadmap §III.A.b |
 | T09 | Transfert de propriété animal (vente → email acheteur) | Haute | App + Web | Roadmap §III.A.c |
 | T10 | Annonces — likes sur portée/bébé + notification éleveur + favoris | Haute | Web d'abord | Roadmap §VI |
-| T11 | Annonces — visuel liste style "match" (photo bébé premier plan) | Moyenne | Web | Roadmap §VI |
-| T12 | Annonces — fix onglet annonces profil éleveur | Haute | App + Web | Roadmap §VI |
-| T13 | Registre sanitaire — import Excel | Basse | Web | Roadmap §V |
-| T14 | Notifications animaux perdus — fix iOS (alertes non reçues) | Haute | App | Roadmap §I.C |
-| T15 | Animaux perdus — carte synchronisée avec filtres liste | Moyenne | App + Web | Roadmap §I.B |
 
 ### Services & Communauté — **Nabil**
 > Spec complète : `SPEC_PRO_SERVICES.md`
@@ -56,18 +52,6 @@
 | S10 | Promenades collectives | Moyenne | App + Web | Créer `lib/pages/promenades/` + `src/app/promenades/` |
 | S11 | Forum communauté | Basse | App + Web | Créer `lib/pages/communaute/` + `src/app/communaute/` |
 | S12 | Groupes communauté | Basse | App + Web | Créer `lib/pages/communaute/` |
-
-### App uniquement
-
-| # | Tâche | Priorité | Fichiers probables | Notes |
-|---|---|---|---|---|
-| A01 | Contrats — modèle de base modifiable | Moyenne | `eleveur/admin/contrat_reservation.dart` | Roadmap §IV |
-
-### Web uniquement
-
-| # | Tâche | Priorité | Fichiers probables | Notes |
-|---|---|---|---|---|
-| W01 | Contrats — modèle de base modifiable | Moyenne | `elevage/contrats/page.tsx` (à créer) | Roadmap §IV |
 
 ---
 
@@ -90,6 +74,17 @@
 
 | Tâche | Date | Repo | Fichiers modifiés |
 |---|---|---|---|
+| A10 — Feed immersif : layout full-screen, photo carrée BoxFit.contain + flou, header élevage, badge LOF/Non-LOF, description extensible, boutons d'action en colonne | 2026-05-28 | App + Web | `annonces_feed_page.dart`, `annonce_detail_page.dart`, `annonces/feed/page.tsx` |
+| T01 — Animaux perdus : formulaire complet (nom depuis mes animaux, race depuis JSON, localisation) | 2026-05-28 | App + Web | `alerte_perdu_form_page.dart`, `animaux-perdus/declarer/page.tsx` |
+| T02 — Animaux perdus : filtres liste (espèce, race, ville) + vue détail | 2026-05-28 | App + Web | `animaux_perdus_page.dart`, `animaux-perdus/page.tsx` |
+| T04 — Messagerie : ajout au menu + redesign liste | 2026-05-28 | App + Web | Messagerie |
+| T05 — Messagerie : types de conversation (annonce, perdu, élevage, libre, pro) | 2026-05-28 | App + Web | Messagerie |
+| T11 — Feed annonces : visuel style "match" (photo premier plan, boutons like/favori) | 2026-05-28 | App + Web | `annonces_feed_page.dart` |
+| T12 — Fix onglet annonces profil éleveur | 2026-05-28 | App + Web | Profil éleveur |
+| T13 — Registre sanitaire : export (PDF/Excel) | 2026-05-28 | App + Web | Registre |
+| T14 — Notifications animaux perdus : fix réception | 2026-05-28 | App | Notifications |
+| T15 — Animaux perdus : carte synchronisée avec filtres liste | 2026-05-28 | App + Web | `animaux_perdus_page.dart`, `animaux-perdus/page.tsx` |
+| A01 — Contrats : modèle de base modifiable | 2026-05-28 | App + Web | `contrat_reservation.dart`, `elevage/contrats/page.tsx` |
 | Fix — Annonces saillie : section "Père" masquée dans le formulaire + section "Parents" masquée dans le détail | 2026-05-28 | App + Web | `create_annonce_page.dart`, `annonce_detail_page.dart`, `annonces/[id]/page.tsx` |
 | Fix — Annonces saillie : prix non affiché (`saillie_prix` mal typé `numeric` → `float8` Supabase, parsing défensif, `_norm()` manquant dans mes-annonces) | 2026-05-28 | App + Web | `create_annonce_page.dart`, `annonces_feed_page.dart`, `annonce_detail_page.dart`, `mes_annonces_page.dart`, `annonces/page.tsx`, `annonces/feed/page.tsx`, `annonces/[id]/page.tsx`, `mes-annonces/page.tsx`, `annonces/creer/page.tsx`, `annonces/[id]/modifier/page.tsx` |
 | A02 — Alerte page d'accueil → gestion directe (1 alerte → fiche, >1 → liste) | 2026-05-28 | App + Web | `particulier_home.dart`, `eleveur_home.dart`, `ParticulierDashboard.tsx`, `EleveurDashboard.tsx` |
