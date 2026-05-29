@@ -66,7 +66,12 @@ class ServicesPage extends StatelessWidget {
             floating: false,
             pinned: true,
             backgroundColor: const Color(0xFF1F2A2E),
-            automaticallyImplyLeading: false,
+            leading: Navigator.canPop(context)
+                ? IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                    onPressed: () => Navigator.pop(context),
+                  )
+                : null,
             flexibleSpace: FlexibleSpaceBar(
               centerTitle: false,
               titlePadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
@@ -153,7 +158,7 @@ class _CategoryCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),

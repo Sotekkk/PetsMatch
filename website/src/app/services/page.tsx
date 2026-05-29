@@ -58,10 +58,10 @@ const SECTIONS: ServiceSection[] = [
     color: '#16A34A',
     colorLight: '#F0FDF4',
     items: [
-      { id: 'hotels',      label: 'Hôtels & Hébergements', icon: '🏨', soon: true },
-      { id: 'restau',      label: 'Restaurants',           icon: '🍽️', soon: true },
-      { id: 'plages',      label: 'Plages & Baignades',    icon: '🏖️', soon: true },
-      { id: 'parcs',       label: 'Parcs & Espaces verts', icon: '🌳', soon: true },
+      { id: 'all',          label: 'Tous les lieux',        icon: '🗺️', href: '/animal-friendly' },
+      { id: 'hotels',      label: 'Hôtels & Hébergements', icon: '🏨', href: '/animal-friendly' },
+      { id: 'restau',      label: 'Restaurants',           icon: '🍽️', href: '/animal-friendly' },
+      { id: 'parcs',       label: 'Parcs & Espaces verts', icon: '🌳', href: '/animal-friendly' },
     ],
   },
   {

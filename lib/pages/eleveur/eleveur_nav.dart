@@ -16,6 +16,7 @@ import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
+import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/eleveur/user_elevage_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
@@ -289,6 +290,16 @@ class _EleveurNavState extends State<EleveurNav> {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(
                         builder: (_) => const ProAgendaPage(),
+                      ));
+                    },
+                  ),
+                  _DrawerItem(
+                    icon: Icons.home_work_outlined,
+                    label: 'Registre pension',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const RegistrePensionPage(),
                       ));
                     },
                   ),

@@ -72,8 +72,6 @@
 
 | # | Tâche | Priorité | App / Web | Fichiers de départ |
 |---|---|---|---|---|
-| S07 | Registre pension (entrée/sortie) | Moyenne | App + Web | Réutiliser logique `registre_entree_sortie` |
-| S08 | Animal Friendly — carte + ajout lieu | Haute | App + Web | Créer `lib/pages/animal_friendly/` + `src/app/animal-friendly/` |
 | S09 | Événements — création + inscription + rappels | Moyenne | App + Web | Créer `lib/pages/evenements/` + `src/app/evenements/` |
 | S10 | Promenades collectives | Moyenne | App + Web | Créer `lib/pages/promenades/` + `src/app/promenades/` |
 | S11 | Forum communauté | Basse | App + Web | Créer `lib/pages/communaute/` + `src/app/communaute/` |
@@ -81,7 +79,7 @@
 
 ---
 
-## Terminé — Nabil (S01, S02, S03, S04, S05, S06)
+## Terminé — Nabil (S01, S02, S03, S04, S05, S06, S07, S08)
 
 | Tâche | Date | Repo | Fichiers modifiés |
 |---|---|---|---|
@@ -93,6 +91,9 @@
 | S05 — Accès carnet santé animal : `animal_acces_page.dart` (demande + vue carnet), icône agenda RDV confirmé/terminé avec animal | 2026-05-28 | App | `animal_acces_page.dart`, `pro_agenda.dart` |
 | S06 — CR & ordonnances : `compte_rendu_page.dart` (2 onglets texte/URL), icône agenda, sauvegarde `comptes_rendus` + `ordonnances` | 2026-05-28 | App | `compte_rendu_page.dart`, `pro_agenda.dart` |
 | Fix — Nav pro : sections "Mon Élevage" et "Annonces" masquées pour les pros dans le drawer | 2026-05-28 | App | `eleveur_nav.dart` |
+| Fix — Services page : bouton retour absent (automaticallyImplyLeading: false supprimé) | 2026-05-29 | App | `services_page.dart` |
+| S07 — Registre pension : entrée/sortie animaux en pension (3 onglets, ajout via bottom sheet, marquer sorti) | 2026-05-29 | App | `registre_pension_page.dart`, `eleveur_nav.dart` |
+| S08 — Animal Friendly : liste lieux Supabase + carte Google Maps + ajout lieu (app) + page web | 2026-05-29 | App + Web | `friendly_map_page.dart`, `website/src/app/animal-friendly/page.tsx`, `services/page.tsx` |
 
 ---
 
