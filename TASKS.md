@@ -67,19 +67,10 @@
 | T09 | Transfert de propriété animal (vente → email acheteur) | Haute | App + Web | Roadmap §III.A.c |
 | T10 | Annonces — likes sur portée/bébé + notification éleveur + favoris | Haute | Web d'abord | Roadmap §VI |
 
-### Services & Communauté — **Nabil**
-> Spec complète : `SPEC_PRO_SERVICES.md`
-
-| # | Tâche | Priorité | App / Web | Fichiers de départ |
-|---|---|---|---|---|
-| S09 | Événements — création + inscription + rappels | Moyenne | App + Web | Créer `lib/pages/evenements/` + `src/app/evenements/` |
-| S10 | Promenades collectives | Moyenne | App + Web | Créer `lib/pages/promenades/` + `src/app/promenades/` |
-| S11 | Forum communauté | Basse | App + Web | Créer `lib/pages/communaute/` + `src/app/communaute/` |
-| S12 | Groupes communauté | Basse | App + Web | Créer `lib/pages/communaute/` |
 
 ---
 
-## Terminé — Nabil (S01, S02, S03, S04, S05, S06, S07, S08)
+## Terminé — Nabil (S01–S12 ✅ COMPLET)
 
 | Tâche | Date | Repo | Fichiers modifiés |
 |---|---|---|---|
@@ -92,6 +83,10 @@
 | S06 — CR & ordonnances : `compte_rendu_page.dart` (2 onglets texte/URL), icône agenda, sauvegarde `comptes_rendus` + `ordonnances` | 2026-05-28 | App | `compte_rendu_page.dart`, `pro_agenda.dart` |
 | Fix — Nav pro : sections "Mon Élevage" et "Annonces" masquées pour les pros dans le drawer | 2026-05-28 | App | `eleveur_nav.dart` |
 | Fix — Services page : bouton retour absent (automaticallyImplyLeading: false supprimé) | 2026-05-29 | App | `services_page.dart` |
+| S09 — Événements : liste + filtres type + inscription "Je participe" + création | 2026-05-29 | App | `evenements_page.dart` |
+| S10 — Promenades collectives : liste + niveau badge + rejoindre + création | 2026-05-29 | App | `promenades_page.dart` |
+| S11 — Forum : catégories → sujets → réponses, création sujet, envoi réponse | 2026-05-29 | App | `forum_page.dart` |
+| S12 — Groupes : liste tous/mes groupes, rejoindre/quitter, création, rôle admin | 2026-05-29 | App | `groupes_page.dart` |
 | S07 — Registre pension : entrée/sortie animaux en pension (3 onglets, ajout via bottom sheet, marquer sorti) | 2026-05-29 | App | `registre_pension_page.dart`, `eleveur_nav.dart` |
 | S08 — Animal Friendly : liste lieux Supabase + carte Google Maps + ajout lieu (app) + page web | 2026-05-29 | App + Web | `friendly_map_page.dart`, `website/src/app/animal-friendly/page.tsx`, `services/page.tsx` |
 
