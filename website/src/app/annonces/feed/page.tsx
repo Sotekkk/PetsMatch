@@ -122,6 +122,7 @@ export default function FeedPage() {
   const [filtreType, setFiltreType] = useState('tous');
 
   const pendingIndex = useRef<number | null>(null);
+  const pendingJump  = useRef<{ annonceId: string; bebeIndex: number | null } | null>(null);
 
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -180,8 +181,14 @@ export default function FeedPage() {
     }
 
     setItems(feed);
-    const targetIndex = pendingIndex.current ?? 0;
+    let targetIndex = pendingIndex.current ?? 0;
     pendingIndex.current = null;
+    if (pendingJump.current) {
+      const pj = pendingJump.current;
+      pendingJump.current = null;
+      const found = feed.findIndex(f => f.annonceId === pj.annonceId && f.bebeIndex === pj.bebeIndex);
+      if (found !== -1) targetIndex = found;
+    }
     setItemIndex(Math.min(targetIndex, Math.max(feed.length - 1, 0)));
     setPhotoIndex(0);
 
@@ -222,6 +229,16 @@ export default function FeedPage() {
   // ── Restaurer depuis messages ────────────────────────────────────────────────
 
   useEffect(() => {
+    const jump = sessionStorage.getItem('feedJump');
+    if (jump) {
+      sessionStorage.removeItem('feedJump');
+      const j = JSON.parse(jump) as { annonceId: string; bebeIndex: number | null; espece?: string };
+      pendingJump.current = { annonceId: j.annonceId, bebeIndex: j.bebeIndex };
+      const espece = j.espece && j.espece !== 'tous' ? j.espece : 'tous';
+      setFiltreEspece(espece);
+      loadFeed(espece, 'tous');
+      return;
+    }
     const saved = sessionStorage.getItem('feedReturn');
     if (!saved) return;
     sessionStorage.removeItem('feedReturn');
@@ -537,37 +554,62 @@ export default function FeedPage() {
           <div className="flex-1 pointer-events-auto" onClick={goNextPhoto} />
         </div>
 
-        {/* Dégradés */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 pointer-events-none" />
+        {/* Dégradé haut */}
+        <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-black/70 to-transparent pointer-events-none z-10" />
+        {/* Dégradé bas */}
+        <div className="absolute bottom-0 left-0 right-0 h-72 bg-gradient-to-t from-black/85 to-transparent pointer-events-none z-10" />
 
-        {/* ── Barre du haut ── */}
-        <div className="absolute top-0 left-0 right-0 flex items-center justify-between p-4 pointer-events-auto z-10">
-          <button onClick={() => setStep('filters')}
-            className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/60 transition-colors">
-            ✕
-          </button>
-          <span className="text-white/60 text-xs">{itemIndex + 1} / {items.length}</span>
+        {/* ── Header éleveur ── */}
+        <div className="absolute top-0 left-0 right-0 bg-black/55 z-20 pointer-events-auto">
+          <div className="flex items-center gap-2.5 px-3 py-3">
+            <button onClick={() => setStep('filters')}
+              className="w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center flex-shrink-0 hover:bg-white/20 transition-colors">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+            {item.uidEleveur ? (
+              <Link href={`/elevages/${item.uidEleveur}`} onClick={(e) => e.stopPropagation()}
+                className="w-10 h-10 rounded-full border-2 border-white/70 overflow-hidden flex-shrink-0">
+                {item.photoEleveur ? (
+                  <Image src={item.photoEleveur} alt={item.nomEleveur ?? ''} width={40} height={40} className="object-cover w-full h-full" />
+                ) : (
+                  <div className="w-full h-full bg-[#0C5C6C] flex items-center justify-center text-sm">🏡</div>
+                )}
+              </Link>
+            ) : (
+              <div className="w-10 h-10 rounded-full border-2 border-white/70 bg-[#0C5C6C] flex items-center justify-center text-sm flex-shrink-0">🏡</div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-bold text-sm leading-tight truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+                {item.nomEleveur || 'Élevage'}
+              </p>
+              <p className="text-white/65 text-xs leading-tight truncate">{item.nom}</p>
+            </div>
+            <span className="text-white/50 text-xs flex-shrink-0 mr-1">{itemIndex + 1} / {items.length}</span>
+            <button className="w-9 h-9 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {/* ── Colonne d'actions droite (style TikTok) ── */}
-        <div className="absolute right-2 bottom-28 flex flex-col items-center gap-1.5 z-10 pointer-events-auto">
+        {/* ── Dots photos (sous le header) ── */}
+        {item.photos.length > 1 && (
+          <div className="absolute top-[68px] left-0 right-0 flex justify-center gap-1.5 z-20 pointer-events-none">
+            {item.photos.map((_, pi) => (
+              <div key={pi} className={`rounded-full shadow transition-all duration-220 ${pi === photoIndex ? 'w-2.5 h-2.5 bg-white' : 'w-2 h-2 bg-white/40'}`} />
+            ))}
+          </div>
+        )}
 
-          {/* Photo éleveur */}
-          {item.uidEleveur && (
-            <Link href={`/elevages/${item.uidEleveur}`}
-              className="w-10 h-10 rounded-full border-2 border-white bg-[#EEF5EA] overflow-hidden flex-shrink-0 shadow-lg block mb-1"
-              onClick={(e) => e.stopPropagation()}>
-              {item.photoEleveur ? (
-                <Image src={item.photoEleveur} alt={item.nomEleveur ?? ''} width={40} height={40} className="object-cover w-full h-full" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-base">🏡</div>
-              )}
-            </Link>
-          )}
+        {/* ── Colonne d'actions droite ── */}
+        <div className="absolute right-3 top-1/2 -translate-y-[60%] flex flex-col items-center gap-4 z-20 pointer-events-auto">
 
           {/* Like */}
           <button onClick={(e) => { e.stopPropagation(); toggleLike(item); }}
-            className="group flex flex-col items-center gap-0.5">
+            className="flex flex-col items-center gap-0.5">
             <div className={`w-11 h-11 rounded-full backdrop-blur-sm flex items-center justify-center transition-all duration-200 ${likeAnim ? 'scale-125' : 'hover:scale-110 active:scale-95'} ${isLiked ? 'bg-red-500/30' : 'bg-black/40'}`}>
               <span className={`text-xl ${isLiked ? 'drop-shadow-[0_0_8px_rgba(239,68,68,0.9)]' : ''}`}>
                 {isLiked ? '❤️' : '🤍'}
@@ -582,7 +624,7 @@ export default function FeedPage() {
 
           {/* Favoris */}
           <button onClick={(e) => { e.stopPropagation(); toggleFavorite(item); }}
-            className="group flex flex-col items-center gap-0.5">
+            className="flex flex-col items-center gap-0.5">
             <div className={`w-11 h-11 rounded-full backdrop-blur-sm flex items-center justify-center transition-all duration-200 ${favAnim ? 'scale-125' : 'hover:scale-110 active:scale-95'} ${isFavorited ? 'bg-yellow-500/30' : 'bg-black/40'}`}>
               <span className="text-xl">{isFavorited ? '🔖' : '🏷️'}</span>
             </div>
@@ -594,9 +636,7 @@ export default function FeedPage() {
           </button>
 
           {/* Message */}
-          <button onClick={(e) => { e.stopPropagation(); openMessage(item); }}
-            disabled={openingMessage}
-            className="group">
+          <button onClick={(e) => { e.stopPropagation(); openMessage(item); }} disabled={openingMessage}>
             <div className="w-11 h-11 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-200">
               {openingMessage
                 ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -608,8 +648,7 @@ export default function FeedPage() {
           </button>
 
           {/* Partager */}
-          <button onClick={(e) => { e.stopPropagation(); handleShare(item); }}
-            className="group">
+          <button onClick={(e) => { e.stopPropagation(); handleShare(item); }}>
             <div className="w-11 h-11 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-200">
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
@@ -617,7 +656,6 @@ export default function FeedPage() {
             </div>
           </button>
         </div>
-
 
         {/* ── Banner connexion ── */}
         {showLoginBanner && (
@@ -635,16 +673,23 @@ export default function FeedPage() {
           </div>
         )}
 
-        {/* ── Infos bas de page ── */}
-        <div className="absolute bottom-0 left-0 right-0 pr-16 pointer-events-auto z-10">
-          <div className="p-4 pb-6">
+        {/* ── Bottom card glassmorphism ── */}
+        <div className="absolute bottom-0 left-0 right-0 pr-16 z-20 pointer-events-auto backdrop-blur-[14px] bg-black/42 rounded-t-[28px]">
+          <div className="px-5 pt-4 pb-6">
 
-            {/* Badge saillie */}
-            {item.isSaillie && (
-              <span className="inline-block text-white text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500 mb-2">
-                💜 Saillie
-              </span>
-            )}
+            {/* Badge espèce / saillie */}
+            <div className="flex gap-2 mb-2">
+              {item.espece && (
+                <span className="text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-white/15">
+                  {item.espece === 'chien' ? '🐕 Chien' : item.espece === 'chat' ? '🐈 Chat' : item.espece === 'lapin' ? '🐇 Lapin' : item.espece === 'oiseau' ? '🐦 Oiseau' : item.espece === 'reptile' ? '🦎 Reptile' : `🐾 ${item.espece}`}
+                </span>
+              )}
+              {item.isSaillie && (
+                <span className="text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-500">
+                  💜 Saillie
+                </span>
+              )}
+            </div>
 
             {/* Nom + sexe + prix */}
             <div className="flex items-end justify-between gap-3 mb-1">
@@ -654,14 +699,12 @@ export default function FeedPage() {
                     {item.sexe === 'male' ? '♂' : '♀'}
                   </span>
                 )}
-                <h2 className="text-white font-bold text-xl leading-tight truncate"
-                  style={{ textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}>
+                <h2 className="text-white font-bold text-xl leading-tight truncate" style={{ fontFamily: 'Galey, sans-serif', textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}>
                   {item.nom}
                 </h2>
               </div>
               {item.prix != null && (
-                <span className="text-white font-bold text-lg flex-shrink-0"
-                  style={{ textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}>
+                <span className="text-white font-bold text-lg flex-shrink-0" style={{ textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}>
                   {item.prix} €
                 </span>
               )}
@@ -669,60 +712,37 @@ export default function FeedPage() {
 
             {/* Race + ville */}
             <div className="flex items-center gap-2 mb-1">
-              {item.race && (
-                <p className="text-white/80 text-sm capitalize truncate"
-                  style={{ textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}>
-                  {item.race}
-                </p>
-              )}
+              {item.race && <p className="text-white/80 text-sm capitalize truncate">{item.race}</p>}
               {item.race && item.ville && <span className="text-white/40 text-sm">·</span>}
-              {item.ville && (
-                <p className="text-white/60 text-xs truncate"
-                  style={{ textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}>
-                  📍 {item.ville}
-                </p>
-              )}
+              {item.ville && <p className="text-white/60 text-xs truncate">📍 {item.ville}</p>}
             </div>
-
-            {/* Nom éleveur */}
-            {item.nomEleveur && (
-              <p className="text-white/60 text-xs mb-2 truncate"
-                style={{ textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}>
-                🏡 {item.nomEleveur}
-              </p>
-            )}
 
             {/* Description */}
             {item.description && (
-              <div className="mb-2">
-                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${descExpanded ? 'max-h-40' : 'max-h-9'}`}>
-                  <p className="text-white/85 text-sm leading-snug"
-                    style={{ textShadow: '0 1px 4px rgba(0,0,0,0.6)' }}>
-                    {item.description}
-                  </p>
+              <div className="mb-3">
+                <div className={`overflow-hidden transition-all duration-300 ${descExpanded ? 'max-h-36' : 'max-h-9'}`}>
+                  <p className="text-white/85 text-sm leading-snug">{item.description}</p>
                 </div>
                 <button onClick={() => setDescExpanded(v => !v)}
-                  className="text-white/70 text-xs font-bold hover:text-white transition-colors mt-0.5">
+                  className="text-white/65 text-xs font-bold hover:text-white transition-colors mt-0.5">
                   {descExpanded ? '↑ Moins' : '… Plus'}
                 </button>
               </div>
             )}
 
-            {/* Voir l'annonce */}
-            <Link href={`/annonces/${item.annonceId}`}
-              className="inline-block text-white text-xs border border-white/40 bg-white/10 backdrop-blur-sm px-4 py-1.5 rounded-full hover:bg-white/20 transition-colors">
-              Voir l&apos;annonce →
-            </Link>
-
-            {/* Barre de progression photos */}
-            {item.photos.length > 1 && (
-              <div className="flex gap-1 mt-3">
-                {item.photos.map((_, pi) => (
-                  <div key={pi}
-                    className={`flex-1 h-0.5 rounded-full transition-colors ${pi === photoIndex ? 'bg-white' : 'bg-white/30'}`} />
-                ))}
-              </div>
-            )}
+            {/* Boutons action */}
+            <div className="flex gap-2 mt-2">
+              <Link href={`/annonces/${item.annonceId}`}
+                className="flex-1 text-center text-white text-xs font-semibold border border-white/30 bg-white/10 backdrop-blur-sm px-3 py-2 rounded-2xl hover:bg-white/20 transition-colors"
+                style={{ fontFamily: 'Galey, sans-serif' }}>
+                Voir l&apos;annonce →
+              </Link>
+              <Link href={`/annonces?espece=${item.espece ?? 'tous'}&race=${encodeURIComponent(item.race ?? '')}`}
+                className="flex-1 text-center text-white text-xs font-semibold border border-white/30 bg-white/10 backdrop-blur-sm px-3 py-2 rounded-2xl hover:bg-white/20 transition-colors"
+                style={{ fontFamily: 'Galey, sans-serif' }}>
+                Similaires
+              </Link>
+            </div>
           </div>
         </div>
 

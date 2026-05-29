@@ -1,9 +1,10 @@
+import 'dart:ui';
 import 'package:PetsMatch/utils/storage_helper.dart' show thumbUrl;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 
 // ── Modèle ────────────────────────────────────────────────────────────────────
 
@@ -40,7 +41,6 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
   static const _teal   = Color(0xFF0C5C6C);
 
   final _supa = Supabase.instance.client;
-  final _uid  = FirebaseAuth.instance.currentUser?.uid ?? '';
 
   late final TabController _tabCtrl;
 
@@ -60,71 +60,109 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
       if (_tabCtrl.index == 0 && !_loadedFavs)  _loadTab('favoris');
       if (_tabCtrl.index == 1 && !_loadedLikes) _loadTab('likes');
     });
-    _loadTab('favoris'); // charger favoris par défaut
+    _initLoad();
+  }
+
+  // Attend que Firebase Auth soit prêt avant de charger
+  Future<void> _initLoad() async {
+    if (FirebaseAuth.instance.currentUser != null) {
+      _loadTab('favoris');
+      return;
+    }
+    try {
+      await FirebaseAuth.instance.authStateChanges()
+          .firstWhere((u) => u != null)
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {}
+    if (mounted) _loadTab('favoris');
   }
 
   @override
   void dispose() { _tabCtrl.dispose(); super.dispose(); }
 
   Future<List<_SavedItem>> _fetchFromTable(String table) async {
-    if (_uid.isEmpty) return [];
-    final rows = await _supa
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return [];
+
+    final rawRows = await _supa
         .from(table)
         .select('annonce_id, bebe_index')
-        .eq('user_uid', _uid)
-        .order('created_at', ascending: false);
+        .eq('user_uid', uid);
 
+    final rows = List<Map<String, dynamic>>.from(rawRows);
     if (rows.isEmpty) return [];
 
-    final ids = rows.map((r) => r['annonce_id'] as String).toSet().toList();
-    final annonces = await _supa
+    final ids = rows
+        .map((r) => r['annonce_id']?.toString())
+        .whereType<String>()
+        .toSet()
+        .toList();
+    if (ids.isEmpty) return [];
+
+    final rawAnnonces = await _supa
         .from('annonces')
         .select('id, titre, espece, race, type, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur')
         .inFilter('id', ids);
 
+    final annonces = List<Map<String, dynamic>>.from(rawAnnonces);
     final annonceMap = <String, Map<String, dynamic>>{
-      for (final a in annonces) a['id'] as String: a,
+      for (final a in annonces)
+        if (a['id'] != null) a['id'].toString(): a,
     };
+
+    // Supabase peut retourner des entiers/décimaux comme String selon le contexte
+    int? safeInt(dynamic v) => v == null ? null
+        : v is num ? v.toInt()
+        : int.tryParse(v.toString());
+    double? safeDbl(dynamic v) => v == null ? null
+        : v is num ? v.toDouble()
+        : double.tryParse(v.toString());
+    String? safeStr(dynamic v) => v?.toString();
 
     final result = <_SavedItem>[];
     for (final row in rows) {
-      final a = annonceMap[row['annonce_id'] as String];
+      final annonceId = row['annonce_id']?.toString();
+      if (annonceId == null) continue;
+      final a = annonceMap[annonceId];
       if (a == null) continue;
       final aPhotos = List<String>.from(a['photos'] ?? []);
       final bebes   = List<Map<String, dynamic>>.from(a['animaux_portee'] ?? []);
-      final bi      = row['bebe_index'] as int?;
+      final bi      = safeInt(row['bebe_index']);
 
       if (bi != null && bi < bebes.length) {
         final b     = bebes[bi];
         final bPh   = List<String>.from(b['photos'] ?? []);
         final photo = bPh.isNotEmpty ? bPh.first : (aPhotos.isNotEmpty ? aPhotos.first : null);
         if (photo == null) continue;
+        final bNom = safeStr(b['nom']);
         result.add(_SavedItem(
-          annonceId: row['annonce_id'] as String,
+          annonceId: annonceId,
           bebeIndex: bi, photo: photo,
-          nom:   (b['nom'] as String?)?.isNotEmpty == true ? b['nom'] as String : 'Bébé ${bi + 1}',
-          race:  a['race'] as String?,
-          espece: a['espece'] as String?,
-          sexe:  b['sexe'] as String?,
-          prix:  (b['prix'] as num?)?.toDouble(),
-          ville: a['ville_eleveur'] as String?,
-          nomEleveur: a['nom_eleveur'] as String?,
+          nom:   bNom?.isNotEmpty == true ? bNom! : 'Bébé ${bi + 1}',
+          race:  safeStr(a['race']),
+          espece: safeStr(a['espece']),
+          sexe:  safeStr(b['sexe']),
+          prix:  safeDbl(b['prix']),
+          ville: safeStr(a['ville_eleveur']),
+          nomEleveur: safeStr(a['nom_eleveur']),
         ));
       } else if (bi == null) {
-        if (aPhotos.isEmpty) continue;
-        final prix = (a['saillie_prix'] as num? ?? a['prix'] as num?)?.toDouble();
+        final photo = aPhotos.isNotEmpty ? aPhotos.first : null;
+        if (photo == null) continue;
+        final prix = safeDbl(a['saillie_prix']) ?? safeDbl(a['prix']);
+        final titre = safeStr(a['titre']);
         result.add(_SavedItem(
-          annonceId: row['annonce_id'] as String,
-          bebeIndex: null, photo: aPhotos.first,
-          nom: (a['titre'] as String?)?.isNotEmpty == true
-              ? a['titre'] as String
+          annonceId: annonceId,
+          bebeIndex: null, photo: photo,
+          nom: titre?.isNotEmpty == true
+              ? titre!
               : '${a['espece'] ?? ''} ${a['race'] ?? ''}'.trim(),
-          race:  a['race'] as String?,
-          espece: a['espece'] as String?,
-          sexe:  a['sexe'] as String?,
+          race:  safeStr(a['race']),
+          espece: safeStr(a['espece']),
+          sexe:  safeStr(a['sexe']),
           prix:  prix,
-          ville: a['ville_eleveur'] as String?,
-          nomEleveur: a['nom_eleveur'] as String?,
+          ville: safeStr(a['ville_eleveur']),
+          nomEleveur: safeStr(a['nom_eleveur']),
         ));
       }
     }
@@ -160,8 +198,10 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
       }
     });
     try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      if (uid.isEmpty) return;
       var q = _supa.from(table).delete()
-          .eq('user_uid', _uid)
+          .eq('user_uid', uid)
           .eq('annonce_id', item.annonceId);
       if (item.bebeIndex != null) {
         await q.eq('bebe_index', item.bebeIndex!);
@@ -180,9 +220,10 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
 
   void _openDetail(_SavedItem item) {
     Navigator.push(context, MaterialPageRoute(
-      builder: (_) => AnnonceDetailPage(
-        annonceId: item.annonceId,
-        initialData: {'_id': item.annonceId},
+      builder: (_) => AnnoncesFeedPage(
+        initialAnnonceId: item.annonceId,
+        initialBebeIndex: item.bebeIndex,
+        initialEspece: item.espece ?? 'tous',
       ),
     ));
   }
@@ -232,7 +273,7 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
           crossAxisCount: 2,
           crossAxisSpacing: 10,
           mainAxisSpacing: 10,
-          childAspectRatio: 0.72,
+          childAspectRatio: 0.75,
         ),
         itemCount: items.length,
         itemBuilder: (_, i) => _SavedCard(
@@ -259,6 +300,19 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
         const Text('Utilise le feed pour découvrir et\nsauvegarder des annonces.',
             textAlign: TextAlign.center,
             style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFADB5BD))),
+        const SizedBox(height: 20),
+        TextButton.icon(
+          onPressed: () {
+            setState(() {
+              if (table == 'favoris') _loadedFavs = false;
+              else _loadedLikes = false;
+            });
+            _loadTab(table);
+          },
+          icon: const Icon(Icons.refresh, size: 16),
+          label: const Text('Réessayer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          style: TextButton.styleFrom(foregroundColor: _teal),
+        ),
       ]),
     );
   }
@@ -276,82 +330,102 @@ class _SavedCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Stack(children: [
-          Positioned.fill(
-            child: CachedNetworkImage(
-              imageUrl: thumbUrl(item.photo, width: 400, quality: 75),
-              fit: BoxFit.cover,
-              placeholder: (_, __) => Container(color: const Color(0xFFE5E7EB)),
-              errorWidget: (_, __, ___) => Container(
-                color: const Color(0xFFE5E7EB),
-                child: const Icon(Icons.pets, color: Colors.white54, size: 40),
-              ),
-            ),
-          ),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Color(0xBB000000)],
-                  stops: [0.5, 1.0],
-                ),
-              ),
-            ),
-          ),
-          Positioned(bottom: 10, left: 10, right: 10,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                if (item.sexe != null) ...[
-                  Text(item.sexe == 'male' ? '♂' : '♀',
-                      style: const TextStyle(color: Colors.white,
-                          fontSize: 13, fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 4),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        debugPrint('CARD constraints: ${constraints.maxWidth}×${constraints.maxHeight}');
+        return GestureDetector(
+          onTap: onTap,
+          child: AspectRatio(
+            aspectRatio: 0.75,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Fond flouté (couvre toute la carte)
+                  ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                    child: CachedNetworkImage(
+                      imageUrl: thumbUrl(item.photo, width: 200, quality: 30),
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(color: const Color(0xFF1A1A1A)),
+                      errorWidget: (_, __, ___) => const ColoredBox(color: Color(0xFF1A1A1A)),
+                    ),
+                  ),
+                  // Test : URL brute + contain + center pour voir le chiot entier
+                  CachedNetworkImage(
+                    imageUrl: item.photo,
+                    fit: BoxFit.contain,
+                    alignment: Alignment.center,
+                    filterQuality: FilterQuality.high,
+                    placeholder: (_, __) => const SizedBox.shrink(),
+                    errorWidget: (_, __, ___) => const Icon(Icons.pets, color: Colors.white24, size: 40),
+                  ),
+                  // Gradient bas pour lisibilité du texte
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Color(0xBB000000)],
+                        stops: [0.5, 1.0],
+                      ),
+                    ),
+                  ),
+                  // Infos bas
+                  Positioned(bottom: 10, left: 10, right: 10,
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        if (item.sexe != null) ...[
+                          Text(item.sexe == 'male' ? '♂' : '♀',
+                              style: const TextStyle(color: Colors.white,
+                                  fontSize: 13, fontWeight: FontWeight.bold)),
+                          const SizedBox(width: 4),
+                        ],
+                        Flexible(child: Text(item.nom,
+                            style: const TextStyle(color: Colors.white,
+                                fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14),
+                            maxLines: 1, overflow: TextOverflow.ellipsis)),
+                      ]),
+                      if (item.race?.isNotEmpty == true)
+                        Text(item.race!,
+                            style: const TextStyle(color: Colors.white70,
+                                fontFamily: 'Galey', fontSize: 11),
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                      if (item.prix != null)
+                        Text('${item.prix!.toInt()} €',
+                            style: const TextStyle(color: Colors.white,
+                                fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+                      if (item.nomEleveur?.isNotEmpty == true)
+                        Text('🏡 ${item.nomEleveur}',
+                            style: const TextStyle(color: Colors.white60,
+                                fontFamily: 'Galey', fontSize: 10),
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ]),
+                  ),
+                  // Badge retirer
+                  Positioned(top: 8, right: 8,
+                    child: GestureDetector(
+                      onTap: onRemove,
+                      child: Container(
+                        width: 32, height: 32,
+                        decoration: BoxDecoration(
+                          color: Colors.black45,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Icon(
+                          isFavori ? Icons.bookmark : Icons.favorite,
+                          color: isFavori ? Colors.amber : Colors.redAccent,
+                          size: 17,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
-                Flexible(child: Text(item.nom,
-                    style: const TextStyle(color: Colors.white,
-                        fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14),
-                    maxLines: 1, overflow: TextOverflow.ellipsis)),
-              ]),
-              if (item.race?.isNotEmpty == true)
-                Text(item.race!,
-                    style: const TextStyle(color: Colors.white70,
-                        fontFamily: 'Galey', fontSize: 11),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-              if (item.prix != null)
-                Text('${item.prix!.toInt()} €',
-                    style: const TextStyle(color: Colors.white,
-                        fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
-              if (item.nomEleveur?.isNotEmpty == true)
-                Text('🏡 ${item.nomEleveur}',
-                    style: const TextStyle(color: Colors.white60,
-                        fontFamily: 'Galey', fontSize: 10),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-            ]),
-          ),
-          Positioned(top: 8, right: 8,
-            child: GestureDetector(
-              onTap: onRemove,
-              child: Container(
-                width: 32, height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.black45,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(
-                  isFavori ? Icons.bookmark : Icons.favorite,
-                  color: isFavori ? Colors.amber : Colors.redAccent,
-                  size: 17,
-                ),
               ),
             ),
           ),
-        ]),
-      ),
+        );
+      },
     );
   }
 }

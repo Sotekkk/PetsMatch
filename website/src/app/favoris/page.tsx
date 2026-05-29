@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SavedItem {
   annonceId: string;
@@ -19,9 +22,11 @@ interface SavedItem {
   nomEleveur?: string;
 }
 
-type Tab = 'likes' | 'favoris';
+type Tab = 'favoris' | 'likes';
 
-async function loadItems(userUid: string, table: 'likes' | 'favoris'): Promise<SavedItem[]> {
+// ── Data fetching ─────────────────────────────────────────────────────────────
+
+async function loadItems(userUid: string, table: Tab): Promise<SavedItem[]> {
   const { data: rows } = await supabase
     .from(table)
     .select('annonce_id, bebe_index')
@@ -44,7 +49,7 @@ async function loadItems(userUid: string, table: 'likes' | 'favoris'): Promise<S
     if (!a) continue;
     const aPhotos: string[] = a.photos ?? [];
     const bebes: Record<string, unknown>[] = a.animaux_portee ?? [];
-    const bi = row.bebe_index;
+    const bi = row.bebe_index as number | null;
 
     if (bi !== null && bi !== undefined && bebes[bi]) {
       const b = bebes[bi];
@@ -74,63 +79,66 @@ async function loadItems(userUid: string, table: 'likes' | 'favoris'): Promise<S
   return result;
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function FavorisPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>('favoris');
   const [likeItems, setLikeItems]   = useState<SavedItem[]>([]);
   const [favItems, setFavItems]     = useState<SavedItem[]>([]);
-  const [loadingLikes, setLoadingLikes]   = useState(false);
-  const [loadingFavs, setLoadingFavs]     = useState(false);
-  const [loadedLikes, setLoadedLikes]     = useState(false);
-  const [loadedFavs, setLoadedFavs]       = useState(false);
+  const [loadingLikes, setLoadingLikes] = useState(false);
+  const [loadingFavs, setLoadingFavs]   = useState(false);
+  const [loadedLikes, setLoadedLikes]   = useState(false);
+  const [loadedFavs, setLoadedFavs]     = useState(false);
 
   useEffect(() => {
-    if (!user) return;
-    // Charger les favoris (🔖) au démarrage
-    loadTab('favoris');
+    if (user) doLoad('favoris');
   }, [user]);
 
   useEffect(() => {
     if (!user) return;
-    if (tab === 'likes' && !loadedLikes) loadTab('likes');
-    if (tab === 'favoris' && !loadedFavs) loadTab('favoris');
+    if (tab === 'likes'   && !loadedLikes) doLoad('likes');
+    if (tab === 'favoris' && !loadedFavs)  doLoad('favoris');
   }, [tab, user]);
 
-  async function loadTab(t: Tab) {
+  async function doLoad(t: Tab) {
     if (!user) return;
     if (t === 'likes') {
       setLoadingLikes(true);
       const items = await loadItems(user.uid, 'likes');
-      setLikeItems(items);
-      setLoadingLikes(false);
-      setLoadedLikes(true);
+      setLikeItems(items); setLoadingLikes(false); setLoadedLikes(true);
     } else {
       setLoadingFavs(true);
       const items = await loadItems(user.uid, 'favoris');
-      setFavItems(items);
-      setLoadingFavs(false);
-      setLoadedFavs(true);
+      setFavItems(items); setLoadingFavs(false); setLoadedFavs(true);
     }
   }
 
   async function removeItem(item: SavedItem, t: Tab) {
-    const table = t === 'likes' ? 'likes' : 'favoris';
-    if (t === 'likes') {
-      setLikeItems((prev) => prev.filter((i) => !(i.annonceId === item.annonceId && i.bebeIndex === item.bebeIndex)));
-    } else {
-      setFavItems((prev) => prev.filter((i) => !(i.annonceId === item.annonceId && i.bebeIndex === item.bebeIndex)));
-    }
-    const q = supabase.from(table).delete().eq('user_uid', user!.uid).eq('annonce_id', item.annonceId);
-    if (item.bebeIndex !== null) await q.eq('bebe_index', item.bebeIndex);
-    else await q.is('bebe_index', null);
+    if (t === 'likes') setLikeItems(p => p.filter(i => !(i.annonceId === item.annonceId && i.bebeIndex === item.bebeIndex)));
+    else               setFavItems(p  => p.filter(i => !(i.annonceId === item.annonceId && i.bebeIndex === item.bebeIndex)));
+    const q = supabase.from(t).delete().eq('user_uid', user!.uid).eq('annonce_id', item.annonceId);
+    item.bebeIndex !== null ? await q.eq('bebe_index', item.bebeIndex) : await q.is('bebe_index', null);
+  }
+
+  function openInFeed(item: SavedItem) {
+    sessionStorage.setItem('feedJump', JSON.stringify({
+      annonceId: item.annonceId,
+      bebeIndex: item.bebeIndex,
+      espece: item.espece ?? 'tous',
+    }));
+    router.push('/annonces/feed');
   }
 
   if (!user) {
     return (
       <div className="min-h-screen bg-[#F5F5F0] flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-500 mb-4">Connectez-vous pour voir vos likes et sauvegardés</p>
-          <Link href="/connexion" className="bg-[#0C5C6C] text-white px-6 py-3 rounded-full hover:bg-[#094F5D] transition-colors">
+        <div className="text-center px-6">
+          <div className="text-5xl mb-4">❤️</div>
+          <p className="text-gray-500 mb-6 font-medium">Connectez-vous pour voir vos interactions</p>
+          <Link href="/connexion"
+            className="bg-[#0C5C6C] text-white px-8 py-3 rounded-full font-semibold hover:bg-[#094F5D] transition-colors">
             Se connecter
           </Link>
         </div>
@@ -138,112 +146,171 @@ export default function FavorisPage() {
     );
   }
 
-  const items      = tab === 'likes' ? likeItems : favItems;
-  const isLoading  = tab === 'likes' ? loadingLikes : loadingFavs;
+  const items     = tab === 'likes' ? likeItems : favItems;
+  const isLoading = tab === 'likes' ? loadingLikes : loadingFavs;
 
   return (
     <div className="min-h-screen bg-[#F5F5F0]">
-      <div className="max-w-2xl mx-auto px-4 py-8">
 
-        {/* En-tête */}
-        <div className="mb-6">
-          <Link href="/profil" className="text-sm text-[#0C5C6C] hover:underline">← Mon profil</Link>
-          <h1 className="text-2xl font-bold text-[#1F2A2E] mt-3" style={{ fontFamily: 'Galey, sans-serif' }}>
+      {/* ── Barre teal (miroir AppBar Flutter) ── */}
+      <div className="bg-[#0C5C6C] px-4 pt-4 pb-0 sticky top-16 z-40">
+        <div className="max-w-3xl mx-auto">
+          <h1 className="text-white text-xl font-bold mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>
             Mes interactions
           </h1>
+          {/* TabBar style Flutter */}
+          <div className="flex">
+            <button
+              onClick={() => setTab('favoris')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-semibold border-b-2 transition-colors ${
+                tab === 'favoris'
+                  ? 'border-white text-white'
+                  : 'border-transparent text-white/50 hover:text-white/75'
+              }`}>
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
+              </svg>
+              Sauvegardés
+              {loadedFavs && favItems.length > 0 && (
+                <span className="ml-1 bg-white/20 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+                  {favItems.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setTab('likes')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-semibold border-b-2 transition-colors ${
+                tab === 'likes'
+                  ? 'border-white text-white'
+                  : 'border-transparent text-white/50 hover:text-white/75'
+              }`}>
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+              </svg>
+              J&apos;aime
+              {loadedLikes && likeItems.length > 0 && (
+                <span className="ml-1 bg-white/20 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+                  {likeItems.length}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
+      </div>
 
-        {/* Onglets */}
-        <div className="flex gap-2 mb-6 bg-white rounded-2xl p-1.5 shadow-sm border border-gray-100">
-          <button
-            onClick={() => setTab('favoris')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-              tab === 'favoris'
-                ? 'bg-yellow-50 text-yellow-700 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}>
-            🔖 Sauvegardés
-            {loadedFavs && favItems.length > 0 && (
-              <span className="bg-yellow-100 text-yellow-700 text-xs px-1.5 py-0.5 rounded-full font-bold">
-                {favItems.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setTab('likes')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-              tab === 'likes'
-                ? 'bg-red-50 text-red-600 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}>
-            ❤️ J&apos;aime
-            {loadedLikes && likeItems.length > 0 && (
-              <span className="bg-red-100 text-red-600 text-xs px-1.5 py-0.5 rounded-full font-bold">
-                {likeItems.length}
-              </span>
-            )}
-          </button>
-        </div>
+      {/* ── Contenu ── */}
+      <div className="max-w-3xl mx-auto px-3 py-4">
 
-        {/* Contenu */}
         {isLoading ? (
-          <div className="flex justify-center py-20">
+          <div className="flex justify-center py-24">
             <div className="w-8 h-8 border-4 border-[#0C5C6C]/20 border-t-[#0C5C6C] rounded-full animate-spin" />
           </div>
+
         ) : items.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="text-5xl mb-4">{tab === 'favoris' ? '🔖' : '🤍'}</div>
-            <p className="text-gray-400 text-sm">
+          <div className="flex flex-col items-center py-24 text-center">
+            <svg className="w-20 h-20 text-gray-200 mb-5" fill="currentColor" viewBox="0 0 24 24">
               {tab === 'favoris'
-                ? 'Aucun animal sauvegardé pour l\'instant.'
-                : 'Aucun like pour l\'instant.'}
+                ? <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
+                : <path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/>}
+            </svg>
+            <p className="text-gray-400 text-base font-medium mb-1">
+              {tab === 'favoris' ? 'Aucun animal sauvegardé' : 'Aucun like pour l\'instant'}
             </p>
+            <p className="text-gray-300 text-sm mb-8">Utilise le feed pour découvrir des annonces.</p>
             <Link href="/annonces/feed"
-              className="mt-6 inline-block bg-[#0C5C6C] text-white px-6 py-3 rounded-full text-sm hover:bg-[#094F5D] transition-colors">
+              className="bg-[#0C5C6C] text-white px-7 py-3 rounded-full text-sm font-semibold hover:bg-[#094F5D] transition-colors">
               Découvrir le feed →
             </Link>
           </div>
+
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-2.5">
             {items.map((item) => (
-              <div key={`${item.annonceId}_${item.bebeIndex ?? 'null'}`} className="relative group rounded-2xl overflow-hidden bg-white shadow-sm">
-                <Link href={`/annonces/${item.annonceId}`}>
-                  <div className="relative aspect-[3/4]">
-                    <Image src={item.photo} alt={item.nom} fill className="object-cover" sizes="(max-width: 640px) 50vw, 33vw" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-                    <div className="absolute bottom-0 left-0 right-0 p-3">
-                      <div className="flex items-center gap-1 mb-0.5">
-                        {item.sexe && (
-                          <span className="text-white text-sm font-bold">{item.sexe === 'male' ? '♂' : '♀'}</span>
-                        )}
-                        <p className="text-white font-semibold text-sm truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
-                          {item.nom}
-                        </p>
-                      </div>
-                      {item.race && <p className="text-white/70 text-xs truncate capitalize">{item.race}</p>}
-                      {item.prix != null && (
-                        <p className="text-white font-bold text-sm mt-0.5">{item.prix} €</p>
-                      )}
-                      {item.nomEleveur && (
-                        <p className="text-white/60 text-[10px] mt-0.5 truncate">🏡 {item.nomEleveur}</p>
-                      )}
-                    </div>
-                  </div>
-                </Link>
-                {/* Bouton retirer */}
-                <button
-                  onClick={() => removeItem(item, tab)}
-                  title={tab === 'favoris' ? 'Retirer des sauvegardés' : 'Retirer des likes'}
-                  className={`absolute top-2 right-2 w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-sm hover:scale-110 transition-transform ${
-                    tab === 'favoris' ? 'text-yellow-400' : 'text-red-400'
-                  }`}>
-                  {tab === 'favoris' ? '🔖' : '❤️'}
-                </button>
-              </div>
+              <SavedCard
+                key={`${item.annonceId}_${item.bebeIndex ?? 'null'}`}
+                item={item}
+                isFavori={tab === 'favoris'}
+                onRemove={() => removeItem(item, tab)}
+                onOpen={() => openInFeed(item)}
+              />
             ))}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Carte (miroir _SavedCard Flutter) ─────────────────────────────────────────
+
+function SavedCard({
+  item, isFavori, onRemove, onOpen,
+}: {
+  item: SavedItem;
+  isFavori: boolean;
+  onRemove: () => void;
+  onOpen: () => void;
+}) {
+  return (
+    <div className="relative rounded-2xl overflow-hidden bg-[#1A1A1A] shadow-sm"
+      style={{ aspectRatio: '0.72' }}>
+
+      {/* Blurred background */}
+      <div className="absolute inset-0 overflow-hidden">
+        <Image src={item.photo} alt="" fill className="object-cover scale-110"
+          style={{ filter: 'blur(20px)' }} sizes="200px" />
+      </div>
+      <div className="absolute inset-0 bg-black/25" />
+
+      {/* Tap → feed */}
+      <button onClick={onOpen} className="absolute inset-0 w-full h-full overflow-hidden">
+        {/* fitWidth: fill full width, crop top/bottom if needed */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={item.photo} alt={item.nom}
+          className="absolute w-full h-auto top-0" />
+        {/* Gradient bas */}
+        <div className="absolute inset-0"
+          style={{ background: 'linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.73) 100%)' }} />
+        {/* Infos bas */}
+        <div className="absolute bottom-0 left-0 right-0 p-2.5 text-left">
+          <div className="flex items-center gap-1">
+            {item.sexe && (
+              <span className="text-white text-sm font-bold leading-none">
+                {item.sexe === 'male' ? '♂' : '♀'}
+              </span>
+            )}
+            <p className="text-white font-bold text-[13px] truncate leading-tight"
+              style={{ fontFamily: 'Galey, sans-serif' }}>
+              {item.nom}
+            </p>
+          </div>
+          {item.race && (
+            <p className="text-white/70 text-[11px] truncate capitalize mt-0.5">{item.race}</p>
+          )}
+          {item.prix != null && (
+            <p className="text-white font-bold text-[13px] mt-0.5">{item.prix} €</p>
+          )}
+          {item.nomEleveur && (
+            <p className="text-white/60 text-[10px] mt-0.5 truncate">🏡 {item.nomEleveur}</p>
+          )}
+        </div>
+      </button>
+
+      {/* Badge retirer haut-droite */}
+      <button
+        onClick={onRemove}
+        title={isFavori ? 'Retirer des sauvegardés' : 'Retirer des likes'}
+        className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/45 flex items-center justify-center hover:scale-110 transition-transform z-10">
+        {isFavori ? (
+          <svg className="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
+          </svg>
+        ) : (
+          <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+          </svg>
+        )}
+      </button>
     </div>
   );
 }
