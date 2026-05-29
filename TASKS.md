@@ -36,8 +36,8 @@
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
 | ~~PT01~~ | ~~**[V1]** Vérifier complétude formulaire "Animal perdu"~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-29 |
-| PT02 | **[V1]** Déclarer animal trouvé — formulaire complet (espèce, race estimée, sexe, date, localisation GPS, photo x1 min, contact) + champs optionnels (couleur, taille, état santé, comportement) | Haute | App + Web | Créer `animal_trouve_form_page.dart` + `animaux-perdus/declarer-trouve/page.tsx` |
-| PT03 | **[V1]** Table Supabase `animaux_trouves` — migration SQL (voir `SPEC_ANIMAUX_PERDUS_TROUVES.md` §B) | Haute | Supabase | Dashboard SQL Editor |
+| ~~PT02~~ | ~~**[V1]** Déclarer animal trouvé — formulaire complet~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-29 |
+| ~~PT03~~ | ~~**[V1]** Table Supabase `animaux_trouves`~~ | ~~Haute~~ | ~~Supabase~~ | ✅ Terminé 2026-05-29 |
 | PT04 | **[V1]** Carte animaux perdus/trouvés — onglet Perdu/Trouvé + code couleur (rouge/vert/orange/bleu) + filtres espèce, race, région, ville, distance | Haute | App + Web | `animaux_perdus_page.dart`, `animaux-perdus/page.tsx` |
 | PT05 | **[V1]** Bouton global "J'ai trouvé un animal" — visible dans menu (drawer éleveur + particulier) + page d'accueil (action urgente) | Haute | App + Web | `eleveur_nav.dart`, `particulier_nav.dart`, `EleveurDashboard.tsx`, `ParticulierDashboard.tsx` |
 | PT06 | **[V1]** Saisie manuelle numéro puce → recherche dans alertes perdus + animaux trouvés + animaux de l'élevage | Haute | App + Web | `animaux_perdus_page.dart`, `animaux-perdus/page.tsx` |
@@ -149,6 +149,9 @@
 | A05/A06 étendu fiche animal — auto-fill naissance + date_entree depuis date_naissance + puce/race mère visible | 2026-05 | Web | `mes-animaux/[id]/page.tsx` |
 | Alerte perdue — photo de l'animal pré-remplie par défaut, texte "Changer" adaptatif | 2026-05 | Web | `animaux-perdus/declarer/page.tsx` |
 | PT01 — Formulaire animal perdu : ajout pays, région, récompense, split contact (email + téléphone + messagerie toggle), pré-remplissage depuis contacts_urgence fiche animal, extraction pays/région depuis Google Places | 2026-05-29 | App + Web | `alerte_perdu_form_page.dart`, `animaux-perdus/declarer/page.tsx`, `supabase/migrations/add_alertes_perdus_fields.sql` |
+| PT02 — Formulaire "Déclarer un animal trouvé" : espèce/race (autocomplete JSON), sexe, taille, couleur, puce, date, état de santé, comportement, description, adresse Google Places (rue + cp + ville + région + pays), multi-photos avec crop, contacts (email + tél + messagerie toggle), insert table `animaux_trouves` | 2026-05-29 | App + Web | `animal_trouve_form_page.dart`, `animaux-perdus/declarer-trouve/page.tsx`, `animaux_perdus_page.dart`, `eleveur_home.dart` |
+| PT03 — Table Supabase `animaux_trouves` : création + RLS policies (select/insert/update/delete permissifs `USING (true)`) | 2026-05-29 | Supabase | SQL Editor |
+| Suivi repro — vue détail (bottom sheet) sur clic chaleur/saillie/gestation : tous les champs affichés, badge "Confirmée" pour gestations confirmées, bouton "Confirmer la gestation" si non confirmée (app uniquement, web déjà OK) | 2026-05-29 | App | `animal_fiche.dart` |
 | Sélecteur parent (père + mère) depuis mes animaux dans fiche animal | 2026-05 | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
 | Sélecteur mère — auto-fill race mère + date naissance mère depuis la fiche de la mère sélectionnée | 2026-05 | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
 | Registre vue lecture — affichage puce mère + race mère quand provenance = naissance | 2026-05 | Web | `mes-animaux/[id]/page.tsx` |
@@ -179,3 +182,12 @@
 - **Supabase Edge Function `delete-user`** : JWT verification désactivée dans le dashboard (clé anon = format `sb_publishable_` non-JWT)
 - **Firebase Storage** : photos profil, animaux, documents — URL sauvegardée dans Supabase
 - **Supabase URL** : `https://zyvpngcvzrkdytypjlyq.supabase.co`
+
+- **✅ RLS policies `animaux_trouves`** : table créée avec RLS activé. Policies permissives ajoutées (Firebase UID stocké en TEXT, pas Supabase auth.uid()) :
+  ```sql
+  ALTER TABLE animaux_trouves ENABLE ROW LEVEL SECURITY;
+  CREATE POLICY "animaux_trouves_select_all" ON animaux_trouves FOR SELECT USING (true);
+  CREATE POLICY "animaux_trouves_insert_own" ON animaux_trouves FOR INSERT WITH CHECK (true);
+  CREATE POLICY "animaux_trouves_update_own" ON animaux_trouves FOR UPDATE USING (true);
+  CREATE POLICY "animaux_trouves_delete_own" ON animaux_trouves FOR DELETE USING (true);
+  ```
