@@ -5,7 +5,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 
@@ -325,6 +326,14 @@ export default function FeedPage() {
           data: { annonceId: item.annonceId, bebeIndex: item.bebeIndex, fromUid: user!.uid },
           read: false,
         });
+        // Push notification via Firebase Cloud Functions (même infra que les alertes perdus)
+        httpsCallable(functions, 'sendLikeNotification')({
+          receiverUid: item.uidEleveur,
+          annonceId: item.annonceId,
+          bebeIndex: item.bebeIndex,
+          nomAnimal: item.nom,
+          senderName: likerName,
+        }).catch(() => {});
       }
     }
   }
