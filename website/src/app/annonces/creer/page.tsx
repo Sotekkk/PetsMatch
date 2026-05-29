@@ -10,6 +10,13 @@ import ImageCropModal from '@/components/ImageCropModal';
 
 const ESPECES = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Cheval', 'Reptile', 'Autre'];
 
+function genId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
 const ESPECE_DB: Record<string, string> = {
   'Chien': 'chien', 'Chat': 'chat', 'Lapin': 'lapin', 'Oiseau': 'oiseau',
   'Cheval': 'cheval', 'Reptile': 'nac', 'Autre': 'autre',
@@ -368,7 +375,7 @@ export default function CreerAnnoncePage() {
       const villeEleveur = userData?.villeElevage ?? userData?.ville ?? '';
 
       const { error: insertError } = await supabase.from('annonces').insert({
-        id: crypto.randomUUID(),
+        id: genId(),
         uid_eleveur: user!.uid, nom_eleveur: nomEleveur, ville_eleveur: villeEleveur,
         titre: titre || `${espece} ${race}`.trim(),
         espece: ESPECE_DB[espece] ?? espece.toLowerCase(), race,

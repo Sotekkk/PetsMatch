@@ -60,13 +60,18 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
   final _rueCtrl           = TextEditingController();
   final _cpCtrl            = TextEditingController();
   final _villeCtrl         = TextEditingController();
+  final _paysCtrl          = TextEditingController(text: 'France');
+  final _regionCtrl        = TextEditingController();
   final _descCtrl          = TextEditingController();
-  final _contactCtrl       = TextEditingController();
+  final _recompenseCtrl    = TextEditingController();
+  final _contactEmailCtrl  = TextEditingController();
+  final _contactTelCtrl    = TextEditingController();
 
   String   _espece       = 'chien';
   String?  _sexe;
   DateTime? _datePerte;
   DateTime? _dateDerniereLoc;
+  bool     _contactMessagerie  = true;
   bool     _saving             = false;
   bool     _locating           = false;
   List<Prediction> _predictions = [];
@@ -130,9 +135,10 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
       _sexe             = widget.sexe;
       _datePerte        = DateTime.now();
       _dateDerniereLoc  = DateTime.now();
-      _contactCtrl.text = widget.contactUrgence?.isNotEmpty == true
-          ? widget.contactUrgence!
-          : (FirebaseAuth.instance.currentUser?.email ?? '');
+      _contactEmailCtrl.text = FirebaseAuth.instance.currentUser?.email ?? '';
+      if (widget.contactUrgence?.isNotEmpty == true) {
+        _contactTelCtrl.text = widget.contactUrgence!;
+      }
       _numeroAlerte = _generateNumero();
       if (widget.animalId != null) _loadAnimalData();
     }
@@ -257,9 +263,9 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
       final contacts = List<Map<String, dynamic>>.from(d['contacts_urgence'] ?? []);
       if (contacts.isNotEmpty) {
         final c = contacts.first;
-        _contactCtrl.text = (c['tel'] as String?)?.isNotEmpty == true
-            ? c['tel'] as String
-            : (c['nom'] as String?) ?? '';
+        _contactTelCtrl.text  = (c['tel'] as String?) ?? '';
+        final cEmail = (c['email'] as String?) ?? '';
+        if (cEmail.isNotEmpty) _contactEmailCtrl.text = cEmail;
       }
     });
     _loadBreeds(newEspece);
@@ -281,9 +287,14 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
         _espece           = newEspece;
         _sexe             = d['sexe'] as String?;
         _existingPhotoUrl = d['photo_url'] as String?;
-        _descCtrl.text    = (d['description'] ?? '') as String;
-        _contactCtrl.text = (d['contact'] ?? '') as String;
-        _numeroAlerte     = (d['numero_alerte'] ?? _generateNumero()) as String;
+        _descCtrl.text         = (d['description'] ?? '') as String;
+        _recompenseCtrl.text   = (d['recompense'] ?? '') as String;
+        _contactEmailCtrl.text = (d['contact_email'] ?? d['contact'] ?? '') as String;
+        _contactTelCtrl.text   = (d['contact_telephone'] ?? '') as String;
+        _contactMessagerie     = (d['contact_messagerie'] ?? true) as bool;
+        _paysCtrl.text         = (d['pays'] ?? 'France') as String;
+        _regionCtrl.text       = (d['region'] ?? '') as String;
+        _numeroAlerte          = (d['numero_alerte'] ?? _generateNumero()) as String;
         _lat              = (d['lat'] as num?)?.toDouble();
         _lng              = (d['lng'] as num?)?.toDouble();
 
@@ -337,13 +348,15 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
           _existingPhotoUrl = d['photo_url'] as String;
         }
         // Pre-fill contact from emergency contacts if not already set
-        if (_contactCtrl.text.isEmpty) {
+        if (_contactTelCtrl.text.isEmpty) {
           final contacts = List<Map<String, dynamic>>.from(d['contacts_urgence'] ?? []);
           if (contacts.isNotEmpty) {
             final c = contacts.first;
-            _contactCtrl.text = (c['tel'] as String?)?.isNotEmpty == true
-                ? c['tel'] as String
-                : (c['nom'] as String?) ?? '';
+            _contactTelCtrl.text = (c['tel'] as String?) ?? '';
+            final cEmail = (c['email'] as String?) ?? '';
+            if (cEmail.isNotEmpty && _contactEmailCtrl.text.isEmpty) {
+              _contactEmailCtrl.text = cEmail;
+            }
           }
         }
       });
@@ -358,7 +371,8 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
     _places.dispose();
     for (final c in [_nomCtrl, _identCtrl, _raceCtrl, _couleurCtrl,
                      _addressSearchCtrl, _rueCtrl, _cpCtrl, _villeCtrl,
-                     _descCtrl, _contactCtrl]) {
+                     _paysCtrl, _regionCtrl, _descCtrl, _recompenseCtrl,
+                     _contactEmailCtrl, _contactTelCtrl]) {
       c.dispose();
     }
     super.dispose();
@@ -458,19 +472,23 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
     try {
       final det = await _places.getDetailsByPlaceId(p.placeId!, language: 'fr');
       if (!mounted || !det.isOkay) return;
-      String num = '', route = '', cp = '', ville = '';
+      String num = '', route = '', cp = '', ville = '', pays = '', region = '';
       for (final c in det.result.addressComponents) {
-        if (c.types.contains('street_number')) num   = c.longName;
-        if (c.types.contains('route'))         route = c.longName;
-        if (c.types.contains('postal_code'))   cp    = c.longName;
-        if (c.types.contains('locality'))      ville = c.longName;
+        if (c.types.contains('street_number'))                   num    = c.longName;
+        if (c.types.contains('route'))                           route  = c.longName;
+        if (c.types.contains('postal_code'))                     cp     = c.longName;
+        if (c.types.contains('locality'))                        ville  = c.longName;
         else if (c.types.contains('administrative_area_level_2') && ville.isEmpty) ville = c.longName;
+        if (c.types.contains('administrative_area_level_1'))     region = c.longName;
+        if (c.types.contains('country'))                         pays   = c.longName;
       }
       final loc = det.result.geometry?.location;
       setState(() {
         _rueCtrl.text   = [num, route].where((s) => s.isNotEmpty).join(' ');
         _cpCtrl.text    = cp;
         _villeCtrl.text = ville;
+        if (pays.isNotEmpty)   _paysCtrl.text   = pays;
+        if (region.isNotEmpty) _regionCtrl.text = region;
         if (loc != null) { _lat = loc.lat; _lng = loc.lng; }
       });
     } catch (_) {}
@@ -496,6 +514,8 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
         _rueCtrl.text   = m.street ?? '';
         _cpCtrl.text    = m.postalCode ?? '';
         _villeCtrl.text = m.locality ?? m.subLocality ?? '';
+        if ((m.country ?? '').isNotEmpty)             _paysCtrl.text   = m.country!;
+        if ((m.administrativeArea ?? '').isNotEmpty)  _regionCtrl.text = m.administrativeArea!;
         _addressSearchCtrl.text =
             [_rueCtrl.text, _cpCtrl.text, _villeCtrl.text].where((s) => s.isNotEmpty).join(', ');
       });
@@ -507,14 +527,6 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
     }
   }
 
-  // ── Validation ───────────────────────────────────────────────────────────────
-
-  bool _isValidContact(String c) {
-    final email = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
-    final phone = RegExp(r'^[\+\d][\d\s\.\-]{6,}$');
-    return email.hasMatch(c) || phone.hasMatch(c);
-  }
-
   // ── Submit ───────────────────────────────────────────────────────────────────
 
   Future<void> _submit() async {
@@ -524,11 +536,13 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
     if (_sexe == null)                  errors.add('Sexe');
     if (_datePerte == null)             errors.add('Date de disparition');
     if (_villeCtrl.text.trim().isEmpty) errors.add('Ville');
-    final contact = _contactCtrl.text.trim();
-    if (contact.isEmpty) {
-      errors.add('Contact');
-    } else if (!_isValidContact(contact)) {
-      errors.add('Contact invalide (email ou téléphone)');
+    final contactEmail = _contactEmailCtrl.text.trim();
+    final contactTel   = _contactTelCtrl.text.trim();
+    if (contactEmail.isEmpty && contactTel.isEmpty && !_contactMessagerie) {
+      errors.add('Au moins un contact requis (email, téléphone ou messagerie)');
+    }
+    if (contactEmail.isNotEmpty && !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(contactEmail)) {
+      errors.add('Email invalide');
     }
 
     if (errors.isNotEmpty) {
@@ -557,12 +571,17 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
         'couleur':                 _couleurCtrl.text.trim().isEmpty ? null : _couleurCtrl.text.trim(),
         'photo_url':               photoUrl,
         'description':             _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+        'recompense':              _recompenseCtrl.text.trim().isEmpty ? null : _recompenseCtrl.text.trim(),
         'date_perte':              _datePerte?.toIso8601String().substring(0, 10),
         'date_derniere_localisation': dateDernLoc?.toIso8601String().substring(0, 10),
         'derniere_localisation':   localisation.isEmpty ? null : localisation,
+        'pays':                    _paysCtrl.text.trim().isEmpty ? 'France' : _paysCtrl.text.trim(),
+        'region':                  _regionCtrl.text.trim().isEmpty ? null : _regionCtrl.text.trim(),
         'lat':                     _lat,
         'lng':                     _lng,
-        'contact':                 contact,
+        'contact_email':           contactEmail.isEmpty ? null : contactEmail,
+        'contact_telephone':       contactTel.isEmpty ? null : contactTel,
+        'contact_messagerie':      _contactMessagerie,
         'numero_alerte':           _numeroAlerte,
         'statut':                  'perdu',
       };
@@ -749,6 +768,12 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
             const SizedBox(width: 8),
             Expanded(child: _FField(controller: _villeCtrl, hint: 'Ville *')),
           ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: _FField(controller: _paysCtrl, hint: 'Pays')),
+            const SizedBox(width: 8),
+            Expanded(child: _FField(controller: _regionCtrl, hint: 'Région')),
+          ]),
           if (_lat != null)
             Padding(
               padding: const EdgeInsets.only(top: 4, left: 4),
@@ -767,14 +792,28 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
           _FMultiField(controller: _descCtrl, hint: 'Circonstances de la disparition…'),
           const SizedBox(height: 18),
 
+          // ── Récompense ─────────────────────────────────────────────────────
+          const _FLabel('Récompense (optionnel)'),
+          const SizedBox(height: 6),
+          _FField(controller: _recompenseCtrl, hint: 'Ex : 200 €'),
+          const SizedBox(height: 18),
+
           // ── Contact ────────────────────────────────────────────────────────
           const _FLabel('Contact *'),
           const SizedBox(height: 4),
-          Text('Email ou téléphone (affiché aux personnes qui trouvent une alerte).',
+          Text('Au moins un moyen de contact requis.',
               style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
           const SizedBox(height: 6),
-          _FField(controller: _contactCtrl, hint: 'Email ou téléphone',
+          _FField(controller: _contactEmailCtrl, hint: 'Email',
               inputType: TextInputType.emailAddress),
+          const SizedBox(height: 8),
+          _FField(controller: _contactTelCtrl, hint: 'Téléphone',
+              inputType: TextInputType.phone),
+          const SizedBox(height: 8),
+          _MessagerieToggle(
+            value: _contactMessagerie,
+            onChanged: (v) => setState(() => _contactMessagerie = v),
+          ),
           const SizedBox(height: 32),
 
           // ── Bouton submit ──────────────────────────────────────────────────
@@ -1003,6 +1042,28 @@ class _DropdownCard extends StatelessWidget {
               style: const TextStyle(fontFamily: 'Galey')))).toList(),
       onChanged: (v) { if (v != null) onChanged(v); },
     ),
+  );
+}
+
+class _MessagerieToggle extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  const _MessagerieToggle({required this.value, required this.onChanged});
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))]),
+    child: Row(children: [
+      const Icon(Icons.chat_bubble_outline, size: 18, color: Color(0xFF0C5C6C)),
+      const SizedBox(width: 12),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Messagerie PetsMatch', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+        Text('Permettre aux utilisateurs de vous contacter via l\'app',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+      ])),
+      Switch(value: value, onChanged: onChanged, activeColor: const Color(0xFF0C5C6C)),
+    ]),
   );
 }
 

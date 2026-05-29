@@ -35,7 +35,7 @@
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
-| PT01 | **[V1]** Vérifier complétude formulaire "Animal perdu" — checklist tous champs obligatoires vs spec (circonstances, récompense, contact email/tel/messagerie, date dernière localisation) | Haute | App + Web | `alerte_perdu_form_page.dart`, `animaux-perdus/declarer/page.tsx` |
+| ~~PT01~~ | ~~**[V1]** Vérifier complétude formulaire "Animal perdu"~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-29 |
 | PT02 | **[V1]** Déclarer animal trouvé — formulaire complet (espèce, race estimée, sexe, date, localisation GPS, photo x1 min, contact) + champs optionnels (couleur, taille, état santé, comportement) | Haute | App + Web | Créer `animal_trouve_form_page.dart` + `animaux-perdus/declarer-trouve/page.tsx` |
 | PT03 | **[V1]** Table Supabase `animaux_trouves` — migration SQL (voir `SPEC_ANIMAUX_PERDUS_TROUVES.md` §B) | Haute | Supabase | Dashboard SQL Editor |
 | PT04 | **[V1]** Carte animaux perdus/trouvés — onglet Perdu/Trouvé + code couleur (rouge/vert/orange/bleu) + filtres espèce, race, région, ville, distance | Haute | App + Web | `animaux_perdus_page.dart`, `animaux-perdus/page.tsx` |
@@ -49,6 +49,13 @@
 | PT12 | **[V2]** Statuts animaux trouvés — workflow (Trouvé → Pris en charge → Propriétaire contacté → Restitué → Clôturé) | Moyenne | App + Web | `animal_trouve_form_page.dart` |
 | PT13 | **[V3]** IA rapprochement photos animaux perdus/trouvés | Basse | Backend | À évaluer |
 | PT14 | **[V3]** Statistiques admin — animaux retrouvés, délai moyen, zones fréquentes, taux résolution | Basse | App + Web | Panel admin |
+
+### Fiche animal — Gestion alimentation
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| AL01 | **[V1]** Gestion alimentation — calcul ration journalière selon poids actuel + objectif de poids + type (croquettes, BARF, ration ménagère). Pour croquettes : saisie marque/référence + % protéines. Pour ration ménagère : calcul grammes par ingrédient + suggestions de recettes. Afficher ration dans fiche animal. | Haute | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
+| AL02 | **[V2]** Recettes ration ménagère — bibliothèque de recettes par espèce (chien, chat) avec ingrédients + quantités auto-adaptées au poids animal | Moyenne | App + Web | Créer `lib/pages/alimentation/` + `src/app/alimentation/` |
 
 ### App mobile + Web (synchronisés)
 
@@ -141,6 +148,7 @@
 | Registre fiche animal — visible à la création + vue lecture seule (statut badge + tous champs) | 2026-05 | Web | `mes-animaux/[id]/page.tsx` |
 | A05/A06 étendu fiche animal — auto-fill naissance + date_entree depuis date_naissance + puce/race mère visible | 2026-05 | Web | `mes-animaux/[id]/page.tsx` |
 | Alerte perdue — photo de l'animal pré-remplie par défaut, texte "Changer" adaptatif | 2026-05 | Web | `animaux-perdus/declarer/page.tsx` |
+| PT01 — Formulaire animal perdu : ajout pays, région, récompense, split contact (email + téléphone + messagerie toggle), pré-remplissage depuis contacts_urgence fiche animal, extraction pays/région depuis Google Places | 2026-05-29 | App + Web | `alerte_perdu_form_page.dart`, `animaux-perdus/declarer/page.tsx`, `supabase/migrations/add_alertes_perdus_fields.sql` |
 | Sélecteur parent (père + mère) depuis mes animaux dans fiche animal | 2026-05 | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
 | Sélecteur mère — auto-fill race mère + date naissance mère depuis la fiche de la mère sélectionnée | 2026-05 | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
 | Registre vue lecture — affichage puce mère + race mère quand provenance = naissance | 2026-05 | Web | `mes-animaux/[id]/page.tsx` |

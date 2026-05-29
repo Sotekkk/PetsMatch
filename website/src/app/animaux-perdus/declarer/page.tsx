@@ -21,7 +21,7 @@ interface UserAnimal {
   couleur?: string;
   photo_url?: string;
   identification?: string;
-  contacts_urgence?: { nom?: string; tel?: string }[];
+  contacts_urgence?: { nom?: string; tel?: string; email?: string }[];
 }
 
 const ESPECES = ['chien', 'chat', 'lapin', 'oiseau', 'nac', 'cheval', 'ovin', 'caprin', 'porcin', 'autre'];
@@ -39,8 +39,8 @@ function genNumero() {
   return `A${d}-${r}`;
 }
 
-function isValidContact(c: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c) || /^[\+\d][\d\s.\-]{6,}$/.test(c);
+function isValidEmail(c: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c);
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -63,7 +63,12 @@ export default function DeclarerPerduPage() {
   const [cp, setCp] = useState('');
   const [ville, setVille] = useState('');
   const [description, setDescription] = useState('');
-  const [contact, setContact] = useState('');
+  const [recompense, setRecompense] = useState('');
+  const [pays, setPays] = useState('France');
+  const [region, setRegion] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactTel, setContactTel] = useState('');
+  const [contactMessagerie, setContactMessagerie] = useState(true);
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [photoCropSrc, setPhotoCropSrc] = useState<string | null>(null);
@@ -105,7 +110,7 @@ export default function DeclarerPerduPage() {
   }, []);
 
   useEffect(() => {
-    if (user?.email) setContact(user.email);
+    if (user?.email) setContactEmail(user.email);
   }, [user]);
 
   // Load breeds when espece changes
@@ -158,17 +163,21 @@ export default function DeclarerPerduPage() {
           setLocSearch(pred.description);
           return;
         }
-        let num = '', route = '', postalCode = '', city = '';
+        let num = '', route = '', postalCode = '', city = '', country = '', adminArea = '';
         for (const c of place.address_components) {
           if (c.types.includes('street_number')) num = c.long_name;
           if (c.types.includes('route')) route = c.long_name;
           if (c.types.includes('postal_code')) postalCode = c.long_name;
           if (c.types.includes('locality')) city = c.long_name;
           else if (c.types.includes('postal_town') && !city) city = c.long_name;
+          if (c.types.includes('administrative_area_level_1')) adminArea = c.long_name;
+          if (c.types.includes('country')) country = c.long_name;
         }
         if (city) setVille(city);
         if (postalCode) setCp(postalCode);
         if (num || route) setRue([num, route].filter(Boolean).join(' '));
+        if (country) setPays(country);
+        if (adminArea) setRegion(adminArea);
         setLocSearch([num && route ? `${num} ${route}` : route || num, postalCode, city].filter(Boolean).join(', '));
       }
     );
@@ -199,7 +208,8 @@ export default function DeclarerPerduPage() {
     const contacts = a.contacts_urgence ?? [];
     if (contacts.length > 0) {
       const first = contacts[0];
-      setContact(first.tel || first.nom || user?.email || '');
+      if (first.tel) setContactTel(first.tel);
+      if (first.email) setContactEmail(first.email);
     }
     setShowPicker(false);
   }
@@ -240,8 +250,8 @@ export default function DeclarerPerduPage() {
     if (!sexe)          errs.push('Sexe');
     if (!datePerte)     errs.push('Date de disparition');
     if (!ville.trim())  errs.push('Ville');
-    if (!contact.trim()) errs.push('Contact');
-    else if (!isValidContact(contact.trim())) errs.push('Contact invalide (email ou téléphone)');
+    if (!contactEmail.trim() && !contactTel.trim() && !contactMessagerie) errs.push('Au moins un contact requis');
+    if (contactEmail.trim() && !isValidEmail(contactEmail.trim())) errs.push('Email invalide');
     setErrors(errs);
     if (errs.length > 0) return;
 
@@ -260,10 +270,15 @@ export default function DeclarerPerduPage() {
         couleur: couleur.trim() || null,
         photo_url: photoUrl,
         description: description.trim() || null,
+        recompense: recompense.trim() || null,
         date_perte: datePerte,
         date_derniere_localisation: dateDerniereLoc || datePerte,
         derniere_localisation: localisation || null,
-        contact: contact.trim(),
+        pays: pays.trim() || 'France',
+        region: region.trim() || null,
+        contact_email: contactEmail.trim() || null,
+        contact_telephone: contactTel.trim() || null,
+        contact_messagerie: contactMessagerie,
         numero_alerte: numeroAlerte,
         statut: 'perdu',
       });
@@ -456,6 +471,14 @@ export default function DeclarerPerduPage() {
                 className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white"
                 placeholder="Ville *" />
             </div>
+            <div className="flex gap-2">
+              <input value={pays} onChange={e => setPays(e.target.value)}
+                className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white"
+                placeholder="Pays" />
+              <input value={region} onChange={e => setRegion(e.target.value)}
+                className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white"
+                placeholder="Région" />
+            </div>
           </div>
         </div>
 
@@ -467,13 +490,36 @@ export default function DeclarerPerduPage() {
             className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white resize-none" />
         </div>
 
+        {/* Récompense */}
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-1">Récompense (optionnel)</label>
+          <input value={recompense} onChange={e => setRecompense(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white"
+            placeholder="Ex : 200 €" />
+        </div>
+
         {/* Contact */}
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-1">Contact *</label>
-          <p className="text-xs text-gray-400 mb-1">Email ou téléphone — visible par les personnes qui trouvent l&apos;alerte</p>
-          <input value={contact} onChange={e => setContact(e.target.value)}
-            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white"
-            placeholder="email@exemple.com ou 06 00 00 00 00" />
+          <p className="text-xs text-gray-400 mb-2">Au moins un moyen de contact requis.</p>
+          <div className="space-y-2">
+            <input value={contactEmail} onChange={e => setContactEmail(e.target.value)}
+              type="email"
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white"
+              placeholder="Email" />
+            <input value={contactTel} onChange={e => setContactTel(e.target.value)}
+              type="tel"
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white"
+              placeholder="Téléphone" />
+            <label className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3 cursor-pointer">
+              <input type="checkbox" checked={contactMessagerie} onChange={e => setContactMessagerie(e.target.checked)}
+                className="w-4 h-4 accent-[#0C5C6C] rounded" />
+              <span className="text-sm">
+                <span className="font-semibold text-gray-700">Messagerie PetsMatch</span>
+                <span className="text-gray-400 ml-1 text-xs">— permettre aux utilisateurs de vous écrire via l&apos;app</span>
+              </span>
+            </label>
+          </div>
         </div>
 
         {/* Submit */}
