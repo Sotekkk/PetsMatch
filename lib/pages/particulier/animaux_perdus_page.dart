@@ -12,6 +12,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 
 // ── Species colors ────────────────────────────────────────────────────────────
 
@@ -437,6 +438,15 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
             Tab(icon: Icon(Icons.map_outlined), text: 'Carte'),
           ],
         ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'declare_trouve',
+        backgroundColor: const Color(0xFF0C5C6C),
+        icon: const Icon(Icons.pets, color: Colors.white, size: 20),
+        label: const Text('J\'ai trouvé un animal',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
+        onPressed: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const AnimalTrouveFormPage())),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _orange))

@@ -296,6 +296,10 @@ export default function AnimauxPerdusPage() {
             className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors shadow-sm">
             📍 Déclarer un animal perdu
           </a>
+          <a href="/animaux-perdus/declarer-trouve"
+            className="flex items-center gap-2 bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors shadow-sm">
+            🐾 J&apos;ai trouvé un animal
+          </a>
           {/* Toggle liste / carte */}
           <div className="flex bg-gray-100 rounded-xl p-1">
             <button onClick={() => setView('liste')}

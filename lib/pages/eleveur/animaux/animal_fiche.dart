@@ -1957,6 +1957,24 @@ class _ReproListState extends State<_ReproList> {
     }
   }
 
+  Future<void> _confirmGestation(String id) async {
+    try {
+      await Supabase.instance.client
+          .from('gestations')
+          .update({'gestation_confirmee': true})
+          .eq('id', id);
+      if (mounted) setState(() {
+        final idx = _data.indexWhere((d) => d['id']?.toString() == id);
+        if (idx >= 0) _data[idx] = {..._data[idx], 'gestation_confirmee': true};
+      });
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Gestation confirmée ✓'), backgroundColor: Color(0xFF6E9E57)));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1979,13 +1997,20 @@ class _ReproListState extends State<_ReproList> {
                   itemCount: _data.length,
                   itemBuilder: (_, i) {
                     final d = _data[i];
+                    final id = d['id']?.toString() ?? '';
+                    final isGestation = widget.collection == 'gestations';
+                    final alreadyConfirmed = d['gestation_confirmee'] as bool? ?? false;
                     return _SimpleCard(
                       data: d,
-                      onDelete: () => _delete(d['id']?.toString() ?? ''),
+                      collection: widget.collection,
+                      onDelete: () => _delete(id),
                       onEdit: widget.editBuilder != null ? () async {
                         await showDialog(context: context, builder: (ctx) => widget.editBuilder!(ctx, d));
                         _refresh();
                       } : null,
+                      onConfirmGestation: (isGestation && !alreadyConfirmed)
+                          ? () => _confirmGestation(id)
+                          : null,
                     );
                   },
                 ),
@@ -2219,7 +2244,10 @@ class _SimpleCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final VoidCallback onDelete;
   final VoidCallback? onEdit;
-  const _SimpleCard({required this.data, required this.onDelete, this.onEdit});
+  final String? collection;
+  final VoidCallback? onConfirmGestation;
+  const _SimpleCard({required this.data, required this.onDelete, this.onEdit,
+      this.collection, this.onConfirmGestation});
 
   static const _labels = {
     'nom_partenaire':   'Partenaire',
@@ -2249,6 +2277,91 @@ class _SimpleCard extends StatelessWidget {
     return val.toString();
   }
 
+  void _showDetail(BuildContext context) {
+    final rawDate = data['date'];
+    final date = rawDate is String && rawDate.isNotEmpty
+        ? (DateTime.tryParse(rawDate) != null
+            ? DateFormat('dd/MM/yyyy').format(DateTime.parse(rawDate))
+            : rawDate)
+        : '';
+    final isGestation = collection == 'gestations';
+    final confirmee   = data['gestation_confirmee'] as bool? ?? false;
+
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          Text(
+            isGestation ? 'Détail gestation'
+                : collection == 'saillies' ? 'Détail saillie'
+                : 'Détail chaleurs',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 16),
+          if (date.isNotEmpty)
+            _DetailRow(label: 'Date', value: date),
+          ...data.entries
+              .where((e) => !_excludedKeys.contains(e.key)
+                  && e.value != null && e.value.toString().isNotEmpty)
+              .map((e) {
+                final v = _fmt(e.key, e.value);
+                if (v.isEmpty) return const SizedBox.shrink();
+                final label = _labels[e.key] ?? e.key.replaceAll('_', ' ');
+                return _DetailRow(label: label, value: v);
+              }),
+          if (isGestation) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: confirmee ? const Color(0xFFEEF5EA) : const Color(0xFFFFF3CD),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: confirmee ? const Color(0xFF6E9E57) : const Color(0xFFFFCC02)),
+              ),
+              child: Text(
+                confirmee ? '✓ Gestation confirmée' : '⏳ Gestation à confirmer',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                    color: confirmee ? const Color(0xFF4A7A3A) : const Color(0xFF9E7000)),
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
+          if (isGestation && !confirmee && onConfirmGestation != null)
+            SizedBox(width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6E9E57),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.check_circle_outline, color: Colors.white),
+                label: const Text('Confirmer la gestation',
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700)),
+                onPressed: () {
+                  Navigator.pop(context);
+                  onConfirmGestation!();
+                },
+              ),
+            ),
+          if (onEdit != null)
+            TextButton.icon(
+              onPressed: () { Navigator.pop(context); onEdit!(); },
+              icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF6E9E57)),
+              label: const Text('Modifier', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6E9E57), fontWeight: FontWeight.w600)),
+            ),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final rawDate = data['date'];
@@ -2259,54 +2372,72 @@ class _SimpleCard extends StatelessWidget {
         : '';
     final hasConfirmee = data.containsKey('gestation_confirmee');
     final confirmee = data['gestation_confirmee'] as bool? ?? false;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 5)]),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Row(children: [
-            Text(date, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
-            if (hasConfirmee) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: confirmee ? const Color(0xFFEEF5EA) : const Color(0xFFFFF3CD),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: confirmee ? const Color(0xFF6E9E57) : const Color(0xFFFFCC02)),
-                ),
-                child: Text(
-                  confirmee ? '✓ Confirmée' : 'À confirmer',
-                  style: TextStyle(
-                    fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600,
-                    color: confirmee ? const Color(0xFF4A7A3A) : const Color(0xFF9E7000),
+    return GestureDetector(
+      onTap: () => _showDetail(context),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 5)]),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Row(children: [
+              Text(date, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
+              if (hasConfirmee) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: confirmee ? const Color(0xFFEEF5EA) : const Color(0xFFFFF3CD),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: confirmee ? const Color(0xFF6E9E57) : const Color(0xFFFFCC02)),
+                  ),
+                  child: Text(
+                    confirmee ? '✓ Confirmée' : 'À confirmer',
+                    style: TextStyle(
+                      fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600,
+                      color: confirmee ? const Color(0xFF4A7A3A) : const Color(0xFF9E7000),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ]),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.chevron_right, size: 18, color: Color(0xFFBDBDBD)),
+              const SizedBox(width: 4),
+              IconButton(icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red), onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+            ]),
           ]),
-          Row(mainAxisSize: MainAxisSize.min, children: [
-            if (onEdit != null)
-              IconButton(icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF6E9E57)), onPressed: onEdit, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-            const SizedBox(width: 4),
-            IconButton(icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red), onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-          ]),
+          ...data.entries
+              .where((e) => !_excludedKeys.contains(e.key)
+                  && e.value != null && e.value.toString().isNotEmpty)
+              .map((e) {
+            final v = _fmt(e.key, e.value);
+            if (v.isEmpty) return const SizedBox.shrink();
+            final label = _labels[e.key] ?? e.key.replaceAll('_', ' ');
+            return Padding(padding: const EdgeInsets.only(top: 3),
+              child: Text('$label : $v', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))));
+          }),
         ]),
-        ...data.entries
-            .where((e) => !_excludedKeys.contains(e.key)
-                && e.value != null && e.value.toString().isNotEmpty)
-            .map((e) {
-          final v = _fmt(e.key, e.value);
-          if (v.isEmpty) return const SizedBox.shrink();
-          final label = _labels[e.key] ?? e.key.replaceAll('_', ' ');
-          return Padding(padding: const EdgeInsets.only(top: 3),
-            child: Text('$label : $v', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))));
-        }),
-      ]),
+      ),
     );
   }
+}
+
+class _DetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+  const _DetailRow({required this.label, required this.value});
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SizedBox(width: 150,
+        child: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
+            fontWeight: FontWeight.w600, color: Color(0xFF6F767B)))),
+      Expanded(child: Text(value, style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+    ]),
+  );
 }
 
 class _SanteCard extends StatelessWidget {

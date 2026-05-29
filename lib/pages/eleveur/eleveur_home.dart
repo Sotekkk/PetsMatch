@@ -8,6 +8,7 @@ import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
+import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
@@ -283,6 +284,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AnimauxPerdusPage()))),
       _QuickTile(icon: Icons.add_alert_outlined, label: 'Déclarer\nperdu', color: Colors.orange.shade800,
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AlertePerduFormPage()))),
+      _QuickTile(icon: Icons.pets, label: 'Animal\ntrouvé', color: const Color(0xFF0C5C6C),
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AnimalTrouveFormPage()))),
     ];
 
     return Column(children: [
