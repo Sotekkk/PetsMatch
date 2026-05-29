@@ -37,33 +37,24 @@ bool isRequestingPermission = false;
 Future<void> saveFcmTokenToFirestore() async {
   try {
     String? token = await FirebaseMessaging.instance.getToken();
-    print("FCM Token : $token");
-
-    if (Platform.isIOS) {
-      String? apnsToken = await FirebaseMessaging.instance.getAPNSToken();
-      if (apnsToken != null) {
-        print("APNS Token: $apnsToken");
-        // Vous pouvez maintenant sauvegarder le token APNS où il est nécessaire
-      } else {
-        print("APNS Token not available yet.");
-      }
-    }
 
     if (token != null) {
-      User? user = FirebaseAuth.instance.currentUser;
+      final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'fcmToken': token,
-          // Optionally save APNS token specifically for iOS devices
-          'apnsToken': Platform.isIOS
-              ? await FirebaseMessaging.instance.getAPNSToken()
-              : null,
-        }, SetOptions(merge: true));
-        print("Token FCM sauvegardé avec succès !");
+        // Firestore (messagerie)
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
+          {'fcmToken': token}, SetOptions(merge: true));
+        // Supabase (notifications push likes/alertes)
+        try {
+          await Supabase.instance.client
+              .from('users')
+              .update({'fcm_token': token})
+              .eq('uid', user.uid);
+        } catch (_) {}
       }
     }
   } catch (e) {
-    print("Erreur lors de la sauvegarde du token FCM : $e");
+    // ignore
   }
 }
 
@@ -403,9 +394,22 @@ Future<void> main() async {
     await requestPermissions();
   } catch (_) {}
 
+  // Sauvegarde immédiate si l'user est déjà connecté (timeout 5s max)
   try {
-    await saveFcmTokenToFirestore();
+    await saveFcmTokenToFirestore().timeout(const Duration(seconds: 5));
   } catch (_) {}
+
+  // Rafraîchir le token à chaque changement (reinstall, rotation clé FCM…)
+  FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid)
+          .set({'fcmToken': newToken}, SetOptions(merge: true));
+      await Supabase.instance.client.from('users')
+          .update({'fcm_token': newToken}).eq('uid', user.uid);
+    } catch (_) {}
+  });
   await Future.delayed(const Duration(seconds: 1));
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,

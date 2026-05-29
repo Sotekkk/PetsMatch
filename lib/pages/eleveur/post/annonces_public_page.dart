@@ -47,8 +47,15 @@ const _regionsByPays = <String, List<String>>{
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 class AnnoncesPublicPage extends StatefulWidget {
-  final String typeFilter; // 'compagnon' | 'saillie'
-  const AnnoncesPublicPage({super.key, this.typeFilter = 'compagnon'});
+  final String  typeFilter;    // 'compagnon' | 'saillie'
+  final String  initialEspece;
+  final String? initialRace;
+  const AnnoncesPublicPage({
+    super.key,
+    this.typeFilter = 'compagnon',
+    this.initialEspece = 'tous',
+    this.initialRace,
+  });
 
   @override
   State<AnnoncesPublicPage> createState() => _AnnoncesPublicPageState();
@@ -65,6 +72,14 @@ class _AnnoncesPublicPageState extends State<AnnoncesPublicPage> {
   String _departement  = '';
   String _ville        = '';
   String _raceText     = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _espece   = widget.initialEspece;
+    _raceText = widget.initialRace ?? '';
+    if (_raceText.isNotEmpty) _raceCtrl.text = _raceText;
+  }
   double? _prixMin;
   double? _prixMax;
 

@@ -14,5 +14,6 @@ exports.sendVaccinationReminders = stripeFunctions.sendVaccinationReminders;
 exports.triggerVaccinationReminder = stripeFunctions.triggerVaccinationReminder;
 exports.sendPushNotification = stripeFunctions.sendPushNotification;
 
-// Alertes perdus
+// Alertes perdus + likes
 exports.notifyUsersNearLostAnimal = alertesFunctions.notifyUsersNearLostAnimal;
+exports.sendLikeNotification = alertesFunctions.sendLikeNotification;

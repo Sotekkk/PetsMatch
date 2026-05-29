@@ -16,6 +16,7 @@ import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
+import 'package:PetsMatch/pages/connect_page.dart';
 
 class ParticulierNav extends StatefulWidget {
   final VoidCallback? onAdminTap;
@@ -41,6 +42,9 @@ class _ParticulierNavState extends State<ParticulierNav> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
+      onPopInvokedWithResult: (_, __) {
+        if (_selectedIndex != 0) setState(() => _selectedIndex = 0);
+      },
       child: Scaffold(
       key: _scaffoldKey,
       endDrawer: _buildDrawer(context),
@@ -232,8 +236,13 @@ class _ParticulierNavState extends State<ParticulierNav> {
                     fontSize: 15,
                     color: Colors.redAccent)),
             onTap: () async {
-              Navigator.pop(context);
               await FirebaseAuth.instance.signOut();
+              if (context.mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => WelcomePage()),
+                  (route) => false,
+                );
+              }
             },
             dense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),

@@ -173,3 +173,51 @@ exports.notifyUsersNearLostAnimal = functions
         );
         return {sent, inApp: notifRows.length};
     });
+
+/**
+ * Callable: envoie un push FCM de like à l'éleveur via Firebase Admin SDK.
+ */
+exports.sendLikeNotification = functions
+    .region("europe-west1")
+    .https.onCall(async (data, context) => {
+        if (!context.auth) {
+            throw new functions.https.HttpsError("unauthenticated", "Auth required");
+        }
+
+        const {receiverUid, annonceId, bebeIndex, nomAnimal, senderName} = data;
+        if (!receiverUid) return {sent: false, reason: "no_receiverUid"};
+
+        const userDoc = await admin.firestore().collection("users").doc(receiverUid).get();
+        const fcmToken = userDoc.exists ? userDoc.data().fcmToken : null;
+        if (!fcmToken) return {sent: false, reason: "no_fcmToken"};
+
+        const title = "❤️ Nouveau like sur votre annonce";
+        const body = `${senderName || "Quelqu'un"} a aimé "${nomAnimal || "votre animal"}"`;
+
+        const message = {
+            token: fcmToken,
+            notification: {title, body},
+            data: {
+                type: "like",
+                annonceId: annonceId || "",
+                bebeIndex: bebeIndex != null ? String(bebeIndex) : "",
+            },
+            android: {
+                priority: "high",
+                notification: {channelId: "high_importance_channel", sound: "default"},
+            },
+            apns: {
+                headers: {"apns-priority": "10"},
+                payload: {aps: {alert: {title, body}, sound: "default", badge: 1}},
+            },
+        };
+
+        try {
+            await admin.messaging().send(message);
+            console.log(`sendLikeNotification: push envoyé à ${receiverUid}`);
+            return {sent: true};
+        } catch (e) {
+            console.error("sendLikeNotification FCM error:", e);
+            return {sent: false, reason: String(e)};
+        }
+    });

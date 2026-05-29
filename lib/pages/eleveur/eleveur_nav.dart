@@ -21,6 +21,7 @@ import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
+import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -51,6 +52,9 @@ class _EleveurNavState extends State<EleveurNav> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
+      onPopInvokedWithResult: (_, __) {
+        if (_selectedIndex != 0) setState(() => _selectedIndex = 0);
+      },
       child: Scaffold(
       key: _scaffoldKey,
       endDrawer: _buildEndDrawer(context),
@@ -322,8 +326,13 @@ class _EleveurNavState extends State<EleveurNav> {
             title: const Text('Déconnexion',
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15, color: Colors.redAccent)),
             onTap: () async {
-              Navigator.pop(context);
               await FirebaseAuth.instance.signOut();
+              if (context.mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => WelcomePage()),
+                  (route) => false,
+                );
+              }
             },
             dense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),

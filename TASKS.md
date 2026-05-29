@@ -29,6 +29,7 @@
 | A18 | Espèce âne — ajouter partout (listes espèces, filtres, formulaires) + créer `donkey_breeds.json` | Haute | App + Web | Tous les sélecteurs d'espèce + assets |
 | A19 | Feed — filtre race dynamique selon espèce (liste JSON par espèce) | Haute | App + Web | `annonces_feed_page.dart`, `annonces/feed/page.tsx` |
 | A20 | Carte annonces compagnons — filtres par espèce, race, région, ville, pays, département | Haute | App | `annonces_map_page.dart` |
+| A21 | Sécurité avant mise en prod — RLS Supabase propres (remplacer Firebase Auth UID par JWT custom ou service role), politique de confidentialité, CGU, suppression compte RGPD | Haute | App + Web + Supabase | Toutes tables Supabase |
 
 ### App mobile + Web (synchronisés)
 
@@ -110,6 +111,12 @@
 | A05 — Registre entrée/sortie : auto-fill provenance nom+adresse éleveur au choix "Naissance" | 2026-05 | App + Web | `registre_entree_sortie.dart`, `elevage/registre-entree-sortie/page.tsx` |
 | A06 — Registre entrée/sortie : affichage infos mère (nom + puce) si animal né dans l'élevage | 2026-05 | App + Web | `registre_entree_sortie.dart`, `elevage/registre-entree-sortie/page.tsx` |
 | A17 — Fix overflow cards annonces Trouver un compagnon (1 px) + animaux perdus home (7.4 px) | 2026-05-28 | App | `trouver_compagnon_page.dart`, `particulier_home.dart` |
+| Feed v2 — Photo 4:5 style TikTok, header overlay foncé, dots ronds centrés, glassmorphism card bas, description extensible (DraggableScrollableSheet), "Animaux similaires" → AnnoncesPublicPage avec espèce+race pré-remplis | 2026-05-29 | App | `annonces_feed_page.dart`, `annonces_public_page.dart` |
+| Push notifications likes — Firebase Cloud Function `sendLikeNotification` (Admin SDK, fcmToken Firestore), appelée depuis Flutter au moment du like + token FCM sauvegardé au login et sur onTokenRefresh | 2026-05-29 | App + Firebase Functions | `functions/alertes.js`, `functions/index.js`, `lib/main.dart`, `login_page.dart`, `annonces_feed_page.dart` |
+| Fix cloche notifications — NotifBadge : polling 20s + Realtime sans filtre uid (DELETE sans REPLICA IDENTITY FULL) | 2026-05-29 | App | `notifications_page.dart` |
+| Fix clic notif like → ouvre feed sur la bonne photo (initialAnnonceId + initialBebeIndex) | 2026-05-29 | App | `notifications_page.dart`, `annonces_feed_page.dart` |
+| Fix déconnexion — pushAndRemoveUntil(WelcomePage) dans eleveur_nav + particulier_nav | 2026-05-29 | App | `eleveur_nav.dart`, `particulier_nav.dart` |
+| Compteurs likes/favoris web — chargement global + mise à jour locale au clic | 2026-05-29 | Web | `website/src/app/annonces/feed/page.tsx` |
 | Fix overflow "Dernières annonces" page Trouver un compagnon | 2026-05 | App | `trouver_compagnon_page.dart` |
 | Fix affichage prix portée (tranches min/max) et saillie dans page liste annonces | 2026-05 | Web | `annonces/page.tsx` |
 | Registre fiche animal — visible à la création + vue lecture seule (statut badge + tous champs) | 2026-05 | Web | `mes-animaux/[id]/page.tsx` |

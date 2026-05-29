@@ -52,6 +52,8 @@ class _LoginPageState extends State<LoginPage> {
           .doc(cred.user!.uid)
           .get();
       User_Info.updateUserInfo(doc.data() as Map<String, dynamic>);
+      // Sauvegarde du token FCM maintenant que l'user est authentifié
+      saveFcmTokenToFirestore().catchError((_) {});
 
       if (!mounted) return;
       Widget dest = User_Info.isValidate || User_Info.isAdmin

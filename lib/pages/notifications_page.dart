@@ -1,9 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -41,6 +42,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
         _notifs = List<Map<String, dynamic>>.from(data);
         _loading = false;
       });
+      // Marquer toutes comme lues → met à jour le badge via realtime
+      await _supa.from('notifications').update({'read': true}).eq('uid', _uid).eq('read', false);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -79,9 +82,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final data = notif['data'];
     String? alerteId;
     String? annonceId;
+    int?    bebeIndex;
     if (data is Map) {
       alerteId  = data['alerteId']  as String?;
       annonceId = data['annonceId'] as String?;
+      final raw = data['bebeIndex'];
+      bebeIndex = raw is int ? raw : (raw is num ? raw.toInt() : null);
     }
 
     _deleteNotif(notif);
@@ -93,9 +99,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       ));
     } else if (type == 'like' && annonceId != null) {
       await Navigator.push(context, MaterialPageRoute(
-        builder: (_) => AnnonceDetailPage(
-          annonceId: annonceId!,
-          initialData: {'_id': annonceId},
+        builder: (_) => AnnoncesFeedPage(
+          initialAnnonceId: annonceId,
+          initialBebeIndex: bebeIndex,
         ),
       ));
     }
@@ -280,16 +286,20 @@ class _NotifBadgeState extends State<NotifBadge> {
   final _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
   int _unread = 0;
   RealtimeChannel? _channel;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
     _fetchUnread();
     _subscribe();
+    // Polling de secours si Realtime n'est pas activé sur la table
+    _pollTimer = Timer.periodic(const Duration(seconds: 20), (_) => _fetchUnread());
   }
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
     _channel?.unsubscribe();
     super.dispose();
   }
@@ -308,13 +318,14 @@ class _NotifBadgeState extends State<NotifBadge> {
 
   void _subscribe() {
     if (_uid.isEmpty) return;
+    // Sans filtre : les DELETE ne transmettent pas uid sans REPLICA IDENTITY FULL.
+    // On re-fetch à chaque changement ; _fetchUnread() filtre déjà par uid.
     _channel = _supa
         .channel('notif_badge_$_uid')
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'notifications',
-          filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'uid', value: _uid),
           callback: (_) => _fetchUnread(),
         )
         .subscribe();

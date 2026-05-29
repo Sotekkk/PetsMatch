@@ -131,6 +131,8 @@ export default function FeedPage() {
   const [likeAnim, setLikeAnim] = useState(false);
   const [favoritedKeys, setFavoritedKeys] = useState<Set<string>>(new Set());
   const [favAnim, setFavAnim] = useState(false);
+  const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
+  const [favoriCounts, setFavoriCounts] = useState<Record<string, number>>({});
 
   const [descExpanded, setDescExpanded] = useState(false);
   const [shareItem, setShareItem] = useState<FeedItem | null>(null);
@@ -189,6 +191,27 @@ export default function FeedPage() {
       ]);
       if (likes) setLikedKeys(new Set(likes.map((l) => `${l.annonce_id}_${l.bebe_index ?? 'null'}`)));
       if (favs) setFavoritedKeys(new Set(favs.map((f) => `${f.annonce_id}_${f.bebe_index ?? 'null'}`)));
+    }
+
+    // Compteurs globaux (tous utilisateurs)
+    const annonceIds = [...new Set(feed.map((f) => f.annonceId))];
+    if (annonceIds.length > 0) {
+      const [{ data: allLikes }, { data: allFavs }] = await Promise.all([
+        supabase.from('likes').select('annonce_id, bebe_index').in('annonce_id', annonceIds),
+        supabase.from('favoris').select('annonce_id, bebe_index').in('annonce_id', annonceIds),
+      ]);
+      const lc: Record<string, number> = {};
+      for (const l of allLikes ?? []) {
+        const k = `${l.annonce_id}_${l.bebe_index ?? 'null'}`;
+        lc[k] = (lc[k] ?? 0) + 1;
+      }
+      setLikeCounts(lc);
+      const fc: Record<string, number> = {};
+      for (const f of allFavs ?? []) {
+        const k = `${f.annonce_id}_${f.bebe_index ?? 'null'}`;
+        fc[k] = (fc[k] ?? 0) + 1;
+      }
+      setFavoriCounts(fc);
     }
 
     setLoading(false);
@@ -284,6 +307,7 @@ export default function FeedPage() {
     const key = `${item.annonceId}_${item.bebeIndex ?? 'null'}`;
     const isLiked = likedKeys.has(key);
     setLikedKeys((prev) => { const n = new Set(prev); isLiked ? n.delete(key) : n.add(key); return n; });
+    setLikeCounts((prev) => ({ ...prev, [key]: Math.max(0, (prev[key] ?? 0) + (isLiked ? -1 : 1)) }));
     if (!isLiked) { setLikeAnim(true); setTimeout(() => setLikeAnim(false), 600); }
     if (isLiked) {
       const q = supabase.from('likes').delete().eq('user_uid', user!.uid).eq('annonce_id', item.annonceId);
@@ -312,6 +336,7 @@ export default function FeedPage() {
     const key = `${item.annonceId}_${item.bebeIndex ?? 'null'}`;
     const isFav = favoritedKeys.has(key);
     setFavoritedKeys((prev) => { const n = new Set(prev); isFav ? n.delete(key) : n.add(key); return n; });
+    setFavoriCounts((prev) => ({ ...prev, [key]: Math.max(0, (prev[key] ?? 0) + (isFav ? -1 : 1)) }));
     if (!isFav) { setFavAnim(true); setTimeout(() => setFavAnim(false), 600); }
     if (isFav) {
       const q = supabase.from('favoris').delete().eq('user_uid', user!.uid).eq('annonce_id', item.annonceId);
@@ -463,7 +488,15 @@ export default function FeedPage() {
   const likeKey = `${item.annonceId}_${item.bebeIndex ?? 'null'}`;
   const isLiked = likedKeys.has(likeKey);
   const isFavorited = favoritedKeys.has(likeKey);
+  const likeCount = likeCounts[likeKey] ?? 0;
+  const favoriCount = favoriCounts[likeKey] ?? 0;
   const currentPhoto = item.photos[photoIndex] ?? item.photos[0];
+
+  function fmtCount(n: number) {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+    return `${n}`;
+  }
 
   return (
     <div className="fixed inset-0 bg-black z-40 flex items-center justify-center overflow-hidden"
@@ -525,20 +558,30 @@ export default function FeedPage() {
 
           {/* Like */}
           <button onClick={(e) => { e.stopPropagation(); toggleLike(item); }}
-            className="group">
+            className="group flex flex-col items-center gap-0.5">
             <div className={`w-11 h-11 rounded-full backdrop-blur-sm flex items-center justify-center transition-all duration-200 ${likeAnim ? 'scale-125' : 'hover:scale-110 active:scale-95'} ${isLiked ? 'bg-red-500/30' : 'bg-black/40'}`}>
               <span className={`text-xl ${isLiked ? 'drop-shadow-[0_0_8px_rgba(239,68,68,0.9)]' : ''}`}>
                 {isLiked ? '❤️' : '🤍'}
               </span>
             </div>
+            {likeCount > 0 && (
+              <span className="text-white text-[11px] font-bold" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.6)' }}>
+                {fmtCount(likeCount)}
+              </span>
+            )}
           </button>
 
           {/* Favoris */}
           <button onClick={(e) => { e.stopPropagation(); toggleFavorite(item); }}
-            className="group">
+            className="group flex flex-col items-center gap-0.5">
             <div className={`w-11 h-11 rounded-full backdrop-blur-sm flex items-center justify-center transition-all duration-200 ${favAnim ? 'scale-125' : 'hover:scale-110 active:scale-95'} ${isFavorited ? 'bg-yellow-500/30' : 'bg-black/40'}`}>
-              <span className="text-xl">{isFavorited ? '🔖' : '🔖'}</span>
+              <span className="text-xl">{isFavorited ? '🔖' : '🏷️'}</span>
             </div>
+            {favoriCount > 0 && (
+              <span className="text-white text-[11px] font-bold" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.6)' }}>
+                {fmtCount(favoriCount)}
+              </span>
+            )}
           </button>
 
           {/* Message */}
