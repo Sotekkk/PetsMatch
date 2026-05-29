@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
@@ -130,10 +131,38 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
   late String  _espece    = widget.initialEspece;
   late String  _typeVente = widget.initialTypeFilter;
   late String? _race      = widget.initialRace;
+  List<String> _races     = [];
+
+  static const _especeToAsset = {
+    'chien':   'assets/dog_breeds.json',
+    'chat':    'assets/cat_breeds.json',
+    'lapin':   'assets/rabbit_breeds.json',
+    'oiseau':  'assets/bird_breeds.json',
+    'cheval':  'assets/horse_breeds.json',
+    'ovin':    'assets/sheep_breeds.json',
+    'caprin':  'assets/goat_breeds.json',
+    'porcin':  'assets/pig_breeds.json',
+    'nac':     'assets/nac_breeds.json',
+  };
+
+  Future<void> _loadRaces(String espece) async {
+    final asset = _especeToAsset[espece];
+    if (asset == null) { setState(() => _races = []); return; }
+    try {
+      final raw = await rootBundle.loadString(asset);
+      final list = (jsonDecode(raw) as List).cast<String>();
+      setState(() => _races = list);
+    } catch (_) {
+      setState(() => _races = []);
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    if (_espece != 'tous') {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadRaces(_espece));
+    }
     // Auto-démarrage si on vient d'une notification ou "Animaux similaires"
     if (widget.initialAnnonceId != null || widget.initialRace != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _loadFeed());
@@ -442,7 +471,10 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
             children: _especeList.map((e) {
               final sel = _espece == e.$1;
               return GestureDetector(
-                onTap: () => setState(() => _espece = e.$1),
+                onTap: () {
+                  setState(() { _espece = e.$1; _race = null; _races = []; });
+                  _loadRaces(e.$1);
+                },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   decoration: BoxDecoration(
@@ -460,6 +492,41 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
               );
             }).toList(),
           ),
+          if (_races.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Row(children: [
+              const Text('Race', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              if (_race != null) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => setState(() => _race = null),
+                  child: const Text('Effacer', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF0C5C6C))),
+                ),
+              ],
+            ]),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8, runSpacing: 8,
+              children: _races.map((r) {
+                final sel = _race == r;
+                return GestureDetector(
+                  onTap: () => setState(() => _race = sel ? null : r),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: sel ? const Color(0xFFE8F4F6) : Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: sel ? _teal : const Color(0xFFE5E7EB), width: 1.5),
+                    ),
+                    child: Text(r, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
+                        color: sel ? _teal : const Color(0xFF6F767B))),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
           const SizedBox(height: 24),
           const Text('Type', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
           const SizedBox(height: 10),

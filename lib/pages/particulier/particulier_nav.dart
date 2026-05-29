@@ -12,6 +12,7 @@ import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/particulier/particulier_home.dart';
 import 'package:PetsMatch/pages/particulier/user_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
+import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
@@ -156,6 +157,16 @@ class _ParticulierNavState extends State<ParticulierNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const AnimauxPerdusPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'J\'ai trouvé un animal',
+                      icon: Icons.pets,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AnimalTrouveFormPage(),
                         ));
                       },
                     ),

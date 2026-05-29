@@ -38,8 +38,8 @@
 | ~~PT01~~ | ~~**[V1]** Vérifier complétude formulaire "Animal perdu"~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-29 |
 | ~~PT02~~ | ~~**[V1]** Déclarer animal trouvé — formulaire complet~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-29 |
 | ~~PT03~~ | ~~**[V1]** Table Supabase `animaux_trouves`~~ | ~~Haute~~ | ~~Supabase~~ | ✅ Terminé 2026-05-29 |
-| PT04 | **[V1]** Carte animaux perdus/trouvés — onglet Perdu/Trouvé + code couleur (rouge/vert/orange/bleu) + filtres espèce, race, région, ville, distance | Haute | App + Web | `animaux_perdus_page.dart`, `animaux-perdus/page.tsx` |
-| PT05 | **[V1]** Bouton global "J'ai trouvé un animal" — visible dans menu (drawer éleveur + particulier) + page d'accueil (action urgente) | Haute | App + Web | `eleveur_nav.dart`, `particulier_nav.dart`, `EleveurDashboard.tsx`, `ParticulierDashboard.tsx` |
+| ~~PT04~~ | ~~**[V1]** Carte animaux perdus/trouvés — onglet Perdu/Trouvé + code couleur + filtres espèce, race, région, ville, distance~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-29 |
+| ~~PT05~~ | ~~**[V1]** Bouton global "J'ai trouvé un animal" — drawer éleveur + particulier + Header web~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-29 |
 | PT06 | **[V1]** Saisie manuelle numéro puce → recherche dans alertes perdus + animaux trouvés + animaux de l'élevage | Haute | App + Web | `animaux_perdus_page.dart`, `animaux-perdus/page.tsx` |
 | PT07 | **[V1]** Notifications de proximité pour les animaux trouvés (< 10 km d'une alerte active) — Firebase Cloud Function `notifyNearFoundAnimal` | Haute | Firebase Functions | `functions/alertes.js` |
 | PT08 | **[V1]** Messagerie automatique perdu/trouvé — conversation Firestore avec objet + message prérempli au contact | Moyenne | App + Web | Messagerie existante |

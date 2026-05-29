@@ -19,6 +19,7 @@ import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/eleveur/user_elevage_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
+import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
@@ -250,6 +251,16 @@ class _EleveurNavState extends State<EleveurNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const AnimauxPerdusPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'J\'ai trouvé un animal',
+                      icon: Icons.pets,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AnimalTrouveFormPage(),
                         ));
                       },
                     ),
