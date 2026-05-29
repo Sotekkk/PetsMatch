@@ -102,7 +102,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       await Supabase.instance.client.from('rdv').insert({
         'pro_uid':        widget.proUid,
         'client_uid':     uid,
-        if (_selectedAnimalId != null) 'animal_id': _selectedAnimalId,
+        if (_selectedAnimalId != null) 'animal_id': int.tryParse(_selectedAnimalId!),
         'date_heure':     dateHeure.toIso8601String(),
         'duree_minutes':  _dureeMinutes,
         'motif':          _motifCtrl.text.trim(),
