@@ -206,10 +206,22 @@ CREATE TABLE alertes_correspondances (
 
 ## E. Identification par puce électronique 🔲
 
+### Périmètre — 3 usages couverts par le même service
+
+| Usage | Contexte | Résultat attendu |
+|---|---|---|
+| **Gestion élevage** | Éleveur dans son élevage | Ouvre directement la fiche de l'animal (`animal_fiche.dart`) |
+| **Animal trouvé** | Particulier / vétérinaire / refuge | Ouvre fiche OU alerte perdue liée |
+| **Animal inconnu** | Puce non reconnue | Propose créer fiche / déclarer trouvé / déclarer perdu |
+
+> **Cas d'usage élevage (prioritaire)** : l'éleveur scanne la puce d'un de ses animaux pendant ses soins
+> (vaccination, pesée, contrôle) → la fiche de l'animal s'ouvre immédiatement sans navigation manuelle.
+> C'est le cas d'usage quotidien le plus fréquent.
+
 ### V1 — Saisie manuelle
 - Champ "Numéro de puce" dans le formulaire animal trouvé
-- Bouton "Rechercher par puce" dans la page animaux perdus/trouvés
-- Recherche dans `alertes_perdus.identification` + `animaux.identification`
+- Bouton "Rechercher par puce" dans la page animaux perdus/trouvés ET dans "Mes animaux"
+- Recherche dans `animaux.identification` (élevage) + `alertes_perdus.identification` + `animaux_trouves`
 
 ### V2 — Lecteur Bluetooth externe
 **Protocoles supportés :** Bluetooth HID, BLE, ISO11784, ISO11785, FDX-B
@@ -219,22 +231,36 @@ CREATE TABLE alertes_correspondances (
 **Service Flutter à créer : `ChipScannerService`**
 ```dart
 class ChipScannerService {
-  Future<void> connect();      // Connexion lecteur BLE
+  Future<void> connect();        // Connexion lecteur BLE
   Future<void> disconnect();
-  Stream<String> listen();     // Stream numéros de puce lus
-  String parseChip(String raw); // Normalisation format
-  Future<AnimalMatch> searchAnimal(String chipNumber); // Recherche multi-table
+  Stream<String> listen();       // Stream numéros de puce lus
+  String parseChip(String raw);  // Normalisation format (FDX-B → 15 chiffres)
+  Future<ChipSearchResult> searchAnimal(String chipNumber); // Recherche multi-table
+}
+
+class ChipSearchResult {
+  final AnimalFicheResult? ownAnimal;     // Animal de l'éleveur (priorité 1)
+  final AlertePerduResult? alertePerdue; // Alerte active associée (priorité 2)
+  final AnimalTrouveResult? trouve;      // Déclaration "trouvé" existante
+  // Si null → animal inconnu
 }
 ```
 
 **Workflow UX :**
 1. Bouton "Scanner une puce" (lecteur BT) ou "Saisir une puce" (manuel)
 2. Connexion lecteur → lecture → numéro affiché
-3. Recherche automatique dans `animaux`, `alertes_perdus`, `animaux_trouves`
+3. Recherche automatique dans `animaux` (élevage), `alertes_perdus`, `animaux_trouves`
 
 **Résultats possibles :**
-- ✅ Animal trouvé dans la base → ouvrir fiche animal OU alerte liée
-- ❓ Inconnu → proposer : créer fiche animal / déclarer trouvé / déclarer perdu
+- ✅ **Animal de l'éleveur** → ouvre directement `AnimalFichePage` (fiche complète)
+- ✅ **Alerte perdue connue** → ouvre la fiche d'alerte + propose de contacter le propriétaire
+- ✅ **Déclaration "trouvé" existante** → affiche la déclaration + propose de matcher
+- ❓ **Inconnu** → propose : créer fiche animal / déclarer trouvé / déclarer perdu
+
+**Point d'entrée UX :**
+- Icône "scanner" dans la barre de recherche de "Mes animaux" (éleveur)
+- Bouton flottant dans la page animaux perdus/trouvés
+- Accessible depuis le menu principal (drawer)
 
 ---
 
