@@ -44,6 +44,31 @@ interface Alerte {
   lng?: number;
 }
 
+interface Trouve {
+  id: string;
+  uid_declarant?: string;
+  espece: string;
+  race?: string;
+  sexe?: string;
+  taille?: string;
+  couleur?: string;
+  numero_puce?: string;
+  etat_sante?: string;
+  comportement?: string;
+  description?: string;
+  date_trouve?: string;
+  localisation_adresse?: string;
+  ville?: string;
+  region?: string;
+  pays?: string;
+  photos?: string[];
+  contact_email?: string;
+  contact_telephone?: string;
+  accepte_messagerie?: boolean;
+  lat?: number;
+  lng?: number;
+}
+
 // ── Constantes ────────────────────────────────────────────────────────────────
 
 const ESPECES = ['chien', 'chat', 'lapin', 'oiseau', 'nac', 'cheval', 'ovin', 'caprin', 'porcin', 'autre'];
@@ -93,13 +118,16 @@ export default function AnimauxPerdusPage() {
   const router = useRouter();
 
   const [alertes, setAlertes]       = useState<Alerte[]>([]);
+  const [trouves, setTrouves]       = useState<Trouve[]>([]);
   const [loading, setLoading]       = useState(true);
   const [view, setView]             = useState<'liste' | 'carte'>('liste');
   const [selectedAlerte, setSelectedAlerte] = useState<Alerte | null>(null);
+  const [selectedTrouve, setSelectedTrouve] = useState<Trouve | null>(null);
   const [contacting, setContacting] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
   // Filtres
+  const [filterType,   setFilterType]   = useState<'perdu' | 'trouve' | 'tous'>('perdu');
   const [filtreEspece, setFiltreEspece] = useState('tous');
   const [filtreRace,   setFiltreRace]   = useState('');
   const [filtreVille,  setFiltreVille]  = useState('');
@@ -115,15 +143,14 @@ export default function AnimauxPerdusPage() {
   // ── Load data ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    supabase
-      .from('alertes_perdus')
-      .select('*')
-      .eq('statut', 'perdu')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setAlertes((data as Alerte[]) ?? []);
-        setLoading(false);
-      });
+    Promise.all([
+      supabase.from('alertes_perdus').select('*').eq('statut', 'perdu').order('created_at', { ascending: false }),
+      supabase.from('animaux_trouves').select('*').order('created_at', { ascending: false }),
+    ]).then(([{ data: perdus }, { data: found }]) => {
+      setAlertes((perdus as Alerte[]) ?? []);
+      setTrouves((found as Trouve[]) ?? []);
+      setLoading(false);
+    });
   }, []);
 
   // Default ville from user profile
@@ -145,23 +172,31 @@ export default function AnimauxPerdusPage() {
 
   // ── Filter logic ──────────────────────────────────────────────────────────
 
-  const filtered = alertes.filter((a) => {
-    if (filtreEspece !== 'tous' && a.espece?.toLowerCase() !== filtreEspece) return false;
-    if (filtreRace && !a.race?.toLowerCase().includes(filtreRace.toLowerCase())) return false;
-    if (filtreVille) {
-      const loc = `${a.ville ?? ''} ${a.derniere_localisation ?? ''}`.toLowerCase();
-      if (!loc.includes(filtreVille.toLowerCase())) return false;
-    }
+  function applyFilters(loc: string, espece?: string, race?: string): boolean {
+    if (filtreEspece !== 'tous' && espece?.toLowerCase() !== filtreEspece) return false;
+    if (filtreRace && !race?.toLowerCase().includes(filtreRace.toLowerCase())) return false;
+    if (filtreVille && !loc.includes(filtreVille.toLowerCase())) return false;
     if (filtreRegion) {
       const depts = departmentsInRegion(filtreRegion);
-      const loc = `${a.ville ?? ''} ${a.derniere_localisation ?? ''}`.toLowerCase();
       if (!depts.some(d => loc.includes(d.toLowerCase())) && !loc.includes(filtreRegion.toLowerCase())) return false;
     }
-    if (filtreDept) {
-      const loc = `${a.ville ?? ''} ${a.derniere_localisation ?? ''}`.toLowerCase();
-      if (!loc.includes(filtreDept.toLowerCase())) return false;
-    }
+    if (filtreDept && !loc.includes(filtreDept.toLowerCase())) return false;
     return true;
+  }
+
+  const filteredPerdus = (filterType === 'perdu' || filterType === 'tous') ? alertes.filter(a => {
+    const loc = `${a.ville ?? ''} ${a.derniere_localisation ?? ''}`.toLowerCase();
+    return applyFilters(loc, a.espece, a.race);
+  }) : [];
+
+  const filteredTrouves = (filterType === 'trouve' || filterType === 'tous') ? trouves.filter(a => {
+    const loc = `${a.ville ?? ''} ${a.localisation_adresse ?? ''} ${a.region ?? ''}`.toLowerCase();
+    return applyFilters(loc, a.espece, a.race);
+  }) : [];
+
+  const filtered = alertes.filter((a) => {
+    const loc = `${a.ville ?? ''} ${a.derniere_localisation ?? ''}`.toLowerCase();
+    return applyFilters(loc, a.espece, a.race);
   });
 
   const regionsDisponibles = filtrePays ? (REGIONS_BY_PAYS[filtrePays] ?? []) : [];
@@ -173,21 +208,39 @@ export default function AnimauxPerdusPage() {
 
   // ── Map items ─────────────────────────────────────────────────────────────
 
-  const withCoords: AlerteMapItem[] = filtered
-    .filter(a => a.lat != null && a.lng != null)
-    .map(a => ({
-      id: a.id,
-      nom_animal: a.nom_animal,
-      espece: a.espece,
-      race: a.race,
-      photo_url: a.photo_url,
-      derniere_localisation: a.derniere_localisation ?? a.ville,
-      contact: a.contact,
-      date_perte: a.date_perte,
-      lat: a.lat!,
-      lng: a.lng!,
-      onDetail: () => setSelectedAlerte(a),
-    }));
+  const withCoords: AlerteMapItem[] = [
+    ...filteredPerdus
+      .filter(a => a.lat != null && a.lng != null)
+      .map(a => ({
+        id: a.id,
+        type: 'perdu' as const,
+        nom_animal: a.nom_animal,
+        espece: a.espece,
+        race: a.race,
+        photo_url: a.photo_url,
+        derniere_localisation: a.derniere_localisation ?? a.ville,
+        contact: a.contact,
+        date_perte: a.date_perte,
+        lat: a.lat!,
+        lng: a.lng!,
+        onDetail: () => setSelectedAlerte(a),
+      })),
+    ...filteredTrouves
+      .filter(a => a.lat != null && a.lng != null)
+      .map(a => ({
+        id: a.id,
+        type: 'trouve' as const,
+        nom_animal: '',
+        espece: a.espece,
+        race: a.race,
+        photo_url: a.photos?.[0],
+        derniere_localisation: a.localisation_adresse ?? a.ville,
+        date_trouve: a.date_trouve,
+        lat: a.lat!,
+        lng: a.lng!,
+        onDetail: () => setSelectedTrouve(a),
+      })),
+  ];
 
   // ── Breed autocomplete ────────────────────────────────────────────────────
 
@@ -275,6 +328,20 @@ export default function AnimauxPerdusPage() {
     }
   }, []);
 
+  const deleteTrouve = useCallback(async (id: string) => {
+    if (!confirm('Supprimer cette déclaration définitivement ?')) return;
+    setActionLoading(true);
+    try {
+      await supabase.from('animaux_trouves').delete().eq('id', id);
+      setTrouves(prev => prev.filter(a => a.id !== id));
+      setSelectedTrouve(null);
+    } finally {
+      setActionLoading(false);
+    }
+  }, []);
+
+  const totalFiltered = filteredPerdus.length + filteredTrouves.length;
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -284,14 +351,30 @@ export default function AnimauxPerdusPage() {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-3xl font-bold text-[#1F2A2E] mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
-            Animaux perdus
+            {filterType === 'trouve' ? 'Animaux trouvés' : filterType === 'tous' ? 'Perdus & trouvés' : 'Animaux perdus'}
           </h1>
           <p className="text-gray-500 text-sm">
-            {filtered.length} alerte{filtered.length !== 1 ? 's' : ''}
-            {view === 'carte' && withCoords.length < filtered.length ? ` · ${withCoords.length} sur la carte` : ''}
+            {totalFiltered} résultat{totalFiltered !== 1 ? 's' : ''}
+            {view === 'carte' && withCoords.length < totalFiltered ? ` · ${withCoords.length} sur la carte` : ''}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
+          {/* Type toggle */}
+          <div className="flex bg-gray-100 rounded-xl p-1">
+            {([
+              { value: 'perdu',  label: '🚨 Perdus',  color: '#E65100' },
+              { value: 'trouve', label: '🐾 Trouvés', color: '#0C5C6C' },
+              { value: 'tous',   label: 'Tous',        color: '#6B7280' },
+            ] as const).map(opt => (
+              <button key={opt.value} onClick={() => setFilterType(opt.value)}
+                className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+                style={filterType === opt.value
+                  ? { background: opt.color, color: 'white' }
+                  : { color: '#6B7280' }}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
           <a href="/animaux-perdus/declarer"
             className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors shadow-sm">
             📍 Déclarer un animal perdu
@@ -420,23 +503,31 @@ export default function AnimauxPerdusPage() {
       ) : view === 'carte' ? (
         <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm" style={{ height: '65vh' }}>
           <AnimauxPerdusMap alertes={withCoords} />
+          {/* Légende */}
+          <div className="absolute bottom-4 left-4 bg-white/95 rounded-xl shadow-md px-4 py-3 space-y-1.5 text-xs font-semibold pointer-events-none">
+            <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-orange-500 flex-shrink-0" />Perdu</div>
+            <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-600 flex-shrink-0" />Trouvé</div>
+          </div>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : totalFiltered === 0 ? (
         <div className="text-center py-20 text-gray-400">
           <div className="text-5xl mb-4">🔍</div>
-          <p className="font-medium">Aucun animal perdu pour ces filtres</p>
+          <p className="font-medium">Aucun résultat pour ces filtres</p>
           <button onClick={() => { setFiltreEspece('tous'); setFiltreRace(''); setFiltreVille(''); }}
-            className="mt-3 text-sm text-orange-500 underline">Voir tous les animaux</button>
+            className="mt-3 text-sm text-orange-500 underline">Réinitialiser les filtres</button>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {filtered.map(a => (
-            <AlerteCard key={a.id} alerte={a} onClick={() => setSelectedAlerte(a)} />
+          {filteredPerdus.map(a => (
+            <AlerteCard key={`p_${a.id}`} alerte={a} onClick={() => setSelectedAlerte(a)} />
+          ))}
+          {filteredTrouves.map(a => (
+            <TrouveCard key={`t_${a.id}`} trouve={a} onClick={() => setSelectedTrouve(a)} />
           ))}
         </div>
       )}
 
-      {/* Detail modal */}
+      {/* Detail modal — perdu */}
       {selectedAlerte && (
         <AlerteDetailModal
           alerte={selectedAlerte}
@@ -447,6 +538,17 @@ export default function AnimauxPerdusPage() {
           user={user}
           onRetrouve={() => retrouveAlerte(selectedAlerte.id)}
           onDelete={() => deleteAlerte(selectedAlerte.id)}
+        />
+      )}
+
+      {/* Detail modal — trouvé */}
+      {selectedTrouve && (
+        <TrouveDetailModal
+          trouve={selectedTrouve}
+          onClose={() => setSelectedTrouve(null)}
+          actionLoading={actionLoading}
+          user={user}
+          onDelete={() => deleteTrouve(selectedTrouve.id)}
         />
       )}
     </div>
@@ -677,6 +779,177 @@ function InfoRow({ icon, label, value }: { icon: string; label: string; value: s
       <div>
         <span className="text-xs text-gray-400">{label} </span>
         <span className="text-sm font-medium text-gray-700 capitalize">{value}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Trouvé card ───────────────────────────────────────────────────────────────
+
+function TrouveCard({ trouve: a, onClick }: { trouve: Trouve; onClick: () => void }) {
+  const colors = ESPECE_COLORS[a.espece?.toLowerCase()] ?? ESPECE_COLORS.autre;
+  const photoUrl = a.photos?.[0];
+  const date = fmtDate(a.date_trouve);
+  const loc = a.localisation_adresse ?? a.ville ?? '';
+
+  return (
+    <div onClick={onClick}
+      className="bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all cursor-pointer group"
+      style={{ borderColor: '#89CDD8' }}>
+      <div className="aspect-square relative overflow-hidden bg-gray-50">
+        {photoUrl
+          ? <Image src={photoUrl} alt="Animal trouvé" fill className="object-contain group-hover:scale-105 transition-transform duration-300" sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" />
+          : <div className="w-full h-full flex items-center justify-center text-5xl" style={{ background: colors.bg }}>{ESPECE_EMOJI[a.espece] ?? '🐾'}</div>}
+        <span className="absolute top-2 left-2 text-xs font-bold px-2 py-0.5 rounded-full"
+          style={{ background: colors.dot, color: 'white' }}>
+          {ESPECE_EMOJI[a.espece] ?? '🐾'} {a.espece?.charAt(0).toUpperCase() + (a.espece?.slice(1) ?? '')}
+        </span>
+        <span className="absolute top-2 right-2 bg-[#0C5C6C] text-white text-xs font-semibold px-2 py-0.5 rounded-full">
+          Trouvé
+        </span>
+      </div>
+      <div className="p-4">
+        <h3 className="font-bold text-[#1F2A2E] text-base truncate">
+          {a.espece ? `${a.espece.charAt(0).toUpperCase()}${a.espece.slice(1)} trouvé${a.sexe === 'femelle' ? 'e' : ''}` : 'Animal trouvé'}
+        </h3>
+        {a.race && <p className="text-sm capitalize truncate" style={{ color: colors.text }}>{a.race}</p>}
+        {a.sexe && <p className="text-xs text-gray-400">{SEXE_LABEL[a.sexe] ?? a.sexe}</p>}
+        {loc && <p className="text-gray-400 text-xs mt-1 truncate">📍 {loc}</p>}
+        {date && <p className="text-gray-400 text-xs">🗓 Trouvé le {date}</p>}
+        <div className="mt-3 text-center text-xs font-semibold py-1.5 rounded-lg bg-[#E8F4F6] text-[#0C5C6C]">
+          Voir le détail →
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Trouvé detail modal ───────────────────────────────────────────────────────
+
+function TrouveDetailModal({
+  trouve: a, onClose, actionLoading, user, onDelete,
+}: {
+  trouve: Trouve;
+  onClose: () => void;
+  actionLoading: boolean;
+  user: { uid: string } | null;
+  onDelete: () => void;
+}) {
+  const colors  = ESPECE_COLORS[a.espece?.toLowerCase()] ?? ESPECE_COLORS.autre;
+  const isOwner = user?.uid === a.uid_declarant;
+  const photos  = a.photos ?? [];
+  const [photoIdx, setPhotoIdx] = useState(0);
+  const photoUrl = photos[photoIdx];
+  const accepte  = a.accepte_messagerie !== false;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl"
+        onClick={e => e.stopPropagation()}>
+
+        {/* Photo(s) */}
+        <div className="relative aspect-video bg-gray-50">
+          {photoUrl
+            ? <Image src={photoUrl} alt="Animal trouvé" fill className="object-contain" sizes="(max-width: 768px) 100vw, 512px" />
+            : <div className="w-full h-full flex items-center justify-center text-8xl" style={{ background: colors.bg }}>{ESPECE_EMOJI[a.espece] ?? '🐾'}</div>}
+          <button onClick={onClose}
+            className="absolute top-3 right-3 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center text-lg transition-colors">
+            ×
+          </button>
+          <span className="absolute top-3 left-3 text-sm font-bold px-3 py-1 rounded-full bg-[#0C5C6C] text-white">
+            {ESPECE_EMOJI[a.espece] ?? '🐾'} {a.espece?.charAt(0).toUpperCase()}{a.espece?.slice(1) ?? 'Animal'} — Trouvé
+          </span>
+          {photos.length > 1 && (
+            <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
+              {photos.map((_, i) => (
+                <button key={i} onClick={() => setPhotoIdx(i)}
+                  className={`rounded-full transition-all ${i === photoIdx ? 'w-4 h-2.5 bg-white' : 'w-2.5 h-2.5 bg-white/60'}`} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="p-5">
+          <h2 className="text-xl font-bold text-[#1F2A2E] mb-1">
+            {a.espece ? `${a.espece.charAt(0).toUpperCase()}${a.espece.slice(1)} trouvé${a.sexe === 'femelle' ? 'e' : ''}` : 'Animal trouvé'}
+          </h2>
+
+          {/* Infos */}
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-4 text-sm">
+            {a.race && <InfoRow icon="🐾" label="Race" value={a.race} />}
+            {a.sexe && <InfoRow icon={a.sexe === 'male' ? '♂' : a.sexe === 'femelle' ? '♀' : '?'} label="Sexe" value={a.sexe} />}
+            {a.taille && <InfoRow icon="📏" label="Taille" value={a.taille} />}
+            {a.couleur && <InfoRow icon="🎨" label="Couleur" value={a.couleur} />}
+            {a.numero_puce && <InfoRow icon="💾" label="Puce" value={a.numero_puce} />}
+          </div>
+
+          {/* Date + lieu */}
+          <div className="bg-[#E8F4F6] border border-[#89CDD8] rounded-xl p-3 mb-4 space-y-1">
+            {(a.localisation_adresse ?? a.ville) && (
+              <p className="text-sm text-[#0C5C6C]">
+                <span className="font-semibold">📍 Trouvé à :</span> {a.localisation_adresse ?? a.ville}
+              </p>
+            )}
+            {a.date_trouve && (
+              <p className="text-sm text-[#0C5C6C]">
+                <span className="font-semibold">🗓 Trouvé le :</span> {fmtDate(a.date_trouve)}
+              </p>
+            )}
+          </div>
+
+          {a.etat_sante && (
+            <div className="mb-3">
+              <p className="text-xs font-semibold text-gray-500 mb-1">État de santé</p>
+              <p className="text-sm text-gray-700">{a.etat_sante}</p>
+            </div>
+          )}
+          {a.comportement && (
+            <div className="mb-3">
+              <p className="text-xs font-semibold text-gray-500 mb-1">Comportement</p>
+              <p className="text-sm text-gray-700">{a.comportement}</p>
+            </div>
+          )}
+          {a.description && (
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-gray-500 mb-1">Description</p>
+              <p className="text-sm text-gray-700 leading-relaxed">{a.description}</p>
+            </div>
+          )}
+
+          {/* Contact */}
+          {!isOwner && (
+            <div className="space-y-2">
+              {accepte ? (
+                <p className="text-sm text-center text-gray-500 py-2 bg-[#E8F4F6] rounded-xl">
+                  💬 Connectez-vous pour contacter via la messagerie
+                </p>
+              ) : (
+                <>
+                  {a.contact_telephone && (
+                    <a href={`tel:${a.contact_telephone}`}
+                      className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-[#0C5C6C] text-white hover:bg-[#094F5D] transition-colors">
+                      📞 {a.contact_telephone}
+                    </a>
+                  )}
+                  {a.contact_email && (
+                    <a href={`mailto:${a.contact_email}`}
+                      className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors">
+                      ✉️ {a.contact_email}
+                    </a>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+          {isOwner && (
+            <div className="space-y-2">
+              <button onClick={onDelete} disabled={actionLoading}
+                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-red-50 text-red-600 hover:bg-red-100 transition-colors disabled:opacity-60">
+                🗑 Supprimer la déclaration
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
