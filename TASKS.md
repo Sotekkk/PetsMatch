@@ -31,6 +31,25 @@
 | A20 | Carte annonces compagnons — filtres par espèce, race, région, ville, pays, département | Haute | App | `annonces_map_page.dart` |
 | A21 | Sécurité avant mise en prod — RLS Supabase propres (remplacer Firebase Auth UID par JWT custom ou service role), politique de confidentialité, CGU, suppression compte RGPD | Haute | App + Web + Supabase | Toutes tables Supabase |
 
+### Animaux perdus / trouvés — Spec complète : `SPEC_ANIMAUX_PERDUS_TROUVES.md`
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| PT01 | **[V1]** Vérifier complétude formulaire "Animal perdu" — checklist tous champs obligatoires vs spec (circonstances, récompense, contact email/tel/messagerie, date dernière localisation) | Haute | App + Web | `alerte_perdu_form_page.dart`, `animaux-perdus/declarer/page.tsx` |
+| PT02 | **[V1]** Déclarer animal trouvé — formulaire complet (espèce, race estimée, sexe, date, localisation GPS, photo x1 min, contact) + champs optionnels (couleur, taille, état santé, comportement) | Haute | App + Web | Créer `animal_trouve_form_page.dart` + `animaux-perdus/declarer-trouve/page.tsx` |
+| PT03 | **[V1]** Table Supabase `animaux_trouves` — migration SQL (voir `SPEC_ANIMAUX_PERDUS_TROUVES.md` §B) | Haute | Supabase | Dashboard SQL Editor |
+| PT04 | **[V1]** Carte animaux perdus/trouvés — onglet Perdu/Trouvé + code couleur (rouge/vert/orange/bleu) + filtres espèce, race, région, ville, distance | Haute | App + Web | `animaux_perdus_page.dart`, `animaux-perdus/page.tsx` |
+| PT05 | **[V1]** Bouton global "J'ai trouvé un animal" — visible dans menu (drawer éleveur + particulier) + page d'accueil (action urgente) | Haute | App + Web | `eleveur_nav.dart`, `particulier_nav.dart`, `EleveurDashboard.tsx`, `ParticulierDashboard.tsx` |
+| PT06 | **[V1]** Saisie manuelle numéro puce → recherche dans alertes perdus + animaux trouvés + animaux de l'élevage | Haute | App + Web | `animaux_perdus_page.dart`, `animaux-perdus/page.tsx` |
+| PT07 | **[V1]** Notifications de proximité pour les animaux trouvés (< 10 km d'une alerte active) — Firebase Cloud Function `notifyNearFoundAnimal` | Haute | Firebase Functions | `functions/alertes.js` |
+| PT08 | **[V1]** Messagerie automatique perdu/trouvé — conversation Firestore avec objet + message prérempli au contact | Moyenne | App + Web | Messagerie existante |
+| PT09 | **[V2]** Matching automatique perdu ↔ trouvé — score pondéré (espèce+race+sexe+zone+date+couleur+puce) + notification si ≥ 90% | Haute | Firebase Functions + App + Web | Créer `matchLostFound` Cloud Function |
+| PT10 | **[V2]** Table `alertes_correspondances` — stocker les paires matchées pour éviter doublons de notif | Moyenne | Supabase | Dashboard SQL Editor |
+| PT11 | **[V2]** Lecteur puce Bluetooth — `ChipScannerService` (connect/disconnect/listen/parseChip/searchAnimal), protocoles BLE + ISO11784/11785 | Haute | App | Créer `lib/services/chip_scanner_service.dart` |
+| PT12 | **[V2]** Statuts animaux trouvés — workflow (Trouvé → Pris en charge → Propriétaire contacté → Restitué → Clôturé) | Moyenne | App + Web | `animal_trouve_form_page.dart` |
+| PT13 | **[V3]** IA rapprochement photos animaux perdus/trouvés | Basse | Backend | À évaluer |
+| PT14 | **[V3]** Statistiques admin — animaux retrouvés, délai moyen, zones fréquentes, taux résolution | Basse | App + Web | Panel admin |
+
 ### App mobile + Web (synchronisés)
 
 | # | Tâche | Priorité | Repo | Notes |
