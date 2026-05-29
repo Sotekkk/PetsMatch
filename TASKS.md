@@ -67,6 +67,32 @@
 | T09 | Transfert de propriété animal (vente → email acheteur) | Haute | App + Web | Roadmap §III.A.c |
 | T10 | Annonces — likes sur portée/bébé + notification éleveur + favoris | Haute | Web d'abord | Roadmap §VI |
 
+### Services & Communauté — **Nabil** (suite)
+
+| # | Tâche | Priorité | App / Web | Fichiers de départ |
+|---|---|---|---|---|
+| S13 | **Annuaire vétérinaires & comportementalistes — carte** : carte Leaflet avec marqueurs code couleur par type (véto = bleu, comportementaliste = violet…), filtres espèce/distance/notation, fiche détail. Même logique visuelle que la carte éleveurs. | Haute | App + Web | `service_list_page.dart`, `src/app/services/` |
+| S14 | **Pet sitter & promeneurs — zone de travail** : le pro définit sa zone géographique d'intervention (polygone ou rayon) sur une carte, visible dans son profil. Filtrage des résultats par zone dans l'annuaire. Table Supabase `zones_intervention`. | Haute | App + Web | `pro_profile_edit.dart`, `src/app/profil/` |
+
+### Agenda connecté — **Nabil** (tous les profils)
+> Agenda partagé éleveur + particulier, multi-usages (RDV pros, véto, alimentation, médicaments, alerte mise-bas, visites adoption)
+
+| # | Tâche | Priorité | App / Web | Notes |
+|---|---|---|---|---|
+| AG01 | **Agenda éleveur & particulier — structure de base** : créer les pages agenda (`lib/pages/agenda/agenda_page.dart`, `src/app/agenda/page.tsx`), table Supabase `agenda_events` (uid, titre, date_debut, date_fin, type, animal_id, notes, couleur), vue mensuelle + vue liste | Haute | App + Web | Base commune pour AG02–AG06 |
+| AG02 | **RDV pro → agenda automatique** : quand un RDV pro (véto, comportementaliste, pet sitter…) est confirmé (statut = `confirme`), créer automatiquement un événement dans `agenda_events` pour l'utilisateur (éleveur ou particulier). Visible par les deux parties. Lien bidirectionnel : RDV annulé → événement supprimé. | Haute | App + Web | `pro_agenda.dart`, `rdv_booking_page.dart` |
+| AG03 | **Notifications rappel RDV** : Firebase Cloud Function `sendRdvReminder` (même technique que `sendLikeNotification` — Admin SDK + FCM token dans Firestore) : déclencher 24h avant et 1h avant chaque RDV. Stocker `reminder_24h_sent` et `reminder_1h_sent` dans l'événement pour éviter doublons. | Haute | Firebase Functions + App | `functions/alertes.js` (ou nouveau `functions/agenda.js`) |
+| AG04 | **Alerte mise-bas** : dans la fiche animal (gestation confirmée), créer automatiquement un événement agenda `type = mise_bas` à la date de mise-bas prévue. Notification J-7 et J-1. | Haute | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
+| AG05 | **Visite adoption éleveur ↔ particulier** : à partir de la messagerie (annonce compagnon), proposer de planifier une visite. Créer RDV dans agenda des deux parties avec lien vers l'annonce + le profil de l'autre. | Moyenne | App + Web | Messagerie + agenda |
+| AG06 | **Rappels médicaments & alimentation** : ajouter des événements récurrents dans l'agenda depuis la fiche animal (antiparasitaire, vaccin, pesée, ration spéciale). Notification push à l'heure programmée. | Moyenne | App | `animal_fiche.dart` |
+
+### Conseils pratiques — **Angélique**
+
+| # | Tâche | Priorité | Repo | Notes |
+|---|---|---|---|---|
+| CP01 | **Guide "Adopter un chiot"** : pages statiques ou dynamiques avec sections (choisir sa race, checklist arrivée, premiers jours, vaccination, socialisation, alimentation chiot, éducation de base). Accessible depuis l'accueil et la fiche race dans le feed. | Haute | App + Web | Créer `lib/pages/guides/` + `src/app/guides/chiot/page.tsx` |
+| CP02 | **Guide "Adopter un chaton"** : même structure que CP01, adapté au chat (litière, griffoir, socialisation, stérilisation, alimentation chaton). | Haute | App + Web | `src/app/guides/chaton/page.tsx` |
+| CP03 | **Guide "Adopter un lapin"** : bases de soins (cage, alimentation foin/légumes/granulés, socialisation, stérilisation, signes de santé). | Haute | App + Web | `src/app/guides/lapin/page.tsx` |
 
 ---
 
