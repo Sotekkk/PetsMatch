@@ -71,8 +71,10 @@
 
 | # | Tâche | Priorité | App / Web | Fichiers de départ |
 |---|---|---|---|---|
-| S13 | **Annuaire vétérinaires & comportementalistes — carte** : carte Leaflet avec marqueurs code couleur par type (véto = bleu, comportementaliste = violet…), filtres espèce/distance/notation, fiche détail. Même logique visuelle que la carte éleveurs. | Haute | App + Web | `service_list_page.dart`, `src/app/services/` |
-| S14 | **Pet sitter & promeneurs — zone de travail** : le pro définit sa zone géographique d'intervention (polygone ou rayon) sur une carte, visible dans son profil. Filtrage des résultats par zone dans l'annuaire. Table Supabase `zones_intervention`. | Haute | App + Web | `pro_profile_edit.dart`, `src/app/profil/` |
+| S13 | **Admin — gestion profils pro** : liste des profils professionnels dans le panel admin (filtre cat_pro, statut is_pro), possibilité de valider/refuser/suspendre un profil pro, édition manuelle des champs (rayon, espèces, certifications). App + Web avec même niveau de fonctionnalité que la vue admin éleveurs existante. | Haute | App + Web | `admin_panel.dart`, `user_detail.dart`, `src/app/admin/` |
+| S14 | **Vue admin web (site)** : reflet de la vue admin appli mobile — liste utilisateurs + filtres (éleveur/particulier/pro/admin), fiche détail, validation profil pro, suppression compte. Même fonctionnalités que l'admin app. | Haute | Web | `src/app/admin/page.tsx` (à créer) |
+| S15 | **Annuaire vétérinaires & comportementalistes — carte** : carte Leaflet avec marqueurs code couleur par type (véto = bleu, comportementaliste = violet…), filtres espèce/distance/notation, fiche détail. Même logique visuelle que la carte éleveurs. | Haute | App + Web | `service_list_page.dart`, `src/app/services/` |
+| S16 | **Pet sitter & promeneurs — zone de travail** : le pro définit sa zone géographique d'intervention (polygone ou rayon) sur une carte, visible dans son profil. Filtrage des résultats par zone dans l'annuaire. Table Supabase `zones_intervention`. | Haute | App + Web | `pro_profile_edit.dart`, `src/app/profil/` |
 
 ### Agenda connecté — **Nabil** (tous les profils)
 > Agenda partagé éleveur + particulier, multi-usages (RDV pros, véto, alimentation, médicaments, alerte mise-bas, visites adoption)
