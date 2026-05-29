@@ -132,6 +132,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
   late String  _typeVente = widget.initialTypeFilter;
   late String? _race      = widget.initialRace;
   List<String> _races     = [];
+  final _raceCtrl = TextEditingController();
 
   static const _especeToAsset = {
     'chien':   'assets/dog_breeds.json',
@@ -443,7 +444,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
   // ── Build ────────────────────────────────────────────────────────────────────
 
   @override
-  void dispose() { _vertCtrl.dispose(); super.dispose(); }
+  void dispose() { _vertCtrl.dispose(); _raceCtrl.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) => _feedStarted ? _buildFeed() : _buildFilters();
@@ -494,37 +495,53 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
           ),
           if (_races.isNotEmpty) ...[
             const SizedBox(height: 24),
-            Row(children: [
-              const Text('Race', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-              if (_race != null) ...[
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () => setState(() => _race = null),
-                  child: const Text('Effacer', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF0C5C6C))),
-                ),
-              ],
-            ]),
+            const Text('Race', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
             const SizedBox(height: 10),
-            Wrap(
-              spacing: 8, runSpacing: 8,
-              children: _races.map((r) {
-                final sel = _race == r;
-                return GestureDetector(
-                  onTap: () => setState(() => _race = sel ? null : r),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: sel ? const Color(0xFFE8F4F6) : Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: sel ? _teal : const Color(0xFFE5E7EB), width: 1.5),
-                    ),
-                    child: Text(r, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                        fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
-                        color: sel ? _teal : const Color(0xFF6F767B))),
-                  ),
+            GestureDetector(
+              onTap: () async {
+                final breeds = List<String>.from(_races);
+                final selected = await showModalBottomSheet<String>(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.white,
+                  shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                  builder: (_) => _FeedBreedPicker(breeds: breeds, current: _race ?? ''),
                 );
-              }).toList(),
+                if (selected != null) {
+                  setState(() {
+                    _race = selected.isEmpty ? null : selected;
+                    _raceCtrl.text = selected;
+                  });
+                }
+              },
+              child: AbsorbPointer(
+                child: TextField(
+                  controller: _raceCtrl,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Toutes les races',
+                    hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF9CA3AF)),
+                    prefixIcon: const Icon(Icons.pets_outlined, size: 18, color: Color(0xFF0C5C6C)),
+                    suffixIcon: _race != null
+                        ? GestureDetector(
+                            onTap: () => setState(() { _race = null; _raceCtrl.clear(); }),
+                            child: const Icon(Icons.close, size: 18, color: Color(0xFF9CA3AF)),
+                          )
+                        : const Icon(Icons.keyboard_arrow_down, size: 18, color: Color(0xFF0C5C6C)),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                            color: _race != null ? _teal : const Color(0xFFE5E7EB), width: 1.5)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFF0C5C6C), width: 1.5)),
+                  ),
+                ),
+              ),
             ),
           ],
           const SizedBox(height: 24),
@@ -1272,3 +1289,101 @@ class _ShareBtn extends StatelessWidget {
     ]),
   );
 }
+
+// ─── Sélecteur de race (feed) ─────────────────────────────────────────────────
+
+class _FeedBreedPicker extends StatefulWidget {
+  final List<String> breeds;
+  final String current;
+  const _FeedBreedPicker({required this.breeds, required this.current});
+  @override State<_FeedBreedPicker> createState() => _FeedBreedPickerState();
+}
+
+class _FeedBreedPickerState extends State<_FeedBreedPicker> {
+  late List<String> _filtered;
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void initState() { super.initState(); _filtered = widget.breeds; }
+
+  @override
+  void dispose() { _searchCtrl.dispose(); super.dispose(); }
+
+  void _filter(String q) => setState(() {
+    _filtered = q.isEmpty
+        ? widget.breeds
+        : widget.breeds.where((b) => b.toLowerCase().contains(q.toLowerCase())).toList();
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      minChildSize: 0.4,
+      builder: (_, scroll) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Column(children: [
+          const SizedBox(height: 12),
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(children: [
+              const Expanded(child: Text('Choisir une race',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17))),
+              if (widget.current.isNotEmpty)
+                TextButton(
+                  onPressed: () => Navigator.pop(context, ''),
+                  child: const Text('Effacer', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF0C5C6C))),
+                ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+              ),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: _filter,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Rechercher une race...',
+                hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                prefixIcon: const Icon(Icons.search, size: 20),
+                filled: true, fillColor: Colors.grey.shade100,
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.builder(
+              controller: scroll,
+              itemCount: _filtered.length,
+              itemBuilder: (_, i) {
+                final b = _filtered[i];
+                final selected = b == widget.current;
+                return ListTile(
+                  dense: true,
+                  title: Text(b, style: TextStyle(
+                      fontFamily: 'Galey', fontSize: 14,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
+                      color: selected ? const Color(0xFF0C5C6C) : const Color(0xFF1F2A2E))),
+                  trailing: selected ? const Icon(Icons.check, color: Color(0xFF0C5C6C), size: 18) : null,
+                  onTap: () => Navigator.pop(context, b),
+                );
+              },
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
