@@ -102,6 +102,19 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     }
   }
 
+  Future<void> _deleteAnimal(String id) async {
+    try {
+      await Supabase.instance.client.from('animaux').delete().eq('id', id);
+      if (mounted) _loadAnimaux();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Erreur lors de la suppression')),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -749,10 +762,12 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       itemCount: docs.length,
       itemBuilder: (_, i) {
         final data = docs[i];
+        final id = data['id'] as String? ?? '';
         return _AnimalCard(
-          id: data['id'] as String? ?? '',
+          id: id,
           data: data,
-          onTap: () => _openFiche(context, data['id'] as String?, data: data),
+          onTap: () => _openFiche(context, id, data: data),
+          onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
         );
       },
     );
@@ -842,11 +857,13 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             itemCount: members.length,
             itemBuilder: (_, i) {
               final data = members[i];
+              final id = data['id'] as String? ?? '';
               return _AnimalCard(
-                id: data['id'] as String? ?? '',
+                id: id,
                 data: data,
                 showPorteeBadge: true,
-                onTap: () => _openFiche(context, data['id'] as String?, data: data),
+                onTap: () => _openFiche(context, id, data: data),
+                onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
               );
             },
           ),
@@ -972,11 +989,13 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       itemCount: docs.length,
       itemBuilder: (_, i) {
         final data = docs[i];
+        final id = data['id'] as String? ?? '';
         return _AnimalCard(
-          id: data['id'] as String? ?? '',
+          id: id,
           data: data,
           showStatut: true,
-          onTap: () => _openFiche(context, data['id'] as String?, data: data),
+          onTap: () => _openFiche(context, id, data: data),
+          onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
         );
       },
     );
@@ -1048,12 +1067,14 @@ class _AnimalCard extends StatelessWidget {
   final String id;
   final Map<String, dynamic> data;
   final VoidCallback onTap;
+  final VoidCallback? onDelete;
   final bool showStatut;
   final bool showPorteeBadge;
   const _AnimalCard({
     required this.id,
     required this.data,
     required this.onTap,
+    this.onDelete,
     this.showStatut = false,
     this.showPorteeBadge = false,
   });
@@ -1070,6 +1091,31 @@ class _AnimalCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onDelete == null ? null : () async {
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Supprimer cet animal ?',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            content: Text('La fiche de $nom sera définitivement supprimée.',
+                style: const TextStyle(fontFamily: 'Galey')),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey')),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Supprimer',
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.redAccent,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        );
+        if (confirm == true) onDelete!();
+      },
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,

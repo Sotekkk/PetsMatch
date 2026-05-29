@@ -131,6 +131,36 @@ class _AnimalCard extends StatelessWidget {
             builder: (_) => AnimalFormPage(petId: petId, existing: data),
           ),
         ),
+        onLongPress: () async {
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Text('Supprimer cet animal ?',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              content: Text('La fiche de $name sera définitivement supprimée.',
+                  style: const TextStyle(fontFamily: 'Galey')),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Supprimer',
+                        style: TextStyle(fontFamily: 'Galey', color: Colors.redAccent,
+                            fontWeight: FontWeight.w700))),
+              ],
+            ),
+          );
+          if (confirm == true) {
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(uid)
+                .collection('pets')
+                .doc(petId)
+                .delete();
+          }
+        },
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
