@@ -1,18 +1,19 @@
+import 'dart:convert';
+import 'dart:math' show pi, sin, cos, sqrt, atan2;
+import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
-import 'dart:convert';
-import 'package:PetsMatch/pages/chatScreen.dart';
-import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // ── Species colors ────────────────────────────────────────────────────────────
 
@@ -66,20 +67,25 @@ class AnimauxPerdusPage extends StatefulWidget {
 class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     with SingleTickerProviderStateMixin {
   static const _orange = Color(0xFFE65100);
+  static const _teal   = Color(0xFF0C5C6C);
 
   late TabController _tabController;
   List<Map<String, dynamic>> _alertes = [];
+  List<Map<String, dynamic>> _trouves = [];
   bool _loading = true;
   GoogleMapController? _mapController;
   bool _locating = false;
 
   // Filtres
+  String _filterType = 'perdu'; // 'perdu', 'trouve', 'tous'
   String? _filterEspece;
   String _searchLieu = '';
   String _filterRace = '';
   String _filterPays = '';
   String _filterRegion = '';
   String _filterDept = '';
+  int? _filterDistanceKm;
+  double? _userLat, _userLng;
   List<String> _breeds = [];
   List<String> _raceSuggestions = [];
   bool _showRaceSugg = false;
@@ -105,31 +111,55 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     'Luxembourg': ['Luxembourg'],
   };
 
+  Color get _accentColor => _filterType == 'trouve' ? _teal : _orange;
+
   List<Map<String, dynamic>> get _filtered {
-    return _alertes.where((a) {
+    List<Map<String, dynamic>> all = [];
+    if (_filterType == 'perdu' || _filterType == 'tous') {
+      all.addAll(_alertes.map((a) => {...a, '__type': 'perdu'}));
+    }
+    if (_filterType == 'trouve' || _filterType == 'tous') {
+      all.addAll(_trouves.map((a) => {...a, '__type': 'trouve'}));
+    }
+    return all.where((a) {
+      final type = a['__type'] as String;
       if (_filterEspece != null && _filterEspece != 'tous') {
         if ((a['espece'] as String? ?? '').toLowerCase() != _filterEspece) return false;
       }
-      if (_filterRace.isNotEmpty) {
-        final race = (a['race'] as String? ?? '').toLowerCase();
-        if (!race.contains(_filterRace.toLowerCase())) return false;
+      if (_filterRace.isNotEmpty &&
+          !(a['race'] as String? ?? '').toLowerCase().contains(_filterRace.toLowerCase())) {
+        return false;
       }
+      final loc = '${a['ville'] ?? ''} ${a['region'] ?? ''} '
+          '${type == 'perdu' ? (a['derniere_localisation'] ?? '') : (a['localisation_adresse'] ?? '')}'
+          .toLowerCase();
       if (_filterRegion.isNotEmpty) {
         final depts = FrenchGeo.departmentsInRegion(_filterRegion);
-        final loc = '${a['ville'] ?? ''} ${a['derniere_localisation'] ?? ''}'.toLowerCase();
-        final matchesDept = depts.any((d) => loc.contains(d.toLowerCase()));
-        if (!matchesDept && !loc.contains(_filterRegion.toLowerCase())) return false;
+        if (!loc.contains(_filterRegion.toLowerCase()) &&
+            !depts.any((d) => loc.contains(d.toLowerCase()))) return false;
       }
-      if (_filterDept.isNotEmpty) {
-        final loc = '${a['ville'] ?? ''} ${a['derniere_localisation'] ?? ''}'.toLowerCase();
-        if (!loc.contains(_filterDept.toLowerCase())) return false;
-      }
-      if (_searchLieu.isNotEmpty) {
-        final loc = '${a['derniere_localisation'] ?? ''} ${a['ville'] ?? ''}'.toLowerCase();
-        if (!loc.contains(_searchLieu.toLowerCase())) return false;
+      if (_filterDept.isNotEmpty && !loc.contains(_filterDept.toLowerCase())) return false;
+      if (_searchLieu.isNotEmpty && !loc.contains(_searchLieu.toLowerCase())) return false;
+      if (_filterDistanceKm != null && _userLat != null && _userLng != null) {
+        final lat = (a['lat'] as num?)?.toDouble();
+        final lng = (a['lng'] as num?)?.toDouble();
+        if (lat != null && lng != null &&
+            _haversine(_userLat!, _userLng!, lat, lng) > _filterDistanceKm!) {
+          return false;
+        }
       }
       return true;
     }).toList();
+  }
+
+  static double _haversine(double lat1, double lng1, double lat2, double lng2) {
+    const R = 6371.0;
+    final dLat = (lat2 - lat1) * pi / 180;
+    final dLng = (lng2 - lng1) * pi / 180;
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * pi / 180) * cos(lat2 * pi / 180) *
+            sin(dLng / 2) * sin(dLng / 2);
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
   @override
@@ -138,6 +168,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     _tabController = TabController(length: 2, vsync: this);
     _load();
     _loadDefaultVille();
+    _fetchUserPosition();
     _raceFocusNode.addListener(() {
       if (!_raceFocusNode.hasFocus) setState(() => _showRaceSugg = false);
     });
@@ -151,6 +182,26 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     _raceCtrl.dispose();
     _lieuCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _fetchUserPosition() async {
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) return;
+      final pos = await Geolocator.getCurrentPosition(
+          locationSettings:
+              const LocationSettings(accuracy: LocationAccuracy.medium));
+      if (mounted) {
+        setState(() {
+          _userLat = pos.latitude;
+          _userLng = pos.longitude;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadDefaultVille() async {
@@ -176,7 +227,10 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
 
   Future<void> _loadBreeds(String espece) async {
     final file = _breedFiles[espece];
-    if (file == null) { setState(() => _breeds = []); return; }
+    if (file == null) {
+      setState(() => _breeds = []);
+      return;
+    }
     try {
       final raw = await rootBundle.loadString('assets/$file.json');
       final list = List<String>.from(json.decode(raw) as List);
@@ -188,13 +242,58 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
 
   void _onRaceInput(String val) {
     _filterRace = val;
-    if (val.isEmpty) { setState(() { _raceSuggestions = []; _showRaceSugg = false; }); return; }
+    if (val.isEmpty) {
+      setState(() {
+        _raceSuggestions = [];
+        _showRaceSugg = false;
+      });
+      return;
+    }
     final q = val.toLowerCase();
     final matches = _breeds.where((b) => b.toLowerCase().contains(q)).take(6).toList();
-    setState(() { _raceSuggestions = matches; _showRaceSugg = matches.isNotEmpty; });
+    setState(() {
+      _raceSuggestions = matches;
+      _showRaceSugg = matches.isNotEmpty;
+    });
   }
 
   String? get _currentUid => FirebaseAuth.instance.currentUser?.uid;
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final results = await Future.wait([
+        Supabase.instance.client
+            .from('alertes_perdus')
+            .select()
+            .eq('statut', 'perdu')
+            .order('created_at', ascending: false),
+        Supabase.instance.client
+            .from('animaux_trouves')
+            .select()
+            .order('created_at', ascending: false),
+      ]);
+      if (mounted) {
+        setState(() {
+          _alertes = List<Map<String, dynamic>>.from(results[0] as List);
+          _trouves = List<Map<String, dynamic>>.from(results[1] as List);
+          _loading = false;
+        });
+        if (widget.initialAlertId != null) {
+          final target = _alertes.firstWhere(
+            (a) => a['id'] == widget.initialAlertId,
+            orElse: () => {},
+          );
+          if (target.isNotEmpty) {
+            WidgetsBinding.instance
+                .addPostFrameCallback((_) => _showAlertDetail(target));
+          }
+        }
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   Future<void> _retrouveAlerte(String id) async {
     final ok = await showDialog<bool>(
@@ -257,32 +356,33 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    try {
-      final rows = await Supabase.instance.client
-          .from('alertes_perdus')
-          .select()
-          .eq('statut', 'perdu')
-          .order('created_at', ascending: false);
-      if (mounted) {
-        setState(() {
-          _alertes = List<Map<String, dynamic>>.from(rows as List);
-          _loading = false;
-        });
-        if (widget.initialAlertId != null) {
-          final target = _alertes.firstWhere(
-            (a) => a['id'] == widget.initialAlertId,
-            orElse: () => {},
-          );
-          if (target.isNotEmpty) {
-            WidgetsBinding.instance.addPostFrameCallback((_) => _showAlertDetail(target));
-          }
-        }
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
+  Future<void> _deleteTrouve(String id) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Supprimer la déclaration ?',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('Cette déclaration sera supprimée définitivement.',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler',
+                style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6F767B))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await Supabase.instance.client.from('animaux_trouves').delete().eq('id', id);
+    _load();
   }
 
   void _showAlertDetail(Map<String, dynamic> a) {
@@ -293,8 +393,30 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
       backgroundColor: Colors.transparent,
       builder: (_) => _AlertDetailSheet(
         alerte: a,
-        onShare: () { Navigator.pop(context); _share(a); },
-        onContact: () { Navigator.pop(context); _contact(a); },
+        onShare: () {
+          Navigator.pop(context);
+          _share(a);
+        },
+        onContact: () {
+          Navigator.pop(context);
+          _contact(a, type: 'perdu');
+        },
+      ),
+    );
+  }
+
+  void _showTrouveDetail(Map<String, dynamic> a) {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _TrouveDetailSheet(
+        trouve: a,
+        onContact: () {
+          Navigator.pop(context);
+          _contact(a, type: 'trouve');
+        },
       ),
     );
   }
@@ -325,24 +447,42 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ShareSheet(text: text, url: url, nom: 'Animal perdu : $nom'),
+      builder: (_) =>
+          _ShareSheet(text: text, url: url, nom: 'Animal perdu : $nom'),
     );
   }
 
-  Future<void> _contact(Map<String, dynamic> a) async {
-    final ownerId = a['uid_proprietaire'] as String?;
+  Future<void> _contact(Map<String, dynamic> a, {String type = 'perdu'}) async {
+    // For trouvé with messaging disabled, show contact info directly
+    if (type == 'trouve') {
+      final accepte = a['accepte_messagerie'] as bool? ?? true;
+      if (!accepte) {
+        final phone = a['contact_telephone'] as String?;
+        final email = a['contact_email'] as String?;
+        if (!mounted) return;
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: Colors.transparent,
+          builder: (_) => _ContactInfoSheet(phone: phone, email: email),
+        );
+        return;
+      }
+    }
+
+    final ownerId = type == 'perdu'
+        ? a['uid_proprietaire'] as String?
+        : a['uid_declarant'] as String?;
     if (ownerId == null) return;
     final currentUid = FirebaseAuth.instance.currentUser?.uid;
     if (currentUid == null) return;
     if (currentUid == ownerId) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('C\'est votre propre alerte')));
+          const SnackBar(content: Text('C\'est votre propre déclaration')));
       return;
     }
 
     try {
       final firestore = FirebaseFirestore.instance;
-      // Find existing conversation
       final existing = await firestore
           .collection('conversations')
           .where('participants', arrayContains: currentUid)
@@ -350,14 +490,14 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
 
       String? conversationId;
       for (final doc in existing.docs) {
-        final participants = List<String>.from(doc.data()['participants'] ?? []);
+        final participants =
+            List<String>.from(doc.data()['participants'] ?? []);
         if (participants.contains(ownerId)) {
           conversationId = doc.id;
           break;
         }
       }
 
-      // Create if not found, or tag existing without category
       bool isNew = false;
       if (conversationId == null) {
         final docRef = await firestore.collection('conversations').add({
@@ -370,28 +510,34 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
         conversationId = docRef.id;
         isNew = true;
       } else {
-        // Always tag the conversation as animaux-perdus when coming from this context
         final conv = existing.docs.firstWhere((d) => d.id == conversationId);
         if (conv.data()['categorie'] != 'animaux-perdus') {
-          await firestore.collection('conversations').doc(conversationId).update({'categorie': 'animaux-perdus'});
+          await firestore
+              .collection('conversations')
+              .doc(conversationId)
+              .update({'categorie': 'animaux-perdus'});
         }
       }
 
       if (!mounted) return;
-      final alerteId = a['id'] as String? ?? a['alerte_id'] as String?;
+      final alerteId = a['id'] as String?;
       final nomAnimal = a['nom_animal'] as String?;
-      Navigator.push(context, MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          conversationId: conversationId!,
-          eleveurId: ownerId,
-          alerteId: alerteId,
-          nomAnimal: nomAnimal,
-          isNewConversation: isNew,
-        ),
-      ));
+      Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChatScreen(
+              conversationId: conversationId!,
+              eleveurId: ownerId,
+              alerteId: alerteId,
+              nomAnimal: nomAnimal,
+              isNewConversation: isNew,
+            ),
+          ));
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
+      }
     }
   }
 
@@ -420,14 +566,22 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
 
   @override
   Widget build(BuildContext context) {
+    final title = _filterType == 'trouve'
+        ? 'Animaux trouvés'
+        : _filterType == 'tous'
+            ? 'Perdus & trouvés'
+            : 'Animaux perdus';
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       appBar: AppBar(
-        backgroundColor: _orange,
+        backgroundColor: _accentColor,
         iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text('Animaux perdus',
-            style: TextStyle(
-                fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
+        title: Text(title,
+            style: const TextStyle(
+                fontFamily: 'Galey',
+                fontWeight: FontWeight.w700,
+                color: Colors.white)),
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
@@ -441,21 +595,24 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
       ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'declare_trouve',
-        backgroundColor: const Color(0xFF0C5C6C),
+        backgroundColor: _teal,
         icon: const Icon(Icons.pets, color: Colors.white, size: 20),
         label: const Text('J\'ai trouvé un animal',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
+            style: TextStyle(
+                fontFamily: 'Galey',
+                fontWeight: FontWeight.w700,
+                color: Colors.white)),
         onPressed: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const AnimalTrouveFormPage())),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _orange))
+          ? Center(child: CircularProgressIndicator(color: _accentColor))
           : TabBarView(
               controller: _tabController,
               children: [
                 RefreshIndicator(
                   onRefresh: _load,
-                  color: _orange,
+                  color: _accentColor,
                   child: _buildList(),
                 ),
                 _buildMap(),
@@ -485,14 +642,28 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                 itemCount: list.length,
                 itemBuilder: (_, i) {
-                  final isOwn = list[i]['uid_proprietaire'] == _currentUid;
+                  final item = list[i];
+                  final type = item['__type'] as String;
+                  final ownerId = type == 'perdu'
+                      ? item['uid_proprietaire']
+                      : item['uid_declarant'];
+                  final isOwn = ownerId == _currentUid;
                   return _AlertCard(
-                    alerte: list[i],
-                    onTap: () => _showAlertDetail(list[i]),
-                    onShare: () => _share(list[i]),
-                    onContact: () => _contact(list[i]),
-                    onRetrouve: isOwn ? () => _retrouveAlerte(list[i]['id'] as String) : null,
-                    onDelete: isOwn ? () => _deleteAlerte(list[i]['id'] as String) : null,
+                    alerte: item,
+                    type: type,
+                    onTap: () => type == 'perdu'
+                        ? _showAlertDetail(item)
+                        : _showTrouveDetail(item),
+                    onShare: type == 'perdu' ? () => _share(item) : null,
+                    onContact: () => _contact(item, type: type),
+                    onRetrouve: (type == 'perdu' && isOwn)
+                        ? () => _retrouveAlerte(item['id'] as String)
+                        : null,
+                    onDelete: isOwn
+                        ? () => type == 'perdu'
+                            ? _deleteAlerte(item['id'] as String)
+                            : _deleteTrouve(item['id'] as String)
+                        : null,
                   );
                 },
               ),
@@ -505,6 +676,30 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Type toggle: Perdus | Trouvés | Tous
+        Row(children: [
+          _TypeChip(
+              label: '🚨 Perdus',
+              value: 'perdu',
+              current: _filterType,
+              color: _orange,
+              onTap: () => setState(() => _filterType = 'perdu')),
+          const SizedBox(width: 6),
+          _TypeChip(
+              label: '🐾 Trouvés',
+              value: 'trouve',
+              current: _filterType,
+              color: _teal,
+              onTap: () => setState(() => _filterType = 'trouve')),
+          const SizedBox(width: 6),
+          _TypeChip(
+              label: 'Tous',
+              value: 'tous',
+              current: _filterType,
+              color: const Color(0xFF6B7280),
+              onTap: () => setState(() => _filterType = 'tous')),
+        ]),
+        const SizedBox(height: 8),
         // Lieu search
         SizedBox(
           height: 38,
@@ -514,12 +709,21 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
             style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
             decoration: InputDecoration(
               hintText: 'Ville ou lieu…',
-              hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey),
-              prefixIcon: const Icon(Icons.location_on_outlined, size: 18, color: Colors.grey),
-              contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.grey.shade300)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.grey.shade300)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: const BorderSide(color: _orange)),
+              hintStyle: const TextStyle(
+                  fontFamily: 'Galey', fontSize: 13, color: Colors.grey),
+              prefixIcon:
+                  const Icon(Icons.location_on_outlined, size: 18, color: Colors.grey),
+              contentPadding:
+                  const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide(color: Colors.grey.shade300)),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide(color: Colors.grey.shade300)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide(color: _accentColor)),
               filled: true,
               fillColor: const Color(0xFFF8F8F8),
             ),
@@ -539,9 +743,8 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
               final selected = isAll
                   ? (_filterEspece == null || _filterEspece == 'tous')
                   : _filterEspece == e;
-              final chipBg = selected
-                  ? (_especeText[e] ?? _orange)
-                  : Colors.grey.shade100;
+              final chipBg =
+                  selected ? (_especeText[e] ?? _accentColor) : Colors.grey.shade100;
               return GestureDetector(
                 onTap: () {
                   setState(() {
@@ -555,11 +758,14 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
                 },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(color: chipBg, borderRadius: BorderRadius.circular(20)),
+                  decoration: BoxDecoration(
+                      color: chipBg, borderRadius: BorderRadius.circular(20)),
                   child: Text(
                     '${_especeEmoji[e] ?? ''}  ${e[0].toUpperCase()}${e.substring(1)}',
                     style: TextStyle(
-                        fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                        fontFamily: 'Galey',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                         color: selected ? Colors.white : Colors.black87),
                   ),
                 ),
@@ -576,7 +782,9 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
               hint: 'Pays',
               items: const ['France', 'Belgique', 'Suisse', 'Luxembourg'],
               onChanged: (v) => setState(() {
-                _filterPays = v ?? ''; _filterRegion = ''; _filterDept = '';
+                _filterPays = v ?? '';
+                _filterRegion = '';
+                _filterDept = '';
               }),
             ),
           ),
@@ -588,14 +796,18 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
               items: _filterPays.isNotEmpty
                   ? (_regionsByPaysList[_filterPays] ?? [])
                   : const [],
-              onChanged: (v) => setState(() { _filterRegion = v ?? ''; _filterDept = ''; }),
+              onChanged: (v) =>
+                  setState(() {
+                    _filterRegion = v ?? '';
+                    _filterDept = '';
+                  }),
             ),
           ),
           const SizedBox(width: 6),
           Expanded(
             child: _GeoDropdown(
               value: _filterDept.isEmpty ? null : _filterDept,
-              hint: 'Département',
+              hint: 'Dép.',
               items: _filterRegion.isNotEmpty
                   ? FrenchGeo.departmentsInRegion(_filterRegion)
                   : const [],
@@ -603,6 +815,48 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
             ),
           ),
         ]),
+        // Distance filter (shown when GPS position available)
+        if (_userLat != null) ...[
+          const SizedBox(height: 8),
+          Row(children: [
+            const Icon(Icons.near_me_outlined, size: 15, color: Colors.grey),
+            const SizedBox(width: 6),
+            const Text('Rayon :',
+                style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [null, 5, 10, 25, 50, 100].map((d) {
+                    final selected = _filterDistanceKm == d;
+                    return GestureDetector(
+                      onTap: () => setState(() => _filterDistanceKm = d),
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: selected ? _accentColor : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          d == null ? 'Tous' : '$d km',
+                          style: TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: selected ? Colors.white : Colors.black87),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ]),
+        ],
         // Race autocomplete (only when espece selected)
         if (_filterEspece != null && _filterEspece != 'tous') ...[
           const SizedBox(height: 8),
@@ -616,18 +870,34 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
                 decoration: InputDecoration(
                   hintText: 'Race (optionnel)…',
-                  hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey),
-                  prefixIcon: const Icon(Icons.pets, size: 16, color: Colors.grey),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.grey.shade300)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.grey.shade300)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: const BorderSide(color: _orange)),
+                  hintStyle: const TextStyle(
+                      fontFamily: 'Galey', fontSize: 13, color: Colors.grey),
+                  prefixIcon:
+                      const Icon(Icons.pets, size: 16, color: Colors.grey),
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide(color: Colors.grey.shade300)),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide(color: Colors.grey.shade300)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide(color: _accentColor)),
                   filled: true,
                   fillColor: const Color(0xFFF8F8F8),
                   suffixIcon: _filterRace.isNotEmpty
-                      ? IconButton(icon: const Icon(Icons.clear, size: 16), onPressed: () {
-                          _raceCtrl.clear(); setState(() { _filterRace = ''; _raceSuggestions = []; _showRaceSugg = false; });
-                        })
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 16),
+                          onPressed: () {
+                            _raceCtrl.clear();
+                            setState(() {
+                              _filterRace = '';
+                              _raceSuggestions = [];
+                              _showRaceSugg = false;
+                            });
+                          })
                       : null,
                 ),
               ),
@@ -642,15 +912,22 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
                   borderRadius: BorderRadius.circular(12),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: _raceSuggestions.map((r) => ListTile(
-                      dense: true,
-                      title: Text(r, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-                      onTap: () {
-                        _raceCtrl.text = r;
-                        setState(() { _filterRace = r; _showRaceSugg = false; });
-                        _raceFocusNode.unfocus();
-                      },
-                    )).toList(),
+                    children: _raceSuggestions
+                        .map((r) => ListTile(
+                              dense: true,
+                              title: Text(r,
+                                  style: const TextStyle(
+                                      fontFamily: 'Galey', fontSize: 13)),
+                              onTap: () {
+                                _raceCtrl.text = r;
+                                setState(() {
+                                  _filterRace = r;
+                                  _showRaceSugg = false;
+                                });
+                                _raceFocusNode.unfocus();
+                              },
+                            ))
+                        .toList(),
                   ),
                 ),
               ),
@@ -664,22 +941,35 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     final list = _filtered;
     final markers = <Marker>{};
     for (final a in list) {
+      final type = a['__type'] as String;
       final lat = (a['lat'] as num?)?.toDouble();
       final lng = (a['lng'] as num?)?.toDouble();
       if (lat == null || lng == null) continue;
       final espece = (a['espece'] as String? ?? '').toLowerCase();
-      final hue = _especeHue[espece] ?? BitmapDescriptor.hueOrange;
+      final hue = type == 'trouve'
+          ? BitmapDescriptor.hueGreen
+          : (_especeHue[espece] ?? BitmapDescriptor.hueOrange);
+      final emoji = _especeEmoji[espece] ?? '🐾';
+      final nom = type == 'perdu'
+          ? (a['nom_animal'] as String? ?? '')
+          : '$emoji ${espece.isNotEmpty ? espece[0].toUpperCase() + espece.substring(1) : 'Animal'}';
+      final snippetLoc = type == 'perdu'
+          ? (a['derniere_localisation'] as String? ?? '')
+          : (a['ville'] as String? ?? '');
       markers.add(Marker(
-        markerId: MarkerId(a['id'].toString()),
+        markerId: MarkerId('${type}_${a['id']}'),
         position: LatLng(lat, lng),
         icon: BitmapDescriptor.defaultMarkerWithHue(hue),
         infoWindow: InfoWindow(
-          title: '${_especeEmoji[espece] ?? '🐾'} ${a['nom_animal']}',
-          snippet: '${a['espece'] ?? ''}'
-              '${a['race'] != null && (a['race'] as String).isNotEmpty ? ' · ${a['race']}' : ''}'
-              '${a['derniere_localisation'] != null && (a['derniere_localisation'] as String).isNotEmpty ? '\n📍 ${a['derniere_localisation']}' : ''}',
+          title: '${type == 'perdu' ? '🚨' : '🐾'} $nom',
+          snippet: [
+            espece,
+            if ((a['race'] as String?)?.isNotEmpty == true) a['race'] as String,
+            if (snippetLoc.isNotEmpty) '📍 $snippetLoc',
+          ].join(' · '),
         ),
-        onTap: () => _showAlertDetail(a),
+        onTap: () =>
+            type == 'perdu' ? _showAlertDetail(a) : _showTrouveDetail(a),
       ));
     }
 
@@ -697,7 +987,6 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
             zoomControlsEnabled: true,
             onMapCreated: (c) => _mapController = c,
           ),
-          // Recenter button
           Positioned(
             right: 12,
             bottom: 100,
@@ -706,19 +995,44 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
               backgroundColor: Colors.white,
               onPressed: _locating ? null : _recenterMap,
               child: _locating
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: _orange))
-                  : const Icon(Icons.my_location, color: _orange, size: 20),
+                          strokeWidth: 2, color: _accentColor))
+                  : Icon(Icons.my_location, color: _accentColor, size: 20),
             ),
           ),
-          // No coords warning if markers is empty but there are alerts
+          // Legend
+          Positioned(
+            left: 12,
+            bottom: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.92),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Container(width: 10, height: 10, decoration: const BoxDecoration(color: Color(0xFFE65100), shape: BoxShape.circle)),
+                  const SizedBox(width: 6),
+                  const Text('Perdu', style: TextStyle(fontFamily: 'Galey', fontSize: 11)),
+                ]),
+                const SizedBox(height: 4),
+                Row(children: [
+                  Container(width: 10, height: 10, decoration: const BoxDecoration(color: Color(0xFF22C55E), shape: BoxShape.circle)),
+                  const SizedBox(width: 6),
+                  const Text('Trouvé', style: TextStyle(fontFamily: 'Galey', fontSize: 11)),
+                ]),
+              ]),
+            ),
+          ),
           if (markers.isEmpty && list.isNotEmpty)
             Positioned(
               bottom: 16,
-              left: 16,
+              left: 80,
               right: 16,
               child: Container(
                 padding:
@@ -729,7 +1043,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
                   border: Border.all(color: Colors.orange.shade200),
                 ),
                 child: Text(
-                  'Certaines alertes n\'ont pas de coordonnées GPS et n\'apparaissent pas sur la carte.',
+                  'Certaines déclarations n\'ont pas de coordonnées GPS.',
                   style: TextStyle(
                       fontFamily: 'Galey',
                       fontSize: 12,
@@ -744,24 +1058,68 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
   }
 }
 
-// ── Card ──────────────────────────────────────────────────────────────────────
+// ── Type chip ─────────────────────────────────────────────────────────────────
+
+class _TypeChip extends StatelessWidget {
+  final String label, value, current;
+  final Color color;
+  final VoidCallback onTap;
+  const _TypeChip({
+    required this.label,
+    required this.value,
+    required this.current,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = current == value;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? color : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: selected ? color : Colors.grey.shade300, width: 1),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+              fontFamily: 'Galey',
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: selected ? Colors.white : Colors.grey.shade600),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Alert Card ────────────────────────────────────────────────────────────────
 
 class _AlertCard extends StatelessWidget {
   final Map<String, dynamic> alerte;
+  final String type;
   final VoidCallback onTap;
-  final VoidCallback onShare;
+  final VoidCallback? onShare;
   final VoidCallback onContact;
   final VoidCallback? onRetrouve;
   final VoidCallback? onDelete;
 
   const _AlertCard({
     required this.alerte,
+    required this.type,
     required this.onTap,
-    required this.onShare,
+    this.onShare,
     required this.onContact,
     this.onRetrouve,
     this.onDelete,
   });
+
+  static const _teal = Color(0xFF0C5C6C);
 
   void _showOwnerActions(BuildContext context) {
     showModalBottomSheet(
@@ -775,32 +1133,50 @@ class _AlertCard extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(
-            width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20),
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 20),
             decoration: BoxDecoration(
-                color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2)),
           ),
           if (onRetrouve != null)
             ListTile(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
               leading: const CircleAvatar(
                 backgroundColor: Color(0xFFEEF5EA),
-                child: Icon(Icons.check_circle_outline, color: Color(0xFF6E9E57)),
+                child: Icon(Icons.check_circle_outline,
+                    color: Color(0xFF6E9E57)),
               ),
               title: const Text('Animal retrouvé !',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-              onTap: () { Navigator.pop(context); onRetrouve!(); },
+                  style: TextStyle(
+                      fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              onTap: () {
+                Navigator.pop(context);
+                onRetrouve!();
+              },
             ),
           if (onDelete != null)
             ListTile(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
               leading: const CircleAvatar(
                 backgroundColor: Color(0xFFFFEBEE),
                 child: Icon(Icons.delete_outline, color: Colors.red),
               ),
-              title: const Text('Supprimer l\'alerte',
-                  style: TextStyle(
-                      fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.red)),
-              onTap: () { Navigator.pop(context); onDelete!(); },
+              title: Text(
+                  type == 'perdu'
+                      ? 'Supprimer l\'alerte'
+                      : 'Supprimer la déclaration',
+                  style: const TextStyle(
+                      fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700,
+                      color: Colors.red)),
+              onTap: () {
+                Navigator.pop(context);
+                onDelete!();
+              },
             ),
         ]),
       ),
@@ -809,24 +1185,44 @@ class _AlertCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nom      = (alerte['nom_animal'] ?? '') as String;
-    final espece   = ((alerte['espece'] ?? '') as String).toLowerCase();
-    final sexe     = (alerte['sexe'] as String?) ?? '';
-    final race     = (alerte['race'] ?? '') as String;
-    final lieu     = (alerte['derniere_localisation'] ?? alerte['ville'] ?? '') as String;
-    final photoUrl = alerte['photo_url'] as String?;
-    final desc     = alerte['description'] as String?;
-    final contact  = (alerte['contact'] as String?) ?? '';
-    final numero   = (alerte['numero_alerte'] as String?) ?? '';
-    final dateStr  = alerte['date_perte'] as String?;
-    final date     = dateStr != null
+    final isPerdu = type == 'perdu';
+    final espece = ((alerte['espece'] ?? '') as String).toLowerCase();
+    final nom = isPerdu ? (alerte['nom_animal'] ?? '') as String : '';
+    final race = (alerte['race'] ?? '') as String;
+    final sexe = (alerte['sexe'] as String?) ?? '';
+    final lieu = isPerdu
+        ? (alerte['derniere_localisation'] ?? alerte['ville'] ?? '') as String
+        : (alerte['localisation_adresse'] ?? alerte['ville'] ?? '') as String;
+
+    String? photoUrl;
+    if (isPerdu) {
+      photoUrl = alerte['photo_url'] as String?;
+    } else {
+      final photos = alerte['photos'];
+      if (photos is List && photos.isNotEmpty) {
+        photoUrl = photos.first as String?;
+      }
+    }
+
+    final dateStr =
+        isPerdu ? alerte['date_perte'] as String? : alerte['date_trouve'] as String?;
+    final date = dateStr != null
         ? DateFormat('dd/MM/yyyy').format(DateTime.parse(dateStr))
         : '';
+    final desc = alerte['description'] as String?;
 
-    final cardBg     = _especeBg[espece]     ?? Colors.white;
-    final cardBorder = _especeBorder[espece] ?? Colors.orange.shade200;
-    final cardText   = _especeText[espece]   ?? const Color(0xFFE65100);
-    final emoji      = _especeEmoji[espece]  ?? '🐾';
+    final cardBorder = isPerdu
+        ? (_especeBorder[espece] ?? Colors.orange.shade200)
+        : const Color(0xFF89CDD8);
+    final cardText = isPerdu
+        ? (_especeText[espece] ?? const Color(0xFFE65100))
+        : _teal;
+    final cardBg = _especeBg[espece] ?? Colors.white;
+    final emoji = _especeEmoji[espece] ?? '🐾';
+    final badge = isPerdu ? '$emoji PERDU' : '$emoji TROUVÉ';
+    final displayName = nom.isNotEmpty
+        ? nom
+        : '${espece.isNotEmpty ? espece[0].toUpperCase() + espece.substring(1) : 'Animal'} trouvé';
 
     return GestureDetector(
       onTap: onTap,
@@ -834,169 +1230,175 @@ class _AlertCard extends StatelessWidget {
           ? () => _showOwnerActions(context)
           : null,
       child: Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: cardBorder, width: 1.2),
-        boxShadow: [
-          BoxShadow(color: cardBorder.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 3))
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: 72,
-              height: 72,
-              child: photoUrl != null && photoUrl.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: photoUrl,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => _placeholder(cardBg, cardText, emoji),
-                      errorWidget: (_, __, ___) => _placeholder(cardBg, cardText, emoji))
-                  : _placeholder(cardBg, cardText, emoji),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                      color: cardText,
-                      borderRadius: BorderRadius.circular(20)),
-                  child: Text('$emoji PERDU',
-                      style: const TextStyle(
-                          fontFamily: 'Galey',
-                          fontSize: 10,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700)),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(nom,
-                      style: const TextStyle(
-                          fontFamily: 'Galey',
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15,
-                          color: Color(0xFF1F2A2E)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                ),
-              ]),
-              const SizedBox(height: 3),
-              Text(
-                [espece, if (race.isNotEmpty) race, if (sexe.isNotEmpty) sexe].join(' · '),
-                style: const TextStyle(
-                    fontFamily: 'Galey',
-                    fontSize: 12,
-                    color: Color(0xFF6F767B)),
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: cardBorder, width: 1.2),
+          boxShadow: [
+            BoxShadow(
+                color: cardBorder.withOpacity(0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 3))
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child:
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 72,
+                height: 72,
+                child: photoUrl != null && photoUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: photoUrl,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) =>
+                            _placeholder(cardBg, cardText, emoji),
+                        errorWidget: (_, __, ___) =>
+                            _placeholder(cardBg, cardText, emoji))
+                    : _placeholder(cardBg, cardText, emoji),
               ),
-              if (lieu.isNotEmpty) ...[
-                const SizedBox(height: 2),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                 Row(children: [
-                  Icon(Icons.location_on_outlined,
-                      size: 12, color: cardText),
-                  const SizedBox(width: 3),
-                  Expanded(
-                    child: Text(lieu,
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                        color: cardText,
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Text(badge,
                         style: const TextStyle(
                             fontFamily: 'Galey',
-                            fontSize: 11,
-                            color: Color(0xFF6F767B)),
+                            fontSize: 10,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(displayName,
+                        style: const TextStyle(
+                            fontFamily: 'Galey',
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            color: Color(0xFF1F2A2E)),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                   ),
                 ]),
-              ],
-              if (date.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text('Disparu le $date',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: cardText)),
-              ],
-              if (desc != null && desc.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(desc,
-                    style: const TextStyle(
+                const SizedBox(height: 3),
+                Text(
+                  [
+                    espece,
+                    if (race.isNotEmpty) race,
+                    if (sexe.isNotEmpty) sexe
+                  ].join(' · '),
+                  style: const TextStyle(
+                      fontFamily: 'Galey',
+                      fontSize: 12,
+                      color: Color(0xFF6F767B)),
+                ),
+                if (lieu.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Row(children: [
+                    Icon(Icons.location_on_outlined, size: 12, color: cardText),
+                    const SizedBox(width: 3),
+                    Expanded(
+                      child: Text(lieu,
+                          style: const TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 11,
+                              color: Color(0xFF6F767B)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                  ]),
+                ],
+                if (date.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    '${isPerdu ? 'Disparu' : 'Trouvé'} le $date',
+                    style: TextStyle(
                         fontFamily: 'Galey',
-                        fontSize: 12,
-                        color: Color(0xFF4A5568)),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis),
-              ],
-              if (contact.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Row(children: [
-                  const Icon(Icons.phone_outlined,
-                      size: 12, color: Color(0xFF6F767B)),
-                  const SizedBox(width: 4),
-                  Text(contact,
+                        fontSize: 11,
+                        color: cardText),
+                  ),
+                ],
+                if (desc != null && desc.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(desc,
                       style: const TextStyle(
                           fontFamily: 'Galey',
-                          fontSize: 11,
-                          color: Color(0xFF6F767B))),
+                          fontSize: 12,
+                          color: Color(0xFF4A5568)),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                ],
+                const SizedBox(height: 8),
+                Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                  OutlinedButton.icon(
+                    onPressed: onContact,
+                    icon: const Icon(Icons.message_outlined, size: 14),
+                    label: const Text('Contacter',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _teal,
+                      side: const BorderSide(color: _teal),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  if (isPerdu && onShare != null) ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: onShare,
+                      icon: const Icon(Icons.share, size: 14),
+                      label: const Text('Partager',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange.shade700,
+                        side: BorderSide(color: Colors.orange.shade300),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ],
                 ]),
-              ],
-              if (numero.isNotEmpty)
-                Text('N° $numero',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 10,
-                        color: cardText.withOpacity(0.7), fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                OutlinedButton.icon(
-                  onPressed: onContact,
-                  icon: const Icon(Icons.message_outlined, size: 14),
-                  label: const Text('Contacter',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF0C5C6C),
-                    side: const BorderSide(color: Color(0xFF0C5C6C)),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: onShare,
-                  icon: const Icon(Icons.share, size: 14),
-                  label: const Text('Partager',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.orange.shade700,
-                    side: BorderSide(color: Colors.orange.shade300),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
               ]),
-            ]),
-          ),
-        ]),
+            ),
+          ]),
+        ),
       ),
-      ),  // Container
-    );  // GestureDetector
+    );
   }
 
   Widget _placeholder(Color bg, Color iconColor, String emoji) => Container(
-        color: bg,
-        child: Center(child: Text(emoji, style: const TextStyle(fontSize: 30))),
-      );
+      color: bg,
+      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 30))));
 }
+
+// ── Alert Detail Sheet (perdus) ───────────────────────────────────────────────
 
 class _AlertDetailSheet extends StatelessWidget {
   final Map<String, dynamic> alerte;
   final VoidCallback onShare;
   final VoidCallback onContact;
 
-  const _AlertDetailSheet({required this.alerte, required this.onShare, required this.onContact});
+  const _AlertDetailSheet(
+      {required this.alerte,
+      required this.onShare,
+      required this.onContact});
 
   @override
   Widget build(BuildContext context) {
@@ -1010,7 +1412,9 @@ class _AlertDetailSheet extends StatelessWidget {
     final numero   = (alerte['numero_alerte'] as String?) ?? '';
     final photoUrl = alerte['photo_url'] as String?;
     final dateStr  = alerte['date_perte'] as String?;
-    final date     = dateStr != null ? DateFormat('dd/MM/yyyy').format(DateTime.parse(dateStr)) : '';
+    final date     = dateStr != null
+        ? DateFormat('dd/MM/yyyy').format(DateTime.parse(dateStr))
+        : '';
     final cardText = _especeText[espece] ?? const Color(0xFFE65100);
     final cardBg   = _especeBg[espece]   ?? const Color(0xFFFFF7ED);
     final emoji    = _especeEmoji[espece] ?? '🐾';
@@ -1020,15 +1424,19 @@ class _AlertDetailSheet extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+      padding: EdgeInsets.fromLTRB(
+          20, 16, 20, MediaQuery.of(context).viewInsets.bottom + 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Center(
             child: Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2)),
             ),
           ),
           const SizedBox(height: 16),
@@ -1039,56 +1447,113 @@ class _AlertDetailSheet extends StatelessWidget {
                 width: 90,
                 height: 90,
                 child: photoUrl != null && photoUrl.isNotEmpty
-                    ? CachedNetworkImage(imageUrl: photoUrl, width: 90, height: 90, fit: BoxFit.cover)
-                    : Container(color: cardBg, child: Center(child: Text(emoji, style: const TextStyle(fontSize: 40)))),
+                    ? CachedNetworkImage(
+                        imageUrl: photoUrl,
+                        width: 90,
+                        height: 90,
+                        fit: BoxFit.cover)
+                    : Container(
+                        color: cardBg,
+                        child: Center(
+                            child: Text(emoji,
+                                style: const TextStyle(fontSize: 40)))),
               ),
             ),
             const SizedBox(width: 14),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(color: cardText, borderRadius: BorderRadius.circular(20)),
-                  child: Text('$emoji PERDU', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(nom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFF1F2A2E)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                ),
-              ]),
-              const SizedBox(height: 4),
-              Text([espece, if (race.isNotEmpty) race, if (sexe.isNotEmpty) sexe].join(' · '),
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
-              if (date.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text('Disparu le $date', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: cardText)),
-              ],
-            ])),
+            Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Row(children: [
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                          color: cardText,
+                          borderRadius: BorderRadius.circular(20)),
+                      child: Text('$emoji PERDU',
+                          style: const TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 11,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(nom,
+                          style: const TextStyle(
+                              fontFamily: 'Galey',
+                              fontWeight: FontWeight.w700,
+                              fontSize: 17,
+                              color: Color(0xFF1F2A2E)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                  ]),
+                  const SizedBox(height: 4),
+                  Text(
+                      [
+                        espece,
+                        if (race.isNotEmpty) race,
+                        if (sexe.isNotEmpty) sexe
+                      ].join(' · '),
+                      style: const TextStyle(
+                          fontFamily: 'Galey',
+                          fontSize: 13,
+                          color: Color(0xFF6F767B))),
+                  if (date.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text('Disparu le $date',
+                        style: TextStyle(
+                            fontFamily: 'Galey',
+                            fontSize: 12,
+                            color: cardText)),
+                  ],
+                ])),
           ]),
           if (lieu.isNotEmpty) ...[
             const SizedBox(height: 12),
             Row(children: [
               Icon(Icons.location_on_outlined, size: 16, color: cardText),
               const SizedBox(width: 6),
-              Expanded(child: Text(lieu, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF4A5568)))),
+              Expanded(
+                  child: Text(lieu,
+                      style: const TextStyle(
+                          fontFamily: 'Galey',
+                          fontSize: 13,
+                          color: Color(0xFF4A5568)))),
             ]),
           ],
           if (desc != null && desc.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text(desc, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF4A5568))),
+            Text(desc,
+                style: const TextStyle(
+                    fontFamily: 'Galey',
+                    fontSize: 13,
+                    color: Color(0xFF4A5568))),
           ],
           if (contact.isNotEmpty) ...[
             const SizedBox(height: 6),
             Row(children: [
-              const Icon(Icons.phone_outlined, size: 14, color: Color(0xFF6F767B)),
+              const Icon(Icons.phone_outlined,
+                  size: 14, color: Color(0xFF6F767B)),
               const SizedBox(width: 6),
-              Text(contact, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
+              Text(contact,
+                  style: const TextStyle(
+                      fontFamily: 'Galey',
+                      fontSize: 13,
+                      color: Color(0xFF6F767B))),
             ]),
           ],
           if (numero.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text('N° $numero', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: cardText.withOpacity(0.7), fontWeight: FontWeight.w600)),
+              child: Text('N° $numero',
+                  style: TextStyle(
+                      fontFamily: 'Galey',
+                      fontSize: 11,
+                      color: cardText.withOpacity(0.7),
+                      fontWeight: FontWeight.w600)),
             ),
           const SizedBox(height: 16),
           Row(children: [
@@ -1096,11 +1561,13 @@ class _AlertDetailSheet extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: onContact,
                 icon: const Icon(Icons.message_outlined, size: 16),
-                label: const Text('Contacter', style: TextStyle(fontFamily: 'Galey')),
+                label:
+                    const Text('Contacter', style: TextStyle(fontFamily: 'Galey')),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF0C5C6C),
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ),
@@ -1108,11 +1575,13 @@ class _AlertDetailSheet extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: onShare,
               icon: const Icon(Icons.share, size: 16),
-              label: const Text('Partager', style: TextStyle(fontFamily: 'Galey')),
+              label:
+                  const Text('Partager', style: TextStyle(fontFamily: 'Galey')),
               style: OutlinedButton.styleFrom(
                 foregroundColor: cardText,
                 side: BorderSide(color: cardText.withOpacity(0.4)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ]),
@@ -1122,33 +1591,402 @@ class _AlertDetailSheet extends StatelessWidget {
   }
 }
 
+// ── Trouvé Detail Sheet ───────────────────────────────────────────────────────
+
+class _TrouveDetailSheet extends StatefulWidget {
+  final Map<String, dynamic> trouve;
+  final VoidCallback onContact;
+  const _TrouveDetailSheet({required this.trouve, required this.onContact});
+
+  @override
+  State<_TrouveDetailSheet> createState() => _TrouveDetailSheetState();
+}
+
+class _TrouveDetailSheetState extends State<_TrouveDetailSheet> {
+  static const _teal = Color(0xFF0C5C6C);
+  int _photoIndex = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final a = widget.trouve;
+    final espece = ((a['espece'] ?? '') as String).toLowerCase();
+    final race = (a['race'] ?? '') as String;
+    final sexe = (a['sexe'] as String?) ?? '';
+    final taille = (a['taille'] as String?) ?? '';
+    final couleur = (a['couleur'] as String?) ?? '';
+    final puce = (a['numero_puce'] as String?) ?? '';
+    final etat = (a['etat_sante'] as String?) ?? '';
+    final comportement = (a['comportement'] as String?) ?? '';
+    final desc = (a['description'] as String?) ?? '';
+    final lieu = (a['localisation_adresse'] ?? a['ville'] ?? '') as String;
+    final dateStr = a['date_trouve'] as String?;
+    final date = dateStr != null
+        ? DateFormat('dd/MM/yyyy').format(DateTime.parse(dateStr))
+        : '';
+    final accepte = a['accepte_messagerie'] as bool? ?? true;
+    final phone = a['contact_telephone'] as String?;
+    final email = a['contact_email'] as String?;
+
+    final photosRaw = a['photos'];
+    final photos = photosRaw is List
+        ? List<String>.from(photosRaw.map((e) => e.toString()))
+        : <String>[];
+    final emoji = _especeEmoji[espece] ?? '🐾';
+    final cardBg = _especeBg[espece] ?? const Color(0xFFE8F4F6);
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+          20, 16, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Photos
+            if (photos.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 200,
+                  child: photos.length == 1
+                      ? CachedNetworkImage(
+                          imageUrl: photos.first, fit: BoxFit.cover)
+                      : Stack(children: [
+                          PageView.builder(
+                            itemCount: photos.length,
+                            onPageChanged: (i) =>
+                                setState(() => _photoIndex = i),
+                            itemBuilder: (_, i) => CachedNetworkImage(
+                                imageUrl: photos[i], fit: BoxFit.cover),
+                          ),
+                          Positioned(
+                            bottom: 8,
+                            left: 0,
+                            right: 0,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: List.generate(
+                                photos.length,
+                                (i) => Container(
+                                  margin: const EdgeInsets.symmetric(
+                                      horizontal: 3),
+                                  width: i == _photoIndex ? 16 : 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: i == _photoIndex
+                                        ? Colors.white
+                                        : Colors.white54,
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ]),
+                ),
+              ),
+              const SizedBox(height: 14),
+            ] else ...[
+              Center(
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                      color: cardBg, borderRadius: BorderRadius.circular(16)),
+                  child: Center(
+                      child: Text(emoji,
+                          style: const TextStyle(fontSize: 40))),
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+            // Badge + titre
+            Row(children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                    color: _teal,
+                    borderRadius: BorderRadius.circular(20)),
+                child: Text('$emoji TROUVÉ',
+                    style: const TextStyle(
+                        fontFamily: 'Galey',
+                        fontSize: 11,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  espece.isNotEmpty
+                      ? '${espece[0].toUpperCase()}${espece.substring(1)}'
+                      : 'Animal trouvé',
+                  style: const TextStyle(
+                      fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 17,
+                      color: Color(0xFF1F2A2E)),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 10),
+            // Infos
+            Wrap(spacing: 8, runSpacing: 6, children: [
+              if (race.isNotEmpty) _InfoChip(race),
+              if (sexe.isNotEmpty) _InfoChip(sexe),
+              if (taille.isNotEmpty) _InfoChip(taille),
+              if (couleur.isNotEmpty) _InfoChip('Couleur : $couleur'),
+              if (puce.isNotEmpty) _InfoChip('Puce : $puce'),
+            ]),
+            if (date.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Row(children: [
+                const Icon(Icons.calendar_today_outlined,
+                    size: 14, color: _teal),
+                const SizedBox(width: 6),
+                Text('Trouvé le $date',
+                    style: const TextStyle(
+                        fontFamily: 'Galey', fontSize: 13, color: _teal)),
+              ]),
+            ],
+            if (lieu.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Row(children: [
+                const Icon(Icons.location_on_outlined, size: 14, color: _teal),
+                const SizedBox(width: 6),
+                Expanded(
+                    child: Text(lieu,
+                        style: const TextStyle(
+                            fontFamily: 'Galey',
+                            fontSize: 13,
+                            color: Color(0xFF4A5568)))),
+              ]),
+            ],
+            if (etat.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _DetailRow(label: 'État de santé', value: etat),
+            ],
+            if (comportement.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              _DetailRow(label: 'Comportement', value: comportement),
+            ],
+            if (desc.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(desc,
+                  style: const TextStyle(
+                      fontFamily: 'Galey',
+                      fontSize: 13,
+                      color: Color(0xFF4A5568))),
+            ],
+            const SizedBox(height: 16),
+            // Contact
+            if (accepte)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: widget.onContact,
+                  icon: const Icon(Icons.message_outlined, size: 16),
+                  label: const Text('Contacter',
+                      style: TextStyle(fontFamily: 'Galey')),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _teal,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F4F6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  const Text('Contact direct',
+                      style: TextStyle(
+                          fontFamily: 'Galey',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          color: _teal)),
+                  if (phone != null && phone.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      const Icon(Icons.phone_outlined,
+                          size: 14, color: Color(0xFF6F767B)),
+                      const SizedBox(width: 6),
+                      Text(phone,
+                          style: const TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 13,
+                              color: Color(0xFF4A5568))),
+                    ]),
+                  ],
+                  if (email != null && email.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      const Icon(Icons.email_outlined,
+                          size: 14, color: Color(0xFF6F767B)),
+                      const SizedBox(width: 6),
+                      Text(email,
+                          style: const TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 13,
+                              color: Color(0xFF4A5568))),
+                    ]),
+                  ],
+                ]),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  final String label;
+  const _InfoChip(this.label);
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+            color: const Color(0xFFE8F4F6),
+            borderRadius: BorderRadius.circular(20)),
+        child: Text(label,
+            style: const TextStyle(
+                fontFamily: 'Galey',
+                fontSize: 12,
+                color: Color(0xFF0C5C6C))),
+      );
+}
+
+class _DetailRow extends StatelessWidget {
+  final String label, value;
+  const _DetailRow({required this.label, required this.value});
+  @override
+  Widget build(BuildContext context) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(label,
+                style: const TextStyle(
+                    fontFamily: 'Galey',
+                    fontSize: 12,
+                    color: Color(0xFF6F767B))),
+          ),
+          Expanded(
+              child: Text(value,
+                  style: const TextStyle(
+                      fontFamily: 'Galey',
+                      fontSize: 12,
+                      color: Color(0xFF1F2A2E)))),
+        ],
+      );
+}
+
+// ── Contact info sheet (for trouvé with messagerie disabled) ──────────────────
+
+class _ContactInfoSheet extends StatelessWidget {
+  final String? phone, email;
+  const _ContactInfoSheet({this.phone, this.email});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        padding: EdgeInsets.fromLTRB(
+            20, 16, 20, MediaQuery.of(context).padding.bottom + 24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2))),
+          const Text('Coordonnées du déclarant',
+              style: TextStyle(
+                  fontFamily: 'Galey',
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16)),
+          const SizedBox(height: 16),
+          if (phone != null && phone!.isNotEmpty)
+            ListTile(
+              leading: const Icon(Icons.phone_outlined, color: Color(0xFF0C5C6C)),
+              title: Text(phone!,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+              onTap: () => launchUrl(Uri.parse('tel:$phone')),
+            ),
+          if (email != null && email!.isNotEmpty)
+            ListTile(
+              leading: const Icon(Icons.email_outlined, color: Color(0xFF0C5C6C)),
+              title: Text(email!,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+              onTap: () => launchUrl(Uri.parse('mailto:$email')),
+            ),
+          if ((phone == null || phone!.isEmpty) &&
+              (email == null || email!.isEmpty))
+            const Text('Aucune coordonnée disponible.',
+                style: TextStyle(
+                    fontFamily: 'Galey',
+                    fontSize: 13,
+                    color: Color(0xFF6F767B))),
+        ]),
+      );
+}
+
 // ─── Share sheet ──────────────────────────────────────────────────────────────
 
 class _ShareSheet extends StatelessWidget {
   final String text, url, nom;
-  const _ShareSheet({required this.text, required this.url, required this.nom});
+  const _ShareSheet(
+      {required this.text, required this.url, required this.nom});
 
   Future<void> _copy(BuildContext ctx) async {
     await Clipboard.setData(ClipboardData(text: url));
     if (ctx.mounted) {
       Navigator.pop(ctx);
-      ScaffoldMessenger.of(ctx).showSnackBar(
-        const SnackBar(content: Text('Lien copié !'), duration: Duration(seconds: 2)));
+      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+          content: Text('Lien copié !'), duration: Duration(seconds: 2)));
     }
   }
 
   Future<void> _launch(BuildContext ctx, Uri uri) async {
-    try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
     if (ctx.mounted) Navigator.pop(ctx);
   }
 
   @override
   Widget build(BuildContext context) {
-    final encoded  = Uri.encodeComponent(text);
-    final waUrl    = Uri.parse('https://wa.me/?text=$encoded');
-    final smsUrl   = Uri.parse('sms:?body=$encoded');
-    final emailUrl = Uri.parse('mailto:?subject=${Uri.encodeComponent(nom)}&body=$encoded');
-    final safe     = MediaQuery.of(context).padding;
+    final encoded = Uri.encodeComponent(text);
+    final waUrl = Uri.parse('https://wa.me/?text=$encoded');
+    final smsUrl = Uri.parse('sms:?body=$encoded');
+    final emailUrl = Uri.parse(
+        'mailto:?subject=${Uri.encodeComponent(nom)}&body=$encoded');
+    final safe = MediaQuery.of(context).padding;
 
     return Container(
       decoration: const BoxDecoration(
@@ -1157,13 +1995,21 @@ class _ShareSheet extends StatelessWidget {
       ),
       padding: EdgeInsets.fromLTRB(24, 12, 24, safe.bottom + 24),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 40, height: 4,
-          decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+        Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2))),
         const SizedBox(height: 16),
         Text(nom,
-          style: const TextStyle(color: Colors.white, fontFamily: 'Galey',
-              fontWeight: FontWeight.w700, fontSize: 15),
-          maxLines: 1, overflow: TextOverflow.ellipsis),
+            style: const TextStyle(
+                color: Colors.white,
+                fontFamily: 'Galey',
+                fontWeight: FontWeight.w700,
+                fontSize: 15),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis),
         const SizedBox(height: 20),
         Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
           _ShareBtn(
@@ -1173,7 +2019,8 @@ class _ShareSheet extends StatelessWidget {
             onTap: () => _copy(context),
           ),
           _ShareBtn(
-            icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Colors.white, size: 24),
+            icon: const FaIcon(FontAwesomeIcons.whatsapp,
+                color: Colors.white, size: 24),
             bg: const Color(0xFF25D366),
             label: 'WhatsApp',
             onTap: () => _launch(context, waUrl),
@@ -1185,7 +2032,8 @@ class _ShareSheet extends StatelessWidget {
             onTap: () => _launch(context, smsUrl),
           ),
           _ShareBtn(
-            icon: const Icon(Icons.mail_outline_rounded, color: Colors.white, size: 24),
+            icon: const Icon(Icons.mail_outline_rounded,
+                color: Colors.white, size: 24),
             bg: const Color(0xFFEA4335),
             label: 'Email',
             onTap: () => _launch(context, emailUrl),
@@ -1201,24 +2049,35 @@ class _ShareBtn extends StatelessWidget {
   final Color bg;
   final String label;
   final VoidCallback onTap;
-  const _ShareBtn({required this.icon, required this.bg, required this.label, required this.onTap});
+  const _ShareBtn(
+      {required this.icon,
+      required this.bg,
+      required this.label,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Container(
-        width: 56, height: 56,
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)),
-        child: Center(child: icon),
-      ),
-      const SizedBox(height: 6),
-      SizedBox(width: 60,
-        child: Text(label,
-          style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'Galey'),
-          textAlign: TextAlign.center, maxLines: 2)),
-    ]),
-  );
+        onTap: onTap,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+                color: bg, borderRadius: BorderRadius.circular(16)),
+            child: Center(child: icon),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+              width: 60,
+              child: Text(label,
+                  style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontFamily: 'Galey'),
+                  textAlign: TextAlign.center,
+                  maxLines: 2)),
+        ]),
+      );
 }
 
 // ── Dropdown géographique compact ─────────────────────────────────────────────
@@ -1229,8 +2088,10 @@ class _GeoDropdown extends StatelessWidget {
   final List<String> items;
   final ValueChanged<String?> onChanged;
   const _GeoDropdown({
-    required this.value, required this.hint,
-    required this.items, required this.onChanged,
+    required this.value,
+    required this.hint,
+    required this.items,
+    required this.onChanged,
   });
 
   @override
@@ -1240,22 +2101,36 @@ class _GeoDropdown extends StatelessWidget {
       isExpanded: true,
       isDense: true,
       decoration: InputDecoration(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
             borderSide: BorderSide(color: Colors.grey.shade300)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
             borderSide: BorderSide(color: Colors.grey.shade300)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFFE65100))),
-        filled: true, fillColor: const Color(0xFFF8F8F8),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide:
+                const BorderSide(color: Color(0xFFE65100))),
+        filled: true,
+        fillColor: const Color(0xFFF8F8F8),
       ),
-      hint: Text(hint, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
-      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF1F2A2E)),
+      hint: Text(hint,
+          style: const TextStyle(
+              fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+      style: const TextStyle(
+          fontFamily: 'Galey', fontSize: 12, color: Color(0xFF1F2A2E)),
       items: [
-        DropdownMenuItem<String>(value: null,
-            child: Text(hint, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey))),
-        ...items.map((s) => DropdownMenuItem(value: s,
-            child: Text(s, style: const TextStyle(fontFamily: 'Galey', fontSize: 12),
+        DropdownMenuItem<String>(
+            value: null,
+            child: Text(hint,
+                style: const TextStyle(
+                    fontFamily: 'Galey', fontSize: 11, color: Colors.grey))),
+        ...items.map((s) => DropdownMenuItem(
+            value: s,
+            child: Text(s,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12),
                 overflow: TextOverflow.ellipsis))),
       ],
       onChanged: items.isEmpty ? null : onChanged,
