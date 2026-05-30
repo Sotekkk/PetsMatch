@@ -144,6 +144,21 @@ export default function ServicesPage() {
         </div>
       </div>
 
+      {/* Accès carte */}
+      <div className="max-w-3xl mx-auto px-4 pt-6 pb-0">
+        <Link href="/services/carte"
+          className="flex items-center gap-3 bg-white rounded-xl border border-[#0C5C6C]/20 px-5 py-3.5 hover:shadow-md transition-shadow group">
+          <span className="text-2xl">🗺️</span>
+          <div className="flex-1">
+            <p className="font-bold text-sm text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>Carte des professionnels</p>
+            <p className="text-xs text-gray-400">Vétérinaires, éducateurs, garderies… près de chez vous</p>
+          </div>
+          <svg className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </Link>
+      </div>
+
       {/* Grid sections */}
       <div className="max-w-3xl mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-2 gap-6">
         {SECTIONS.map((section) => (

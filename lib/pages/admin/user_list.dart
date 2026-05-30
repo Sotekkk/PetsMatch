@@ -1,6 +1,7 @@
 import 'package:PetsMatch/pages/admin/user_detail.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class UserList extends StatefulWidget {
   const UserList({super.key});
@@ -13,6 +14,9 @@ class _UserListState extends State<UserList> {
   String _search = '';
   String _filter = 'tous';
 
+  // uid → {is_pro, is_elevage} depuis Supabase (fallback si absent dans Firestore)
+  Map<String, Map<String, dynamic>> _supaRoles = {};
+
   static const _filters = [
     ('tous', 'Tous'),
     ('particulier', 'Particulier'),
@@ -21,18 +25,45 @@ class _UserListState extends State<UserList> {
     ('admin', 'Admin'),
   ];
 
-  bool _matchesFilter(Map<String, dynamic> data) {
+  @override
+  void initState() {
+    super.initState();
+    _loadSupaRoles();
+  }
+
+  Future<void> _loadSupaRoles() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('users')
+          .select('uid, is_pro, is_elevage');
+      final map = <String, Map<String, dynamic>>{};
+      for (final row in (rows as List)) {
+        final uid = row['uid']?.toString() ?? '';
+        if (uid.isNotEmpty) map[uid] = Map<String, dynamic>.from(row);
+      }
+      if (mounted) setState(() => _supaRoles = map);
+    } catch (_) {}
+  }
+
+  bool _isPro(String uid, Map<String, dynamic> data) =>
+      data['isPro'] == true || _supaRoles[uid]?['is_pro'] == true;
+
+  bool _isElevage(String uid, Map<String, dynamic> data) =>
+      data['isElevage'] == true || _supaRoles[uid]?['is_elevage'] == true;
+
+  bool _matchesFilter(String uid, Map<String, dynamic> data) {
+    final isPro = _isPro(uid, data);
+    final isElevage = _isElevage(uid, data);
+    final isAdmin = data['isAdmin'] == true;
     switch (_filter) {
       case 'admin':
-        return data['isAdmin'] == true;
+        return isAdmin;
       case 'eleveur':
-        return data['isElevage'] == true && data['isAdmin'] != true;
+        return isElevage && !isAdmin;
       case 'pro':
-        return data['isPro'] == true && data['isAdmin'] != true;
+        return isPro && !isAdmin;
       case 'particulier':
-        return data['isElevage'] != true &&
-            data['isPro'] != true &&
-            data['isAdmin'] != true;
+        return !isElevage && !isPro && !isAdmin;
       default:
         return true;
     }
@@ -113,7 +144,7 @@ class _UserListState extends State<UserList> {
 
               final docs = snapshot.data!.docs.where((doc) {
                 final data = doc.data() as Map<String, dynamic>;
-                if (!_matchesFilter(data)) return false;
+                if (!_matchesFilter(doc.id, data)) return false;
                 if (_search.isEmpty) return true;
                 final name =
                     '${data['firstname'] ?? ''} ${data['lastname'] ?? ''}'

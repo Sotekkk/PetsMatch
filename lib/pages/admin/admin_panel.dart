@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/admin/pro_list.dart';
 import 'package:PetsMatch/pages/admin/supabase_migration_page.dart';
 import 'package:PetsMatch/pages/admin/user_list.dart';
 import 'package:PetsMatch/pages/admin/verification_list.dart';
@@ -22,6 +23,7 @@ class _AdminPanelState extends State<AdminPanel> {
     const _DashboardTab(),
     const VerificationList(),
     const UserList(),
+    const ProList(),
   ];
 
   @override
@@ -76,6 +78,10 @@ class _AdminPanelState extends State<AdminPanel> {
           BottomNavigationBarItem(
             icon: Icon(Icons.people),
             label: 'Utilisateurs',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.work_outline),
+            label: 'Pros',
           ),
         ],
       ),
@@ -263,9 +269,9 @@ class _ExpiringAccountsList extends StatelessWidget {
           return Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.green.withOpacity(0.08),
+              color: Colors.green.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.green.withOpacity(0.2)),
+              border: Border.all(color: Colors.green.withValues(alpha: 0.2)),
             ),
             child: const Row(
               children: [
@@ -297,9 +303,9 @@ class _ExpiringAccountsList extends StatelessWidget {
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.07),
+                color: color.withValues(alpha: 0.07),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: color.withOpacity(0.3)),
+                border: Border.all(color: color.withValues(alpha: 0.3)),
               ),
               child: Row(
                 children: [
@@ -328,7 +334,7 @@ class _ExpiringAccountsList extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.15),
+                      color: color.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
@@ -379,7 +385,7 @@ class _StatCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -428,7 +434,7 @@ class _RecentCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
@@ -579,9 +585,9 @@ class _AddressMigrationButtonState extends State<_AddressMigrationButton> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.blue.withOpacity(0.06),
+        color: Colors.blue.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.withOpacity(0.2)),
+        border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

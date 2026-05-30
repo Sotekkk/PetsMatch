@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/services/service_detail_page.dart';
 
@@ -30,10 +31,49 @@ class _ServiceListPageState extends State<ServiceListPage> {
   List<Map<String, dynamic>> _pros = [];
   List<Map<String, dynamic>> _filtered = [];
   bool _loading = true;
+  bool _showMap = false;
   String _search = '';
   String _filterEspece = '';
+  GoogleMapController? _mapCtrl;
 
   static const _especes = ['Toutes', 'Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
+
+  // ── Carte ─────────────────────────────────────────────────────────────────
+
+  double _hueForCat(String cat) => switch (cat) {
+    'sante' || 'veterinaire' => BitmapDescriptor.hueAzure,
+    'education'              => BitmapDescriptor.hueOrange,
+    'garde'                  => BitmapDescriptor.hueGreen,
+    'referencement'          => BitmapDescriptor.hueYellow,
+    _                        => BitmapDescriptor.hueViolet,
+  };
+
+  Set<Marker> _buildMarkers() => _filtered
+      .where((p) => p['lat'] != null && p['lng'] != null)
+      .map((p) => Marker(
+            markerId: MarkerId(p['uid']?.toString() ?? p.hashCode.toString()),
+            position: LatLng((p['lat'] as num).toDouble(), (p['lng'] as num).toDouble()),
+            icon: BitmapDescriptor.defaultMarkerWithHue(_hueForCat(p['cat_pro'] ?? '')),
+            onTap: () => _showProSheet(p),
+          ))
+      .toSet();
+
+  void _showProSheet(Map<String, dynamic> pro) {
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      isDismissible: true,
+      enableDrag: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _ProMapSheet(
+        pro: pro,
+        categoryColor: widget.categoryColor,
+        categoryLabel: widget.categoryLabel,
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -99,9 +139,16 @@ class _ServiceListPageState extends State<ServiceListPage> {
               icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
               onPressed: () => Navigator.pop(context),
             ),
+            actions: [
+              IconButton(
+                icon: Icon(_showMap ? Icons.list_rounded : Icons.map_outlined, color: Colors.white),
+                tooltip: _showMap ? 'Vue liste' : 'Vue carte',
+                onPressed: () => setState(() => _showMap = !_showMap),
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               centerTitle: false,
-              titlePadding: const EdgeInsets.fromLTRB(56, 0, 20, 16),
+              titlePadding: const EdgeInsets.fromLTRB(56, 0, 60, 16),
               title: Text(
                 widget.categoryLabel,
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white),
@@ -186,9 +233,22 @@ class _ServiceListPageState extends State<ServiceListPage> {
             ),
           ),
 
-          // Résultats
+          // Résultats — liste ou carte
           if (_loading)
             const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: Color(0xFF6E9E57))))
+          else if (_showMap)
+            SliverFillRemaining(
+              child: _filtered.isEmpty
+                  ? Center(child: Text('Aucun professionnel avec position GPS',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500)))
+                  : GoogleMap(
+                      initialCameraPosition: const CameraPosition(target: LatLng(46.5, 2.5), zoom: 6),
+                      markers: _buildMarkers(),
+                      onMapCreated: (c) => _mapCtrl = c,
+                      myLocationEnabled: true,
+                      myLocationButtonEnabled: true,
+                    ),
+            )
           else if (_filtered.isEmpty)
             SliverFillRemaining(
               child: Center(
@@ -228,6 +288,95 @@ class _ServiceListPageState extends State<ServiceListPage> {
             ),
         ],
       ),
+    );
+  }
+}
+
+// ── Bottom sheet carte ────────────────────────────────────────────────────────
+
+class _ProMapSheet extends StatelessWidget {
+  final Map<String, dynamic> pro;
+  final Color categoryColor;
+  final String categoryLabel;
+
+  const _ProMapSheet({required this.pro, required this.categoryColor, required this.categoryLabel});
+
+  @override
+  Widget build(BuildContext context) {
+    final nom      = pro['name_elevage'] ?? pro['firstname'] ?? 'Professionnel';
+    final prof     = pro['profession_pro'] ?? '';
+    final ville    = pro['ville_elevage'] ?? pro['ville'] ?? '';
+    final photo    = pro['profile_picture_url'] ?? '';
+    final accept   = pro['accept_new_clients'] ?? true;
+    final especes  = (pro['especes_acceptees'] as List? ?? []).map((e) => e.toString()).toList();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 16),
+        Row(children: [
+          Container(
+            width: 56, height: 56,
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: categoryColor.withValues(alpha: 0.12)),
+            child: photo.isNotEmpty
+                ? ClipRRect(borderRadius: BorderRadius.circular(14),
+                    child: Image.network(photo, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Icon(Icons.person_outline, color: categoryColor, size: 28)))
+                : Icon(Icons.person_outline, color: categoryColor, size: 28),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(nom.toString(), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+            if (prof.isNotEmpty)
+              Text(prof.toString(), style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: categoryColor, fontWeight: FontWeight.w600)),
+            if (ville.isNotEmpty)
+              Row(children: [
+                Icon(Icons.location_on_outlined, size: 12, color: Colors.grey.shade400),
+                const SizedBox(width: 2),
+                Text(ville.toString(), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+              ]),
+          ])),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: accept ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(accept ? 'Dispo' : 'Complet',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700,
+                    color: accept ? const Color(0xFF388E3C) : const Color(0xFFF57C00))),
+          ),
+        ]),
+        if (especes.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Wrap(spacing: 6, runSpacing: 4, children: especes.take(4).map((e) =>
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(color: categoryColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+              child: Text(e, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: categoryColor, fontWeight: FontWeight.w600)),
+            )).toList()),
+        ],
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: categoryColor, padding: const EdgeInsets.symmetric(vertical: 14)),
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => ServiceDetailPage(
+                  proUid: pro['uid'] ?? '',
+                  categoryLabel: categoryLabel,
+                  categoryColor: categoryColor,
+                ),
+              ));
+            },
+            child: const Text('Voir le profil', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+          ),
+        ),
+      ]),
     );
   }
 }

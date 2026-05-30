@@ -71,8 +71,9 @@
 
 | # | Tâche | Priorité | App / Web | Fichiers de départ |
 |---|---|---|---|---|
-| S13 | **Admin — gestion profils pro** : liste des profils professionnels dans le panel admin (filtre cat_pro, statut is_pro), possibilité de valider/refuser/suspendre un profil pro, édition manuelle des champs (rayon, espèces, certifications). App + Web avec même niveau de fonctionnalité que la vue admin éleveurs existante. | Haute | App + Web | `admin_panel.dart`, `user_detail.dart`, `src/app/admin/` |
-| S14 | **Vue admin web (site)** : reflet de la vue admin appli mobile — liste utilisateurs + filtres (éleveur/particulier/pro/admin), fiche détail, validation profil pro, suppression compte. Même fonctionnalités que l'admin app. | Haute | Web | `src/app/admin/page.tsx` (à créer) |
+| ~~S13~~ | ~~**Admin — gestion profils pro**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
+| ~~S14~~ | ~~**Vue admin web (site)**~~ | ~~Haute~~ | ~~Web~~ | ✅ Terminé 2026-05-30 |
+| ~~S15~~ | ~~**Annuaire vétérinaires & comportementalistes — carte**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
 | S15 | **Annuaire vétérinaires & comportementalistes — carte** : carte Leaflet avec marqueurs code couleur par type (véto = bleu, comportementaliste = violet…), filtres espèce/distance/notation, fiche détail. Même logique visuelle que la carte éleveurs. | Haute | App + Web | `service_list_page.dart`, `src/app/services/` |
 | S16 | **Pet sitter & promeneurs — zone de travail** : le pro définit sa zone géographique d'intervention (polygone ou rayon) sur une carte, visible dans son profil. Filtrage des résultats par zone dans l'annuaire. Table Supabase `zones_intervention`. | Haute | App + Web | `pro_profile_edit.dart`, `src/app/profil/` |
 
@@ -117,6 +118,9 @@
 | S12 — Groupes : liste tous/mes groupes, rejoindre/quitter, création, rôle admin | 2026-05-29 | App | `groupes_page.dart` |
 | S07 — Registre pension : entrée/sortie animaux en pension (3 onglets, ajout via bottom sheet, marquer sorti) | 2026-05-29 | App | `registre_pension_page.dart`, `eleveur_nav.dart` |
 | S08 — Animal Friendly : liste lieux Supabase + carte Google Maps + ajout lieu (app) + page web | 2026-05-29 | App + Web | `friendly_map_page.dart`, `website/src/app/animal-friendly/page.tsx`, `services/page.tsx` |
+| S13 — Admin gestion profils pro : onglet Pros dans l'admin app (liste Firestore+Supabase, filtre cat_pro, valider/refuser/suspendre, éditer rayon/espèces) + page admin web | 2026-05-30 | App + Web | `pro_list.dart`, `pro_detail.dart`, `admin_panel.dart`, `src/app/admin/page.tsx` |
+| S14 — Vue admin web : liste utilisateurs + filtres + fiche détail + validation pro + suppression | 2026-05-30 | Web | `src/app/admin/page.tsx` |
+| S15 — Annuaire pros carte : toggle Liste/Carte dans ServiceListPage (Google Maps, marqueurs colorés par cat_pro, bottom sheet tap) + page web /services/carte (Leaflet, filtres cat+espèce+search, légende) | 2026-05-30 | App + Web | `service_list_page.dart`, `ServicesMap.tsx`, `services/carte/page.tsx`, `services/page.tsx` |
 
 ---
 
