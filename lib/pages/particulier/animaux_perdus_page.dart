@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' show pi, sin, cos, sqrt, atan2;
 import 'package:PetsMatch/pages/chatScreen.dart';
@@ -14,6 +15,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:google_maps_webservice/places.dart';
+import 'package:PetsMatch/main.dart';
 
 // ── Species colors ────────────────────────────────────────────────────────────
 
@@ -93,6 +96,12 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
   final _raceCtrl = TextEditingController();
   final _lieuCtrl = TextEditingController();
 
+  // Google Places pour le filtre lieu
+  late final GoogleMapsPlaces _places;
+  Timer? _locDebounce;
+  List<Prediction> _locPredictions = [];
+  bool _loadingLoc = false;
+
   static const _especes = [
     'tous', 'chien', 'chat', 'lapin', 'oiseau', 'nac',
     'cheval', 'ovin', 'caprin', 'porcin', 'autre'
@@ -166,11 +175,17 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _places = GoogleMapsPlaces(apiKey: getApiKey());
     _load();
     _loadDefaultVille();
     _fetchUserPosition();
+    // Délai pour laisser le onTap des suggestions se déclencher avant de les masquer
     _raceFocusNode.addListener(() {
-      if (!_raceFocusNode.hasFocus) setState(() => _showRaceSugg = false);
+      if (!_raceFocusNode.hasFocus) {
+        Future.delayed(const Duration(milliseconds: 200), () {
+          if (mounted) setState(() => _showRaceSugg = false);
+        });
+      }
     });
   }
 
@@ -181,6 +196,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     _raceFocusNode.dispose();
     _raceCtrl.dispose();
     _lieuCtrl.dispose();
+    _locDebounce?.cancel();
     super.dispose();
   }
 
@@ -255,6 +271,54 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
       _raceSuggestions = matches;
       _showRaceSugg = matches.isNotEmpty;
     });
+  }
+
+  // ── Location autocomplete ─────────────────────────────────────────────────
+
+  void _onLocChanged(String val) {
+    _locDebounce?.cancel();
+    setState(() { _searchLieu = val; _locPredictions = []; });
+    if (val.trim().length < 3) return;
+    setState(() => _loadingLoc = true);
+    _locDebounce = Timer(const Duration(milliseconds: 450), () => _fetchLocPredictions(val));
+  }
+
+  Future<void> _fetchLocPredictions(String input) async {
+    try {
+      final res = await _places.autocomplete(
+        input,
+        components: [
+          Component(Component.country, 'fr'), Component(Component.country, 'be'),
+          Component(Component.country, 'ch'), Component(Component.country, 'lu'),
+        ],
+        language: 'fr',
+      );
+      if (!mounted) return;
+      setState(() { _locPredictions = res.isOkay ? res.predictions : []; _loadingLoc = false; });
+    } catch (_) {
+      if (mounted) setState(() { _locPredictions = []; _loadingLoc = false; });
+    }
+  }
+
+  Future<void> _selectLocPrediction(Prediction p) async {
+    setState(() { _locPredictions = []; _lieuCtrl.text = p.description ?? ''; _searchLieu = p.description ?? ''; });
+    if (p.placeId == null) return;
+    try {
+      final det = await _places.getDetailsByPlaceId(p.placeId!, language: 'fr');
+      if (!mounted || !det.isOkay) return;
+      String ville = '', region = '', pays = '';
+      for (final c in det.result.addressComponents) {
+        if (c.types.contains('locality'))                        ville  = c.longName;
+        else if (c.types.contains('administrative_area_level_2') && ville.isEmpty) ville = c.longName;
+        if (c.types.contains('administrative_area_level_1'))     region = c.longName;
+        if (c.types.contains('country'))                         pays   = c.longName;
+      }
+      setState(() {
+        if (ville.isNotEmpty) { _lieuCtrl.text = ville; _searchLieu = ville; }
+        if (pays.isNotEmpty)   _filterPays   = pays;
+        if (region.isNotEmpty) _filterRegion = region;
+      });
+    } catch (_) {}
   }
 
   String? get _currentUid => FirebaseAuth.instance.currentUser?.uid;
@@ -700,35 +764,71 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
               onTap: () => setState(() => _filterType = 'tous')),
         ]),
         const SizedBox(height: 8),
-        // Lieu search
-        SizedBox(
-          height: 38,
-          child: TextField(
-            controller: _lieuCtrl,
-            onChanged: (v) => setState(() => _searchLieu = v),
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
-            decoration: InputDecoration(
-              hintText: 'Ville ou lieu…',
-              hintStyle: const TextStyle(
-                  fontFamily: 'Galey', fontSize: 13, color: Colors.grey),
-              prefixIcon:
-                  const Icon(Icons.location_on_outlined, size: 18, color: Colors.grey),
-              contentPadding:
-                  const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: BorderSide(color: Colors.grey.shade300)),
-              enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: BorderSide(color: Colors.grey.shade300)),
-              focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: BorderSide(color: _accentColor)),
-              filled: true,
-              fillColor: const Color(0xFFF8F8F8),
+        // Lieu search avec Google Places
+        Stack(clipBehavior: Clip.none, children: [
+          SizedBox(
+            height: 38,
+            child: TextField(
+              controller: _lieuCtrl,
+              onChanged: _onLocChanged,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Ville, région ou lieu…',
+                hintStyle: const TextStyle(
+                    fontFamily: 'Galey', fontSize: 13, color: Colors.grey),
+                prefixIcon: const Icon(Icons.location_on_outlined, size: 18, color: Colors.grey),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide(color: Colors.grey.shade300)),
+                enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide(color: Colors.grey.shade300)),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide(color: _accentColor)),
+                filled: true,
+                fillColor: const Color(0xFFF8F8F8),
+                suffixIcon: _loadingLoc
+                    ? const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: SizedBox(width: 18, height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2)))
+                    : _searchLieu.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 16),
+                            onPressed: () => setState(() {
+                              _lieuCtrl.clear();
+                              _searchLieu = '';
+                              _filterRegion = '';
+                              _filterPays = '';
+                              _locPredictions = [];
+                            }))
+                        : null,
+              ),
             ),
           ),
-        ),
+          if (_locPredictions.isNotEmpty)
+            Positioned(
+              top: 42,
+              left: 0,
+              right: 0,
+              child: Material(
+                elevation: 6,
+                borderRadius: BorderRadius.circular(12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _locPredictions.take(5).map((p) => ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.location_on_outlined, size: 16, color: Colors.grey),
+                    title: Text(p.description ?? '',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                    onTap: () => _selectLocPrediction(p),
+                  )).toList(),
+                ),
+              ),
+            ),
+        ]),
         const SizedBox(height: 8),
         // Espece chips
         SizedBox(

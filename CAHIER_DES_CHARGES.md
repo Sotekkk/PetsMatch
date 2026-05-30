@@ -21,6 +21,7 @@
 | ✅ | Tables Supabase : users, animaux, annonces, likes, favoris, notifications, registres, contrats, factures |
 | 🔶 | Migration Firestore → Supabase : feed social (`post`), utilisateurs bloqués (`bloquer`) |
 | 🔶 | Messagerie : conversations Firestore — à migrer ou adapter (temps réel) |
+| ⬜ | CAPTCHA anti-robot sur les formulaires de connexion et d'inscription |
 | ⬜ | - [ ] |
 
 ---
@@ -34,6 +35,7 @@
 | ✅ | Mot de passe oublié |
 | ✅ | Vérification email |
 | ✅ | Apple Sign In `[App]` |
+| ⬜ | Connexion avec Google (OAuth) |
 | ✅ | Choix du type de profil (Particulier / Éleveur / Pro) |
 | ✅ | Formulaire inscription multi-étapes (nom, adresse, téléphone, date naissance) |
 | ✅ | Géolocalisation adresse → lat/lng sauvegardés |
@@ -45,7 +47,7 @@
 
 | Statut | Fonctionnalité |
 |---|---|
-| ✅ | Profil particulier (nom, prénom, adresse, téléphone, photo) |
+| ✅ | Profil particulier (nom, prénom, adresse, téléphone, photo) — pas de validation manuelle requise |
 | ✅ | Profil éleveur (nom élevage, SIRET, ACACED, adresse élevage, description, photo) |
 | ✅ | Profil pro (profession, SIRET, TVA) |
 | ✅ | Mise à jour lat/lng sur changement d'adresse (Firestore + Supabase) |
@@ -68,6 +70,9 @@
 | ✅ | Double confirmation avant suppression (dialog + saisir "SUPPRIMER") |
 | ✅ | Liste demandes de vérification éleveurs |
 | ✅ | Valider / Rejeter une demande de vérification éleveur |
+| ⬜ | Tableau de bord admin — statistiques : nombre d'annonces en ligne, nombre d'animaux par espèce |
+| ⬜ | Validation automatique profils éleveur/pro (algorithme) — si suspect, soumis à révision admin |
+| ⬜ | Validation automatique annonces éleveur (algorithme) — si suspect, soumis à révision admin |
 | ⬜ | - [ ] |
 
 ---
@@ -81,6 +86,9 @@
 | ✅ | Liste animaux avec photo, nom, espèce, race, statut |
 | ✅ | Filtres par espèce |
 | ✅ | Sélection race depuis fichiers breeds JSON |
+| ✅ | Barre de recherche par nom ou numéro de puce |
+| ⬜ | Vue "Reproducteurs" — filtrer uniquement les animaux reproducteurs |
+| ⬜ | Vue "Bébés" — regroupement par portée ou par mois/année de naissance |
 | ⬜ | - [ ] |
 
 ### 4.2 Fiche animal
@@ -99,8 +107,10 @@
 | ✅ | Carnet de santé (vaccins, antiparasitaires, vermifuges, actes vétérinaires) |
 | ✅ | Upload documents (ADN, santé repro, filiation, hanches, autre) |
 | ✅ | Catégories documents avec icônes |
-| ⬜ | Onglet suivi repro (chaleurs, saillie, gestation) |
-| ⬜ | Courbe de poids (croissance + adulte) |
+| ✅ | Onglet suivi repro (chaleurs, saillie, gestation, gestation confirmée) |
+| ✅ | Onglet alimentation — calcul ration journalière selon poids/objectif (croquettes marque/produit, BARF, ration ménagère) `[V1]` |
+| ⬜ | Courbe de poids adulte |
+| ⬜ | Courbe de poids chiot / juvénile (croissance) |
 | ⬜ | Transfert de propriété (vente → email acheteur) |
 | ⬜ | - [ ] |
 
@@ -132,13 +142,13 @@
 
 | Statut | Fonctionnalité |
 |---|---|
-| ⬜ | Saisie chaleurs (date début, date fin) sur fiche femelle |
-| ⬜ | Saisie saillie (sélection mâle de l'élevage ou saillie extérieure) |
-| ⬜ | Saillie → gestation débutée automatique avec date de mise bas prévue calculée |
-| ⬜ | Champ "Gestation confirmée" (oui/non/en attente) |
+| ✅ | Saisie chaleurs (date début, date fin) sur fiche femelle |
+| ✅ | Saisie saillie (sélection mâle de l'élevage ou saillie extérieure) |
+| ✅ | Saillie → gestation débutée automatique avec date de mise bas prévue calculée |
+| ✅ | Champ "Gestation confirmée" (oui/non/en attente) |
+| ✅ | Gestation → visible et modifiable sur la fiche femelle |
 | ⬜ | Alerte push rappel de confirmation de gestation (délai selon espèce) |
 | ⬜ | Saillie extérieure : l'éleveur du mâle peut partager accès aux infos (photo, nom, puce, race) |
-| ⬜ | Gestation → visible et modifiable sur la fiche femelle |
 
 ---
 
@@ -148,7 +158,7 @@
 |---|---|
 | ✅ | Saisie actes sanitaires (date, type, animal, commentaire) |
 | ✅ | Liste chronologique |
-| ⬜ | Import Excel `[Web]` |
+| ✅ | Import Excel `[Web]` |
 | ⬜ | - [ ] |
 
 ---
@@ -163,7 +173,7 @@
 | ✅ | Auto-fill depuis portée (provenance nom + adresse élevage) |
 | ✅ | Auto-fill infos éleveur pour toute nouvelle entrée (provenance = élevage par défaut) |
 | ✅ | Auto-fill infos mère depuis fiche animal si mère = animal de l'élevage |
-| ⬜ | Import Excel `[Web]` |
+| ✅ | Import Excel `[Web]` |
 | ⬜ | - [ ] |
 
 ---
@@ -172,7 +182,7 @@
 
 | Statut | Fonctionnalité |
 |---|---|
-| ⬜ | Barre de recherche (loupe) dans la liste animaux éleveur — filtrer par nom ou numéro de puce |
+| ✅ | Barre de recherche (loupe) dans la liste animaux éleveur — filtrer par nom ou numéro de puce |
 
 ---
 
@@ -186,13 +196,14 @@
 | ✅ | Détail annonce |
 | ✅ | Modification annonce |
 | ✅ | Mes annonces |
-| 🔶 | Fix onglet annonces profil éleveur (mauvaises annonces affichées) |
-| ⬜ | Photo annonce : carrée à la création ✅ — format rectangle adapté + zoom centré sur l'animal dans le feed (sans rogner) |
+| ✅ | Fix onglet annonces profil éleveur |
+| ✅ | Photos annonces au format carré — format conservé |
 | ✅ | Clic long sur annonce dans "mes dernières annonces" (accueil éleveur) → menu Supprimer avec confirmation |
 | ⬜ | Likes sur annonce / sur bébé de portée |
 | ⬜ | Notification éleveur lors d'un like |
 | ⬜ | Favoris : voir les annonces likées |
-| ⬜ | Visuel liste style "match" (photo bébé premier plan) `[Web]` |
+| ✅ | Visuel liste style "match" (photo bébé premier plan) |
+| ⬜ | Carte annonces compagnons — filtres espèce, race, région, ville, pays, département |
 | ⬜ | Champ description père/mère visible (particulier) |
 | ⬜ | Identification mère obligatoire selon espèce |
 | ⬜ | - [ ] |
@@ -216,25 +227,23 @@
 
 | Statut | Fonctionnalité |
 |---|---|
-| ⬜ | Page d'accueil : clic sur alerte animal perdu → ouvrir directement la gestion de l'alerte |
-| ⬜ | Page d'accueil : clic long sur alerte → menu "Supprimer l'alerte" / "Animal retrouvé" (avec confirmation) |
-| 🔶 | Formulaire déclarer animal perdu (champs de base) |
-| ⬜ | Champ Nom : chercher dans mes animaux OU saisie manuelle |
-| ⬜ | Race depuis fichiers breeds JSON |
-| ⬜ | Date dernière localisation (≠ date disparition) |
-| ⬜ | Contact : email ou téléphone |
-| ⬜ | Champs obligatoires validés (nom, espèce, race, sexe, date, localisation, contact) |
-| ⬜ | Depuis fiche animal → contact urgence pré-rempli |
-| 🔶 | Liste animaux perdus |
-| ⬜ | Filtres liste (espèce, race, pays, ville, région) |
+| ✅ | Page d'accueil : clic sur alerte animal perdu → ouvrir directement la gestion de l'alerte |
+| ✅ | Page d'accueil : clic long sur alerte → menu "Animal retrouvé" / "Supprimer" (avec confirmation) |
+| ✅ | Formulaire déclarer animal perdu complet (nom depuis mes animaux, race JSON, localisation, pays/région, récompense, contact) |
+| ✅ | Formulaire "Déclarer un animal trouvé" complet (espèce/race, état de santé, comportement, multi-photos, contacts) |
+| ✅ | Liste animaux perdus + filtres (espèce, race, ville) |
+| ✅ | Vue détail alerte |
+| ✅ | Carte animaux perdus/trouvés — onglet Perdu/Trouvé + code couleur + filtres synchronisés |
+| ✅ | Bouton "J'ai trouvé un animal" dans le menu principal (app + web) |
+| ⬜ | Suggestion "Alerte animale" lors de doublon déclaration perdu/trouvé — affichage tableau de bord |
 | ⬜ | Affichage par défaut = région de l'utilisateur |
-| ⬜ | Vue détail lisible |
 | ⬜ | Contact via messagerie (objet auto = nom, espèce, race, sexe, réf) |
-| 🔶 | Vue carte |
-| ⬜ | Carte synchronisée avec filtres liste |
-| ⬜ | Code couleur par espèce sur la carte |
-| ⬜ | Notifications alertes (icône cloche, badge rouge) |
-| ⬜ | Fix notifications iOS (alertes non reçues) `[App]` |
+| ⬜ | Saisie manuelle numéro de puce → recherche alertes perdus + animaux trouvés |
+| ⬜ | Notifications de proximité (< 10 km d'une alerte active) |
+| ⬜ | Matching automatique perdu ↔ trouvé (score pondéré ≥ 90% → notification) |
+| ⬜ | Lecteur puce Bluetooth |
+| ⬜ | Workflow statuts animaux trouvés (Trouvé → Pris en charge → Restitué → Clôturé) |
+| 🔶 | Notifications alertes (icône cloche, badge) — fix iOS en cours |
 | ⬜ | - [ ] |
 
 ---
@@ -243,10 +252,10 @@
 
 | Statut | Fonctionnalité |
 |---|---|
-| 🔶 | Messagerie temps réel (base Firestore) |
-| ⬜ | Onglet "Messages" dans le menu principal (app + web) |
-| ⬜ | Redesign liste conversations (cohérence web/app) |
-| ⬜ | Types de conversations : Annonce / Animal perdu / Contact élevage / Discussion libre / Service pro |
+| ✅ | Messagerie temps réel (base Firestore) |
+| ✅ | Onglet "Messages" dans le menu principal (app + web) |
+| ✅ | Redesign liste conversations (cohérence web/app) |
+| ✅ | Types de conversations : Annonce / Animal perdu / Contact élevage / Discussion libre / Service pro |
 | ⬜ | Appui long : Épingler / Archiver / Sourdine / Bloquer / Supprimer |
 | ⬜ | - [ ] |
 
@@ -279,8 +288,8 @@
 |---|---|
 | ✅ | Notifications push Firebase Messaging |
 | ✅ | Notifications locales |
+| ✅ | Notification like sur annonce |
 | ⬜ | Rappels vaccins / antiparasitaires (J-7, J-1, J) |
-| ⬜ | Notification like sur annonce |
 | ⬜ | Fix notifications iOS animaux perdus |
 | ⬜ | - [ ] |
 
@@ -297,13 +306,79 @@
 
 ---
 
-## 14. Services pro / Vétérinaires
+## 14. Pôle Santé
+
+> Vétérinaires et professionnels de santé animale regroupés dans un pôle dédié.
 
 | Statut | Fonctionnalité |
 |---|---|
-| ✅ | Page services |
-| ✅ | Annuaire vétérinaires |
+| ✅ | Page Pôle Santé (accès depuis Services) |
+| ✅ | Annuaire vétérinaires — liste + fiche détail + prise de RDV |
+| ⬜ | Annuaire vétérinaires — vue carte (marqueurs code couleur, filtres espèce/distance) |
+| ⬜ | Annuaire ostéopathes & kinésithérapeutes — liste + carte + RDV |
+| ⬜ | Annuaire naturopathes & médecines douces (chiropracteurs, acupuncteurs…) — liste + carte + RDV |
+| ⬜ | Assurances animaux — annuaire / comparateur de contrats |
 | ⬜ | - [ ] |
+
+---
+
+## 14b. Marketplace
+
+> Remplace la section "Produits". Espace commercial et partenaires.
+
+| Statut | Fonctionnalité |
+|---|---|
+| ⬜ | Petfood — catalogue marques/produits |
+| ⬜ | Accessoires — liste produits |
+| ⬜ | Créateurs — annuaire artisans/créateurs pour animaux |
+| ⬜ | Bons plans — espace publicitaire / partenariats / promotions |
+| ⬜ | - [ ] |
+
+---
+
+## 14c. Éducation & Garde
+
+| Statut | Fonctionnalité |
+|---|---|
+| ✅ | Éducateurs canins — liste + fiche + RDV |
+| ✅ | Comportementalistes — liste + fiche + RDV |
+| ✅ | Pet sitters — liste + fiche + RDV |
+| ✅ | Promeneurs — liste + fiche + RDV |
+| ✅ | Pensions — liste + fiche |
+| ✅ | Registre pension (entrée/sortie animaux en pension) |
+| ⬜ | Zone de travail géographique pet sitter & promeneurs (polygone ou rayon sur carte) |
+| ⬜ | - [ ] |
+
+---
+
+## 14d. Communauté
+
+> Fusion de l'ancienne section "Communauté" et "Animal Friendly". Animal Friendly est supprimé en tant que section séparée.
+
+| Statut | Fonctionnalité |
+|---|---|
+| ✅ | Forum — catégories → sujets → réponses + création sujet |
+| ✅ | Groupes — liste / rejoindre / quitter / créer / rôle admin |
+| ✅ | Balades collectives — liste + niveau badge + rejoindre + créer |
+| ✅ | Événements — liste + filtres type + inscription "Je participe" + création |
+| ⬜ | Adoption association — annuaire associations + animaux à adopter |
+| ⬜ | - [ ] |
+
+---
+
+## 14e. Sorties & Voyages
+
+> Remplace "Animal Friendly". Lieux et séjours accueillant les animaux.
+
+| Statut | Fonctionnalité |
+|---|---|
+| ⬜ | Parcs — liste + carte des parcs acceptant les animaux |
+| ⬜ | Restaurants — liste + carte des restaurants pet-friendly |
+| ⬜ | Séjours — hôtels / campings / locations saisonnières / Airbnb acceptant les animaux |
+| ⬜ | Filtres par type d'hébergement, espèce acceptée, région |
+| ⬜ | - [ ] |
+
+> **Note UI** : Uniformiser la taille de police et l'alignement des titres de catégories sur la page Services.
 
 ---
 

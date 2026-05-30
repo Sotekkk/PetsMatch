@@ -16,25 +16,33 @@
 
 ## À faire — Backlog
 
-### Tâches Angélique — Profil éleveur, particulier & Admin
+### Tâches Angélique — Infrastructure, Profil, Admin
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
+| A01b | CAPTCHA anti-robot sur les formulaires de connexion et d'inscription | Haute | App + Web | `login_page.dart`, `inscription/page.tsx` |
+| A01c | Connexion avec Google (OAuth) | Haute | App + Web | `login_page.dart`, `inscription/page.tsx` |
 | A09 | Suivi repro — saillie extérieure : accès infos mâle (photo, nom, puce, race) depuis éleveur externe | Moyenne | App + Web | À créer `suivi_repro.dart` + table `saillie_acces` |
-| A12 | Admin — algorithme de validation automatique profils éleveurs (détection spam, cohérence données) | Haute | App + Web | `admin_panel.dart`, `verification_detail.dart` |
-| A13 | Admin — algorithme modération annonces (filtre contenu, cohérence espèce/race/prix) | Haute | App + Web | Panel admin |
-| A14 | Vue fiche animal pour particuliers — identique à la vue carte profil éleveur | Haute | App + Web | À créer dans profil particulier |
+| A12 | Admin — validation automatique profils éleveur/pro : algorithme (SIRET, cohérence, doublons) + envoi à l'admin si suspect | Haute | App + Web | `admin_panel.dart`, `verification_detail.dart` |
+| A13 | Admin — validation automatique annonces : algorithme (cohérence espèce/race/prix, contenu signalé) + envoi à l'admin si suspect | Haute | App + Web | Panel admin |
+| A14 | Vue fiche animal pour particuliers — identique à la vue profil éleveur | Haute | App + Web | À créer dans profil particulier |
 | A15 | Profil particulier — revoir mise en page (app) | Moyenne | App | `particulier_home.dart`, `info_utilisateur.dart` |
 | A16 | Vue admin dans l'appli web | Haute | Web | `src/app/admin/` à créer |
-| A18 | Espèce âne — ajouter partout (listes espèces, filtres, formulaires) + créer `donkey_breeds.json` | Haute | App + Web | Tous les sélecteurs d'espèce + assets |
-| A19 | Feed — filtre race dynamique selon espèce (liste JSON par espèce) | Haute | App + Web | `annonces_feed_page.dart`, `annonces/feed/page.tsx` |
+| A16b | Panel admin — tableau de bord stats : nombre d'annonces en ligne, nombre d'animaux par espèce | Haute | App + Web | `admin_panel.dart`, `src/app/admin/page.tsx` |
+| ~~A18~~ | ~~Espèce âne — ajouter partout (listes espèces, filtres, formulaires) + créer `donkey_breeds.json`~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
+| ~~A19~~ | ~~Feed — filtre race dynamique selon espèce (liste JSON par espèce)~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
 | A20 | Carte annonces compagnons — filtres par espèce, race, région, ville, pays, département | Haute | App | `annonces_map_page.dart` |
-| A21 | Sécurité avant mise en prod — RLS Supabase propres (remplacer Firebase Auth UID par JWT custom ou service role), politique de confidentialité, CGU, suppression compte RGPD | Haute | App + Web + Supabase | Toutes tables Supabase |
+| A21 | Sécurité avant mise en prod — RLS Supabase propres, politique de confidentialité, CGU, suppression compte RGPD | Haute | App + Web + Supabase | Toutes tables Supabase |
+| A22 | Mes animaux — Vue "Reproducteurs" (filtre animaux reproducteurs) | Moyenne | App + Web | `mes_animaux.dart`, `mes-animaux/page.tsx` |
+| A23 | Mes animaux — Vue "Bébés" (regroupement par portée ou mois/année de naissance) | Moyenne | App + Web | `mes_animaux.dart`, `mes-animaux/page.tsx` |
+| A24 | Fiche animal — courbe de poids adulte | Moyenne | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
+| A25 | Fiche animal — courbe de poids chiot/juvénile (courbe de croissance) | Moyenne | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
 
 ### Animaux perdus / trouvés — Spec complète : `SPEC_ANIMAUX_PERDUS_TROUVES.md`
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
+| PT00 | **[V1]** "Alerte animale" — widget tableau de bord suggérant alerte lors de doublon déclaration perdu/trouvé | Haute | App + Web | `particulier_home.dart`, `eleveur_home.dart`, `ParticulierDashboard.tsx` |
 | ~~PT01~~ | ~~**[V1]** Vérifier complétude formulaire "Animal perdu"~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-29 |
 | ~~PT02~~ | ~~**[V1]** Déclarer animal trouvé — formulaire complet~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-29 |
 | ~~PT03~~ | ~~**[V1]** Table Supabase `animaux_trouves`~~ | ~~Haute~~ | ~~Supabase~~ | ✅ Terminé 2026-05-29 |
@@ -54,8 +62,8 @@
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
-| AL01 | **[V1]** Gestion alimentation — calcul ration journalière selon poids actuel + objectif de poids + type (croquettes, BARF, ration ménagère). Pour croquettes : saisie marque/référence + % protéines. Pour ration ménagère : calcul grammes par ingrédient + suggestions de recettes. Afficher ration dans fiche animal. | Haute | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
-| AL02 | **[V2]** Recettes ration ménagère — bibliothèque de recettes par espèce (chien, chat) avec ingrédients + quantités auto-adaptées au poids animal | Moyenne | App + Web | Créer `lib/pages/alimentation/` + `src/app/alimentation/` |
+| ~~AL01~~ | ~~**[V1]** Onglet alimentation — calcul ration journalière (croquettes marque/produit, BARF, ration ménagère) + objectif de poids~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
+| AL02 | **[V2]** Recettes ration ménagère — bibliothèque par espèce (chien, chat) avec ingrédients + quantités auto-adaptées au poids | Moyenne | App + Web | Créer `lib/pages/alimentation/` + `src/app/alimentation/` |
 
 ### App mobile + Web (synchronisés)
 
@@ -67,26 +75,37 @@
 | T09 | Transfert de propriété animal (vente → email acheteur) | Haute | App + Web | Roadmap §III.A.c |
 | T10 | Annonces — likes sur portée/bébé + notification éleveur + favoris | Haute | Web d'abord | Roadmap §VI |
 
-### Services & Communauté — **Nabil** (suite)
+### Services — restructuration & nouvelles sections — **Nabil**
+
+> **Nouvelle architecture Services** :
+> Pôle Santé / Marketplace / Éducation & Garde / Communauté / Sorties & Voyages
+> Animal Friendly est supprimé et absorbé dans Communauté + Sorties & Voyages.
 
 | # | Tâche | Priorité | App / Web | Fichiers de départ |
 |---|---|---|---|---|
-| ~~S13~~ | ~~**Admin — gestion profils pro**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
-| ~~S14~~ | ~~**Vue admin web (site)**~~ | ~~Haute~~ | ~~Web~~ | ✅ Terminé 2026-05-30 |
-| ~~S15~~ | ~~**Annuaire vétérinaires & comportementalistes — carte**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
-| ~~S16~~ | ~~**Pet sitter & promeneurs — zone de travail**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
+| S13 | **Admin — gestion profils pro** : liste dans le panel admin, valider/refuser/suspendre, édition manuelle | Haute | App + Web | `admin_panel.dart`, `user_detail.dart`, `src/app/admin/` |
+| S14 | **Vue admin web** : reflet admin mobile (utilisateurs, filtres, fiche, validation pro, suppression) | Haute | Web | `src/app/admin/page.tsx` (à créer) |
+| S15 | **Pôle Santé — vétérinaires carte** : marqueurs code couleur, filtres espèce/distance, fiche détail | Haute | App + Web | `service_list_page.dart`, `src/app/services/` |
+| S15b | **Pôle Santé — ostéopathes & kinés** : liste + carte + RDV | Moyenne | App + Web | `service_list_page.dart` |
+| S15c | **Pôle Santé — naturopathes & médecines douces** (chiro, acupuncture…) : liste + carte + RDV | Moyenne | App + Web | `service_list_page.dart` |
+| S15d | **Pôle Santé — assurances animaux** : annuaire / comparateur | Basse | App + Web | `service_list_page.dart` |
+| S16 | **Pet sitter & promeneurs — zone de travail** : polygone ou rayon sur carte, filtrage annuaire par zone. Table `zones_intervention`. | Haute | App + Web | `pro_profile_edit.dart`, `src/app/profil/` |
+| S17 | **Marketplace — Petfood & Accessoires** : catalogue produits/marques, sous-catégories petfood / accessoires / créateurs / bons plans | Moyenne | App + Web | `src/app/services/marketplace/` à créer |
+| S18 | **Communauté — Adoption association** : annuaire associations + animaux à adopter | Moyenne | App + Web | `forum_page.dart`, `src/app/communaute/` |
+| S19 | **Sorties & Voyages** (remplace Animal Friendly) : parcs / restaurants / séjours (hôtels, campings, locations, Airbnb) acceptant les animaux — liste + carte + filtres | Haute | App + Web | Remplace `friendly_map_page.dart`, `animal-friendly/page.tsx` |
+| S20 | **UI Services** — uniformiser taille de police et alignement des titres de catégories sur la page principale Services | Haute | App + Web | `services_page.dart`, `src/app/services/page.tsx` |
 
 ### Agenda connecté — **Nabil** (tous les profils)
 > Agenda partagé éleveur + particulier, multi-usages (RDV pros, véto, alimentation, médicaments, alerte mise-bas, visites adoption)
 
 | # | Tâche | Priorité | App / Web | Notes |
 |---|---|---|---|---|
-| ~~AG01~~ | ~~**Agenda éleveur & particulier — structure de base**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
-| ~~AG02~~ | ~~**RDV pro → agenda automatique**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
-| ~~AG03~~ | ~~**Notifications rappel RDV**~~ | ~~Haute~~ | ~~Firebase Functions + App~~ | ✅ Terminé 2026-05-30 |
-| ~~AG04~~ | ~~**Alerte mise-bas**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
-| ~~AG05~~ | ~~**Visite adoption éleveur ↔ particulier**~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
-| ~~AG06~~ | ~~**Rappels médicaments & alimentation**~~ | ~~Moyenne~~ | ~~App~~ | ✅ Terminé 2026-05-30 |
+| AG01 | **Agenda éleveur & particulier — structure de base** : créer les pages agenda (`lib/pages/agenda/agenda_page.dart`, `src/app/agenda/page.tsx`), table Supabase `agenda_events` (uid, titre, date_debut, date_fin, type, animal_id, notes, couleur), vue mensuelle + vue liste | Haute | App + Web | Base commune pour AG02–AG06 |
+| AG02 | **RDV pro → agenda automatique** : quand un RDV pro (véto, comportementaliste, pet sitter…) est confirmé (statut = `confirme`), créer automatiquement un événement dans `agenda_events` pour l'utilisateur (éleveur ou particulier). Visible par les deux parties. Lien bidirectionnel : RDV annulé → événement supprimé. | Haute | App + Web | `pro_agenda.dart`, `rdv_booking_page.dart` |
+| AG03 | **Notifications rappel RDV** : Firebase Cloud Function `sendRdvReminder` (même technique que `sendLikeNotification` — Admin SDK + FCM token dans Firestore) : déclencher 24h avant et 1h avant chaque RDV. Stocker `reminder_24h_sent` et `reminder_1h_sent` dans l'événement pour éviter doublons. | Haute | Firebase Functions + App | `functions/alertes.js` (ou nouveau `functions/agenda.js`) |
+| AG04 | **Alerte mise-bas** : dans la fiche animal (gestation confirmée), créer automatiquement un événement agenda `type = mise_bas` à la date de mise-bas prévue. Notification J-7 et J-1. | Haute | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
+| AG05 | **Visite adoption éleveur ↔ particulier** : à partir de la messagerie (annonce compagnon), proposer de planifier une visite. Créer RDV dans agenda des deux parties avec lien vers l'annonce + le profil de l'autre. | Moyenne | App + Web | Messagerie + agenda |
+| AG06 | **Rappels médicaments & alimentation** : ajouter des événements récurrents dans l'agenda depuis la fiche animal (antiparasitaire, vaccin, pesée, ration spéciale). Notification push à l'heure programmée. | Moyenne | App | `animal_fiche.dart` |
 
 ### Conseils pratiques — **Angélique**
 
@@ -117,9 +136,6 @@
 | S12 — Groupes : liste tous/mes groupes, rejoindre/quitter, création, rôle admin | 2026-05-29 | App | `groupes_page.dart` |
 | S07 — Registre pension : entrée/sortie animaux en pension (3 onglets, ajout via bottom sheet, marquer sorti) | 2026-05-29 | App | `registre_pension_page.dart`, `eleveur_nav.dart` |
 | S08 — Animal Friendly : liste lieux Supabase + carte Google Maps + ajout lieu (app) + page web | 2026-05-29 | App + Web | `friendly_map_page.dart`, `website/src/app/animal-friendly/page.tsx`, `services/page.tsx` |
-| S13 — Admin gestion profils pro : onglet Pros dans l'admin app (liste Firestore+Supabase, filtre cat_pro, valider/refuser/suspendre, éditer rayon/espèces) + page admin web | 2026-05-30 | App + Web | `pro_list.dart`, `pro_detail.dart`, `admin_panel.dart`, `src/app/admin/page.tsx` |
-| S14 — Vue admin web : liste utilisateurs + filtres + fiche détail + validation pro + suppression | 2026-05-30 | Web | `src/app/admin/page.tsx` |
-| S15 — Annuaire pros carte : toggle Liste/Carte dans ServiceListPage (Google Maps, marqueurs colorés par cat_pro, bottom sheet tap) + page web /services/carte (Leaflet, filtres cat+espèce+search, légende) | 2026-05-30 | App + Web | `service_list_page.dart`, `ServicesMap.tsx`, `services/carte/page.tsx`, `services/page.tsx` |
 
 ---
 
@@ -127,6 +143,8 @@
 
 | Tâche | Date | Repo | Fichiers modifiés |
 |---|---|---|---|
+| A18 — Espèce âne ajoutée partout (sélecteurs, filtres feed, formulaires) + `donkey_breeds.json` créé | 2026-05-30 | App + Web | `annonces_feed_page.dart`, `mes_animaux.dart`, `annonces/feed/page.tsx` |
+| A19 — Feed filtres espèce + race : liste déroulante searchable (bottom sheet Flutter / dropdown web) | 2026-05-30 | App + Web | `annonces_feed_page.dart`, `annonces/feed/page.tsx` |
 | A10 — Feed immersif : layout full-screen, photo carrée BoxFit.contain + flou, header élevage, badge LOF/Non-LOF, description extensible, boutons d'action en colonne | 2026-05-28 | App + Web | `annonces_feed_page.dart`, `annonce_detail_page.dart`, `annonces/feed/page.tsx` |
 | T01 — Animaux perdus : formulaire complet (nom depuis mes animaux, race depuis JSON, localisation) | 2026-05-28 | App + Web | `alerte_perdu_form_page.dart`, `animaux-perdus/declarer/page.tsx` |
 | T02 — Animaux perdus : filtres liste (espèce, race, ville) + vue détail | 2026-05-28 | App + Web | `animaux_perdus_page.dart`, `animaux-perdus/page.tsx` |
