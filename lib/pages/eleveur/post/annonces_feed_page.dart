@@ -132,7 +132,8 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
   late String  _typeVente = widget.initialTypeFilter;
   late String? _race      = widget.initialRace;
   List<String> _races     = [];
-  final _raceCtrl = TextEditingController();
+  final _raceCtrl   = TextEditingController();
+  final _especeCtrl = TextEditingController();
 
   static const _especeToAsset = {
     'chien':   'assets/dog_breeds.json',
@@ -140,6 +141,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
     'lapin':   'assets/rabbit_breeds.json',
     'oiseau':  'assets/bird_breeds.json',
     'cheval':  'assets/horse_breeds.json',
+    'ane':     'assets/donkey_breeds.json',
     'ovin':    'assets/sheep_breeds.json',
     'caprin':  'assets/goat_breeds.json',
     'porcin':  'assets/pig_breeds.json',
@@ -162,6 +164,8 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
   void initState() {
     super.initState();
     if (_espece != 'tous') {
+      final label = _especeList.firstWhere((e) => e.$1 == _espece, orElse: () => ('', _espece, '')).$2;
+      _especeCtrl.text = label;
       WidgetsBinding.instance.addPostFrameCallback((_) => _loadRaces(_espece));
     }
     // Auto-démarrage si on vient d'une notification ou "Animaux similaires"
@@ -178,13 +182,18 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
   final _favoriCounts     = <String, int>{};
 
   static const _especeList = [
-    ('tous',    'Tous',    '🐾'),
-    ('chien',   'Chien',   '🐕'),
-    ('chat',    'Chat',    '🐈'),
-    ('lapin',   'Lapin',   '🐇'),
-    ('oiseau',  'Oiseau',  '🐦'),
-    ('reptile', 'Reptile', '🦎'),
-    ('autre',   'Autre',   '🐾'),
+    ('tous',    'Toutes espèces', '🐾'),
+    ('chien',   'Chien',     '🐕'),
+    ('chat',    'Chat',      '🐈'),
+    ('cheval',  'Cheval',    '🐴'),
+    ('ane',     'Âne',       '🫏'),
+    ('lapin',   'Lapin',     '🐇'),
+    ('oiseau',  'Oiseau',    '🦜'),
+    ('nac',     'NAC',       '🦎'),
+    ('ovin',    'Ovin',      '🐑'),
+    ('caprin',  'Caprin',    '🐐'),
+    ('porcin',  'Porcin',    '🐷'),
+    ('autre',   'Autre',     '🐾'),
   ];
 
   // ── Chargement ──────────────────────────────────────────────────────────────
@@ -444,7 +453,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
   // ── Build ────────────────────────────────────────────────────────────────────
 
   @override
-  void dispose() { _vertCtrl.dispose(); _raceCtrl.dispose(); super.dispose(); }
+  void dispose() { _vertCtrl.dispose(); _raceCtrl.dispose(); _especeCtrl.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) => _feedStarted ? _buildFeed() : _buildFilters();
@@ -466,32 +475,50 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
           const SizedBox(height: 24),
           const Text('Espèce', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
           const SizedBox(height: 10),
-          GridView.count(
-            crossAxisCount: 4, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 0.85,
-            children: _especeList.map((e) {
-              final sel = _espece == e.$1;
-              return GestureDetector(
-                onTap: () {
-                  setState(() { _espece = e.$1; _race = null; _races = []; });
-                  _loadRaces(e.$1);
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  decoration: BoxDecoration(
-                    color: sel ? const Color(0xFFE8F4F6) : Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: sel ? _teal : const Color(0xFFE5E7EB), width: 2),
-                  ),
-                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Text(e.$3, style: const TextStyle(fontSize: 24)),
-                    const SizedBox(height: 4),
-                    Text(e.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                        fontWeight: FontWeight.w600, color: sel ? _teal : const Color(0xFF6F767B))),
-                  ]),
-                ),
+          GestureDetector(
+            onTap: () async {
+              final selected = await showModalBottomSheet<String>(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.white,
+                shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                builder: (_) => _FeedSpeciesPicker(
+                    species: _especeList, current: _espece),
               );
-            }).toList(),
+              if (selected != null) {
+                setState(() { _espece = selected; _race = null; _races = []; _especeCtrl.text = _especeList.firstWhere((e) => e.$1 == selected).$2; });
+                _loadRaces(selected);
+              }
+            },
+            child: AbsorbPointer(
+              child: TextField(
+                controller: _especeCtrl,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Toutes les espèces',
+                  hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF9CA3AF)),
+                  prefixIcon: Center(
+                    widthFactor: 1,
+                    child: Text(
+                      _especeList.firstWhere((e) => e.$1 == _espece, orElse: () => ('', '', '🐾')).$3,
+                      style: const TextStyle(fontSize: 20),
+                    ),
+                  ),
+                  suffixIcon: const Icon(Icons.keyboard_arrow_down, size: 18, color: Color(0xFF0C5C6C)),
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                          color: _espece != 'tous' ? _teal : const Color(0xFFE5E7EB), width: 1.5)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF0C5C6C), width: 1.5)),
+                ),
+              ),
+            ),
           ),
           if (_races.isNotEmpty) ...[
             const SizedBox(height: 24),
@@ -712,8 +739,10 @@ class _FeedCardState extends State<_FeedCard> with SingleTickerProviderStateMixi
 
   String _especeLabel(String e) {
     const map = {
-      'chien': '🐕 Chien', 'chat': '🐈 Chat', 'lapin': '🐇 Lapin',
-      'oiseau': '🐦 Oiseau', 'reptile': '🦎 Reptile',
+      'chien': '🐕 Chien', 'chat': '🐈 Chat', 'cheval': '🐴 Cheval',
+      'ane': '🫏 Âne', 'lapin': '🐇 Lapin', 'oiseau': '🦜 Oiseau',
+      'nac': '🦎 NAC', 'ovin': '🐑 Ovin', 'caprin': '🐐 Caprin',
+      'porcin': '🐷 Porcin', 'autre': '🐾 Autre',
     };
     return map[e] ?? '🐾 ${e[0].toUpperCase()}${e.substring(1)}';
   }
@@ -1288,6 +1317,98 @@ class _ShareBtn extends StatelessWidget {
           textAlign: TextAlign.center, maxLines: 2)),
     ]),
   );
+}
+
+// ─── Sélecteur d'espèce (feed) ───────────────────────────────────────────────
+
+class _FeedSpeciesPicker extends StatefulWidget {
+  final List<(String, String, String)> species;
+  final String current;
+  const _FeedSpeciesPicker({required this.species, required this.current});
+  @override State<_FeedSpeciesPicker> createState() => _FeedSpeciesPickerState();
+}
+
+class _FeedSpeciesPickerState extends State<_FeedSpeciesPicker> {
+  late List<(String, String, String)> _filtered;
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void initState() { super.initState(); _filtered = widget.species; }
+
+  @override
+  void dispose() { _searchCtrl.dispose(); super.dispose(); }
+
+  void _filter(String q) => setState(() {
+    _filtered = q.isEmpty
+        ? widget.species
+        : widget.species.where((e) => e.$2.toLowerCase().contains(q.toLowerCase())).toList();
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      maxChildSize: 0.9,
+      minChildSize: 0.4,
+      builder: (_, scroll) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Column(children: [
+          const SizedBox(height: 12),
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(children: [
+              const Expanded(child: Text('Choisir une espèce',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17))),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+              ),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: _filter,
+              autofocus: false,
+              decoration: InputDecoration(
+                hintText: 'Rechercher une espèce...',
+                hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                prefixIcon: const Icon(Icons.search, size: 20),
+                filled: true, fillColor: Colors.grey.shade100,
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.builder(
+              controller: scroll,
+              itemCount: _filtered.length,
+              itemBuilder: (_, i) {
+                final e = _filtered[i];
+                final selected = e.$1 == widget.current;
+                return ListTile(
+                  leading: Text(e.$3, style: const TextStyle(fontSize: 22)),
+                  title: Text(e.$2, style: TextStyle(
+                      fontFamily: 'Galey', fontSize: 14,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
+                      color: selected ? const Color(0xFF0C5C6C) : const Color(0xFF1F2A2E))),
+                  trailing: selected ? const Icon(Icons.check, color: Color(0xFF0C5C6C), size: 18) : null,
+                  onTap: () => Navigator.pop(context, e.$1),
+                );
+              },
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
 }
 
 // ─── Sélecteur de race (feed) ─────────────────────────────────────────────────
