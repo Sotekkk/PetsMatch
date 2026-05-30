@@ -327,6 +327,7 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
             : null,
         'pays':                     _paysCtrl.text.trim().isEmpty ? 'France' : _paysCtrl.text.trim(),
         'region':                   _regionCtrl.text.trim().isEmpty ? null : _regionCtrl.text.trim(),
+        'departement':              _deptCtrl.text.trim().isEmpty ? null : _deptCtrl.text.trim(),
         'lat':                      _lat,
         'lng':                      _lng,
         'photos':                   photos,
