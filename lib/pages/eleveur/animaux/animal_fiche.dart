@@ -1959,16 +1959,41 @@ class _ReproListState extends State<_ReproList> {
 
   Future<void> _confirmGestation(String id) async {
     try {
-      await Supabase.instance.client
-          .from('gestations')
-          .update({'gestation_confirmee': true})
-          .eq('id', id);
+      final supa = Supabase.instance.client;
+      await supa.from('gestations').update({'gestation_confirmee': true}).eq('id', id);
+
+      // Sync agenda mise-bas
+      final idx   = _data.indexWhere((d) => d['id']?.toString() == id);
+      final gest  = idx >= 0 ? _data[idx] : null;
+      final datePrevue = gest?['date_prevue'] as String?;
+      final uid   = FirebaseAuth.instance.currentUser?.uid;
+
+      if (datePrevue != null && uid != null) {
+        String animalNom = 'animal';
+        try {
+          final a = await supa.from('animaux').select('nom').eq('id', widget.animalId).maybeSingle();
+          if (a != null) animalNom = (a['nom'] as String?)?.isNotEmpty == true ? a['nom'] as String : 'animal';
+        } catch (_) {}
+
+        await supa.from('agenda_events').upsert({
+          'uid':          uid,
+          'titre':        'Mise-bas prévue — $animalNom',
+          'type':         'mise_bas',
+          'date_debut':   datePrevue,
+          'animal_id':    int.tryParse(widget.animalId),
+          'notes':        'Gestation confirmée',
+          'gestation_id': id,
+        }, onConflict: 'gestation_id');
+      }
+
       if (mounted) setState(() {
-        final idx = _data.indexWhere((d) => d['id']?.toString() == id);
         if (idx >= 0) _data[idx] = {..._data[idx], 'gestation_confirmee': true};
       });
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Gestation confirmée ✓'), backgroundColor: Color(0xFF6E9E57)));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Gestation confirmée ✓  ·  Agenda mis à jour'),
+            backgroundColor: Color(0xFF6E9E57)));
+      }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
@@ -2680,6 +2705,13 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
       'date': _date!.toIso8601String(),
       'date_rappel': _rappel?.toIso8601String(),
     });
+    if (_rappel != null) {
+      await _scheduleRappelAgenda(
+        animalId: widget.animalId,
+        dateRappel: _rappel!,
+        titre: 'Rappel vaccin — ${_vaccin.text.trim()}',
+      );
+    }
     RegistreHelper.writeActe(
       animalId: widget.animalId, typeActe: 'vaccination', dateActe: _date!,
       intervenant: _veto.text.trim(),
@@ -2774,6 +2806,13 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
         'date': _date!.toIso8601String(),
         'date_rappel': _dateRappel?.toIso8601String(),
       });
+      if (_dateRappel != null) {
+        await _scheduleRappelAgenda(
+          animalId: widget.animalId,
+          dateRappel: _dateRappel!,
+          titre: 'Rappel vaccin — ${_vaccin.text.trim()}',
+        );
+      }
     }
     RegistreHelper.writeActe(
       animalId: widget.animalId,
@@ -2855,6 +2894,13 @@ class _AddAntiparasitaireDialogState extends State<_AddAntiparasitaireDialog> {
       'date_rappel': _dateRappel?.toIso8601String(),
       'frequence': _frequence.text.trim(), 'notes': _notes.text.trim(),
     });
+    if (_dateRappel != null) {
+      await _scheduleRappelAgenda(
+        animalId: widget.animalId,
+        dateRappel: _dateRappel!,
+        titre: 'Rappel antiparasitaire — ${_produit.text.trim()}',
+      );
+    }
     RegistreHelper.writeActe(
       animalId: widget.animalId, typeActe: 'antiparasitaire', dateActe: _date!,
       intervenant: '',
@@ -2974,6 +3020,26 @@ class _AddChaleursDialogState extends State<_AddChaleursDialog> {
       return true;
     },
   );
+}
+
+// ─── Helper rappels agenda ────────────────────────────────────────────────────
+
+Future<void> _scheduleRappelAgenda({
+  required String animalId,
+  required DateTime dateRappel,
+  required String titre,
+}) async {
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return;
+  try {
+    await Supabase.instance.client.from('agenda_events').insert({
+      'uid':        uid,
+      'titre':      titre,
+      'type':       'medication',
+      'date_debut': dateRappel.toIso8601String(),
+      'animal_id':  int.tryParse(animalId),
+    });
+  } catch (_) {}
 }
 
 // ─── Durée de gestation par espèce ───────────────────────────────────────────

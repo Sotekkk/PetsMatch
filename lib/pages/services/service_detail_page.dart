@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 
 class ServiceDetailPage extends StatefulWidget {
@@ -24,6 +27,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   final _supa = Supabase.instance.client;
   Map<String, dynamic>? _proData;
   bool _loading = true;
+  bool _loadingChat = false;
   late TabController _tabController;
 
   @override
@@ -107,6 +111,37 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     final raw = _proData?['rayon_intervention'];
     if (raw is int) return raw;
     return int.tryParse(raw?.toString() ?? '') ?? 0;
+  }
+
+  Future<void> _openChat() async {
+    setState(() => _loadingChat = true);
+    try {
+      final currentUserId = FirebaseAuth.instance.currentUser!.uid;
+      final proId = widget.proUid;
+      final sortedIds = [currentUserId, proId]..sort();
+      final participantIds = sortedIds.join('_');
+      final snap = await FirebaseFirestore.instance
+          .collection('conversations')
+          .where('participantIds', isEqualTo: participantIds)
+          .limit(1)
+          .get();
+      final DocumentReference ref = snap.docs.isEmpty
+          ? await FirebaseFirestore.instance.collection('conversations').add({
+              'participants': [currentUserId, proId],
+              'participantIds': participantIds,
+              'lastMessage': '',
+              'timestamp': FieldValue.serverTimestamp(),
+              'categorie': 'services',
+            })
+          : snap.docs.first.reference;
+      if (mounted) {
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ChatScreen(conversationId: ref.id, eleveurId: proId),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _loadingChat = false);
+    }
   }
 
   Future<void> _launch(String url) async {
@@ -425,11 +460,10 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       child: Row(children: [
         Expanded(
           child: OutlinedButton.icon(
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Messagerie bientôt disponible', style: TextStyle(fontFamily: 'Galey')),
-                behavior: SnackBarBehavior.floating),
-            ),
-            icon: const Icon(Icons.message_outlined, size: 18),
+            onPressed: _loadingChat ? null : _openChat,
+            icon: _loadingChat
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.message_outlined, size: 18),
             label: const Text('Contacter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFF1E2025),

@@ -74,20 +74,19 @@
 | ~~S13~~ | ~~**Admin — gestion profils pro**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
 | ~~S14~~ | ~~**Vue admin web (site)**~~ | ~~Haute~~ | ~~Web~~ | ✅ Terminé 2026-05-30 |
 | ~~S15~~ | ~~**Annuaire vétérinaires & comportementalistes — carte**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
-| S15 | **Annuaire vétérinaires & comportementalistes — carte** : carte Leaflet avec marqueurs code couleur par type (véto = bleu, comportementaliste = violet…), filtres espèce/distance/notation, fiche détail. Même logique visuelle que la carte éleveurs. | Haute | App + Web | `service_list_page.dart`, `src/app/services/` |
-| S16 | **Pet sitter & promeneurs — zone de travail** : le pro définit sa zone géographique d'intervention (polygone ou rayon) sur une carte, visible dans son profil. Filtrage des résultats par zone dans l'annuaire. Table Supabase `zones_intervention`. | Haute | App + Web | `pro_profile_edit.dart`, `src/app/profil/` |
+| ~~S16~~ | ~~**Pet sitter & promeneurs — zone de travail**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
 
 ### Agenda connecté — **Nabil** (tous les profils)
 > Agenda partagé éleveur + particulier, multi-usages (RDV pros, véto, alimentation, médicaments, alerte mise-bas, visites adoption)
 
 | # | Tâche | Priorité | App / Web | Notes |
 |---|---|---|---|---|
-| AG01 | **Agenda éleveur & particulier — structure de base** : créer les pages agenda (`lib/pages/agenda/agenda_page.dart`, `src/app/agenda/page.tsx`), table Supabase `agenda_events` (uid, titre, date_debut, date_fin, type, animal_id, notes, couleur), vue mensuelle + vue liste | Haute | App + Web | Base commune pour AG02–AG06 |
-| AG02 | **RDV pro → agenda automatique** : quand un RDV pro (véto, comportementaliste, pet sitter…) est confirmé (statut = `confirme`), créer automatiquement un événement dans `agenda_events` pour l'utilisateur (éleveur ou particulier). Visible par les deux parties. Lien bidirectionnel : RDV annulé → événement supprimé. | Haute | App + Web | `pro_agenda.dart`, `rdv_booking_page.dart` |
-| AG03 | **Notifications rappel RDV** : Firebase Cloud Function `sendRdvReminder` (même technique que `sendLikeNotification` — Admin SDK + FCM token dans Firestore) : déclencher 24h avant et 1h avant chaque RDV. Stocker `reminder_24h_sent` et `reminder_1h_sent` dans l'événement pour éviter doublons. | Haute | Firebase Functions + App | `functions/alertes.js` (ou nouveau `functions/agenda.js`) |
-| AG04 | **Alerte mise-bas** : dans la fiche animal (gestation confirmée), créer automatiquement un événement agenda `type = mise_bas` à la date de mise-bas prévue. Notification J-7 et J-1. | Haute | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
-| AG05 | **Visite adoption éleveur ↔ particulier** : à partir de la messagerie (annonce compagnon), proposer de planifier une visite. Créer RDV dans agenda des deux parties avec lien vers l'annonce + le profil de l'autre. | Moyenne | App + Web | Messagerie + agenda |
-| AG06 | **Rappels médicaments & alimentation** : ajouter des événements récurrents dans l'agenda depuis la fiche animal (antiparasitaire, vaccin, pesée, ration spéciale). Notification push à l'heure programmée. | Moyenne | App | `animal_fiche.dart` |
+| ~~AG01~~ | ~~**Agenda éleveur & particulier — structure de base**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
+| ~~AG02~~ | ~~**RDV pro → agenda automatique**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
+| ~~AG03~~ | ~~**Notifications rappel RDV**~~ | ~~Haute~~ | ~~Firebase Functions + App~~ | ✅ Terminé 2026-05-30 |
+| ~~AG04~~ | ~~**Alerte mise-bas**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
+| ~~AG05~~ | ~~**Visite adoption éleveur ↔ particulier**~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
+| ~~AG06~~ | ~~**Rappels médicaments & alimentation**~~ | ~~Moyenne~~ | ~~App~~ | ✅ Terminé 2026-05-30 |
 
 ### Conseils pratiques — **Angélique**
 

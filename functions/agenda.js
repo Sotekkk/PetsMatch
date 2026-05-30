@@ -1,0 +1,176 @@
+const functions = require("firebase-functions/v1");
+const admin = require("firebase-admin");
+const https = require("https");
+
+const SUPABASE_URL = "https://zyvpngcvzrkdytypjlyq.supabase.co";
+const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" +
+    ".eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5dnBuZ2N2enJrZHl0eXBqbHlxIiwi" +
+    "cm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTM2NDY1NSwiZXhwIjoyMDk0OT" +
+    "QwNjU1fQ.1U96V3c7nHG3T08dboBcxTd05k8A_JQfnyrJTbJ0HgQ";
+
+// ─── Supabase helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Exécute une requête HTTP vers l'API REST Supabase.
+ * @param {string} method - Méthode HTTP (GET, POST, PATCH…).
+ * @param {string} path - Chemin relatif (table + query string).
+ * @param {object|null} body - Corps JSON optionnel.
+ * @return {Promise<Array|object>}
+ */
+function supabaseRequest(method, path, body) {
+    return new Promise((resolve, reject) => {
+        const url = new URL(`${SUPABASE_URL}/rest/v1/${path}`);
+        const bodyStr = body ? JSON.stringify(body) : null;
+        const options = {
+            hostname: url.hostname,
+            path: url.search ? `${url.pathname}${url.search}` : url.pathname,
+            method,
+            headers: {
+                "Content-Type": "application/json",
+                "apikey": SUPABASE_SERVICE_KEY,
+                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                "Prefer": method === "GET" ? "return=representation" : "return=minimal",
+            },
+        };
+        if (bodyStr) options.headers["Content-Length"] = Buffer.byteLength(bodyStr);
+
+        const req = https.request(options, (res) => {
+            let data = "";
+            res.on("data", (chunk) => data += chunk);
+            res.on("end", () => {
+                try {
+                    resolve(JSON.parse(data));
+                } catch (_) {
+                    resolve([]);
+                }
+            });
+        });
+        req.on("error", reject);
+        if (bodyStr) req.write(bodyStr);
+        req.end();
+    });
+}
+
+/**
+ * Met à jour une ligne Supabase par son id.
+ * @param {string} table - Nom de la table.
+ * @param {number|string} id - Identifiant de la ligne.
+ * @param {object} update - Champs à mettre à jour.
+ * @return {Promise<Array|object>}
+ */
+async function supabasePatch(table, id, update) {
+    return supabaseRequest("PATCH", `${table}?id=eq.${id}`, update);
+}
+
+/**
+ * Sélectionne des lignes Supabase avec filtres.
+ * @param {string} table - Nom de la table.
+ * @param {string} query - Filtres PostgREST (query string sans '?').
+ * @return {Promise<Array>}
+ */
+async function supabaseSelect(table, query) {
+    return supabaseRequest("GET", `${table}?${query}&select=*`);
+}
+
+// ─── FCM helper ───────────────────────────────────────────────────────────────
+
+/**
+ * Envoie une notification FCM à un utilisateur via son fcmToken Firestore.
+ * @param {string} uid - UID Firebase de l'utilisateur.
+ * @param {string} title - Titre de la notification.
+ * @param {string} body - Corps de la notification.
+ * @param {object} data - Données supplémentaires FCM.
+ * @return {Promise<boolean>}
+ */
+async function sendPush(uid, title, body, data = {}) {
+    try {
+        const doc = await admin.firestore().collection("users").doc(uid).get();
+        const token = doc.exists ? doc.data().fcmToken : null;
+        if (!token) return false;
+
+        await admin.messaging().send({
+            token,
+            notification: {title, body},
+            data: {type: "rdv_reminder", ...data},
+            android: {
+                priority: "high",
+                notification: {channelId: "high_importance_channel", sound: "default"},
+            },
+            apns: {
+                headers: {"apns-priority": "10"},
+                payload: {aps: {alert: {title, body}, sound: "default", badge: 1}},
+            },
+        });
+        return true;
+    } catch (e) {
+        console.error(`sendPush error for ${uid}:`, e);
+        return false;
+    }
+}
+
+// ─── Fonction principale ──────────────────────────────────────────────────────
+
+/**
+ * Schedulée toutes les 30 minutes.
+ * Envoie des rappels FCM 24h et 1h avant chaque RDV confirmé.
+ */
+exports.sendRdvReminders = functions
+    .region("europe-west1")
+    .pubsub.schedule("every 30 minutes")
+    .onRun(async () => {
+        const now = new Date();
+        let sent24 = 0;
+        let sent1 = 0;
+
+        // ── Rappel 24h ────────────────────────────────────────────────────────
+        const from24 = new Date(now.getTime() + 23 * 3600 * 1000).toISOString();
+        const to24 = new Date(now.getTime() + 25 * 3600 * 1000).toISOString();
+
+        const rdvs24 = await supabaseSelect("rdv",
+            `statut=eq.confirme&reminder_24h_sent=eq.false` +
+            `&date_heure=gte.${from24}&date_heure=lte.${to24}`);
+
+        for (const rdv of (Array.isArray(rdvs24) ? rdvs24 : [])) {
+            const dateStr = new Date(rdv.date_heure).toLocaleString("fr-FR", {
+                weekday: "long", day: "numeric", month: "long",
+                hour: "2-digit", minute: "2-digit",
+            });
+            const ok = await sendPush(
+                rdv.client_uid,
+                "⏰ Rappel RDV — demain",
+                `Votre rendez-vous est prévu le ${dateStr}`,
+                {rdvId: String(rdv.id)},
+            );
+            if (ok) {
+                await supabasePatch("rdv", rdv.id, {reminder_24h_sent: true});
+                sent24++;
+            }
+        }
+
+        // ── Rappel 1h ─────────────────────────────────────────────────────────
+        const from1 = new Date(now.getTime() + 30 * 60 * 1000).toISOString();
+        const to1 = new Date(now.getTime() + 90 * 60 * 1000).toISOString();
+
+        const rdvs1 = await supabaseSelect("rdv",
+            `statut=eq.confirme&reminder_1h_sent=eq.false` +
+            `&date_heure=gte.${from1}&date_heure=lte.${to1}`);
+
+        for (const rdv of (Array.isArray(rdvs1) ? rdvs1 : [])) {
+            const dateStr = new Date(rdv.date_heure).toLocaleString("fr-FR", {
+                hour: "2-digit", minute: "2-digit",
+            });
+            const ok = await sendPush(
+                rdv.client_uid,
+                "⏰ Rappel RDV — dans 1 heure",
+                `Votre rendez-vous est prévu à ${dateStr}`,
+                {rdvId: String(rdv.id)},
+            );
+            if (ok) {
+                await supabasePatch("rdv", rdv.id, {reminder_1h_sent: true});
+                sent1++;
+            }
+        }
+
+        console.log(`sendRdvReminders: ${sent24} rappels 24h, ${sent1} rappels 1h envoyés`);
+        return null;
+    });

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/services/service_detail_page.dart';
@@ -32,6 +33,10 @@ class _ServiceListPageState extends State<ServiceListPage> {
   List<Map<String, dynamic>> _filtered = [];
   bool _loading = true;
   bool _showMap = false;
+  bool _nearMe = false;
+  bool _locating = false;
+  double? _userLat;
+  double? _userLng;
   String _search = '';
   String _filterEspece = '';
   GoogleMapController? _mapCtrl;
@@ -103,6 +108,42 @@ class _ServiceListPageState extends State<ServiceListPage> {
     }
   }
 
+  Future<void> _toggleNearMe() async {
+    if (_nearMe) {
+      setState(() { _nearMe = false; _applyFilters(); });
+      return;
+    }
+    setState(() => _locating = true);
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.deniedForever || perm == LocationPermission.denied) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Localisation refusée', style: TextStyle(fontFamily: 'Galey')),
+        ));
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium));
+      if (mounted) {
+        setState(() {
+          _userLat = pos.latitude;
+          _userLng = pos.longitude;
+          _nearMe = true;
+        });
+        _applyFilters();
+      }
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Impossible d\'obtenir la position', style: TextStyle(fontFamily: 'Galey')),
+      ));
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
   void _applyFilters() {
     setState(() {
       _filtered = _pros.where((p) {
@@ -119,7 +160,20 @@ class _ServiceListPageState extends State<ServiceListPage> {
             _filterEspece == 'Toutes' ||
             (especes is List && especes.contains(_filterEspece));
 
-        return matchSearch && matchEspece;
+        bool matchNearMe = true;
+        if (_nearMe && _userLat != null && _userLng != null) {
+          final pLat = (p['lat'] as num?)?.toDouble();
+          final pLng = (p['lng'] as num?)?.toDouble();
+          if (pLat == null || pLng == null) {
+            matchNearMe = false;
+          } else {
+            final rayon = (p['rayon_intervention'] as num?)?.toDouble() ?? 30;
+            final distKm = Geolocator.distanceBetween(_userLat!, _userLng!, pLat, pLng) / 1000;
+            matchNearMe = distKm <= rayon;
+          }
+        }
+
+        return matchSearch && matchEspece && matchNearMe;
       }).toList();
     });
   }
@@ -226,6 +280,34 @@ class _ServiceListPageState extends State<ServiceListPage> {
                           ),
                         );
                       },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Filtre "Proche de moi"
+                  GestureDetector(
+                    onTap: _locating ? null : _toggleNearMe,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: _nearMe ? widget.categoryColor : const Color(0xFFF0F0F0),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        if (_locating)
+                          SizedBox(width: 14, height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2,
+                              color: _nearMe ? Colors.white : widget.categoryColor))
+                        else
+                          Icon(Icons.near_me_rounded, size: 14,
+                            color: _nearMe ? Colors.white : const Color(0xFF555555)),
+                        const SizedBox(width: 6),
+                        Text('Proche de moi',
+                          style: TextStyle(
+                            fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                            color: _nearMe ? Colors.white : const Color(0xFF555555),
+                          )),
+                      ]),
                     ),
                   ),
                 ],

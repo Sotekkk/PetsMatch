@@ -1,6 +1,7 @@
 
 const stripeFunctions = require("./stripe");
 const alertesFunctions = require("./alertes");
+const agendaFunctions = require("./agenda");
 const testFunctions = require("./stripe");
 
 // Export your Stripe functions
@@ -17,3 +18,6 @@ exports.sendPushNotification = stripeFunctions.sendPushNotification;
 // Alertes perdus + likes
 exports.notifyUsersNearLostAnimal = alertesFunctions.notifyUsersNearLostAnimal;
 exports.sendLikeNotification = alertesFunctions.sendLikeNotification;
+
+// Agenda — rappels RDV
+exports.sendRdvReminders = agendaFunctions.sendRdvReminders;

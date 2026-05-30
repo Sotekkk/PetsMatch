@@ -16,6 +16,7 @@ import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
+import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/eleveur/user_elevage_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
@@ -47,6 +48,7 @@ class _EleveurNavState extends State<EleveurNav> {
   Widget _tabContent(int index) => switch (index) {
     1 => MessagePage(),
     2 => const NotificationsPage(),
+    3 => const AgendaPage(),
     _ => const EleveurHomePage(),
   };
 
@@ -90,6 +92,13 @@ class _EleveurNavState extends State<EleveurNav> {
                   activeIcon: Icons.notifications,
                   active: _selectedIndex == 2,
                   onTap: () => setState(() => _selectedIndex = 2),
+                ),
+                _NavItem(
+                  icon: Icons.calendar_month_outlined,
+                  activeIcon: Icons.calendar_month_rounded,
+                  label: 'Agenda',
+                  active: _selectedIndex == 3,
+                  onTap: () => setState(() => _selectedIndex = 3),
                 ),
                 _NavItem(
                   icon: Icons.menu,

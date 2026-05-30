@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_webservice/places.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/pro/pro_zone_page.dart';
 
 class ProProfileEditPage extends StatefulWidget {
   const ProProfileEditPage({super.key});
@@ -31,7 +32,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   final _siteWebCtrl         = TextEditingController();
   final _instagramCtrl       = TextEditingController();
   final _facebookCtrl        = TextEditingController();
-  final _rayonCtrl           = TextEditingController();
+  int _rayonKm               = 20;
   final _addressSearchCtrl   = TextEditingController();
   final _rueCtrl             = TextEditingController();
   final _villeCtrl           = TextEditingController();
@@ -66,7 +67,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     _places.dispose();
     for (final c in [
       _nomStructureCtrl, _professionCtrl, _descCtrl, _tarifsCtrl,
-      _siteWebCtrl, _instagramCtrl, _facebookCtrl, _rayonCtrl,
+      _siteWebCtrl, _instagramCtrl, _facebookCtrl,
       _addressSearchCtrl, _rueCtrl, _villeCtrl, _cpCtrl, _paysCtrl,
     ]) { c.dispose(); }
     for (final c in _horairesCtrl.values) { c.dispose(); }
@@ -91,7 +92,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         _siteWebCtrl.text      = row['site_web']        ?? '';
         _instagramCtrl.text    = row['instagram']       ?? '';
         _facebookCtrl.text     = row['facebook']        ?? '';
-        _rayonCtrl.text        = (row['rayon_intervention'] ?? 0).toString();
+        _rayonKm               = (row['rayon_intervention'] as num?)?.toInt() ?? 20;
         _acceptNewClients      = row['accept_new_clients'] ?? true;
         _lat                   = (row['lat'] as num?)?.toDouble();
         _lng                   = (row['lng'] as num?)?.toDouble();
@@ -252,7 +253,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         'site_web':             _siteWebCtrl.text.trim(),
         'instagram':            _instagramCtrl.text.trim(),
         'facebook':             _facebookCtrl.text.trim(),
-        'rayon_intervention':   int.tryParse(_rayonCtrl.text.trim()) ?? 0,
+        'rayon_intervention':   _rayonKm,
         'especes_acceptees':    _especesAcceptees,
         'horaires':             horairesMap,
         'certifications':       _certifications,
@@ -277,7 +278,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       User_Info.siteWeb           = _siteWebCtrl.text.trim();
       User_Info.instagram         = _instagramCtrl.text.trim();
       User_Info.facebook          = _facebookCtrl.text.trim();
-      User_Info.rayonIntervention = int.tryParse(_rayonCtrl.text.trim()) ?? 0;
+      User_Info.rayonIntervention = _rayonKm;
       User_Info.especesAcceptees  = List.from(_especesAcceptees);
       User_Info.certifications    = List.from(_certifications);
       User_Info.acceptNewClients  = _acceptNewClients;
@@ -386,8 +387,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 24),
                   _sectionTitle('Disponibilité & intervention'),
                   const SizedBox(height: 12),
-                  _field(_rayonCtrl, 'Rayon d\'intervention (km)',
-                      Icons.social_distance_outlined, inputType: TextInputType.number),
+                  _zoneTile(),
                   const SizedBox(height: 16),
                   _acceptClientsToggle(),
 
@@ -539,6 +539,43 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   }
 
   // ── Widget helpers ────────────────────────────────────────────────────────────
+
+  Widget _zoneTile() {
+    return InkWell(
+      onTap: () async {
+        final result = await Navigator.push<int>(
+          context,
+          MaterialPageRoute(builder: (_) => const ProZonePage()),
+        );
+        if (result != null && mounted) {
+          setState(() => _rayonKm = result);
+        }
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE0E0E0)),
+        ),
+        child: Row(children: [
+          const Icon(Icons.social_distance_outlined, color: Color(0xFF0C5C6C), size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Zone d\'intervention',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF888888))),
+              Text('$_rayonKm km',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                      fontSize: 15, color: Color(0xFF1E2025))),
+            ]),
+          ),
+          const Icon(Icons.chevron_right_rounded, color: Color(0xFFBBBBBB)),
+        ]),
+      ),
+    );
+  }
 
   Widget _sectionTitle(String title) {
     return Text(title,

@@ -28,17 +28,35 @@ export default function ServicesCartePage() {
   const [catFilter, setCatFilter] = useState('');
   const [especeFilter, setEspeceFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [nearMe, setNearMe] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     loadPros();
   }, []);
+
+  async function toggleNearMe() {
+    if (nearMe) { setNearMe(false); setUserPos(null); return; }
+    if (!navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserPos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setNearMe(true);
+        setLocating(false);
+      },
+      () => setLocating(false),
+      { enableHighAccuracy: false, timeout: 8000 }
+    );
+  }
 
   async function loadPros() {
     setLoading(true);
     try {
       const { data } = await supabase
         .from('users')
-        .select('uid, name_elevage, firstname, profile_picture_url, profession_pro, ville_elevage, ville, cat_pro, especes_acceptees, accept_new_clients, lat, lng')
+        .select('uid, name_elevage, firstname, profile_picture_url, profession_pro, ville_elevage, ville, cat_pro, especes_acceptees, accept_new_clients, lat, lng, rayon_intervention')
         .eq('is_pro', true)
         .not('lat', 'is', null)
         .not('lng', 'is', null);
@@ -61,12 +79,25 @@ export default function ServicesCartePage() {
     }
   }
 
+  function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
   const filtered = pros.filter(p => {
     if (catFilter && p.cat_pro !== catFilter) return false;
     if (especeFilter && !p.especes.includes(especeFilter)) return false;
     if (search) {
       const q = search.toLowerCase();
       if (!p.name.toLowerCase().includes(q) && !(p.ville ?? '').toLowerCase().includes(q)) return false;
+    }
+    if (nearMe && userPos) {
+      const rayon = (p as any).rayon_intervention ?? 30;
+      const dist = haversineKm(userPos.lat, userPos.lng, p.lat, p.lng);
+      if (dist > rayon) return false;
     }
     return true;
   });
@@ -133,6 +164,28 @@ export default function ServicesCartePage() {
                 {e}
               </button>
             ))}
+          </div>
+          {/* Filtre proche de moi */}
+          <div>
+            <button
+              onClick={toggleNearMe}
+              disabled={locating}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-colors"
+              style={{
+                borderColor: nearMe ? '#0C5C6C' : '#E5E7EB',
+                background:  nearMe ? '#0C5C6C' : 'white',
+                color:       nearMe ? 'white' : '#6B7280',
+                fontFamily:  'Galey, sans-serif',
+                opacity:     locating ? 0.6 : 1,
+              }}
+            >
+              {locating ? (
+                <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+              ) : (
+                <span>📍</span>
+              )}
+              Proche de moi
+            </button>
           </div>
         </div>
       </div>

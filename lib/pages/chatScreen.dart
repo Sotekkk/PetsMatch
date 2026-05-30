@@ -12,6 +12,7 @@ import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/user_detail_page_feed.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -225,6 +226,141 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _proposeVisite() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
+    TimeOfDay selectedTime = const TimeOfDay(hour: 10, minute: 0);
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      isDismissible: true,
+      enableDrag: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Text('📅  Proposer une visite',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFF1E2025))),
+              const Spacer(),
+              IconButton(icon: const Icon(Icons.close_rounded, size: 20), onPressed: () => Navigator.pop(ctx)),
+            ]),
+            const SizedBox(height: 16),
+
+            // Date
+            GestureDetector(
+              onTap: () async {
+                final d = await showDatePicker(
+                  context: ctx,
+                  initialDate: selectedDate,
+                  firstDate: DateTime.now(),
+                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                  locale: const Locale('fr'),
+                );
+                if (d != null) setModal(() => selectedDate = d);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                decoration: BoxDecoration(color: const Color(0xFFF5F5F5), borderRadius: BorderRadius.circular(12)),
+                child: Row(children: [
+                  const Icon(Icons.calendar_today_outlined, color: Color(0xFF0C5C6C), size: 20),
+                  const SizedBox(width: 10),
+                  Text(DateFormat('EEEE d MMMM yyyy', 'fr').format(selectedDate),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025))),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Heure
+            GestureDetector(
+              onTap: () async {
+                final t = await showTimePicker(context: ctx, initialTime: selectedTime);
+                if (t != null) setModal(() => selectedTime = t);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                decoration: BoxDecoration(color: const Color(0xFFF5F5F5), borderRadius: BorderRadius.circular(12)),
+                child: Row(children: [
+                  const Icon(Icons.access_time_rounded, color: Color(0xFF0C5C6C), size: 20),
+                  const SizedBox(width: 10),
+                  Text(selectedTime.format(ctx),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025))),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF0C5C6C),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  final dateVisite = DateTime(
+                    selectedDate.year, selectedDate.month, selectedDate.day,
+                    selectedTime.hour, selectedTime.minute,
+                  );
+                  await _saveVisite(uid, dateVisite);
+                },
+                child: const Text('Confirmer la visite',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveVisite(String uid, DateTime dateVisite) async {
+    final supa = Supabase.instance.client;
+    final nomAnimal = widget.nomAnimal ?? 'animal';
+    final dateStr = DateFormat('EEEE d MMMM yyyy à HH:mm', 'fr').format(dateVisite);
+
+    // Créer l'événement dans l'agenda des deux parties
+    final rows = [
+      {
+        'uid':        uid,
+        'titre':      'Visite — $nomAnimal',
+        'type':       'visite',
+        'date_debut': dateVisite.toUtc().toIso8601String(),
+        'notes':      'Visite organisée via messagerie',
+      },
+      {
+        'uid':        widget.eleveurId,
+        'titre':      'Visite — $nomAnimal',
+        'type':       'visite',
+        'date_debut': dateVisite.toUtc().toIso8601String(),
+        'notes':      'Visite organisée via messagerie',
+      },
+    ];
+    try {
+      await supa.from('agenda_events').insert(rows);
+    } catch (_) {}
+
+    // Envoyer un message dans la conversation
+    await _sendMessage('📅  Visite proposée : $dateStr', uid);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Visite ajoutée à vos agendas !',
+            style: TextStyle(fontFamily: 'Galey')),
+        backgroundColor: Color(0xFF0C5C6C),
+      ));
+    }
+  }
+
   void _showFullImage(String url) {
     showDialog(context: context, builder: (_) => Dialog(
       backgroundColor: Colors.black,
@@ -404,11 +540,13 @@ class _ChatScreenState extends State<ChatScreen> {
                 if (v == 'photo') _pickImage();
                 else if (v == 'camera') _takePhoto();
                 else if (v == 'location') _shareLocation();
+                else if (v == 'visite') _proposeVisite();
               },
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'photo', child: Row(children: [Icon(Icons.photo_outlined, size: 18), SizedBox(width: 10), Text('Galerie', style: TextStyle(fontFamily: 'Galey'))])),
                 PopupMenuItem(value: 'camera', child: Row(children: [Icon(Icons.camera_alt_outlined, size: 18), SizedBox(width: 10), Text('Appareil photo', style: TextStyle(fontFamily: 'Galey'))])),
                 PopupMenuItem(value: 'location', child: Row(children: [Icon(Icons.location_on_outlined, size: 18), SizedBox(width: 10), Text('Ma position', style: TextStyle(fontFamily: 'Galey'))])),
+                PopupMenuItem(value: 'visite', child: Row(children: [Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF0C5C6C)), SizedBox(width: 10), Text('Proposer une visite', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF0C5C6C)))])),
               ],
             ),
             // Text field

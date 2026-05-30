@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/pro/animal_acces_page.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 
@@ -104,10 +105,35 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   Future<void> _updateStatut(String rdvId, String statut) async {
     try {
-      await Supabase.instance.client
-          .from('rdv')
-          .update({'statut': statut})
-          .eq('id', rdvId);
+      final supa = Supabase.instance.client;
+      await supa.from('rdv').update({'statut': statut}).eq('id', rdvId);
+
+      // Sync agenda du client
+      final rdv = _rdvs.firstWhere(
+        (r) => r['id'].toString() == rdvId,
+        orElse: () => {},
+      );
+      final clientUid = rdv['client_uid'] as String?;
+
+      if (statut == 'confirme' && clientUid != null) {
+        final proName = User_Info.nameElevage.isNotEmpty
+            ? User_Info.nameElevage
+            : User_Info.professionPro.isNotEmpty
+                ? User_Info.professionPro
+                : 'Professionnel';
+        await supa.from('agenda_events').upsert({
+          'uid':        clientUid,
+          'titre':      'RDV avec $proName',
+          'type':       'rdv',
+          'date_debut': rdv['date_heure'],
+          'animal_id':  rdv['animal_id'],
+          'notes':      rdv['motif'],
+          'rdv_id':     rdv['id'],
+        }, onConflict: 'rdv_id');
+      } else if ((statut == 'annule' || statut == 'refuse') && rdv.isNotEmpty) {
+        await supa.from('agenda_events').delete().eq('rdv_id', rdv['id']);
+      }
+
       await _loadRdvs();
     } catch (e) {
       if (mounted) {
