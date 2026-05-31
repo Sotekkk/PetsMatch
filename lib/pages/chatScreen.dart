@@ -424,6 +424,10 @@ class _ChatScreenState extends State<ChatScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         titleSpacing: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+          onPressed: () => Navigator.maybePop(context),
+        ),
         title: FutureBuilder<Map<String, dynamic>>(
           future: _getUserInfo(widget.eleveurId),
           builder: (_, snap) {
