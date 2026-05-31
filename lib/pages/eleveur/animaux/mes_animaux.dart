@@ -88,7 +88,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       if (!_tabController.indexIsChanging) setState(() {});
     });
     _loadAnimaux();
-    ChaleursNotifService.checkAndNotify();
   }
 
   static int _intervalChaleurs(String espece) {
