@@ -127,6 +127,11 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
         race: a['race'] as String?, espece: a['espece'] as String?,
         sexe: a['sexe'] as String?,
         prix: () { final v = a['saillie_prix'] ?? a['prix']; return v is num ? v.toDouble() : v is String ? double.tryParse(v) : null; }(),
+        description: a['description'] as String?,
+        pedigree: () {
+          final rt = a['registre_type'];
+          return rt is String && rt.isNotEmpty && !rt.startsWith('Non ');
+        }(),
         ville: a['ville_eleveur'] as String?,
         uidEleveur: uid, nomEleveur: nomEleveur,
         dateNaissance: dateNaissanceAnimal,
@@ -240,7 +245,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
     try {
       var q = Supabase.instance.client
           .from('annonces')
-          .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur, uid_eleveur, date_naissance, date_naissance_animal')
+          .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur, uid_eleveur, description, registre_type, date_naissance, date_naissance_animal')
           .eq('statut', 'disponible');
       if (_espece != 'tous')       q = q.eq('espece', _espece);
       if (_race   != null)         q = q.eq('race', _race!);

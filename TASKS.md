@@ -39,11 +39,12 @@
 | A25 | Fiche animal — courbe de poids chiot/juvénile (courbe de croissance) | Moyenne | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
 | A26 | Messagerie — ajouter la flèche retour (tous les profils : éleveur, particulier, pro) | Haute | App + Web | `chatScreen.dart`, pages messagerie web |
 | A27 | Fiche animal — modification du poids (ajouter/éditer une entrée poids) depuis l'onglet courbe de poids | Haute | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
-| A28 | Feed annonces — description manquante sur les fiches animaux individuels (hors portée) | Haute | App + Web | `annonces_feed_page.dart`, `annonces/feed/page.tsx` |
+| ~~A28~~ | ~~Feed annonces — description manquante sur les fiches animaux individuels (hors portée)~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | A29 | Mes annonces — après création d'annonce, la liste ne se rafraîchit pas automatiquement au retour (nouvelle annonce absente sans reload manuel) — à vérifier app + web | Haute | App + Web | `mes_annonces_page.dart`, `mes-annonces/page.tsx`, `create_annonce_page.dart`, `annonces/creer/page.tsx` |
 | A30 | Annonces — durée de vie configurable (ex. 30/60/90 jours) : expiration automatique + badge "Expire dans X jours" + notification éleveur avant expiration + possibilité de renouveler | Haute | App + Web + Firebase Functions | `create_annonce_page.dart`, `mes_annonces_page.dart`, `annonces/creer/page.tsx`, `mes-annonces/page.tsx`, colonne `expires_at` Supabase |
 | ~~A31~~ | ~~Annonces / Fiche animal — âge des bébés affiché en semaines si moins de 3 mois, en mois sinon (ex. "6 semaines" vs "4 mois")~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | A32 | Annonces — bouton "Pause" pour suspendre temporairement une annonce sans la supprimer (statut `en_pause`) : visible uniquement par l'éleveur, badge "En pause" dans le feed + mes-annonces, réactivation en un clic | Haute | App + Web | `mes_annonces_page.dart`, `annonces_feed_page.dart`, `mes-annonces/page.tsx`, colonne `statut` Supabase |
+| A34 | Suivi des chaleurs femelles — saisie de l'historique des cycles par animal (date dernière chaleur), calcul automatique de la prochaine selon l'espèce (chienne ≈ 6 mois, chatte ≈ 21 jours si non stérilisée, jument saisonnière…), rappel push + badge "Chaleurs prochaines" dans la fiche animal J-7 et J-1. Table Supabase `cycles_chaleurs` (`animal_id`, `date_debut`, `notes`). | Haute | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx`, `functions/agenda.js`, table `cycles_chaleurs` |
 | A33 | Animaux trouvés — permettre à l'auteur d'éditer sa publication après déclaration (modifier description, photos, localisation, contact) | Haute | App + Web | `animal_trouve_form_page.dart`, `animaux-perdus/declarer-trouve/page.tsx` |
 
 ### Animaux perdus / trouvés — Spec complète : `SPEC_ANIMAUX_PERDUS_TROUVES.md`
@@ -114,6 +115,7 @@
 | AG04 | **Alerte mise-bas** : dans la fiche animal (gestation confirmée), créer automatiquement un événement agenda `type = mise_bas` à la date de mise-bas prévue. Notification J-7 et J-1. | Haute | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
 | AG05 | **Visite adoption éleveur ↔ particulier** : à partir de la messagerie (annonce compagnon), proposer de planifier une visite. Créer RDV dans agenda des deux parties avec lien vers l'annonce + le profil de l'autre. | Moyenne | App + Web | Messagerie + agenda |
 | AG06 | **Rappels médicaments & alimentation** : ajouter des événements récurrents dans l'agenda depuis la fiche animal (antiparasitaire, vaccin, pesée, ration spéciale). Notification push à l'heure programmée. | Moyenne | App | `animal_fiche.dart` |
+| AG07 | **RDV pro — animal concerné** : lors de la prise de RDV avec un pro (`rdv_booking_page.dart`), permettre de sélectionner un animal parmi "mes animaux" (liste depuis Supabase). L'animal sélectionné est stocké dans la table `rdv` (`animal_id`, `animal_nom`) et affiché dans l'agenda pro et client. | Haute | App + Web | `rdv_booking_page.dart`, `pro_agenda.dart`, `src/app/services/` |
 
 ### Conseils pratiques — **Angélique**
 

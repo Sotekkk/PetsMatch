@@ -39,6 +39,8 @@ interface RawAnnonce {
   sexe?: string;
   nom_eleveur?: string;
   uid_eleveur?: string;
+  description?: string;
+  registre_type?: string;
   date_naissance?: string;
   date_naissance_animal?: string;
 }
@@ -113,6 +115,7 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
         nom: a.titre || `${a.espece ?? ''} ${a.race ?? ''}`.trim(),
         race: a.race, espece: a.espece,
         sexe: a.sexe, prix,
+        description: a.description,
         ville: a.ville_eleveur, nomEleveur: a.nom_eleveur,
         uidEleveur: a.uid_eleveur, isSaillie,
         dateNaissance: a.date_naissance_animal,
@@ -174,7 +177,7 @@ export default function FeedPage() {
     setLoading(true);
     let q = supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, sexe, nom_eleveur, uid_eleveur, date_naissance, date_naissance_animal')
+      .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, sexe, nom_eleveur, uid_eleveur, description, registre_type, date_naissance, date_naissance_animal')
       .eq('statut', 'disponible')
       .order('created_at', { ascending: false });
 
