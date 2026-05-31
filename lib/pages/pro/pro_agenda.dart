@@ -210,14 +210,16 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             : User_Info.professionPro.isNotEmpty
                 ? User_Info.professionPro
                 : 'Professionnel';
+        final dhUtc = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toUtc();
         await supa.from('agenda_events').upsert({
-          'uid':        clientUid,
-          'titre':      'RDV avec $proName',
-          'type':       'rdv',
-          'date_debut': rdv['date_heure'],
-          'animal_id':  rdv['animal_id'],
-          'notes':      rdv['motif'],
-          'rdv_id':     rdv['id'],
+          'uid':           clientUid,
+          'titre':         'RDV avec $proName',
+          'type':          'rdv',
+          'date_debut':    dhUtc?.toIso8601String() ?? rdv['date_heure'],
+          'animal_id':     rdv['animal_id'],
+          'notes':         rdv['motif'],
+          'rdv_id':        rdv['id'],
+          if (dureeMinutes != null) 'duree_minutes': dureeMinutes,
         }, onConflict: 'rdv_id');
       } else if ((statut == 'annule' || statut == 'refuse') && rdv.isNotEmpty) {
         await supa.from('agenda_events').delete().eq('rdv_id', rdv['id']);

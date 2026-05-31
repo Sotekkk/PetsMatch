@@ -134,6 +134,38 @@ async function sendPush(uid, title, body, data = {}) {
     }
 }
 
+// ─── Notification nouvelle demande RDV ───────────────────────────────────────
+
+/**
+ * Callable : notifie le pro quand un client envoie une demande de RDV.
+ * @param {object} data - Données : proUid, clientName, dateStr.
+ * @param {object} context - Contexte Firebase.
+ * @return {Promise<object>}
+ */
+exports.notifyProNewRdv = functions
+    .region("europe-west1")
+    .https.onCall(async (data, context) => {
+        if (!context.auth) {
+            throw new functions.https.HttpsError("unauthenticated", "Auth required");
+        }
+
+        const {proUid, clientName, dateStr} = data;
+        if (!proUid) return {sent: false, reason: "no_proUid"};
+
+        const doc = await admin.firestore().collection("users").doc(proUid).get();
+        const fcmToken = doc.exists ? doc.data().fcmToken : null;
+        if (!fcmToken) return {sent: false, reason: "no_fcmToken"};
+
+        const title = "📅 Nouvelle demande de RDV";
+        const body = dateStr ?
+            `${clientName || "Un client"} souhaite un RDV le ${dateStr}` :
+            `${clientName || "Un client"} souhaite prendre un RDV avec vous`;
+
+        await sendPush(proUid, title, body, {type: "rdv_demande"});
+        console.log(`notifyProNewRdv: push envoyé à ${proUid}`);
+        return {sent: true};
+    });
+
 // ─── Fonction principale ──────────────────────────────────────────────────────
 
 /**

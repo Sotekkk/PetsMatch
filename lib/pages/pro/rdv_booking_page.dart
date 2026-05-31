@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -69,9 +70,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     try {
       final rows = await Supabase.instance.client
           .from('rdv')
-          .select('date_heure, duree_minutes')
+          .select('date_heure, duree_minutes, statut')
           .eq('pro_uid', widget.proUid)
-          .eq('statut', 'confirme')
+          .inFilter('statut', ['confirme', 'demande'])
           .gte('date_heure', DateTime.now().toIso8601String());
       if (mounted) setState(() => _proRdvs = List<Map<String, dynamic>>.from(rows));
     } catch (_) {}
@@ -143,6 +144,22 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         'motif':          _motifCtrl.text.trim(),
         'statut':         'demande',
       });
+
+      // Notification push au pro
+      try {
+        final user = FirebaseAuth.instance.currentUser;
+        final clientName = user?.displayName?.isNotEmpty == true
+            ? user!.displayName!
+            : 'Un client';
+        final dateStr = _formatDate(_selectedDate);
+        await FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('notifyProNewRdv')
+            .call({
+          'proUid':     widget.proUid,
+          'clientName': clientName,
+          'dateStr':    dateStr,
+        });
+      } catch (_) {}
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(

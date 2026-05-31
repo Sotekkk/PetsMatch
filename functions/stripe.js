@@ -554,7 +554,7 @@ async function sendNotification({token, platform, title, body}) {
     }
 }
 
-exports.sendPushNotification = functions.https.onCall(async (data, context) => {
+exports.sendPushNotification = functions.region("europe-west1").https.onCall(async (data, context) => {
     const token = data.token; // Le token du destinataire
     const payload = {
         notification: {

@@ -33,6 +33,23 @@ const _kTypeColor = {
   'autre':     Color(0xFF9E9E9E),
 };
 
+String _eventSubtitle(String time, String type, dynamic dureeMinutes) {
+  final label = _kTypeLabel[type] ?? type;
+  if (dureeMinutes == null) return '$time  ·  $label';
+  final d = (dureeMinutes as num).toInt();
+  final durLabel = d < 60 ? '$d min' : (d % 60 == 0 ? '${d ~/ 60} h' : '${d ~/ 60} h ${d % 60}');
+  return '$time  ·  $durLabel  ·  $label';
+}
+
+DateTime _parseDate(String s) {
+  try {
+    final dt = DateTime.parse(s);
+    return dt.isUtc ? dt.toLocal() : DateTime.parse('${s}Z').toLocal();
+  } catch (_) {
+    return DateTime.now();
+  }
+}
+
 Color _colorFor(Map<String, dynamic> e) {
   if (e['couleur'] != null) {
     try { return Color(int.parse('FF${(e['couleur'] as String).replaceAll('#', '')}', radix: 16)); } catch (_) {}
@@ -68,8 +85,8 @@ class _AgendaPageState extends State<AgendaPage> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final from = DateTime(_focusedMonth.year, _focusedMonth.month - 1, 1);
-      final to   = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0, 23, 59, 59);
+      final from = DateTime(_focusedMonth.year, _focusedMonth.month - 1, 1).toUtc();
+      final to   = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0, 23, 59, 59).toUtc();
       final data = await _supa
           .from('agenda_events')
           .select()
@@ -89,12 +106,12 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 
   List<Map<String, dynamic>> _eventsForDay(DateTime day) => _events.where((e) {
-    final d = DateTime.parse(e['date_debut']).toLocal();
+    final d = _parseDate(e['date_debut'] as String);
     return d.year == day.year && d.month == day.month && d.day == day.day;
   }).toList();
 
   List<Map<String, dynamic>> get _upcoming => _events.where((e) {
-    return DateTime.parse(e['date_debut']).toLocal().isAfter(DateTime.now().subtract(const Duration(days: 1)));
+    return _parseDate(e['date_debut'] as String).isAfter(DateTime.now().subtract(const Duration(days: 1)));
   }).toList();
 
   void _prevMonth() { _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1); _load(); }
@@ -296,7 +313,7 @@ class _AgendaPageState extends State<AgendaPage> {
     // Group by date
     final Map<String, List<Map<String, dynamic>>> grouped = {};
     for (final e in _upcoming) {
-      final key = DateFormat('yyyy-MM-dd').format(DateTime.parse(e['date_debut']).toLocal());
+      final key = DateFormat('yyyy-MM-dd').format(_parseDate(e['date_debut'] as String));
       grouped.putIfAbsent(key, () => []).add(e);
     }
     final keys = grouped.keys.toList()..sort();
@@ -351,7 +368,7 @@ class _EventTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color  = _colorFor(event);
-    final time   = DateFormat('HH:mm').format(DateTime.parse(event['date_debut']).toLocal());
+    final time   = DateFormat('HH:mm').format(_parseDate(event['date_debut'] as String));
     final type   = event['type'] as String? ?? 'autre';
 
     return Container(
@@ -372,7 +389,7 @@ class _EventTile extends StatelessWidget {
         title: Text(event['titre'] ?? '',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                 fontSize: 14, color: Color(0xFF1E2025))),
-        subtitle: Text('$time  ·  ${_kTypeLabel[type] ?? type}',
+        subtitle: Text(_eventSubtitle(time, type, event['duree_minutes']),
             style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
         trailing: IconButton(
           icon: const Icon(Icons.delete_outline, size: 18, color: Colors.grey),
