@@ -22,9 +22,10 @@ exports.sendLikeNotification = alertesFunctions.sendLikeNotification;
 exports.notifyNearFoundAnimal = alertesFunctions.notifyNearFoundAnimal;
 exports.notifyAnimalOwner = alertesFunctions.notifyAnimalOwner;
 
-// Agenda — rappels RDV + notifications RDV
+// Agenda — rappels RDV + notifications RDV + mise-bas
 exports.sendRdvReminders = agendaFunctions.sendRdvReminders;
 exports.notifyProNewRdv = agendaFunctions.notifyProNewRdv;
+exports.sendMiseBasReminders = agendaFunctions.sendMiseBasReminders;
 
 // Chaleurs — alertes quotidiennes éleveurs
 exports.sendChaleursNotifications = chaleursFunctions.sendChaleursNotifications;

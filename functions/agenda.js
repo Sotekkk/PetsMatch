@@ -271,3 +271,66 @@ exports.sendRdvReminders = functions
         console.log(`sendRdvReminders: ${sent24} rappels 24h, ${sent1} rappels 1h traités`);
         return null;
     });
+
+// ─── Rappels mise-bas ─────────────────────────────────────────────────────────
+// Migration SQL requise (une fois) :
+//   ALTER TABLE gestations
+//     ADD COLUMN IF NOT EXISTS reminder_j7_sent boolean DEFAULT false,
+//     ADD COLUMN IF NOT EXISTS reminder_j3_sent boolean DEFAULT false,
+//     ADD COLUMN IF NOT EXISTS reminder_j1_sent boolean DEFAULT false;
+
+/**
+ * Schedulée quotidiennement à 8h.
+ * Envoie un rappel FCM J-7, J-3 et J-1 avant la mise-bas prévue
+ * à l'éleveur propriétaire de la femelle.
+ */
+exports.sendMiseBasReminders = functions
+    .region("europe-west1")
+    .pubsub.schedule("0 8 * * *")
+    .timeZone("Europe/Paris")
+    .onRun(async () => {
+        const now = new Date();
+        let sent = 0;
+
+        const paliers = [
+            {days: 7, field: "reminder_j7_sent", label: "dans 7 jours"},
+            {days: 3, field: "reminder_j3_sent", label: "dans 3 jours"},
+            {days: 1, field: "reminder_j1_sent", label: "demain"},
+        ];
+
+        for (const {days, field, label} of paliers) {
+            const target = new Date(now);
+            target.setDate(target.getDate() + days);
+            const dateStr = target.toISOString().split("T")[0]; // YYYY-MM-DD
+
+            const gestations = await supabaseSelect("gestations",
+                `gestation_confirmee=eq.true` +
+                `&${field}=eq.false` +
+                `&date_prevue=eq.${encodeURIComponent(dateStr)}`);
+
+            for (const g of gestations) {
+                const animals = await supabaseSelect("animaux", `id=eq.${g.animal_id}`);
+                const animal = animals[0];
+                if (!animal || !animal.uid_eleveur) continue;
+
+                const animalNom = animal.nom || "votre femelle";
+                const miseBas = new Date(g.date_prevue).toLocaleDateString("fr-FR", {
+                    day: "numeric", month: "long",
+                });
+
+                const emoji = days === 1 ? "🐣" : days === 3 ? "⏳" : "📅";
+                await sendPush(
+                    animal.uid_eleveur,
+                    `${emoji} Mise-bas prévue ${label}`,
+                    `${animalNom} devrait mettre bas le ${miseBas}. Préparez la maternité !`,
+                    {type: "mise_bas", animalId: String(g.animal_id)},
+                );
+
+                await supabasePatch("gestations", g.id, {[field]: true});
+                sent++;
+            }
+        }
+
+        console.log(`sendMiseBasReminders: ${sent} rappels envoyés`);
+        return null;
+    });
