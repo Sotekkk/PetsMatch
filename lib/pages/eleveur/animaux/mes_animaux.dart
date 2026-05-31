@@ -1,5 +1,6 @@
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_form_page.dart';
+import 'package:PetsMatch/services/chaleurs_notif_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -87,6 +88,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       if (!_tabController.indexIsChanging) setState(() {});
     });
     _loadAnimaux();
+    ChaleursNotifService.checkAndNotify();
   }
 
   static int _intervalChaleurs(String espece) {
