@@ -102,7 +102,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       await Supabase.instance.client.from('rdv').insert({
         'pro_uid':        widget.proUid,
         'client_uid':     uid,
-        if (_selectedAnimalId != null) 'animal_id': int.tryParse(_selectedAnimalId!),
+        if (_selectedAnimalId != null) 'animal_id': int.tryParse(_selectedAnimalId!) ?? _selectedAnimalId,
         'date_heure':     dateHeure.toIso8601String(),
         'duree_minutes':  _dureeMinutes,
         'motif':          _motifCtrl.text.trim(),
@@ -208,43 +208,38 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                   _buildDureeSelector(),
                   const SizedBox(height: 20),
 
-                  // Animal (optionnel)
-                  if (_animaux.isNotEmpty) ...[
-                    _sectionTitle('Animal concerné (optionnel)'),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE4E7E2)),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String?>(
-                          value: _selectedAnimalId,
-                          isExpanded: true,
-                          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025)),
-                          hint: const Text('Aucun animal sélectionné',
-                              style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey)),
-                          items: [
-                            const DropdownMenuItem<String?>(
-                              value: null,
-                              child: Text('Aucun', style: TextStyle(fontFamily: 'Galey', fontSize: 14)),
-                            ),
-                            ..._animaux.map((a) => DropdownMenuItem<String?>(
-                              value: a['id'].toString(),
-                              child: Text(
-                                '${a['nom'] ?? 'Sans nom'} (${a['espece'] ?? ''})',
-                                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                              ),
-                            )),
-                          ],
-                          onChanged: (v) => setState(() => _selectedAnimalId = v),
+                  // Animal
+                  _sectionTitle('Pour quel animal ?'),
+                  const SizedBox(height: 8),
+                  if (_loadingAnimaux)
+                    const Center(child: SizedBox(height: 24, width: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2)))
+                  else if (_animaux.isEmpty)
+                    Text('Aucun animal enregistré dans votre élevage.',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500))
+                  else
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _AnimalChip(
+                          label: 'Aucun',
+                          icon: Icons.block_outlined,
+                          selected: _selectedAnimalId == null,
+                          color: widget.categoryColor,
+                          onTap: () => setState(() => _selectedAnimalId = null),
                         ),
-                      ),
+                        ..._animaux.map((a) => _AnimalChip(
+                          label: a['nom']?.toString() ?? 'Sans nom',
+                          subtitle: a['espece']?.toString() ?? '',
+                          icon: Icons.pets,
+                          selected: _selectedAnimalId == a['id'].toString(),
+                          color: widget.categoryColor,
+                          onTap: () => setState(() => _selectedAnimalId = a['id'].toString()),
+                        )),
+                      ],
                     ),
-                    const SizedBox(height: 20),
-                  ],
+                  const SizedBox(height: 20),
 
                   // Motif
                   _sectionTitle('Motif du rendez-vous *'),
@@ -395,5 +390,59 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     const jours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
     const mois = ['jan', 'fév', 'mar', 'avr', 'mai', 'juin', 'juil', 'août', 'sep', 'oct', 'nov', 'déc'];
     return '${jours[d.weekday - 1]} ${d.day} ${mois[d.month - 1]} ${d.year}';
+  }
+}
+
+// ── Animal chip ───────────────────────────────────────────────────────────────
+
+class _AnimalChip extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final bool selected;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _AnimalChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.color,
+    required this.onTap,
+    this.subtitle = '',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? color : Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: selected ? color : const Color(0xFFDDDDDD)),
+          boxShadow: selected
+              ? [BoxShadow(color: color.withValues(alpha: 0.25), blurRadius: 6, offset: const Offset(0, 2))]
+              : [],
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 14, color: selected ? Colors.white : Colors.grey.shade500),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(
+            fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+            color: selected ? Colors.white : const Color(0xFF1E2025),
+          )),
+          if (subtitle.isNotEmpty) ...[
+            const SizedBox(width: 4),
+            Text('($subtitle)', style: TextStyle(
+              fontFamily: 'Galey', fontSize: 11,
+              color: selected ? Colors.white.withValues(alpha: 0.75) : Colors.grey.shade500,
+            )),
+          ],
+        ]),
+      ),
+    );
   }
 }

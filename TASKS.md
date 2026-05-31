@@ -106,6 +106,7 @@
 | ~~AG04~~ | ~~**Alerte mise-bas** : gestation confirmée → événement `type=mise_bas` dans agenda~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
 | ~~AG05~~ | ~~**Visite adoption éleveur ↔ particulier** : proposer visite depuis messagerie → 2 événements agenda~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
 | ~~AG06~~ | ~~**Rappels médicaments & alimentation** : antiparasitaire/vaccin/visite → `agenda_events type=medication`~~ | ~~Moyenne~~ | ~~App~~ | ✅ Terminé 2026-05-30 |
+| ~~AG07~~ | ~~**RDV pro — sélection animal obligatoire** : dans le formulaire de réservation, afficher clairement l'animal concerné (sélecteur prominent, nom affiché dans la liste RDV du pro et dans les notifications)~~ | ~~Haute~~ | ~~App~~ | ✅ Terminé 2026-05-31 |
 
 ### Conseils pratiques — **Angélique**
 

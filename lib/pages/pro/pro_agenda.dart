@@ -68,11 +68,37 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         } catch (_) {}
       }
 
+      // Load animal names in batch
+      final animalIds = rows
+          .map((r) => r['animal_id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      Map<String, String> animalNames = {};
+      if (animalIds.isNotEmpty) {
+        try {
+          final animaux = await Supabase.instance.client
+              .from('animaux')
+              .select('id, nom')
+              .inFilter('id', animalIds);
+          for (final a in animaux) {
+            animalNames[a['id'].toString()] = a['nom']?.toString() ?? '';
+          }
+        } catch (_) {}
+      }
+
       if (mounted) {
         setState(() {
           _rdvs = rows.map((r) {
             final cUid = r['client_uid'] as String?;
-            return {...r, '_client_name': cUid != null ? (clientNames[cUid] ?? 'Client') : 'Client'};
+            final aId = r['animal_id']?.toString();
+            return {
+              ...r,
+              '_client_name': cUid != null ? (clientNames[cUid] ?? 'Client') : 'Client',
+              '_animal_nom': aId != null ? (animalNames[aId] ?? '') : '',
+            };
           }).toList();
           _loading = false;
         });
@@ -329,6 +355,7 @@ class _RdvCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final dateHeure = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
     final clientName = rdv['_client_name']?.toString() ?? 'Client';
+    final animalNom = rdv['_animal_nom']?.toString() ?? '';
     final motif = rdv['motif']?.toString() ?? '';
     final duree = (rdv['duree_minutes'] as num?)?.toInt() ?? 30;
     final notes = rdv['notes_pro']?.toString() ?? '';
@@ -386,6 +413,15 @@ class _RdvCard extends StatelessWidget {
                 Text(clientName, style: const TextStyle(fontFamily: 'Galey',
                     fontWeight: FontWeight.w600, fontSize: 14)),
               ]),
+              if (animalNom.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Row(children: [
+                  const Icon(Icons.pets, size: 14, color: Color(0xFF6E9E57)),
+                  const SizedBox(width: 10),
+                  Text(animalNom, style: const TextStyle(fontFamily: 'Galey',
+                      fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF6E9E57))),
+                ]),
+              ],
               const SizedBox(height: 8),
 
               // Motif + durée
