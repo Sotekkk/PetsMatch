@@ -388,7 +388,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
           const SizedBox(height: 12),
           ElevatedButton(
             onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const CreateAnnoncePage())),
+                MaterialPageRoute(builder: (_) => const CreateAnnoncePage()))
+                .then((_) { if (mounted) _loadData(); }),
             style: ElevatedButton.styleFrom(
                 backgroundColor: _teal, foregroundColor: Colors.white),
             child: const Text('Créer une annonce',

@@ -18,6 +18,7 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
+  int _refreshKey = 0;
 
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
@@ -63,15 +64,16 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _AnnoncesList(uid: _uid, filter: 'all'),
-          _AnnoncesList(uid: _uid, filter: 'actives'),
-          _AnnoncesList(uid: _uid, filter: 'pause'),
-          _AnnoncesList(uid: _uid, filter: 'terminees'),
+          _AnnoncesList(key: ValueKey('all_$_refreshKey'),    uid: _uid, filter: 'all'),
+          _AnnoncesList(key: ValueKey('act_$_refreshKey'),    uid: _uid, filter: 'actives'),
+          _AnnoncesList(key: ValueKey('pause_$_refreshKey'),  uid: _uid, filter: 'pause'),
+          _AnnoncesList(key: ValueKey('fin_$_refreshKey'),    uid: _uid, filter: 'terminees'),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const CreateAnnoncePage())),
+            MaterialPageRoute(builder: (_) => const CreateAnnoncePage()))
+            .then((_) { if (mounted) setState(() => _refreshKey++); }),
         backgroundColor: _teal,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add),
@@ -87,7 +89,7 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
 class _AnnoncesList extends StatelessWidget {
   final String? uid;
   final String filter;
-  const _AnnoncesList({required this.uid, required this.filter});
+  const _AnnoncesList({super.key, required this.uid, required this.filter});
 
   static Timestamp? _ts(dynamic v) {
     if (v == null) return null;

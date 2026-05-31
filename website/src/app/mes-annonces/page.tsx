@@ -55,9 +55,10 @@ export default function MesAnnoncesPage() {
 
   useEffect(() => {
     if (!user) return;
+    const SELECT = 'id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at';
     supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at')
+      .select(SELECT)
       .eq('uid_eleveur', user.uid)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
@@ -65,6 +66,21 @@ export default function MesAnnoncesPage() {
         setFetching(false);
       })
       .catch(() => setFetching(false));
+
+    const channel = supabase
+      .channel(`mes-annonces-${user.uid}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'annonces', filter: `uid_eleveur=eq.${user.uid}` },
+        (payload) => setAnnonces(prev => [payload.new as Annonce, ...prev])
+      )
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'annonces', filter: `uid_eleveur=eq.${user.uid}` },
+        (payload) => setAnnonces(prev => prev.map(a => a.id === (payload.new as Annonce).id ? payload.new as Annonce : a))
+      )
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'annonces', filter: `uid_eleveur=eq.${user.uid}` },
+        (payload) => setAnnonces(prev => prev.filter(a => a.id !== (payload.old as Annonce).id))
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [user]);
 
   async function handleDelete(id: string) {

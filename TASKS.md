@@ -46,6 +46,7 @@
 | A32 | Annonces — bouton "Pause" pour suspendre temporairement une annonce sans la supprimer (statut `en_pause`) : visible uniquement par l'éleveur, badge "En pause" dans le feed + mes-annonces, réactivation en un clic | Haute | App + Web | `mes_annonces_page.dart`, `annonces_feed_page.dart`, `mes-annonces/page.tsx`, colonne `statut` Supabase |
 | A34 | Suivi des chaleurs femelles — saisie de l'historique des cycles par animal (date dernière chaleur), calcul automatique de la prochaine selon l'espèce (chienne ≈ 6 mois, chatte ≈ 21 jours si non stérilisée, jument saisonnière…), rappel push + badge "Chaleurs prochaines" dans la fiche animal J-7 et J-1. Table Supabase `cycles_chaleurs` (`animal_id`, `date_debut`, `notes`). | Haute | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx`, `functions/agenda.js`, table `cycles_chaleurs` |
 | A33 | Animaux trouvés — permettre à l'auteur d'éditer sa publication après déclaration (modifier description, photos, localisation, contact) | Haute | App + Web | `animal_trouve_form_page.dart`, `animaux-perdus/declarer-trouve/page.tsx` |
+| A35 | Feed annonces web — ajouter les mêmes badges que l'app : espèce (emoji + label), race, LOF/LOOF/Stud-book/Non-LOF (via `registre_type`), âge en semaines/mois/ans (via `date_naissance` / `date_naissance_animal`) | Haute | Web | `annonces/feed/page.tsx` (petsmatch-web + website) |
 
 ### Animaux perdus / trouvés — Spec complète : `SPEC_ANIMAUX_PERDUS_TROUVES.md`
 
