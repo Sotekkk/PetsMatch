@@ -170,13 +170,32 @@ class _AnnoncesList extends StatelessWidget {
 
 // ─── Card annonce avec stats + actions ───────────────────────────────────────
 
-class _AnnonceCard extends StatelessWidget {
+class _AnnonceCard extends StatefulWidget {
   final String id;
   final Map<String, dynamic> data;
   const _AnnonceCard({required this.id, required this.data});
+  @override
+  State<_AnnonceCard> createState() => _AnnonceCardState();
+}
 
+class _AnnonceCardState extends State<_AnnonceCard> {
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
+
+  late String _statut;
+
+  @override
+  void initState() {
+    super.initState();
+    _statut = (widget.data['statut'] as String?) ?? 'disponible';
+  }
+
+  @override
+  void didUpdateWidget(_AnnonceCard old) {
+    super.didUpdateWidget(old);
+    final incoming = (widget.data['statut'] as String?) ?? 'disponible';
+    if (incoming != _statut) setState(() => _statut = incoming);
+  }
 
   Color _statutColor(String s) => switch (s) {
     'disponible' => _green,
@@ -196,12 +215,15 @@ class _AnnonceCard extends StatelessWidget {
     _            => s,
   };
 
-  Future<void> _togglePause(BuildContext context, String statut) async {
-    final next = statut == 'pause' ? 'disponible' : 'pause';
+  Future<void> _togglePause() async {
+    final prev = _statut;
+    final next = _statut == 'pause' ? 'disponible' : 'pause';
+    setState(() => _statut = next);
     try {
-      await Supabase.instance.client.from('annonces').update({'statut': next}).eq('id', id);
+      await Supabase.instance.client.from('annonces').update({'statut': next}).eq('id', widget.id);
     } catch (e) {
-      if (context.mounted) {
+      setState(() => _statut = prev);
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Erreur: $e', style: const TextStyle(fontFamily: 'Galey'))));
       }
@@ -231,7 +253,7 @@ class _AnnonceCard extends StatelessWidget {
     );
     if (ok == true) {
       try {
-        await Supabase.instance.client.from('annonces').update({'statut': 'supprime'}).eq('id', id);
+        await Supabase.instance.client.from('annonces').update({'statut': 'supprime'}).eq('id', widget.id);
       } catch (e) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -243,24 +265,23 @@ class _AnnonceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statut     = (data['statut'] as String?) ?? 'disponible';
-    final espece     = (data['espece'] as String?) ?? '';
-    final race       = (data['race'] as String?) ?? '';
-    final titre      = (data['titre'] as String?) ?? '';
-    final type       = (data['type'] as String?) ?? 'animal';
-    final typeVente  = (data['typeVente'] as String?) ?? 'vente';
-    final photos     = List<String>.from(data['photos'] ?? []);
-    final prix       = (data['prix'] as num?)?.toDouble();
-    final prixMin    = (data['prixMinPortee'] as num?)?.toDouble();
-    final prixMax    = (data['prixMaxPortee'] as num?)?.toDouble();
-    final spRaw      = data['sailliePrix'];
+    final espece     = (widget.data['espece'] as String?) ?? '';
+    final race       = (widget.data['race'] as String?) ?? '';
+    final titre      = (widget.data['titre'] as String?) ?? '';
+    final type       = (widget.data['type'] as String?) ?? 'animal';
+    final typeVente  = (widget.data['typeVente'] as String?) ?? 'vente';
+    final photos     = List<String>.from(widget.data['photos'] ?? []);
+    final prix       = (widget.data['prix'] as num?)?.toDouble();
+    final prixMin    = (widget.data['prixMinPortee'] as num?)?.toDouble();
+    final prixMax    = (widget.data['prixMaxPortee'] as num?)?.toDouble();
+    final spRaw      = widget.data['sailliePrix'];
     final sailliePrix = spRaw is num ? spRaw.toDouble() : spRaw is String ? double.tryParse(spRaw) : null;
-    final vues       = (data['vues'] as num?)?.toInt() ?? 0;
-    final contacts   = (data['contacts'] as num?)?.toInt() ?? 0;
-    final createdAt  = data['createdAt'] as Timestamp?;
-    final expiresAt  = data['expiresAt'] as Timestamp?;
-    final isPaused   = statut == 'pause';
-    final isTermine  = statut == 'vendu' || statut == 'cede' || statut == 'expire' || statut == 'supprime';
+    final vues       = (widget.data['vues'] as num?)?.toInt() ?? 0;
+    final contacts   = (widget.data['contacts'] as num?)?.toInt() ?? 0;
+    final createdAt  = widget.data['createdAt'] as Timestamp?;
+    final expiresAt  = widget.data['expiresAt'] as Timestamp?;
+    final isPaused   = _statut == 'pause';
+    final isTermine  = _statut == 'vendu' || _statut == 'cede' || _statut == 'expire' || _statut == 'supprime';
 
     final displayTitle = titre.isNotEmpty ? titre
         : race.isNotEmpty ? race : speciesLabel(espece);
@@ -304,7 +325,7 @@ class _AnnonceCard extends StatelessWidget {
       ),
       child: InkWell(
         onTap: () => Navigator.push(context, MaterialPageRoute(
-            builder: (_) => AnnonceDetailPage(annonceId: id, initialData: data))),
+            builder: (_) => AnnonceDetailPage(annonceId: widget.id, initialData: widget.data))),
         borderRadius: BorderRadius.circular(16),
         child: Column(children: [
           // ── Row principale : photo + infos ────────────────────────────────
@@ -332,7 +353,7 @@ class _AnnonceCard extends StatelessWidget {
                   Wrap(spacing: 6, runSpacing: 4, children: [
                     _badge(type == 'portee' ? 'Portée' : 'Animal',
                         type == 'portee' ? _teal : _green),
-                    _badge(_statutLabel(statut), _statutColor(statut)),
+                    _badge(_statutLabel(_statut), _statutColor(_statut)),
                     if (expiryLabel.isNotEmpty)
                       _badge(expiryLabel, Colors.redAccent),
                   ]),
@@ -384,7 +405,7 @@ class _AnnonceCard extends StatelessWidget {
                   icon: isPaused ? Icons.play_arrow_outlined : Icons.pause_outlined,
                   label: isPaused ? 'Activer' : 'Pause',
                   color: isPaused ? _green : const Color(0xFF9CA3AF),
-                  onTap: () => _togglePause(context, statut),
+                  onTap: _togglePause,
                 ),
                 const SizedBox(width: 8),
                 // Modifier
@@ -393,7 +414,7 @@ class _AnnonceCard extends StatelessWidget {
                   label: 'Modifier',
                   color: _teal,
                   onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => CreateAnnoncePage(annonceId: id, initialData: data))),
+                      builder: (_) => CreateAnnoncePage(annonceId: widget.id, initialData: widget.data))),
                 ),
                 const Spacer(),
                 // Supprimer
