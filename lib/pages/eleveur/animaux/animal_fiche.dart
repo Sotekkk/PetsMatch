@@ -1975,7 +1975,9 @@ class _ReproListState extends State<_ReproList> {
           if (a != null) animalNom = (a['nom'] as String?)?.isNotEmpty == true ? a['nom'] as String : 'animal';
         } catch (_) {}
 
-        await supa.from('agenda_events').upsert({
+        final existing = await supa.from('agenda_events')
+            .select('id').eq('gestation_id', id).maybeSingle();
+        final eventData = {
           'uid':          uid,
           'titre':        'Mise-bas prévue — $animalNom',
           'type':         'mise_bas',
@@ -1983,7 +1985,12 @@ class _ReproListState extends State<_ReproList> {
           'animal_id':    int.tryParse(widget.animalId),
           'notes':        'Gestation confirmée',
           'gestation_id': id,
-        }, onConflict: 'gestation_id');
+        };
+        if (existing != null) {
+          await supa.from('agenda_events').update(eventData).eq('id', existing['id']);
+        } else {
+          await supa.from('agenda_events').insert(eventData);
+        }
       }
 
       if (mounted) setState(() {
