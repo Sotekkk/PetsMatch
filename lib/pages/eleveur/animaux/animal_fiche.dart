@@ -483,16 +483,85 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   }
 
   Future<void> _pickPedigree() async {
-    final result = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'png', 'jpeg']);
-    if (result?.files.single.path != null) {
-      setState(() => _saving = true);
-      try {
-        final url = await _uploadFile(File(result!.files.single.path!), 'pedigrees');
-        setState(() { _pedigreeUrl = url; _saving = false; });
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pedigree chargé ✓')));
-      } catch (e) {
-        setState(() => _saving = false);
-      }
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          const Text('Ajouter un pedigree',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
+          const SizedBox(height: 16),
+          ListTile(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            tileColor: const Color(0xFF6E9E57).withOpacity(0.07),
+            leading: Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(color: const Color(0xFF6E9E57).withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.camera_alt_outlined, color: Color(0xFF6E9E57)),
+            ),
+            title: const Text('Prendre une photo', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            subtitle: const Text('Ouvrir la caméra', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+            onTap: () => Navigator.pop(context, 'camera'),
+          ),
+          const SizedBox(height: 10),
+          ListTile(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            tileColor: const Color(0xFF0C5C6C).withOpacity(0.07),
+            leading: Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(color: const Color(0xFF0C5C6C).withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.photo_library_outlined, color: Color(0xFF0C5C6C)),
+            ),
+            title: const Text('Choisir depuis la galerie', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            subtitle: const Text('Sélectionner une photo', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+            onTap: () => Navigator.pop(context, 'gallery'),
+          ),
+          const SizedBox(height: 10),
+          ListTile(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            tileColor: const Color(0xFFB07D3A).withOpacity(0.07),
+            leading: Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(color: const Color(0xFFB07D3A).withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.picture_as_pdf_outlined, color: Color(0xFFB07D3A)),
+            ),
+            title: const Text('Document PDF', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            subtitle: const Text('Importer un fichier PDF', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+            onTap: () => Navigator.pop(context, 'pdf'),
+          ),
+        ]),
+      ),
+    );
+    if (choice == null) return;
+
+    File? file;
+    if (choice == 'camera') {
+      final xFile = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 90);
+      if (xFile != null) file = File(xFile.path);
+    } else if (choice == 'gallery') {
+      final xFile = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 90);
+      if (xFile != null) file = File(xFile.path);
+    } else {
+      final result = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf']);
+      if (result?.files.single.path != null) file = File(result!.files.single.path!);
+    }
+
+    if (file == null) return;
+    setState(() => _saving = true);
+    try {
+      final url = await _uploadFile(file, 'pedigrees');
+      setState(() { _pedigreeUrl = url; _saving = false; });
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pedigree chargé ✓')));
+    } catch (e) {
+      setState(() => _saving = false);
     }
   }
 
@@ -725,10 +794,7 @@ class _IdentiteTab extends StatelessWidget {
                   if (_hasPoids) _field('Poids (kg)', s._poidsCtrl, inputType: TextInputType.number),
                 ]),
                 const SizedBox(height: 12),
-                _card([
-                  _pedigreeSection(context),
-                  _genealogieSection(context),
-                ]),
+                _card([_genealogieSection(context)]),
                 const SizedBox(height: 12),
                 _contactsUrgenceSection(context),
                 const SizedBox(height: 12),
@@ -736,6 +802,8 @@ class _IdentiteTab extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 12),
+          _card([_pedigreeSection(context)]),
           const SizedBox(height: 12),
           _registreSection(context),
           const SizedBox(height: 12),
@@ -1294,98 +1362,112 @@ class _IdentiteTab extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(cfg.sectionLabel,
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
-        const SizedBox(height: 6),
-        Row(children: [
-          Expanded(child: GestureDetector(
-            onTap: () => s.setState(() => s._pedigree = false),
-            child: Container(
-              margin: const EdgeInsets.only(right: 6),
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              decoration: BoxDecoration(
-                color: !s._pedigree ? const Color(0xFF6E9E57) : Colors.transparent,
-                border: Border.all(color: !s._pedigree ? const Color(0xFF6E9E57) : Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text('Non', textAlign: TextAlign.center,
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                      color: !s._pedigree ? Colors.white : const Color(0xFF1F2A2E))),
-            ),
-          )),
-          Expanded(child: GestureDetector(
-            onTap: () => s.setState(() => s._pedigree = true),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              decoration: BoxDecoration(
-                color: s._pedigree ? const Color(0xFF6E9E57) : Colors.transparent,
-                border: Border.all(color: s._pedigree ? const Color(0xFF6E9E57) : Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(cfg.yesLabel, textAlign: TextAlign.center,
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                      color: s._pedigree ? Colors.white : const Color(0xFF1F2A2E))),
-            ),
-          )),
-        ]),
-        if (s._pedigree) ...[
-          const SizedBox(height: 12),
-          Text(cfg.typeLabel,
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
-          const SizedBox(height: 6),
-          Wrap(spacing: 6, runSpacing: 6,
-            children: cfg.typeOptions.map((opt) {
-              final active = s._pedigreeLof == opt;
-              return GestureDetector(
-                onTap: () => s.setState(() => s._pedigreeLof = opt),
+        // ── Contrôles d'édition (bloqués hors mode édition) ──────────────────
+        IgnorePointer(
+          ignoring: !s._editing,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(cfg.sectionLabel,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
+            const SizedBox(height: 6),
+            Row(children: [
+              Expanded(child: GestureDetector(
+                onTap: () => s.setState(() => s._pedigree = false),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  margin: const EdgeInsets.only(right: 6),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
                   decoration: BoxDecoration(
-                    color: active ? const Color(0xFF0C5C6C) : Colors.transparent,
-                    border: Border.all(color: active ? const Color(0xFF0C5C6C) : Colors.grey.shade300),
+                    color: !s._pedigree ? const Color(0xFF6E9E57) : Colors.transparent,
+                    border: Border.all(color: !s._pedigree ? const Color(0xFF6E9E57) : Colors.grey.shade300),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Text(opt, textAlign: TextAlign.center,
+                  child: Text('Non', textAlign: TextAlign.center,
                       style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                          color: active ? Colors.white : const Color(0xFF1F2A2E))),
+                          color: !s._pedigree ? Colors.white : const Color(0xFF1F2A2E))),
                 ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: s._clubRegistreCtrl,
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
-            decoration: InputDecoration(
-              labelText: cfg.clubLabel,
-              labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xFF6E9E57))),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 8),
-          GestureDetector(
-            onTap: s._pickPedigree,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFE4E7E2)),
-                borderRadius: BorderRadius.circular(10),
+              )),
+              Expanded(child: GestureDetector(
+                onTap: () => s.setState(() => s._pedigree = true),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    color: s._pedigree ? const Color(0xFF6E9E57) : Colors.transparent,
+                    border: Border.all(color: s._pedigree ? const Color(0xFF6E9E57) : Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(cfg.yesLabel, textAlign: TextAlign.center,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                          color: s._pedigree ? Colors.white : const Color(0xFF1F2A2E))),
+                ),
+              )),
+            ]),
+            if (s._pedigree) ...[
+              const SizedBox(height: 12),
+              Text(cfg.typeLabel,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
+              const SizedBox(height: 6),
+              Wrap(spacing: 6, runSpacing: 6,
+                children: cfg.typeOptions.map((opt) {
+                  final active = s._pedigreeLof == opt;
+                  return GestureDetector(
+                    onTap: () => s.setState(() => s._pedigreeLof = opt),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: active ? const Color(0xFF0C5C6C) : Colors.transparent,
+                        border: Border.all(color: active ? const Color(0xFF0C5C6C) : Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(opt, textAlign: TextAlign.center,
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                              color: active ? Colors.white : const Color(0xFF1F2A2E))),
+                    ),
+                  );
+                }).toList(),
               ),
-              child: Row(children: [
-                Icon(s._pedigreeUrl != null ? Icons.check_circle_outline : Icons.upload_file_outlined,
-                    size: 18, color: s._pedigreeUrl != null ? const Color(0xFF6E9E57) : const Color(0xFF0C5C6C)),
-                const SizedBox(width: 8),
-                Text(s._pedigreeUrl != null ? 'Document chargé ✓' : cfg.docLabel,
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                        color: s._pedigreeUrl != null ? const Color(0xFF6E9E57) : const Color(0xFF6F767B))),
-              ]),
-            ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: s._clubRegistreCtrl,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                decoration: InputDecoration(
+                  labelText: cfg.clubLabel,
+                  labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFF6E9E57))),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  isDense: true,
+                ),
+              ),
+              if (s._editing && s._pedigreeUrl == null) ...[
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: s._pickPedigree,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xFFE4E7E2)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.upload_file_outlined, size: 18, color: Color(0xFF0C5C6C)),
+                      const SizedBox(width: 8),
+                      Text(cfg.docLabel,
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+                    ]),
+                  ),
+                ),
+              ],
+            ],
+          ]),
+        ),
+        // ── Prévisualisation (toujours cliquable) ─────────────────────────────
+        if (s._pedigree && s._pedigreeUrl != null) ...[
+          const SizedBox(height: 8),
+          _PedigreePreview(
+            url: s._pedigreeUrl!,
+            onReplace: s._editing ? s._pickPedigree : null,
           ),
         ],
         const SizedBox(height: 4),
@@ -1812,8 +1894,10 @@ class _IdentiteTab extends StatelessWidget {
               ])),
               if ((doc['url'] ?? '').isNotEmpty)
                 IconButton(
-                  icon: const Icon(Icons.open_in_new, size: 18, color: Color(0xFF0C5C6C)),
-                  onPressed: () => launchUrl(Uri.parse(doc['url']!), mode: LaunchMode.externalApplication),
+                  icon: Icon(
+                    _isImageUrl(doc['url']!) ? Icons.image_outlined : Icons.open_in_new,
+                    size: 18, color: const Color(0xFF0C5C6C)),
+                  onPressed: () => _openDoc(context, doc['url']!),
                   padding: EdgeInsets.zero, constraints: const BoxConstraints(),
                 ),
               if (s._editing)
@@ -1854,6 +1938,122 @@ class _IdentiteTab extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Visualiseur de document ──────────────────────────────────────────────────
+
+bool _isImageUrl(String url) {
+  final lower = url.toLowerCase().split('?').first;
+  return lower.endsWith('.jpg') || lower.endsWith('.jpeg') ||
+      lower.endsWith('.png') || lower.endsWith('.webp') || lower.endsWith('.gif');
+}
+
+void _openDoc(BuildContext context, String url) {
+  if (_isImageUrl(url)) {
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => _ImageViewerPage(url: url),
+    ));
+  } else {
+    launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  }
+}
+
+class _ImageViewerPage extends StatelessWidget {
+  const _ImageViewerPage({required this.url});
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+        elevation: 0,
+      ),
+      body: InteractiveViewer(
+        minScale: 0.5,
+        maxScale: 5,
+        child: Center(
+          child: Image.network(
+            url,
+            fit: BoxFit.contain,
+            loadingBuilder: (_, child, progress) => progress == null
+                ? child
+                : const Center(child: CircularProgressIndicator(color: Colors.white)),
+            errorBuilder: (_, __, ___) => const Center(
+              child: Icon(Icons.broken_image_outlined, color: Colors.white54, size: 64),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PedigreePreview extends StatelessWidget {
+  const _PedigreePreview({required this.url, required this.onReplace});
+  final String url;
+  final VoidCallback? onReplace;
+
+  @override
+  Widget build(BuildContext context) {
+    final isImage = _isImageUrl(url);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _openDoc(context, url),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFF6E9E57).withOpacity(0.4)),
+            borderRadius: BorderRadius.circular(10),
+            color: const Color(0xFFEEF5EA),
+          ),
+          child: Row(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: isImage
+                  ? Image.network(url, width: 48, height: 48, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const _DocIcon())
+                  : const _DocIcon(),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Document chargé ✓',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        fontWeight: FontWeight.w600, color: Color(0xFF6E9E57))),
+                Text(isImage ? 'Appuyez pour agrandir' : 'Appuyez pour ouvrir le PDF',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
+              ]),
+            ),
+            if (onReplace != null)
+              GestureDetector(
+                onTap: onReplace,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: const Text('Modifier',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF0C5C6C))),
+                ),
+              ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _DocIcon extends StatelessWidget {
+  const _DocIcon();
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 48, height: 48,
+    color: const Color(0xFFB07D3A).withOpacity(0.12),
+    child: const Icon(Icons.picture_as_pdf_outlined, color: Color(0xFFB07D3A), size: 26),
+  );
 }
 
 // ─── Onglet Suivi Repro ───────────────────────────────────────────────────────
