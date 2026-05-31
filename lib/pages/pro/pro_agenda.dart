@@ -129,10 +129,73 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }).toList();
   }
 
-  Future<void> _updateStatut(String rdvId, String statut) async {
+  Future<void> _showAcceptDialog(Map<String, dynamic> rdv) async {
+    int duree = 60;
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Durée du rendez-vous',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 6),
+            const Text('Le client ne verra pas cette durée — elle sert à bloquer votre agenda.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 18),
+            Wrap(spacing: 10, runSpacing: 10, children: [30, 45, 60, 90, 120].map((d) {
+              final sel = duree == d;
+              return GestureDetector(
+                onTap: () => setModal(() => duree = d),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: sel ? _teal : Colors.white,
+                    border: Border.all(color: sel ? _teal : const Color(0xFFE4E7E2)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    d < 60 ? '$d min' : (d == 60 ? '1 h' : '${d ~/ 60} h${d % 60 > 0 ? " ${d % 60}" : ""}'),
+                    style: TextStyle(
+                        fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                        color: sel ? Colors.white : const Color(0xFF1E2025)),
+                  ),
+                ),
+              );
+            }).toList()),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _teal, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+                child: const Text('Confirmer le RDV',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+    if (confirmed == true) {
+      await _updateStatut(rdv['id'].toString(), 'confirme', dureeMinutes: duree);
+    }
+  }
+
+  Future<void> _updateStatut(String rdvId, String statut, {int? dureeMinutes}) async {
     try {
       final supa = Supabase.instance.client;
-      await supa.from('rdv').update({'statut': statut}).eq('id', rdvId);
+      final update = <String, dynamic>{'statut': statut};
+      if (dureeMinutes != null) update['duree_minutes'] = dureeMinutes;
+      await supa.from('rdv').update(update).eq('id', rdvId);
 
       // Sync agenda du client
       final rdv = _rdvs.firstWhere(
@@ -297,7 +360,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           rdv: rdv,
           showActions: showActions,
           showCancel: showCancel,
-          onAccept:  () => _updateStatut(rdv['id'].toString(), 'confirme'),
+          onAccept:  () => _showAcceptDialog(rdv),
           onDecline: () => _updateStatut(rdv['id'].toString(), 'annule'),
           onCancel:  () => _updateStatut(rdv['id'].toString(), 'annule'),
           onDone:    () => _updateStatut(rdv['id'].toString(), 'termine'),
@@ -357,7 +420,7 @@ class _RdvCard extends StatelessWidget {
     final clientName = rdv['_client_name']?.toString() ?? 'Client';
     final animalNom = rdv['_animal_nom']?.toString() ?? '';
     final motif = rdv['motif']?.toString() ?? '';
-    final duree = (rdv['duree_minutes'] as num?)?.toInt() ?? 30;
+    final duree = (rdv['duree_minutes'] as num?)?.toInt();
     final notes = rdv['notes_pro']?.toString() ?? '';
     final statut = rdv['statut']?.toString() ?? '';
     final hasNotes = notes.isNotEmpty;
@@ -428,8 +491,13 @@ class _RdvCard extends StatelessWidget {
               if (motif.isNotEmpty)
                 Text(motif, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF555F6A))),
               const SizedBox(height: 4),
-              Text('Durée : $duree min',
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+              Text(
+                duree != null
+                    ? (duree < 60 ? 'Durée : $duree min' : 'Durée : ${duree ~/ 60} h${duree % 60 > 0 ? " ${duree % 60}" : ""}')
+                    : 'Durée : à définir par le professionnel',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    color: duree != null ? Colors.grey : Colors.orange.shade400),
+              ),
 
               // Notes indicator
               if (hasNotes) ...[

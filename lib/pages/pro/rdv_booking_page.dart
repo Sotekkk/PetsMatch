@@ -24,18 +24,19 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 1));
   int _selectedHour = 10;
   int _selectedMinute = 0;
-  int _dureeMinutes = 30;
   String? _selectedAnimalId;
   final _motifCtrl = TextEditingController();
 
   bool _loadingAnimaux = true;
   bool _saving = false;
   List<Map<String, dynamic>> _animaux = [];
+  List<Map<String, dynamic>> _proRdvs = [];
 
   @override
   void initState() {
     super.initState();
     _loadAnimaux();
+    _loadProRdvs();
   }
 
   @override
@@ -64,6 +65,33 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     }
   }
 
+  Future<void> _loadProRdvs() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('rdv')
+          .select('date_heure, duree_minutes')
+          .eq('pro_uid', widget.proUid)
+          .eq('statut', 'confirme')
+          .gte('date_heure', DateTime.now().toIso8601String());
+      if (mounted) setState(() => _proRdvs = List<Map<String, dynamic>>.from(rows));
+    } catch (_) {}
+  }
+
+  bool _isBusy(int h, int m) {
+    final selDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    for (final r in _proRdvs) {
+      final dh = DateTime.tryParse(r['date_heure'] ?? '')?.toLocal();
+      if (dh == null) continue;
+      if (dh.year != selDay.year || dh.month != selDay.month || dh.day != selDay.day) continue;
+      final dur = (r['duree_minutes'] as num?)?.toInt() ?? 30;
+      final rdvStart = dh.hour * 60 + dh.minute;
+      final rdvEnd = rdvStart + dur;
+      final proposed = h * 60 + m;
+      if (proposed >= rdvStart && proposed < rdvEnd) return true;
+    }
+    return false;
+  }
+
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final picked = await showDatePicker(
@@ -84,6 +112,14 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   Future<void> _submit() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    if (_isBusy(_selectedHour, _selectedMinute)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Ce créneau est déjà réservé. Choisissez un autre horaire.', style: TextStyle(fontFamily: 'Galey')),
+        backgroundColor: Colors.orange,
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
     if (_motifCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Veuillez indiquer le motif du rendez-vous', style: TextStyle(fontFamily: 'Galey')),
@@ -104,7 +140,6 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         'client_uid':     uid,
         if (_selectedAnimalId != null) 'animal_id': int.tryParse(_selectedAnimalId!) ?? _selectedAnimalId,
         'date_heure':     dateHeure.toIso8601String(),
-        'duree_minutes':  _dureeMinutes,
         'motif':          _motifCtrl.text.trim(),
         'statut':         'demande',
       });
@@ -200,12 +235,6 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                   _sectionTitle('Heure'),
                   const SizedBox(height: 8),
                   _buildTimeSelector(),
-                  const SizedBox(height: 20),
-
-                  // Durée
-                  _sectionTitle('Durée estimée'),
-                  const SizedBox(height: 8),
-                  _buildDureeSelector(),
                   const SizedBox(height: 20),
 
                   // Animal
@@ -305,6 +334,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   );
 
   Widget _buildTimeSelector() {
+    final busyWarning = _isBusy(_selectedHour, _selectedMinute);
     return Column(children: [
       // Heures
       SingleChildScrollView(
@@ -312,22 +342,32 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         child: Row(
           children: List.generate(13, (i) => i + 8).map((h) {
             final sel = _selectedHour == h;
+            final busy = _isBusy(h, _selectedMinute);
             return GestureDetector(
-              onTap: () => setState(() => _selectedHour = h),
+              onTap: busy ? null : () => setState(() => _selectedHour = h),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 margin: const EdgeInsets.only(right: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: sel ? widget.categoryColor : Colors.white,
-                  border: Border.all(color: sel ? widget.categoryColor : const Color(0xFFE4E7E2)),
+                  color: busy
+                      ? const Color(0xFFF0F0F0)
+                      : sel ? widget.categoryColor : Colors.white,
+                  border: Border.all(
+                    color: busy
+                        ? const Color(0xFFCCCCCC)
+                        : sel ? widget.categoryColor : const Color(0xFFE4E7E2),
+                  ),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  '$h h',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                      color: sel ? Colors.white : const Color(0xFF1E2025),
-                      fontWeight: sel ? FontWeight.w700 : FontWeight.normal),
+                  busy ? '$h h ✕' : '$h h',
+                  style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 13,
+                    color: busy ? Colors.grey : sel ? Colors.white : const Color(0xFF1E2025),
+                    fontWeight: sel && !busy ? FontWeight.w700 : FontWeight.normal,
+                    decoration: busy ? TextDecoration.lineThrough : null,
+                  ),
                 ),
               ),
             );
@@ -338,53 +378,58 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       // Minutes
       Row(children: [0, 15, 30, 45].map((m) {
         final sel = _selectedMinute == m;
+        final busy = _isBusy(_selectedHour, m);
         return GestureDetector(
-          onTap: () => setState(() => _selectedMinute = m),
+          onTap: busy ? null : () => setState(() => _selectedMinute = m),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             margin: const EdgeInsets.only(right: 8),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: sel ? widget.categoryColor : Colors.white,
-              border: Border.all(color: sel ? widget.categoryColor : const Color(0xFFE4E7E2)),
+              color: busy
+                  ? const Color(0xFFF0F0F0)
+                  : sel ? widget.categoryColor : Colors.white,
+              border: Border.all(
+                color: busy
+                    ? const Color(0xFFCCCCCC)
+                    : sel ? widget.categoryColor : const Color(0xFFE4E7E2),
+              ),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
               m == 0 ? '00 min' : '$m min',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                  color: sel ? Colors.white : const Color(0xFF1E2025),
-                  fontWeight: sel ? FontWeight.w700 : FontWeight.normal),
+              style: TextStyle(
+                fontFamily: 'Galey', fontSize: 13,
+                color: busy ? Colors.grey : sel ? Colors.white : const Color(0xFF1E2025),
+                fontWeight: sel && !busy ? FontWeight.w700 : FontWeight.normal,
+                decoration: busy ? TextDecoration.lineThrough : null,
+              ),
             ),
           ),
         );
       }).toList()),
+      if (busyWarning) ...[
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.orange.shade200),
+          ),
+          child: const Row(children: [
+            Icon(Icons.warning_amber_outlined, size: 15, color: Colors.orange),
+            SizedBox(width: 8),
+            Expanded(child: Text(
+              'Ce créneau est déjà réservé. Sélectionnez un autre horaire.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.orange),
+            )),
+          ]),
+        ),
+      ],
     ]);
   }
 
-  Widget _buildDureeSelector() {
-    return Row(children: [30, 60, 90].map((d) {
-      final sel = _dureeMinutes == d;
-      return GestureDetector(
-        onTap: () => setState(() => _dureeMinutes = d),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          margin: const EdgeInsets.only(right: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: sel ? widget.categoryColor : Colors.white,
-            border: Border.all(color: sel ? widget.categoryColor : const Color(0xFFE4E7E2)),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text(
-            d < 60 ? '$d min' : '${d ~/ 60} h',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                color: sel ? Colors.white : const Color(0xFF1E2025),
-                fontWeight: sel ? FontWeight.w700 : FontWeight.normal),
-          ),
-        ),
-      );
-    }).toList());
-  }
 
   String _formatDate(DateTime d) {
     const jours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
