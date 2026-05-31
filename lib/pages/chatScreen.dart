@@ -96,6 +96,7 @@ class _ChatScreenState extends State<ChatScreen> {
       'unreadCount': unread,
       'lastMessage': imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : text),
       'timestamp': FieldValue.serverTimestamp(),
+      'deletedFor': FieldValue.delete(),
     });
     _scrollToBottom();
   }

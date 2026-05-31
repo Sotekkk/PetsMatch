@@ -52,6 +52,42 @@ class _MessagePageState extends State<MessagePage> {
     loadBlockedUsers().then((_) { if (mounted) setState(() {}); });
   }
 
+  Future<void> _deleteConversation(String conversationId) async {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    await FirebaseFirestore.instance
+        .collection('conversations')
+        .doc(conversationId)
+        .update({'deletedFor.$uid': true});
+  }
+
+  void _showDeleteDialog(BuildContext context, String conversationId) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Supprimer la conversation',
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+        content: const Text(
+            'Cette conversation sera supprimée de votre liste. '
+            'L\'autre participant peut toujours y accéder.',
+            style: TextStyle(fontSize: 14)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler', style: TextStyle(color: Color(0xFF6B7280))),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _deleteConversation(conversationId);
+            },
+            child: const Text('Supprimer', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> loadBlockedUsers() async {
     final String currentUserId = FirebaseAuth.instance.currentUser!.uid;
     final doc = await FirebaseFirestore.instance
@@ -238,6 +274,8 @@ class _MessagePageState extends State<MessagePage> {
                       final cat = data['categorie'] as String?;
                       if (cat != activeCat) return false;
                     }
+                    final deletedFor = data['deletedFor'] as Map<String, dynamic>?;
+                    if (deletedFor?[currentUserId] == true) return false;
                     return true;
                   }).toList();
 
@@ -303,6 +341,7 @@ class _MessagePageState extends State<MessagePage> {
                           }
 
                           return ListTile(
+                            onLongPress: () => _showDeleteDialog(context, conversationId),
                             leading: CircleAvatar(
                               backgroundColor: const Color(0xFFA7C79A),
                               backgroundImage: userInfo['profilePictureUrl'] != null
