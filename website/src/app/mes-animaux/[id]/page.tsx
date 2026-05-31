@@ -594,6 +594,109 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
   );
 }
 
+// ─── Weight chart (SVG) ───────────────────────────────────────────────────────
+
+function WeightChartSVG({ data, isJuvenile, dateNaissance }: {
+  data: { date?: unknown; valeur?: unknown }[];
+  isJuvenile: boolean;
+  dateNaissance?: string;
+}) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  const W = 400, H = 160, L = 44, T = 20, R = 12, B = 30;
+  const w = W - L - R, h = H - T - B;
+
+  const vals = data.map(d => parseFloat(String(d.valeur ?? '0')) || 0);
+  const minY = Math.min(...vals), maxY = Math.max(...vals);
+  const rangeY = maxY - minY < 0.01 ? 1 : (maxY - minY) * 1.2;
+  const baseY = minY - rangeY * 0.1;
+
+  const pts = vals.map((v, i) => ({
+    x: L + (vals.length < 2 ? w / 2 : i * w / (vals.length - 1)),
+    y: T + h - ((v - baseY) / rangeY) * h,
+    val: v, i,
+  }));
+
+  const xLabel = (i: number) => {
+    const raw = String(data[i].date ?? '');
+    if (!raw) return '';
+    const dt = new Date(raw);
+    if (isNaN(dt.getTime())) return '';
+    if (isJuvenile && dateNaissance) {
+      const days = Math.floor((dt.getTime() - new Date(dateNaissance).getTime()) / 86400000);
+      if (days < 14) return `${days}j`;
+      if (days < 90) return `${Math.round(days / 7)}sem`;
+      return `${Math.round(days / 30)}m`;
+    }
+    return dt.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+  };
+
+  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const areaPath = `M${pts[0].x.toFixed(1)},${T + h} ${pts.map(p => `L${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')} L${pts[pts.length - 1].x.toFixed(1)},${T + h} Z`;
+
+  const gridLines = Array.from({ length: 5 }, (_, g) => ({
+    yVal: baseY + g * rangeY / 4, yPx: T + h - g * h / 4,
+  }));
+
+  const step = Math.ceil((vals.length - 1) / 4) || 1;
+  const labelIdxs = new Set([0, vals.length - 1]);
+  for (let i = step; i < vals.length - 1; i += step) labelIdxs.add(i);
+
+  const tip = hovered !== null ? pts[hovered] : null;
+
+  return (
+    <div className="px-4 pt-3 pb-1">
+      <p className="text-xs font-semibold text-[#5F9EAA] mb-1">
+        {isJuvenile ? 'Courbe de croissance' : 'Évolution du poids'}
+      </p>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 160 }}>
+        <defs>
+          <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#5F9EAA" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#5F9EAA" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {gridLines.map(({ yVal, yPx }, g) => (
+          <g key={g}>
+            <line x1={L} y1={yPx} x2={W - R} y2={yPx} stroke="#F0F0F0" strokeWidth="1" />
+            <text x={L - 4} y={yPx + 3} textAnchor="end" fontSize="9" fill="#BBBBBB" fontFamily="system-ui">
+              {yVal < 10 ? yVal.toFixed(1) : yVal.toFixed(0)}
+            </text>
+          </g>
+        ))}
+        <path d={areaPath} fill="url(#wg)" />
+        <path d={linePath} fill="none" stroke="#5F9EAA" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        {pts.map(p => (
+          <g key={p.i} onMouseEnter={() => setHovered(p.i)} onMouseLeave={() => setHovered(null)} style={{ cursor: 'pointer' }}>
+            <circle cx={p.x} cy={p.y} r={hovered === p.i ? 5.5 : 3.5} fill="#5F9EAA" />
+            <circle cx={p.x} cy={p.y} r={hovered === p.i ? 3.5 : 2} fill="white" />
+          </g>
+        ))}
+        {pts.filter(p => labelIdxs.has(p.i)).map(p => (
+          <text key={p.i} x={p.x} y={T + h + 16} textAnchor="middle" fontSize="9" fill="#BBBBBB" fontFamily="system-ui">
+            {xLabel(p.i)}
+          </text>
+        ))}
+        {tip && (() => {
+          const l1 = `${tip.val.toFixed(1)} kg`, l2 = xLabel(tip.i);
+          const tw = Math.max(l1.length, l2.length) * 6.5 + 14;
+          const th2 = 36;
+          let tx = tip.x - tw / 2, ty = tip.y - th2 - 10;
+          if (tx < L) tx = L;
+          if (tx + tw > W - R) tx = W - R - tw;
+          if (ty < T) ty = tip.y + 10;
+          return (
+            <g>
+              <rect x={tx} y={ty} width={tw} height={th2} rx="6" fill="#5F9EAA" />
+              <text x={tx + tw / 2} y={ty + 13} textAnchor="middle" fontSize="11" fill="white" fontWeight="700" fontFamily="system-ui">{l1}</text>
+              <text x={tx + tw / 2} y={ty + 27} textAnchor="middle" fontSize="9" fill="rgba(255,255,255,0.8)" fontFamily="system-ui">{l2}</text>
+            </g>
+          );
+        })()}
+      </svg>
+    </div>
+  );
+}
+
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 export default function AnimalFichePage() {
@@ -1575,34 +1678,42 @@ export default function AnimalFichePage() {
             {(() => {
               const sorted = [...health.poids].sort((a,b) => String(a.date??'').localeCompare(String(b.date??'')));
               const maxPoids = Math.max(...sorted.map(r => parseFloat(String(r.valeur??'0'))||0), 0.1);
-              return sorted.map(r => {
-                const val = parseFloat(String(r.valeur??'0'));
-                const pct = Math.round((val/maxPoids)*100);
-                const isEditing = editPoids === r.id;
-                return (
-                  <div key={r.id} className="px-4 py-3 border-b border-gray-50 last:border-0">
-                    {isEditing ? (
-                      <AddHealthForm saving={savingHealth} onCancel={()=>setEditPoids(null)}
-                        onSave={d=>updateHealthRecord('poids',r.id,d)}
-                        initial={{ valeur: String(r.valeur??''), date: String(r.date??''), notes: String(r.notes??'') }}
-                        fields={[{key:'valeur',label:'Poids (kg)',required:true,type:'number'},{key:'date',label:'Date',type:'date'},{key:'notes',label:'Notes'}]}/>
-                    ) : (
-                      <>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-semibold text-sm text-[#5F9EAA]">{val} kg</span>
-                          <span className="text-xs text-gray-400 flex-1">{fmtDate(String(r.date??''))}</span>
-                          <button onClick={()=>setEditPoids(r.id)} className="text-xs text-[#0C5C6C] hover:text-[#094F5D] font-medium px-1">✏️</button>
-                          <button onClick={()=>deleteHealthRecord('poids',r.id)} className="text-xs text-red-400 hover:text-red-600">×</button>
-                        </div>
-                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full transition-all" style={{ width:`${pct}%`, backgroundColor:'#5F9EAA' }}/>
-                        </div>
-                        {!!r.notes && <p className="text-xs text-gray-400 mt-1">{String(r.notes)}</p>}
-                      </>
-                    )}
-                  </div>
-                );
-              });
+              const isJuvenile = !!animal.date_naissance && (Date.now() - new Date(animal.date_naissance).getTime()) / 86400000 < 548;
+              return (
+                <>
+                  {sorted.length >= 2 && (
+                    <WeightChartSVG data={sorted} isJuvenile={isJuvenile} dateNaissance={animal.date_naissance} />
+                  )}
+                  {sorted.map(r => {
+                    const val = parseFloat(String(r.valeur??'0'));
+                    const pct = Math.round((val/maxPoids)*100);
+                    const isEditing = editPoids === r.id;
+                    return (
+                      <div key={r.id} className="px-4 py-3 border-b border-gray-50 last:border-0">
+                        {isEditing ? (
+                          <AddHealthForm saving={savingHealth} onCancel={()=>setEditPoids(null)}
+                            onSave={d=>updateHealthRecord('poids',r.id,d)}
+                            initial={{ valeur: String(r.valeur??''), date: String(r.date??''), notes: String(r.notes??'') }}
+                            fields={[{key:'valeur',label:'Poids (kg)',required:true,type:'number'},{key:'date',label:'Date',type:'date'},{key:'notes',label:'Notes'}]}/>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-semibold text-sm text-[#5F9EAA]">{val} kg</span>
+                              <span className="text-xs text-gray-400 flex-1">{fmtDate(String(r.date??''))}</span>
+                              <button onClick={()=>setEditPoids(r.id)} className="text-xs text-[#0C5C6C] hover:text-[#094F5D] font-medium px-1">✏️</button>
+                              <button onClick={()=>deleteHealthRecord('poids',r.id)} className="text-xs text-red-400 hover:text-red-600">×</button>
+                            </div>
+                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-full rounded-full transition-all" style={{ width:`${pct}%`, backgroundColor:'#5F9EAA' }}/>
+                            </div>
+                            {!!r.notes && <p className="text-xs text-gray-400 mt-1">{String(r.notes)}</p>}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
+              );
             })()}
             {health.poids.length===0 && <p className="p-4 text-sm text-gray-400">Aucune mesure</p>}
           </HealthSection>

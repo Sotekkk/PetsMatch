@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:file_picker/file_picker.dart';
@@ -2597,6 +2598,26 @@ class _PoidsTab extends StatefulWidget {
 }
 class _PoidsTabState extends State<_PoidsTab> {
   int _refreshKey = 0;
+  DateTime? _dateNaissance;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchBirthDate();
+  }
+
+  Future<void> _fetchBirthDate() async {
+    final res = await Supabase.instance.client
+        .from('animaux').select('date_naissance').eq('id', widget.animalId).maybeSingle();
+    if (!mounted || res == null) return;
+    final raw = res['date_naissance'] as String?;
+    if (raw != null && raw.isNotEmpty) setState(() => _dateNaissance = DateTime.tryParse(raw));
+  }
+
+  bool get _isJuvenile {
+    if (_dateNaissance == null) return false;
+    return DateTime.now().difference(_dateNaissance!).inDays < 548;
+  }
 
   void _refresh() { if (mounted) setState(() => _refreshKey++); }
 
@@ -2627,13 +2648,21 @@ class _PoidsTabState extends State<_PoidsTab> {
           final vals = docs.map((d) =>
               double.tryParse(d['valeur']?.toString() ?? '') ?? 0.0).toList();
           final maxPoids = vals.isEmpty ? 1.0 : vals.reduce((a, b) => a > b ? a : b);
+          final showChart = docs.length >= 2;
 
           return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: docs.length,
-            itemBuilder: (_, i) {
-              final d    = docs[i];
-              final raw  = d['date'] as String?;
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            itemCount: docs.length + (showChart ? 1 : 0),
+            itemBuilder: (_, rawIdx) {
+              if (showChart && rawIdx == 0) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 16, bottom: 8),
+                  child: _WeightChart(docs: docs, isJuvenile: _isJuvenile, dateNaissance: _dateNaissance),
+                );
+              }
+              final i = rawIdx - (showChart ? 1 : 0);
+              final d   = docs[i];
+              final raw = d['date'] as String?;
               final date = raw != null && raw.isNotEmpty
                   ? (DateTime.tryParse(raw) != null
                       ? DateFormat('dd/MM/yyyy').format(DateTime.parse(raw))
@@ -2642,10 +2671,10 @@ class _PoidsTabState extends State<_PoidsTab> {
               final val = vals[i];
               final pct = maxPoids > 0 ? val / maxPoids : 0.0;
               return Container(
-                margin: const EdgeInsets.only(bottom: 10),
+                margin: EdgeInsets.only(bottom: 10, top: i == 0 && !showChart ? 16 : 0),
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 5)]),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 5)]),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                     Text(date, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
@@ -2691,6 +2720,200 @@ class _PoidsTabState extends State<_PoidsTab> {
         },
       ),
     );
+  }
+}
+
+// ─── Weight line chart ─────────────────────────────────────────────────────────
+
+class _WeightChart extends StatefulWidget {
+  final List<Map<String, dynamic>> docs;
+  final bool isJuvenile;
+  final DateTime? dateNaissance;
+  const _WeightChart({required this.docs, required this.isJuvenile, this.dateNaissance});
+  @override State<_WeightChart> createState() => _WeightChartState();
+}
+class _WeightChartState extends State<_WeightChart> {
+  int? _hoverIdx;
+
+  String _xLabel(int i) {
+    final raw = widget.docs[i]['date'] as String? ?? '';
+    final dt = DateTime.tryParse(raw);
+    if (dt == null) return '';
+    if (widget.isJuvenile && widget.dateNaissance != null) {
+      final days = dt.difference(widget.dateNaissance!).inDays.abs();
+      if (days < 14) return '${days}j';
+      if (days < 90) return '${(days / 7).round()}sem';
+      return '${(days / 30).round()}m';
+    }
+    return DateFormat('dd/MM').format(dt);
+  }
+
+  List<Offset> _calcPoints(Size size) {
+    const l = 44.0, t = 20.0, r = 12.0, b = 30.0;
+    final w = size.width - l - r;
+    final h = size.height - t - b;
+    final vals = widget.docs.map((d) => double.tryParse(d['valeur']?.toString() ?? '') ?? 0.0).toList();
+    final minY = vals.reduce((a, b) => a < b ? a : b);
+    final maxY = vals.reduce((a, b) => a > b ? a : b);
+    final rangeY = (maxY - minY) < 0.01 ? 1.0 : (maxY - minY) * 1.2;
+    final baseY = minY - rangeY * 0.1;
+    return List.generate(vals.length, (i) {
+      final x = l + (vals.length < 2 ? w / 2 : i * w / (vals.length - 1));
+      final y = t + h - ((vals[i] - baseY) / rangeY) * h;
+      return Offset(x, y);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 195,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8)],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: LayoutBuilder(builder: (_, c) {
+          return GestureDetector(
+            onTapDown: (d) {
+              final pts = _calcPoints(Size(c.maxWidth, c.maxHeight));
+              int? best;
+              double bestDist = 32;
+              for (int i = 0; i < pts.length; i++) {
+                final dist = (pts[i] - d.localPosition).distance;
+                if (dist < bestDist) { bestDist = dist; best = i; }
+              }
+              setState(() => _hoverIdx = best == _hoverIdx ? null : best);
+            },
+            child: CustomPaint(
+              painter: _ChartPainter(
+                docs: widget.docs,
+                isJuvenile: widget.isJuvenile,
+                hoverIdx: _hoverIdx,
+                xLabelFn: _xLabel,
+              ),
+              child: const SizedBox.expand(),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _ChartPainter extends CustomPainter {
+  final List<Map<String, dynamic>> docs;
+  final bool isJuvenile;
+  final int? hoverIdx;
+  final String Function(int) xLabelFn;
+
+  static const _l = 44.0, _t = 20.0, _r = 12.0, _b = 30.0;
+  static const _accent = Color(0xFF5F9EAA);
+
+  const _ChartPainter({required this.docs, required this.isJuvenile, this.hoverIdx, required this.xLabelFn});
+
+  @override
+  bool shouldRepaint(_ChartPainter o) => o.hoverIdx != hoverIdx;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width - _l - _r;
+    final h = size.height - _t - _b;
+    final vals = docs.map((d) => double.tryParse(d['valeur']?.toString() ?? '') ?? 0.0).toList();
+    if (vals.isEmpty) return;
+
+    final minY = vals.reduce((a, b) => a < b ? a : b);
+    final maxY = vals.reduce((a, b) => a > b ? a : b);
+    final rangeY = (maxY - minY) < 0.01 ? 1.0 : (maxY - minY) * 1.2;
+    final baseY = minY - rangeY * 0.1;
+
+    Offset pt(int i) {
+      final x = _l + (vals.length < 2 ? w / 2 : i * w / (vals.length - 1));
+      final y = _t + h - ((vals[i] - baseY) / rangeY) * h;
+      return Offset(x, y);
+    }
+
+    // Title
+    final title = isJuvenile ? 'Courbe de croissance' : 'Évolution du poids';
+    final titleTp = TextPainter(
+      text: TextSpan(text: title, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: _accent)),
+      textDirection: ui.TextDirection.ltr,
+    )..layout();
+    titleTp.paint(canvas, Offset(_l, (_t - titleTp.height) / 2));
+
+    // Grid lines
+    final gridPaint = Paint()..color = const Color(0xFFF0F0F0)..strokeWidth = 1;
+    for (int g = 0; g <= 4; g++) {
+      final yVal = baseY + g * rangeY / 4;
+      final yPx = _t + h - g * h / 4;
+      canvas.drawLine(Offset(_l, yPx), Offset(size.width - _r, yPx), gridPaint);
+      final lbl = yVal < 10 ? yVal.toStringAsFixed(1) : yVal.toStringAsFixed(0);
+      final tp = TextPainter(
+        text: TextSpan(text: lbl, style: const TextStyle(fontFamily: 'Galey', fontSize: 9, color: Color(0xFFBBBBBB))),
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(_l - tp.width - 4, yPx - tp.height / 2));
+    }
+
+    // Area fill + line
+    if (vals.length >= 2) {
+      final areaPath = Path()..moveTo(pt(0).dx, _t + h);
+      for (int i = 0; i < vals.length; i++) areaPath.lineTo(pt(i).dx, pt(i).dy);
+      areaPath..lineTo(pt(vals.length - 1).dx, _t + h)..close();
+      canvas.drawPath(areaPath, Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter, end: Alignment.bottomCenter,
+          colors: [Color(0x285F9EAA), Color(0x005F9EAA)],
+        ).createShader(Rect.fromLTWH(_l, _t, w, h))
+        ..style = PaintingStyle.fill);
+
+      final linePath = Path()..moveTo(pt(0).dx, pt(0).dy);
+      for (int i = 1; i < vals.length; i++) linePath.lineTo(pt(i).dx, pt(i).dy);
+      canvas.drawPath(linePath, Paint()
+        ..color = _accent..strokeWidth = 2.5..strokeCap = StrokeCap.round..style = PaintingStyle.stroke);
+    }
+
+    // Dots + X labels
+    final step = ((vals.length - 1) / 4).ceil().clamp(1, vals.length);
+    for (int i = 0; i < vals.length; i++) {
+      final p = pt(i);
+      final isH = hoverIdx == i;
+      canvas.drawCircle(p, isH ? 5.5 : 3.5, Paint()..color = _accent);
+      canvas.drawCircle(p, isH ? 3.5 : 2.0, Paint()..color = Colors.white);
+      if (i == 0 || i == vals.length - 1 || i % step == 0) {
+        final tp = TextPainter(
+          text: TextSpan(text: xLabelFn(i), style: const TextStyle(fontFamily: 'Galey', fontSize: 9, color: Color(0xFFBBBBBB))),
+          textDirection: ui.TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, Offset((p.dx - tp.width / 2).clamp(_l, size.width - _r - tp.width), _t + h + 6));
+      }
+    }
+
+    // Tooltip on hover
+    if (hoverIdx != null && hoverIdx! < vals.length) {
+      final i = hoverIdx!;
+      final p = pt(i);
+      const pad = 7.0;
+      final line1 = '${vals[i].toStringAsFixed(1)} kg';
+      final line2 = xLabelFn(i);
+      final tp1 = TextPainter(text: TextSpan(text: line1, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)), textDirection: ui.TextDirection.ltr)..layout();
+      final tp2 = TextPainter(text: TextSpan(text: line2, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xCCFFFFFF))), textDirection: ui.TextDirection.ltr)..layout();
+      final tooltipW = (tp1.width > tp2.width ? tp1.width : tp2.width) + pad * 2;
+      final tooltipH = tp1.height + tp2.height + pad * 2 + 2;
+      var tx = p.dx - tooltipW / 2;
+      var ty = p.dy - tooltipH - 10;
+      if (tx < _l) tx = _l;
+      if (tx + tooltipW > size.width - _r) tx = size.width - _r - tooltipW;
+      if (ty < _t) ty = p.dy + 10;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromLTWH(tx, ty, tooltipW, tooltipH), const Radius.circular(8)),
+        Paint()..color = _accent,
+      );
+      tp1.paint(canvas, Offset(tx + pad, ty + pad));
+      tp2.paint(canvas, Offset(tx + pad, ty + pad + tp1.height + 2));
+    }
   }
 }
 
