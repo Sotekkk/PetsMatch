@@ -94,8 +94,8 @@ export default function MesAnnoncesPage() {
     }
   }
 
-  async function handleArchive(a: Annonce) {
-    const newStatut = a.statut === 'archivee' ? 'disponible' : 'archivee';
+  async function handlePause(a: Annonce) {
+    const newStatut = a.statut === 'pause' ? 'disponible' : 'pause';
     await supabase.from('annonces').update({ statut: newStatut }).eq('id', a.id);
     setAnnonces(prev => prev.map(x => x.id === a.id ? { ...x, statut: newStatut } : x));
   }
@@ -230,10 +230,10 @@ export default function MesAnnoncesPage() {
                       Modifier
                     </Link>
                     <button
-                      onClick={() => handleArchive(a)}
-                      title={statut === 'archivee' ? 'Réactiver' : 'Archiver'}
-                      className="px-2.5 py-2 text-xs border border-gray-200 hover:border-amber-300 text-gray-400 hover:text-amber-600 rounded-xl transition-colors">
-                      {statut === 'archivee' ? '↩' : '📦'}
+                      onClick={() => handlePause(a)}
+                      title={statut === 'pause' ? 'Réactiver' : 'Mettre en pause'}
+                      className={`px-2.5 py-2 text-xs border rounded-xl transition-colors ${statut === 'pause' ? 'border-[#6E9E57] text-[#6E9E57] hover:bg-[#EEF5EA]' : 'border-gray-200 text-gray-400 hover:border-[#0C5C6C]/40 hover:text-[#0C5C6C]'}`}>
+                      {statut === 'pause' ? '▶' : '⏸'}
                     </button>
                     <button
                       onClick={() => handleDelete(a.id)}
