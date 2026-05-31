@@ -32,8 +32,11 @@ function supabaseRequest(method, path, body, extraHeaders = {}) {
             let data = "";
             res.on("data", (chunk) => data += chunk);
             res.on("end", () => {
-                try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
-                catch (_) { resolve({ status: res.statusCode, body: [] }); }
+                try {
+                    resolve({status: res.statusCode, body: JSON.parse(data)});
+                } catch (_) {
+                    resolve({status: res.statusCode, body: []});
+                }
             });
         });
         req.on("error", reject);
@@ -48,10 +51,10 @@ async function supabaseSelect(table, query) {
 }
 
 async function supabaseInsert(table, rows, onConflict = null) {
-    const prefer = onConflict
-        ? `resolution=ignore-duplicates,return=minimal`
-        : "return=minimal";
-    const res = await supabaseRequest("POST", table, rows, { "Prefer": prefer });
+    const prefer = onConflict ?
+        `resolution=ignore-duplicates,return=minimal` :
+        "return=minimal";
+    const res = await supabaseRequest("POST", table, rows, {"Prefer": prefer});
     return res.status;
 }
 
@@ -65,15 +68,15 @@ async function sendPush(uid, title, body, data = {}) {
 
         await admin.messaging().send({
             token,
-            notification: { title, body },
-            data: { type: "chaleur", ...data },
+            notification: {title, body},
+            data: {type: "chaleur", ...data},
             android: {
                 priority: "high",
-                notification: { channelId: "chaleurs_channel", sound: "default" },
+                notification: {channelId: "chaleurs_channel", sound: "default"},
             },
             apns: {
-                headers: { "apns-priority": "10" },
-                payload: { aps: { alert: { title, body }, sound: "default", badge: 1 } },
+                headers: {"apns-priority": "10"},
+                payload: {aps: {alert: {title, body}, sound: "default", badge: 1}},
             },
         });
         return true;
@@ -87,27 +90,27 @@ async function sendPush(uid, title, body, data = {}) {
 
 function intervalChaleurs(espece) {
     switch ((espece || "").toLowerCase()) {
-        case "chien":  return 182;
-        case "chat":   return 21;
-        case "lapin":  return 14;
-        case "ovin":   return 17;
-        case "caprin": return 21;
-        case "porcin": return 21;
-        case "cheval": return 21;
-        default:       return 0;
+    case "chien": return 182;
+    case "chat": return 21;
+    case "lapin": return 14;
+    case "ovin": return 17;
+    case "caprin": return 21;
+    case "porcin": return 21;
+    case "cheval": return 21;
+    default: return 0;
     }
 }
 
 function emojiEspece(espece) {
     switch ((espece || "").toLowerCase()) {
-        case "chien":  return "🐕";
-        case "chat":   return "🐈";
-        case "cheval": return "🐴";
-        case "lapin":  return "🐰";
-        case "ovin":   return "🐑";
-        case "caprin": return "🐐";
-        case "porcin": return "🐷";
-        default:       return "🐾";
+    case "chien": return "🐕";
+    case "chat": return "🐈";
+    case "cheval": return "🐴";
+    case "lapin": return "🐰";
+    case "ovin": return "🐑";
+    case "caprin": return "🐐";
+    case "porcin": return "🐷";
+    default: return "🐾";
     }
 }
 
@@ -183,7 +186,7 @@ exports.sendChaleursNotifications = functions
             const subtitle = [race, espece].filter((s) => s && s.trim()).join(" · ");
             const em = emojiEspece(espece);
 
-            let title, body;
+            let title; let body;
             if (diff < 0) {
                 title = `🌸 Chaleurs probables — ${nom}`;
                 body = `${em} ${nom} (${subtitle}) est probablement en chaleurs (${-diff} j de retard).`;
@@ -200,7 +203,7 @@ exports.sendChaleursNotifications = functions
 
             // Mark as sent FIRST to avoid duplicates if push/notif insert fails
             try {
-                await supabaseInsert("notifs_sent", [{ key, sent_at: now.toISOString() }], "key");
+                await supabaseInsert("notifs_sent", [{key, sent_at: now.toISOString()}], "key");
             } catch (e) {
                 console.error(`notifs_sent insert error for ${key}:`, e);
                 continue; // skip if we can't mark it
@@ -211,7 +214,7 @@ exports.sendChaleursNotifications = functions
                 animal.uid_eleveur,
                 title,
                 body,
-                { animalId: String(animal.id) },
+                {animalId: String(animal.id)},
             );
             if (pushed) sent++;
 
@@ -222,7 +225,7 @@ exports.sendChaleursNotifications = functions
                     type: "chaleur",
                     title,
                     body,
-                    data: { animalId: String(animal.id) },
+                    data: {animalId: String(animal.id)},
                     read: false,
                 }]);
                 inApp++;
