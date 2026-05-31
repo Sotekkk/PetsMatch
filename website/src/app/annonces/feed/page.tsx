@@ -20,6 +20,7 @@ interface RawBebe {
   statut?: string;
   photos?: string[];
   description?: string;
+  pedigree?: boolean;
 }
 
 interface RawAnnonce {
@@ -62,6 +63,24 @@ interface FeedItem {
   photoEleveur?: string;
   isSaillie?: boolean;
   dateNaissance?: string;
+  pedigree?: boolean;
+  registreType?: string;
+}
+
+function especeLabel(espece: string): string {
+  const map: Record<string, string> = {
+    chien: '🐕 Chien', chat: '🐈 Chat', lapin: '🐇 Lapin',
+    oiseau: '🐦 Oiseau', reptile: '🦎 Reptile', cheval: '🐴 Cheval',
+    ane: '🫏 Âne', ovin: '🐑 Ovin', caprin: '🐐 Caprin',
+    porcin: '🐷 Porcin', nac: '🐾 NAC', poule: '🐓 Poule',
+    canari: '🐦 Canari', perroquet: '🦜 Perroquet', furet: '🦡 Furet',
+  };
+  return map[espece.toLowerCase()] ?? `🐾 ${espece}`;
+}
+
+function pedigreeLabel(registreType?: string): string | null {
+  if (!registreType || registreType.startsWith('Non ')) return null;
+  return registreType;
 }
 
 function ageLabel(dateStr?: string): string | null {
@@ -104,6 +123,7 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
             ville: a.ville_eleveur, nomEleveur: a.nom_eleveur,
             uidEleveur: a.uid_eleveur, isSaillie: false,
             dateNaissance: a.date_naissance,
+            pedigree: b.pedigree ?? false,
           });
         }
       });
@@ -119,6 +139,7 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
         ville: a.ville_eleveur, nomEleveur: a.nom_eleveur,
         uidEleveur: a.uid_eleveur, isSaillie,
         dateNaissance: a.date_naissance_animal,
+        registreType: a.registre_type,
       });
     }
   }
@@ -701,16 +722,31 @@ export default function FeedPage() {
         <div className="absolute bottom-0 left-0 right-0 pr-16 z-20 pointer-events-auto backdrop-blur-[14px] bg-black/42 rounded-t-[28px]">
           <div className="px-5 pt-4 pb-6">
 
-            {/* Badge espèce / saillie */}
-            <div className="flex gap-2 mb-2">
+            {/* Badges espèce / saillie / race / pedigree / âge */}
+            <div className="flex flex-wrap gap-1.5 mb-2">
               {item.espece && (
                 <span className="text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-white/15">
-                  {item.espece === 'chien' ? '🐕 Chien' : item.espece === 'chat' ? '🐈 Chat' : item.espece === 'lapin' ? '🐇 Lapin' : item.espece === 'oiseau' ? '🐦 Oiseau' : item.espece === 'reptile' ? '🦎 Reptile' : `🐾 ${item.espece}`}
+                  {especeLabel(item.espece)}
                 </span>
               )}
               {item.isSaillie && (
                 <span className="text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-500">
                   💜 Saillie
+                </span>
+              )}
+              {item.race && (
+                <span className="text-white/90 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-white/10 capitalize">
+                  {item.race}
+                </span>
+              )}
+              {(item.pedigree || pedigreeLabel(item.registreType)) && (
+                <span className="text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/80">
+                  🏅 {item.pedigree ? 'Pedigree' : pedigreeLabel(item.registreType)}
+                </span>
+              )}
+              {ageLabel(item.dateNaissance) && (
+                <span className="text-white/80 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-white/10">
+                  🎂 {ageLabel(item.dateNaissance)}
                 </span>
               )}
             </div>
@@ -734,18 +770,8 @@ export default function FeedPage() {
               )}
             </div>
 
-            {/* Race + ville + âge */}
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              {item.race && <p className="text-white/80 text-sm capitalize truncate">{item.race}</p>}
-              {item.race && item.ville && <span className="text-white/40 text-sm">·</span>}
-              {item.ville && <p className="text-white/60 text-xs truncate">📍 {item.ville}</p>}
-              {ageLabel(item.dateNaissance) && (
-                <>
-                  {(item.race || item.ville) && <span className="text-white/40 text-sm">·</span>}
-                  <p className="text-white/70 text-xs">🎂 {ageLabel(item.dateNaissance)}</p>
-                </>
-              )}
-            </div>
+            {/* Ville */}
+            {item.ville && <p className="text-white/60 text-xs truncate mb-1">📍 {item.ville}</p>}
 
             {/* Description */}
             {item.description && (

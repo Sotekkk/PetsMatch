@@ -566,6 +566,7 @@ export default function AnimalFichePage() {
   });
   const [addOpen, setAddOpen] = useState<string|null>(null);
   const [savingHealth, setSavingHealth] = useState(false);
+  const [editPoids, setEditPoids] = useState<string|null>(null);
 
   // ── État repro
   const [chaleurs, setChaleurs] = useState<HealthRecord[]>([]);
@@ -759,6 +760,14 @@ export default function AnimalFichePage() {
     await supabase.from(table).insert({ ...data, animal_id: id, id: crypto.randomUUID() });
     await loadHealth();
     setAddOpen(null);
+    setSavingHealth(false);
+  }
+
+  async function updateHealthRecord(table: string, recordId: string, data: Record<string,string>) {
+    setSavingHealth(true);
+    await supabase.from(table).update(data).eq('id', recordId);
+    await loadHealth();
+    setEditPoids(null);
     setSavingHealth(false);
   }
 
@@ -1510,17 +1519,28 @@ export default function AnimalFichePage() {
               return sorted.map(r => {
                 const val = parseFloat(String(r.valeur??'0'));
                 const pct = Math.round((val/maxPoids)*100);
+                const isEditing = editPoids === r.id;
                 return (
-                  <div key={r.id} className="px-4 py-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-semibold text-sm text-[#5F9EAA]">{val} kg</span>
-                      <span className="text-xs text-gray-400 flex-1">{fmtDate(String(r.date??''))}</span>
-                      <button onClick={()=>deleteHealthRecord('poids',r.id)} className="text-xs text-red-400 hover:text-red-600">×</button>
-                    </div>
-                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all" style={{ width:`${pct}%`, backgroundColor:'#5F9EAA' }}/>
-                    </div>
-                    {!!r.notes && <p className="text-xs text-gray-400 mt-1">{String(r.notes)}</p>}
+                  <div key={r.id} className="px-4 py-3 border-b border-gray-50 last:border-0">
+                    {isEditing ? (
+                      <AddHealthForm saving={savingHealth} onCancel={()=>setEditPoids(null)}
+                        onSave={d=>updateHealthRecord('poids',r.id,d)}
+                        initial={{ valeur: String(r.valeur??''), date: String(r.date??''), notes: String(r.notes??'') }}
+                        fields={[{key:'valeur',label:'Poids (kg)',required:true,type:'number'},{key:'date',label:'Date',type:'date'},{key:'notes',label:'Notes'}]}/>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-semibold text-sm text-[#5F9EAA]">{val} kg</span>
+                          <span className="text-xs text-gray-400 flex-1">{fmtDate(String(r.date??''))}</span>
+                          <button onClick={()=>setEditPoids(r.id)} className="text-xs text-[#0C5C6C] hover:text-[#094F5D] font-medium px-1">✏️</button>
+                          <button onClick={()=>deleteHealthRecord('poids',r.id)} className="text-xs text-red-400 hover:text-red-600">×</button>
+                        </div>
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all" style={{ width:`${pct}%`, backgroundColor:'#5F9EAA' }}/>
+                        </div>
+                        {!!r.notes && <p className="text-xs text-gray-400 mt-1">{String(r.notes)}</p>}
+                      </>
+                    )}
                   </div>
                 );
               });
