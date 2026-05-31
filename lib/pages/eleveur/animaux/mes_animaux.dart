@@ -58,8 +58,10 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   // Présents filters
   String _filterEspece  = 'tous';
   String _filterSexe    = 'tous';
-  String _filterRace    = '';
-  bool   _filterPortee  = false;
+  String _filterRace     = '';
+  String _presentsSubTab = 'tous'; // 'tous', 'repro', 'bebes'
+  bool   _selectMode    = false;
+  final Set<String> _selectedIds = {};
 
   // Anciens filters
   String    _anciensEspece = 'tous';
@@ -85,7 +87,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
-      if (!_tabController.indexIsChanging) setState(() {});
+      if (!_tabController.indexIsChanging) {
+        setState(() { _selectMode = false; _selectedIds.clear(); });
+      }
     });
     _loadAnimaux();
   }
@@ -185,6 +189,63 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     }
   }
 
+  Future<void> _toggleReproducteur(String id, bool current) async {
+    try {
+      await Supabase.instance.client.from('animaux')
+          .update({'reproducteur': !current}).eq('id', id);
+      if (mounted) _loadAnimaux();
+    } catch (_) {}
+  }
+
+  Future<void> _regrouperEnPortee() async {
+    if (_selectedIds.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sélectionne au moins 2 animaux')),
+      );
+      return;
+    }
+    final n = _selectedIds.length;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Regrouper en portée ?',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text(
+          '$n animal${n > 1 ? 'aux' : ''} seront liés dans la même portée.',
+          style: const TextStyle(fontFamily: 'Galey'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Regrouper',
+                style: TextStyle(fontFamily: 'Galey', color: Color(0xFF0C5C6C),
+                    fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    final porteeId = 'portee_${DateTime.now().millisecondsSinceEpoch}';
+    try {
+      await Supabase.instance.client.from('animaux')
+          .update({'portee_id': porteeId})
+          .inFilter('id', _selectedIds.toList());
+      setState(() { _selectMode = false; _selectedIds.clear(); });
+      _loadAnimaux();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Erreur lors du regroupement')),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -197,7 +258,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (_filterEspece != 'tous') c++;
     if (_filterSexe != 'tous')   c++;
     if (_filterRace.isNotEmpty)  c++;
-    if (_filterPortee)           c++;
     return c;
   }
 
@@ -278,11 +338,11 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                         fontSize: 17, color: Color(0xFF1F2A2E))),
                 const Spacer(),
-                if (tmpEspece != 'tous' || tmpSexe != 'tous' || tmpRace.isNotEmpty || _filterPortee)
+                if (tmpEspece != 'tous' || tmpSexe != 'tous' || tmpRace.isNotEmpty)
                   TextButton(
                     onPressed: () {
                       setSheet(() { tmpEspece = 'tous'; tmpSexe = 'tous'; tmpRace = ''; });
-                      setState(() { _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = ''; _filterPortee = false; });
+                      setState(() { _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = ''; });
                     },
                     style: TextButton.styleFrom(padding: EdgeInsets.zero),
                     child: const Text('Réinitialiser',
@@ -355,35 +415,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                   );
                 }).toList()),
               ],
-              const SizedBox(height: 18),
-              const Text('Portée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
-                  fontSize: 13, color: Color(0xFF6F767B))),
-              const SizedBox(height: 10),
-              GestureDetector(
-                onTap: () {
-                  setSheet(() {});
-                  setState(() => _filterPortee = !_filterPortee);
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: _filterPortee ? const Color(0xFF0C5C6C) : Colors.transparent,
-                    border: Border.all(
-                        color: _filterPortee ? const Color(0xFF0C5C6C) : Colors.grey.shade300),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.diversity_3, size: 13,
-                        color: _filterPortee ? Colors.white : const Color(0xFF0C5C6C)),
-                    const SizedBox(width: 5),
-                    Text('Portées uniquement',
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                            color: _filterPortee ? Colors.white : Colors.black87,
-                            fontWeight: _filterPortee ? FontWeight.w600 : FontWeight.normal)),
-                  ]),
-                ),
-              ),
               const SizedBox(height: 8),
             ]),
           );
@@ -647,12 +678,33 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(
-        title: const Text('Mes Animaux',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        title: _selectMode
+            ? Text('${_selectedIds.length} sélectionné${_selectedIds.length != 1 ? 's' : ''}',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))
+            : const Text('Mes Animaux',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         backgroundColor: _teal,
         foregroundColor: Colors.white,
         elevation: 0,
-        actions: [
+        actions: _selectMode ? [
+          IconButton(
+            icon: Icon(Icons.group_work_outlined,
+                color: _selectedIds.isNotEmpty ? Colors.white : Colors.white38),
+            onPressed: _selectedIds.isNotEmpty ? _regrouperEnPortee : null,
+            tooltip: 'Regrouper en portée',
+          ),
+          IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => setState(() { _selectMode = false; _selectedIds.clear(); }),
+            tooltip: 'Annuler',
+          ),
+        ] : [
+          if (isPresents)
+            IconButton(
+              icon: const Icon(Icons.checklist_outlined),
+              onPressed: () => setState(() { _selectMode = true; _selectedIds.clear(); }),
+              tooltip: 'Sélectionner',
+            ),
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: Stack(
@@ -695,7 +747,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           unselectedLabelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 14),
         ),
       ),
-      floatingActionButton: isPresents
+      floatingActionButton: isPresents && !_selectMode
           ? FloatingActionButton(
               onPressed: () => _showAddSheet(context),
               backgroundColor: _green,
@@ -717,9 +769,45 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   Widget _buildPresentsTab() {
     return Column(children: [
       _buildSearchField(),
+      _buildPresentsSubTabs(),
       if (_presentsFilterCount > 0) _buildPresentsFiltersRow(),
       Expanded(child: _buildPresentsList()),
     ]);
+  }
+
+  Widget _buildPresentsSubTabs() {
+    const tabs = [
+      ('tous',  'Tous'),
+      ('repro', '⭐ Repro'),
+      ('bebes', '🐣 Bébés'),
+    ];
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+      child: Row(children: tabs.map((t) {
+        final active = _presentsSubTab == t.$1;
+        return Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: GestureDetector(
+            onTap: () => setState(() => _presentsSubTab = t.$1),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              decoration: BoxDecoration(
+                color: active ? _teal : Colors.transparent,
+                border: Border.all(color: active ? _teal : Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(t.$2, style: TextStyle(
+                fontFamily: 'Galey', fontSize: 13,
+                color: active ? Colors.white : Colors.black87,
+                fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+              )),
+            ),
+          ),
+        );
+      }).toList()),
+    );
   }
 
   Widget _buildPresentsFiltersRow() {
@@ -751,14 +839,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               onRemove: () => setState(() => _filterRace = ''),
             ),
           ],
-          if (_filterPortee) ...[
-            const SizedBox(width: 6),
-            _ActiveChip(
-              label: 'Portées',
-              color: const Color(0xFF0C5C6C),
-              onRemove: () => setState(() => _filterPortee = false),
-            ),
-          ],
         ]),
       ),
     );
@@ -768,14 +848,14 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (_uid == null) return const Center(child: Text('Non connecté'));
     if (_loading) return const Center(child: CircularProgressIndicator(color: _green));
 
-    var docs = _animauxData.where((data) {
+    // Base filter: présents only + search + espèce/sexe/race
+    var base = _animauxData.where((data) {
       final statut = data['statut'] as String? ?? '';
       if (statut == 'sorti' || statut == 'decede') return false;
       if (_filterEspece != 'tous' && data['espece'] != _filterEspece) return false;
       if (_filterSexe != 'tous' && data['sexe'] != _filterSexe) return false;
       if (_filterRace.isNotEmpty &&
           (data['race'] ?? '').toString().toLowerCase() != _filterRace.toLowerCase()) return false;
-      if (_filterPortee && (data['portee_id'] == null || (data['portee_id'] as String).isEmpty)) return false;
       if (_search.isNotEmpty) {
         final nom  = (data['nom']            ?? '').toString().toLowerCase();
         final puce = (data['identification'] ?? '').toString().toLowerCase();
@@ -785,20 +865,38 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     }).toList()
       ..sort((a, b) => (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString()));
 
+    // Sub-tab filtering
+    List<Map<String, dynamic>> docs;
+    if (_presentsSubTab == 'repro') {
+      docs = base.where((d) => d['reproducteur'] == true).toList();
+    } else if (_presentsSubTab == 'bebes') {
+      docs = base.where((d) {
+        final pid = d['portee_id'] as String? ?? '';
+        return pid.isNotEmpty && d['reproducteur'] != true;
+      }).toList();
+    } else {
+      docs = base;
+    }
+
     if (docs.isEmpty) {
+      String emptyMsg;
+      if (_presentsSubTab == 'repro') {
+        emptyMsg = 'Aucun animal reproducteur\nAppui long sur une carte pour en marquer un';
+      } else if (_presentsSubTab == 'bebes') {
+        emptyMsg = 'Aucun bébé dans une portée';
+      } else {
+        emptyMsg = _presentsFilterCount > 0
+            ? 'Aucun animal présent\ncorrespondant aux filtres'
+            : 'Vous n\'avez aucun animal présent';
+      }
       return Center(
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           speciesIcon(_filterEspece == 'tous' ? 'autre' : _filterEspece, 56, Colors.grey.shade300),
           const SizedBox(height: 12),
-          Text(
-            _presentsFilterCount > 0
-                ? 'Aucun animal présent\ncorrespondant aux filtres'
-                : 'Vous n\'avez aucun animal présent',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade500, fontFamily: 'Galey', fontSize: 15),
-          ),
+          Text(emptyMsg, textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey.shade500, fontFamily: 'Galey', fontSize: 15)),
           const SizedBox(height: 16),
-          if (_presentsFilterCount == 0)
+          if (_presentsSubTab == 'tous' && _presentsFilterCount == 0)
             ElevatedButton.icon(
               onPressed: () => _showAddSheet(context),
               icon: const Icon(Icons.add),
@@ -806,10 +904,10 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               style: ElevatedButton.styleFrom(
                   backgroundColor: _green, foregroundColor: Colors.white),
             )
-          else
+          else if (_presentsSubTab == 'tous' && _presentsFilterCount > 0)
             TextButton(
               onPressed: () => setState(() {
-                _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = ''; _filterPortee = false;
+                _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = '';
               }),
               child: const Text('Réinitialiser les filtres',
                   style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6E9E57))),
@@ -818,8 +916,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       );
     }
 
-    // Vue groupée par portée
-    if (_filterPortee) return _buildPorteeGroupedView(docs);
+    if (_presentsSubTab == 'bebes') return _buildPorteeGroupedView(docs);
 
     return GridView.builder(
       padding: const EdgeInsets.all(16),
@@ -836,10 +933,19 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         return _AnimalCard(
           id: id,
           data: data,
+          reproducteur: data['reproducteur'] == true,
           chaleurFlag:  _chaleurFlags[id]  ?? false,
           gestanteFlag: _gestanteFlags[id] ?? false,
-          onTap: () => _openFiche(context, id, data: data),
+          selectMode: _selectMode,
+          selected: _selectedIds.contains(id),
+          onTap: _selectMode
+              ? () => setState(() {
+                  if (_selectedIds.contains(id)) _selectedIds.remove(id);
+                  else _selectedIds.add(id);
+                })
+              : () => _openFiche(context, id, data: data),
           onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
+          onToggleReproducteur: id.isEmpty ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
         );
       },
     );
@@ -934,10 +1040,19 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                 id: id,
                 data: data,
                 showPorteeBadge: true,
+                reproducteur: data['reproducteur'] == true,
                 chaleurFlag:  _chaleurFlags[id]  ?? false,
                 gestanteFlag: _gestanteFlags[id] ?? false,
-                onTap: () => _openFiche(context, id, data: data),
+                selectMode: _selectMode,
+                selected: _selectedIds.contains(id),
+                onTap: _selectMode
+                    ? () => setState(() {
+                        if (_selectedIds.contains(id)) _selectedIds.remove(id);
+                        else _selectedIds.add(id);
+                      })
+                    : () => _openFiche(context, id, data: data),
                 onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
+                onToggleReproducteur: id.isEmpty ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
               );
             },
           ),
@@ -1144,19 +1259,27 @@ class _AnimalCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
+  final VoidCallback? onToggleReproducteur;
   final bool showStatut;
   final bool showPorteeBadge;
+  final bool reproducteur;
   final bool chaleurFlag;
   final bool gestanteFlag;
+  final bool selectMode;
+  final bool selected;
   const _AnimalCard({
     required this.id,
     required this.data,
     required this.onTap,
     this.onDelete,
+    this.onToggleReproducteur,
     this.showStatut = false,
     this.showPorteeBadge = false,
+    this.reproducteur = false,
     this.chaleurFlag = false,
     this.gestanteFlag = false,
+    this.selectMode = false,
+    this.selected = false,
   });
 
   @override
@@ -1171,30 +1294,79 @@ class _AnimalCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
-      onLongPress: onDelete == null ? null : () async {
-        final confirm = await showDialog<bool>(
+      onLongPress: selectMode || (onDelete == null && onToggleReproducteur == null) ? null : () {
+        showModalBottomSheet(
           context: context,
-          builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text('Supprimer cet animal ?',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-            content: Text('La fiche de $nom sera définitivement supprimée.',
-                style: const TextStyle(fontFamily: 'Galey')),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey')),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Supprimer',
-                    style: TextStyle(fontFamily: 'Galey', color: Colors.redAccent,
-                        fontWeight: FontWeight.w700)),
-              ),
-            ],
+          backgroundColor: Colors.transparent,
+          builder: (_) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: 40, height: 4,
+                  decoration: BoxDecoration(color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 14),
+              Text(nom, style: const TextStyle(fontFamily: 'Galey',
+                  fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
+              const SizedBox(height: 6),
+              const Divider(),
+              if (onToggleReproducteur != null)
+                ListTile(
+                  leading: Icon(Icons.star,
+                      color: reproducteur ? Colors.amber : Colors.grey.shade400),
+                  title: Text(
+                    reproducteur ? 'Retirer reproducteur' : 'Marquer reproducteur',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 15),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    onToggleReproducteur!();
+                  },
+                ),
+              if (onDelete != null)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                  title: const Text('Supprimer',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 15,
+                          color: Colors.redAccent)),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                        title: const Text('Supprimer cet animal ?',
+                            style: TextStyle(fontFamily: 'Galey',
+                                fontWeight: FontWeight.w700)),
+                        content: Text(
+                            'La fiche de $nom sera définitivement supprimée.',
+                            style: const TextStyle(fontFamily: 'Galey')),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Annuler',
+                                style: TextStyle(fontFamily: 'Galey')),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('Supprimer',
+                                style: TextStyle(fontFamily: 'Galey',
+                                    color: Colors.redAccent,
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm == true) onDelete!();
+                  },
+                ),
+            ]),
           ),
         );
-        if (confirm == true) onDelete!();
       },
       child: Container(
         decoration: BoxDecoration(
@@ -1235,6 +1407,18 @@ class _AnimalCard extends StatelessWidget {
                           ),
                         ),
                       ),
+                    if (!showStatut && reproducteur)
+                      Positioned(
+                        top: 6, right: 6,
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withOpacity(0.92),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.star, size: 11, color: Colors.white),
+                        ),
+                      ),
                     if (showPorteeBadge && (data['portee_id'] as String? ?? '').isNotEmpty)
                       Positioned(
                         top: 6, left: 6,
@@ -1250,6 +1434,31 @@ class _AnimalCard extends StatelessWidget {
                             Text('Portée', style: TextStyle(color: Colors.white, fontSize: 8,
                                 fontFamily: 'Galey', fontWeight: FontWeight.w600)),
                           ]),
+                        ),
+                      ),
+                    if (selectMode)
+                      Positioned.fill(
+                        child: Container(
+                          color: selected
+                              ? const Color(0xFF0C5C6C).withOpacity(0.18)
+                              : Colors.transparent,
+                        ),
+                      ),
+                    if (selectMode)
+                      Positioned(
+                        top: 6, left: 6,
+                        child: Container(
+                          width: 22, height: 22,
+                          decoration: BoxDecoration(
+                            color: selected ? const Color(0xFF0C5C6C) : Colors.white,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: selected ? const Color(0xFF0C5C6C) : Colors.grey.shade400,
+                                width: 2),
+                          ),
+                          child: selected
+                              ? const Icon(Icons.check, size: 13, color: Colors.white)
+                              : null,
                         ),
                       ),
                     if (gestanteFlag || chaleurFlag)
