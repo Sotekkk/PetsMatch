@@ -33,8 +33,8 @@
 | ~~A19~~ | ~~Feed — filtre race dynamique selon espèce (liste JSON par espèce)~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
 | A20 | Carte annonces compagnons — filtres par espèce, race, région, ville, pays, département | Haute | App | `annonces_map_page.dart` |
 | A21 | ~~Sécurité avant mise en prod — voir section **Sécurité / Conformité RGPD** ci-dessous~~ → remplacé par RGPD01–RGPD07 + SEC01–SEC09 | Haute | App + Web + Supabase | Voir section dédiée |
-| A22 | Mes animaux — Vue "Reproducteurs" (filtre animaux reproducteurs) | Moyenne | App + Web | `mes_animaux.dart`, `mes-animaux/page.tsx` |
-| A23 | Mes animaux — Vue "Bébés" (regroupement par portée ou mois/année de naissance) | Moyenne | App + Web | `mes_animaux.dart`, `mes-animaux/page.tsx` |
+| ~~A22~~ | ~~Mes animaux — Vue "Reproducteurs" (filtre animaux reproducteurs)~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
+| ~~A23~~ | ~~Mes animaux — Vue "Bébés" (regroupement par portée ou mois/année de naissance)~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | ~~A24~~ | ~~Fiche animal — courbe de poids adulte~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | ~~A25~~ | ~~Fiche animal — courbe de poids chiot/juvénile (courbe de croissance)~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | ~~A26~~ | ~~Messagerie — ajouter la flèche retour (tous les profils : éleveur, particulier, pro)~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
