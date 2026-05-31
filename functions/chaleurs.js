@@ -50,11 +50,11 @@ async function supabaseSelect(table, query) {
     return Array.isArray(res.body) ? res.body : [];
 }
 
-async function supabaseInsert(table, rows, onConflict = null) {
-    const prefer = onConflict ?
-        `resolution=ignore-duplicates,return=minimal` :
-        "return=minimal";
-    const res = await supabaseRequest("POST", table, rows, {"Prefer": prefer});
+async function supabaseInsert(table, rows) {
+    const res = await supabaseRequest("POST", table, rows, {"Prefer": "return=minimal"});
+    if (res.status < 200 || res.status >= 300) {
+        throw new Error(`Supabase insert ${table}: HTTP ${res.status} — ${JSON.stringify(res.body)}`);
+    }
     return res.status;
 }
 
@@ -201,14 +201,6 @@ exports.sendChaleursNotifications = functions
                 body = `${em} ${nom} (${subtitle}) sera en chaleurs dans ${diff} jours.`;
             }
 
-            // Mark as sent FIRST to avoid duplicates if push/notif insert fails
-            try {
-                await supabaseInsert("notifs_sent", [{key, sent_at: now.toISOString()}], "key");
-            } catch (e) {
-                console.error(`notifs_sent insert error for ${key}:`, e);
-                continue; // skip if we can't mark it
-            }
-
             // Send FCM push
             const pushed = await sendPush(
                 animal.uid_eleveur,
@@ -230,7 +222,14 @@ exports.sendChaleursNotifications = functions
                 }]);
                 inApp++;
             } catch (e) {
-                console.error(`notifications insert error for animal ${animal.id}:`, e);
+                console.error(`notifications insert error for animal ${animal.id}:`, e.message);
+            }
+
+            // Mark as sent (after push + notif, so a failure here won't block future runs)
+            try {
+                await supabaseInsert("notifs_sent", [{key, sent_at: now.toISOString()}]);
+            } catch (e) {
+                console.error(`notifs_sent insert error for ${key}:`, e.message);
             }
         }
 
