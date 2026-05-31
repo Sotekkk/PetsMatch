@@ -35,8 +35,8 @@
 | A21 | ~~Sécurité avant mise en prod — voir section **Sécurité / Conformité RGPD** ci-dessous~~ → remplacé par RGPD01–RGPD07 + SEC01–SEC09 | Haute | App + Web + Supabase | Voir section dédiée |
 | A22 | Mes animaux — Vue "Reproducteurs" (filtre animaux reproducteurs) | Moyenne | App + Web | `mes_animaux.dart`, `mes-animaux/page.tsx` |
 | A23 | Mes animaux — Vue "Bébés" (regroupement par portée ou mois/année de naissance) | Moyenne | App + Web | `mes_animaux.dart`, `mes-animaux/page.tsx` |
-| A24 | Fiche animal — courbe de poids adulte | Moyenne | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
-| A25 | Fiche animal — courbe de poids chiot/juvénile (courbe de croissance) | Moyenne | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
+| ~~A24~~ | ~~Fiche animal — courbe de poids adulte~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
+| ~~A25~~ | ~~Fiche animal — courbe de poids chiot/juvénile (courbe de croissance)~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | ~~A26~~ | ~~Messagerie — ajouter la flèche retour (tous les profils : éleveur, particulier, pro)~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | ~~A27~~ | ~~Fiche animal — modification du poids (ajouter/éditer une entrée poids) depuis l'onglet courbe de poids~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | ~~A28~~ | ~~Feed annonces — description manquante sur les fiches animaux individuels (hors portée)~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
