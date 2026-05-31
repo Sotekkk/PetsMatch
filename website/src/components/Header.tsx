@@ -7,11 +7,9 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import {
-  collection, query, where, orderBy, limit, onSnapshot,
-  doc, updateDoc, Timestamp,
-} from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
 interface Notif {
   id: string;
@@ -19,7 +17,7 @@ interface Notif {
   title: string;
   body: string;
   read: boolean;
-  createdAt: Timestamp | null;
+  created_at: string | null;
   data?: Record<string, string>;
 }
 
@@ -155,27 +153,47 @@ export default function Header() {
     }, () => {});
   }, [user]);
 
-  // Écoute des notifications non lues
+  // Écoute des notifications non lues (Supabase)
   useEffect(() => {
     if (!user) return;
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', user.uid),
-      where('read', '==', false),
-      orderBy('createdAt', 'desc'),
-      limit(20)
-    );
-    return onSnapshot(q, snap => {
-      setNotifs(snap.docs.map(d => ({ id: d.id, ...d.data() } as Notif)));
-    }, () => {});
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    const fetchNotifs = async () => {
+      const { data } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('uid', user.uid)
+        .eq('read', false)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      setNotifs((data ?? []) as Notif[]);
+    };
+
+    fetchNotifs();
+
+    channel = supabase
+      .channel(`header_notifs_${user.uid}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'notifications',
+        filter: `uid=eq.${user.uid}`,
+      }, () => fetchNotifs())
+      .subscribe();
+
+    return () => { channel?.unsubscribe(); };
   }, [user]);
 
   const totalBell = notifs.length + unreadMessages;
 
   async function markAllRead() {
-    for (const n of notifs) {
-      updateDoc(doc(db, 'notifications', n.id), { read: true }).catch(() => {});
-    }
+    if (!user || notifs.length === 0) return;
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('uid', user.uid)
+      .eq('read', false);
+    setNotifs([]);
   }
 
   useEffect(() => {
@@ -285,7 +303,11 @@ export default function Header() {
                     {notifs.map(n => (
                       <div key={n.id} className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 border-b border-gray-50">
                         <div className="w-9 h-9 rounded-full bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">
-                          {n.type === 'alerte' ? '🔍' : n.type === 'like' ? '❤️' : n.type === 'rappel' ? '💉' : '🔔'}
+                          {n.type === 'alerte_perdu' ? '🔍'
+                            : n.type === 'like' ? '❤️'
+                            : n.type === 'chaleur' ? '🌸'
+                            : n.type === 'rappel_vaccin' ? '💉'
+                            : '🔔'}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-[#1F2A2E]">{n.title}</p>

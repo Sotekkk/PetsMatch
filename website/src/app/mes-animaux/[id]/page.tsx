@@ -75,6 +75,64 @@ const CONFIRMATION_INFO: Record<string,string> = {
   porcin: 'Retour en chaleur vers J+21 si gestation non confirmée',
 };
 
+const CHALEURS_INTERVAL: Record<string, number> = {
+  chien: 182, chat: 21, lapin: 14, ovin: 17, caprin: 21, porcin: 21, cheval: 21,
+};
+const CHALEURS_INFO: Record<string, string> = {
+  chien:  'Intervalle moyen : 6 mois',
+  chat:   'Intervalle moyen : 21 jours (si non stérilisée)',
+  cheval: 'Saisonnière printemps-été · cycle ~21j',
+  ovin:   'Saisonnière automne-hiver · cycle ~17j',
+  caprin: 'Saisonnière automne-hiver · cycle ~21j',
+  porcin: 'Intervalle moyen : 21 jours',
+  lapin:  'Réceptive quasi-permanente',
+};
+
+function nextHeatDate(chaleurs: HealthRecord[], espece: string): Date | null {
+  const interval = CHALEURS_INTERVAL[espece];
+  if (!interval || chaleurs.length === 0) return null;
+  const sorted = [...chaleurs].sort((a, b) =>
+    new Date(String(b.date ?? 0)).getTime() - new Date(String(a.date ?? 0)).getTime()
+  );
+  const lastDate = new Date(String(sorted[0].date ?? ''));
+  if (isNaN(lastDate.getTime())) return null;
+  return new Date(lastDate.getTime() + interval * 86400000);
+}
+
+function NextHeatBanner({ nextHeat, espece }: { nextHeat: Date; espece: string }) {
+  const now = new Date();
+  const diff = Math.round((nextHeat.getTime() - now.getTime()) / 86400000);
+  const info = CHALEURS_INFO[espece] ?? '';
+
+  let bg: string, text: string, border: string, icon: string, label: string;
+  if (diff < 0) {
+    bg = 'bg-red-50'; text = 'text-red-700'; border = 'border-red-300'; icon = '⚠️';
+    label = `Chaleurs probables (${-diff}j de retard)`;
+  } else if (diff === 0) {
+    bg = 'bg-red-50'; text = 'text-red-700'; border = 'border-red-300'; icon = '🔴';
+    label = "Chaleurs attendues aujourd'hui !";
+  } else if (diff === 1) {
+    bg = 'bg-red-50'; text = 'text-red-700'; border = 'border-red-300'; icon = '🔴';
+    label = 'Chaleurs attendues demain !';
+  } else if (diff <= 7) {
+    bg = 'bg-amber-50'; text = 'text-amber-700'; border = 'border-amber-300'; icon = '🟠';
+    label = `Chaleurs prochaines dans ${diff} jours`;
+  } else {
+    bg = 'bg-green-50'; text = 'text-green-700'; border = 'border-green-300'; icon = '🌸';
+    label = `Prochaines chaleurs : ${nextHeat.toLocaleDateString('fr-FR')}`;
+  }
+
+  return (
+    <div className={`${bg} border ${border} rounded-xl p-3 flex items-start gap-2 mb-3`}>
+      <span className="text-lg">{icon}</span>
+      <div>
+        <p className={`text-sm font-bold ${text}`} style={{ fontFamily: 'Galey,sans-serif' }}>{label}</p>
+        {info && <p className={`text-xs ${text} opacity-80`}>{info}</p>}
+      </div>
+    </div>
+  );
+}
+
 function fmtDate(d?: string | null) {
   if (!d) return '';
   try { return new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' }); } catch { return d; }
@@ -416,6 +474,7 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
             <button onClick={() => { setReproAdd(reproAdd === 'chaleurs' ? null : 'chaleurs'); setEditId(null); }}
               className="text-sm bg-[#0C5C6C] text-white font-semibold px-3 py-1.5 rounded-full hover:bg-[#094F5D]">+ Ajouter</button>
           </div>
+          {(() => { const next = nextHeatDate(chaleurs, espece); return next ? <NextHeatBanner nextHeat={next} espece={espece} /> : null; })()}
           {reproAdd === 'chaleurs' && (
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <AddHealthForm saving={savingRepro} onCancel={() => setReproAdd(null)}
@@ -1299,7 +1358,7 @@ export default function AnimalFichePage() {
                         { label:'Adresse', value: animal.provenance_adresse },
                         { label:'Réf. import.', value: animal.importation_ref },
                         ...(animal.provenance_qualite === 'naissance' ? [
-                          { label:'Puce mère', value: animal.puce_mere },
+                          { label:'Mère (puce)', value: animal.puce_mere },
                           { label:'Race mère', value: animal.race_mere },
                         ] : []),
                         { label:'Naissance mère', value: animal.date_naissance_mere ? new Date(animal.date_naissance_mere).toLocaleDateString('fr-FR') : undefined },

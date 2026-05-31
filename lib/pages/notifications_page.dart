@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -104,6 +105,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
           initialBebeIndex: bebeIndex,
         ),
       ));
+    } else if (type == 'chaleur') {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => const MesAnimauxPage(),
+      ));
     }
   }
 
@@ -124,6 +129,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'alerte_perdu': return Icons.location_searching;
       case 'message':      return Icons.chat_bubble_outline;
       case 'like':         return Icons.favorite;
+      case 'chaleur':      return Icons.spa;
       default:             return Icons.notifications_outlined;
     }
   }
@@ -133,6 +139,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'alerte_perdu': return _orange;
       case 'message':      return _teal;
       case 'like':         return Colors.redAccent;
+      case 'chaleur':      return const Color(0xFFE91E8C);
       default:             return Colors.grey;
     }
   }

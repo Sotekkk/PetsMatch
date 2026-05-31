@@ -20,7 +20,12 @@ interface Animal {
   date_entree?: string;
   date_sortie?: string;
   portee_id?: string;
+  intervalle_chaleurs_jours?: number | null;
 }
+
+const CHALEURS_INTERVAL_WEB: Record<string, number> = {
+  chien: 182, chat: 21, lapin: 14, ovin: 17, caprin: 21, porcin: 21, cheval: 21,
+};
 
 const SPECIES = [
   { value: 'tous',   label: 'Tous',    color: '#1F2A2E' },
@@ -64,53 +69,103 @@ function Chip({
   );
 }
 
-function AnimalCard({ a, tab, showPorteeBadge = false }: { a: Animal; tab: 'presents' | 'anciens'; showPorteeBadge?: boolean }) {
+function AnimalCard({ a, tab, showPorteeBadge = false, chaleurFlag = false, gestanteFlag = false, onDelete }: {
+  a: Animal; tab: 'presents' | 'anciens'; showPorteeBadge?: boolean;
+  chaleurFlag?: boolean; gestanteFlag?: boolean; onDelete?: () => void;
+}) {
   const espColor = SPECIES.find(s => s.value === a.espece)?.color ?? '#6F767B';
   const isMale   = (a.sexe ?? '').toLowerCase().startsWith('m');
   const isFemale = (a.sexe ?? '').toLowerCase().startsWith('f');
   const photo    = a.photo_url ? thumbUrl(a.photo_url, 400, 75, 'contain') : undefined;
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
-    <Link href={`/mes-animaux/${a.id}`}
-      className="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-all group block">
-      <div className="aspect-square relative overflow-hidden"
-        style={{ background: espColor + '18' }}>
-        {photo
-          ? <img src={photo} alt={a.nom ?? ''} className="w-full h-full object-contain" />
-          : <div className="w-full h-full flex items-center justify-center text-5xl">
-              {SPECIES_EMOJI[a.espece ?? ''] ?? '🐾'}
-            </div>}
-        {tab === 'anciens' && (a.statut === 'sorti' || a.statut === 'decede') && (
-          <span className={`absolute top-2 right-2 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg ${
-            a.statut === 'decede' ? 'bg-red-500' : 'bg-[#0C5C6C]'
-          }`}>
-            {a.statut === 'decede' ? 'Décédé' : 'Sorti'}
-          </span>
-        )}
-        {showPorteeBadge && a.portee_id && (
-          <span className="absolute top-2 left-2 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg bg-[#0C5C6C]/85">
-            🐣 Portée
-          </span>
-        )}
-      </div>
-      <div className="p-3">
-        <p className="font-bold text-[#1F2A2E] text-sm truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
-          {a.nom ?? 'Sans nom'}
-        </p>
-        {a.race && <p className="text-[#6F767B] text-xs truncate mt-0.5">{a.race}</p>}
-        <div className="flex items-center gap-1 mt-2 flex-wrap">
-          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-            style={{ background: espColor + '20', color: espColor }}>
-            {SPECIES_EMOJI[a.espece ?? ''] ?? '🐾'} {speciesLabel(a.espece ?? '')}
-          </span>
-          {(isMale || isFemale) && (
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#5F9EAA]/20 text-[#5F9EAA]">
-              {isMale ? '♂ Mâle' : '♀ Femelle'}
+    <div className="relative group">
+      <Link href={`/mes-animaux/${a.id}`}
+        className="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-all block">
+        <div className="aspect-square relative overflow-hidden"
+          style={{ background: espColor + '18' }}>
+          {photo
+            ? <img src={photo} alt={a.nom ?? ''} className="w-full h-full object-contain" />
+            : <div className="w-full h-full flex items-center justify-center text-5xl">
+                {SPECIES_EMOJI[a.espece ?? ''] ?? '🐾'}
+              </div>}
+          {tab === 'anciens' && (a.statut === 'sorti' || a.statut === 'decede') && (
+            <span className={`absolute top-2 right-2 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg ${
+              a.statut === 'decede' ? 'bg-red-500' : 'bg-[#0C5C6C]'
+            }`}>
+              {a.statut === 'decede' ? 'Décédé' : 'Sorti'}
             </span>
           )}
+          {showPorteeBadge && a.portee_id && (
+            <span className="absolute top-2 left-2 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg bg-[#0C5C6C]/85">
+              🐣 Portée
+            </span>
+          )}
+          {(gestanteFlag || chaleurFlag) && (
+            <div className="absolute bottom-2 left-2 flex flex-col gap-1">
+              {gestanteFlag && (
+                <span className="text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg bg-[#6E9E57]/90">
+                  🤰 Gestante
+                </span>
+              )}
+              {chaleurFlag && (
+                <span className="text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg bg-pink-400/90">
+                  🌸 Chaleurs
+                </span>
+              )}
+            </div>
+          )}
         </div>
-      </div>
-    </Link>
+        <div className="p-3">
+          <p className="font-bold text-[#1F2A2E] text-sm truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+            {a.nom ?? 'Sans nom'}
+          </p>
+          {a.race && <p className="text-[#6F767B] text-xs truncate mt-0.5">{a.race}</p>}
+          <div className="flex items-center gap-1 mt-2 flex-wrap">
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+              style={{ background: espColor + '20', color: espColor }}>
+              {SPECIES_EMOJI[a.espece ?? ''] ?? '🐾'} {speciesLabel(a.espece ?? '')}
+            </span>
+            {(isMale || isFemale) && (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#5F9EAA]/20 text-[#5F9EAA]">
+                {isMale ? '♂ Mâle' : '♀ Femelle'}
+              </span>
+            )}
+          </div>
+        </div>
+      </Link>
+      {onDelete && (
+        <button
+          onClick={e => { e.preventDefault(); setConfirmDelete(true); }}
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-red-500 text-white rounded-full w-7 h-7 flex items-center justify-center shadow-md text-xs"
+          title="Supprimer">
+          ✕
+        </button>
+      )}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfirmDelete(false)}>
+          <div className="bg-white rounded-2xl p-6 shadow-xl max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
+            <p className="font-bold text-[#1F2A2E] text-base mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+              Supprimer cet animal ?
+            </p>
+            <p className="text-sm text-gray-500 mb-5">
+              La fiche de <strong>{a.nom ?? 'cet animal'}</strong> sera définitivement supprimée.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setConfirmDelete(false)}
+                className="px-4 py-2 rounded-xl text-sm text-gray-600 border border-gray-200 hover:bg-gray-50">
+                Annuler
+              </button>
+              <button onClick={() => { setConfirmDelete(false); onDelete?.(); }}
+                className="px-4 py-2 rounded-xl text-sm text-white bg-red-500 hover:bg-red-600 font-semibold">
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -122,6 +177,8 @@ export default function MesAnimauxPage() {
 
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [fetching, setFetching] = useState(true);
+  const [chaleurFlags, setChaleurFlags] = useState<Record<string, boolean>>({});
+  const [gestanteFlags, setGestanteFlags] = useState<Record<string, boolean>>({});
   const [tab, setTab] = useState<'presents' | 'anciens'>('presents');
 
   // Filtres présents
@@ -163,11 +220,51 @@ export default function MesAnimauxPage() {
       ? supabase.from('animaux').select('*').eq('uid_eleveur', user.uid).order('nom', { ascending: true })
       : supabase.from('animaux').select('*').or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`).order('nom', { ascending: true });
 
-    query.then(({ data }) => {
-      setAnimaux((data ?? []) as Animal[]);
+    query.then(async ({ data }) => {
+      const list = (data ?? []) as Animal[];
+      setAnimaux(list);
       setFetching(false);
+
+      // Calcul flags chaleurs et gestante pour les femelles présentes
+      const femIds = list
+        .filter(a => (a.sexe ?? '').startsWith('f') && a.statut !== 'sorti' && a.statut !== 'decede')
+        .map(a => a.id);
+
+      if (femIds.length === 0) return;
+
+      const [{ data: chaleurs }, { data: gests }] = await Promise.all([
+        supabase.from('chaleurs').select('animal_id, date').in('animal_id', femIds).order('date', { ascending: false }),
+        supabase.from('gestations').select('animal_id').in('animal_id', femIds).eq('gestation_confirmee', true).is('date_naissance', null),
+      ]);
+
+      const lastChaleur: Record<string, Date> = {};
+      for (const c of (chaleurs ?? [])) {
+        const aid = c.animal_id as string;
+        if (!lastChaleur[aid]) { const d = new Date(c.date as string); if (!isNaN(d.getTime())) lastChaleur[aid] = d; }
+      }
+
+      const cFlags: Record<string, boolean> = {};
+      const now = new Date();
+      for (const a of list) {
+        if (!(a.id in lastChaleur)) continue;
+        const interval = (a.intervalle_chaleurs_jours ?? CHALEURS_INTERVAL_WEB[a.espece ?? ''] ?? 0);
+        if (!interval) continue;
+        const next = new Date(lastChaleur[a.id].getTime() + interval * 86400000);
+        if ((next.getTime() - now.getTime()) / 86400000 <= 7) cFlags[a.id] = true;
+      }
+
+      const gFlags: Record<string, boolean> = {};
+      for (const g of (gests ?? [])) gFlags[g.animal_id as string] = true;
+
+      setChaleurFlags(cFlags);
+      setGestanteFlags(gFlags);
     });
   }, [user, isEleveur]);
+
+  async function deleteAnimal(id: string) {
+    await supabase.from('animaux').delete().eq('id', id);
+    setAnimaux(prev => prev.filter(a => a.id !== id));
+  }
 
   if (loading || !user) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
 
@@ -476,7 +573,7 @@ export default function MesAnimauxPage() {
                   </span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {members.map(a => <AnimalCard key={a.id} a={a} tab={tab} showPorteeBadge />)}
+                  {members.map(a => <AnimalCard key={a.id} a={a} tab={tab} showPorteeBadge chaleurFlag={!!chaleurFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]} onDelete={() => deleteAnimal(a.id)} />)}
                 </div>
               </div>
             );
@@ -484,7 +581,7 @@ export default function MesAnimauxPage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {currentList.map(a => <AnimalCard key={a.id} a={a} tab={tab} />)}
+          {currentList.map(a => <AnimalCard key={a.id} a={a} tab={tab} chaleurFlag={!!chaleurFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]} onDelete={() => deleteAnimal(a.id)} />)}
         </div>
       )}
 

@@ -2,6 +2,7 @@
 const stripeFunctions = require("./stripe");
 const alertesFunctions = require("./alertes");
 const agendaFunctions = require("./agenda");
+const chaleursFunctions = require("./chaleurs");
 const testFunctions = require("./stripe");
 
 // Export your Stripe functions
@@ -23,3 +24,6 @@ exports.notifyAnimalOwner = alertesFunctions.notifyAnimalOwner;
 
 // Agenda — rappels RDV
 exports.sendRdvReminders = agendaFunctions.sendRdvReminders;
+
+// Chaleurs — alertes quotidiennes éleveurs
+exports.sendChaleursNotifications = chaleursFunctions.sendChaleursNotifications;
