@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_webservice/places.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
+import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/services/alertes_notifications.dart';
 
 class MesAlertesPage extends StatefulWidget {
@@ -15,18 +16,29 @@ class MesAlertesPage extends StatefulWidget {
   State<MesAlertesPage> createState() => _MesAlertesPageState();
 }
 
-class _MesAlertesPageState extends State<MesAlertesPage> {
+class _MesAlertesPageState extends State<MesAlertesPage>
+    with SingleTickerProviderStateMixin {
   final _supa = Supabase.instance.client;
   static const _teal  = Color(0xFF0C5C6C);
   static const _orange = Color(0xFFE65100);
 
+  late final TabController _tabController;
   List<Map<String, dynamic>> _alertes = [];
+  List<Map<String, dynamic>> _trouves = [];
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _fetchAlertes();
+    _fetchTrouves();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchAlertes() async {
@@ -43,6 +55,36 @@ class _MesAlertesPageState extends State<MesAlertesPage> {
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _fetchTrouves() async {
+    final uid = User_Info.uid;
+    if (uid.isEmpty) return;
+    try {
+      final data = await _supa
+          .from('animaux_trouves')
+          .select()
+          .eq('user_uid', uid)
+          .order('created_at', ascending: false);
+      if (mounted) setState(() => _trouves = List<Map<String, dynamic>>.from(data));
+    } catch (_) {}
+  }
+
+  Future<void> _deleteTrouve(String id) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Supprimer la déclaration ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(context, true),
+              child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _supa.from('animaux_trouves').delete().eq('id', id);
+    _fetchTrouves();
   }
 
   Future<void> _retrouveAlerte(String id) async {
@@ -114,49 +156,114 @@ class _MesAlertesPageState extends State<MesAlertesPage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF0C5C6C),
         foregroundColor: Colors.white,
-        title: const Text('Mes animaux perdus',
+        title: const Text('Perdus & Trouvés',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         elevation: 0,
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white60,
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14),
+          unselectedLabelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          tabs: const [
+            Tab(text: 'Perdus'),
+            Tab(text: 'Trouvés'),
+          ],
+        ),
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: _orange,
-        child: const Icon(Icons.add_location_alt, color: Colors.white),
-        onPressed: _nouvelleAlerte,
+      floatingActionButton: AnimatedBuilder(
+        animation: _tabController,
+        builder: (_, __) => FloatingActionButton(
+          backgroundColor: _orange,
+          onPressed: _tabController.index == 0 ? _nouvelleAlerte : _declarerTrouve,
+          child: Icon(
+            _tabController.index == 0 ? Icons.add_location_alt : Icons.pets,
+            color: Colors.white,
+          ),
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _teal))
-          : _alertes.isEmpty
-              ? _buildEmpty()
-              : RefreshIndicator(
-                  onRefresh: _fetchAlertes,
-                  color: _teal,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                    itemCount: _alertes.length,
-                    itemBuilder: (_, i) => _AlerteCard(
-                      data: _alertes[i],
-                      onRetrouve:      () => _retrouveAlerte(_alertes[i]['id']),
-                      onDelete:        () => _deleteAlerte(_alertes[i]['id']),
-                      onEdit:          () => _editAlerte(_alertes[i]),
-                      onUpdateLocation:() => _showUpdateLocationSheet(_alertes[i]),
-                    ),
-                  ),
-                ),
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                _buildPerdusList(),
+                _buildTrouvesList(),
+              ],
+            ),
     );
   }
 
-  Widget _buildEmpty() => Center(
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.location_searching, size: 64, color: Colors.orange.shade200),
-      const SizedBox(height: 16),
-      const Text('Aucune alerte active',
-          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
-      const SizedBox(height: 6),
-      Text('Déclarez un animal perdu via sa fiche\nou le bouton +',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500, fontSize: 13)),
-    ]),
-  );
+  Widget _buildPerdusList() {
+    if (_alertes.isEmpty) {
+      return _buildEmpty(
+        icon: Icons.location_searching,
+        message: 'Aucune alerte active',
+        hint: 'Déclarez un animal perdu via sa fiche\nou le bouton +',
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _fetchAlertes,
+      color: _teal,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+        itemCount: _alertes.length,
+        itemBuilder: (_, i) => _AlerteCard(
+          data: _alertes[i],
+          onTap:           () => _editAlerte(_alertes[i]),
+          onRetrouve:      () => _retrouveAlerte(_alertes[i]['id']),
+          onDelete:        () => _deleteAlerte(_alertes[i]['id']),
+          onEdit:          () => _editAlerte(_alertes[i]),
+          onUpdateLocation:() => _showUpdateLocationSheet(_alertes[i]),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrouvesList() {
+    if (_trouves.isEmpty) {
+      return _buildEmpty(
+        icon: Icons.pets,
+        message: 'Aucune déclaration trouvée',
+        hint: 'Déclarez un animal trouvé\nvia le bouton +',
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _fetchTrouves,
+      color: _teal,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+        itemCount: _trouves.length,
+        itemBuilder: (_, i) => _TrouveCard(
+          data: _trouves[i],
+          onEdit: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => AnimalTrouveFormPage(existing: _trouves[i]),
+          )).then((_) => _fetchTrouves()),
+          onDelete: () => _deleteTrouve(_trouves[i]['id']),
+        ),
+      ),
+    );
+  }
+
+  void _declarerTrouve() {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const AnimalTrouveFormPage()))
+        .then((_) => _fetchTrouves());
+  }
+
+  Widget _buildEmpty({required IconData icon, required String message, required String hint}) =>
+    Center(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 64, color: Colors.orange.shade200),
+        const SizedBox(height: 16),
+        Text(message,
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+        const SizedBox(height: 6),
+        Text(hint,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500, fontSize: 13)),
+      ]),
+    );
 }
 
 // ── Alerte card ───────────────────────────────────────────────────────────────
@@ -167,6 +274,7 @@ class _AlerteCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onEdit;
   final VoidCallback onUpdateLocation;
+  final VoidCallback? onTap;
 
   const _AlerteCard({
     required this.data,
@@ -174,6 +282,7 @@ class _AlerteCard extends StatelessWidget {
     required this.onDelete,
     required this.onEdit,
     required this.onUpdateLocation,
+    this.onTap,
   });
 
   void _showQuickActions(BuildContext context, bool retrouve) {
@@ -225,6 +334,7 @@ class _AlerteCard extends StatelessWidget {
     final retrouve = statut == 'retrouve';
 
     return GestureDetector(
+      onTap: onTap,
       onLongPress: () => _showQuickActions(context, retrouve),
       child: Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -319,6 +429,107 @@ class _AlerteCard extends StatelessWidget {
 }
 
 String _capitalize(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
+// ── Trouvé card ───────────────────────────────────────────────────────────────
+
+class _TrouveCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _TrouveCard({required this.data, required this.onEdit, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    final espece   = data['espece'] as String?;
+    final race     = data['race'] as String?;
+    final lieu     = data['lieu_trouve'] as String?;
+    final statut   = data['statut'] as String? ?? 'trouve';
+    final photos   = data['photos'] as List<dynamic>?;
+    final photoUrl = (photos != null && photos.isNotEmpty) ? photos.first as String? : null;
+    final rendu    = statut == 'rendu';
+
+    return GestureDetector(
+      onTap: onEdit,
+      child: Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: rendu ? const Color(0xFF6E9E57) : const Color(0xFF0C5C6C).withOpacity(0.4),
+            width: 1.5),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(50),
+            child: photoUrl != null && photoUrl.isNotEmpty
+                ? CachedNetworkImage(imageUrl: photoUrl, width: 56, height: 56, fit: BoxFit.cover)
+                : Container(
+                    width: 56, height: 56,
+                    decoration: BoxDecoration(
+                        color: const Color(0xFF0C5C6C).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(50)),
+                    child: const Icon(Icons.pets, color: Color(0xFF0C5C6C), size: 28)),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Expanded(
+                  child: Text(
+                    [if (espece != null) _capitalize(espece), if (race != null && race.isNotEmpty) race].join(' · '),
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                      color: rendu ? const Color(0xFFEEF5EA) : const Color(0xFF0C5C6C).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20)),
+                  child: Text(rendu ? 'Rendu' : 'Trouvé',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600,
+                          color: rendu ? const Color(0xFF6E9E57) : const Color(0xFF0C5C6C))),
+                ),
+              ]),
+              if (lieu != null && lieu.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Row(children: [
+                    const Icon(Icons.location_on_outlined, size: 12, color: Color(0xFF0C5C6C)),
+                    const SizedBox(width: 3),
+                    Expanded(child: Text(lieu,
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
+                        maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  ]),
+                ),
+            ]),
+          ),
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_vert, color: Colors.grey.shade400, size: 20),
+            onSelected: (v) {
+              if (v == 'edit') onEdit();
+              if (v == 'delete') onDelete();
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'edit',
+                child: Row(children: [Icon(Icons.edit_outlined, size: 18, color: Color(0xFF0C5C6C)),
+                    SizedBox(width: 8), Text('Modifier la déclaration', style: TextStyle(fontFamily: 'Galey'))])),
+              const PopupMenuItem(value: 'delete',
+                child: Row(children: [Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                    SizedBox(width: 8), Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))])),
+            ],
+          ),
+        ]),
+      ),
+    ));  // GestureDetector + Container
+  }
+}
 
 // ── Update location bottom sheet ──────────────────────────────────────────────
 

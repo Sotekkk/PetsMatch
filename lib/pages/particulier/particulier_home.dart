@@ -391,7 +391,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
             Row(children: [
               Icon(Icons.location_searching, color: Colors.orange.shade700, size: 18),
               const SizedBox(width: 6),
-              const Text('Animaux perdus',
+              const Text('Perdus & Trouvés',
                   style: TextStyle(
                       fontFamily: 'Galey',
                       fontWeight: FontWeight.w700,
@@ -934,7 +934,7 @@ class _AnnonceMiniCard extends StatelessWidget {
                 Text(prix, style: const TextStyle(fontFamily: 'Galey',
                     fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF0C5C6C))),
               if (ville.isNotEmpty)
-                Text('📍 $ville',
+                Text('ðŸ“ $ville',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 9,
                         color: Color(0xFF9CA3AF)),
                     maxLines: 1, overflow: TextOverflow.ellipsis),

@@ -680,8 +680,8 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     final title = _filterType == 'trouve'
         ? 'Animaux trouvés'
         : _filterType == 'tous'
-            ? 'Perdus & trouvés'
-            : 'Animaux perdus';
+            ? 'Perdus & Trouvés'
+            : 'Perdus & Trouvés';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
@@ -776,6 +776,11 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
                     onContact: () => _contact(item, type: type),
                     onRetrouve: (type == 'perdu' && isOwn)
                         ? () => _retrouveAlerte(item['id'] as String)
+                        : null,
+                    onEdit: (type == 'trouve' && isOwn)
+                        ? () => Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => AnimalTrouveFormPage(existing: item)))
+                            .then((_) => _load())
                         : null,
                     onDelete: isOwn
                         ? () => type == 'perdu'
@@ -1294,6 +1299,7 @@ class _AlertCard extends StatelessWidget {
   final VoidCallback onContact;
   final VoidCallback? onRetrouve;
   final VoidCallback? onDelete;
+  final VoidCallback? onEdit;
 
   const _AlertCard({
     required this.alerte,
@@ -1303,6 +1309,7 @@ class _AlertCard extends StatelessWidget {
     required this.onContact,
     this.onRetrouve,
     this.onDelete,
+    this.onEdit,
   });
 
   static const _teal = Color(0xFF0C5C6C);
@@ -1326,6 +1333,21 @@ class _AlertCard extends StatelessWidget {
                 color: Colors.grey.shade300,
                 borderRadius: BorderRadius.circular(2)),
           ),
+          if (onEdit != null)
+            ListTile(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              leading: const CircleAvatar(
+                backgroundColor: Color(0xFFE8F4F6),
+                child: Icon(Icons.edit_outlined, color: Color(0xFF0C5C6C)),
+              ),
+              title: const Text('Modifier la déclaration',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              onTap: () {
+                Navigator.pop(context);
+                onEdit!();
+              },
+            ),
           if (onRetrouve != null)
             ListTile(
               shape: RoundedRectangleBorder(

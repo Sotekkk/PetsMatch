@@ -19,7 +19,8 @@ class AnimalTrouveFormPage extends StatefulWidget {
   final String? knownOwnerUid;
   final String? initialPuce;
   final String? initialEspece;
-  const AnimalTrouveFormPage({super.key, this.knownOwnerUid, this.initialPuce, this.initialEspece});
+  final Map<String, dynamic>? existing;
+  const AnimalTrouveFormPage({super.key, this.knownOwnerUid, this.initialPuce, this.initialEspece, this.existing});
 
   @override
   State<AnimalTrouveFormPage> createState() => _AnimalTrouveFormPageState();
@@ -95,9 +96,37 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
     _raceFocusNode.addListener(() {
       if (!_raceFocusNode.hasFocus) setState(() => _showBreedSuggestions = false);
     });
-    if (widget.initialPuce != null) _puceCtrl.text = widget.initialPuce!;
-    if (widget.initialEspece != null && _especes.contains(widget.initialEspece)) {
-      _espece = widget.initialEspece!;
+    if (widget.existing != null) {
+      final e = widget.existing!;
+      _espece = (_especes.contains(e['espece']) ? e['espece'] : 'chien') as String;
+      _sexe   = e['sexe'] as String?;
+      _taille = e['taille'] as String?;
+      _contactMessagerie = e['contact_messagerie'] as bool? ?? true;
+      _lat    = (e['lat'] as num?)?.toDouble();
+      _lng    = (e['lng'] as num?)?.toDouble();
+      _raceCtrl.text         = e['race'] ?? '';
+      _couleurCtrl.text      = e['couleur'] ?? '';
+      _puceCtrl.text         = e['numero_puce'] ?? '';
+      _etatSanteCtrl.text    = e['etat_sante'] ?? '';
+      _comportementCtrl.text = e['comportement'] ?? '';
+      _descCtrl.text         = e['description'] ?? '';
+      _villeCtrl.text        = e['localisation_ville'] ?? '';
+      _cpCtrl.text           = e['localisation_code_postal'] ?? '';
+      _paysCtrl.text         = e['pays'] ?? 'France';
+      _regionCtrl.text       = e['region'] ?? '';
+      _deptCtrl.text         = e['departement'] ?? '';
+      _contactEmailCtrl.text = e['contact_email'] ?? '';
+      _contactTelCtrl.text   = e['contact_telephone'] ?? '';
+      _existingPhotos        = List<String>.from(e['photos'] ?? []);
+      _addressSearchCtrl.text = e['localisation_adresse'] ?? '';
+      if (e['date_trouve'] != null) {
+        _dateTrouve = DateTime.tryParse(e['date_trouve'] as String) ?? DateTime.now();
+      }
+    } else {
+      if (widget.initialPuce != null) _puceCtrl.text = widget.initialPuce!;
+      if (widget.initialEspece != null && _especes.contains(widget.initialEspece)) {
+        _espece = widget.initialEspece!;
+      }
     }
     _loadBreeds(_espece);
   }
@@ -316,8 +345,7 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
     setState(() => _saving = true);
     try {
       final photos = await _uploadPhotos();
-      final inserted = await _supa.from('animaux_trouves').insert({
-        'user_uid':                 User_Info.uid,
+      final payload = {
         'espece':                   _espece,
         'race':                     _raceCtrl.text.trim().isEmpty ? null : _raceCtrl.text.trim(),
         'sexe':                     _sexe,
@@ -344,41 +372,50 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
         'contact_email':            email.isEmpty ? null : email,
         'contact_telephone':        tel.isEmpty ? null : tel,
         'contact_messagerie':       _contactMessagerie,
-        'statut':                   'trouve',
-      }).select('id').single();
+      };
 
-      // Notify nearby owners of lost animals (fire-and-forget)
-      if (_lat != null && _lng != null) {
-        try {
-          FirebaseFunctions.instanceFor(region: 'europe-west1')
-              .httpsCallable('notifyNearFoundAnimal')
-              .call({
-                'lat':          _lat,
-                'lng':          _lng,
-                'espece':       _espece,
-                'trouveId':     inserted['id'] ?? '',
-                'declarantUid': User_Info.uid,
-              });
-        } catch (_) {}
-      }
+      if (widget.existing != null) {
+        await _supa.from('animaux_trouves').update(payload).eq('id', widget.existing!['id']);
+      } else {
+        final inserted = await _supa.from('animaux_trouves').insert({
+          ...payload,
+          'user_uid': User_Info.uid,
+          'statut':   'trouve',
+        }).select('id').single();
 
-      // Notify the known owner directly if chip was pre-identified (fire-and-forget)
-      if (widget.knownOwnerUid != null) {
-        try {
-          FirebaseFunctions.instanceFor(region: 'europe-west1')
-              .httpsCallable('notifyAnimalOwner')
-              .call({
-                'ownerUid': widget.knownOwnerUid,
-                'trouveId': inserted['id'] ?? '',
-                'espece':   _espece,
-              });
-        } catch (_) {}
+        // Notify nearby owners of lost animals (fire-and-forget)
+        if (_lat != null && _lng != null) {
+          try {
+            FirebaseFunctions.instanceFor(region: 'europe-west1')
+                .httpsCallable('notifyNearFoundAnimal')
+                .call({
+                  'lat':          _lat,
+                  'lng':          _lng,
+                  'espece':       _espece,
+                  'trouveId':     inserted['id'] ?? '',
+                  'declarantUid': User_Info.uid,
+                });
+          } catch (_) {}
+        }
+
+        // Notify the known owner directly if chip was pre-identified (fire-and-forget)
+        if (widget.knownOwnerUid != null) {
+          try {
+            FirebaseFunctions.instanceFor(region: 'europe-west1')
+                .httpsCallable('notifyAnimalOwner')
+                .call({
+                  'ownerUid': widget.knownOwnerUid,
+                  'trouveId': inserted['id'] ?? '',
+                  'espece':   _espece,
+                });
+          } catch (_) {}
+        }
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Déclaration publiée ✓'),
-            backgroundColor: Color(0xFF6E9E57)));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(widget.existing != null ? 'Déclaration mise à jour ✓' : 'Déclaration publiée ✓'),
+            backgroundColor: const Color(0xFF6E9E57)));
         Navigator.pop(context, true);
       }
     } catch (e) {
@@ -398,8 +435,8 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
       appBar: AppBar(
         backgroundColor: _teal,
         iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text('Déclarer un animal trouvé',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
+        title: Text(widget.existing != null ? 'Modifier ma déclaration' : 'Déclarer un animal trouvé',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
       ),
       body: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(16, 24, 16,
