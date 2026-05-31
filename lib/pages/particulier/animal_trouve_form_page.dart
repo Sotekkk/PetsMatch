@@ -40,6 +40,7 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
   final _cpCtrl             = TextEditingController();
   final _paysCtrl           = TextEditingController(text: 'France');
   final _regionCtrl         = TextEditingController();
+  final _deptCtrl           = TextEditingController();
   final _raceCtrl           = TextEditingController();
   final _contactEmailCtrl   = TextEditingController();
   final _contactTelCtrl     = TextEditingController();
@@ -100,7 +101,7 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
     _places.dispose();
     for (final c in [_couleurCtrl, _puceCtrl, _etatSanteCtrl, _comportementCtrl,
                      _descCtrl, _addressSearchCtrl, _rueCtrl, _villeCtrl, _cpCtrl,
-                     _paysCtrl, _regionCtrl, _raceCtrl, _contactEmailCtrl, _contactTelCtrl]) {
+                     _paysCtrl, _regionCtrl, _deptCtrl, _raceCtrl, _contactEmailCtrl, _contactTelCtrl]) {
       c.dispose();
     }
     super.dispose();
