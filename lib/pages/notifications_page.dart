@@ -287,7 +287,7 @@ class NotifBadge extends StatefulWidget {
   State<NotifBadge> createState() => _NotifBadgeState();
 }
 
-class _NotifBadgeState extends State<NotifBadge> {
+class _NotifBadgeState extends State<NotifBadge> with WidgetsBindingObserver {
   static const _green = Color(0xFF6E9E57);
   final _supa = Supabase.instance.client;
   final _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -298,6 +298,7 @@ class _NotifBadgeState extends State<NotifBadge> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _fetchUnread();
     _subscribe();
     // Polling de secours si Realtime n'est pas activé sur la table
@@ -306,9 +307,15 @@ class _NotifBadgeState extends State<NotifBadge> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     _channel?.unsubscribe();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _fetchUnread();
   }
 
   Future<void> _fetchUnread() async {
