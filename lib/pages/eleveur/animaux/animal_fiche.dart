@@ -67,6 +67,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   String _sexe = 'male';
   bool _sterilise = false;
   String? _typePoil;
+  int? _intervalleChaleursCustom;
 
   // ── Registre Entrée / Sortie
   String    _statut           = 'present'; // 'present' | 'sorti' | 'decede'
@@ -265,6 +266,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _nomMereCtrl.text  = d['nom_mere'] ?? '';
     _puceMereCtrl.text = d['puce_mere'] ?? '';
     _sexe = d['sexe'] ?? 'male';
+    _intervalleChaleursCustom = d['intervalle_chaleurs_jours'] as int?;
     _sterilise = d['sterilise'] ?? false;
     _typePoil = d['type_poil'] as String?;
     _pedigree = d['pedigree'] ?? false;
@@ -657,7 +659,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         controller: _tabs,
         children: [
           _IdentiteTab(this),
-          _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe),
+          _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
           _CarnetSanteTab(animalId: widget.animalId),
         ],
       ),
@@ -1859,7 +1861,8 @@ class _SuiviReproTab extends StatelessWidget {
   final String? animalId;
   final String espece;
   final String sexe;
-  const _SuiviReproTab({this.animalId, required this.espece, required this.sexe});
+  final int? intervalleChaleursCustom;
+  const _SuiviReproTab({this.animalId, required this.espece, required this.sexe, this.intervalleChaleursCustom});
 
   @override
   Widget build(BuildContext context) {
@@ -1878,7 +1881,7 @@ class _SuiviReproTab extends StatelessWidget {
             editBuilder: (ctx, d) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe, existing: d),
           )]
         : [
-            _ChaleursTab(animalId: animalId!, espece: espece),
+            _ChaleursTab(animalId: animalId!, espece: espece, intervalleCustom: intervalleChaleursCustom),
             _ReproList(
               animalId: animalId!, collection: 'saillies',
               addBuilder: (ctx) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe),
@@ -3021,6 +3024,19 @@ int _intervalChaleursJours(String espece) {
   }
 }
 
+int _dureeChaleursJours(String espece) {
+  switch (espece.toLowerCase()) {
+    case 'chien':  return 21; // 9-21j
+    case 'chat':   return 7;  // 5-10j
+    case 'cheval': return 6;  // 4-8j
+    case 'ovin':   return 2;  // 1-3j
+    case 'caprin': return 2;  // 1-3j
+    case 'porcin': return 3;  // 2-4j
+    case 'lapin':  return 7;
+    default:       return 7;
+  }
+}
+
 DateTime? _nextHeatDate(List<Map<String, dynamic>> data, String espece) {
   final interval = _intervalChaleursJours(espece);
   if (interval == 0 || data.isEmpty) return null;
@@ -3108,7 +3124,8 @@ class _NextHeatBanner extends StatelessWidget {
 class _ChaleursTab extends StatefulWidget {
   final String animalId;
   final String espece;
-  const _ChaleursTab({required this.animalId, required this.espece});
+  final int? intervalleCustom;
+  const _ChaleursTab({required this.animalId, required this.espece, this.intervalleCustom});
   @override State<_ChaleursTab> createState() => _ChaleursTabState();
 }
 
@@ -3116,9 +3133,14 @@ class _ChaleursTabState extends State<_ChaleursTab> {
   final _supa = Supabase.instance.client;
   List<Map<String, dynamic>> _data = [];
   bool _loading = true;
+  int? _intervalleCustom; // local copy, editable
 
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() {
+    super.initState();
+    _intervalleCustom = widget.intervalleCustom;
+    _load();
+  }
 
   Future<void> _load() async {
     setState(() => _loading = true);
@@ -3138,10 +3160,64 @@ class _ChaleursTabState extends State<_ChaleursTab> {
     if (mounted) setState(() => _data.removeWhere((d) => d['id']?.toString() == id));
   }
 
+  Future<void> _editIntervalle() async {
+    final ctrl = TextEditingController(text: _intervalleCustom?.toString() ?? '');
+    final result = await showDialog<int?>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Intervalle personnalisé', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('Intervalle par défaut pour ${widget.espece} : ${_intervalChaleursJours(widget.espece)} jours',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: ctrl,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: 'Intervalle en jours',
+              hintText: 'Laisser vide pour utiliser la valeur par défaut',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              suffixText: 'j',
+            ),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, -1), // -1 = reset to default
+            child: const Text('Réinitialiser', style: TextStyle(color: Colors.orange)),
+          ),
+          TextButton(
+            onPressed: () {
+              final v = int.tryParse(ctrl.text.trim());
+              Navigator.pop(context, v ?? 0);
+            },
+            child: const Text('Enregistrer', style: TextStyle(color: Color(0xFF6E9E57), fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (result == null) return;
+    final newVal = result == -1 ? null : (result == 0 ? null : result);
+    await _supa.from('animaux').update({'intervalle_chaleurs_jours': newVal}).eq('id', widget.animalId);
+    if (mounted) setState(() => _intervalleCustom = newVal);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: Color(0xFF6E9E57)));
-    final nextHeat = _nextHeatDate(_data, widget.espece);
+    final effectiveInterval = _intervalleCustom ?? _intervalChaleursJours(widget.espece);
+    final nextHeat = _data.isNotEmpty && effectiveInterval > 0
+        ? (() {
+            final sorted = [..._data]..sort((a, b) {
+                final da = DateTime.tryParse(a['date'] ?? '') ?? DateTime(2000);
+                final db = DateTime.tryParse(b['date'] ?? '') ?? DateTime(2000);
+                return db.compareTo(da);
+              });
+            final last = DateTime.tryParse(sorted.first['date'] ?? '');
+            return last?.add(Duration(days: effectiveInterval));
+          })()
+        : null;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
@@ -3149,7 +3225,7 @@ class _ChaleursTabState extends State<_ChaleursTab> {
         backgroundColor: const Color(0xFF6E9E57),
         onPressed: () async {
           await showDialog(context: context, builder: (_) =>
-              _AddChaleursDialog(animalId: widget.animalId, espece: widget.espece));
+              _AddChaleursDialog(animalId: widget.animalId, espece: widget.espece, intervalleCustom: _intervalleCustom));
           _load();
         },
         child: const Icon(Icons.add, color: Colors.white),
@@ -3159,9 +3235,33 @@ class _ChaleursTabState extends State<_ChaleursTab> {
         children: [
           if (nextHeat != null)
             _NextHeatBanner(nextHeat: nextHeat, espece: widget.espece),
+          // Intervalle row
+          GestureDetector(
+            onTap: _editIntervalle,
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Row(children: [
+                Icon(Icons.tune_rounded, size: 16, color: Colors.grey.shade500),
+                const SizedBox(width: 8),
+                Expanded(child: Text(
+                  _intervalleCustom != null
+                      ? 'Intervalle personnalisé : $_intervalleCustom jours'
+                      : 'Intervalle par défaut (${widget.espece}) : ${_intervalChaleursJours(widget.espece)} jours',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600),
+                )),
+                Icon(Icons.edit_outlined, size: 14, color: Colors.grey.shade400),
+              ]),
+            ),
+          ),
           if (_data.isEmpty)
             Center(child: Padding(
-              padding: const EdgeInsets.only(top: 40),
+              padding: const EdgeInsets.only(top: 32),
               child: Text('Aucune chaleur enregistrée',
                   style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
             ))
@@ -3172,7 +3272,7 @@ class _ChaleursTabState extends State<_ChaleursTab> {
               onDelete: () => _delete(d['id']?.toString() ?? ''),
               onEdit: () async {
                 await showDialog(context: context, builder: (_) =>
-                    _AddChaleursDialog(animalId: widget.animalId, espece: widget.espece, existing: d));
+                    _AddChaleursDialog(animalId: widget.animalId, espece: widget.espece, intervalleCustom: _intervalleCustom, existing: d));
                 _load();
               },
             )),
@@ -3187,8 +3287,9 @@ class _ChaleursTabState extends State<_ChaleursTab> {
 class _AddChaleursDialog extends StatefulWidget {
   final String animalId;
   final String espece;
+  final int? intervalleCustom;
   final Map<String, dynamic>? existing;
-  const _AddChaleursDialog({required this.animalId, required this.espece, this.existing});
+  const _AddChaleursDialog({required this.animalId, required this.espece, this.intervalleCustom, this.existing});
   @override State<_AddChaleursDialog> createState() => _AddChaleursDialogState();
 }
 class _AddChaleursDialogState extends State<_AddChaleursDialog> {
@@ -3216,7 +3317,17 @@ class _AddChaleursDialogState extends State<_AddChaleursDialog> {
   Widget build(BuildContext context) => _BaseDialog(
     title: widget.existing != null ? 'Modifier les chaleurs' : 'Ajouter des chaleurs',
     fields: [
-      _DD('Date début *', _date, (d) => setState(() => _date = d)),
+      _DD('Date début *', _date, (d) {
+        setState(() {
+          _date = d;
+          // Auto-fill date_fin si non encore saisie
+          if (_dateFin == null && widget.existing == null) {
+            final duree = _dureeChaleursJours(widget.espece);
+            _dateFin = d.add(Duration(days: duree));
+            _duree.text = duree.toString();
+          }
+        });
+      }),
       _DD('Date de fin', _dateFin, (d) => setState(() => _dateFin = d)),
       _DF('Durée (jours)', _duree, inputType: TextInputType.number),
       _DF('Notes', _notes, maxLines: 2),
@@ -3237,7 +3348,7 @@ class _AddChaleursDialogState extends State<_AddChaleursDialog> {
           'id': DateTime.now().microsecondsSinceEpoch.toString(), ...payload,
         });
         // Sync agenda J-7 et J-1 pour la prochaine chaleur
-        final interval = _intervalChaleursJours(widget.espece);
+        final interval = widget.intervalleCustom ?? _intervalChaleursJours(widget.espece);
         if (interval > 0) {
           final nextHeat = _date!.add(Duration(days: interval));
           final uid = FirebaseAuth.instance.currentUser?.uid;

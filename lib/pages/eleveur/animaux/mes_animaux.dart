@@ -72,6 +72,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   late TabController _tabController;
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   List<Map<String, dynamic>> _animauxData = [];
+  Map<String, bool> _chaleurFlags  = {};
+  Map<String, bool> _gestanteFlags = {};
   bool _loading = true;
 
   static const _green = Color(0xFF6E9E57);
@@ -87,15 +89,82 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     _loadAnimaux();
   }
 
+  static int _intervalChaleurs(String espece) {
+    switch (espece.toLowerCase()) {
+      case 'chien':  return 182;
+      case 'chat':   return 21;
+      case 'lapin':  return 14;
+      case 'ovin':   return 17;
+      case 'caprin': return 21;
+      case 'porcin': return 21;
+      case 'cheval': return 21;
+      default:       return 0;
+    }
+  }
+
   Future<void> _loadAnimaux() async {
     if (_uid == null) { setState(() => _loading = false); return; }
     setState(() => _loading = true);
     try {
-      final rows = await Supabase.instance.client
-          .from('animaux').select().eq('uid_eleveur', _uid!);
+      final supa = Supabase.instance.client;
+      final rows = await supa.from('animaux').select().eq('uid_eleveur', _uid!);
+      final animaux = List<Map<String, dynamic>>.from(rows as List);
+
+      // IDs des femelles présentes
+      final femIds = animaux
+          .where((a) => a['sexe'] == 'femelle' &&
+              !['sorti','decede'].contains(a['statut'] ?? ''))
+          .map((a) => a['id'] as String)
+          .toList();
+
+      Map<String, bool> cFlags = {};
+      Map<String, bool> gFlags = {};
+
+      if (femIds.isNotEmpty) {
+        // Dernières chaleurs
+        final chaleurs = await supa.from('chaleurs')
+            .select('animal_id, date')
+            .inFilter('animal_id', femIds)
+            .order('date', ascending: false);
+
+        final Map<String, DateTime> lastChaleur = {};
+        for (final c in chaleurs) {
+          final aid = c['animal_id']?.toString() ?? '';
+          final d = DateTime.tryParse(c['date'] ?? '');
+          if (d != null && !lastChaleur.containsKey(aid)) lastChaleur[aid] = d;
+        }
+
+        final now = DateTime.now();
+        for (final a in animaux) {
+          final id = a['id'] as String? ?? '';
+          if (!femIds.contains(id)) continue;
+          final espece = a['espece'] as String? ?? '';
+          final customInterval = a['intervalle_chaleurs_jours'] as int?;
+          final interval = customInterval ?? _intervalChaleurs(espece);
+          if (interval == 0) continue;
+          final last = lastChaleur[id];
+          if (last == null) continue;
+          final diff = last.add(Duration(days: interval)).difference(now).inDays;
+          if (diff <= 7) cFlags[id] = true;
+        }
+
+        // Gestantes confirmées sans date_naissance
+        final gests = await supa.from('gestations')
+            .select('animal_id')
+            .inFilter('animal_id', femIds)
+            .eq('gestation_confirmee', true)
+            .isFilter('date_naissance', null);
+        for (final g in gests) {
+          final aid = g['animal_id']?.toString() ?? '';
+          if (aid.isNotEmpty) gFlags[aid] = true;
+        }
+      }
+
       if (mounted) setState(() {
-        _animauxData = List<Map<String, dynamic>>.from(rows as List);
-        _loading = false;
+        _animauxData    = animaux;
+        _chaleurFlags   = cFlags;
+        _gestanteFlags  = gFlags;
+        _loading        = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -766,6 +835,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         return _AnimalCard(
           id: id,
           data: data,
+          chaleurFlag:  _chaleurFlags[id]  ?? false,
+          gestanteFlag: _gestanteFlags[id] ?? false,
           onTap: () => _openFiche(context, id, data: data),
           onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
         );
@@ -862,6 +933,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                 id: id,
                 data: data,
                 showPorteeBadge: true,
+                chaleurFlag:  _chaleurFlags[id]  ?? false,
+                gestanteFlag: _gestanteFlags[id] ?? false,
                 onTap: () => _openFiche(context, id, data: data),
                 onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
               );
@@ -994,6 +1067,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           id: id,
           data: data,
           showStatut: true,
+          chaleurFlag:  _chaleurFlags[id]  ?? false,
+          gestanteFlag: _gestanteFlags[id] ?? false,
           onTap: () => _openFiche(context, id, data: data),
           onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
         );
@@ -1070,6 +1145,8 @@ class _AnimalCard extends StatelessWidget {
   final VoidCallback? onDelete;
   final bool showStatut;
   final bool showPorteeBadge;
+  final bool chaleurFlag;
+  final bool gestanteFlag;
   const _AnimalCard({
     required this.id,
     required this.data,
@@ -1077,6 +1154,8 @@ class _AnimalCard extends StatelessWidget {
     this.onDelete,
     this.showStatut = false,
     this.showPorteeBadge = false,
+    this.chaleurFlag = false,
+    this.gestanteFlag = false,
   });
 
   @override
@@ -1170,6 +1249,39 @@ class _AnimalCard extends StatelessWidget {
                             Text('Portée', style: TextStyle(color: Colors.white, fontSize: 8,
                                 fontFamily: 'Galey', fontWeight: FontWeight.w600)),
                           ]),
+                        ),
+                      ),
+                    if (gestanteFlag || chaleurFlag)
+                      Positioned(
+                        bottom: 6, left: 6,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (gestanteFlag)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 2),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF6E9E57).withOpacity(0.9),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text('🤰 Gestante',
+                                    style: TextStyle(color: Colors.white, fontSize: 8,
+                                        fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                              ),
+                            if (chaleurFlag)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.pink.shade400.withOpacity(0.9),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text('🌸 Chaleurs',
+                                    style: TextStyle(color: Colors.white, fontSize: 8,
+                                        fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                              ),
+                          ],
                         ),
                       ),
                   ],
