@@ -94,32 +94,31 @@
 
 | # | Tâche | Priorité | App / Web | Fichiers de départ |
 |---|---|---|---|---|
-| S13 | **Admin — gestion profils pro** : liste dans le panel admin, valider/refuser/suspendre, édition manuelle | Haute | App + Web | `admin_panel.dart`, `user_detail.dart`, `src/app/admin/` |
-| S14 | **Vue admin web** : reflet admin mobile (utilisateurs, filtres, fiche, validation pro, suppression) | Haute | Web | `src/app/admin/page.tsx` (à créer) |
-| S15 | **Pôle Santé — vétérinaires carte** : marqueurs code couleur, filtres espèce/distance, fiche détail | Haute | App + Web | `service_list_page.dart`, `src/app/services/` |
-| S15b | **Pôle Santé — ostéopathes & kinés** : liste + carte + RDV | Moyenne | App + Web | `service_list_page.dart` |
-| S15c | **Pôle Santé — naturopathes & médecines douces** (chiro, acupuncture…) : liste + carte + RDV | Moyenne | App + Web | `service_list_page.dart` |
-| S15d | **Pôle Santé — assurances animaux** : annuaire / comparateur | Basse | App + Web | `service_list_page.dart` |
-| S16 | **Pet sitter & promeneurs — zone de travail** : polygone ou rayon sur carte, filtrage annuaire par zone. Table `zones_intervention`. | Haute | App + Web | `pro_profile_edit.dart`, `src/app/profil/` |
-| S17 | **Marketplace — Petfood & Accessoires** : catalogue produits/marques, sous-catégories petfood / accessoires / créateurs / bons plans | Moyenne | App + Web | `src/app/services/marketplace/` à créer |
-| S18 | **Communauté — Adoption association** : annuaire associations + animaux à adopter | Moyenne | App + Web | `forum_page.dart`, `src/app/communaute/` |
-| S19 | **Sorties & Voyages** (remplace Animal Friendly) : parcs / restaurants / séjours (hôtels, campings, locations, Airbnb) acceptant les animaux — liste + carte + filtres | Haute | App + Web | Remplace `friendly_map_page.dart`, `animal-friendly/page.tsx` |
-| S20 | **UI Services** — uniformiser taille de police et alignement des titres de catégories sur la page principale Services | Haute | App + Web | `services_page.dart`, `src/app/services/page.tsx` |
+| ~~S13~~ | ~~**Admin — gestion profils pro** : liste dans le panel admin, valider/refuser/suspendre, édition manuelle~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-27 |
+| ~~S14~~ | ~~**Vue admin web** : reflet admin mobile (utilisateurs, filtres, fiche, validation pro, suppression)~~ | ~~Haute~~ | ~~Web~~ | ✅ Terminé 2026-05-27 |
+| ~~S15~~ | ~~**Pôle Santé — vétérinaires carte** : marqueurs code couleur, filtres espèce/distance, fiche détail~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-27 |
+| ~~S15b~~ | ~~**Pôle Santé — ostéopathes & kinés** : liste + carte + RDV~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
+| ~~S15c~~ | ~~**Pôle Santé — naturopathes & médecines douces**~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
+| ~~S15d~~ | ~~**Pôle Santé — assurances animaux** : section stub dans PoleSantePage~~ | ~~Basse~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
+| ~~S16~~ | ~~**Pet sitter & promeneurs — zone de travail** : rayon sur carte, filtrage annuaire par zone.~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
+| ~~S17~~ | ~~**Marketplace** : renommage "Produits" → "Marketplace", sections petfood / accessoires / créateurs~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
+| ~~S18~~ | ~~**Communauté — Adoption association** : section branchée sur annuaire pros (cat_pro: association)~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
+| ~~S19~~ | ~~**Sorties & Voyages** : "Animal Friendly" renommé, architecture mise à jour app + web~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
+| ~~S20~~ | ~~**UI Services** — 5 catégories unifiées (fusion Vétos+Santé → Pôle Santé), police uniforme~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 
 ### Agenda connecté — **Nabil** (tous les profils)
 > Agenda partagé éleveur + particulier, multi-usages (RDV pros, véto, alimentation, médicaments, alerte mise-bas, visites adoption)
 
 | # | Tâche | Priorité | App / Web | Notes |
 |---|---|---|---|---|
-| AG01 | **Agenda éleveur & particulier — structure de base** : créer les pages agenda (`lib/pages/agenda/agenda_page.dart`, `src/app/agenda/page.tsx`), table Supabase `agenda_events` (uid, titre, date_debut, date_fin, type, animal_id, notes, couleur), vue mensuelle + vue liste | Haute | App + Web | Base commune pour AG02–AG06 |
-| AG02 | **RDV pro → agenda automatique** : quand un RDV pro (véto, comportementaliste, pet sitter…) est confirmé (statut = `confirme`), créer automatiquement un événement dans `agenda_events` pour l'utilisateur (éleveur ou particulier). Visible par les deux parties. Lien bidirectionnel : RDV annulé → événement supprimé. | Haute | App + Web | `pro_agenda.dart`, `rdv_booking_page.dart` |
-| AG03 | **Notifications rappel RDV** : Firebase Cloud Function `sendRdvReminder` (même technique que `sendLikeNotification` — Admin SDK + FCM token dans Firestore) : déclencher 24h avant et 1h avant chaque RDV. Stocker `reminder_24h_sent` et `reminder_1h_sent` dans l'événement pour éviter doublons. | Haute | Firebase Functions + App | `functions/alertes.js` (ou nouveau `functions/agenda.js`) |
-| AG04 | **Alerte mise-bas** : dans la fiche animal (gestation confirmée), créer automatiquement un événement agenda `type = mise_bas` à la date de mise-bas prévue. Notification J-7 et J-1. | Haute | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
-| AG05 | **Visite adoption éleveur ↔ particulier** : à partir de la messagerie (annonce compagnon), proposer de planifier une visite. Créer RDV dans agenda des deux parties avec lien vers l'annonce + le profil de l'autre. | Moyenne | App + Web | Messagerie + agenda |
-| AG06 | **Rappels médicaments & alimentation** : ajouter des événements récurrents dans l'agenda depuis la fiche animal (antiparasitaire, vaccin, pesée, ration spéciale). Notification push à l'heure programmée. | Moyenne | App | `animal_fiche.dart` |
-| AG07 | **RDV pro — animal concerné** : lors de la prise de RDV avec un pro (`rdv_booking_page.dart`), permettre de sélectionner un animal parmi "mes animaux" (liste depuis Supabase). L'animal sélectionné est stocké dans la table `rdv` (`animal_id`, `animal_nom`) et affiché dans l'agenda pro et client. | Haute | App + Web | `rdv_booking_page.dart`, `pro_agenda.dart`, `src/app/services/` |
+| ~~AG01~~ | ~~**Agenda éleveur & particulier — structure de base** : pages agenda, table `agenda_events`, vue mensuelle + vue liste~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
+| ~~AG02~~ | ~~**RDV pro → agenda automatique** : RDV confirmé → `agenda_events`, RDV annulé → suppression~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
+| ~~AG03~~ | ~~**Notifications rappel RDV** : Cloud Function `sendRdvReminders` — rappels FCM 24h et 1h avant RDV~~ | ~~Haute~~ | ~~Firebase Functions~~ | ✅ Terminé 2026-05-30 |
+| ~~AG04~~ | ~~**Alerte mise-bas** : gestation confirmée → événement `type=mise_bas` dans agenda~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
+| ~~AG05~~ | ~~**Visite adoption éleveur ↔ particulier** : proposer visite depuis messagerie → 2 événements agenda~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
+| ~~AG06~~ | ~~**Rappels médicaments & alimentation** : antiparasitaire/vaccin/visite → `agenda_events type=medication`~~ | ~~Moyenne~~ | ~~App~~ | ✅ Terminé 2026-05-30 |
+| ~~AG07~~ | ~~**RDV pro — sélection animal obligatoire** : dans le formulaire de réservation, afficher clairement l'animal concerné (sélecteur prominent, nom affiché dans la liste RDV du pro et dans les notifications)~~ | ~~Haute~~ | ~~App~~ | ✅ Terminé 2026-05-31 |
 | AG08 | **Agenda pro — créneaux disponibles/indisponibles** : permettre au professionnel de définir ses créneaux horaires (disponible / réservé / bloqué) depuis son agenda (`pro_agenda.dart`). Vue semaine avec cases cliquables. Stockage dans table Supabase `creneaux_pro` (`pro_uid`, `date`, `heure_debut`, `heure_fin`, `statut`). Les créneaux bloqués ne sont pas proposés lors de la réservation côté client. | Haute | App + Web | `pro_agenda.dart`, `rdv_booking_page.dart`, `src/app/services/` |
-
 ### Conseils pratiques — **Angélique**
 
 | # | Tâche | Priorité | Repo | Notes |
@@ -188,6 +187,20 @@
 
 | Tâche | Date | Repo | Fichiers modifiés |
 |---|---|---|---|
+| S15b/S15c/S15d/S17/S18/S19/S20 — Pôle Santé (ostéo, kiné, naturo, assurances), Marketplace, Adoption, Sorties & Voyages, UI uniforme 5 catégories | 2026-05-31 | App + Web | `veterinaires_page.dart`, `services_page.dart`, `src/app/services/page.tsx` |
+| AG03 fix — rappels RDV : notif client + pro avec nom animal, colonnes `reminder_24h/1h_sent` ajoutées, déployé et testé | 2026-05-31 | Firebase Functions | `functions/agenda.js` |
+| Fix — `_deptCtrl` manquant dans `animal_trouve_form_page.dart` (crash au lancement) | 2026-05-31 | App | `animal_trouve_form_page.dart` |
+| S13 — Admin gestion profils pro : liste panel admin, valider/refuser/suspendre, édition manuelle | 2026-05-27 | App + Web | `admin_panel.dart`, `user_detail.dart`, `src/app/admin/page.tsx` |
+| S14 — Vue admin web : reflet admin mobile (utilisateurs, filtres, fiche, validation pro, suppression) | 2026-05-27 | Web | `src/app/admin/page.tsx` |
+| S15 — Pôle Santé vétérinaires : carte + marqueurs + filtres espèce/distance + fiche détail + zone intervention | 2026-05-27 | App + Web | `service_list_page.dart`, `service_detail_page.dart`, `src/app/services/carte/page.tsx` |
+| S16 — Zone intervention pro : rayon sur carte Google Maps + filtre "Proche de moi" app+web | 2026-05-30 | App + Web | `pro_profile_edit.dart`, `pro_zone_page.dart`, `service_list_page.dart`, `src/app/services/carte/page.tsx` |
+| AG01 — Agenda structure de base : page Flutter + web, table `agenda_events`, vue calendrier + liste | 2026-05-30 | App + Web | `lib/pages/agenda/agenda_page.dart`, `website/src/app/agenda/page.tsx` |
+| AG02 — RDV pro → agenda automatique : confirmé → `agenda_events`, annulé/refusé → suppression | 2026-05-30 | App + Web | `pro_agenda.dart` |
+| AG03 — Rappels RDV : Cloud Function `sendRdvReminders` (FCM 24h + 1h avant) | 2026-05-30 | Firebase Functions | `functions/agenda.js`, `functions/index.js` |
+| AG04 — Alerte mise-bas : gestation confirmée → événement `type=mise_bas` dans agenda | 2026-05-30 | App | `animal_fiche.dart` |
+| AG05 — Visite adoption : proposer visite depuis chat → 2 événements agenda (un par participant) | 2026-05-30 | App | `chatScreen.dart` |
+| AG06 — Rappels médicaments : antiparasitaire/vaccin/visite → `agenda_events type=medication` | 2026-05-30 | App | `animal_fiche.dart` |
+| Services — Messagerie : bouton "Contacter" fiche pro ouvre conversation Firestore (categorie: services) | 2026-05-30 | App | `service_detail_page.dart` |
 | A18 — Espèce âne ajoutée partout (sélecteurs, filtres feed, formulaires) + `donkey_breeds.json` créé | 2026-05-30 | App + Web | `annonces_feed_page.dart`, `mes_animaux.dart`, `annonces/feed/page.tsx` |
 | A19 — Feed filtres espèce + race : liste déroulante searchable (bottom sheet Flutter / dropdown web) | 2026-05-30 | App + Web | `annonces_feed_page.dart`, `annonces/feed/page.tsx` |
 | A10 — Feed immersif : layout full-screen, photo carrée BoxFit.contain + flou, header élevage, badge LOF/Non-LOF, description extensible, boutons d'action en colonne | 2026-05-28 | App + Web | `annonces_feed_page.dart`, `annonce_detail_page.dart`, `annonces/feed/page.tsx` |

@@ -19,17 +19,18 @@ const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" +
  */
 function supabaseRequest(method, path, body) {
     return new Promise((resolve, reject) => {
-        const url = new URL(`${SUPABASE_URL}/rest/v1/${path}`);
         const bodyStr = body ? JSON.stringify(body) : null;
+        const fullPath = `${SUPABASE_URL}/rest/v1/${path}`;
+        const url = new URL(fullPath);
         const options = {
             hostname: url.hostname,
-            path: url.search ? `${url.pathname}${url.search}` : url.pathname,
+            path: url.pathname + (url.search || ""),
             method,
             headers: {
                 "Content-Type": "application/json",
                 "apikey": SUPABASE_SERVICE_KEY,
                 "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
-                "Prefer": method === "GET" ? "return=representation" : "return=minimal",
+                "Prefer": method === "GET" ? "" : "return=minimal",
             },
         };
         if (bodyStr) options.headers["Content-Length"] = Buffer.byteLength(bodyStr);
@@ -56,20 +57,45 @@ function supabaseRequest(method, path, body) {
  * @param {string} table - Nom de la table.
  * @param {number|string} id - Identifiant de la ligne.
  * @param {object} update - Champs à mettre à jour.
- * @return {Promise<Array|object>}
+ * @return {Promise<void>}
  */
 async function supabasePatch(table, id, update) {
-    return supabaseRequest("PATCH", `${table}?id=eq.${id}`, update);
+    await supabaseRequest("PATCH", `${table}?id=eq.${id}`, update);
 }
 
 /**
- * Sélectionne des lignes Supabase avec filtres.
+ * Sélectionne des lignes Supabase avec filtres PostgREST.
  * @param {string} table - Nom de la table.
- * @param {string} query - Filtres PostgREST (query string sans '?').
+ * @param {string} query - Filtres (sans '?'), ex: "id=eq.1&select=*".
  * @return {Promise<Array>}
  */
 async function supabaseSelect(table, query) {
-    return supabaseRequest("GET", `${table}?${query}&select=*`);
+    const rows = await supabaseRequest("GET", `${table}?${query}&select=*`);
+    return Array.isArray(rows) ? rows : [];
+}
+
+/**
+ * Récupère le nom d'un animal depuis Supabase.
+ * @param {number|string|null} animalId - ID de l'animal.
+ * @return {Promise<string|null>}
+ */
+async function getAnimalNom(animalId) {
+    if (!animalId) return null;
+    const rows = await supabaseSelect("animaux", `id=eq.${animalId}`);
+    return rows[0] ? (rows[0].nom || null) : null;
+}
+
+/**
+ * Récupère le prénom ou nom de structure d'un utilisateur depuis Supabase.
+ * @param {string|null} uid - UID Firebase de l'utilisateur.
+ * @return {Promise<string|null>}
+ */
+async function getUserNom(uid) {
+    if (!uid) return null;
+    const rows = await supabaseSelect("users", `uid=eq.${uid}`);
+    if (!rows[0]) return null;
+    const u = rows[0];
+    return u.name_elevage || u.firstname || null;
 }
 
 // ─── FCM helper ───────────────────────────────────────────────────────────────
@@ -112,7 +138,8 @@ async function sendPush(uid, title, body, data = {}) {
 
 /**
  * Schedulée toutes les 30 minutes.
- * Envoie des rappels FCM 24h et 1h avant chaque RDV confirmé.
+ * Envoie des rappels FCM 24h et 1h avant chaque RDV confirmé
+ * au client ET au professionnel, avec le nom de l'animal concerné.
  */
 exports.sendRdvReminders = functions
     .region("europe-west1")
@@ -128,23 +155,42 @@ exports.sendRdvReminders = functions
 
         const rdvs24 = await supabaseSelect("rdv",
             `statut=eq.confirme&reminder_24h_sent=eq.false` +
-            `&date_heure=gte.${from24}&date_heure=lte.${to24}`);
+            `&date_heure=gte.${encodeURIComponent(from24)}` +
+            `&date_heure=lte.${encodeURIComponent(to24)}`);
 
-        for (const rdv of (Array.isArray(rdvs24) ? rdvs24 : [])) {
+        for (const rdv of rdvs24) {
             const dateStr = new Date(rdv.date_heure).toLocaleString("fr-FR", {
                 weekday: "long", day: "numeric", month: "long",
                 hour: "2-digit", minute: "2-digit",
             });
-            const ok = await sendPush(
+
+            const [animalNom, proNom, clientNom] = await Promise.all([
+                getAnimalNom(rdv.animal_id),
+                getUserNom(rdv.pro_uid),
+                getUserNom(rdv.client_uid),
+            ]);
+
+            const animalPart = animalNom ? ` pour ${animalNom}` : "";
+            const rdvData = {rdvId: String(rdv.id)};
+
+            // → Client
+            await sendPush(
                 rdv.client_uid,
                 "⏰ Rappel RDV — demain",
-                `Votre rendez-vous est prévu le ${dateStr}`,
-                {rdvId: String(rdv.id)},
+                `Votre RDV${animalPart} chez ${proNom || "votre prestataire"} est prévu le ${dateStr}`,
+                rdvData,
             );
-            if (ok) {
-                await supabasePatch("rdv", rdv.id, {reminder_24h_sent: true});
-                sent24++;
-            }
+
+            // → Pro
+            await sendPush(
+                rdv.pro_uid,
+                "⏰ RDV demain",
+                `RDV avec ${clientNom || "un client"}${animalPart} — le ${dateStr}`,
+                rdvData,
+            );
+
+            await supabasePatch("rdv", rdv.id, {reminder_24h_sent: true});
+            sent24++;
         }
 
         // ── Rappel 1h ─────────────────────────────────────────────────────────
@@ -153,24 +199,43 @@ exports.sendRdvReminders = functions
 
         const rdvs1 = await supabaseSelect("rdv",
             `statut=eq.confirme&reminder_1h_sent=eq.false` +
-            `&date_heure=gte.${from1}&date_heure=lte.${to1}`);
+            `&date_heure=gte.${encodeURIComponent(from1)}` +
+            `&date_heure=lte.${encodeURIComponent(to1)}`);
 
-        for (const rdv of (Array.isArray(rdvs1) ? rdvs1 : [])) {
-            const dateStr = new Date(rdv.date_heure).toLocaleString("fr-FR", {
+        for (const rdv of rdvs1) {
+            const timeStr = new Date(rdv.date_heure).toLocaleString("fr-FR", {
                 hour: "2-digit", minute: "2-digit",
             });
-            const ok = await sendPush(
+
+            const [animalNom, proNom, clientNom] = await Promise.all([
+                getAnimalNom(rdv.animal_id),
+                getUserNom(rdv.pro_uid),
+                getUserNom(rdv.client_uid),
+            ]);
+
+            const animalPart = animalNom ? ` pour ${animalNom}` : "";
+            const rdvData = {rdvId: String(rdv.id)};
+
+            // → Client
+            await sendPush(
                 rdv.client_uid,
                 "⏰ Rappel RDV — dans 1 heure",
-                `Votre rendez-vous est prévu à ${dateStr}`,
-                {rdvId: String(rdv.id)},
+                `Votre RDV${animalPart} chez ${proNom || "votre prestataire"} commence à ${timeStr}`,
+                rdvData,
             );
-            if (ok) {
-                await supabasePatch("rdv", rdv.id, {reminder_1h_sent: true});
-                sent1++;
-            }
+
+            // → Pro
+            await sendPush(
+                rdv.pro_uid,
+                "⏰ RDV dans 1 heure",
+                `RDV avec ${clientNom || "un client"}${animalPart} — à ${timeStr}`,
+                rdvData,
+            );
+
+            await supabasePatch("rdv", rdv.id, {reminder_1h_sent: true});
+            sent1++;
         }
 
-        console.log(`sendRdvReminders: ${sent24} rappels 24h, ${sent1} rappels 1h envoyés`);
+        console.log(`sendRdvReminders: ${sent24} rappels 24h, ${sent1} rappels 1h traités`);
         return null;
     });

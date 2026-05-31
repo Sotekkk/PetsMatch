@@ -193,14 +193,14 @@ class SantePage extends StatelessWidget {
   }
 }
 
-class LieuxSympasPage extends StatelessWidget {
-  const LieuxSympasPage({super.key});
+class SortiesPage extends StatelessWidget {
+  const SortiesPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return _ServiceSubPage(
-      title: 'Animal Friendly',
-      icon: Icons.park_outlined,
+      title: 'Sorties & Voyages',
+      icon: Icons.explore_outlined,
       iconColor: const Color(0xFF1E88E5),
       headerColor: const Color(0xFF1E88E5),
       sections: [
@@ -248,7 +248,7 @@ class ProduitsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _ServiceSubPage(
-      title: 'Produits',
+      title: 'Marketplace',
       icon: Icons.shopping_bag_outlined,
       iconColor: const Color(0xFF8E24AA),
       headerColor: const Color(0xFF8E24AA),
@@ -336,8 +336,104 @@ class CommunautePage extends StatelessWidget {
         ),
         _Section(
           icon: Icons.volunteer_activism_outlined,
-          title: 'Adoption & SPA',
+          title: 'Adoption & associations',
           description: 'Animaux à adopter et refuges partenaires',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Associations',
+            categoryColor: Color(0xFF00ACC1),
+            categoryIcon: Icons.volunteer_activism_outlined,
+            catProValues: ['association'],
+          ))),
+        ),
+      ],
+    );
+  }
+}
+
+class PoleSantePage extends StatelessWidget {
+  const PoleSantePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return _ServiceSubPage(
+      title: 'Pôle Santé',
+      icon: Icons.medical_services_outlined,
+      iconColor: const Color(0xFF6E9E57),
+      headerColor: const Color(0xFF6E9E57),
+      sections: [
+        _Section(
+          icon: Icons.local_hospital_outlined,
+          title: 'Vétérinaires',
+          description: 'Trouvez un vétérinaire près de chez vous',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Vétérinaires',
+            categoryColor: Color(0xFF6E9E57),
+            categoryIcon: Icons.local_hospital_outlined,
+            catProValues: ['sante', 'veterinaire'],
+          ))),
+        ),
+        _Section(
+          icon: Icons.emergency_outlined,
+          title: 'Urgences vétérinaires',
+          description: 'Vétérinaires disponibles 24h/24',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Urgences vétérinaires',
+            categoryColor: Color(0xFFE53935),
+            categoryIcon: Icons.emergency_outlined,
+            catProValues: ['sante', 'veterinaire'],
+          ))),
+        ),
+        _Section(
+          icon: Icons.self_improvement_outlined,
+          title: 'Ostéopathes',
+          description: 'Ostéopathie animale — chiens, chats, chevaux et NAC',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Ostéopathes',
+            categoryColor: Color(0xFF6E9E57),
+            categoryIcon: Icons.self_improvement_outlined,
+            catProValues: ['sante'],
+            professionValues: ['Ostéopathe animalier'],
+          ))),
+        ),
+        _Section(
+          icon: Icons.accessibility_new_outlined,
+          title: 'Kinésithérapeutes',
+          description: 'Rééducation, mobilité et récupération post-opératoire',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Kinésithérapeutes',
+            categoryColor: Color(0xFF6E9E57),
+            categoryIcon: Icons.accessibility_new_outlined,
+            catProValues: ['sante'],
+            professionValues: ['Kinésithérapeute animalier'],
+          ))),
+        ),
+        _Section(
+          icon: Icons.eco_outlined,
+          title: 'Naturopathes',
+          description: 'Médecine naturelle, phytothérapie et aromathérapie',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Naturopathes',
+            categoryColor: Color(0xFF6E9E57),
+            categoryIcon: Icons.eco_outlined,
+            catProValues: ['sante'],
+            professionValues: ['Naturopathe animalier'],
+          ))),
+        ),
+        _Section(
+          icon: Icons.spa_outlined,
+          title: 'Médecines alternatives',
+          description: 'Acupuncture, homéopathie, chiropractie animale',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Médecines alternatives',
+            categoryColor: Color(0xFF6E9E57),
+            categoryIcon: Icons.spa_outlined,
+            catProValues: ['sante'],
+          ))),
+        ),
+        _Section(
+          icon: Icons.health_and_safety_outlined,
+          title: 'Assurances animaux',
+          description: 'Comparez les offres d\'assurance pour votre animal',
         ),
       ],
     );
