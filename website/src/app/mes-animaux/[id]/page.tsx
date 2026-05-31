@@ -133,6 +133,11 @@ function NextHeatBanner({ nextHeat, espece }: { nextHeat: Date; espece: string }
   );
 }
 
+function fmtPoids(v: number): string {
+  if (v < 1) return v.toFixed(3);
+  if (v < 10) return v.toFixed(1);
+  return v.toFixed(0);
+}
 function fmtDate(d?: string | null) {
   if (!d) return '';
   try { return new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' }); } catch { return d; }
@@ -659,7 +664,7 @@ function WeightChartSVG({ data, isJuvenile, dateNaissance }: {
           <g key={g}>
             <line x1={L} y1={yPx} x2={W - R} y2={yPx} stroke="#F0F0F0" strokeWidth="1" />
             <text x={L - 4} y={yPx + 3} textAnchor="end" fontSize="9" fill="#BBBBBB" fontFamily="system-ui">
-              {yVal < 10 ? yVal.toFixed(1) : yVal.toFixed(0)}
+              {fmtPoids(yVal < 0 ? 0 : yVal)}
             </text>
           </g>
         ))}
@@ -677,7 +682,7 @@ function WeightChartSVG({ data, isJuvenile, dateNaissance }: {
           </text>
         ))}
         {tip && (() => {
-          const l1 = `${tip.val.toFixed(1)} kg`, l2 = xLabel(tip.i);
+          const l1 = `${fmtPoids(tip.val)} kg`, l2 = xLabel(tip.i);
           const tw = Math.max(l1.length, l2.length) * 6.5 + 14;
           const th2 = 36;
           let tx = tip.x - tw / 2, ty = tip.y - th2 - 10;
@@ -1698,7 +1703,7 @@ export default function AnimalFichePage() {
                         ) : (
                           <>
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="font-semibold text-sm text-[#5F9EAA]">{val} kg</span>
+                              <span className="font-semibold text-sm text-[#5F9EAA]">{fmtPoids(val)} kg</span>
                               <span className="text-xs text-gray-400 flex-1">{fmtDate(String(r.date??''))}</span>
                               <button onClick={()=>setEditPoids(r.id)} className="text-xs text-[#0C5C6C] hover:text-[#094F5D] font-medium px-1">✏️</button>
                               <button onClick={()=>deleteHealthRecord('poids',r.id)} className="text-xs text-red-400 hover:text-red-600">×</button>

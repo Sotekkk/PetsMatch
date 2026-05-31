@@ -2591,6 +2591,12 @@ class _SanteCard extends StatelessWidget {
 
 // ─── Onglet Poids ─────────────────────────────────────────────────────────────
 
+String _fmtPoids(double v) {
+  if (v < 1) return v.toStringAsFixed(3);
+  if (v < 10) return v.toStringAsFixed(1);
+  return v.toStringAsFixed(0);
+}
+
 class _PoidsTab extends StatefulWidget {
   final String animalId;
   const _PoidsTab({required this.animalId});
@@ -2679,7 +2685,7 @@ class _PoidsTabState extends State<_PoidsTab> {
                   Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                     Text(date, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
                     Row(children: [
-                      Text('${val.toStringAsFixed(1)} kg',
+                      Text('${_fmtPoids(val)} kg',
                           style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                               fontSize: 16, color: Color(0xFF1F2A2E))),
                       const SizedBox(width: 8),
@@ -2849,7 +2855,7 @@ class _ChartPainter extends CustomPainter {
       final yVal = baseY + g * rangeY / 4;
       final yPx = _t + h - g * h / 4;
       canvas.drawLine(Offset(_l, yPx), Offset(size.width - _r, yPx), gridPaint);
-      final lbl = yVal < 10 ? yVal.toStringAsFixed(1) : yVal.toStringAsFixed(0);
+      final lbl = _fmtPoids(yVal < 0 ? 0 : yVal);
       final tp = TextPainter(
         text: TextSpan(text: lbl, style: const TextStyle(fontFamily: 'Galey', fontSize: 9, color: Color(0xFFBBBBBB))),
         textDirection: ui.TextDirection.ltr,
@@ -2896,7 +2902,7 @@ class _ChartPainter extends CustomPainter {
       final i = hoverIdx!;
       final p = pt(i);
       const pad = 7.0;
-      final line1 = '${vals[i].toStringAsFixed(1)} kg';
+      final line1 = '${_fmtPoids(vals[i])} kg';
       final line2 = xLabelFn(i);
       final tp1 = TextPainter(text: TextSpan(text: line1, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)), textDirection: ui.TextDirection.ltr)..layout();
       final tp2 = TextPainter(text: TextSpan(text: line2, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xCCFFFFFF))), textDirection: ui.TextDirection.ltr)..layout();
