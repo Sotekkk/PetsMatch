@@ -1878,11 +1878,7 @@ class _SuiviReproTab extends StatelessWidget {
             editBuilder: (ctx, d) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe, existing: d),
           )]
         : [
-            _ReproList(
-              animalId: animalId!, collection: 'chaleurs',
-              addBuilder: (ctx) => _AddChaleursDialog(animalId: animalId!),
-              editBuilder: (ctx, d) => _AddChaleursDialog(animalId: animalId!, existing: d),
-            ),
+            _ChaleursTab(animalId: animalId!, espece: espece),
             _ReproList(
               animalId: animalId!, collection: 'saillies',
               addBuilder: (ctx) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe),
@@ -3010,10 +3006,189 @@ class _AddPoidsDialogState extends State<_AddPoidsDialog> {
   );
 }
 
+// ─── Helpers calcul chaleurs ──────────────────────────────────────────────────
+
+int _intervalChaleursJours(String espece) {
+  switch (espece.toLowerCase()) {
+    case 'chien':  return 182; // ~6 mois
+    case 'chat':   return 21;  // ~21 jours (si non stérilisée)
+    case 'lapin':  return 14;  // quasi-permanente
+    case 'ovin':   return 17;  // cycle ~17j (saisonnière automne-hiver)
+    case 'caprin': return 21;  // cycle ~21j (saisonnière automne-hiver)
+    case 'porcin': return 21;  // ~21 jours
+    case 'cheval': return 21;  // cycle ~21j dans la saison (printemps-été)
+    default:       return 0;
+  }
+}
+
+DateTime? _nextHeatDate(List<Map<String, dynamic>> data, String espece) {
+  final interval = _intervalChaleursJours(espece);
+  if (interval == 0 || data.isEmpty) return null;
+  final sorted = [...data]..sort((a, b) {
+    final da = DateTime.tryParse(a['date'] ?? '') ?? DateTime(2000);
+    final db = DateTime.tryParse(b['date'] ?? '') ?? DateTime(2000);
+    return db.compareTo(da);
+  });
+  final last = DateTime.tryParse(sorted.first['date'] ?? '');
+  if (last == null) return null;
+  return last.add(Duration(days: interval));
+}
+
+// ─── Bannière prochaine chaleur ───────────────────────────────────────────────
+
+class _NextHeatBanner extends StatelessWidget {
+  final DateTime nextHeat;
+  final String espece;
+  const _NextHeatBanner({required this.nextHeat, required this.espece});
+
+  String _intervalInfo() {
+    switch (espece.toLowerCase()) {
+      case 'chien':  return 'Intervalle moyen : 6 mois';
+      case 'chat':   return 'Intervalle moyen : 21 jours (si non stérilisée)';
+      case 'cheval': return 'Saisonnière printemps-été · cycle ~21j';
+      case 'ovin':   return 'Saisonnière automne-hiver · cycle ~17j';
+      case 'caprin': return 'Saisonnière automne-hiver · cycle ~21j';
+      case 'porcin': return 'Intervalle moyen : 21 jours';
+      case 'lapin':  return 'Réceptive quasi-permanente';
+      default:       return '';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final diff = nextHeat.difference(DateTime.now()).inDays;
+    final Color bg, fg, border;
+    final IconData icon;
+    final String label;
+
+    if (diff < 0) {
+      bg = const Color(0xFFFFEBEE); fg = Colors.red.shade700; border = Colors.red.shade300;
+      icon = Icons.warning_amber_rounded;
+      label = 'Chaleurs probables (${-diff}j de retard)';
+    } else if (diff == 0) {
+      bg = const Color(0xFFFFEBEE); fg = Colors.red.shade700; border = Colors.red.shade300;
+      icon = Icons.warning_amber_rounded;
+      label = 'Chaleurs attendues aujourd\'hui !';
+    } else if (diff == 1) {
+      bg = const Color(0xFFFFEBEE); fg = Colors.red.shade700; border = Colors.red.shade300;
+      icon = Icons.warning_amber_rounded;
+      label = 'Chaleurs attendues demain !';
+    } else if (diff <= 7) {
+      bg = const Color(0xFFFFF3CD); fg = const Color(0xFF9E7000); border = const Color(0xFFFFCC02);
+      icon = Icons.access_time_rounded;
+      label = 'Chaleurs prochaines dans $diff jours';
+    } else {
+      bg = const Color(0xFFEEF5EA); fg = const Color(0xFF4A7A3A); border = const Color(0xFF6E9E57);
+      icon = Icons.calendar_today_outlined;
+      label = 'Prochaines chaleurs : ${DateFormat('dd/MM/yyyy').format(nextHeat)}';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: bg, borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: border),
+      ),
+      child: Row(children: [
+        Icon(icon, color: fg, size: 22),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: fg)),
+          if (_intervalInfo().isNotEmpty)
+            Text(_intervalInfo(), style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: fg.withValues(alpha: 0.8))),
+        ])),
+      ]),
+    );
+  }
+}
+
+// ─── Onglet Chaleurs (avec calcul prochaine date) ─────────────────────────────
+
+class _ChaleursTab extends StatefulWidget {
+  final String animalId;
+  final String espece;
+  const _ChaleursTab({required this.animalId, required this.espece});
+  @override State<_ChaleursTab> createState() => _ChaleursTabState();
+}
+
+class _ChaleursTabState extends State<_ChaleursTab> {
+  final _supa = Supabase.instance.client;
+  List<Map<String, dynamic>> _data = [];
+  bool _loading = true;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final rows = await _supa.from('chaleurs')
+          .select()
+          .eq('animal_id', widget.animalId)
+          .order('date', ascending: false);
+      if (mounted) setState(() { _data = List<Map<String, dynamic>>.from(rows); _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _delete(String id) async {
+    await _supa.from('chaleurs').delete().eq('id', id);
+    if (mounted) setState(() => _data.removeWhere((d) => d['id']?.toString() == id));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: Color(0xFF6E9E57)));
+    final nextHeat = _nextHeatDate(_data, widget.espece);
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F8F6),
+      floatingActionButton: FloatingActionButton.small(
+        backgroundColor: const Color(0xFF6E9E57),
+        onPressed: () async {
+          await showDialog(context: context, builder: (_) =>
+              _AddChaleursDialog(animalId: widget.animalId, espece: widget.espece));
+          _load();
+        },
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+        children: [
+          if (nextHeat != null)
+            _NextHeatBanner(nextHeat: nextHeat, espece: widget.espece),
+          if (_data.isEmpty)
+            Center(child: Padding(
+              padding: const EdgeInsets.only(top: 40),
+              child: Text('Aucune chaleur enregistrée',
+                  style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
+            ))
+          else
+            ..._data.map((d) => _SimpleCard(
+              data: d,
+              collection: 'chaleurs',
+              onDelete: () => _delete(d['id']?.toString() ?? ''),
+              onEdit: () async {
+                await showDialog(context: context, builder: (_) =>
+                    _AddChaleursDialog(animalId: widget.animalId, espece: widget.espece, existing: d));
+                _load();
+              },
+            )),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Dialog Chaleurs ──────────────────────────────────────────────────────────
+
 class _AddChaleursDialog extends StatefulWidget {
   final String animalId;
+  final String espece;
   final Map<String, dynamic>? existing;
-  const _AddChaleursDialog({required this.animalId, this.existing});
+  const _AddChaleursDialog({required this.animalId, required this.espece, this.existing});
   @override State<_AddChaleursDialog> createState() => _AddChaleursDialogState();
 }
 class _AddChaleursDialogState extends State<_AddChaleursDialog> {
@@ -3061,6 +3236,29 @@ class _AddChaleursDialogState extends State<_AddChaleursDialog> {
         await Supabase.instance.client.from('chaleurs').insert({
           'id': DateTime.now().microsecondsSinceEpoch.toString(), ...payload,
         });
+        // Sync agenda J-7 et J-1 pour la prochaine chaleur
+        final interval = _intervalChaleursJours(widget.espece);
+        if (interval > 0) {
+          final nextHeat = _date!.add(Duration(days: interval));
+          final uid = FirebaseAuth.instance.currentUser?.uid;
+          if (uid != null) {
+            String nomAnimal = 'animal';
+            try {
+              final a = await Supabase.instance.client.from('animaux').select('nom').eq('id', widget.animalId).maybeSingle();
+              if (a != null) nomAnimal = (a['nom'] as String?)?.isNotEmpty == true ? a['nom'] as String : 'animal';
+            } catch (_) {}
+            for (final offset in [7, 1]) {
+              final rappel = nextHeat.subtract(Duration(days: offset));
+              if (rappel.isAfter(DateTime.now())) {
+                await _scheduleRappelAgenda(
+                  animalId: widget.animalId,
+                  dateRappel: rappel,
+                  titre: 'Chaleurs prévues J-$offset — $nomAnimal',
+                );
+              }
+            }
+          }
+        }
       }
       return true;
     },
