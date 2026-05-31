@@ -37,10 +37,10 @@
 | A23 | Mes animaux — Vue "Bébés" (regroupement par portée ou mois/année de naissance) | Moyenne | App + Web | `mes_animaux.dart`, `mes-animaux/page.tsx` |
 | A24 | Fiche animal — courbe de poids adulte | Moyenne | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
 | A25 | Fiche animal — courbe de poids chiot/juvénile (courbe de croissance) | Moyenne | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
-| A26 | Messagerie — ajouter la flèche retour (tous les profils : éleveur, particulier, pro) | Haute | App + Web | `chatScreen.dart`, pages messagerie web |
+| ~~A26~~ | ~~Messagerie — ajouter la flèche retour (tous les profils : éleveur, particulier, pro)~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | A27 | Fiche animal — modification du poids (ajouter/éditer une entrée poids) depuis l'onglet courbe de poids | Haute | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
 | ~~A28~~ | ~~Feed annonces — description manquante sur les fiches animaux individuels (hors portée)~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
-| A29 | Mes annonces — après création d'annonce, la liste ne se rafraîchit pas automatiquement au retour (nouvelle annonce absente sans reload manuel) — à vérifier app + web | Haute | App + Web | `mes_annonces_page.dart`, `mes-annonces/page.tsx`, `create_annonce_page.dart`, `annonces/creer/page.tsx` |
+| ~~A29~~ | ~~Mes annonces — après création d'annonce, la liste ne se rafraîchit pas automatiquement au retour~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | A30 | Annonces — durée de vie configurable (ex. 30/60/90 jours) : expiration automatique + badge "Expire dans X jours" + notification éleveur avant expiration + possibilité de renouveler | Haute | App + Web + Firebase Functions | `create_annonce_page.dart`, `mes_annonces_page.dart`, `annonces/creer/page.tsx`, `mes-annonces/page.tsx`, colonne `expires_at` Supabase |
 | ~~A31~~ | ~~Annonces / Fiche animal — âge des bébés affiché en semaines si moins de 3 mois, en mois sinon (ex. "6 semaines" vs "4 mois")~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | A32 | Annonces — bouton "Pause" pour suspendre temporairement une annonce sans la supprimer (statut `en_pause`) : visible uniquement par l'éleveur, badge "En pause" dans le feed + mes-annonces, réactivation en un clic | Haute | App + Web | `mes_annonces_page.dart`, `annonces_feed_page.dart`, `mes-annonces/page.tsx`, colonne `statut` Supabase |
