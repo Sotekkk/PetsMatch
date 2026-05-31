@@ -2591,9 +2591,15 @@ class _SanteCard extends StatelessWidget {
 
 // ─── Onglet Poids ─────────────────────────────────────────────────────────────
 
-class _PoidsTab extends StatelessWidget {
+class _PoidsTab extends StatefulWidget {
   final String animalId;
   const _PoidsTab({required this.animalId});
+  @override State<_PoidsTab> createState() => _PoidsTabState();
+}
+class _PoidsTabState extends State<_PoidsTab> {
+  int _refreshKey = 0;
+
+  void _refresh() { if (mounted) setState(() => _refreshKey++); }
 
   @override
   Widget build(BuildContext context) {
@@ -2601,15 +2607,17 @@ class _PoidsTab extends StatelessWidget {
       backgroundColor: const Color(0xFFF8F8F6),
       floatingActionButton: FloatingActionButton.small(
         onPressed: () => showDialog(context: context,
-            builder: (_) => _AddPoidsDialog(animalId: animalId)),
+            builder: (_) => _AddPoidsDialog(animalId: widget.animalId))
+            .then((_) => _refresh()),
         backgroundColor: const Color(0xFF6E9E57),
         child: const Icon(Icons.add, color: Colors.white),
       ),
       body: StreamBuilder<List<Map<String, dynamic>>>(
+        key: ValueKey(_refreshKey),
         stream: Supabase.instance.client
             .from('poids')
             .stream(primaryKey: ['id'])
-            .eq('animal_id', animalId)
+            .eq('animal_id', widget.animalId)
             .order('date', ascending: true),
         builder: (ctx, snap) {
           if (!snap.hasData || snap.data!.isEmpty) {
@@ -2648,9 +2656,18 @@ class _PoidsTab extends StatelessWidget {
                               fontSize: 16, color: Color(0xFF1F2A2E))),
                       const SizedBox(width: 8),
                       IconButton(
+                        icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF0C5C6C)),
+                        onPressed: () => showDialog(context: context,
+                            builder: (_) => _AddPoidsDialog(animalId: widget.animalId, existing: d))
+                            .then((_) => _refresh()),
+                        padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
                         icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
                         onPressed: () => Supabase.instance.client
-                            .from('poids').delete().eq('id', d['id']),
+                            .from('poids').delete().eq('id', d['id'])
+                            .then((_) => _refresh()),
                         padding: EdgeInsets.zero, constraints: const BoxConstraints(),
                       ),
                     ]),
@@ -2941,28 +2958,56 @@ class _AddAllergieDialogState extends State<_AddAllergieDialog> {
 
 class _AddPoidsDialog extends StatefulWidget {
   final String animalId;
-  const _AddPoidsDialog({required this.animalId});
+  final Map<String, dynamic>? existing;
+  const _AddPoidsDialog({required this.animalId, this.existing});
   @override State<_AddPoidsDialog> createState() => _AddPoidsDialogState();
 }
 class _AddPoidsDialogState extends State<_AddPoidsDialog> {
   final _valeur = TextEditingController();
   final _notes  = TextEditingController();
   DateTime? _date;
+
   @override
-  Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter une pesée', fields: [
-    _DD('Date *', _date, (d) => setState(() => _date = d)),
-    _DF('Poids (kg) *', _valeur, inputType: TextInputType.numberWithOptions(decimal: true)),
-    _DF('Notes', _notes),
-  ], onSave: () async {
-    if (_valeur.text.isEmpty || _date == null) return false;
-    final id = DateTime.now().microsecondsSinceEpoch.toString();
-    await Supabase.instance.client.from('poids').insert({
-      'id': id, 'animal_id': widget.animalId,
-      'valeur': double.tryParse(_valeur.text.replaceAll(',', '.')) ?? 0,
-      'date': _date!.toIso8601String(), 'notes': _notes.text.trim(),
-    });
-    return true;
-  });
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    if (e != null) {
+      _date       = e['date'] != null ? DateTime.tryParse(e['date'] as String) : null;
+      _valeur.text = e['valeur']?.toString() ?? '';
+      _notes.text  = (e['notes'] as String?) ?? '';
+    }
+  }
+
+  @override
+  void dispose() { _valeur.dispose(); _notes.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) => _BaseDialog(
+    title: widget.existing != null ? 'Modifier la pesée' : 'Ajouter une pesée',
+    fields: [
+      _DD('Date *', _date, (d) => setState(() => _date = d)),
+      _DF('Poids (kg) *', _valeur, inputType: TextInputType.numberWithOptions(decimal: true)),
+      _DF('Notes', _notes),
+    ],
+    onSave: () async {
+      if (_valeur.text.isEmpty || _date == null) return false;
+      final payload = {
+        'valeur': double.tryParse(_valeur.text.replaceAll(',', '.')) ?? 0,
+        'date':   _date!.toIso8601String(),
+        'notes':  _notes.text.trim(),
+      };
+      if (widget.existing != null) {
+        await Supabase.instance.client.from('poids').update(payload).eq('id', widget.existing!['id']);
+      } else {
+        await Supabase.instance.client.from('poids').insert({
+          'id': DateTime.now().microsecondsSinceEpoch.toString(),
+          'animal_id': widget.animalId,
+          ...payload,
+        });
+      }
+      return true;
+    },
+  );
 }
 
 class _AddChaleursDialog extends StatefulWidget {

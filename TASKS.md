@@ -38,15 +38,16 @@
 | A24 | Fiche animal — courbe de poids adulte | Moyenne | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
 | A25 | Fiche animal — courbe de poids chiot/juvénile (courbe de croissance) | Moyenne | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
 | ~~A26~~ | ~~Messagerie — ajouter la flèche retour (tous les profils : éleveur, particulier, pro)~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
-| A27 | Fiche animal — modification du poids (ajouter/éditer une entrée poids) depuis l'onglet courbe de poids | Haute | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
+| ~~A27~~ | ~~Fiche animal — modification du poids (ajouter/éditer une entrée poids) depuis l'onglet courbe de poids~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | ~~A28~~ | ~~Feed annonces — description manquante sur les fiches animaux individuels (hors portée)~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | ~~A29~~ | ~~Mes annonces — après création d'annonce, la liste ne se rafraîchit pas automatiquement au retour~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | A30 | Annonces — durée de vie configurable (ex. 30/60/90 jours) : expiration automatique + badge "Expire dans X jours" + notification éleveur avant expiration + possibilité de renouveler | Haute | App + Web + Firebase Functions | `create_annonce_page.dart`, `mes_annonces_page.dart`, `annonces/creer/page.tsx`, `mes-annonces/page.tsx`, colonne `expires_at` Supabase |
 | ~~A31~~ | ~~Annonces / Fiche animal — âge des bébés affiché en semaines si moins de 3 mois, en mois sinon (ex. "6 semaines" vs "4 mois")~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | ~~A32~~ | ~~Annonces — bouton "Pause" pour suspendre temporairement une annonce (statut `pause`), réactivation en un clic~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
+| A36 | Profil — rendre obligatoires les champs essentiels à la complétion du profil (adresse email, numéro de téléphone, adresse postale, ville/CP) : validation côté formulaire + message d'alerte si profil incomplet au login (bannière ou modal "Complétez votre profil"). App éleveur + particulier + pro. | Haute | App + Web | `info_utilisateur.dart`, `profil/page.tsx`, `pro_profile_edit.dart` |
 | A34 | Suivi des chaleurs femelles — saisie de l'historique des cycles par animal (date dernière chaleur), calcul automatique de la prochaine selon l'espèce (chienne ≈ 6 mois, chatte ≈ 21 jours si non stérilisée, jument saisonnière…), rappel push + badge "Chaleurs prochaines" dans la fiche animal J-7 et J-1. Table Supabase `cycles_chaleurs` (`animal_id`, `date_debut`, `notes`). | Haute | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx`, `functions/agenda.js`, table `cycles_chaleurs` |
 | A33 | Animaux trouvés — permettre à l'auteur d'éditer sa publication après déclaration (modifier description, photos, localisation, contact) | Haute | App + Web | `animal_trouve_form_page.dart`, `animaux-perdus/declarer-trouve/page.tsx` |
-| A35 | Feed annonces web — ajouter les mêmes badges que l'app : espèce (emoji + label), race, LOF/LOOF/Stud-book/Non-LOF (via `registre_type`), âge en semaines/mois/ans (via `date_naissance` / `date_naissance_animal`) | Haute | Web | `annonces/feed/page.tsx` (petsmatch-web + website) |
+| ~~A35~~ | ~~Feed annonces web — ajouter les mêmes badges que l'app : espèce (emoji + label), race, LOF/LOOF/Stud-book/Non-LOF (via `registre_type`), âge en semaines/mois/ans (via `date_naissance` / `date_naissance_animal`)~~ | ~~Haute~~ | ~~Web~~ | ✅ Terminé 2026-05-31 |
 
 ### Animaux perdus / trouvés — Spec complète : `SPEC_ANIMAUX_PERDUS_TROUVES.md`
 
@@ -117,6 +118,7 @@
 | AG05 | **Visite adoption éleveur ↔ particulier** : à partir de la messagerie (annonce compagnon), proposer de planifier une visite. Créer RDV dans agenda des deux parties avec lien vers l'annonce + le profil de l'autre. | Moyenne | App + Web | Messagerie + agenda |
 | AG06 | **Rappels médicaments & alimentation** : ajouter des événements récurrents dans l'agenda depuis la fiche animal (antiparasitaire, vaccin, pesée, ration spéciale). Notification push à l'heure programmée. | Moyenne | App | `animal_fiche.dart` |
 | AG07 | **RDV pro — animal concerné** : lors de la prise de RDV avec un pro (`rdv_booking_page.dart`), permettre de sélectionner un animal parmi "mes animaux" (liste depuis Supabase). L'animal sélectionné est stocké dans la table `rdv` (`animal_id`, `animal_nom`) et affiché dans l'agenda pro et client. | Haute | App + Web | `rdv_booking_page.dart`, `pro_agenda.dart`, `src/app/services/` |
+| AG08 | **Agenda pro — créneaux disponibles/indisponibles** : permettre au professionnel de définir ses créneaux horaires (disponible / réservé / bloqué) depuis son agenda (`pro_agenda.dart`). Vue semaine avec cases cliquables. Stockage dans table Supabase `creneaux_pro` (`pro_uid`, `date`, `heure_debut`, `heure_fin`, `statut`). Les créneaux bloqués ne sont pas proposés lors de la réservation côté client. | Haute | App + Web | `pro_agenda.dart`, `rdv_booking_page.dart`, `src/app/services/` |
 
 ### Conseils pratiques — **Angélique**
 
