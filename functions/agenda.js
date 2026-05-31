@@ -63,6 +63,10 @@ async function supabasePatch(table, id, update) {
     await supabaseRequest("PATCH", `${table}?id=eq.${id}`, update);
 }
 
+async function supabaseInsert(table, rows) {
+    await supabaseRequest("POST", table, rows);
+}
+
 /**
  * Sélectionne des lignes Supabase avec filtres PostgREST.
  * @param {string} table - Nom de la table.
@@ -319,12 +323,28 @@ exports.sendMiseBasReminders = functions
                 });
 
                 const emoji = days === 1 ? "🐣" : days === 3 ? "⏳" : "📅";
+                const title = `${emoji} Mise-bas prévue ${label}`;
+                const body = `${animalNom} devrait mettre bas le ${miseBas}. Préparez la maternité !`;
+
                 await sendPush(
                     animal.uid_eleveur,
-                    `${emoji} Mise-bas prévue ${label}`,
-                    `${animalNom} devrait mettre bas le ${miseBas}. Préparez la maternité !`,
+                    title,
+                    body,
                     {type: "mise_bas", animalId: String(g.animal_id)},
                 );
+
+                try {
+                    await supabaseInsert("notifications", [{
+                        uid: animal.uid_eleveur,
+                        type: "mise_bas",
+                        title,
+                        body,
+                        data: {animalId: String(g.animal_id)},
+                        read: false,
+                    }]);
+                } catch (e) {
+                    console.error(`notifications insert error for gestation ${g.id}:`, e.message);
+                }
 
                 await supabasePatch("gestations", g.id, {[field]: true});
                 sent++;
