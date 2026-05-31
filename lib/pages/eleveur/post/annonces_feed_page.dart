@@ -36,6 +36,7 @@ class _FeedItem {
   final String? nomEleveur;
   final String? photoEleveur;
   final bool pedigree;
+  final DateTime? dateNaissance;
 
   const _FeedItem({
     required this.annonceId, required this.bebeIndex,
@@ -43,7 +44,7 @@ class _FeedItem {
     this.race, this.espece, this.sexe, this.prix,
     this.statut, this.description, this.ville,
     this.uidEleveur, this.nomEleveur, this.photoEleveur,
-    this.pedigree = false,
+    this.pedigree = false, this.dateNaissance,
   });
 
   _FeedItem withPhoto(String? p) => _FeedItem(
@@ -51,7 +52,36 @@ class _FeedItem {
     race: race, espece: espece, sexe: sexe, prix: prix, statut: statut,
     description: description, ville: ville, uidEleveur: uidEleveur,
     nomEleveur: nomEleveur, photoEleveur: p, pedigree: pedigree,
+    dateNaissance: dateNaissance,
   );
+}
+
+String? _ageLabel(DateTime? date) {
+  if (date == null) return null;
+  final days = DateTime.now().difference(date).inDays;
+  if (days < 0) return null;
+  if (days < 91) {
+    final weeks = (days / 7).floor();
+    return weeks <= 1 ? '1 semaine' : '$weeks semaines';
+  }
+  final months = (days / 30.44).floor();
+  if (months >= 12) {
+    final years = (days / 365.25).floor();
+    return years <= 1 ? '1 an' : '$years ans';
+  }
+  return months <= 1 ? '1 mois' : '$months mois';
+}
+
+String _pedigreeLabel(String? espece, bool hasPedigree) {
+  final String label;
+  switch (espece) {
+    case 'chien': label = 'LOF'; break;
+    case 'chat':  label = 'LOOF'; break;
+    case 'cheval':
+    case 'ane':   label = 'Stud-book'; break;
+    default:      label = 'Pedigree'; break;
+  }
+  return hasPedigree ? '$label ✓' : 'Non $label';
 }
 
 List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
@@ -61,6 +91,11 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
     final bebes      = List<Map<String, dynamic>>.from(a['animaux_portee'] ?? []);
     final uid        = a['uid_eleveur'] as String?;
     final nomEleveur = a['nom_eleveur'] as String?;
+
+    final dateNaissancePortee = a['date_naissance'] is String
+        ? DateTime.tryParse(a['date_naissance'] as String) : null;
+    final dateNaissanceAnimal = a['date_naissance_animal'] is String
+        ? DateTime.tryParse(a['date_naissance_animal'] as String) : null;
 
     if (a['type'] == 'portee' && bebes.isNotEmpty) {
       for (int i = 0; i < bebes.length; i++) {
@@ -80,6 +115,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
           ville: a['ville_eleveur'] as String?,
           uidEleveur: uid, nomEleveur: nomEleveur,
           pedigree: b['pedigree'] == true,
+          dateNaissance: dateNaissancePortee,
         ));
       }
     } else if (aPhotos.isNotEmpty) {
@@ -93,6 +129,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
         prix: () { final v = a['saillie_prix'] ?? a['prix']; return v is num ? v.toDouble() : v is String ? double.tryParse(v) : null; }(),
         ville: a['ville_eleveur'] as String?,
         uidEleveur: uid, nomEleveur: nomEleveur,
+        dateNaissance: dateNaissanceAnimal,
       ));
     }
   }
@@ -203,7 +240,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
     try {
       var q = Supabase.instance.client
           .from('annonces')
-          .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur, uid_eleveur')
+          .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur, uid_eleveur, date_naissance, date_naissance_animal')
           .eq('statut', 'disponible');
       if (_espece != 'tous')       q = q.eq('espece', _espece);
       if (_race   != null)         q = q.eq('race', _race!);
@@ -1052,11 +1089,15 @@ class _FeedCardState extends State<_FeedCard> with SingleTickerProviderStateMixi
                         label: item.race!,
                         color: Colors.white.withValues(alpha: 0.10)),
                     _FeedBadge(
-                      label: item.pedigree ? 'LOF ✓' : 'Non LOF',
+                      label: _pedigreeLabel(item.espece, item.pedigree),
                       color: item.pedigree
                           ? const Color(0xFF0C5C6C).withValues(alpha: 0.85)
                           : Colors.white.withValues(alpha: 0.10),
                     ),
+                    if (_ageLabel(item.dateNaissance) != null)
+                      _FeedBadge(
+                        label: '🎂 ${_ageLabel(item.dateNaissance)!}',
+                        color: Colors.white.withValues(alpha: 0.13)),
                   ]),
                   // Ligne 3 : Ville
                   if (item.ville?.isNotEmpty == true) ...[

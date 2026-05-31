@@ -39,6 +39,8 @@ interface RawAnnonce {
   sexe?: string;
   nom_eleveur?: string;
   uid_eleveur?: string;
+  date_naissance?: string;
+  date_naissance_animal?: string;
 }
 
 interface FeedItem {
@@ -57,6 +59,23 @@ interface FeedItem {
   uidEleveur?: string;
   photoEleveur?: string;
   isSaillie?: boolean;
+  dateNaissance?: string;
+}
+
+function ageLabel(dateStr?: string): string | null {
+  if (!dateStr) return null;
+  const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+  if (days < 0) return null;
+  if (days < 91) {
+    const w = Math.floor(days / 7);
+    return w <= 1 ? '1 semaine' : `${w} semaines`;
+  }
+  const m = Math.floor(days / 30.44);
+  if (m >= 12) {
+    const y = Math.floor(days / 365.25);
+    return y <= 1 ? '1 an' : `${y} ans`;
+  }
+  return m <= 1 ? '1 mois' : `${m} mois`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -82,6 +101,7 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
             statut: b.statut, description: b.description,
             ville: a.ville_eleveur, nomEleveur: a.nom_eleveur,
             uidEleveur: a.uid_eleveur, isSaillie: false,
+            dateNaissance: a.date_naissance,
           });
         }
       });
@@ -95,6 +115,7 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
         sexe: a.sexe, prix,
         ville: a.ville_eleveur, nomEleveur: a.nom_eleveur,
         uidEleveur: a.uid_eleveur, isSaillie,
+        dateNaissance: a.date_naissance_animal,
       });
     }
   }
@@ -153,7 +174,7 @@ export default function FeedPage() {
     setLoading(true);
     let q = supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, sexe, nom_eleveur, uid_eleveur')
+      .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, sexe, nom_eleveur, uid_eleveur, date_naissance, date_naissance_animal')
       .eq('statut', 'disponible')
       .order('created_at', { ascending: false });
 
@@ -710,11 +731,17 @@ export default function FeedPage() {
               )}
             </div>
 
-            {/* Race + ville */}
-            <div className="flex items-center gap-2 mb-1">
+            {/* Race + ville + âge */}
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               {item.race && <p className="text-white/80 text-sm capitalize truncate">{item.race}</p>}
               {item.race && item.ville && <span className="text-white/40 text-sm">·</span>}
               {item.ville && <p className="text-white/60 text-xs truncate">📍 {item.ville}</p>}
+              {ageLabel(item.dateNaissance) && (
+                <>
+                  {(item.race || item.ville) && <span className="text-white/40 text-sm">·</span>}
+                  <p className="text-white/70 text-xs">🎂 {ageLabel(item.dateNaissance)}</p>
+                </>
+              )}
             </div>
 
             {/* Description */}

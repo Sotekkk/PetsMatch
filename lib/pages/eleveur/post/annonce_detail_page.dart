@@ -474,7 +474,7 @@ class _PorteeCard extends StatelessWidget {
       final age = DateTime.now().difference(dateNaissance.toDate());
       final weeks = (age.inDays / 7).floor();
       ageStr = weeks <= 0 ? 'À naître'
-          : weeks < 4 ? '$weeks sem.'
+          : weeks < 13 ? '$weeks sem.'
           : weeks < 52 ? '${(weeks / 4.33).floor()} mois'
           : '${(weeks / 52).floor()} an${(weeks / 52).floor() > 1 ? 's' : ''}';
     }

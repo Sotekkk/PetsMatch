@@ -15,9 +15,11 @@ exports.sendVaccinationReminders = stripeFunctions.sendVaccinationReminders;
 exports.triggerVaccinationReminder = stripeFunctions.triggerVaccinationReminder;
 exports.sendPushNotification = stripeFunctions.sendPushNotification;
 
-// Alertes perdus + likes
+// Alertes perdus + likes + trouvés
 exports.notifyUsersNearLostAnimal = alertesFunctions.notifyUsersNearLostAnimal;
 exports.sendLikeNotification = alertesFunctions.sendLikeNotification;
+exports.notifyNearFoundAnimal = alertesFunctions.notifyNearFoundAnimal;
+exports.notifyAnimalOwner = alertesFunctions.notifyAnimalOwner;
 
 // Agenda — rappels RDV
 exports.sendRdvReminders = agendaFunctions.sendRdvReminders;

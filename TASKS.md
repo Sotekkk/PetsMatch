@@ -32,11 +32,19 @@
 | ~~A18~~ | ~~Espèce âne — ajouter partout (listes espèces, filtres, formulaires) + créer `donkey_breeds.json`~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
 | ~~A19~~ | ~~Feed — filtre race dynamique selon espèce (liste JSON par espèce)~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
 | A20 | Carte annonces compagnons — filtres par espèce, race, région, ville, pays, département | Haute | App | `annonces_map_page.dart` |
-| A21 | Sécurité avant mise en prod — RLS Supabase propres, politique de confidentialité, CGU, suppression compte RGPD | Haute | App + Web + Supabase | Toutes tables Supabase |
+| A21 | ~~Sécurité avant mise en prod — voir section **Sécurité / Conformité RGPD** ci-dessous~~ → remplacé par RGPD01–RGPD07 + SEC01–SEC09 | Haute | App + Web + Supabase | Voir section dédiée |
 | A22 | Mes animaux — Vue "Reproducteurs" (filtre animaux reproducteurs) | Moyenne | App + Web | `mes_animaux.dart`, `mes-animaux/page.tsx` |
 | A23 | Mes animaux — Vue "Bébés" (regroupement par portée ou mois/année de naissance) | Moyenne | App + Web | `mes_animaux.dart`, `mes-animaux/page.tsx` |
 | A24 | Fiche animal — courbe de poids adulte | Moyenne | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
 | A25 | Fiche animal — courbe de poids chiot/juvénile (courbe de croissance) | Moyenne | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
+| A26 | Messagerie — ajouter la flèche retour (tous les profils : éleveur, particulier, pro) | Haute | App + Web | `chatScreen.dart`, pages messagerie web |
+| A27 | Fiche animal — modification du poids (ajouter/éditer une entrée poids) depuis l'onglet courbe de poids | Haute | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` |
+| A28 | Feed annonces — description manquante sur les fiches animaux individuels (hors portée) | Haute | App + Web | `annonces_feed_page.dart`, `annonces/feed/page.tsx` |
+| A29 | Mes annonces — après création d'annonce, la liste ne se rafraîchit pas automatiquement au retour (nouvelle annonce absente sans reload manuel) — à vérifier app + web | Haute | App + Web | `mes_annonces_page.dart`, `mes-annonces/page.tsx`, `create_annonce_page.dart`, `annonces/creer/page.tsx` |
+| A30 | Annonces — durée de vie configurable (ex. 30/60/90 jours) : expiration automatique + badge "Expire dans X jours" + notification éleveur avant expiration + possibilité de renouveler | Haute | App + Web + Firebase Functions | `create_annonce_page.dart`, `mes_annonces_page.dart`, `annonces/creer/page.tsx`, `mes-annonces/page.tsx`, colonne `expires_at` Supabase |
+| ~~A31~~ | ~~Annonces / Fiche animal — âge des bébés affiché en semaines si moins de 3 mois, en mois sinon (ex. "6 semaines" vs "4 mois")~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
+| A32 | Annonces — bouton "Pause" pour suspendre temporairement une annonce sans la supprimer (statut `en_pause`) : visible uniquement par l'éleveur, badge "En pause" dans le feed + mes-annonces, réactivation en un clic | Haute | App + Web | `mes_annonces_page.dart`, `annonces_feed_page.dart`, `mes-annonces/page.tsx`, colonne `statut` Supabase |
+| A33 | Animaux trouvés — permettre à l'auteur d'éditer sa publication après déclaration (modifier description, photos, localisation, contact) | Haute | App + Web | `animal_trouve_form_page.dart`, `animaux-perdus/declarer-trouve/page.tsx` |
 
 ### Animaux perdus / trouvés — Spec complète : `SPEC_ANIMAUX_PERDUS_TROUVES.md`
 
@@ -48,9 +56,9 @@
 | ~~PT03~~ | ~~**[V1]** Table Supabase `animaux_trouves`~~ | ~~Haute~~ | ~~Supabase~~ | ✅ Terminé 2026-05-29 |
 | ~~PT04~~ | ~~**[V1]** Carte animaux perdus/trouvés — onglet Perdu/Trouvé + code couleur + filtres espèce, race, région, ville, distance~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-29 |
 | ~~PT05~~ | ~~**[V1]** Bouton global "J'ai trouvé un animal" — drawer éleveur + particulier + Header web~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-29 |
-| PT06 | **[V1]** Saisie manuelle numéro puce → recherche dans alertes perdus + animaux trouvés + animaux de l'élevage | Haute | App + Web | `animaux_perdus_page.dart`, `animaux-perdus/page.tsx` |
-| PT07 | **[V1]** Notifications de proximité pour les animaux trouvés (< 10 km d'une alerte active) — Firebase Cloud Function `notifyNearFoundAnimal` | Haute | Firebase Functions | `functions/alertes.js` |
-| PT08 | **[V1]** Messagerie automatique perdu/trouvé — conversation Firestore avec objet + message prérempli au contact | Moyenne | App + Web | Messagerie existante |
+| ~~PT06~~ | ~~**[V1]** Saisie manuelle numéro puce → recherche dans alertes perdus + animaux trouvés + animaux de l'élevage~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
+| ~~PT07~~ | ~~**[V1]** Notifications de proximité pour les animaux trouvés (rayon 20 km d'une alerte active) — Firebase Cloud Function `notifyNearFoundAnimal`~~ | ~~Haute~~ | ~~Firebase Functions~~ | ✅ Terminé 2026-05-30 |
+| ~~PT08~~ | ~~**[V1]** Messagerie automatique perdu/trouvé — conversation Firestore avec objet + message prérempli au contact~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
 | PT09 | **[V2]** Matching automatique perdu ↔ trouvé — score pondéré (espèce+race+sexe+zone+date+couleur+puce) + notification si ≥ 90% | Haute | Firebase Functions + App + Web | Créer `matchLostFound` Cloud Function |
 | PT10 | **[V2]** Table `alertes_correspondances` — stocker les paires matchées pour éviter doublons de notif | Moyenne | Supabase | Dashboard SQL Editor |
 | PT11 | **[V2]** Lecteur puce Bluetooth — `ChipScannerService` (connect/disconnect/listen/parseChip/searchAnimal), protocoles BLE + ISO11784/11785. **3 contextes** : (1) élevage → ouvre fiche animal directement, (2) animal trouvé → ouvre alerte liée, (3) inconnu → propose créer/déclarer | Haute | App | Créer `lib/services/chip_scanner_service.dart` |
@@ -69,11 +77,11 @@
 
 | # | Tâche | Priorité | Repo | Notes |
 |---|---|---|---|---|
-| T03 | Animaux perdus — contact via messagerie (objet auto) | Moyenne | App + Web | Roadmap §I.B |
+| ~~T03~~ | ~~Animaux perdus — contact via messagerie (objet auto)~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
 | T07 | Carnet de santé — notifications vaccins/antiparasitaires (J-7, J-1, J) | Haute | App | Roadmap §III.A.b |
 | T08 | Fiche animal — courbe de poids (croissance + adulte) | Moyenne | App + Web | Roadmap §III.A.b |
 | T09 | Transfert de propriété animal (vente → email acheteur) | Haute | App + Web | Roadmap §III.A.c |
-| T10 | Annonces — likes sur portée/bébé + notification éleveur + favoris | Haute | Web d'abord | Roadmap §VI |
+| ~~T10~~ | ~~Annonces — likes sur portée/bébé + notification éleveur + favoris~~ | ~~Haute~~ | ~~Web d'abord~~ | ✅ Déjà terminé |
 
 ### Services — restructuration & nouvelles sections — **Nabil**
 
@@ -117,6 +125,38 @@
 
 ---
 
+### Sécurité / Conformité RGPD
+
+> **Conseil :** La base juridique doit être propre dès la V1. Avant lancement, le minimum obligatoire est : CGU + politique de confidentialité + bannière cookies + mentions légales + gestion consentements + export/suppression données + registre traitements RGPD.
+
+#### 🔴 V1 — Obligatoire avant lancement
+
+| # | Tâche | Priorité | Repo | Notes |
+|---|---|---|---|---|
+| RGPD01 | **CGU + Politique de confidentialité** — pages statiques web + lien depuis app (drawer / paramètres) | Haute | App + Web | `src/app/cgu/page.tsx`, `src/app/confidentialite/page.tsx` |
+| RGPD02 | **Bannière cookies web** — opt-in/opt-out RGPD (Google Analytics, Firebase), sauvegarde consentement localStorage | Haute | Web | `src/components/CookieBanner.tsx` |
+| RGPD03 | **Mentions légales** — page web (éditeur, hébergeur, responsable traitement) | Haute | Web | `src/app/mentions-legales/page.tsx` |
+| RGPD04 | **Registre des traitements RGPD** — document interne listant toutes les données collectées, base légale, durée conservation, sous-traitants (Supabase, Firebase, Stripe, Google) | Haute | Interne | Document Word/Notion hors-code |
+| RGPD05 | **Consentement explicite à l'inscription** — case à cocher CGU + politique confidentialité (non pré-cochée), stocké dans Supabase `users` (`cgu_accepted_at`) | Haute | App + Web | `inscription/page.tsx`, `login_page.dart` |
+| RGPD06 | **Export données utilisateur** (RGPD art. 20) — bouton "Télécharger mes données" dans profil → JSON de toutes ses données Supabase (animaux, alertes, annonces, messages) | Haute | App + Web | `info_utilisateur.dart`, `profil/page.tsx` |
+| RGPD07 | **Suppression compte + données** (RGPD art. 17) — bouton "Supprimer mon compte" → supprime Firebase Auth + toutes tables Supabase (cascade) + photos Storage | Haute | App + Web | `info_utilisateur.dart`, `profil/page.tsx`, Edge Function Supabase `delete-user` |
+
+#### 🟠 V2 — Sécurité avancée
+
+| # | Tâche | Priorité | Repo | Notes |
+|---|---|---|---|---|
+| SEC01 | **RLS Supabase — audit et durcissement** — revoir toutes les tables avec `USING (true)` (trop permissif), remplacer par `USING (auth.uid() = uid)` ou équivalent. Tables concernées : `animaux_trouves`, `notifications`, `messages`, `agenda_events` | Haute | Supabase | SQL Editor — policies par table |
+| SEC02 | **Authentification forte (2FA)** — option opt-in : code SMS ou TOTP (Google Authenticator) à l'activation dans les paramètres | Moyenne | App + Web | Firebase Auth MFA ou Supabase Auth MFA |
+| SEC03 | **Gestion rôles fins** — permissions par rôle (admin, éleveur, particulier, pro, vétérinaire) via colonne `role` Supabase + middleware Next.js + vérification Flutter | Haute | App + Web | `lib/main.dart`, `middleware.ts` |
+| SEC04 | **Partage vétérinaire temporaire** — lien avec token court durée (72h) donnant accès en lecture seule au carnet de santé d'un animal | Haute | App + Web | Créer `lib/pages/partage_sante/` + table `partage_tokens` |
+| SEC05 | **Logs d'accès admin** — traçabilité : qui s'est connecté, quelle fiche consultée, quelle action effectuée (archivage 6 mois) | Moyenne | App + Web | Table `audit_logs` Supabase + panel admin |
+| SEC06 | **Audit actions admin** — toute action admin (valider profil, supprimer compte, modifier annonce) loggée dans `audit_logs` avec timestamp + uid admin + détail action | Haute | App + Web | `admin_panel.dart`, `src/app/admin/page.tsx` |
+| SEC07 | **Chiffrement données sensibles** — numéros de puce (`identification`), données santé critiques : chiffrement AES côté serveur (Edge Function) avant stockage | Moyenne | Supabase | Edge Functions + colonne `encrypted_*` |
+| SEC08 | **Anonymisation** — export stats anonymisées pour admin (pas de PII, agrégats uniquement) | Basse | App + Web | Panel admin — requêtes agrégées |
+| SEC09 | **Sauvegardes automatiques** — vérifier activation snapshots Supabase (quotidien) + test restauration trimestriel | Haute | Supabase | Dashboard Supabase → Backups |
+
+---
+
 ## Terminé — Nabil (S01–S12 ✅ COMPLET)
 
 | Tâche | Date | Repo | Fichiers modifiés |
@@ -147,6 +187,7 @@
 | A19 — Feed filtres espèce + race : liste déroulante searchable (bottom sheet Flutter / dropdown web) | 2026-05-30 | App + Web | `annonces_feed_page.dart`, `annonces/feed/page.tsx` |
 | A10 — Feed immersif : layout full-screen, photo carrée BoxFit.contain + flou, header élevage, badge LOF/Non-LOF, description extensible, boutons d'action en colonne | 2026-05-28 | App + Web | `annonces_feed_page.dart`, `annonce_detail_page.dart`, `annonces/feed/page.tsx` |
 | T01 — Animaux perdus : formulaire complet (nom depuis mes animaux, race depuis JSON, localisation) | 2026-05-28 | App + Web | `alerte_perdu_form_page.dart`, `animaux-perdus/declarer/page.tsx` |
+| PT-fixes — Animaux perdus/trouvés : correctifs filtres (race, région web, département), FAB supprimé du menu (ajouté en AppBar actions), champ `departement` dans les 2 tables + 4 formulaires (perdu/trouvé app+web), contact/partager fonctionnel pour trouvés (fix `user_uid` + `contact_messagerie`), bouton Réinitialiser filtres mobile | 2026-05-30 | App + Web | `animaux_perdus_page.dart`, `alerte_perdu_form_page.dart`, `animal_trouve_form_page.dart`, `animaux-perdus/page.tsx`, `animaux-perdus/declarer/page.tsx`, `animaux-perdus/declarer-trouve/page.tsx` |
 | T02 — Animaux perdus : filtres liste (espèce, race, ville) + vue détail | 2026-05-28 | App + Web | `animaux_perdus_page.dart`, `animaux-perdus/page.tsx` |
 | T04 — Messagerie : ajout au menu + redesign liste | 2026-05-28 | App + Web | Messagerie |
 | T05 — Messagerie : types de conversation (annonce, perdu, élevage, libre, pro) | 2026-05-28 | App + Web | Messagerie |

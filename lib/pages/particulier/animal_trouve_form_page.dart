@@ -13,9 +13,13 @@ import 'package:geocoding/geocoding.dart' as geo;
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 class AnimalTrouveFormPage extends StatefulWidget {
-  const AnimalTrouveFormPage({super.key});
+  final String? knownOwnerUid;
+  final String? initialPuce;
+  final String? initialEspece;
+  const AnimalTrouveFormPage({super.key, this.knownOwnerUid, this.initialPuce, this.initialEspece});
 
   @override
   State<AnimalTrouveFormPage> createState() => _AnimalTrouveFormPageState();
@@ -40,6 +44,7 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
   final _cpCtrl             = TextEditingController();
   final _paysCtrl           = TextEditingController(text: 'France');
   final _regionCtrl         = TextEditingController();
+  final _deptCtrl           = TextEditingController();
   final _raceCtrl           = TextEditingController();
   final _contactEmailCtrl   = TextEditingController();
   final _contactTelCtrl     = TextEditingController();
@@ -90,6 +95,10 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
     _raceFocusNode.addListener(() {
       if (!_raceFocusNode.hasFocus) setState(() => _showBreedSuggestions = false);
     });
+    if (widget.initialPuce != null) _puceCtrl.text = widget.initialPuce!;
+    if (widget.initialEspece != null && _especes.contains(widget.initialEspece)) {
+      _espece = widget.initialEspece!;
+    }
     _loadBreeds(_espece);
   }
 
@@ -100,7 +109,7 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
     _places.dispose();
     for (final c in [_couleurCtrl, _puceCtrl, _etatSanteCtrl, _comportementCtrl,
                      _descCtrl, _addressSearchCtrl, _rueCtrl, _villeCtrl, _cpCtrl,
-                     _paysCtrl, _regionCtrl, _raceCtrl, _contactEmailCtrl, _contactTelCtrl]) {
+                     _paysCtrl, _regionCtrl, _deptCtrl, _raceCtrl, _contactEmailCtrl, _contactTelCtrl]) {
       c.dispose();
     }
     super.dispose();
@@ -223,15 +232,15 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
     try {
       final det = await _places.getDetailsByPlaceId(p.placeId!, language: 'fr');
       if (!mounted || !det.isOkay) return;
-      String num = '', route = '', cp = '', ville = '', pays = '', region = '';
+      String num = '', route = '', cp = '', ville = '', pays = '', region = '', dept = '';
       for (final c in det.result.addressComponents) {
-        if (c.types.contains('street_number'))                   num    = c.longName;
-        if (c.types.contains('route'))                           route  = c.longName;
-        if (c.types.contains('postal_code'))                     cp     = c.longName;
-        if (c.types.contains('locality'))                        ville  = c.longName;
-        else if (c.types.contains('administrative_area_level_2') && ville.isEmpty) ville = c.longName;
-        if (c.types.contains('administrative_area_level_1'))     region = c.longName;
-        if (c.types.contains('country'))                         pays   = c.longName;
+        if (c.types.contains('street_number'))            num    = c.longName;
+        if (c.types.contains('route'))                    route  = c.longName;
+        if (c.types.contains('postal_code'))              cp     = c.longName;
+        if (c.types.contains('locality'))                 ville  = c.longName;
+        if (c.types.contains('administrative_area_level_2')) dept = c.longName;
+        if (c.types.contains('administrative_area_level_1')) region = c.longName;
+        if (c.types.contains('country'))                  pays   = c.longName;
       }
       final rue = [num, route].where((s) => s.isNotEmpty).join(' ');
       final adresse = det.result.formattedAddress ?? p.description ?? '';
@@ -239,9 +248,10 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
       setState(() {
         _rueCtrl.text   = rue;
         _cpCtrl.text    = cp;
-        _villeCtrl.text = ville;
+        _villeCtrl.text = ville.isNotEmpty ? ville : dept;
         if (pays.isNotEmpty)   _paysCtrl.text   = pays;
         if (region.isNotEmpty) _regionCtrl.text = region;
+        if (dept.isNotEmpty)   _deptCtrl.text   = dept;
         _addressSearchCtrl.text = adresse;
         if (loc != null) { _lat = loc.lat; _lng = loc.lng; }
       });
@@ -306,7 +316,7 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
     setState(() => _saving = true);
     try {
       final photos = await _uploadPhotos();
-      await _supa.from('animaux_trouves').insert({
+      final inserted = await _supa.from('animaux_trouves').insert({
         'user_uid':                 User_Info.uid,
         'espece':                   _espece,
         'race':                     _raceCtrl.text.trim().isEmpty ? null : _raceCtrl.text.trim(),
@@ -335,7 +345,35 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
         'contact_telephone':        tel.isEmpty ? null : tel,
         'contact_messagerie':       _contactMessagerie,
         'statut':                   'trouve',
-      });
+      }).select('id').single();
+
+      // Notify nearby owners of lost animals (fire-and-forget)
+      if (_lat != null && _lng != null) {
+        try {
+          FirebaseFunctions.instanceFor(region: 'europe-west1')
+              .httpsCallable('notifyNearFoundAnimal')
+              .call({
+                'lat':          _lat,
+                'lng':          _lng,
+                'espece':       _espece,
+                'trouveId':     inserted['id'] ?? '',
+                'declarantUid': User_Info.uid,
+              });
+        } catch (_) {}
+      }
+
+      // Notify the known owner directly if chip was pre-identified (fire-and-forget)
+      if (widget.knownOwnerUid != null) {
+        try {
+          FirebaseFunctions.instanceFor(region: 'europe-west1')
+              .httpsCallable('notifyAnimalOwner')
+              .call({
+                'ownerUid': widget.knownOwnerUid,
+                'trouveId': inserted['id'] ?? '',
+                'espece':   _espece,
+              });
+        } catch (_) {}
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(

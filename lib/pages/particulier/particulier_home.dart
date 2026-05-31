@@ -261,6 +261,20 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
         onTap: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const TrouverCompagnonPage())),
       ),
+      const SizedBox(height: 10),
+      _QuickTileWide(
+        icon: Icons.nfc_outlined,
+        label: 'Recherche par puce',
+        subtitle: 'Perdus · Trouvés · Élevage',
+        color: const Color(0xFF374151),
+        onTap: () => showModalBottomSheet(
+          context: context,
+          useRootNavigator: true,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => const ChipSearchSheet(),
+        ),
+      ),
     ]);
   }
 

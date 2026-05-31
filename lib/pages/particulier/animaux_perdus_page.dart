@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' show pi, sin, cos, sqrt, atan2;
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -481,6 +482,10 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
           Navigator.pop(context);
           _contact(a, type: 'trouve');
         },
+        onShare: () {
+          Navigator.pop(context);
+          _shareTrouve(a);
+        },
       ),
     );
   }
@@ -516,10 +521,39 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     );
   }
 
+  void _shareTrouve(Map<String, dynamic> a) {
+    final espece  = (a['espece'] ?? 'animal') as String;
+    final race    = (a['race'] as String?) ?? '';
+    final lieu    = (a['localisation_adresse'] ?? a['ville'] ?? '') as String;
+    final dateStr = a['date_trouve'] as String?;
+    final date    = dateStr != null
+        ? DateFormat('dd/MM/yyyy').format(DateTime.parse(dateStr))
+        : '';
+    final desc    = (a['description'] as String?) ?? '';
+
+    const url = 'https://petsmatch.fr/animaux-perdus';
+    final nom = '${espece[0].toUpperCase()}${espece.substring(1)}'
+        '${race.isNotEmpty ? ' ($race)' : ''}';
+    final text = [
+      '🐾 ANIMAL TROUVÉ — $nom',
+      if (lieu.isNotEmpty) '📍 Trouvé à : $lieu',
+      if (date.isNotEmpty) '📅 Trouvé le $date',
+      if (desc.isNotEmpty) desc,
+      '',
+      'Cet animal cherche son propriétaire ! Contactez le déclarant sur PetsMatch 🐾\n$url',
+    ].join('\n');
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ShareSheet(text: text, url: url, nom: 'Animal trouvé : $nom'),
+    );
+  }
+
   Future<void> _contact(Map<String, dynamic> a, {String type = 'perdu'}) async {
     // For trouvé with messaging disabled, show contact info directly
     if (type == 'trouve') {
-      final accepte = a['accepte_messagerie'] as bool? ?? true;
+      final accepte = a['contact_messagerie'] as bool? ?? true;
       if (!accepte) {
         final phone = a['contact_telephone'] as String?;
         final email = a['contact_email'] as String?;
@@ -535,7 +569,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
 
     final ownerId = type == 'perdu'
         ? a['uid_proprietaire'] as String?
-        : a['uid_declarant'] as String?;
+        : a['user_uid'] as String?;
     if (ownerId == null) return;
     final currentUid = FirebaseAuth.instance.currentUser?.uid;
     if (currentUid == null) return;
@@ -605,6 +639,19 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
     }
   }
 
+  void _showChipSearch() {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => ChipSearchSheet(
+        onTapAlerte: (a) { Navigator.pop(sheetCtx); _showAlertDetail(a); },
+        onTapTrouve: (a) { Navigator.pop(sheetCtx); _showTrouveDetail(a); },
+      ),
+    );
+  }
+
   Future<void> _recenterMap() async {
     setState(() => _locating = true);
     try {
@@ -646,6 +693,13 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
                 fontFamily: 'Galey',
                 fontWeight: FontWeight.w700,
                 color: Colors.white)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.nfc_outlined, color: Colors.white),
+            tooltip: 'Recherche par puce',
+            onPressed: _showChipSearch,
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
@@ -718,7 +772,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
                     onTap: () => type == 'perdu'
                         ? _showAlertDetail(item)
                         : _showTrouveDetail(item),
-                    onShare: type == 'perdu' ? () => _share(item) : null,
+                    onShare: type == 'perdu' ? () => _share(item) : () => _shareTrouve(item),
                     onContact: () => _contact(item, type: type),
                     onRetrouve: (type == 'perdu' && isOwn)
                         ? () => _retrouveAlerte(item['id'] as String)
@@ -956,6 +1010,38 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
               ),
             ),
           ]),
+        ],
+        // Reset button
+        if (_filterEspece != null || _filterRace.isNotEmpty ||
+            _searchLieu.isNotEmpty || _filterPays.isNotEmpty ||
+            _filterRegion.isNotEmpty || _filterDept.isNotEmpty ||
+            _filterDistanceKm != null) ...[
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerRight,
+            child: GestureDetector(
+              onTap: () => setState(() {
+                _filterEspece = null;
+                _filterRace = '';
+                _searchLieu = '';
+                _filterPays = '';
+                _filterRegion = '';
+                _filterDept = '';
+                _filterDistanceKm = null;
+                _raceCtrl.clear();
+                _lieuCtrl.clear();
+                _raceSuggestions = [];
+                _showRaceSugg = false;
+                _locPredictions = [];
+              }),
+              child: const Text('Réinitialiser les filtres',
+                  style: TextStyle(
+                      fontFamily: 'Galey',
+                      fontSize: 11,
+                      color: Color(0xFF6F767B),
+                      decoration: TextDecoration.underline)),
+            ),
+          ),
         ],
         // Race autocomplete (only when espece selected)
         if (_filterEspece != null && _filterEspece != 'tous') ...[
@@ -1457,7 +1543,7 @@ class _AlertCard extends StatelessWidget {
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                   ),
-                  if (isPerdu && onShare != null) ...[
+                  if (onShare != null) ...[
                     const SizedBox(width: 8),
                     OutlinedButton.icon(
                       onPressed: onShare,
@@ -1465,8 +1551,9 @@ class _AlertCard extends StatelessWidget {
                       label: const Text('Partager',
                           style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.orange.shade700,
-                        side: BorderSide(color: Colors.orange.shade300),
+                        foregroundColor: isPerdu ? Colors.orange.shade700 : _teal,
+                        side: BorderSide(
+                            color: isPerdu ? Colors.orange.shade300 : const Color(0xFF9ECFDA)),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 4),
                         minimumSize: Size.zero,
@@ -1696,7 +1783,8 @@ class _AlertDetailSheet extends StatelessWidget {
 class _TrouveDetailSheet extends StatefulWidget {
   final Map<String, dynamic> trouve;
   final VoidCallback onContact;
-  const _TrouveDetailSheet({required this.trouve, required this.onContact});
+  final VoidCallback onShare;
+  const _TrouveDetailSheet({required this.trouve, required this.onContact, required this.onShare});
 
   @override
   State<_TrouveDetailSheet> createState() => _TrouveDetailSheetState();
@@ -1723,7 +1811,7 @@ class _TrouveDetailSheetState extends State<_TrouveDetailSheet> {
     final date = dateStr != null
         ? DateFormat('dd/MM/yyyy').format(DateTime.parse(dateStr))
         : '';
-    final accepte = a['accepte_messagerie'] as bool? ?? true;
+    final accepte = a['contact_messagerie'] as bool? ?? true;
     final phone = a['contact_telephone'] as String?;
     final email = a['contact_email'] as String?;
 
@@ -1894,67 +1982,90 @@ class _TrouveDetailSheetState extends State<_TrouveDetailSheet> {
                       color: Color(0xFF4A5568))),
             ],
             const SizedBox(height: 16),
-            // Contact
+            // Contact + Share
             if (accepte)
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: widget.onContact,
-                  icon: const Icon(Icons.message_outlined, size: 16),
-                  label: const Text('Contacter',
-                      style: TextStyle(fontFamily: 'Galey')),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _teal,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+              Row(children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: widget.onContact,
+                    icon: const Icon(Icons.message_outlined, size: 16),
+                    label: const Text('Contacter', style: TextStyle(fontFamily: 'Galey')),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _teal,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
                   ),
                 ),
-              )
-            else
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F4F6),
-                  borderRadius: BorderRadius.circular(12),
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  onPressed: widget.onShare,
+                  icon: const Icon(Icons.share, size: 16),
+                  label: const Text('Partager', style: TextStyle(fontFamily: 'Galey')),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _teal,
+                    side: const BorderSide(color: Color(0xFF9ECFDA)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                 ),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                  const Text('Contact direct',
-                      style: TextStyle(
-                          fontFamily: 'Galey',
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                          color: _teal)),
-                  if (phone != null && phone.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Row(children: [
-                      const Icon(Icons.phone_outlined,
-                          size: 14, color: Color(0xFF6F767B)),
-                      const SizedBox(width: 6),
-                      Text(phone,
-                          style: const TextStyle(
-                              fontFamily: 'Galey',
-                              fontSize: 13,
-                              color: Color(0xFF4A5568))),
-                    ]),
-                  ],
-                  if (email != null && email.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Row(children: [
-                      const Icon(Icons.email_outlined,
-                          size: 14, color: Color(0xFF6F767B)),
-                      const SizedBox(width: 6),
-                      Text(email,
-                          style: const TextStyle(
-                              fontFamily: 'Galey',
-                              fontSize: 13,
-                              color: Color(0xFF4A5568))),
-                    ]),
-                  ],
-                ]),
-              ),
+              ])
+            else
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F4F6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    const Text('Contact direct',
+                        style: TextStyle(
+                            fontFamily: 'Galey',
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            color: _teal)),
+                    if (phone != null && phone.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Row(children: [
+                        const Icon(Icons.phone_outlined,
+                            size: 14, color: Color(0xFF6F767B)),
+                        const SizedBox(width: 6),
+                        Text(phone,
+                            style: const TextStyle(
+                                fontFamily: 'Galey',
+                                fontSize: 13,
+                                color: Color(0xFF4A5568))),
+                      ]),
+                    ],
+                    if (email != null && email.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Row(children: [
+                        const Icon(Icons.email_outlined,
+                            size: 14, color: Color(0xFF6F767B)),
+                        const SizedBox(width: 6),
+                        Text(email,
+                            style: const TextStyle(
+                                fontFamily: 'Galey',
+                                fontSize: 13,
+                                color: Color(0xFF4A5568))),
+                      ]),
+                    ],
+                  ]),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: widget.onShare,
+                  icon: const Icon(Icons.share, size: 16),
+                  label: const Text('Partager', style: TextStyle(fontFamily: 'Galey')),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _teal,
+                    side: const BorderSide(color: Color(0xFF9ECFDA)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ]),
           ],
         ),
       ),
@@ -2181,6 +2292,350 @@ class _ShareBtn extends StatelessWidget {
 }
 
 // ── Dropdown géographique compact ─────────────────────────────────────────────
+
+// ── Chip search sheet (PT06) ──────────────────────────────────────────────────
+
+class ChipSearchSheet extends StatefulWidget {
+  final void Function(Map<String, dynamic>)? onTapAlerte;
+  final void Function(Map<String, dynamic>)? onTapTrouve;
+  const ChipSearchSheet({super.key, this.onTapAlerte, this.onTapTrouve});
+
+  @override
+  State<ChipSearchSheet> createState() => _ChipSearchSheetState();
+}
+
+class _ChipSearchSheetState extends State<ChipSearchSheet> {
+  static const _teal = Color(0xFF0C5C6C);
+  final _supa = Supabase.instance.client;
+  final _ctrl = TextEditingController();
+  bool _searching = false;
+  bool _searched  = false;
+  List<Map<String, dynamic>> _results = [];
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  Future<void> _search() async {
+    final q = _ctrl.text.trim();
+    if (q.isEmpty) return;
+    setState(() { _searching = true; _results = []; _searched = false; });
+
+    final results = <Map<String, dynamic>>[];
+
+    try {
+      final rows = await _supa.from('alertes_perdus').select()
+          .ilike('identification', '%$q%')
+          .eq('statut', 'perdu').limit(10);
+      for (final row in (rows as List)) {
+        results.add({...Map<String, dynamic>.from(row as Map), '__type': 'perdu'});
+      }
+    } catch (_) {}
+
+    try {
+      final rows = await _supa.from('animaux_trouves').select()
+          .ilike('numero_puce', '%$q%').limit(10);
+      for (final row in (rows as List)) {
+        results.add({...Map<String, dynamic>.from(row as Map), '__type': 'trouve'});
+      }
+    } catch (_) {}
+
+    try {
+      final rows = await _supa.from('animaux')
+          .select('id,nom,espece,race,identification,photo_url,uid_eleveur')
+          .ilike('identification', '%$q%').limit(10);
+      for (final row in (rows as List)) {
+        results.add({...Map<String, dynamic>.from(row as Map), '__type': 'elevage'});
+      }
+    } catch (_) {}
+
+    setState(() { _results = results; _searched = true; _searching = false; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.65,
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
+      expand: false,
+      builder: (_, scroll) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Center(child: Container(width: 40, height: 4,
+                  decoration: BoxDecoration(color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 16),
+              const Text('Recherche par numéro de puce',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+              const SizedBox(height: 3),
+              Text('Recherche dans les alertes perdues, déclarations trouvées et élevages.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+              const SizedBox(height: 14),
+              Row(children: [
+                Expanded(
+                  child: Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8F8F8),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: TextField(
+                      controller: _ctrl,
+                      keyboardType: TextInputType.text,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _search(),
+                      autofocus: true,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                      decoration: const InputDecoration(
+                        hintText: '250269802345678',
+                        hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        border: InputBorder.none,
+                        prefixIcon: Icon(Icons.nfc_outlined, size: 18, color: Colors.grey),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _teal, foregroundColor: Colors.white,
+                    minimumSize: const Size(48, 44), padding: EdgeInsets.zero,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: _searching ? null : _search,
+                  child: _searching
+                      ? const SizedBox(width: 18, height: 18,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.search, size: 20),
+                ),
+              ]),
+              const SizedBox(height: 12),
+            ]),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: _searching
+                ? Center(child: CircularProgressIndicator(color: _teal))
+                : !_searched
+                    ? Center(child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.nfc_outlined, size: 52, color: Colors.grey.shade300),
+                          const SizedBox(height: 12),
+                          Text('Entrez un numéro de puce pour rechercher\ndans toutes les déclarations',
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                                  color: Colors.grey.shade400),
+                              textAlign: TextAlign.center),
+                        ]),
+                      ))
+                    : _results.isEmpty
+                        ? Center(child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(Icons.search_off, size: 52, color: Colors.grey.shade300),
+                              const SizedBox(height: 12),
+                              const Text('Aucun animal trouvé avec ce numéro de puce',
+                                  style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                                      color: Colors.grey),
+                                  textAlign: TextAlign.center),
+                            ]),
+                          ))
+                        : ListView.builder(
+                            controller: scroll,
+                            padding: const EdgeInsets.fromLTRB(16, 10, 16, 40),
+                            itemCount: _results.length,
+                            itemBuilder: (_, i) {
+                              final r = _results[i];
+                              final type = r['__type'] as String;
+                              final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
+                              if (type == 'elevage') {
+                                final isOwn = r['uid_eleveur'] != null && r['uid_eleveur'] == currentUid;
+                                return _ChipResultCard(
+                                  result: r,
+                                  onTap: isOwn ? () {
+                                    Navigator.pop(context);
+                                    Navigator.push(context, MaterialPageRoute(
+                                        builder: (_) => AnimalFichePage(animalId: r['id'] as String?)));
+                                  } : null,
+                                  onDeclare: () {
+                                    Navigator.pop(context);
+                                    Navigator.push(context, MaterialPageRoute(
+                                        builder: (_) => AnimalTrouveFormPage(
+                                          knownOwnerUid: r['uid_eleveur'] as String?,
+                                          initialPuce: r['identification'] as String?,
+                                          initialEspece: r['espece'] as String?,
+                                        )));
+                                  },
+                                );
+                              }
+
+                              return _ChipResultCard(
+                                result: r,
+                                onTap: type == 'perdu'
+                                    ? () {
+                                        if (widget.onTapAlerte != null) {
+                                          widget.onTapAlerte!(r);
+                                        } else {
+                                          Navigator.pop(context);
+                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const AnimauxPerdusPage()));
+                                        }
+                                      }
+                                    : () {
+                                        if (widget.onTapTrouve != null) {
+                                          widget.onTapTrouve!(r);
+                                        } else {
+                                          Navigator.pop(context);
+                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const AnimauxPerdusPage()));
+                                        }
+                                      },
+                              );
+                            },
+                          ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _ChipResultCard extends StatelessWidget {
+  final Map<String, dynamic> result;
+  final VoidCallback? onTap;
+  final VoidCallback? onDeclare;
+  const _ChipResultCard({required this.result, this.onTap, this.onDeclare});
+
+  static const _orange = Color(0xFFE65100);
+  static const _teal   = Color(0xFF0C5C6C);
+  static const _green  = Color(0xFF16A34A);
+
+  @override
+  Widget build(BuildContext context) {
+    final type = result['__type'] as String;
+    final accent = type == 'perdu' ? _orange : type == 'trouve' ? _teal : _green;
+    final showBadge = type != 'elevage';
+    final badge = type == 'perdu' ? '🚨 PERDU' : '🐾 TROUVÉ';
+
+    String title, subtitle;
+    String? photoUrl, chipNum;
+
+    if (type == 'perdu') {
+      title    = result['nom_animal'] as String? ?? 'Animal perdu';
+      subtitle = '${result['espece'] ?? ''}'
+          '${(result['ville'] ?? result['derniere_localisation'] ?? '').toString().isNotEmpty ? ' · ${result['ville'] ?? result['derniere_localisation']}' : ''}';
+      photoUrl = result['photo_url'] as String?;
+      chipNum  = result['identification'] as String?;
+    } else if (type == 'trouve') {
+      final esp = result['espece'] as String? ?? 'Animal';
+      title    = esp[0].toUpperCase() + esp.substring(1);
+      subtitle = result['localisation_ville'] as String? ?? result['ville'] as String? ?? '';
+      final photos = result['photos'];
+      if (photos is List && photos.isNotEmpty) photoUrl = photos.first as String?;
+      chipNum  = result['numero_puce'] as String?;
+    } else {
+      title    = result['nom'] as String? ?? 'Animal';
+      final esp  = result['espece'] as String? ?? '';
+      final race = result['race'] as String? ?? '';
+      subtitle = [esp, race].where((s) => s.isNotEmpty).join(' · ');
+      photoUrl = result['photo_url'] as String?;
+      chipNum  = result['identification'] as String?;
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.grey.shade200),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04),
+              blurRadius: 6, offset: const Offset(0, 2))],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(width: 56, height: 56,
+                child: photoUrl != null && photoUrl.isNotEmpty
+                    ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(color: Colors.grey.shade100),
+                        errorWidget: (_, __, ___) => _ChipPhotoPlaceholder(accent))
+                    : _ChipPhotoPlaceholder(accent)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (showBadge) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                      color: accent.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Text(badge,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 9,
+                          fontWeight: FontWeight.w700, color: accent)),
+                ),
+                const SizedBox(height: 4),
+              ],
+              Text(title,
+                  style: const TextStyle(fontFamily: 'Galey',
+                      fontWeight: FontWeight.w600, fontSize: 14),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (subtitle.isNotEmpty)
+                Text(subtitle,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        color: Colors.grey.shade500),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (chipNum != null && chipNum.isNotEmpty)
+                Text('🔖 $chipNum',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                        color: _teal)),
+            ])),
+            if (onTap != null)
+              Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey.shade400),
+          ]),
+          if (onDeclare != null) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.location_on_outlined, size: 16),
+                label: const Text('Déclarer trouvé',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _green,
+                  side: const BorderSide(color: _green),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: onDeclare,
+              ),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+class _ChipPhotoPlaceholder extends StatelessWidget {
+  final Color color;
+  const _ChipPhotoPlaceholder(this.color);
+  @override
+  Widget build(BuildContext context) => Container(
+    color: color.withOpacity(0.08),
+    child: Icon(Icons.pets, color: color.withOpacity(0.4), size: 28),
+  );
+}
 
 class _GeoDropdown extends StatelessWidget {
   final String? value;

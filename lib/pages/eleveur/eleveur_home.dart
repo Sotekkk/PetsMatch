@@ -286,6 +286,14 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AlertePerduFormPage()))),
       _QuickTile(icon: Icons.pets, label: 'Animal\ntrouvé', color: const Color(0xFF0C5C6C),
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AnimalTrouveFormPage()))),
+      _QuickTile(icon: Icons.nfc_outlined, label: 'Rech.\npuce', color: const Color(0xFF374151),
+          onTap: () => showModalBottomSheet(
+            context: context,
+            useRootNavigator: true,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (_) => const ChipSearchSheet(),
+          )),
     ];
 
     return Column(children: [
