@@ -660,7 +660,9 @@ class _TachesTabState extends State<_TachesTab> {
       final taches = tachesRaw.map<Map<String, dynamic>>((t) {
         final assigneNom = t['assigne_a'] != null ? (uidToNom[t['assigne_a']] ?? 'Employé') : null;
         final animalNom = t['animal_id'] != null ? animalNoms[t['animal_id'].toString()] : null;
-        return {...t, 'assigne_nom': assigneNom, 'animal_nom': animalNom};
+        final animauxIds = (t['animaux_ids'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+        final resolvedAnimalNoms = animauxIds.map((id) => animalNoms[id] ?? id).toList();
+        return {...t, 'assigne_nom': assigneNom, 'animal_nom': animalNom, 'animal_noms': resolvedAnimalNoms};
       }).toList();
 
       if (mounted) setState(() {
@@ -675,9 +677,13 @@ class _TachesTabState extends State<_TachesTab> {
   }
 
   Future<void> _toggleStatut(Map<String, dynamic> tache) async {
+    final id = tache['id'];
     final newStatut = tache['statut'] == 'fait' ? 'a_faire' : 'fait';
-    await _supa.from('taches_elevage').update({'statut': newStatut}).eq('id', tache['id']);
-    _load();
+    setState(() {
+      final idx = _taches.indexWhere((t) => t['id'] == id);
+      if (idx != -1) _taches[idx] = {..._taches[idx], 'statut': newStatut};
+    });
+    await _supa.from('taches_elevage').update({'statut': newStatut}).eq('id', id);
   }
 
   Future<void> _delete(Map<String, dynamic> tache) async {
@@ -796,7 +802,10 @@ class _TacheCard extends StatelessWidget {
     final fait = tache['statut'] == 'fait';
     final date = DateTime.tryParse(tache['date'] ?? '');
     final dateStr = date != null ? DateFormat('dd MMM', 'fr_FR').format(date) : '';
-    final animalNom = tache['animal_nom'] as String?;
+    final heureRaw = tache['heure'] as String?;
+    final heureStr = heureRaw != null ? heureRaw.substring(0, 5) : null;
+    final animalNoms = (tache['animal_noms'] as List<dynamic>?)?.cast<String>() ?? [];
+    final animalNomLegacy = tache['animal_nom'] as String?;
     final assigneNom = tache['assigne_nom'] as String?;
 
     return GestureDetector(
@@ -830,9 +839,12 @@ class _TacheCard extends StatelessWidget {
                     fontSize: 14, color: dark,
                     decoration: fait ? TextDecoration.lineThrough : null)),
             const SizedBox(height: 4),
-            Wrap(spacing: 6, children: [
+            Wrap(spacing: 6, runSpacing: 4, children: [
               if (dateStr.isNotEmpty) _Badge(text: '📅 $dateStr', bg: const Color(0xFFEEF5EA), fg: teal),
-              if (animalNom != null) _Badge(text: '🐾 $animalNom', bg: const Color(0xFFEFF6FF), fg: const Color(0xFF1D4ED8)),
+              if (heureStr != null) _Badge(text: '🕐 $heureStr', bg: const Color(0xFFFFF8E1), fg: const Color(0xFFE65100)),
+              for (final nom in animalNoms) _Badge(text: '🐾 $nom', bg: const Color(0xFFEFF6FF), fg: const Color(0xFF1D4ED8)),
+              if (animalNoms.isEmpty && animalNomLegacy != null)
+                _Badge(text: '🐾 $animalNomLegacy', bg: const Color(0xFFEFF6FF), fg: const Color(0xFF1D4ED8)),
               if (assigneNom != null) _Badge(text: '👤 $assigneNom', bg: const Color(0xFFF3F4F6), fg: Colors.grey.shade700),
             ]),
             if ((tache['notes'] as String?)?.isNotEmpty == true) ...[
@@ -888,7 +900,8 @@ class _CreateTacheSheetState extends State<_CreateTacheSheet> {
   final _titreCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   DateTime _date = DateTime.now();
-  String? _selectedAnimalId;
+  TimeOfDay? _heure;
+  final Set<String> _selectedAnimalIds = {};
   String? _selectedEmployeUid;
   bool _saving = false;
 
@@ -896,11 +909,15 @@ class _CreateTacheSheetState extends State<_CreateTacheSheet> {
     if (_titreCtrl.text.trim().isEmpty) return;
     setState(() => _saving = true);
     try {
+      final heureStr = _heure != null
+          ? '${_heure!.hour.toString().padLeft(2, '0')}:${_heure!.minute.toString().padLeft(2, '0')}:00'
+          : null;
       final result = await _supa.from('taches_elevage').insert({
         'titre':       _titreCtrl.text.trim(),
         'uid_eleveur': widget.uid,
         'date':        _date.toIso8601String().split('T').first,
-        if (_selectedAnimalId != null) 'animal_id': _selectedAnimalId,
+        if (heureStr != null) 'heure': heureStr,
+        if (_selectedAnimalIds.isNotEmpty) 'animaux_ids': _selectedAnimalIds.toList(),
         if (_selectedEmployeUid != null) 'assigne_a': _selectedEmployeUid,
         if (_notesCtrl.text.trim().isNotEmpty) 'notes': _notesCtrl.text.trim(),
         'statut': 'a_faire',
@@ -983,17 +1000,107 @@ class _CreateTacheSheetState extends State<_CreateTacheSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            // Animal
+            // Heure
+            GestureDetector(
+              onTap: () async {
+                final t = await showTimePicker(
+                  context: context,
+                  initialTime: _heure ?? TimeOfDay.now(),
+                  builder: (ctx, child) => Theme(
+                    data: Theme.of(ctx).copyWith(colorScheme: ColorScheme.light(primary: widget.teal)),
+                    child: child!,
+                  ),
+                );
+                if (t != null) setState(() => _heure = t);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFE4E7E2)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(children: [
+                  Icon(Icons.access_time_outlined, size: 16, color: widget.teal),
+                  const SizedBox(width: 8),
+                  Text(
+                    _heure != null ? _heure!.format(context) : 'Heure (optionnel)',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                        color: _heure != null ? const Color(0xFF1F2A2E) : const Color(0xFF6F767B)),
+                  ),
+                  const Spacer(),
+                  if (_heure != null) GestureDetector(
+                    onTap: () => setState(() => _heure = null),
+                    child: const Icon(Icons.close, size: 16, color: Color(0xFF6F767B)),
+                  ),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Animaux (multi-select)
             if (widget.animaux.isNotEmpty) ...[
-              _sheetDropdown(
-                hint: '🐾 Animal (optionnel)',
-                value: _selectedAnimalId,
-                items: widget.animaux.map((a) => DropdownMenuItem(
-                  value: a['id'].toString(),
-                  child: Text(a['nom'] ?? '—', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-                )).toList(),
-                onChanged: (v) => setState(() => _selectedAnimalId = v),
-                teal: widget.teal,
+              GestureDetector(
+                onTap: () async {
+                  final sel = Set<String>.from(_selectedAnimalIds);
+                  await showDialog(
+                    context: context,
+                    builder: (ctx) => StatefulBuilder(
+                      builder: (ctx, setS) => AlertDialog(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        title: const Text('Animaux concernés',
+                            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                        content: SizedBox(
+                          width: double.maxFinite,
+                          child: ListView(shrinkWrap: true, children: widget.animaux.map((a) {
+                            final id = a['id'].toString();
+                            return CheckboxListTile(
+                              value: sel.contains(id),
+                              activeColor: widget.teal,
+                              dense: true,
+                              title: Text(a['nom'] ?? '—',
+                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                              onChanged: (v) => setS(() => v == true ? sel.add(id) : sel.remove(id)),
+                            );
+                          }).toList()),
+                        ),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: widget.teal),
+                            onPressed: () { setState(() => _selectedAnimalIds..clear()..addAll(sel)); Navigator.pop(ctx); },
+                            child: const Text('Valider', style: TextStyle(color: Colors.white)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFE4E7E2)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Icon(Icons.pets_outlined, size: 16, color: widget.teal),
+                      const SizedBox(width: 8),
+                      Text(_selectedAnimalIds.isEmpty ? 'Animaux concernés (optionnel)' : '${_selectedAnimalIds.length} animal(aux) sélectionné(s)',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                              color: _selectedAnimalIds.isEmpty ? const Color(0xFF6F767B) : const Color(0xFF1F2A2E))),
+                    ]),
+                    if (_selectedAnimalIds.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Wrap(spacing: 4, runSpacing: 4, children: _selectedAnimalIds.map((id) {
+                        final a = widget.animaux.firstWhere((a) => a['id'].toString() == id, orElse: () => {});
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(color: widget.teal.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                          child: Text(a['nom'] ?? id, style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: widget.teal, fontWeight: FontWeight.w600)),
+                        );
+                      }).toList()),
+                    ],
+                  ]),
+                ),
               ),
               const SizedBox(height: 12),
             ],
@@ -1084,7 +1191,8 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
   late final TextEditingController _titreCtrl;
   late final TextEditingController _notesCtrl;
   late DateTime _date;
-  String? _selectedAnimalId;
+  TimeOfDay? _heure;
+  late Set<String> _selectedAnimalIds;
   String? _selectedEmployeUid;
   bool _saving = false;
 
@@ -1094,13 +1202,14 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
     _titreCtrl = TextEditingController(text: widget.tache['titre'] as String? ?? '');
     _notesCtrl = TextEditingController(text: widget.tache['notes'] as String? ?? '');
     _date = DateTime.tryParse(widget.tache['date'] ?? '') ?? DateTime.now();
-    _selectedAnimalId = widget.tache['animal_id'] as String?;
-    _selectedEmployeUid = widget.tache['assigne_a'] as String?;
-    // Validate selections exist in current lists
-    if (_selectedAnimalId != null &&
-        !widget.animaux.any((a) => a['id'].toString() == _selectedAnimalId)) {
-      _selectedAnimalId = null;
+    final heureRaw = widget.tache['heure'] as String?;
+    if (heureRaw != null) {
+      final parts = heureRaw.split(':');
+      _heure = TimeOfDay(hour: int.tryParse(parts[0]) ?? 0, minute: int.tryParse(parts[1]) ?? 0);
     }
+    final ids = (widget.tache['animaux_ids'] as List<dynamic>?)?.map((e) => e.toString()).toSet() ?? {};
+    _selectedAnimalIds = ids.where((id) => widget.animaux.any((a) => a['id'].toString() == id)).toSet();
+    _selectedEmployeUid = widget.tache['assigne_a'] as String?;
     if (_selectedEmployeUid != null &&
         !widget.employes.any((e) => e['uid_employe'] == _selectedEmployeUid)) {
       _selectedEmployeUid = null;
@@ -1110,11 +1219,16 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
   Future<void> _save() async {
     if (_titreCtrl.text.trim().isEmpty) return;
     setState(() => _saving = true);
+    final heureStr = _heure != null
+        ? '${_heure!.hour.toString().padLeft(2, '0')}:${_heure!.minute.toString().padLeft(2, '0')}:00'
+        : null;
     try {
       await _supa.from('taches_elevage').update({
         'titre': _titreCtrl.text.trim(),
         'date':  _date.toIso8601String().split('T').first,
-        'animal_id':  _selectedAnimalId,
+        'heure': heureStr,
+        'animaux_ids': _selectedAnimalIds.toList(),
+        'animal_id':  null,
         'assigne_a':  _selectedEmployeUid,
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       }).eq('id', widget.tache['id']);
@@ -1174,19 +1288,106 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
               ),
             ),
             const SizedBox(height: 12),
+            // Heure
+            GestureDetector(
+              onTap: () async {
+                final t = await showTimePicker(
+                  context: context,
+                  initialTime: _heure ?? TimeOfDay.now(),
+                  builder: (ctx, child) => Theme(
+                    data: Theme.of(ctx).copyWith(colorScheme: ColorScheme.light(primary: widget.teal)),
+                    child: child!,
+                  ),
+                );
+                if (t != null) setState(() => _heure = t);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFE4E7E2)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(children: [
+                  Icon(Icons.access_time_outlined, size: 16, color: widget.teal),
+                  const SizedBox(width: 8),
+                  Text(
+                    _heure != null ? _heure!.format(context) : 'Heure (optionnel)',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                        color: _heure != null ? const Color(0xFF1F2A2E) : const Color(0xFF6F767B)),
+                  ),
+                  const Spacer(),
+                  if (_heure != null) GestureDetector(
+                    onTap: () => setState(() => _heure = null),
+                    child: const Icon(Icons.close, size: 16, color: Color(0xFF6F767B)),
+                  ),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 12),
             if (widget.animaux.isNotEmpty) ...[
-              _sheetDropdown(
-                hint: '🐾 Animal (optionnel)',
-                value: _selectedAnimalId,
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('— Aucun —', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
-                  ...widget.animaux.map((a) => DropdownMenuItem(
-                    value: a['id'].toString(),
-                    child: Text(a['nom'] ?? '—', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-                  )),
-                ],
-                onChanged: (v) => setState(() => _selectedAnimalId = v),
-                teal: widget.teal,
+              GestureDetector(
+                onTap: () async {
+                  final sel = Set<String>.from(_selectedAnimalIds);
+                  await showDialog(
+                    context: context,
+                    builder: (ctx) => StatefulBuilder(
+                      builder: (ctx, setS) => AlertDialog(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        title: const Text('Animaux concernés',
+                            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                        content: SizedBox(
+                          width: double.maxFinite,
+                          child: ListView(shrinkWrap: true, children: widget.animaux.map((a) {
+                            final id = a['id'].toString();
+                            return CheckboxListTile(
+                              value: sel.contains(id),
+                              activeColor: widget.teal,
+                              dense: true,
+                              title: Text(a['nom'] ?? '—',
+                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                              onChanged: (v) => setS(() => v == true ? sel.add(id) : sel.remove(id)),
+                            );
+                          }).toList()),
+                        ),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: widget.teal),
+                            onPressed: () { setState(() => _selectedAnimalIds..clear()..addAll(sel)); Navigator.pop(ctx); },
+                            child: const Text('Valider', style: TextStyle(color: Colors.white)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFE4E7E2)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Icon(Icons.pets_outlined, size: 16, color: widget.teal),
+                      const SizedBox(width: 8),
+                      Text(_selectedAnimalIds.isEmpty ? 'Animaux concernés (optionnel)' : '${_selectedAnimalIds.length} animal(aux) sélectionné(s)',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                              color: _selectedAnimalIds.isEmpty ? const Color(0xFF6F767B) : const Color(0xFF1F2A2E))),
+                    ]),
+                    if (_selectedAnimalIds.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Wrap(spacing: 4, runSpacing: 4, children: _selectedAnimalIds.map((id) {
+                        final a = widget.animaux.firstWhere((a) => a['id'].toString() == id, orElse: () => {});
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(color: widget.teal.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                          child: Text(a['nom'] ?? id, style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: widget.teal, fontWeight: FontWeight.w600)),
+                        );
+                      }).toList()),
+                    ],
+                  ]),
+                ),
               ),
               const SizedBox(height: 12),
             ],
