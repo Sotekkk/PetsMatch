@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
@@ -126,7 +128,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 4, vsync: this);
     _editing = widget.animalId == null; // new animal → edit mode directly
     if (widget.preselectedEspece != null) _espece = widget.preselectedEspece!;
     _fillFromData(widget.initialData); // pre-fill instantly from cached data
@@ -733,11 +735,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         ],
         bottom: TabBar(
           controller: _tabs,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           indicatorColor: _green,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white60,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
-          tabs: const [Tab(text: 'Identité'), Tab(text: 'Suivi Repro'), Tab(text: 'Carnet Santé')],
+          tabs: const [Tab(text: 'Identité'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation')],
         ),
       ),
       body: TabBarView(
@@ -746,6 +750,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           _IdentiteTab(this),
           _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
           _CarnetSanteTab(animalId: widget.animalId),
+          _AlimentationTab(this),
         ],
       ),
     );
@@ -4516,6 +4521,2475 @@ class _SaveFirstPrompt extends StatelessWidget {
         Text(message, textAlign: TextAlign.center,
             style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500, fontSize: 15)),
       ])));
+}
+
+// ─── Onglet Alimentation ─────────────────────────────────────────────────────
+
+class _AlimentationTab extends StatefulWidget {
+  final _AnimalFichePageState s;
+  const _AlimentationTab(this.s);
+  @override
+  State<_AlimentationTab> createState() => _AlimentationTabState();
+}
+
+class _AlimentationTabState extends State<_AlimentationTab> {
+  static final _supa = Supabase.instance.client;
+  bool _loading = true;
+  bool _saving  = false;
+  Map<String,dynamic>? _existing;
+
+  String  _type          = 'croquettes';
+  String  _activite      = 'modere';
+  String  _catEnergie    = 'normale'; // 'basse'|'normale'|'elevee'|'geant'
+  String? _phaseManuelle; // null = auto-détectée
+
+  final _densiteCtrl  = TextEditingController();
+  final _objectifCtrl = TextEditingController();
+
+  // Marque sélectionnée (depuis marques_aliments)
+  String?       _marqueId;
+  String        _marqueNom   = '';
+  String        _gammeNom    = '';
+  List<dynamic> _dosesMarque = [];
+
+  double _pctMuscles = 70;
+  double _pctAbats   = 10;
+  double _pctOs      = 10;
+  double _pctLegumes = 10;
+
+  // Ration mixte chien/chat (croquettes + pâtée ou croquettes + BARF)
+  double _pctCroquMix    = 70;  // % DER en croquettes
+  String _typeMixte2     = 'patee'; // 'patee' ou 'barf'
+  final  _densitePateeCtrl = TextEditingController(); // kcal/100g pâtée
+
+  // Planning des repas
+  int _nbRepas = 2;
+  bool _modeCalculateur    = true;       // false = summary, true = calculator
+  bool _mixteSepareParRepas = false;     // one food type per meal in mixte
+  final _doseManCtrl   = TextEditingController(); // manual dose override g/j (component 1)
+  final _doseManCtrl2  = TextEditingController(); // manual dose override g/j (component 2 mixte)
+  final _densiteGranCtrl = TextEditingController(); // density for non-dog/cat granulés
+
+  static const _repasLabels = [
+    ['Repas unique'],
+    ['Matin 🌅', 'Soir 🌇'],
+    ['Matin 🌅', 'Midi ☀️', 'Soir 🌇'],
+    ['Matin 🌅', 'Milieu de journée ☀️', 'Après-midi 🌤️', 'Soir 🌇'],
+  ];
+
+  // Ration mixte (espèces herbivores / non chien/chat)
+  double _pctFoinMix     = 67;
+  double _pctGranulesMix = 28;
+  double _pctCompMix     =  5;
+
+  // État reproducteur (femelles)
+  String?              _etatRepro;        // null = auto-détecté
+  Map<String,dynamic>? _gestationActive;  // gestation en cours (sans date_mise_bas)
+  bool                 _lactationRecente = false; // mise-bas < 8 semaines
+
+  static const _actFactors = <String,double>{
+    'repos': 0.8, 'leger': 1.4, 'modere': 1.6, 'actif': 1.8, 'tres_actif': 2.0,
+  };
+  static const _actLabels = <String,String>{
+    'repos':'Repos','leger':'Léger','modere':'Modéré','actif':'Actif','tres_actif':'Très actif',
+  };
+  static const _catEnergieFactors = <String,double>{
+    'basse': 0.85, 'normale': 1.0, 'elevee': 1.2, 'geant': 0.90,
+  };
+  static const _catEnergieLabels = <String,String>{
+    'basse':'Faible','normale':'Normale','elevee':'Élevée','geant':'Géante',
+  };
+  static const _catEnergieExemples = <String,String>{
+    'basse':   'Husky, Basset Hound, Bouledogue',
+    'normale': 'Labrador, Berger Allemand, Beagle',
+    'elevee':  'Border Collie, Jack Russell, Setter',
+    'geant':   'Saint-Bernard, Dogue, Terre-Neuve',
+  };
+  static const _catEnergieExemplesChat = <String,String>{
+    'basse':   'Ragdoll, British Shorthair, Persan (races calmes et corpulentes)',
+    'normale': 'Européen, Siamois, Sacré de Birmanie',
+    'elevee':  'Bengal, Abyssin, Somali, Oriental (races très actives)',
+    'geant':   'Maine Coon, Norvégien (grande race, croissance contrôlée)',
+  };
+
+  // Types de ration adaptés à l'espèce
+  List<(String, String, String)> get _rationOptions {
+    final e = widget.s._espece;
+    if (e == 'cheval')           return [('mixte','🌿','Ration mixte'), ('paturage','🌿','Pâturage'), ('complement','💊','Complément')];
+    if (e == 'lapin')            return [('mixte','🥦','Foin + Granulés'), ('granules','🌾','Granulés seuls')];
+    if (e == 'oiseau')           return [('graines','🌰','Graines / Mix'), ('granules','🌾','Granulés')];
+    if (['ovin','caprin'].contains(e)) return [('mixte','🌿','Ration mixte'), ('foin','🌿','Foin seul')];
+    if (e == 'porcin')           return [('granules','🌾','Aliment complet'), ('menagere','🍲','Ménagère')];
+    return [('croquettes','🥣','Croquettes'), ('barf','🥩','BARF'), ('mixte','🥣🥩','Mixte'), ('menagere','🍲','Ménagère')];
+  }
+
+  // Le type sauvegardé peut être invalide si l'espèce a changé
+  String get _typeValide {
+    final opts = _rationOptions;
+    return opts.any((o) => o.$1 == _type) ? _type : opts.first.$1;
+  }
+
+  bool get _isDogOrCat => ['chien', 'chat'].contains(widget.s._espece);
+
+  Map<String,String> get _exemplesEnergie =>
+      widget.s._espece == 'chat' ? _catEnergieExemplesChat : _catEnergieExemples;
+
+  // ── Formules espèces non-chien/chat ──────────────────────────────────────
+
+  // % poids vif en MS totale/jour selon espèce + activité
+  double get _rationPctPoidsvif {
+    const chevalPct = <String,double>{'repos':1.5,'leger':1.8,'modere':2.0,'actif':2.3,'tres_actif':2.8};
+    const ovinPct   = <String,double>{'repos':1.5,'leger':1.8,'modere':2.0,'actif':2.2,'tres_actif':2.5};
+    const porcinPct = <String,double>{'repos':2.0,'leger':2.5,'modere':3.0,'actif':3.0,'tres_actif':3.0};
+    final e = widget.s._espece;
+    if (e == 'cheval') return chevalPct[_activite] ?? 2.0;
+    if (e == 'ovin' || e == 'caprin') return ovinPct[_activite] ?? 2.0;
+    if (e == 'porcin') return porcinPct[_activite] ?? 2.5;
+    return 2.0;
+  }
+
+  double get _rationTotaleKg =>
+      _poidsRef > 0 ? _poidsRef * _rationPctPoidsvif / 100 * _reproFactor : 0;
+
+  // Détail ration mixte calculée par espèce
+  Map<String,dynamic>? get _rationEspeceDetail {
+    if (_poidsRef <= 0) return null;
+    final e = widget.s._espece;
+    if (e == 'cheval' || e == 'ovin' || e == 'caprin') {
+      final total = _rationTotaleKg;
+      final foin  = total * _pctFoinMix    / 100;
+      final gran  = total * _pctGranulesMix / 100;
+      final comp  = total * _pctCompMix    / 100;
+      final maxRepasGran = e == 'cheval' ? 2.5 : 1.5;
+      final nbRepasMini  = gran > maxRepasGran ? (gran / maxRepasGran).ceil() : 2;
+      return {
+        'total_kg': total, 'foin_kg': foin, 'granules_kg': gran, 'complement_kg': comp,
+        'max_repas_gran': maxRepasGran, 'nb_repas': nbRepasMini,
+        'alerte_gran': gran > maxRepasGran * 2.5, // trop de granulés
+      };
+    }
+    if (e == 'lapin') {
+      return {
+        'granules_g': _poidsRef * 22.5,      // 22.5g/kg/j
+        'legumes_g':  _poidsRef * 50.0,       // 50g/kg/j
+        'eau_ml':     _poidsRef * 100.0,      // 100ml/kg/j
+        'foin': 'illimité',
+      };
+    }
+    if (e == 'oiseau') {
+      return {'graines_g': 35.0, 'legumes_g': 30.0}; // perroquet moyen
+    }
+    if (e == 'porcin') {
+      return {'total_kg': _rationTotaleKg};
+    }
+    return null;
+  }
+
+  // Compléments recommandés par espèce
+  static const _supplements = <String, List<(String,String)>>{
+    'cheval': [
+      ('🧂','Pierre à sel / bloc minéral (accès libre permanent)'),
+      ('🔵','Complément calcium-phosphore (calcul selon fourrage)'),
+      ('🌿','Biotine 20 mg/j (santé des sabots)'),
+      ('💊','Vitamine E + Sélénium (zones carencées, sport)'),
+      ('🦠','Probiotiques (changement alimentation, stress)'),
+      ('🐟','Oméga-3 : huile de lin 50 ml/j'),
+    ],
+    'lapin': [
+      ('🌾','Foin de qualité en accès libre (priorité absolue)'),
+      ('🧂','Pierre à sel (accès libre)'),
+      ('🥬','Légumes frais : chicorée, cresson, romaine (50g/kg/j)'),
+      ('💊','Vitamine C si santé fragilisée'),
+    ],
+    'ovin': [
+      ('🧂','Bloc minéral mouton (Cu < 10 ppm — toxique si trop élevé)'),
+      ('💊','Sélénium injectable annuel (zones carencées)'),
+      ('🌿','Vitamine B12 (brebis en gestation)'),
+      ('🔵','Calcite (prévention hypocalcémie post-agnelage)'),
+    ],
+    'caprin': [
+      ('🧂','Bloc minéral chèvre (Cu toléré, différent du mouton)'),
+      ('💊','Sélénium + Vitamine E'),
+      ('🌿','Vitamine D (stabulation prolongée)'),
+      ('🦠','Probiotiques (chevrettes, diarrhées)'),
+    ],
+    'porcin': [
+      ('💊','Acides aminés essentiels (lysine, méthionine)'),
+      ('🧂','Sel 0.5–1% de la ration'),
+      ('🔵','Vitamines A, D, E, K'),
+      ('⚙️','Zinc + Fer (porcelets en croissance)'),
+    ],
+    'oiseau': [
+      ('🧂','Sépie (calcium, bec)'),
+      ('💊','Vitamines A, D3, E (si granulés insuffisants)'),
+      ('🥬','Légumes frais : carottes, épinards, concombre'),
+      ('🐟','Quelques insectes séchés (perroquets — protéines)'),
+    ],
+  };
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  @override
+  void dispose() { _densiteCtrl.dispose(); _objectifCtrl.dispose(); _densitePateeCtrl.dispose(); _doseManCtrl.dispose(); _doseManCtrl2.dispose(); _densiteGranCtrl.dispose(); super.dispose(); }
+
+  Future<void> _load() async {
+    if (widget.s.widget.animalId == null) { setState(() => _loading = false); return; }
+    try {
+      final res = await _supa
+          .from('alimentations').select()
+          .eq('animal_id', widget.s.widget.animalId!)
+          .maybeSingle();
+      if (mounted && res != null) {
+        setState(() {
+          _existing          = res;
+          _type              = res['type_ration']      ?? 'croquettes';
+          _activite          = res['niveau_activite']  ?? 'modere';
+          _catEnergie        = res['categorie_energie'] ?? 'normale';
+          final pv           = res['phase_vie'] as String?;
+          _phaseManuelle     = (pv == null || pv == 'auto') ? null : pv;
+          _densiteCtrl.text  = res['densite_calorique']?.toString() ?? '';
+          _objectifCtrl.text = res['poids_objectif']?.toString()    ?? '';
+          _marqueId          = res['marque_id'] as String?;
+          _marqueNom         = res['marque'] ?? '';
+          _gammeNom          = res['gamme']  ?? '';
+          _pctMuscles = (res['pourcentage_muscles'] as num?)?.toDouble() ?? 70;
+          _pctAbats   = (res['pourcentage_abats']   as num?)?.toDouble() ?? 10;
+          _pctOs      = (res['pourcentage_os']       as num?)?.toDouble() ?? 10;
+          _pctLegumes = (res['pourcentage_legumes']  as num?)?.toDouble() ?? 10;
+          // Restore mix percentages from notes field (encoded as "foin|gran|comp")
+          final notes = res['notes'] as String?;
+          if (notes != null && notes.contains('|')) {
+            final parts = notes.split('|');
+            if (parts.length >= 3) {
+              _pctFoinMix     = double.tryParse(parts[0]) ?? 67;
+              _pctGranulesMix = double.tryParse(parts[1]) ?? 28;
+              _pctCompMix     = double.tryParse(parts[2]) ?? 5;
+              if (parts.length >= 4) _nbRepas = int.tryParse(parts[3]) ?? 2;
+              if (parts.length >= 5) _mixteSepareParRepas = parts[4] == '1';
+              if (parts.length >= 6) _doseManCtrl.text   = parts[5];
+              if (parts.length >= 7) _doseManCtrl2.text  = parts[6];
+              if (parts.length >= 8 && parts[7].isNotEmpty) _typeMixte2 = parts[7];
+              if (parts.length >= 9) _densitePateeCtrl.text   = parts[8];
+              if (parts.length >= 10) _densiteGranCtrl.text   = parts[9];
+            }
+          }
+          _modeCalculateur = false;
+        });
+        // Re-fetch brand doses if a brand is saved
+        if (_marqueId != null) {
+          final brand = await _supa.from('marques_aliments').select('doses').eq('id', _marqueId!).maybeSingle();
+          if (mounted && brand != null) setState(() => _dosesMarque = brand['doses'] as List<dynamic>? ?? []);
+        }
+      }
+    } catch (_) {
+      // Table may not exist yet — show empty state
+    }
+    // Auto-détection gestation/lactation pour les femelles
+    if (widget.s._sexe == 'femelle') {
+      try {
+        final gesta = await _supa
+            .from('gestations')
+            .select('id, date_saillie, date_mise_bas')
+            .eq('animal_id', widget.s.widget.animalId!)
+            .order('date_saillie', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        if (mounted && gesta != null) {
+          final dateMiseBas = gesta['date_mise_bas'] as String?;
+          if (dateMiseBas == null) {
+            setState(() => _gestationActive = gesta);
+          } else {
+            final birth = DateTime.tryParse(dateMiseBas);
+            if (birth != null && DateTime.now().difference(birth).inDays < 56) {
+              setState(() => _lactationRecente = true);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  // ── Calculs ───────────────────────────────────────────────────────────────
+
+  double? get _poidsActuel {
+    final v = widget.s._poidsCtrl.text.trim().replaceAll(',', '.');
+    return v.isEmpty ? null : double.tryParse(v);
+  }
+  double? get _poidsObjectif {
+    final v = _objectifCtrl.text.trim().replaceAll(',', '.');
+    return v.isEmpty ? null : double.tryParse(v);
+  }
+  double get _poidsRef => _poidsObjectif ?? _poidsActuel ?? 0;
+
+  double get _ageMois {
+    final dn = widget.s._dateNaissance;
+    if (dn == null) return -1;
+    return DateTime.now().difference(dn).inDays / 30.44;
+  }
+
+  // Auto-détection de la phase de vie (junior/adulte/senior) selon âge + poids
+  String get _phaseAutoDetect {
+    final am = _ageMois;
+    if (am < 0) return 'adulte';
+    final p      = _poidsRef;
+    final espece = widget.s._espece;
+    final juniorMois = p > 45 ? 24.0 : p > 25 ? 18.0 : p > 10 ? 15.0 : 12.0;
+    if (am < juniorMois) return 'junior';
+    if (espece == 'chat'  && am >= 96)  return 'senior'; // 8 ans
+    if (espece == 'chien' && am >= 84)  return 'senior'; // 7 ans
+    if (espece == 'lapin' && am >= 48)  return 'senior'; // 4 ans
+    if (espece == 'cheval' && am >= 216) return 'senior'; // 18 ans
+    return 'adulte';
+  }
+
+  String get _phase => _phaseManuelle ?? _phaseAutoDetect;
+
+  // ── État reproducteur (femelles) ─────────────────────────────────────────
+
+  String get _etatReproAuto {
+    if (widget.s._sexe != 'femelle') return 'normal';
+    if (_lactationRecente) return 'lactation';
+    final g = _gestationActive;
+    if (g == null) return 'normal';
+    final saillie = DateTime.tryParse(g['date_saillie'] as String? ?? '');
+    if (saillie == null) return 'normal';
+    final joursG = DateTime.now().difference(saillie).inDays;
+    const durees = <String,int>{'chien':63,'chat':65,'cheval':340,'ovin':150,'caprin':150,'porcin':114,'lapin':31};
+    final total = durees[widget.s._espece] ?? 63;
+    return joursG >= (total - 21) ? 'gestation_fin' : 'gestation_debut';
+  }
+
+  String get _etatReproEffectif => _etatRepro ?? _etatReproAuto;
+
+  double get _reproFactor {
+    switch (_etatReproEffectif) {
+      case 'gestation_debut': return 1.1;
+      case 'gestation_fin':   return 1.3;
+      case 'lactation':       return 1.5;
+      default:                return 1.0;
+    }
+  }
+
+  // ── Calculs DER ──────────────────────────────────────────────────────────
+
+  double? get _rer => _poidsRef > 0 ? 70 * math.pow(_poidsRef, 0.75).toDouble() : null;
+
+  double? get _der {
+    final rer = _rer;
+    if (rer == null) return null;
+    double phaseFactor;
+    if (_phase == 'junior') {
+      if (_ageMois >= 0 && _ageMois < 4) phaseFactor = 3.0;
+      else if (_poidsRef > 25)           phaseFactor = 1.8;
+      else                                phaseFactor = 2.0;
+    } else if (_phase == 'senior') {
+      phaseFactor = 1.2;
+    } else {
+      phaseFactor = _actFactors[_activite] ?? 1.6;
+    }
+    final sterilFactor = widget.s._sterilise
+        ? (widget.s._espece == 'chat' ? 0.7 : 0.8)
+        : 1.0;
+    return rer * phaseFactor * (_catEnergieFactors[_catEnergie] ?? 1.0) * sterilFactor * _reproFactor;
+  }
+
+  double? get _rationCroquettes {
+    final d = _der;
+    if (d == null) return null;
+    final den = double.tryParse(_densiteCtrl.text.replaceAll(',', '.'));
+    if (den == null || den <= 0) return null;
+    return (d / den) * 100;
+  }
+
+  double? get _rationBarf {
+    if (_poidsRef <= 0) return null;
+    final actFactor = (_catEnergieFactors[_catEnergie] ?? 1.0) * ((_actFactors[_activite] ?? 1.6) / 1.6);
+    final sterilFactor = widget.s._sterilise ? (widget.s._espece == 'chat' ? 0.7 : 0.8) : 1.0;
+    return _poidsRef * 1000 * 0.02 * actFactor * sterilFactor * _reproFactor;
+  }
+
+  // Ration mixte chien/chat
+  double? get _rationMixteCroq {
+    final d = _der;
+    if (d == null) return null;
+    final den = double.tryParse(_densiteCtrl.text.replaceAll(',', '.'));
+    if (den == null || den <= 0) return null;
+    return (d * _pctCroquMix / 100.0 / den) * 100;
+  }
+
+  double? get _rationMixteSecond {
+    final d = _der;
+    if (d == null) return null;
+    final pctSecond = 1.0 - _pctCroquMix / 100.0;
+    if (_typeMixte2 == 'barf') {
+      final rb = _rationBarf;
+      return rb != null ? rb * pctSecond : null;
+    }
+    if (_typeMixte2 == 'menagere') {
+      return (d * pctSecond / 120.0) * 100;
+    }
+    final den = double.tryParse(_densitePateeCtrl.text.replaceAll(',', '.'));
+    if (den == null || den <= 0) return null;
+    return (d * pctSecond / den) * 100;
+  }
+
+  // Ration ménagère chien/chat — densité ~120 kcal/100g
+  double? get _rationMenagere {
+    final d = _der;
+    return d != null ? (d / 120.0) * 100 : null;
+  }
+
+  // Doses effectives — override manuel ou calculé
+  double? get _doseEffCroq {
+    final m = double.tryParse(_doseManCtrl.text.replaceAll(',','.'));
+    return m ?? _rationCroquettes;
+  }
+  double? get _doseEffBarf {
+    final m = double.tryParse(_doseManCtrl.text.replaceAll(',','.'));
+    return m ?? _rationBarf;
+  }
+  double? get _doseEffMenagere {
+    final m = double.tryParse(_doseManCtrl.text.replaceAll(',','.'));
+    return m ?? _rationMenagere;
+  }
+  double? get _doseEffMixteCroq {
+    final m = double.tryParse(_doseManCtrl.text.replaceAll(',','.'));
+    return m ?? _rationMixteCroq;
+  }
+  double? get _doseEffMixteSecond {
+    final m = double.tryParse(_doseManCtrl2.text.replaceAll(',','.'));
+    return m ?? _rationMixteSecond;
+  }
+
+  // Calories apportées par la ration effective
+  double? get _kcalApportes {
+    switch (_typeValide) {
+      case 'croquettes':
+        final dose = _doseEffCroq;
+        final den = double.tryParse(_densiteCtrl.text.replaceAll(',','.'));
+        return (dose != null && den != null && den > 0) ? dose * den / 100 : null;
+      case 'barf':
+        final dose = _doseEffBarf;
+        return dose != null ? dose * 1.25 : null;
+      case 'menagere':
+        final dose = _doseEffMenagere;
+        return dose != null ? dose * 120.0 / 100 : null;
+      case 'mixte':
+        double total = 0;
+        final croq = _doseEffMixteCroq;
+        final den = double.tryParse(_densiteCtrl.text.replaceAll(',','.'));
+        if (croq != null && den != null && den > 0) total += croq * den / 100;
+        final sec = _doseEffMixteSecond;
+        if (sec != null) {
+          if (_typeMixte2 == 'barf')         total += sec * 1.25;
+          else if (_typeMixte2 == 'menagere') total += sec * 120.0 / 100;
+          else {
+            final denP = double.tryParse(_densitePateeCtrl.text.replaceAll(',','.'));
+            if (denP != null && denP > 0) total += sec * denP / 100;
+          }
+        }
+        return total > 0 ? total : null;
+      default: return null;
+    }
+  }
+
+  // Interpolation linéaire depuis les doses fabricant (clés : poids_kg / grammes)
+  double? get _doseBrandInterpolee {
+    if (_dosesMarque.isEmpty || _poidsRef <= 0) return null;
+    try {
+      final sorted = List<dynamic>.from(_dosesMarque)
+        ..sort((a, b) => ((a['poids_kg'] as num?)??0).compareTo((b['poids_kg'] as num?)??0));
+      for (int i = 0; i < sorted.length - 1; i++) {
+        final p1 = (sorted[i]['poids_kg']   as num).toDouble();
+        final p2 = (sorted[i+1]['poids_kg'] as num).toDouble();
+        final d1 = (sorted[i]['grammes']    as num).toDouble();
+        final d2 = (sorted[i+1]['grammes']  as num).toDouble();
+        if (_poidsRef >= p1 && _poidsRef <= p2) return d1 + (d2-d1)*(_poidsRef-p1)/(p2-p1);
+      }
+      if (_poidsRef < (sorted.first['poids_kg'] as num)) return (sorted.first['grammes'] as num).toDouble();
+      return (sorted.last['grammes'] as num).toDouble();
+    } catch (_) { return null; }
+  }
+
+  // ── Save ──────────────────────────────────────────────────────────────────
+
+  Future<void> _save() async {
+    if (widget.s.widget.animalId == null) return;
+    setState(() => _saving = true);
+    try {
+      final payload = <String,dynamic>{
+        'animal_id':           widget.s.widget.animalId!,
+        'uid_eleveur':         FirebaseAuth.instance.currentUser?.uid,
+        'type_ration':         _typeValide,
+        'niveau_activite':     _activite,
+        'categorie_energie':   _catEnergie,
+        'phase_vie':           _phaseManuelle ?? 'auto',
+        'poids_objectif':      _poidsObjectif,
+        'marque_id':           _marqueId,
+        'marque':              _marqueNom.isEmpty ? null : _marqueNom,
+        'gamme':               _gammeNom.isEmpty  ? null : _gammeNom,
+        'densite_calorique':   double.tryParse(_densiteCtrl.text.replaceAll(',', '.')),
+        'pourcentage_muscles': _pctMuscles,
+        'pourcentage_abats':   _pctAbats,
+        'pourcentage_os':      _pctOs,
+        'pourcentage_legumes': _pctLegumes,
+        'notes': '${_pctFoinMix.round()}|${_pctGranulesMix.round()}|${_pctCompMix.round()}|$_nbRepas'
+                 '|${_mixteSepareParRepas?1:0}|${_doseManCtrl.text}|${_doseManCtrl2.text}'
+                 '|$_typeMixte2|${_densitePateeCtrl.text}|${_densiteGranCtrl.text}',
+        'updated_at':          DateTime.now().toIso8601String(),
+      };
+      if (_existing != null) {
+        await _supa.from('alimentations').update(payload).eq('id', _existing!['id']);
+      } else {
+        final r = await _supa.from('alimentations').insert(payload).select().single();
+        if (mounted) setState(() => _existing = r);
+      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Alimentation enregistrée'), behavior: SnackBarBehavior.floating));
+      if (mounted) setState(() => _modeCalculateur = false);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  // ── Planning repas ────────────────────────────────────────────────────────
+
+  // Retourne [{label, items: [{emoji, nom, quantite}]}]
+  List<Map<String, dynamic>> get _mealPlan {
+    final espece = widget.s._espece;
+    final labels = _repasLabels[_nbRepas - 1];
+
+    // ── CHIEN / CHAT ──────────────────────────────────────────────
+    if (_isDogOrCat) {
+      if (_typeValide == 'croquettes') {
+        final rc = _doseEffCroq;
+        if (rc == null) return [];
+        final par = (rc / _nbRepas).roundToDouble();
+        return List.generate(_nbRepas, (i) => {
+          'label': labels[i],
+          'items': [{'emoji': '🥜', 'nom': _marqueNom.isNotEmpty ? '$_marqueNom — $_gammeNom' : 'Croquettes', 'qte': '${par.round()} g'}],
+        });
+      }
+      if (_typeValide == 'barf') {
+        final rb = _doseEffBarf;
+        if (rb == null) return [];
+        final par = (rb / _nbRepas).roundToDouble();
+        final pMuscles = (par * _pctMuscles / 100).round();
+        final pAbats   = (par * _pctAbats   / 100).round();
+        final pOs      = (par * _pctOs       / 100).round();
+        final pLeg     = (par * _pctLegumes  / 100).round();
+        return List.generate(_nbRepas, (i) => {
+          'label': labels[i],
+          'items': [
+            {'emoji': '🥩', 'nom': 'Viande/muscles', 'qte': '$pMuscles g'},
+            {'emoji': '🫀', 'nom': 'Abats', 'qte': '$pAbats g'},
+            {'emoji': '🦴', 'nom': 'Os charnus', 'qte': '$pOs g'},
+            {'emoji': '🥦', 'nom': 'Légumes & fruits', 'qte': '$pLeg g'},
+          ],
+        });
+      }
+      if (_typeValide == 'mixte') {
+        final rc = _doseEffMixteCroq;
+        final rs = _doseEffMixteSecond;
+        if (rc == null && rs == null) return [];
+        final secondLabel = _typeMixte2 == 'barf' ? 'BARF' : _typeMixte2 == 'menagere' ? 'Ration ménagère' : 'Pâtée';
+        final secondEmoji = _typeMixte2 == 'barf' ? '🥩' : _typeMixte2 == 'menagere' ? '🍲' : '🥫';
+
+        if (_mixteSepareParRepas && _nbRepas >= 2) {
+          final nCroq = ((_nbRepas * _pctCroquMix / 100).round()).clamp(1, _nbRepas - 1);
+          final nSec  = _nbRepas - nCroq;
+          final rcPar = rc != null ? (rc / nCroq).round() : null;
+          final rsPar = rs != null ? (rs / nSec).round() : null;
+          return List.generate(_nbRepas, (i) => {
+            'label': labels[i],
+            'items': i < nCroq
+              ? (rcPar != null ? [{'emoji':'🥜','nom':_marqueNom.isNotEmpty?_marqueNom:'Croquettes','qte':'$rcPar g'}] : <Map<String,String>>[])
+              : (rsPar != null ? [{'emoji':secondEmoji,'nom':secondLabel,'qte':'$rsPar g'}] : <Map<String,String>>[]),
+          });
+        }
+
+        final rcPar = rc != null ? (rc / _nbRepas).round() : null;
+        final rsPar = rs != null ? (rs / _nbRepas).round() : null;
+        return List.generate(_nbRepas, (i) => {
+          'label': labels[i],
+          'items': [
+            if (rcPar != null) {'emoji': '🥜', 'nom': _marqueNom.isNotEmpty ? _marqueNom : 'Croquettes', 'qte': '$rcPar g'},
+            if (rsPar != null) {'emoji': secondEmoji, 'nom': secondLabel, 'qte': '$rsPar g'},
+          ],
+        });
+      }
+      if (_typeValide == 'menagere') {
+        final rm = _doseEffMenagere;
+        if (rm == null) return [];
+        final par = (rm / _nbRepas).round();
+        return List.generate(_nbRepas, (i) => {
+          'label': labels[i],
+          'items': [{'emoji': '🍲', 'nom': 'Ration ménagère', 'qte': '$par g'}],
+        });
+      }
+      return [];
+    }
+
+    // ── CHEVAL ─────────────────────────────────────────────────────
+    if (espece == 'cheval') {
+      final detail = _rationEspeceDetail;
+      if (detail == null) return [];
+      final foin = detail['foin_kg'] as double;
+      final gran = detail['granules_kg'] as double;
+      final comp = (detail['complement_kg'] as double) * 1000; // en grammes
+      final foinPar = foin / _nbRepas;
+      // Granulés le matin uniquement (max 2.5 kg/repas)
+      final granRepas = List.generate(_nbRepas, (i) {
+        if (i == 0) return math.min(gran, 2.5);
+        if (i == 1) return math.max(0, math.min(gran - 2.5, 2.5));
+        return 0.0;
+      });
+      return List.generate(_nbRepas, (i) {
+        final items = <Map<String,String>>[
+          {'emoji': '🌿', 'nom': 'Foin', 'qte': '${foinPar.toStringAsFixed(1)} kg'},
+        ];
+        if (granRepas[i] > 0) items.add({'emoji': '🌾', 'nom': _marqueNom.isNotEmpty ? '$_marqueNom' : 'Granulés', 'qte': '${granRepas[i].toStringAsFixed(1)} kg'});
+        if (i == 0 && comp > 0) items.add({'emoji': '💊', 'nom': 'Compléments', 'qte': '${comp.round()} g'});
+        return {'label': labels[i], 'items': items};
+      });
+    }
+
+    // ── LAPIN ──────────────────────────────────────────────────────
+    if (espece == 'lapin') {
+      final detail = _rationEspeceDetail;
+      if (detail == null) return [];
+      final gran = detail['granules_g'] as double;
+      final leg  = detail['legumes_g'] as double;
+      final granPar = (gran / _nbRepas).round();
+      final legPar  = (leg  / _nbRepas).round();
+      return List.generate(_nbRepas, (i) => {
+        'label': labels[i],
+        'items': [
+          {'emoji': '🌿', 'nom': 'Foin', 'qte': 'Accès libre'},
+          {'emoji': '🌾', 'nom': 'Granulés', 'qte': '$granPar g'},
+          {'emoji': '🥬', 'nom': 'Légumes frais', 'qte': '$legPar g'},
+        ],
+      });
+    }
+
+    // ── OVIN / CAPRIN ──────────────────────────────────────────────
+    if (espece == 'ovin' || espece == 'caprin') {
+      final detail = _rationEspeceDetail;
+      if (detail == null) return [];
+      final foin = detail['foin_kg'] as double;
+      final gran = detail['granules_kg'] as double;
+      final foinPar = foin / _nbRepas;
+      final granPar = gran / _nbRepas;
+      return List.generate(_nbRepas, (i) => {
+        'label': labels[i],
+        'items': [
+          {'emoji': '🌿', 'nom': 'Foin / Fourrage', 'qte': '${foinPar.toStringAsFixed(1)} kg'},
+          if (granPar > 0) {'emoji': '🌾', 'nom': 'Granulés', 'qte': '${granPar.toStringAsFixed(1)} kg'},
+        ],
+      });
+    }
+
+    // ── PORCIN ─────────────────────────────────────────────────────
+    if (espece == 'porcin') {
+      final detail = _rationEspeceDetail;
+      if (detail == null) return [];
+      final total = detail['total_kg'] as double;
+      final par = total / _nbRepas;
+      return List.generate(_nbRepas, (i) => {
+        'label': labels[i],
+        'items': [{'emoji': '🐷', 'nom': 'Aliment complet', 'qte': '${par.toStringAsFixed(1)} kg'}],
+      });
+    }
+
+    return [];
+  }
+
+  // ── Recipe bottom sheet ───────────────────────────────────────────────────
+
+  void _showRecipeSheet(BuildContext ctx) {
+    showModalBottomSheet(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.75, maxChildSize: 0.95, minChildSize: 0.4,
+        builder: (_, ctrl) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: ListView(
+            controller: ctrl,
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+            children: [
+              Center(child: Container(width: 36, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 16),
+              Text(_typeValide == 'barf' ? 'Ration BARF' : 'Recette ménagère',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+              if (_poidsRef > 0) Text(
+                '${widget.s._nomCtrl.text.isNotEmpty ? widget.s._nomCtrl.text : "Votre animal"}  ·  ${_poidsRef.toStringAsFixed(1)} kg  ·  ${_der?.round() ?? '—'} kcal/j',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+              const SizedBox(height: 20),
+              ...(_typeValide == 'barf' ? _recetteBarf() : _recetteMenagere()),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _recetteBarf() {
+    final rb = _doseEffBarf;
+    if (rb == null) return [Text('Renseignez le poids de votre animal.', style: TextStyle(color: Colors.grey.shade500))];
+    return [
+      _RecetteItem('🥩', 'Viande maigre / muscles (${_pctMuscles.round()}%)', '${(rb * _pctMuscles / 100).round()} g', 'Bœuf, poulet, dinde, lapin — haché ou morceaux', const Color(0xFF0C5C6C)),
+      _RecetteItem('🫀', 'Abats (${_pctAbats.round()}%)', '${(rb * _pctAbats / 100).round()} g', 'Foie, rein, cœur — ne pas dépasser 15%', const Color(0xFF8D6E63)),
+      _RecetteItem('🦴', 'Os charnus (${_pctOs.round()}%)', '${(rb * _pctOs / 100).round()} g', 'Carcasse poulet, côtes agneau', const Color(0xFFBCAAA4)),
+      _RecetteItem('🥦', 'Légumes & fruits (${_pctLegumes.round()}%)', '${(rb * _pctLegumes / 100).round()} g', 'Courgette, carotte, épinard — mixés', const Color(0xFF6E9E57)),
+      const SizedBox(height: 16),
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: const Color(0xFF0C5C6C).withOpacity(0.06), borderRadius: BorderRadius.circular(12)),
+        child: Text('Total : ${rb.round()} g/j  ·  $_nbRepas repas de ${(rb/_nbRepas).round()} g  ·  ≈${(rb*1.25).round()} kcal',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
+      ),
+      const SizedBox(height: 10),
+      Text('💡 Supplémenter avec 5 ml d\'huile de saumon/colza + levure de bière ou complément minéral.',
+        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+    ];
+  }
+
+  List<Widget> _recetteMenagere() {
+    final rm = _doseEffMenagere;
+    if (rm == null) return [Text('Renseignez le poids de votre animal.', style: TextStyle(color: Colors.grey.shade500))];
+    final protG = (rm * 0.40).round();
+    final legG  = (rm * 0.20).round();
+    final fecG  = (rm * 0.30).round();
+    final mgG   = (rm * 0.05).round();
+    final cmpG  = (rm * 0.05).round();
+    final kcal  = (rm * 120.0 / 100).round();
+    final esp   = widget.s._espece;
+    return [
+      _RecetteItem('🥩', 'Protéines animales (40%)', '$protG g',
+        esp == 'chat' ? 'Poulet ou dinde hachée cuite — riche en taurine' : 'Poulet, bœuf, agneau — haché cuit (sans os)', const Color(0xFF0C5C6C)),
+      _RecetteItem('🥬', 'Légumes (20%)', '$legG g',
+        'Carottes, haricots verts, courgette — cuits et mixés', const Color(0xFF6E9E57)),
+      _RecetteItem('🌾', 'Féculents (30%)', '$fecG g',
+        esp == 'chat' ? 'Riz blanc cuit (faible quantité) ou patate douce' : 'Riz blanc ou pâtes cuites', const Color(0xFFB8860B)),
+      _RecetteItem('🫒', 'Matières grasses (5%)', '$mgG g',
+        'Huile de colza ou de saumon (oméga-3)', const Color(0xFF8D6E63)),
+      _RecetteItem('💊', 'Compléments (5%)', '$cmpG g',
+        'Complément minéral-vitaminé (Seatal, Anibio, BARF Balance…)', Colors.purple.shade300),
+      const SizedBox(height: 16),
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: const Color(0xFF0C5C6C).withOpacity(0.06), borderRadius: BorderRadius.circular(12)),
+        child: Text('Total : ${rm.round()} g/j  ·  $_nbRepas repas de ${(rm/_nbRepas).round()} g  ·  ≈$kcal kcal',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
+      ),
+      const SizedBox(height: 10),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.amber.shade200)),
+        child: const Text('⚠️ Consultez votre vétérinaire pour valider cette recette selon les besoins spécifiques de votre animal.',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF856404))),
+      ),
+    ];
+  }
+
+  // ── Summary / Dashboard View ──────────────────────────────────────────────
+
+  Widget _buildSummaryView() {
+    final rer  = _rer;
+    final der  = _der;
+    final kcal = _kcalApportes;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+        // ── PROFIL DE L'ANIMAL ──────────────────────────────────
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade100),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6)],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Text('🐾', style: TextStyle(fontSize: 18)),
+              const SizedBox(width: 8),
+              const Text("Profil de l'animal", style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+              const Spacer(),
+              TextButton(
+                onPressed: () => setState(() => _modeCalculateur = true),
+                style: TextButton.styleFrom(foregroundColor: const Color(0xFF0C5C6C), minimumSize: Size.zero, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                child: const Text('Modifier', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              ),
+            ]),
+            const Divider(height: 14),
+            _sumRow('Poids', _poidsActuel != null ? '${_poidsActuel!.toStringAsFixed(1)} kg' : '—'),
+            _sumRow('Phase', _phase == 'junior' ? '🍼 Junior' : _phase == 'senior' ? '🌿 Senior' : 'Adulte'),
+            if (_phase == 'adulte') _sumRow("Activité", _actLabels[_activite] ?? _activite),
+            if (widget.s._sterilise) _sumRow('Stérilisé(e)', '✂️ Oui'),
+            if (_etatReproEffectif != 'normal') _sumRow('État', _etatReproEffectif == 'gestation_debut' ? '🤰 Gestation (début)' : _etatReproEffectif == 'gestation_fin' ? '🍼 Gestation (fin)' : '🤱 Lactation'),
+          ]),
+        ),
+        const SizedBox(height: 12),
+
+        // ── BESOINS CALORIQUES ──────────────────────────────────
+        if (rer != null) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0C5C6C).withOpacity(0.05),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF0C5C6C).withOpacity(0.12)),
+            ),
+            child: Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Besoins caloriques', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text(der != null ? '${der.round()} kcal/jour' : '${rer.round()} kcal (RER)',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0C5C6C))),
+                if (der != null) Text('RER ${rer.round()} × facteurs (phase, activité, état)',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade400)),
+              ])),
+              const Text('⚡', style: TextStyle(fontSize: 28)),
+            ]),
+          ),
+          const SizedBox(height: 12),
+        ],
+
+        // ── RATION ACTUELLE ──────────────────────────────────────
+        _buildRationCard(der, kcal),
+        const SizedBox(height: 12),
+
+        // ── PLAN DE REPAS ────────────────────────────────────────
+        _buildRepasSection(),
+        const SizedBox(height: 20),
+
+        // ── ACTIONS ──────────────────────────────────────────────
+        Row(children: [
+          Expanded(child: OutlinedButton.icon(
+            onPressed: () => setState(() => _modeCalculateur = true),
+            icon: const Icon(Icons.calculate_outlined, size: 16),
+            label: const Text('Recalculer la ration', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF0C5C6C),
+              side: const BorderSide(color: Color(0xFF0C5C6C)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          )),
+          if (_typeValide == 'menagere' || _typeValide == 'barf') ...[
+            const SizedBox(width: 10),
+            Expanded(child: ElevatedButton.icon(
+              onPressed: () => _showRecipeSheet(context),
+              icon: const Icon(Icons.menu_book_outlined, size: 16, color: Colors.white),
+              label: const Text('Voir la recette', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0C5C6C),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            )),
+          ],
+        ]),
+        const SizedBox(height: 32),
+      ]),
+    );
+  }
+
+  Widget _buildRationCard(double? der, double? kcalApportes) {
+    final type  = _typeValide;
+    final isDog = _isDogOrCat;
+
+    String typeLabel, typeEmoji;
+    switch (type) {
+      case 'croquettes': typeLabel = 'Croquettes';      typeEmoji = '🥜'; break;
+      case 'barf':       typeLabel = 'BARF';             typeEmoji = '🥩'; break;
+      case 'menagere':   typeLabel = 'Ration ménagère';  typeEmoji = '🍲'; break;
+      case 'mixte':      typeLabel = 'Mixte';            typeEmoji = '🥣'; break;
+      default:           typeLabel = type;               typeEmoji = '🍽️';
+    }
+
+    Widget doseFld(TextEditingController ctrl, double? computed, String unit) => Row(children: [
+      Expanded(child: TextField(
+        controller: ctrl,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C)),
+        onChanged: (_) => setState(() {}),
+        decoration: InputDecoration(
+          hintText: computed != null ? computed.round().toString() : 'Quantité',
+          hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade400, fontWeight: FontWeight.normal),
+          suffixText: unit,
+          suffixStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF0C5C6C)),
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          filled: true,
+          fillColor: const Color(0xFF0C5C6C).withOpacity(0.04),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: const Color(0xFF0C5C6C).withOpacity(0.25))),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: const Color(0xFF0C5C6C).withOpacity(0.25))),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF0C5C6C), width: 1.5)),
+        ),
+      )),
+      if (ctrl.text.isNotEmpty) GestureDetector(
+        onTap: () => setState(ctrl.clear),
+        child: Padding(padding: const EdgeInsets.only(left:6), child: Icon(Icons.refresh_rounded, size:18, color:Colors.grey.shade400)),
+      ),
+    ]);
+
+    Widget densFld(TextEditingController ctrl, String hint) => Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: TextField(
+        controller: ctrl,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+        onChanged: (_) => setState(() {}),
+        decoration: InputDecoration(
+          labelText: hint,
+          labelStyle: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
+          suffixText: 'kcal/100g',
+          suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade400),
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          filled: true, fillColor: Colors.grey.shade50,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade200)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade200)),
+        ),
+      ),
+    );
+
+    Widget? kcalBadge;
+    if (kcalApportes != null && der != null) {
+      final diff  = kcalApportes - der;
+      final pct   = ((diff / der) * 100).round();
+      final ok    = diff.abs() / der < 0.15;
+      final over  = diff > 0;
+      final color = ok ? const Color(0xFF6E9E57) : over ? const Color(0xFFE65100) : const Color(0xFF0C5C6C);
+      kcalBadge = Container(
+        margin: const EdgeInsets.only(top: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(10), border: Border.all(color: color.withOpacity(0.2))),
+        child: Row(children: [
+          Text(ok ? '✅' : over ? '⚠️' : 'ℹ️', style: const TextStyle(fontSize: 14)),
+          const SizedBox(width: 8),
+          Expanded(child: Text(
+            '${kcalApportes.round()} kcal apportés  (${pct >= 0 ? '+' : ''}$pct% vs besoins)',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: color),
+          )),
+        ]),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text(typeEmoji, style: const TextStyle(fontSize: 18)),
+          const SizedBox(width: 8),
+          Text(typeLabel, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+          const Spacer(),
+          TextButton(
+            onPressed: () => setState(() => _modeCalculateur = true),
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFF0C5C6C), minimumSize: Size.zero, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+            child: const Text('Modifier', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+          ),
+        ]),
+        const Divider(height: 14),
+
+        // ── Croquettes
+        if (type == 'croquettes' && isDog) ...[
+          if (_marqueNom.isNotEmpty) ...[
+            Text('$_marqueNom — $_gammeNom', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
+            const SizedBox(height: 8),
+          ],
+          Row(children: [
+            const Text('🥜  Quantité/jour ', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            const SizedBox(width: 6),
+            Expanded(child: doseFld(_doseManCtrl, _rationCroquettes, 'g')),
+          ]),
+          if (_densiteCtrl.text.isEmpty || double.tryParse(_densiteCtrl.text.replaceAll(',','.')) == null)
+            densFld(_densiteCtrl, 'Densité énergetique (sur l\'emballage)'),
+        ],
+
+        // ── BARF
+        if (type == 'barf' && isDog) ...[
+          Row(children: [
+            const Text('Total BARF/jour ', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            const SizedBox(width: 6),
+            Expanded(child: doseFld(_doseManCtrl, _rationBarf, 'g')),
+          ]),
+          const SizedBox(height: 10),
+          Builder(builder:(_) {
+            final base = _doseEffBarf ?? _rationBarf ?? 0;
+            return Wrap(spacing: 6, runSpacing: 6, children: [
+              _miniChip('🥩', '${(base * _pctMuscles / 100).round()} g muscles'),
+              _miniChip('🫀', '${(base * _pctAbats   / 100).round()} g abats'),
+              _miniChip('🦴', '${(base * _pctOs       / 100).round()} g os'),
+              _miniChip('🥦', '${(base * _pctLegumes  / 100).round()} g légumes'),
+            ]);
+          }),
+        ],
+
+        // ── Ménagère
+        if (type == 'menagere' && isDog) ...[
+          Row(children: [
+            const Text('Total/jour ', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            const SizedBox(width: 6),
+            Expanded(child: doseFld(_doseManCtrl, _rationMenagere, 'g')),
+          ]),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () => _showRecipeSheet(context),
+            child: Text('📋 Voir la composition détaillée →', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: const Color(0xFF0C5C6C), decoration: TextDecoration.underline)),
+          ),
+        ],
+
+        // ── Mixte chien/chat
+        if (type == 'mixte' && isDog) ...[
+          Row(children: [
+            const Text('🥜  Croquettes', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            Text('  (${_pctCroquMix.round()}%)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+            const SizedBox(width: 6),
+            Expanded(child: doseFld(_doseManCtrl, _rationMixteCroq, 'g')),
+          ]),
+          const SizedBox(height: 6),
+          Row(children: [
+            Text('${_typeMixte2=='barf'?'🥩':_typeMixte2=='menagere'?'🍲':'🥫'}  ${_typeMixte2=='barf'?'BARF':_typeMixte2=='menagere'?'Ménagère':'Pâtée'}',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            Text('  (${(100-_pctCroquMix).round()}%)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+            const SizedBox(width: 6),
+            Expanded(child: doseFld(_doseManCtrl2, _rationMixteSecond, 'g')),
+          ]),
+          if (_typeMixte2 == 'patee' && (_densitePateeCtrl.text.isEmpty || double.tryParse(_densitePateeCtrl.text.replaceAll(',','.')) == null))
+            densFld(_densitePateeCtrl, 'Densité pâtée (sur l\'emballage)'),
+          if (_densiteCtrl.text.isEmpty || double.tryParse(_densiteCtrl.text.replaceAll(',','.')) == null)
+            densFld(_densiteCtrl, 'Densité croquettes (sur l\'emballage)'),
+        ],
+
+        // ── Autres espèces
+        if (!isDog) Builder(builder: (_) {
+          final detail = _rationEspeceDetail;
+          if (detail == null) return Text('Renseignez le poids pour calculer.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500));
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (detail.containsKey('total_kg'))  _sumRow('Total/jour', '${(detail['total_kg'] as double).toStringAsFixed(1)} kg'),
+            if (detail.containsKey('foin_kg'))   _sumRow('🌿 Foin', '${(detail['foin_kg'] as double).toStringAsFixed(1)} kg'),
+            if (detail.containsKey('granules_kg') && (detail['granules_kg'] as double) > 0) ...[
+              _sumRow('🌾 Granulés', '${(detail['granules_kg'] as double).toStringAsFixed(1)} kg'),
+              if (_densiteGranCtrl.text.isEmpty || double.tryParse(_densiteGranCtrl.text.replaceAll(',','.')) == null)
+                densFld(_densiteGranCtrl, 'Densité granulés (sur l\'emballage)'),
+            ],
+            if (detail.containsKey('complement_kg')) _sumRow('💊 Compléments', '${((detail['complement_kg'] as double)*1000).round()} g'),
+            if (detail.containsKey('granules_g'))    _sumRow('🌾 Granulés', '${(detail['granules_g'] as double).round()} g'),
+            if (detail.containsKey('legumes_g'))     _sumRow('🥬 Légumes', '${(detail['legumes_g'] as double).round()} g'),
+            if (detail.containsKey('graines_g'))     _sumRow('🌰 Graines', '${(detail['graines_g'] as double).round()} g'),
+          ]);
+        }),
+
+        if (kcalBadge != null) kcalBadge,
+
+        // Save button
+        const SizedBox(height: 14),
+        SizedBox(width: double.infinity, child: ElevatedButton(
+          onPressed: _saving ? null : _save,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF0C5C6C), disabledBackgroundColor: Colors.grey.shade300,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            padding: const EdgeInsets.symmetric(vertical: 12)),
+          child: _saving
+            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+            : const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white, fontSize: 14)),
+        )),
+      ]),
+    );
+  }
+
+  Widget _miniChip(String emoji, String label) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(20)),
+    child: Text('$emoji $label', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF1F2A2E))),
+  );
+
+  Widget _sumRow(String label, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(children: [
+      Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+      const Spacer(),
+      Text(value, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+    ]),
+  );
+
+  Widget _buildRepasSection() {
+    final plan = _mealPlan;
+    if (plan.isEmpty) return const SizedBox.shrink();
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const SizedBox(height: 24),
+      const _AlimSection('Rations journalières'),
+      const SizedBox(height: 10),
+
+      // Sélecteur nombre de repas
+      Row(children: [
+        Text('Repas par jour :', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+        const SizedBox(width: 10),
+        ...List.generate(4, (i) {
+          final n = i + 1;
+          final selected = _nbRepas == n;
+          return GestureDetector(
+            onTap: () => setState(() => _nbRepas = n),
+            child: Container(
+              margin: const EdgeInsets.only(right: 6),
+              width: 34, height: 34,
+              decoration: BoxDecoration(
+                color: selected ? const Color(0xFF0C5C6C) : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: selected ? const Color(0xFF0C5C6C) : Colors.grey.shade200),
+              ),
+              alignment: Alignment.center,
+              child: Text('$n', style: TextStyle(
+                fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700,
+                color: selected ? Colors.white : Colors.grey.shade600)),
+            ),
+          );
+        }),
+        const Spacer(),
+        // Note état
+        if (_etatReproEffectif != 'normal')
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color: const Color(0xFF0C5C6C).withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
+            child: Text(
+              _etatReproEffectif == 'lactation' ? '🤱 +50%' : _etatReproEffectif == 'gestation_fin' ? '🤰 +30%' : '🤰 +10%',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF0C5C6C), fontWeight: FontWeight.w700)),
+          ),
+        if (widget.s._sterilise)
+          Container(
+            margin: const EdgeInsets.only(left: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color: Colors.purple.shade50, borderRadius: BorderRadius.circular(8)),
+            child: Text('✂️ Stérilisé', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.purple.shade600, fontWeight: FontWeight.w700)),
+          ),
+      ]),
+      const SizedBox(height: 12),
+
+      // Cartes repas
+      ...plan.asMap().entries.map((entry) {
+        final idx  = entry.key;
+        final meal = entry.value;
+        final label = meal['label'] as String;
+        final items = meal['items'] as List;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade100),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // En-tête repas
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: [
+                  const Color(0xFF0C5C6C), const Color(0xFF6E9E57),
+                  const Color(0xFFB8860B), const Color(0xFF8D6E63),
+                ][idx % 4].withOpacity(0.08),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              child: Row(children: [
+                Text(label, style: TextStyle(
+                  fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700,
+                  color: [
+                    const Color(0xFF0C5C6C), const Color(0xFF4A7A38),
+                    const Color(0xFF8B6914), const Color(0xFF5D4037),
+                  ][idx % 4])),
+              ]),
+            ),
+            // Items
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: items.map<Widget>((item) {
+                  final m = item as Map;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(children: [
+                      Text(m['emoji'] as String, style: const TextStyle(fontSize: 18)),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(m['nom'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)))),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0C5C6C).withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(m['qte'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
+                      ),
+                    ]),
+                  );
+                }).toList(),
+              ),
+            ),
+          ]),
+        );
+      }),
+
+      // Note eau
+      Padding(
+        padding: const EdgeInsets.only(top: 2, bottom: 4),
+        child: Row(children: [
+          const Text('💧', style: TextStyle(fontSize: 14)),
+          const SizedBox(width: 6),
+          Text(
+            widget.s._espece == 'cheval' ? 'Eau fraîche : 30–60 L/j minimum'
+            : widget.s._espece == 'lapin' ? 'Eau fraîche : ${(_poidsRef * 100).round()} ml/j minimum'
+            : 'Eau fraîche disponible en permanence',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+        ]),
+      ),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: Color(0xFF0C5C6C)));
+    if (widget.s.widget.animalId == null) {
+      return const _SaveFirstPrompt(message: 'Enregistrez la fiche pour accéder à l\'alimentation.');
+    }
+    if (!_modeCalculateur) return _buildSummaryView();
+
+    final rer       = _rer;
+    final der       = _der;
+    final phaseAuto = _phaseAutoDetect;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+        if (_existing != null) ...[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() => _modeCalculateur = false),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 14, color: Color(0xFF0C5C6C)),
+              label: const Text('← Retour au résumé', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF0C5C6C))),
+              style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero),
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
+
+        // ── TYPE DE RATION ──────────────────────────────────────
+        const _AlimSection('Type de ration'),
+        const SizedBox(height: 10),
+        Row(children: [
+          for (final t in _rationOptions)
+            Expanded(child: Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: GestureDetector(
+                onTap: () => setState(() => _type = t.$1),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: _typeValide == t.$1 ? const Color(0xFF0C5C6C) : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: _typeValide == t.$1 ? const Color(0xFF0C5C6C) : Colors.grey.shade200),
+                  ),
+                  child: Column(children: [
+                    Text(t.$2, style: const TextStyle(fontSize: 22)),
+                    const SizedBox(height: 4),
+                    Text(t.$3, style: TextStyle(fontFamily:'Galey',fontSize:11,fontWeight:FontWeight.w600,
+                      color: _typeValide==t.$1 ? Colors.white : const Color(0xFF1F2A2E))),
+                  ]),
+                ),
+              ),
+            )),
+        ]),
+        const SizedBox(height: 20),
+
+        // ── POIDS DE RÉFÉRENCE ──────────────────────────────────
+        const _AlimSection('Poids de référence'),
+        const SizedBox(height: 10),
+        Row(children: [
+          if (_poidsActuel != null) Expanded(
+            child: Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color:Colors.grey.shade50, borderRadius:BorderRadius.circular(12), border:Border.all(color:Colors.grey.shade100)),
+              child: Column(crossAxisAlignment:CrossAxisAlignment.start, children:[
+                Text('Actuel', style:TextStyle(fontFamily:'Galey',fontSize:11,color:Colors.grey.shade500)),
+                Text('${_poidsActuel!.toStringAsFixed(1)} kg',
+                  style: const TextStyle(fontFamily:'Galey',fontWeight:FontWeight.w700,fontSize:16,color:Color(0xFF1F2A2E))),
+              ]),
+            ),
+          ),
+          Expanded(child: TextField(
+            controller: _objectifCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: const TextStyle(fontFamily:'Galey',fontSize:14),
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              labelText:'Objectif (kg)',
+              labelStyle:TextStyle(fontFamily:'Galey',fontSize:13,color:Colors.grey.shade500),
+              filled:true, fillColor:Colors.grey.shade50,
+              contentPadding:const EdgeInsets.symmetric(horizontal:14,vertical:12),
+              border:OutlineInputBorder(borderRadius:BorderRadius.circular(12),borderSide:BorderSide(color:Colors.grey.shade200)),
+              enabledBorder:OutlineInputBorder(borderRadius:BorderRadius.circular(12),borderSide:BorderSide(color:Colors.grey.shade200)),
+            ),
+          )),
+        ]),
+        const SizedBox(height: 20),
+
+        // ── PHASE DE VIE (auto-détectée + override) ─────────────
+        Row(children: [
+          const _AlimSection('Phase de vie'),
+          const SizedBox(width: 8),
+          if (_phaseManuelle == null) Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color:Colors.grey.shade100, borderRadius:BorderRadius.circular(10)),
+            child: Text('auto', style:TextStyle(fontFamily:'Galey',fontSize:10,color:Colors.grey.shade500)),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        if (phaseAuto == 'junior') Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(color:const Color(0xFFFFF3CD), borderRadius:BorderRadius.circular(12), border:Border.all(color:const Color(0xFFFFDC80))),
+          child: const Row(children: [
+            Text('🍼 ', style: TextStyle(fontSize: 16)),
+            Expanded(child: Text('Alimentation spécifique Junior en croissance recommandée',
+              style: TextStyle(fontFamily:'Galey',fontSize:12,color:Color(0xFF856404)))),
+          ]),
+        ),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final e in [('junior','Junior 🍼'),('adulte','Adulte'),('senior','Senior 🌿')])
+            GestureDetector(
+              onTap: () => setState(() => _phaseManuelle = e.$1 == phaseAuto ? null : e.$1),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _phase == e.$1 ? const Color(0xFF0C5C6C) : Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: _phase == e.$1 ? const Color(0xFF0C5C6C) : Colors.grey.shade200),
+                ),
+                child: Row(mainAxisSize:MainAxisSize.min, children:[
+                  Text(e.$2, style:TextStyle(fontFamily:'Galey',fontSize:13,
+                    color: _phase==e.$1 ? Colors.white : const Color(0xFF1F2A2E),
+                    fontWeight: _phase==e.$1 ? FontWeight.w700 : FontWeight.normal)),
+                  if (e.$1 == phaseAuto) ...[
+                    const SizedBox(width:4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal:5,vertical:1),
+                      decoration: BoxDecoration(
+                        color: _phase==e.$1 ? Colors.white.withOpacity(0.25) : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(6)),
+                      child: Text('auto', style:TextStyle(fontFamily:'Galey',fontSize:9,
+                        color: _phase==e.$1 ? Colors.white : Colors.grey.shade500)),
+                    ),
+                  ],
+                ]),
+              ),
+            ),
+        ]),
+        const SizedBox(height: 20),
+
+        // ── ÉNERGIE DE LA RACE (chien/chat uniquement) ──────────
+        if (_isDogOrCat) ...[
+        const _AlimSection('Énergie de la race'),
+        const SizedBox(height: 10),
+        ...(_catEnergieLabels.entries.map((e) => GestureDetector(
+          onTap: () => setState(() => _catEnergie = e.key),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: _catEnergie == e.key ? const Color(0xFF0C5C6C).withOpacity(0.08) : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _catEnergie==e.key ? const Color(0xFF0C5C6C) : Colors.grey.shade200,
+                width: _catEnergie==e.key ? 1.5 : 1),
+            ),
+            child: Row(children: [
+              Radio<String>(value:e.key, groupValue:_catEnergie,
+                onChanged:(v) => setState(() => _catEnergie=v!),
+                activeColor:const Color(0xFF0C5C6C),
+                materialTapTargetSize:MaterialTapTargetSize.shrinkWrap,
+                visualDensity:VisualDensity.compact),
+              const SizedBox(width:6),
+              Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start, children:[
+                Text(e.value, style:TextStyle(fontFamily:'Galey',fontSize:13,fontWeight:FontWeight.w600,
+                  color: _catEnergie==e.key ? const Color(0xFF0C5C6C) : const Color(0xFF1F2A2E))),
+                Text(_exemplesEnergie[e.key] ?? '', style:TextStyle(fontFamily:'Galey',fontSize:11,color:Colors.grey.shade500)),
+              ])),
+            ]),
+          ),
+        ))),
+        const SizedBox(height: 20),
+        ], // end if (_isDogOrCat) énergie race
+
+        // ── NIVEAU D'ACTIVITÉ (adulte) ──────────────────────────
+        if (_phase == 'adulte') ...[
+          const _AlimSection("Niveau d'activité"),
+          const SizedBox(height: 10),
+          Wrap(spacing:8, runSpacing:8, children:[
+            for (final e in _actLabels.entries)
+              GestureDetector(
+                onTap: () => setState(() => _activite = e.key),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal:14,vertical:8),
+                  decoration: BoxDecoration(
+                    color: _activite==e.key ? const Color(0xFF0C5C6C) : Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: _activite==e.key ? const Color(0xFF0C5C6C) : Colors.grey.shade200),
+                  ),
+                  child: Text(e.value, style:TextStyle(fontFamily:'Galey',fontSize:13,
+                    color: _activite==e.key ? Colors.white : const Color(0xFF1F2A2E),
+                    fontWeight: _activite==e.key ? FontWeight.w700 : FontWeight.normal)),
+                ),
+              ),
+          ]),
+          const SizedBox(height: 20),
+        ],
+
+        // ── ÉTAT REPRODUCTEUR (femelles uniquement) ─────────────
+        if (widget.s._sexe == 'femelle') ...[
+          Row(children: [
+            const _AlimSection('État reproducteur'),
+            const SizedBox(width: 8),
+            if (_etatRepro == null) Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(color:Colors.grey.shade100, borderRadius:BorderRadius.circular(10)),
+              child: Text('auto', style:TextStyle(fontFamily:'Galey',fontSize:10,color:Colors.grey.shade500)),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final e in [
+              ('normal',          'Normal', '⚪'),
+              ('gestation_debut', 'Gestation (début)', '🤰'),
+              ('gestation_fin',   'Gestation (fin)', '🍼'),
+              ('lactation',       'Lactation', '🤱'),
+            ])
+              GestureDetector(
+                onTap: () => setState(() => _etatRepro = e.$1 == _etatReproEffectif && _etatRepro != null ? null : e.$1),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _etatReproEffectif == e.$1 ? const Color(0xFF0C5C6C) : Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: _etatReproEffectif == e.$1 ? const Color(0xFF0C5C6C) : Colors.grey.shade200),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text(e.$3, style: const TextStyle(fontSize: 13)),
+                    const SizedBox(width: 4),
+                    Text(e.$2, style: TextStyle(fontFamily:'Galey', fontSize: 12,
+                      color: _etatReproEffectif == e.$1 ? Colors.white : const Color(0xFF1F2A2E),
+                      fontWeight: _etatReproEffectif == e.$1 ? FontWeight.w700 : FontWeight.normal)),
+                    if (e.$1 == _etatReproAuto && _etatRepro == null) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: _etatReproEffectif == e.$1 ? Colors.white.withOpacity(0.25) : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(6)),
+                        child: Text('auto', style: TextStyle(fontFamily:'Galey', fontSize: 9,
+                          color: _etatReproEffectif == e.$1 ? Colors.white : Colors.grey.shade500)),
+                      ),
+                    ],
+                  ]),
+                ),
+              ),
+          ]),
+          // Recommandations spécifiques selon l'état
+          if (_etatReproEffectif != 'normal') ...[
+            const SizedBox(height: 10),
+            Container(
+              margin: const EdgeInsets.only(top: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F4F7),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF0C5C6C).withOpacity(0.2)),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  const Text('🥗 ', style: TextStyle(fontSize: 14)),
+                  Expanded(child: Text(
+                    _etatReproEffectif == 'gestation_debut'
+                      ? 'Gestation (début) — Apports +10%'
+                      : _etatReproEffectif == 'gestation_fin'
+                        ? 'Gestation (fin) — Apports +30%'
+                        : 'Lactation — Apports +50%',
+                    style: const TextStyle(fontFamily:'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C)))),
+                ]),
+                const SizedBox(height: 6),
+                Text(
+                  _etatReproEffectif == 'gestation_debut'
+                    ? 'Augmentez progressivement les rations. Préférez une alimentation riche en protéines de qualité. Ne modifiez pas l\'alimentation brutalement.'
+                    : _etatReproEffectif == 'gestation_fin'
+                      ? 'Dernières semaines : augmentez les apports progressivement. Fractionnez les repas (3–4/j pour les chiens/chats). Alimentation gestante ou aliment jeune recommandé.'
+                      : 'Alimentation à volonté recommandée (chiens/chats). Eau fraîche disponible en permanence. Besoins pouvant atteindre +75% selon le nombre de petits.',
+                  style: TextStyle(fontFamily:'Galey', fontSize: 11, color: Colors.grey.shade700)),
+              ]),
+            ),
+          ],
+          const SizedBox(height: 20),
+        ],
+
+        // ── PARAMÈTRES SELON TYPE ───────────────────────────────
+        if (_typeValide == 'croquettes') ...[
+          const _AlimSection('Produit'),
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: () => showModalBottomSheet(
+              context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+              builder: (_) => _MarquePickerSheet(
+                espece: widget.s._espece, phase: _phase,
+                onSelected: (b) => setState(() {
+                  _marqueId     = b['id'] as String?;
+                  _marqueNom    = (b['marque'] ?? '') as String;
+                  _gammeNom     = (b['gamme']  ?? '') as String;
+                  _densiteCtrl.text = (b['densite_kcal_100g'] as num?)?.round().toString() ?? '';
+                  _dosesMarque  = (b['doses'] as List<dynamic>?) ?? [];
+                }),
+              ),
+            ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal:14, vertical:12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _marqueNom.isNotEmpty ? const Color(0xFF0C5C6C) : Colors.grey.shade200),
+              ),
+              child: Row(children:[
+                const Icon(Icons.search, size:18, color:Color(0xFF0C5C6C)),
+                const SizedBox(width:10),
+                Expanded(child: _marqueNom.isEmpty
+                  ? Text('Rechercher une marque…', style:TextStyle(fontFamily:'Galey',fontSize:14,color:Colors.grey.shade400))
+                  : Column(crossAxisAlignment:CrossAxisAlignment.start, children:[
+                      Text(_marqueNom, style:const TextStyle(fontFamily:'Galey',fontSize:14,fontWeight:FontWeight.w700,color:Color(0xFF1F2A2E))),
+                      Text(_gammeNom, style:TextStyle(fontFamily:'Galey',fontSize:12,color:Colors.grey.shade500)),
+                    ]),
+                ),
+                if (_marqueNom.isNotEmpty)
+                  GestureDetector(
+                    onTap: () => setState(() { _marqueId=null; _marqueNom=''; _gammeNom=''; _densiteCtrl.clear(); _dosesMarque=[]; }),
+                    child: const Icon(Icons.close, size:18, color:Color(0xFF0C5C6C)),
+                  ),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _alimField('Densité énergétique (kcal/100g)', _densiteCtrl, numeric:true, hint:'Ex : 340 — indiqué sur l\'emballage'),
+        ] else if (_typeValide == 'barf') ...[
+          const _AlimSection('Composition BARF (%)'),
+          const SizedBox(height: 10),
+          _BarfSlider(label:'Muscles / viande maigre', emoji:'🥩', value:_pctMuscles, color:const Color(0xFF0C5C6C), onChanged:(v)=>setState(()=>_pctMuscles=v)),
+          _BarfSlider(label:'Abats (foie, rein…)',     emoji:'🫀', value:_pctAbats,   color:const Color(0xFF8D6E63), onChanged:(v)=>setState(()=>_pctAbats=v)),
+          _BarfSlider(label:'Os charnus',               emoji:'🦴', value:_pctOs,      color:const Color(0xFFBCAAA4), onChanged:(v)=>setState(()=>_pctOs=v)),
+          _BarfSlider(label:'Légumes & fruits',         emoji:'🥦', value:_pctLegumes, color:const Color(0xFF6E9E57), onChanged:(v)=>setState(()=>_pctLegumes=v)),
+          const SizedBox(height: 4),
+          Row(mainAxisAlignment:MainAxisAlignment.end, children:[
+            Text('Total : ', style:TextStyle(fontFamily:'Galey',fontSize:12,color:Colors.grey.shade500)),
+            Text('${(_pctMuscles+_pctAbats+_pctOs+_pctLegumes).round()}%', style:TextStyle(
+              fontFamily:'Galey',fontSize:13,fontWeight:FontWeight.w700,
+              color:(_pctMuscles+_pctAbats+_pctOs+_pctLegumes-100).abs()<1 ? const Color(0xFF6E9E57) : const Color(0xFFE25C5C))),
+          ]),
+        ] else if (_typeValide == 'menagere') ...[
+          const _AlimSection('Ration ménagère'),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(
+              builder:(_)=>_RecetteLibraryPage(espece:widget.s._espece, sterilise:widget.s._sterilise))),
+            icon: const Icon(Icons.menu_book_outlined, size:18),
+            label: const Text('Bibliothèque de recettes', style:TextStyle(fontFamily:'Galey')),
+            style: OutlinedButton.styleFrom(
+              foregroundColor:const Color(0xFF0C5C6C), side:const BorderSide(color:Color(0xFF0C5C6C)),
+              shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(20)),
+              padding:const EdgeInsets.symmetric(horizontal:20,vertical:12)),
+          ),
+        ] else if (_typeValide == 'mixte' && _isDogOrCat) ...[
+          // ── RATION MIXTE CHIEN/CHAT (croquettes + pâtée ou BARF) ──
+          const _AlimSection('Composition de la ration mixte'),
+          const SizedBox(height: 10),
+          // Slider croquettes %
+          _BarfSlider(
+            label: 'Croquettes', emoji: '🥜',
+            value: _pctCroquMix, color: const Color(0xFF0C5C6C),
+            onChanged: (v) => setState(() => _pctCroquMix = v)),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 10),
+            child: Row(children: [
+              const SizedBox(width: 22),
+              Text(
+                '${(100 - _pctCroquMix).round()}% issu de : ',
+                style: TextStyle(fontFamily:'Galey',fontSize:12,color:Colors.grey.shade600)),
+              // Toggle pâtée / BARF
+              GestureDetector(
+                onTap: () => setState(() {
+                  if (_typeMixte2 == 'patee') _typeMixte2 = 'barf';
+                  else if (_typeMixte2 == 'barf') _typeMixte2 = 'menagere';
+                  else _typeMixte2 = 'patee';
+                }),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal:10, vertical:4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0C5C6C).withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFF0C5C6C).withOpacity(0.3))),
+                  child: Row(mainAxisSize:MainAxisSize.min, children:[
+                    Text(_typeMixte2 == 'barf' ? '🥩 BARF' : _typeMixte2 == 'menagere' ? '🍲 Ménagère' : '🥫 Pâtée',
+                      style: const TextStyle(fontFamily:'Galey',fontSize:12,fontWeight:FontWeight.w700,color:Color(0xFF0C5C6C))),
+                    const SizedBox(width:4),
+                    const Icon(Icons.swap_horiz, size:14, color:Color(0xFF0C5C6C)),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
+          // Croquettes : brand + density
+          const Text('Croquettes', style:TextStyle(fontFamily:'Galey',fontSize:12,color:Color(0xFF1F2A2E),fontWeight:FontWeight.w600)),
+          const SizedBox(height:6),
+          GestureDetector(
+            onTap: () => showModalBottomSheet(
+              context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+              builder: (_) => _MarquePickerSheet(
+                espece: widget.s._espece, phase: _phase,
+                onSelected: (b) => setState(() {
+                  _marqueId    = b['id'] as String?;
+                  _marqueNom   = (b['marque'] ?? '') as String;
+                  _gammeNom    = (b['gamme']  ?? '') as String;
+                  _densiteCtrl.text = (b['densite_kcal_100g'] as num?)?.round().toString() ?? '';
+                  _dosesMarque = (b['doses'] as List<dynamic>?) ?? [];
+                }),
+              ),
+            ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal:14, vertical:12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _marqueNom.isNotEmpty ? const Color(0xFF0C5C6C) : Colors.grey.shade200),
+              ),
+              child: Row(children:[
+                const Icon(Icons.search, size:18, color:Color(0xFF0C5C6C)),
+                const SizedBox(width:10),
+                Expanded(child: _marqueNom.isEmpty
+                  ? Text('Rechercher une marque…', style:TextStyle(fontFamily:'Galey',fontSize:14,color:Colors.grey.shade400))
+                  : Column(crossAxisAlignment:CrossAxisAlignment.start, children:[
+                      Text(_marqueNom, style:const TextStyle(fontFamily:'Galey',fontSize:14,fontWeight:FontWeight.w700,color:Color(0xFF1F2A2E))),
+                      Text(_gammeNom, style:TextStyle(fontFamily:'Galey',fontSize:12,color:Colors.grey.shade500)),
+                    ]),
+                ),
+                if (_marqueNom.isNotEmpty)
+                  GestureDetector(
+                    onTap: () => setState(() { _marqueId=null; _marqueNom=''; _gammeNom=''; _densiteCtrl.clear(); _dosesMarque=[]; }),
+                    child: const Icon(Icons.close, size:18, color:Color(0xFF0C5C6C)),
+                  ),
+              ]),
+            ),
+          ),
+          const SizedBox(height:8),
+          _alimField('Densité croquettes (kcal/100g)', _densiteCtrl, numeric:true, hint:'Ex : 362 — indiqué sur l\'emballage'),
+          const SizedBox(height:12),
+          // Second composant
+          if (_typeMixte2 == 'patee') ...[
+            const Text('Pâtée', style:TextStyle(fontFamily:'Galey',fontSize:12,color:Color(0xFF1F2A2E),fontWeight:FontWeight.w600)),
+            const SizedBox(height:6),
+            _alimField('Densité pâtée (kcal/100g)', _densitePateeCtrl, numeric:true, hint:'Ex : 85 — indiqué sur l\'emballage'),
+          ] else if (_typeMixte2 == 'menagere') ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color:const Color(0xFFE8F5E9), borderRadius:BorderRadius.circular(10), border:Border.all(color:const Color(0xFF6E9E57).withOpacity(0.3))),
+              child: const Row(children:[
+                Text('🍲 ', style:TextStyle(fontSize:14)),
+                Expanded(child:Text('Ration ménagère — viande cuite, légumes, féculents. Densité estimée à 120 kcal/100g.',
+                  style:TextStyle(fontFamily:'Galey',fontSize:12,color:Color(0xFF1F2A2E)))),
+              ]),
+            ),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color:const Color(0xFFF5F0E8), borderRadius:BorderRadius.circular(10), border:Border.all(color:const Color(0xFFBCAAA4).withOpacity(0.3))),
+              child: const Row(children:[
+                Text('🥩 ', style:TextStyle(fontSize:14)),
+                Expanded(child:Text('BARF — viande crue, os charnus, abats. Ration estimée à 2% du poids vif.',
+                  style:TextStyle(fontFamily:'Galey',fontSize:12,color:Color(0xFF1F2A2E)))),
+              ]),
+            ),
+          ],
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => setState(() => _mixteSepareParRepas = !_mixteSepareParRepas),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal:14, vertical:10),
+              decoration: BoxDecoration(
+                color: _mixteSepareParRepas ? const Color(0xFF0C5C6C).withOpacity(0.07) : Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _mixteSepareParRepas ? const Color(0xFF0C5C6C) : Colors.grey.shade200),
+              ),
+              child: Row(children:[
+                Icon(_mixteSepareParRepas ? Icons.restaurant_outlined : Icons.shuffle_rounded,
+                  size:18, color:_mixteSepareParRepas ? const Color(0xFF0C5C6C) : Colors.grey.shade500),
+                const SizedBox(width:10),
+                Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start, children:[
+                  Text(_mixteSepareParRepas ? 'Un type par repas' : 'Mélangé à chaque repas',
+                    style:TextStyle(fontFamily:'Galey',fontSize:13,fontWeight:FontWeight.w600,
+                      color: _mixteSepareParRepas ? const Color(0xFF0C5C6C) : const Color(0xFF1F2A2E))),
+                  Text(_mixteSepareParRepas ? 'Ex: croquettes le matin, pâtée le soir' : 'Les deux composants à chaque repas',
+                    style:TextStyle(fontFamily:'Galey',fontSize:11,color:Colors.grey.shade500)),
+                ])),
+                Switch.adaptive(
+                  value: _mixteSepareParRepas,
+                  onChanged: (v) => setState(() => _mixteSepareParRepas = v),
+                  activeColor: const Color(0xFF0C5C6C),
+                ),
+              ]),
+            ),
+          ),
+        ] else if (_typeValide == 'mixte') ...[
+          // ── RATION MIXTE (cheval, ovin, caprin, lapin) ──────────
+          _AlimSection(widget.s._espece == 'lapin' ? 'Composition (foin + granulés)' : 'Composition de la ration'),
+          const SizedBox(height: 10),
+          if (['cheval','ovin','caprin'].contains(widget.s._espece)) ...[
+            _BarfSlider(label:'Foin / Fourrage',   emoji:'🌿', value:_pctFoinMix,     color:const Color(0xFF6E9E57), onChanged:(v)=>setState(()=>_pctFoinMix=v)),
+            _BarfSlider(label:'Granulés / Aliment', emoji:'🌾', value:_pctGranulesMix, color:const Color(0xFFB8860B), onChanged:(v)=>setState(()=>_pctGranulesMix=v)),
+            _BarfSlider(label:'Compléments',        emoji:'💊', value:_pctCompMix,     color:const Color(0xFF0C5C6C), onChanged:(v)=>setState(()=>_pctCompMix=v)),
+            const SizedBox(height: 4),
+            Row(mainAxisAlignment:MainAxisAlignment.end, children:[
+              Text('Total : ', style:TextStyle(fontFamily:'Galey',fontSize:12,color:Colors.grey.shade500)),
+              Text('${(_pctFoinMix+_pctGranulesMix+_pctCompMix).round()}%', style:TextStyle(
+                fontFamily:'Galey',fontSize:13,fontWeight:FontWeight.w700,
+                color:(_pctFoinMix+_pctGranulesMix+_pctCompMix-100).abs()<1 ? const Color(0xFF6E9E57) : const Color(0xFFE25C5C))),
+            ]),
+            const SizedBox(height: 12),
+          ],
+          // Recherche marque granulés
+          const Text('Marque de granulés', style:TextStyle(fontFamily:'Galey',fontSize:12,color:Color(0xFF1F2A2E))),
+          const SizedBox(height: 6),
+          GestureDetector(
+            onTap: () => showModalBottomSheet(
+              context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+              builder: (_) => _MarquePickerSheet(
+                espece: widget.s._espece, phase: _phase,
+                onSelected: (b) => setState(() {
+                  _marqueId   = b['id'] as String?;
+                  _marqueNom  = (b['marque'] ?? '') as String;
+                  _gammeNom   = (b['gamme']  ?? '') as String;
+                  _dosesMarque = (b['doses'] as List<dynamic>?) ?? [];
+                }),
+              ),
+            ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal:14, vertical:12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _marqueNom.isNotEmpty ? const Color(0xFF0C5C6C) : Colors.grey.shade200),
+              ),
+              child: Row(children:[
+                const Icon(Icons.search, size:18, color:Color(0xFF0C5C6C)),
+                const SizedBox(width:10),
+                Expanded(child: _marqueNom.isEmpty
+                  ? Text('Rechercher une marque…', style:TextStyle(fontFamily:'Galey',fontSize:14,color:Colors.grey.shade400))
+                  : Column(crossAxisAlignment:CrossAxisAlignment.start, children:[
+                      Text(_marqueNom, style:const TextStyle(fontFamily:'Galey',fontSize:14,fontWeight:FontWeight.w700,color:Color(0xFF1F2A2E))),
+                      if (_gammeNom.isNotEmpty) Text(_gammeNom, style:TextStyle(fontFamily:'Galey',fontSize:12,color:Colors.grey.shade500)),
+                    ]),
+                ),
+                if (_marqueNom.isNotEmpty) GestureDetector(
+                  onTap: () => setState(() { _marqueId=null; _marqueNom=''; _gammeNom=''; _dosesMarque=[]; }),
+                  child: const Icon(Icons.close, size:18, color:Color(0xFF0C5C6C)),
+                ),
+              ]),
+            ),
+          ),
+        ] else if (_typeValide == 'paturage') ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color:const Color(0xFFE8F5E9), borderRadius:BorderRadius.circular(12), border:Border.all(color:const Color(0xFF6E9E57).withOpacity(0.3))),
+            child: const Row(children:[
+              Text('🌿 ', style:TextStyle(fontSize:16)),
+              Expanded(child:Text('Pâturage libre — veillez à la qualité de l\'herbe et à la disponibilité de sel et eau fraîche.',
+                style:TextStyle(fontFamily:'Galey',fontSize:12,color:Color(0xFF2E7D32)))),
+            ]),
+          ),
+        ] else ...[
+          // Complément / graines / granulés seuls
+          _alimField('Informations complémentaires', _densiteCtrl, hint: 'Marque, quantité, fréquence…'),
+        ],
+        const SizedBox(height: 24),
+
+        // ── RÉSULTATS ───────────────────────────────────────────
+        if (_isDogOrCat && _poidsRef > 0 && der != null) ...[
+          const _AlimSection('Besoins calculés'),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color:const Color(0xFF0C5C6C).withOpacity(0.07), borderRadius:BorderRadius.circular(16)),
+            child: Column(children:[
+              _AlimCalcRow('RER (besoins de repos)', '${rer!.round()} kcal/j'),
+              const SizedBox(height:8),
+              _AlimCalcRow('DER (besoins journaliers)', '${der.round()} kcal/j'),
+              if (_phase == 'junior') ...[
+                const SizedBox(height:4),
+                Align(alignment:Alignment.centerLeft, child:Text(
+                  '🍼 Facteur junior : ×${_ageMois>=0&&_ageMois<4 ? 3.0 : _poidsRef>25 ? 1.8 : 2.0} (grande race = croissance lente)',
+                  style:const TextStyle(fontFamily:'Galey',fontSize:11,color:Color(0xFF856404)))),
+              ],
+              if (widget.s._sterilise) ...[
+                const SizedBox(height:4),
+                Align(alignment:Alignment.centerLeft, child:Text(
+                  '✂️ Animal stérilisé : besoins réduits ×${widget.s._espece == 'chat' ? '0.7' : '0.8'} pris en compte',
+                  style:const TextStyle(fontFamily:'Galey',fontSize:11,color:Color(0xFF0C5C6C)))),
+              ],
+              if (_etatReproEffectif != 'normal' && widget.s._sexe == 'femelle') ...[
+                const SizedBox(height:4),
+                Align(alignment:Alignment.centerLeft, child:Text(
+                  _etatReproEffectif == 'gestation_debut'
+                    ? '🤰 Gestation début : +10% inclus dans le calcul'
+                    : _etatReproEffectif == 'gestation_fin'
+                      ? '🍼 Gestation fin : +30% inclus dans le calcul'
+                      : '🤱 Lactation : +50% inclus (jusqu\'à +75% selon la portée)',
+                  style:const TextStyle(fontFamily:'Galey',fontSize:11,color:Color(0xFF0C5C6C)))),
+              ],
+              if (_typeValide=='croquettes' && _rationCroquettes!=null) ...[
+                const Divider(height:20),
+                _AlimCalcRow('Ration calculée', '${_rationCroquettes!.round()} g/j', highlight:true),
+                if (_doseBrandInterpolee != null) ...[
+                  const SizedBox(height:6),
+                  _AlimCalcRow('Dose fabricant (${_poidsRef.toStringAsFixed(1)} kg)', '${_doseBrandInterpolee!.round()} g/j', subtle:true),
+                ],
+              ],
+              if (_typeValide=='barf' && _rationBarf!=null) ...[
+                const Divider(height:20),
+                _AlimCalcRow('Ration BARF estimée', '${_rationBarf!.round()} g/j', highlight:true),
+                const SizedBox(height:4),
+                Text('Fourchette : ${(_poidsRef*20).round()}–${(_poidsRef*30).round()} g/j (2–3% poids vif)',
+                  style:TextStyle(fontFamily:'Galey',fontSize:11,color:Colors.grey.shade500)),
+              ],
+              if (_typeValide=='mixte' && _isDogOrCat) ...[
+                const Divider(height:20),
+                if (_rationMixteCroq != null)
+                  _AlimCalcRow('🥜 Croquettes (${_pctCroquMix.round()}%)', '${_rationMixteCroq!.round()} g/j', highlight:true)
+                else
+                  _AlimCalcRow('🥜 Croquettes (${_pctCroquMix.round()}%)', '— (densité manquante)', highlight:false),
+                const SizedBox(height:4),
+                if (_rationMixteSecond != null)
+                  _AlimCalcRow(
+                    _typeMixte2 == 'barf' ? '🥩 BARF (${(100-_pctCroquMix).round()}%)' : '🥫 Pâtée (${(100-_pctCroquMix).round()}%)',
+                    '${_rationMixteSecond!.round()} g/j', highlight:true)
+                else
+                  _AlimCalcRow(
+                    _typeMixte2 == 'barf' ? '🥩 BARF (${(100-_pctCroquMix).round()}%)' : '🥫 Pâtée (${(100-_pctCroquMix).round()}%)',
+                    _typeMixte2 == 'barf' ? '— (poids requis)' : '— (densité manquante)', highlight:false),
+              ],
+            ]),
+          ),
+          const SizedBox(height:6),
+          Text(
+            'RER = 70 × poids⁰·⁷⁵  ·  ${_phase=="adulte" ? "act.×${_actFactors[_activite]}" : _phase}  ·  race×${_catEnergieFactors[_catEnergie]}'
+            '${widget.s._sterilise ? "  ·  stérilisé×${widget.s._espece == 'chat' ? '0.7' : '0.8'}" : ""}'
+            '${_etatReproEffectif != 'normal' ? "  ·  repro×${_reproFactor.toStringAsFixed(1)}" : ""}',
+            style:TextStyle(fontFamily:'Galey',fontSize:11,color:Colors.grey.shade400)),
+        ] else if (!_isDogOrCat) ...[
+          // ── BESOINS CALCULÉS (espèces non chien/chat) ───────────
+          Builder(builder: (_) {
+            final detail = _rationEspeceDetail;
+            if (detail == null) {
+              return Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color:Colors.blue.shade50, borderRadius:BorderRadius.circular(12), border:Border.all(color:Colors.blue.shade100)),
+                child: Row(children:[
+                  Icon(Icons.info_outline, color:Colors.blue.shade700, size:18),
+                  const SizedBox(width:10),
+                  const Expanded(child:Text('Renseignez le poids (onglet Identité) pour calculer la ration.',
+                    style:TextStyle(fontFamily:'Galey',fontSize:12,color:Color(0xFF1F2A2E)))),
+                ]),
+              );
+            }
+            return Column(crossAxisAlignment:CrossAxisAlignment.start, children:[
+              const _AlimSection('Besoins calculés'),
+              const SizedBox(height:10),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color:const Color(0xFF0C5C6C).withOpacity(0.07), borderRadius:BorderRadius.circular(16)),
+                child: Column(crossAxisAlignment:CrossAxisAlignment.start, children:[
+                  // Cheval / ovin / caprin — ration mixte
+                  if (detail.containsKey('total_kg')) ...[
+                    _AlimCalcRow('Total ration/jour (${_rationPctPoidsvif.toStringAsFixed(1)}% poids vif)', '${(detail['total_kg'] as double).toStringAsFixed(1)} kg/j'),
+                    const Divider(height:16),
+                    _AlimCalcRow('🌿 Foin / Fourrage', '${(detail['foin_kg'] as double).toStringAsFixed(1)} kg/j', highlight:true),
+                    const SizedBox(height:4),
+                    _AlimCalcRow('🌾 Granulés', '${(detail['granules_kg'] as double).toStringAsFixed(1)} kg/j', highlight:true),
+                    const SizedBox(height:4),
+                    _AlimCalcRow('💊 Compléments', '${((detail['complement_kg'] as double)*1000).round()} g/j', highlight:true),
+                    if (detail['granules_kg'] as double > 0) ...[
+                      const SizedBox(height:8),
+                      Text(
+                        '↳ Répartir en ${detail['nb_repas']} repas — max ${detail['max_repas_gran']} kg de granulés/repas',
+                        style:const TextStyle(fontFamily:'Galey',fontSize:11,color:Color(0xFF0C5C6C))),
+                    ],
+                    if (detail['alerte_gran'] as bool) ...[
+                      const SizedBox(height:6),
+                      Container(
+                        padding:const EdgeInsets.symmetric(horizontal:10,vertical:6),
+                        decoration:BoxDecoration(color:Colors.orange.shade50, borderRadius:BorderRadius.circular(8), border:Border.all(color:Colors.orange.shade200)),
+                        child:const Text('⚠️ Ration en granulés élevée : risque digestif. Réduisez et augmentez le foin.',
+                          style:TextStyle(fontFamily:'Galey',fontSize:11,color:Color(0xFFE65100))),
+                      ),
+                    ],
+                    if (_etatReproEffectif != 'normal' && widget.s._sexe == 'femelle') ...[
+                      const SizedBox(height:6),
+                      Text(_etatReproEffectif=='gestation_debut'?'🤰 Gestation début : +10% inclus':_etatReproEffectif=='gestation_fin'?'🍼 Gestation fin : +30% inclus':'🤱 Lactation : +50% inclus',
+                        style:const TextStyle(fontFamily:'Galey',fontSize:11,color:Color(0xFF0C5C6C))),
+                    ],
+                    const SizedBox(height:8),
+                    Text('Eau fraîche : ${widget.s._espece=='cheval' ? '30–60 L/j min' : '3–5 L/j'}',
+                      style:TextStyle(fontFamily:'Galey',fontSize:11,color:Colors.grey.shade500)),
+                  ],
+                  // Lapin
+                  if (detail.containsKey('granules_g') && detail.containsKey('foin')) ...[
+                    Row(children:[
+                      const Text('🌾 ', style:TextStyle(fontSize:14)),
+                      Expanded(child:Text('Foin : accès libre permanent (80% minimum de la ration)',
+                        style:const TextStyle(fontFamily:'Galey',fontSize:12,fontWeight:FontWeight.w700,color:Color(0xFF0C5C6C)))),
+                    ]),
+                    const SizedBox(height:8),
+                    _AlimCalcRow('🌿 Granulés',  '${(detail['granules_g'] as double).round()} g/j', highlight:true),
+                    const SizedBox(height:4),
+                    _AlimCalcRow('🥬 Légumes frais', '${(detail['legumes_g'] as double).round()} g/j', highlight:true),
+                    const SizedBox(height:8),
+                    Text('Eau : ${(detail['eau_ml'] as double).round()} ml/j min',
+                      style:TextStyle(fontFamily:'Galey',fontSize:11,color:Colors.grey.shade500)),
+                  ],
+                  // Oiseau
+                  if (detail.containsKey('graines_g')) ...[
+                    _AlimCalcRow('🌰 Graines / Granulés',    '${(detail['graines_g'] as double).round()} g/j (perroquet moyen)', highlight:true),
+                    const SizedBox(height:4),
+                    _AlimCalcRow('🥬 Légumes / Fruits frais', '${(detail['legumes_g'] as double).round()} g/j', highlight:true),
+                  ],
+                  // Porc
+                  if (detail.containsKey('total_kg') && widget.s._espece == 'porcin') ...[
+                    _AlimCalcRow('Aliment complet/jour', '${(detail['total_kg'] as double).toStringAsFixed(1)} kg/j', highlight:true),
+                  ],
+                ]),
+              ),
+              const SizedBox(height:6),
+              Text('Calcul : ${_poidsRef.toStringAsFixed(1)} kg × ${_rationPctPoidsvif.toStringAsFixed(1)}% (poids vif)${_etatReproEffectif!='normal'?' × repro':''}',
+                style:TextStyle(fontFamily:'Galey',fontSize:11,color:Colors.grey.shade400)),
+            ]);
+          }),
+          const SizedBox(height:20),
+          // ── COMPLÉMENTS RECOMMANDÉS ─────────────────────────────
+          if (_supplements.containsKey(widget.s._espece)) ...[
+            const _AlimSection('Compléments recommandés'),
+            const SizedBox(height:8),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color:Colors.white, borderRadius:BorderRadius.circular(14),
+                border:Border.all(color:Colors.grey.shade200),
+                boxShadow:[BoxShadow(color:Colors.black.withOpacity(0.03),blurRadius:6)]),
+              child: Column(crossAxisAlignment:CrossAxisAlignment.start, children:[
+                for (final s in _supplements[widget.s._espece]!) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(crossAxisAlignment:CrossAxisAlignment.start, children:[
+                      Text(s.$1, style:const TextStyle(fontSize:16)),
+                      const SizedBox(width:8),
+                      Expanded(child:Text(s.$2, style:const TextStyle(fontFamily:'Galey',fontSize:12,color:Color(0xFF1F2A2E)))),
+                    ]),
+                  ),
+                ],
+              ]),
+            ),
+          ],
+        ] else ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color:Colors.amber.shade50, borderRadius:BorderRadius.circular(12), border:Border.all(color:Colors.amber.shade100)),
+            child: Row(children:[
+              Icon(Icons.info_outline, color:Colors.amber.shade700, size:18),
+              const SizedBox(width:10),
+              const Expanded(child:Text('Renseignez le poids (onglet Identité) ou un objectif pour calculer la ration.',
+                style:TextStyle(fontFamily:'Galey',fontSize:12,color:Color(0xFF1F2A2E)))),
+            ]),
+          ),
+        ],
+        const SizedBox(height: 16),
+
+        // ── PLAN DE REPAS ────────────────────────────────────────
+        _buildRepasSection(),
+        const SizedBox(height: 16),
+
+        // ── AVERTISSEMENT ───────────────────────────────────────
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(Icons.info_outline, size: 15, color: Colors.grey.shade500),
+            const SizedBox(width: 8),
+            const Expanded(child: Text(
+              'Ces informations sont fournies à titre indicatif. En cas de problème de santé spécifique ou de régime particulier, consultez votre vétérinaire.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6B7280)),
+            )),
+          ]),
+        ),
+        const SizedBox(height: 16),
+
+        // ── ENREGISTRER ─────────────────────────────────────────
+        SizedBox(width:double.infinity, child:ElevatedButton(
+          onPressed: _saving ? null : _save,
+          style: ElevatedButton.styleFrom(
+            backgroundColor:const Color(0xFF0C5C6C), disabledBackgroundColor:Colors.grey.shade300,
+            shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(20)),
+            padding:const EdgeInsets.symmetric(vertical:14)),
+          child: _saving
+            ? const SizedBox(width:20,height:20,child:CircularProgressIndicator(color:Colors.white,strokeWidth:2))
+            : const Text('Enregistrer', style:TextStyle(fontFamily:'Galey',fontWeight:FontWeight.w600,color:Colors.white,fontSize:15)),
+        )),
+        const SizedBox(height: 32),
+      ]),
+    );
+  }
+
+  Widget _alimField(String label, TextEditingController ctrl, {bool numeric = false, String? hint}) => TextField(
+    controller: ctrl,
+    keyboardType: numeric ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
+    style: const TextStyle(fontFamily:'Galey',fontSize:14),
+    onChanged: (_) => setState(() {}),
+    decoration: InputDecoration(
+      labelText:label, hintText:hint,
+      hintStyle:TextStyle(fontFamily:'Galey',fontSize:12,color:Colors.grey.shade400),
+      labelStyle:TextStyle(fontFamily:'Galey',fontSize:13,color:Colors.grey.shade500),
+      filled:true, fillColor:Colors.grey.shade50,
+      contentPadding:const EdgeInsets.symmetric(horizontal:14,vertical:12),
+      border:OutlineInputBorder(borderRadius:BorderRadius.circular(12),borderSide:BorderSide(color:Colors.grey.shade200)),
+      enabledBorder:OutlineInputBorder(borderRadius:BorderRadius.circular(12),borderSide:BorderSide(color:Colors.grey.shade200))),
+  );
+}
+
+class _AlimSection extends StatelessWidget {
+  final String title;
+  const _AlimSection(this.title);
+  @override
+  Widget build(BuildContext context) => Text(title,
+    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13,
+      color: Color(0xFF1F2A2E), letterSpacing: 0.3));
+}
+
+class _AlimCalcRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool highlight;
+  final bool subtle;
+  const _AlimCalcRow(this.label, this.value, {this.highlight = false, this.subtle = false});
+  @override
+  Widget build(BuildContext context) {
+    final color = highlight ? const Color(0xFF0C5C6C) : subtle ? Colors.grey.shade400 : const Color(0xFF1F2A2E);
+    return Row(mainAxisAlignment:MainAxisAlignment.spaceBetween, children:[
+      Text(label, style:TextStyle(fontFamily:'Galey',fontSize:13,color:color,
+        fontWeight:highlight ? FontWeight.w700 : FontWeight.normal)),
+      Text(value, style:TextStyle(fontFamily:'Galey',fontSize:subtle?12:14,fontWeight:FontWeight.w700,color:color)),
+    ]);
+  }
+}
+
+class _BarfSlider extends StatelessWidget {
+  final String label;
+  final String emoji;
+  final double value;
+  final Color color;
+  final ValueChanged<double> onChanged;
+  const _BarfSlider({required this.label, required this.emoji, required this.value, required this.color, required this.onChanged});
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Text('$emoji ', style: const TextStyle(fontSize: 14)),
+        Expanded(child: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF1F2A2E)))),
+        Text('${value.round()}%', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+      ]),
+      SliderTheme(
+        data: SliderThemeData(
+          activeTrackColor: color, thumbColor: color, overlayColor: color.withOpacity(0.15),
+          trackHeight: 4, inactiveTrackColor: Colors.grey.shade200),
+        child: Slider(value: value, min: 0, max: 100, divisions: 100, onChanged: onChanged),
+      ),
+    ]),
+  );
+}
+
+class _RecetteItem extends StatelessWidget {
+  final String emoji, label, qte, desc;
+  final Color color;
+  const _RecetteItem(this.emoji, this.label, this.qte, this.desc, this.color);
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.06),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: color.withOpacity(0.2)),
+    ),
+    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(emoji, style: const TextStyle(fontSize: 20)),
+      const SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: color)),
+        Text(desc, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+      ])),
+      const SizedBox(width: 8),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
+        child: Text(qte, style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w800, color: color)),
+      ),
+    ]),
+  );
+}
+
+// ─── Bibliothèque de recettes ménagères ──────────────────────────────────────
+
+class _RecetteLibraryPage extends StatelessWidget {
+  final String espece;
+  final bool sterilise;
+  const _RecetteLibraryPage({required this.espece, this.sterilise = false});
+
+  static const _recettes = <String, List<Map<String,dynamic>>>{
+    'chien': [
+      {
+        'nom': 'Riz – Poulet – Légumes',
+        'description': 'Recette équilibrée de base, facile à digérer',
+        'poids_ref': 10.0,
+        'ingredients': [
+          {'nom': 'Poulet cuit (sans os)', 'quantite': 150, 'unite': 'g'},
+          {'nom': 'Riz blanc cuit',        'quantite': 100, 'unite': 'g'},
+          {'nom': 'Carottes cuites',       'quantite': 50,  'unite': 'g'},
+          {'nom': 'Courgette cuite',       'quantite': 30,  'unite': 'g'},
+          {'nom': 'Huile de colza',        'quantite': 5,   'unite': 'ml'},
+        ],
+      },
+      {
+        'nom': 'Bœuf – Patate douce – Épinards',
+        'description': 'Riche en protéines et en fer',
+        'poids_ref': 10.0,
+        'ingredients': [
+          {'nom': 'Bœuf haché cuit',    'quantite': 140, 'unite': 'g'},
+          {'nom': 'Patate douce cuite', 'quantite': 120, 'unite': 'g'},
+          {'nom': 'Épinards cuits',     'quantite': 40,  'unite': 'g'},
+          {'nom': 'Huile de lin',       'quantite': 5,   'unite': 'ml'},
+        ],
+      },
+      {
+        'nom': 'Poisson – Quinoa – Brocoli',
+        'description': 'Riche en oméga-3, idéal pour les chiens sensibles',
+        'poids_ref': 10.0,
+        'ingredients': [
+          {'nom': 'Saumon cuit',      'quantite': 130, 'unite': 'g'},
+          {'nom': 'Quinoa cuit',      'quantite': 100, 'unite': 'g'},
+          {'nom': 'Brocoli cuit',     'quantite': 60,  'unite': 'g'},
+          {'nom': 'Huile de poisson', 'quantite': 3,   'unite': 'ml'},
+        ],
+      },
+    ],
+    'chat': [
+      {
+        'nom': 'Poulet – Foie – Riz',
+        'description': 'Recette complète riche en protéines animales',
+        'poids_ref': 4.0,
+        'ingredients': [
+          {'nom': 'Poulet cuit (sans os)',   'quantite': 80, 'unite': 'g'},
+          {'nom': 'Foie de poulet cuit',     'quantite': 20, 'unite': 'g'},
+          {'nom': 'Riz blanc cuit',          'quantite': 20, 'unite': 'g'},
+          {'nom': 'Huile de poisson',        'quantite': 2,  'unite': 'ml'},
+        ],
+      },
+      {
+        'nom': 'Thon – Œuf – Courgette',
+        'description': 'Riche en taurine naturelle, essentielle pour les chats',
+        'poids_ref': 4.0,
+        'ingredients': [
+          {'nom': 'Thon au naturel égoutté', 'quantite': 70, 'unite': 'g'},
+          {'nom': 'Œuf entier cuit',         'quantite': 25, 'unite': 'g'},
+          {'nom': 'Courgette cuite',         'quantite': 15, 'unite': 'g'},
+          {'nom': 'Huile de saumon',         'quantite': 2,  'unite': 'ml'},
+        ],
+      },
+    ],
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final recettes = _recettes[espece] ?? _recettes['chien']!;
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F8F6),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0C5C6C),
+        foregroundColor: Colors.white,
+        title: const Text('Bibliothèque de recettes',
+          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      ),
+      body: ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: recettes.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (ctx, i) => _RecetteCard(recette: recettes[i], sterilise: sterilise),
+      ),
+    );
+  }
+}
+
+class _RecetteCard extends StatefulWidget {
+  final Map<String,dynamic> recette;
+  final bool sterilise;
+  const _RecetteCard({required this.recette, this.sterilise = false});
+  @override
+  State<_RecetteCard> createState() => _RecetteCardState();
+}
+
+class _RecetteCardState extends State<_RecetteCard> {
+  final _poidsCtrl = TextEditingController();
+  bool _expanded = false;
+
+  @override
+  void dispose() { _poidsCtrl.dispose(); super.dispose(); }
+
+  double get _poidsRef => (widget.recette['poids_ref'] as num).toDouble();
+
+  // Sterilized animals need ~20% fewer calories
+  double get _sterilFactor => widget.sterilise ? 0.8 : 1.0;
+
+  double _adapt(double q, double poids) =>
+      poids > 0 ? q * (poids / _poidsRef) * _sterilFactor : q * _sterilFactor;
+
+  @override
+  Widget build(BuildContext context) {
+    final ingredients = (widget.recette['ingredients'] as List<dynamic>).cast<Map<String,dynamic>>();
+    final poids = double.tryParse(_poidsCtrl.text.replaceAll(',', '.')) ?? 0;
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white, borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        GestureDetector(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(widget.recette['nom'] as String,
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1F2A2E))),
+                const SizedBox(height: 2),
+                Text(widget.recette['description'] as String,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+              ])),
+              Icon(_expanded ? Icons.expand_less : Icons.expand_more, color: const Color(0xFF0C5C6C)),
+            ]),
+          ),
+        ),
+        if (_expanded) ...[
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Text('Poids de l\'animal :', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E))),
+                const SizedBox(width: 8),
+                SizedBox(width: 80, child: TextField(
+                  controller: _poidsCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    hintText: '${_poidsRef.round()} kg',
+                    hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400),
+                    isDense: true, contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade200)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade200)),
+                    filled: true, fillColor: Colors.grey.shade50,
+                  ),
+                )),
+                const SizedBox(width: 6),
+                Text('kg  (réf. ${_poidsRef.round()} kg)', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade400)),
+              ]),
+              const SizedBox(height: 14),
+              const Text('Ingrédients', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0C5C6C))),
+              const SizedBox(height: 8),
+              ...ingredients.map((ing) {
+                final q = (ing['quantite'] as num).toDouble();
+                final adapted = (poids > 0 || widget.sterilise);
+                final display = adapted ? _adapt(q, poids).round() : q.round();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(children: [
+                    const Text('• ', style: TextStyle(color: Color(0xFF0C5C6C), fontSize: 16)),
+                    Expanded(child: Text(ing['nom'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)))),
+                    Text('$display ${ing['unite']}', style: TextStyle(
+                      fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700,
+                      color: adapted ? const Color(0xFF0C5C6C) : const Color(0xFF1F2A2E))),
+                  ]),
+                );
+              }),
+              if (poids > 0 || widget.sterilise) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(color: const Color(0xFF0C5C6C).withOpacity(0.07), borderRadius: BorderRadius.circular(8)),
+                  child: Text(
+                    poids > 0
+                      ? (widget.sterilise
+                          ? 'Quantités adaptées pour ${poids.toStringAsFixed(1)} kg · stérilisé (−20%)'
+                          : 'Quantités adaptées pour ${poids.toStringAsFixed(1)} kg')
+                      : 'Animal stérilisé : quantités réduites de 20%',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF0C5C6C))),
+                ),
+              ],
+            ]),
+          ),
+        ],
+      ]),
+    );
+  }
+}
+
+// ─── Sélecteur de marque d'aliment ───────────────────────────────────────────
+
+class _MarquePickerSheet extends StatefulWidget {
+  final String espece;
+  final String phase;
+  final void Function(Map<String,dynamic>) onSelected;
+  const _MarquePickerSheet({required this.espece, required this.phase, required this.onSelected});
+  @override
+  State<_MarquePickerSheet> createState() => _MarquePickerSheetState();
+}
+
+class _MarquePickerSheetState extends State<_MarquePickerSheet> {
+  final _search = TextEditingController();
+  List<Map<String,dynamic>> _results = [];
+  bool _searching = false;
+  Timer? _debounce;
+
+  @override
+  void initState() { super.initState(); _fetch(''); }
+  @override
+  void dispose() { _search.dispose(); _debounce?.cancel(); super.dispose(); }
+
+  void _onSearch(String q) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () => _fetch(q));
+  }
+
+  Future<void> _fetch(String q) async {
+    if (!mounted) return;
+    setState(() => _searching = true);
+    try {
+      var query = Supabase.instance.client
+          .from('marques_aliments')
+          .select('id, marque, gamme, densite_kcal_100g, doses, age_categorie, taille_race, type_aliment')
+          .eq('espece', widget.espece);
+      if (widget.phase != 'junior') query = query.eq('age_categorie', 'adulte');
+      if (q.isNotEmpty) query = query.or('marque.ilike.%$q%,gamme.ilike.%$q%');
+      final data = await query.order('marque').limit(50);
+      if (mounted) setState(() => _results = (data as List).cast<Map<String,dynamic>>());
+    } catch (_) {} finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: MediaQuery.of(context).size.height * 0.85,
+    decoration: const BoxDecoration(color:Colors.white, borderRadius:BorderRadius.vertical(top:Radius.circular(20))),
+    child: Column(children: [
+      Center(child:Container(margin:const EdgeInsets.symmetric(vertical:12),width:40,height:4,
+        decoration:BoxDecoration(color:Colors.grey.shade300, borderRadius:BorderRadius.circular(2)))),
+      const Padding(padding:EdgeInsets.symmetric(horizontal:16,vertical:4),
+        child:Text('Choisir un aliment', style:TextStyle(fontFamily:'Galey',fontWeight:FontWeight.w700,fontSize:17,color:Color(0xFF1F2A2E)))),
+      const SizedBox(height:8),
+      Padding(padding:const EdgeInsets.symmetric(horizontal:16),
+        child:TextField(
+          controller:_search, autofocus:true, onChanged:_onSearch,
+          style:const TextStyle(fontFamily:'Galey',fontSize:14),
+          decoration:InputDecoration(
+            hintText:'Ex : Royal Canin, Orijen, Pro Plan…',
+            hintStyle:TextStyle(fontFamily:'Galey',fontSize:13,color:Colors.grey.shade400),
+            prefixIcon:const Icon(Icons.search,size:20),
+            filled:true, fillColor:Colors.grey.shade100,
+            contentPadding:const EdgeInsets.symmetric(vertical:0),
+            border:OutlineInputBorder(borderRadius:BorderRadius.circular(30),borderSide:BorderSide.none)),
+        )),
+      const SizedBox(height:4),
+      if (_searching) const LinearProgressIndicator(color:Color(0xFF0C5C6C), minHeight:2),
+      Expanded(
+        child: _results.isEmpty && !_searching
+          ? Center(child:Text(
+              _search.text.isEmpty ? 'Aucune marque dans la base' : 'Aucun résultat pour « ${_search.text} »',
+              style:const TextStyle(fontFamily:'Galey',color:Colors.grey)))
+          : ListView.separated(
+              padding: EdgeInsets.only(
+                top: 8, bottom: 8 + MediaQuery.of(context).viewInsets.bottom),
+              separatorBuilder:(_,__) => const Divider(height:1),
+              itemCount:_results.length,
+              itemBuilder:(ctx,i) {
+                final b = _results[i];
+                final densite = (b['densite_kcal_100g'] as num?)?.round();
+                final isJunior = b['age_categorie'] == 'junior';
+                final taille = b['taille_race'] as String?;
+                return ListTile(
+                  dense:true,
+                  title:Text('${b['marque']} — ${b['gamme']}',
+                    style:const TextStyle(fontFamily:'Galey',fontSize:14,fontWeight:FontWeight.w600,color:Color(0xFF1F2A2E))),
+                  subtitle:Wrap(spacing:8, children:[
+                    if (densite != null) Text('$densite kcal/100g',
+                      style:TextStyle(fontFamily:'Galey',fontSize:12,color:Colors.grey.shade500)),
+                    if (isJunior) Container(
+                      padding:const EdgeInsets.symmetric(horizontal:6,vertical:2),
+                      decoration:BoxDecoration(color:const Color(0xFFFFF3CD),borderRadius:BorderRadius.circular(6)),
+                      child:const Text('Junior',style:TextStyle(fontFamily:'Galey',fontSize:10,color:Color(0xFF856404)))),
+                    if (taille != null && taille != 'toutes') Container(
+                      padding:const EdgeInsets.symmetric(horizontal:6,vertical:2),
+                      decoration:BoxDecoration(color:Colors.grey.shade100,borderRadius:BorderRadius.circular(6)),
+                      child:Text(taille,style:TextStyle(fontFamily:'Galey',fontSize:10,color:Colors.grey.shade600))),
+                  ]),
+                  onTap:() { Navigator.pop(context); widget.onSelected(b); },
+                );
+              },
+            ),
+      ),
+    ]),
+  );
 }
 
 // ─── Breed picker sheet (modal bottom sheet) ──────────────────────────────────
