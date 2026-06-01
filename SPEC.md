@@ -387,6 +387,62 @@ Sur toutes les pages qui acceptent une photo (fiche animal, portée, documents) 
 - Supprime : Firebase Auth + Supabase cascade + Firestore doc
 - Double confirmation obligatoire (dialog + saisir "SUPPRIMER")
 
+### Gestion des employés d'élevage (A46)
+
+**Tables Supabase requises :**
+```sql
+CREATE TABLE IF NOT EXISTS employes (
+  id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  uid_employe TEXT NOT NULL,
+  uid_eleveur TEXT NOT NULL,
+  actif       BOOLEAN DEFAULT TRUE NOT NULL,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS taches_elevage (
+  id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  titre       TEXT NOT NULL,
+  animal_id   TEXT,            -- pas de FK (animaux.id est TEXT)
+  uid_eleveur TEXT NOT NULL,
+  date        DATE NOT NULL,
+  statut      TEXT DEFAULT 'a_faire' NOT NULL,  -- 'a_faire' | 'fait'
+  assigne_a   TEXT,            -- uid de l'employé assigné
+  notes       TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Vue éleveur — page "Mes Employés" :**
+- Onglet **Employés** : liste des employés actifs avec bouton Révoquer. FAB → recherche et ajout d'un utilisateur (particulier, éleveur ou pro hors pôle santé).
+- Onglet **Tâches** : liste des tâches de l'élevage, filtres À faire/Terminées. FAB → créer une tâche (titre*, date*, animal optionnel, assigné à optionnel, notes).
+  - Chaque tâche est modifiable (icône crayon) et supprimable.
+  - À la création, si une tâche est assignée : notification in-app (Supabase `notifications`) + push FCM via Cloud Function `notifyTacheAssignee`.
+
+**Vue employé — page "Mes Employeurs" :**
+- Liste des élevages pour lesquels l'utilisateur travaille (actif = true).
+- Clic sur un élevage → `EmployeurDetailPage` avec 2 onglets :
+  - **Mes Tâches** : tâches assignées à cet employé par cet éleveur. Bouton "Fait ✓" pour marquer terminée.
+  - **Animaux** : liste read-only des animaux de l'élevage (nom, espèce, race, photo).
+- Accessible depuis :
+  - Menu particulier → "Mes Employeurs"
+  - Menu éleveur (section Mon Élevage) → "Mes Employeurs"
+
+**Notifications tâches :**
+- `type = 'tache'` dans la table `notifications`
+- `data = { eleveurUid: '...', tacheId: '...' }`
+- Clic sur la notification → navigue vers `EmployeurDetailPage` de l'éleveur concerné
+
+**Cloud Function `notifyTacheAssignee` :**
+- Callable (`europe-west1`)
+- Paramètres : `{ assigneUid, titre }`
+- Lit le `fcmToken` depuis Firestore `users/{assigneUid}`
+- Envoie FCM sur canal `taches`
+
+**Permissions (v1 — à affiner) :**
+- L'employé voit tous les animaux de l'éleveur (lecture seule)
+- L'employé peut marquer ses tâches comme "fait"
+- L'éleveur contrôle quelles sections sont accessibles (suivi repro, carnet santé, identité) — à implémenter en v2
+
 ### Portée → Registre entrée/sortie
 - `provenance_type` = `'naissance'`
 - `provenance_nom` = nom de l'élevage (`name_elevage`)

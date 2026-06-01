@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
+import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -109,6 +110,20 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => const MesAnimauxPage(),
       ));
+    } else if (type == 'tache') {
+      final eleveurUid = data is Map ? data['eleveurUid'] as String? : null;
+      if (eleveurUid != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => EmployeurDetailPage(
+            eleveurUid: eleveurUid,
+            eleveurNom: 'Mon employeur',
+          ),
+        ));
+      } else {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const MesEmployeursPage(),
+        ));
+      }
     }
   }
 
@@ -130,6 +145,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'message':      return Icons.chat_bubble_outline;
       case 'like':         return Icons.favorite;
       case 'chaleur':      return Icons.spa;
+      case 'tache':        return Icons.task_alt;
       default:             return Icons.notifications_outlined;
     }
   }
@@ -140,6 +156,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'message':      return _teal;
       case 'like':         return Colors.redAccent;
       case 'chaleur':      return const Color(0xFFE91E8C);
+      case 'tache':        return const Color(0xFF6E9E57);
       default:             return Colors.grey;
     }
   }

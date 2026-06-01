@@ -18,6 +18,7 @@ import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
+import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 
 class ParticulierNav extends StatefulWidget {
   final VoidCallback? onAdminTap;
@@ -197,6 +198,16 @@ class _ParticulierNavState extends State<ParticulierNav> {
                       },
                     ),
                   ],
+                ),
+                _DrawerItem(
+                  icon: Icons.work_outline,
+                  label: 'Mes Employeurs',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const MesEmployeursPage(),
+                    ));
+                  },
                 ),
                 _DrawerItem(
                   icon: Icons.favorite_border,

@@ -4,6 +4,7 @@ const alertesFunctions = require("./alertes");
 const agendaFunctions = require("./agenda");
 const chaleursFunctions = require("./chaleurs");
 const retraiteFunctions = require("./retraite");
+const tachesFunctions = require("./taches");
 const testFunctions = require("./stripe");
 
 // Export your Stripe functions
@@ -33,3 +34,6 @@ exports.sendChaleursNotifications = chaleursFunctions.sendChaleursNotifications;
 
 // Retraite reproductive — alertes J-30 et J-0
 exports.sendRetraiteReminders = retraiteFunctions.sendRetraiteReminders;
+
+// Tâches employés — push FCM à l'assignation
+exports.notifyTacheAssignee = tachesFunctions.notifyTacheAssignee;
