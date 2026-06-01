@@ -19,6 +19,7 @@ import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 class ParticulierNav extends StatefulWidget {
   final VoidCallback? onAdminTap;
@@ -30,9 +31,28 @@ class ParticulierNav extends StatefulWidget {
 class _ParticulierNavState extends State<ParticulierNav> {
   int _selectedIndex = 0;
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  bool _isEmploye = false;
 
   static const _teal = Color(0xFF0C5C6C);
   static const _dark = Color(0xFF1F2A2E);
+
+  @override
+  void initState() {
+    super.initState();
+    _checkIsEmploye();
+  }
+
+  Future<void> _checkIsEmploye() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final rows = await Supabase.instance.client
+        .from('employes')
+        .select('id')
+        .eq('uid_employe', uid)
+        .eq('actif', true)
+        .limit(1);
+    if (mounted) setState(() => _isEmploye = (rows as List).isNotEmpty);
+  }
 
   Widget _tabContent(int index) => switch (index) {
         1 => MessagePage(),
@@ -199,16 +219,17 @@ class _ParticulierNavState extends State<ParticulierNav> {
                     ),
                   ],
                 ),
-                _DrawerItem(
-                  icon: Icons.work_outline,
-                  label: 'Mes Employeurs',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const MesEmployeursPage(),
-                    ));
-                  },
-                ),
+                if (_isEmploye)
+                  _DrawerItem(
+                    icon: Icons.work_outline,
+                    label: 'Mes Employeurs',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const MesEmployeursPage(),
+                      ));
+                    },
+                  ),
                 _DrawerItem(
                   icon: Icons.favorite_border,
                   label: 'Favoris',

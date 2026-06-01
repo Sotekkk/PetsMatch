@@ -30,6 +30,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 class EleveurNav extends StatefulWidget {
   final VoidCallback? onAdminTap;
@@ -41,10 +42,29 @@ class EleveurNav extends StatefulWidget {
 class _EleveurNavState extends State<EleveurNav> {
   int _selectedIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  bool _isEmploye = false;
 
   static const _green = Color(0xFF6E9E57);
   static const _teal = Color(0xFF0C5C6C);
   static const _dark = Color(0xFF1F2A2E);
+
+  @override
+  void initState() {
+    super.initState();
+    _checkIsEmploye();
+  }
+
+  Future<void> _checkIsEmploye() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final rows = await Supabase.instance.client
+        .from('employes')
+        .select('id')
+        .eq('uid_employe', uid)
+        .eq('actif', true)
+        .limit(1);
+    if (mounted) setState(() => _isEmploye = (rows as List).isNotEmpty);
+  }
 
   Widget _tabContent(int index) => switch (index) {
     1 => MessagePage(),
@@ -211,16 +231,17 @@ class _EleveurNavState extends State<EleveurNav> {
                           ));
                         },
                       ),
-                      _DrawerSubItem(
-                        label: 'Mes Employeurs',
-                        icon: Icons.work_outline,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const MesEmployeursPage(),
-                          ));
-                        },
-                      ),
+                      if (_isEmploye)
+                        _DrawerSubItem(
+                          label: 'Mes Employeurs',
+                          icon: Icons.work_outline,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const MesEmployeursPage(),
+                            ));
+                          },
+                        ),
                     ],
                   ),
                   _DrawerSection(

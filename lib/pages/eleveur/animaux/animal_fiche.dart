@@ -34,8 +34,17 @@ class AnimalFichePage extends StatefulWidget {
   final String? animalId;
   final Map<String, dynamic>? initialData;
   final String? preselectedEspece;
+  final bool readOnly;
+  final String? eleveurUidOverride;
 
-  const AnimalFichePage({super.key, this.animalId, this.initialData, this.preselectedEspece});
+  const AnimalFichePage({
+    super.key,
+    this.animalId,
+    this.initialData,
+    this.preselectedEspece,
+    this.readOnly = false,
+    this.eleveurUidOverride,
+  });
 
   @override
   State<AnimalFichePage> createState() => _AnimalFichePageState();
@@ -334,7 +343,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         uploadedUrl = await uploadPhoto(_photoFile!, 'animaux/$uid/$name');
       }
 
-      final uid = FirebaseAuth.instance.currentUser!.uid;
+      final uid = widget.eleveurUidOverride ?? FirebaseAuth.instance.currentUser!.uid;
       final id = widget.animalId ?? DateTime.now().millisecondsSinceEpoch.toString();
       final data = {
         'id':                  id,
@@ -703,7 +712,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          if (_saving)
+          if (widget.readOnly)
+            const Padding(
+              padding: EdgeInsets.only(right: 16),
+              child: Center(child: Text('Lecture seule',
+                  style: TextStyle(color: Colors.white60, fontFamily: 'Galey', fontSize: 12))),
+            )
+          else if (_saving)
             const Center(child: Padding(padding: EdgeInsets.only(right: 16),
                 child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))))
           else if (_editing)

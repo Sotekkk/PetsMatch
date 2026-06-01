@@ -30,6 +30,9 @@
 //     created_at  TIMESTAMPTZ DEFAULT NOW()
 //   );
 
+// SQL à exécuter une fois pour les permissions :
+//   ALTER TABLE employes ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -37,7 +40,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart'
-    show speciesColor, speciesIcon, speciesLabel;
+    show speciesColor, speciesIcon, speciesLabel, kSpeciesData;
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 
 // ─── Page principale ──────────────────────────────────────────────────────────
 
@@ -210,7 +214,10 @@ class _EmployesTabState extends State<_EmployesTab> {
                     return _EmployeCard(
                       nom: nom, photoUrl: photoUrl,
                       teal: widget.teal, dark: widget.dark,
+                      employeId: e['id'].toString(),
+                      permissions: (e['permissions'] as Map<String, dynamic>?) ?? {},
                       onRevoquer: () => _revoquer(e['id'].toString(), nom),
+                      onPermissionsChanged: _load,
                     );
                   },
                 ),
@@ -220,11 +227,14 @@ class _EmployesTabState extends State<_EmployesTab> {
 
 class _EmployeCard extends StatelessWidget {
   const _EmployeCard({required this.nom, required this.photoUrl,
-      required this.teal, required this.dark, required this.onRevoquer});
-  final String nom;
+      required this.teal, required this.dark, required this.onRevoquer,
+      required this.employeId, required this.permissions, required this.onPermissionsChanged});
+  final String nom, employeId;
   final String? photoUrl;
   final Color teal, dark;
   final VoidCallback onRevoquer;
+  final Map<String, dynamic> permissions;
+  final VoidCallback onPermissionsChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -248,15 +258,149 @@ class _EmployeCard extends StatelessWidget {
           child: Text(nom, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
               fontSize: 14, color: dark)),
         ),
+        IconButton(
+          icon: Icon(Icons.tune_rounded, color: teal, size: 20),
+          tooltip: 'Gérer les accès',
+          onPressed: () async {
+            await showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => _PermissionsSheet(
+                employeId: employeId,
+                nom: nom,
+                permissions: permissions,
+                teal: teal,
+              ),
+            );
+            onPermissionsChanged();
+          },
+        ),
         TextButton(
           onPressed: onRevoquer,
-          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10)),
+          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6)),
           child: const Text('Révoquer', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
               color: Colors.red, fontWeight: FontWeight.w600)),
         ),
       ]),
     );
   }
+}
+
+// ─── Feuille de permissions (côté employeur) ─────────────────────────────────
+
+class _PermissionsSheet extends StatefulWidget {
+  final String employeId, nom;
+  final Map<String, dynamic> permissions;
+  final Color teal;
+  const _PermissionsSheet({required this.employeId, required this.nom,
+      required this.permissions, required this.teal});
+  @override
+  State<_PermissionsSheet> createState() => _PermissionsSheetState();
+}
+
+class _PermissionsSheetState extends State<_PermissionsSheet> {
+  final _supa = Supabase.instance.client;
+  late bool _modifierAnimaux;
+  late bool _gererTaches;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _modifierAnimaux = widget.permissions['modifier_animaux'] == true;
+    _gererTaches     = widget.permissions['gerer_taches']     == true;
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await _supa.from('employes').update({
+        'permissions': {
+          'modifier_animaux': _modifierAnimaux,
+          'gerer_taches':     _gererTaches,
+        },
+      }).eq('id', widget.employeId);
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 16),
+        Text('Accès de ${widget.nom}',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        const SizedBox(height: 4),
+        const Text('Définissez ce que cet employé peut faire.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+        const SizedBox(height: 16),
+        _PermSwitch(
+          icon: Icons.pets_outlined,
+          title: 'Modifier les fiches animaux',
+          subtitle: 'Peut éditer les informations, poids, santé',
+          value: _modifierAnimaux,
+          teal: widget.teal,
+          onChanged: (v) => setState(() => _modifierAnimaux = v),
+        ),
+        const Divider(height: 1, indent: 56),
+        _PermSwitch(
+          icon: Icons.task_alt,
+          title: 'Gérer les tâches',
+          subtitle: 'Peut créer et modifier ses propres tâches',
+          value: _gererTaches,
+          teal: widget.teal,
+          onChanged: (v) => setState(() => _gererTaches = v),
+        ),
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _saving ? null : _save,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: widget.teal,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            child: _saving
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Colors.white)),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _PermSwitch extends StatelessWidget {
+  final IconData icon;
+  final String title, subtitle;
+  final bool value;
+  final Color teal;
+  final ValueChanged<bool> onChanged;
+  const _PermSwitch({required this.icon, required this.title, required this.subtitle,
+      required this.value, required this.teal, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) => SwitchListTile(
+    secondary: Icon(icon, color: value ? teal : Colors.grey.shade400),
+    title: Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+    subtitle: Text(subtitle, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+    value: value,
+    activeColor: teal,
+    onChanged: onChanged,
+    contentPadding: EdgeInsets.zero,
+  );
 }
 
 // ─── Bottom sheet : Ajouter un employé ───────────────────────────────────────
@@ -1202,6 +1346,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                         final u = e['user'] as Map<String, dynamic>;
                         final nom = _nomEmployeur(u);
                         final photo = _photoEmployeur(u);
+                        final perms = (e['permissions'] as Map<String, dynamic>?) ?? {};
                         return _EmployeurCard(
                           nom: nom, photo: photo,
                           teal: _teal, dark: _dark,
@@ -1209,6 +1354,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                             builder: (_) => EmployeurDetailPage(
                               eleveurUid: u['uid'] as String,
                               eleveurNom: nom,
+                              permissions: perms,
                             ),
                           )),
                         );
@@ -1260,7 +1406,13 @@ class _EmployeurCard extends StatelessWidget {
 
 class EmployeurDetailPage extends StatefulWidget {
   final String eleveurUid, eleveurNom;
-  const EmployeurDetailPage({super.key, required this.eleveurUid, required this.eleveurNom});
+  final Map<String, dynamic> permissions;
+  const EmployeurDetailPage({
+    super.key,
+    required this.eleveurUid,
+    required this.eleveurNom,
+    this.permissions = const {},
+  });
   @override
   State<EmployeurDetailPage> createState() => _EmployeurDetailPageState();
 }
@@ -1275,17 +1427,14 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
   static const _dark = Color(0xFF1F2A2E);
   static const _bg   = Color(0xFFF8F8F6);
 
-  bool _loadingTaches  = true;
-  bool _loadingAnimaux = true;
-  List<Map<String, dynamic>> _taches  = [];
-  List<Map<String, dynamic>> _animaux = [];
+  bool _loadingTaches = true;
+  List<Map<String, dynamic>> _taches = [];
 
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 2, vsync: this);
     _loadTaches();
-    _loadAnimaux();
   }
 
   @override
@@ -1311,22 +1460,6 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
       if (mounted) setState(() { _taches = List<Map<String, dynamic>>.from(rows); _loadingTaches = false; });
     } catch (_) {
       if (mounted) setState(() => _loadingTaches = false);
-    }
-  }
-
-  Future<void> _loadAnimaux() async {
-    if (!mounted) return;
-    setState(() => _loadingAnimaux = true);
-    try {
-      final rows = await _supa
-          .from('animaux')
-          .select('id, nom, espece, race, sexe, photo_url')
-          .eq('uid_eleveur', widget.eleveurUid)
-          .not('statut', 'in', '(sorti,decede)')
-          .order('nom');
-      if (mounted) setState(() { _animaux = List<Map<String, dynamic>>.from(rows); _loadingAnimaux = false; });
-    } catch (_) {
-      if (mounted) setState(() => _loadingAnimaux = false);
     }
   }
 
@@ -1358,20 +1491,49 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
       ),
       body: TabBarView(
         controller: _tab,
-        children: [_buildTachesTab(), _buildAnimauxTab()],
+        children: [
+          _buildTachesTab(),
+          _AnimauxEmployeTab(
+            eleveurUid: widget.eleveurUid,
+            canEditAnimaux: widget.permissions['modifier_animaux'] == true,
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildTachesTab() {
+    final canGererTaches = widget.permissions['gerer_taches'] == true;
+    final uid = FirebaseAuth.instance.currentUser!.uid;
     if (_loadingTaches) return const Center(child: CircularProgressIndicator(color: _teal));
-    return RefreshIndicator(
+    return Scaffold(
+      backgroundColor: _bg,
+      floatingActionButton: canGererTaches ? FloatingActionButton.extended(
+        backgroundColor: _teal,
+        icon: const Icon(Icons.add_task, color: Colors.white),
+        label: const Text('Nouvelle tâche', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
+        onPressed: () async {
+          await showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (_) => _CreateTacheSheet(
+              uid: widget.eleveurUid,
+              employes: [{'uid_employe': uid, 'nom': 'Moi'}],
+              animaux: const [],
+              teal: _teal, dark: _dark,
+            ),
+          );
+          _loadTaches();
+        },
+      ) : null,
+      body: RefreshIndicator(
       onRefresh: _loadTaches,
       color: _teal,
       child: _taches.isEmpty
           ? _empty('Aucune tâche', 'Votre responsable n\'a pas encore créé de tâche pour vous.')
           : ListView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
               itemCount: _taches.length,
               itemBuilder: (ctx, i) {
                 final t = _taches[i];
@@ -1431,29 +1593,521 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
                 ));
               },
             ),
+    ));
+  }
+
+}
+
+// ─── Tab animaux employé (Reproducteurs / Bébés / Tous + filtres) ─────────────
+
+class _AnimauxEmployeTab extends StatefulWidget {
+  final String eleveurUid;
+  final bool canEditAnimaux;
+  const _AnimauxEmployeTab({required this.eleveurUid, this.canEditAnimaux = false});
+  @override
+  State<_AnimauxEmployeTab> createState() => _AnimauxEmployeTabState();
+}
+
+class _AnimauxEmployeTabState extends State<_AnimauxEmployeTab> {
+  static const _teal = Color(0xFF0C5C6C);
+
+  final _supa       = Supabase.instance.client;
+  final _searchCtrl = TextEditingController();
+
+  bool _loading = true;
+  List<Map<String, dynamic>> _all = [];
+
+  int _subTab = 0; // 0=Tous, 1=Reproducteurs, 2=Bébés
+
+  String? _filterEspece;
+  String? _filterSexe;
+  String? _filterRace;
+  String _search = '';
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  @override
+  void dispose() { _searchCtrl.dispose(); super.dispose(); }
+
+  Future<void> _load() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+    try {
+      final rows = await _supa
+          .from('animaux')
+          .select('id, nom, espece, race, sexe, photo_url, identification, reproducteur, portee_id, date_naissance')
+          .eq('uid_eleveur', widget.eleveurUid)
+          .not('statut', 'in', '(sorti,decede)')
+          .order('nom');
+      if (mounted) setState(() { _all = List<Map<String, dynamic>>.from(rows); _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  List<Map<String, dynamic>> get _filtered {
+    var list = _all;
+    if (_subTab == 1) {
+      list = list.where((a) => a['reproducteur'] == true).toList();
+    } else if (_subTab == 2) {
+      list = list.where((a) {
+        final p = a['portee_id'] as String? ?? '';
+        return p.isNotEmpty && a['reproducteur'] != true;
+      }).toList();
+    }
+    if (_filterEspece != null) {
+      list = list.where((a) => (a['espece'] as String? ?? '') == _filterEspece).toList();
+    }
+    if (_filterSexe != null) {
+      list = list.where((a) => (a['sexe'] as String? ?? '') == _filterSexe).toList();
+    }
+    if (_filterRace != null) {
+      list = list.where((a) => (a['race'] as String? ?? '') == _filterRace).toList();
+    }
+    if (_search.isNotEmpty) {
+      final q = _search.toLowerCase();
+      list = list.where((a) {
+        final nom  = (a['nom'] as String? ?? '').toLowerCase();
+        final puce = (a['identification'] as String? ?? '').toLowerCase();
+        return nom.contains(q) || puce.contains(q);
+      }).toList();
+    }
+    return list;
+  }
+
+  int get _activeFilterCount {
+    int n = 0;
+    if (_filterEspece != null) n++;
+    if (_filterSexe   != null) n++;
+    if (_filterRace   != null) n++;
+    return n;
+  }
+
+  List<String> get _availableRaces => _all
+      .where((a) => _filterEspece == null || (a['espece'] as String? ?? '') == _filterEspece)
+      .map((a) => a['race'] as String? ?? '')
+      .where((r) => r.isNotEmpty)
+      .toSet()
+      .toList()
+    ..sort();
+
+  Widget _buildPorteeGroupedView(List<Map<String, dynamic>> docs) {
+    final fmt = DateFormat('dd/MM/yyyy', 'fr_FR');
+    final Map<String, List<Map<String, dynamic>>> groups = {};
+    for (final d in docs) {
+      final pid = (d['portee_id'] as String?) ?? '';
+      if (pid.isEmpty) continue;
+      groups.putIfAbsent(pid, () => []).add(d);
+    }
+    final sortedKeys = groups.keys.toList()
+      ..sort((a, b) {
+        final da = DateTime.tryParse(groups[a]!.first['date_naissance'] as String? ?? '') ?? DateTime(0);
+        final db = DateTime.tryParse(groups[b]!.first['date_naissance'] as String? ?? '') ?? DateTime(0);
+        return db.compareTo(da);
+      });
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      itemCount: sortedKeys.length,
+      itemBuilder: (_, gi) {
+        final pid     = sortedKeys[gi];
+        final members = groups[pid]!;
+        final first   = members.first;
+        final dn      = DateTime.tryParse(first['date_naissance'] as String? ?? '');
+        final race    = (first['race']   as String?) ?? '';
+        final espece  = (first['espece'] as String?) ?? '';
+
+        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (gi > 0) const SizedBox(height: 20),
+          // Header portée
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: _teal.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _teal.withOpacity(0.2)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.diversity_3, size: 18, color: _teal),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(
+                    ['Portée', if (race.isNotEmpty) race, if (espece.isNotEmpty) '· ${speciesLabel(espece)}'].join(' '),
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _teal),
+                  ),
+                  if (dn != null)
+                    Text('Nés le ${fmt.format(dn)}',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF5F9EAA))),
+                ]),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: _teal.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text('${members.length}',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _teal)),
+              ),
+            ]),
+          ),
+          // Grille bébés
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 0.68,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            itemCount: members.length,
+            itemBuilder: (_, i) => _EmployeAnimalCard(
+              data: members[i],
+              eleveurUid: widget.eleveurUid,
+              canEdit: widget.canEditAnimaux,
+            ),
+          ),
+        ]);
+      },
     );
   }
 
-  Widget _buildAnimauxTab() {
-    if (_loadingAnimaux) return const Center(child: CircularProgressIndicator(color: _teal));
-    return RefreshIndicator(
-      onRefresh: _loadAnimaux,
-      color: _teal,
-      child: _animaux.isEmpty
-          ? _empty('Aucun animal', '')
-          : GridView.builder(
-              padding: const EdgeInsets.all(16),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                childAspectRatio: 0.68,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-              ),
-              itemCount: _animaux.length,
-              itemBuilder: (_, i) => _EmployeAnimalCard(data: _animaux[i]),
-            ),
+  void _openFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _FilterSheetE(
+        filterEspece: _filterEspece,
+        filterSexe:   _filterSexe,
+        filterRace:   _filterRace,
+        availableRaces: _availableRaces,
+        onApply: (espece, sexe, race) => setState(() {
+          _filterEspece = espece;
+          _filterSexe   = sexe;
+          _filterRace   = race;
+        }),
+      ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
+    final filtered       = _filtered;
+    final hasFilter      = _activeFilterCount > 0;
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      color: _teal,
+      child: Column(children: [
+        // ── Recherche + filtre ──
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _searchCtrl,
+                onChanged: (v) => setState(() => _search = v.trim()),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Nom ou numéro de puce…',
+                  hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF9CA3AF)),
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  filled: true, fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  isDense: true,
+                  suffixIcon: _search.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close, size: 16),
+                          onPressed: () { _searchCtrl.clear(); setState(() => _search = ''); },
+                        )
+                      : null,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                IconButton(
+                  icon: Icon(Icons.tune_rounded, color: hasFilter ? _teal : Colors.grey.shade600),
+                  onPressed: _openFilterSheet,
+                ),
+                if (hasFilter)
+                  Positioned(
+                    top: 6, right: 6,
+                    child: Container(
+                      width: 8, height: 8,
+                      decoration: const BoxDecoration(color: _teal, shape: BoxShape.circle),
+                    ),
+                  ),
+              ],
+            ),
+          ]),
+        ),
+        // ── Sub-tabs ──
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              _SubTabChip(label: 'Tous', active: _subTab == 0,
+                  onTap: () => setState(() => _subTab = 0)),
+              const SizedBox(width: 8),
+              _SubTabChip(label: '⭐ Reproducteurs', active: _subTab == 1,
+                  onTap: () => setState(() => _subTab = 1)),
+              const SizedBox(width: 8),
+              _SubTabChip(label: '🐣 Bébés', active: _subTab == 2,
+                  onTap: () => setState(() => _subTab = 2)),
+            ]),
+          ),
+        ),
+        // ── Chips filtres actifs ──
+        if (hasFilter)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Wrap(spacing: 6, runSpacing: 4, children: [
+              if (_filterEspece != null)
+                _ActiveFilterChipE(
+                  label: speciesLabel(_filterEspece!),
+                  onRemove: () => setState(() { _filterEspece = null; _filterRace = null; }),
+                ),
+              if (_filterSexe != null)
+                _ActiveFilterChipE(
+                  label: _filterSexe == 'male' ? '♂ Mâle' : '♀ Femelle',
+                  onRemove: () => setState(() => _filterSexe = null),
+                ),
+              if (_filterRace != null)
+                _ActiveFilterChipE(
+                  label: _filterRace!,
+                  onRemove: () => setState(() => _filterRace = null),
+                ),
+            ]),
+          ),
+        // ── Grille / portées ──
+        Expanded(
+          child: filtered.isEmpty
+              ? _empty(_subTab == 2 ? 'Aucun bébé dans une portée' : 'Aucun animal', '')
+              : _subTab == 2
+                  ? _buildPorteeGroupedView(filtered)
+                  : GridView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        childAspectRatio: 0.68,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                      ),
+                      itemCount: filtered.length,
+                      itemBuilder: (_, i) => _EmployeAnimalCard(
+                        data: filtered[i],
+                        eleveurUid: widget.eleveurUid,
+                        canEdit: widget.canEditAnimaux,
+                      ),
+                    ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ─── Filter sheet (animaux employé) ──────────────────────────────────────────
+
+class _FilterSheetE extends StatefulWidget {
+  final String? filterEspece, filterSexe, filterRace;
+  final List<String> availableRaces;
+  final void Function(String? espece, String? sexe, String? race) onApply;
+  const _FilterSheetE({
+    required this.filterEspece, required this.filterSexe, required this.filterRace,
+    required this.availableRaces, required this.onApply,
+  });
+  @override
+  State<_FilterSheetE> createState() => _FilterSheetEState();
+}
+
+class _FilterSheetEState extends State<_FilterSheetE> {
+  static const _teal = Color(0xFF0C5C6C);
+  String? _espece, _sexe, _race;
+
+  @override
+  void initState() {
+    super.initState();
+    _espece = widget.filterEspece;
+    _sexe   = widget.filterSexe;
+    _race   = widget.filterRace;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6, maxChildSize: 0.9, minChildSize: 0.3,
+      builder: (_, sc) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        child: SingleChildScrollView(
+          controller: sc,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 16),
+            Row(children: [
+              const Expanded(child: Text('Filtres',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+              TextButton(
+                onPressed: () => setState(() { _espece = null; _sexe = null; _race = null; }),
+                child: const Text('Tout effacer', style: TextStyle(fontFamily: 'Galey', color: _teal)),
+              ),
+            ]),
+            const SizedBox(height: 16),
+            const Text('Espèce', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 8, children: kSpeciesData
+                .where((s) => s.value != 'tous')
+                .map((s) {
+              final selected = _espece == s.value;
+              return GestureDetector(
+                onTap: () => setState(() { _espece = selected ? null : s.value; _race = null; }),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: selected ? _teal : Colors.white,
+                    border: Border.all(color: selected ? _teal : Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(s.label,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                          color: selected ? Colors.white : Colors.grey.shade700)),
+                ),
+              );
+            }).toList()),
+            const SizedBox(height: 16),
+            const Text('Sexe', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+            const SizedBox(height: 8),
+            Row(children: [
+              _SexeChipE(label: '♂ Mâle',    value: 'male',    selected: _sexe == 'male',
+                  onTap: () => setState(() => _sexe = _sexe == 'male'    ? null : 'male')),
+              const SizedBox(width: 8),
+              _SexeChipE(label: '♀ Femelle', value: 'femelle', selected: _sexe == 'femelle',
+                  onTap: () => setState(() => _sexe = _sexe == 'femelle' ? null : 'femelle')),
+            ]),
+            if (widget.availableRaces.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text('Race', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: widget.availableRaces.map((r) {
+                final selected = _race == r;
+                return GestureDetector(
+                  onTap: () => setState(() => _race = selected ? null : r),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: selected ? _teal : Colors.white,
+                      border: Border.all(color: selected ? _teal : Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(r,
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                            color: selected ? Colors.white : Colors.grey.shade700)),
+                  ),
+                );
+              }).toList()),
+            ],
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () { widget.onApply(_espece, _sexe, _race); Navigator.pop(context); },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _teal,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Appliquer',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Colors.white)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _SubTabChip extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  const _SubTabChip({required this.label, required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: active ? const Color(0xFF0C5C6C) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: active ? const Color(0xFF0C5C6C) : Colors.grey.shade300),
+      ),
+      child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+          color: active ? Colors.white : Colors.grey)),
+    ),
+  );
+}
+
+class _ActiveFilterChipE extends StatelessWidget {
+  final String label;
+  final VoidCallback onRemove;
+  const _ActiveFilterChipE({required this.label, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: const Color(0xFF0C5C6C).withOpacity(0.1),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
+          color: Color(0xFF0C5C6C), fontWeight: FontWeight.w600)),
+      const SizedBox(width: 4),
+      GestureDetector(
+        onTap: onRemove,
+        child: const Icon(Icons.close, size: 14, color: Color(0xFF0C5C6C)),
+      ),
+    ]),
+  );
+}
+
+class _SexeChipE extends StatelessWidget {
+  final String label, value;
+  final bool selected;
+  final VoidCallback onTap;
+  const _SexeChipE({required this.label, required this.value, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: selected ? const Color(0xFF0C5C6C) : Colors.white,
+        border: Border.all(color: selected ? const Color(0xFF0C5C6C) : Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+          color: selected ? Colors.white : Colors.grey.shade700)),
+    ),
+  );
 }
 
 // ─── Page : Détail tâche + commentaires ──────────────────────────────────────
@@ -1733,18 +2387,31 @@ class _CommentBubble extends StatelessWidget {
 
 class _EmployeAnimalCard extends StatelessWidget {
   final Map<String, dynamic> data;
-  const _EmployeAnimalCard({required this.data});
+  final String eleveurUid;
+  final bool canEdit;
+  const _EmployeAnimalCard({required this.data, required this.eleveurUid, this.canEdit = false});
 
   @override
   Widget build(BuildContext context) {
-    final photoUrl = data['photo_url'] as String?;
-    final nom    = data['nom']    as String? ?? 'Sans nom';
-    final espece = data['espece'] as String? ?? '';
-    final race   = data['race']   as String? ?? '';
-    final sexe   = data['sexe']   as String? ?? '';
-    final color  = speciesColor(espece);
+    final photoUrl  = data['photo_url']  as String?;
+    final nom       = data['nom']        as String? ?? 'Sans nom';
+    final espece    = data['espece']     as String? ?? '';
+    final race      = data['race']       as String? ?? '';
+    final sexe      = data['sexe']       as String? ?? '';
+    final color     = speciesColor(espece);
+    final isRepro   = data['reproducteur'] == true;
+    final hasPortee = (data['portee_id']  as String? ?? '').isNotEmpty;
+    final animalId  = data['id']?.toString();
 
-    return Container(
+    return GestureDetector(
+      onTap: animalId == null ? null : () => Navigator.push(context, MaterialPageRoute(
+        builder: (_) => AnimalFichePage(
+          animalId: animalId,
+          readOnly: !canEdit,
+          eleveurUidOverride: canEdit ? eleveurUid : null,
+        ),
+      )),
+      child: Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -1755,12 +2422,39 @@ class _EmployeAnimalCard extends StatelessWidget {
           borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           child: AspectRatio(
             aspectRatio: 1.0,
-            child: photoUrl != null
-                ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover)
-                : Container(
-                    color: color.withOpacity(0.12),
-                    child: Center(child: speciesIcon(espece, 44, color)),
+            child: Stack(children: [
+              Positioned.fill(
+                child: photoUrl != null
+                    ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover)
+                    : Container(
+                        color: color.withOpacity(0.12),
+                        child: Center(child: speciesIcon(espece, 44, color)),
+                      ),
+              ),
+              if (isRepro)
+                Positioned(
+                  top: 6, right: 6,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(color: Color(0xFFFFA000), shape: BoxShape.circle),
+                    child: const Icon(Icons.star, color: Colors.white, size: 11),
                   ),
+                ),
+              if (hasPortee)
+                Positioned(
+                  top: 6, left: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0C5C6C),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text('Portée',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 8,
+                            color: Colors.white, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+            ]),
           ),
         ),
         Expanded(
@@ -1780,13 +2474,14 @@ class _EmployeAnimalCard extends StatelessWidget {
               const Spacer(),
               Wrap(spacing: 4, runSpacing: 4, children: [
                 _AnimalBadge(text: speciesLabel(espece), color: color),
-                if (sexe == 'male')   _AnimalBadge(text: '♂', color: const Color(0xFF1D4ED8)),
+                if (sexe == 'male')    _AnimalBadge(text: '♂', color: const Color(0xFF1D4ED8)),
                 if (sexe == 'femelle') _AnimalBadge(text: '♀', color: Colors.pinkAccent),
               ]),
             ]),
           ),
         ),
       ]),
+      ),
     );
   }
 }
