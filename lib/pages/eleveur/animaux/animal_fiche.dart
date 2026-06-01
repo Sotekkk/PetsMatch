@@ -747,6 +747,22 @@ class _IdentiteTab extends StatelessWidget {
   bool get _hasPoids   => s._espece != 'oiseau';
   bool get _hasBreeds  => s._allBreeds[s._espece]?.isNotEmpty == true;
 
+  static const _agesRetraite = <String, int>{
+    'chien': 7, 'chat': 8, 'lapin': 5,
+    'cheval': 18, 'ovin': 8, 'caprin': 8, 'porcin': 5, 'ane': 15,
+  };
+
+  // Nombre de jours avant (positif) ou après (négatif) l'âge de retraite.
+  // Retourne null si non applicable.
+  int? get _joursAvantRetraite {
+    if (s._sexe != 'femelle' || s._sterilise || s._dateNaissance == null) return null;
+    final ageRetraite = _agesRetraite[s._espece];
+    if (ageRetraite == null) return null;
+    final dn = s._dateNaissance!;
+    final retraite = DateTime(dn.year + ageRetraite, dn.month, dn.day);
+    return retraite.difference(DateTime.now()).inDays;
+  }
+
   String get _tailleLabel {
     if (s._espece == 'cheval') return 'Taille au garrot (cm)';
     if (s._espece == 'oiseau') return 'Envergure (cm)';
@@ -766,6 +782,10 @@ class _IdentiteTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (_joursAvantRetraite != null && _joursAvantRetraite! <= 30)
+            _RetraiteBanner(jours: _joursAvantRetraite!, espece: s._espece),
+          if (_joursAvantRetraite != null && _joursAvantRetraite! <= 30)
+            const SizedBox(height: 12),
           IgnorePointer(
             ignoring: !s._editing,
             child: Column(
@@ -2054,6 +2074,55 @@ class _DocIcon extends StatelessWidget {
     color: const Color(0xFFB07D3A).withOpacity(0.12),
     child: const Icon(Icons.picture_as_pdf_outlined, color: Color(0xFFB07D3A), size: 26),
   );
+}
+
+// ─── Banner mise en retraite ──────────────────────────────────────────────────
+
+class _RetraiteBanner extends StatelessWidget {
+  const _RetraiteBanner({required this.jours, required this.espece});
+  final int jours;
+  final String espece;
+
+  static const _agesRetraite = <String, int>{
+    'chien': 7, 'chat': 8, 'lapin': 5,
+    'cheval': 18, 'ovin': 8, 'caprin': 8, 'porcin': 5, 'ane': 15,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final ageRetraite = _agesRetraite[espece] ?? '?';
+    final bool atteint = jours <= 0;
+    final color = atteint ? const Color(0xFFDC2626) : const Color(0xFFD97706);
+    final bg = atteint ? const Color(0xFFFEE2E2) : const Color(0xFFFEF3C7);
+    final border = atteint ? const Color(0xFFFCA5A5) : const Color(0xFFFDE68A);
+
+    final String label;
+    if (atteint) {
+      label = 'Âge de retraite reproductive atteint ($ageRetraite ans) — arrêt de la reproduction recommandé.';
+    } else if (jours == 1) {
+      label = 'Retraite reproductive demain ($ageRetraite ans) — préparez la mise en retraite.';
+    } else {
+      label = 'Retraite reproductive dans $jours jours ($ageRetraite ans) — préparez la mise en retraite.';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: border),
+      ),
+      child: Row(children: [
+        Icon(atteint ? Icons.block : Icons.warning_amber_rounded, color: color, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(label,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  color: color, fontWeight: FontWeight.w600)),
+        ),
+      ]),
+    );
+  }
 }
 
 // ─── Onglet Suivi Repro ───────────────────────────────────────────────────────
