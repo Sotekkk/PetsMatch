@@ -10,6 +10,14 @@
 //     created_at  TIMESTAMPTZ DEFAULT NOW()
 //   );
 //
+//   CREATE TABLE IF NOT EXISTS tache_commentaires (
+//     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+//     tache_id    BIGINT NOT NULL,
+//     uid_auteur  TEXT NOT NULL,
+//     contenu     TEXT NOT NULL,
+//     created_at  TIMESTAMPTZ DEFAULT NOW()
+//   );
+//
 //   CREATE TABLE IF NOT EXISTS taches_elevage (
 //     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 //     titre       TEXT NOT NULL,
@@ -28,6 +36,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:intl/intl.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart'
+    show speciesColor, speciesIcon, speciesLabel;
 
 // ─── Page principale ──────────────────────────────────────────────────────────
 
@@ -589,12 +599,15 @@ class _TachesTabState extends State<_TachesTab> {
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                         itemCount: affichees.length,
-                        itemBuilder: (_, i) => _TacheCard(
+                        itemBuilder: (ctx, i) => _TacheCard(
                           tache: affichees[i],
                           teal: widget.teal, dark: widget.dark,
                           onToggle: () => _toggleStatut(affichees[i]),
                           onDelete: () => _delete(affichees[i]),
                           onEdit: () => _edit(affichees[i]),
+                          onTap: () => Navigator.push(ctx, MaterialPageRoute(
+                            builder: (_) => TacheDetailPage(tache: affichees[i]),
+                          )).then((_) => _load()),
                         ),
                       ),
               ),
@@ -628,10 +641,11 @@ class _FilterChip extends StatelessWidget {
 
 class _TacheCard extends StatelessWidget {
   const _TacheCard({required this.tache, required this.teal, required this.dark,
-      required this.onToggle, required this.onDelete, required this.onEdit});
+      required this.onToggle, required this.onDelete, required this.onEdit, this.onTap});
   final Map<String, dynamic> tache;
   final Color teal, dark;
   final VoidCallback onToggle, onDelete, onEdit;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -641,7 +655,9 @@ class _TacheCard extends StatelessWidget {
     final animalNom = tache['animal_nom'] as String?;
     final assigneNom = tache['assigne_nom'] as String?;
 
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -695,7 +711,7 @@ class _TacheCard extends StatelessWidget {
           ),
         ]),
       ]),
-    );
+    ));
   }
 }
 
@@ -1304,7 +1320,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
     try {
       final rows = await _supa
           .from('animaux')
-          .select('id, nom, espece, race, photo_url')
+          .select('id, nom, espece, race, sexe, photo_url')
           .eq('uid_eleveur', widget.eleveurUid)
           .not('statut', 'in', '(sorti,decede)')
           .order('nom');
@@ -1357,13 +1373,17 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
           : ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: _taches.length,
-              itemBuilder: (_, i) {
+              itemBuilder: (ctx, i) {
                 final t = _taches[i];
                 final fait = t['statut'] == 'fait';
                 final date = DateTime.tryParse(t['date'] ?? '');
                 final dateStr = date != null ? DateFormat('dd MMM', 'fr_FR').format(date) : '';
                 final animalNom = t['animal_nom'] as String?;
-                return Container(
+                return GestureDetector(
+                  onTap: () => Navigator.push(ctx, MaterialPageRoute(
+                    builder: (_) => TacheDetailPage(tache: t),
+                  )).then((_) => _loadTaches()),
+                  child: Container(
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
@@ -1406,8 +1426,9 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
                       child: const Text('Fait ✓',
                           style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal, fontWeight: FontWeight.w600)),
                     ),
+                    const Icon(Icons.chevron_right, size: 16, color: Color(0xFFCBD5E0)),
                   ]),
-                );
+                ));
               },
             ),
     );
@@ -1420,40 +1441,371 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
       color: _teal,
       child: _animaux.isEmpty
           ? _empty('Aucun animal', '')
-          : ListView.builder(
+          : GridView.builder(
               padding: const EdgeInsets.all(16),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 0.68,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+              ),
               itemCount: _animaux.length,
-              itemBuilder: (_, i) {
-                final a = _animaux[i];
-                final photo = a['photo_url'] as String?;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 4)],
-                  ),
-                  child: Row(children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: _teal.withOpacity(0.1),
-                      backgroundImage: photo != null ? CachedNetworkImageProvider(photo) : null,
-                      child: photo == null ? const Icon(Icons.pets, size: 18, color: _teal) : null,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(a['nom'] ?? '—',
-                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14, color: _dark)),
-                      Text('${a['espece'] ?? ''} · ${a['race'] ?? ''}',
-                          style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
-                    ])),
-                  ]),
-                );
-              },
+              itemBuilder: (_, i) => _EmployeAnimalCard(data: _animaux[i]),
             ),
     );
   }
+}
+
+// ─── Page : Détail tâche + commentaires ──────────────────────────────────────
+
+class TacheDetailPage extends StatefulWidget {
+  final Map<String, dynamic> tache;
+  const TacheDetailPage({super.key, required this.tache});
+  @override
+  State<TacheDetailPage> createState() => _TacheDetailPageState();
+}
+
+class _TacheDetailPageState extends State<TacheDetailPage> {
+  final _supa = Supabase.instance.client;
+  final _uid  = FirebaseAuth.instance.currentUser!.uid;
+  final _commentCtrl = TextEditingController();
+
+  static const _teal = Color(0xFF0C5C6C);
+  static const _dark = Color(0xFF1F2A2E);
+
+  bool _loading = true;
+  bool _sending = false;
+  List<Map<String, dynamic>> _comments = [];
+  final Map<String, String> _authorNames = {};
+
+  @override
+  void initState() { super.initState(); _loadComments(); }
+
+  @override
+  void dispose() { _commentCtrl.dispose(); super.dispose(); }
+
+  Future<void> _loadComments() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+    try {
+      final rows = await _supa
+          .from('tache_commentaires')
+          .select()
+          .eq('tache_id', widget.tache['id'])
+          .order('created_at');
+
+      for (final c in rows) {
+        final uid = c['uid_auteur'] as String;
+        if (!_authorNames.containsKey(uid)) {
+          final u = await _supa.from('users')
+              .select('uid, firstname, lastname, name_elevage, is_elevage')
+              .eq('uid', uid).maybeSingle();
+          if (u != null) {
+            _authorNames[uid] = u['is_elevage'] == true
+                ? (u['name_elevage'] as String? ?? 'Élevage')
+                : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+          }
+        }
+        c['auteur_nom'] = _authorNames[uid] ?? 'Utilisateur';
+      }
+      if (mounted) setState(() {
+        _comments = List<Map<String, dynamic>>.from(rows);
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _addComment() async {
+    final text = _commentCtrl.text.trim();
+    if (text.isEmpty) return;
+    setState(() => _sending = true);
+    try {
+      await _supa.from('tache_commentaires').insert({
+        'tache_id':   widget.tache['id'],
+        'uid_auteur': _uid,
+        'contenu':    text,
+      });
+      _commentCtrl.clear();
+      await _loadComments();
+    } catch (_) {} finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.tache;
+    final date = DateTime.tryParse(t['date'] ?? '');
+    final dateStr = date != null ? DateFormat('dd MMMM yyyy', 'fr_FR').format(date) : '';
+    final animalNom  = t['animal_nom']  as String?;
+    final assigneNom = t['assigne_nom'] as String?;
+    final notes = t['notes'] as String?;
+    final fait = t['statut'] == 'fait';
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F8F6),
+      appBar: AppBar(
+        backgroundColor: Colors.white, elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, size: 18, color: _dark),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text('Détail de la tâche',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: _dark)),
+      ),
+      body: Column(children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              // ── Fiche tâche ──
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Container(
+                      width: 28, height: 28, margin: const EdgeInsets.only(top: 2),
+                      decoration: BoxDecoration(
+                        color: fait ? _teal : Colors.transparent,
+                        border: Border.all(color: fait ? _teal : Colors.grey.shade400, width: 1.5),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: fait ? const Icon(Icons.check, color: Colors.white, size: 16) : null,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(t['titre'] ?? '',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                              fontSize: 16, color: _dark,
+                              decoration: fait ? TextDecoration.lineThrough : null)),
+                    ),
+                  ]),
+                  const SizedBox(height: 14),
+                  const Divider(height: 1),
+                  const SizedBox(height: 14),
+                  _InfoRow(icon: Icons.calendar_today_outlined, label: 'Date', value: dateStr),
+                  if (animalNom != null) ...[
+                    const SizedBox(height: 10),
+                    _InfoRow(icon: Icons.pets_outlined, label: 'Animal', value: animalNom),
+                  ],
+                  if (assigneNom != null) ...[
+                    const SizedBox(height: 10),
+                    _InfoRow(icon: Icons.person_outline, label: 'Assigné à', value: assigneNom),
+                  ],
+                  if (notes != null && notes.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    _InfoRow(icon: Icons.notes_outlined, label: 'Notes', value: notes),
+                  ],
+                ]),
+              ),
+              const SizedBox(height: 20),
+              // ── Commentaires ──
+              const Text('Commentaires',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 15, color: _dark)),
+              const SizedBox(height: 12),
+              if (_loading)
+                const Center(child: CircularProgressIndicator(color: _teal)),
+              if (!_loading && _comments.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('Aucun commentaire pour l\'instant.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
+                ),
+              ..._comments.map((c) => _CommentBubble(comment: c, currentUid: _uid)),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+        // ── Saisie commentaire ──
+        Container(
+          color: Colors.white,
+          padding: EdgeInsets.fromLTRB(12, 8, 12,
+              MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 8),
+          child: Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _commentCtrl,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                maxLines: null,
+                textInputAction: TextInputAction.newline,
+                decoration: InputDecoration(
+                  hintText: 'Écrire un commentaire…',
+                  hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF9CA3AF)),
+                  filled: true, fillColor: const Color(0xFFF3F4F6),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _sending ? null : _addComment,
+              child: Container(
+                width: 40, height: 40,
+                decoration: const BoxDecoration(color: _teal, shape: BoxShape.circle),
+                child: _sending
+                    ? const Padding(padding: EdgeInsets.all(10),
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Icon(Icons.send_rounded, color: Colors.white, size: 18),
+              ),
+            ),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String label, value;
+  const _InfoRow({required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Icon(icon, size: 16, color: const Color(0xFF6F767B)),
+    const SizedBox(width: 10),
+    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
+      const SizedBox(height: 2),
+      Text(value, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E), fontWeight: FontWeight.w500)),
+    ])),
+  ]);
+}
+
+class _CommentBubble extends StatelessWidget {
+  final Map<String, dynamic> comment;
+  final String currentUid;
+  const _CommentBubble({required this.comment, required this.currentUid});
+
+  @override
+  Widget build(BuildContext context) {
+    final isMe = comment['uid_auteur'] == currentUid;
+    final nom     = comment['auteur_nom'] as String? ?? 'Utilisateur';
+    final contenu  = comment['contenu'] as String? ?? '';
+    final rawDate  = comment['created_at'] as String?;
+    final dt = rawDate != null ? DateTime.tryParse(rawDate)?.toLocal() : null;
+    final timeStr = dt != null ? DateFormat('dd/MM · HH:mm').format(dt) : '';
+
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+        child: Column(crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start, children: [
+          Text(isMe ? 'Moi' : nom,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
+          const SizedBox(height: 3),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: isMe ? const Color(0xFF0C5C6C) : Colors.white,
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(16),
+                topRight: const Radius.circular(16),
+                bottomLeft: Radius.circular(isMe ? 16 : 4),
+                bottomRight: Radius.circular(isMe ? 4 : 16),
+              ),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4)],
+            ),
+            child: Text(contenu,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                    color: isMe ? Colors.white : const Color(0xFF1F2A2E))),
+          ),
+          const SizedBox(height: 3),
+          Text(timeStr,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xFF9CA3AF))),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─── Card animal employé (grille, lecture seule) ──────────────────────────────
+
+class _EmployeAnimalCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+  const _EmployeAnimalCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final photoUrl = data['photo_url'] as String?;
+    final nom    = data['nom']    as String? ?? 'Sans nom';
+    final espece = data['espece'] as String? ?? '';
+    final race   = data['race']   as String? ?? '';
+    final sexe   = data['sexe']   as String? ?? '';
+    final color  = speciesColor(espece);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 3))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          child: AspectRatio(
+            aspectRatio: 1.0,
+            child: photoUrl != null
+                ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover)
+                : Container(
+                    color: color.withOpacity(0.12),
+                    child: Center(child: speciesIcon(espece, 44, color)),
+                  ),
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(nom,
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 13, color: Color(0xFF1F2A2E)),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (race.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(race,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              ],
+              const Spacer(),
+              Wrap(spacing: 4, runSpacing: 4, children: [
+                _AnimalBadge(text: speciesLabel(espece), color: color),
+                if (sexe == 'male')   _AnimalBadge(text: '♂', color: const Color(0xFF1D4ED8)),
+                if (sexe == 'femelle') _AnimalBadge(text: '♀', color: Colors.pinkAccent),
+              ]),
+            ]),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _AnimalBadge extends StatelessWidget {
+  final String text;
+  final Color color;
+  const _AnimalBadge({required this.text, required this.color});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.12),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(text, style: TextStyle(fontFamily: 'Galey', fontSize: 9,
+        color: color, fontWeight: FontWeight.w700)),
+  );
 }
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
