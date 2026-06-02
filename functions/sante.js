@@ -137,18 +137,17 @@ exports.sendSanteReminders = functions
             for (const {key: palierKey, days, phrase} of PALIERS) {
                 const targetDate = dateStr(days);
 
-                // Récupère les rappels du jour avec les infos de l'animal (uid_eleveur, nom, espece)
+                // Récupère les rappels du jour avec les infos de l'animal (éleveur ou particulier)
                 const rows = await supabaseGet(
                     `${table}?date_rappel=eq.${targetDate}` +
-                    `&select=*,animaux!inner(nom,espece,uid_eleveur)`,
+                    `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire)`,
                 );
                 if (!Array.isArray(rows) || rows.length === 0) continue;
 
                 for (const row of rows) {
                     const animal = row.animaux;
-                    if (!animal || !animal.uid_eleveur) continue;
-
-                    const uid = animal.uid_eleveur;
+                    const uid = animal?.uid_eleveur || animal?.uid_proprietaire;
+                    if (!animal || !uid) continue;
                     const nomAnimal = animal.nom || "Votre animal";
                     const produit = row[nomField] || label;
                     const dedupKey = `sante_${table}_${palierKey}_${row.id}`;

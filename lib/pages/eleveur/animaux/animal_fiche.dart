@@ -3397,6 +3397,13 @@ class _AddVermifugeDialogState extends State<_AddVermifugeDialog> {
       'date_rappel': _dateRappel?.toIso8601String(),
       'notes': _notes.text.trim(),
     });
+    if (_dateRappel != null) {
+      await _scheduleRappelAgenda(
+        animalId: widget.animalId,
+        dateRappel: _dateRappel!,
+        titre: 'Rappel vermifuge — ${_produit.text.trim()}',
+      );
+    }
     RegistreHelper.writeActe(
       animalId: widget.animalId, typeActe: 'vermifuge', dateActe: _date!,
       intervenant: '',
@@ -3911,9 +3918,16 @@ Future<void> _scheduleRappelAgenda({
   final uid = FirebaseAuth.instance.currentUser?.uid;
   if (uid == null) return;
   try {
+    String finalTitre = titre;
+    try {
+      final a = await Supabase.instance.client
+          .from('animaux').select('nom').eq('id', animalId).maybeSingle();
+      final nom = a?['nom'] as String?;
+      if (nom != null && nom.isNotEmpty) finalTitre = '$titre ($nom)';
+    } catch (_) {}
     await Supabase.instance.client.from('agenda_events').insert({
       'uid':        uid,
-      'titre':      titre,
+      'titre':      finalTitre,
       'type':       'medication',
       'date_debut': dateRappel.toIso8601String(),
       'animal_id':  int.tryParse(animalId),
