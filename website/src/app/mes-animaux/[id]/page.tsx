@@ -9,6 +9,7 @@ import { loadBreeds } from '@/lib/breeds';
 import HealthSection from '@/components/animaux/HealthSection';
 import { uploadBlob } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
+import AlimentationTab from './AlimentationTab';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -715,7 +716,7 @@ export default function AnimalFichePage() {
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(isNew);
-  const [tab, setTab] = useState<'identite'|'sante'|'repro'>('identite');
+  const [tab, setTab] = useState<'identite'|'sante'|'repro'|'alimentation'>('identite');
 
   const [animal, setAnimal] = useState<Animal>({ id:'', espece:'chien', sexe:'male' });
   const [breeds, setBreeds] = useState<string[]>([]);
@@ -1083,8 +1084,8 @@ export default function AnimalFichePage() {
   }
 
   const tabs = isEleveur
-    ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet Santé' }, { key:'repro', label:'Suivi Repro' }]
-    : [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet de santé' }];
+    ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet Santé' }, { key:'repro', label:'Suivi Repro' }, { key:'alimentation', label:'Alimentation' }]
+    : [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet de santé' }, { key:'alimentation', label:'Alimentation' }];
 
   const isMale = (animal.sexe ?? '').toLowerCase().startsWith('m');
   const showPoil = ['chien','chat'].includes(animal.espece ?? '');
@@ -1758,6 +1759,18 @@ export default function AnimalFichePage() {
           saveSaillie={saveSaillie}
           updateRepro={updateRepro}
           deleteRepro={deleteRepro}
+        />
+      )}
+
+      {tab === 'alimentation' && !isNew && (
+        <AlimentationTab
+          animalId={id ?? ''}
+          espece={animal.espece ?? 'chien'}
+          sexe={animal.sexe ?? 'male'}
+          sterilise={animal.sterilise ?? false}
+          dateNaissance={animal.date_naissance}
+          nom={animal.nom}
+          userId={user?.uid ?? ''}
         />
       )}
 
