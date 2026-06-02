@@ -11,27 +11,27 @@ const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" +
 // ─── Ages de retraite reproductive par espèce (en années) ────────────────────
 
 const AGES_RETRAITE = {
-    chien:  7,
-    chat:   8,
-    lapin:  5,
+    chien: 7,
+    chat: 8,
+    lapin: 5,
     cheval: 18,
-    ovin:   8,
+    ovin: 8,
     caprin: 8,
     porcin: 5,
-    ane:    15,
+    ane: 15,
 };
 
 function emojiEspece(espece) {
     switch ((espece || "").toLowerCase()) {
-    case "chien":  return "🐕";
-    case "chat":   return "🐈";
+    case "chien": return "🐕";
+    case "chat": return "🐈";
     case "cheval": return "🐴";
-    case "lapin":  return "🐰";
-    case "ovin":   return "🐑";
+    case "lapin": return "🐰";
+    case "ovin": return "🐑";
     case "caprin": return "🐐";
     case "porcin": return "🐷";
-    case "ane":    return "🫏";
-    default:       return "🐾";
+    case "ane": return "🫏";
+    default: return "🐾";
     }
 }
 
@@ -59,8 +59,11 @@ function supabaseRequest(method, path, body, extraHeaders = {}) {
             let data = "";
             res.on("data", (chunk) => data += chunk);
             res.on("end", () => {
-                try { resolve({status: res.statusCode, body: JSON.parse(data)}); }
-                catch (_) { resolve({status: res.statusCode, body: []}); }
+                try {
+                    resolve({status: res.statusCode, body: JSON.parse(data)});
+                } catch (_) {
+                    resolve({status: res.statusCode, body: []});
+                }
             });
         });
         req.on("error", reject);
@@ -165,14 +168,19 @@ exports.sendRetraiteReminders = functions
 
             const nom = animal.nom || "Votre femelle";
             const em = emojiEspece(animal.espece);
-            const dateStr = retraiteBirthday.toLocaleDateString("fr-FR", {day: "numeric", month: "long", year: "numeric"});
+            const dateStr = retraiteBirthday.toLocaleDateString("fr-FR", {
+                day: "numeric", month: "long", year: "numeric",
+            });
 
-            let title, body;
+            let title;
+            let body;
             if (palier === "j30") {
                 title = `⚠️ Retraite reproductive dans 1 mois — ${nom}`;
+                // eslint-disable-next-line max-len
                 body = `${em} ${nom} approche de l'âge de retraite reproductive (${ageRetraite} ans le ${dateStr}). Pensez à prévoir sa mise en retraite.`;
             } else {
                 title = `🏁 Retraite reproductive atteinte — ${nom}`;
+                // eslint-disable-next-line max-len
                 body = `${em} ${nom} a atteint l'âge de retraite reproductive (${ageRetraite} ans). Il est recommandé d'arrêter la reproduction.`;
             }
 

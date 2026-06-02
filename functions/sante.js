@@ -11,16 +11,16 @@ const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" +
 // ─── Tables avec date_rappel ──────────────────────────────────────────────────
 
 const TABLES = [
-    {table: "vaccinations",    label: "Vaccin",          emoji: "💉", nomField: "vaccin"},
-    {table: "vermifuges",      label: "Vermifuge",        emoji: "💊", nomField: "produit"},
+    {table: "vaccinations", label: "Vaccin", emoji: "💉", nomField: "vaccin"},
+    {table: "vermifuges", label: "Vermifuge", emoji: "💊", nomField: "produit"},
     {table: "antiparasitaires", label: "Antiparasitaire", emoji: "🛡️", nomField: "produit"},
 ];
 
 // Paliers J-7, J-1, J-0
 const PALIERS = [
-    {key: "j7", days: 7,  phrase: "dans 7 jours"},
-    {key: "j1", days: 1,  phrase: "demain"},
-    {key: "j0", days: 0,  phrase: "aujourd'hui"},
+    {key: "j7", days: 7, phrase: "dans 7 jours"},
+    {key: "j1", days: 1, phrase: "demain"},
+    {key: "j0", days: 0, phrase: "aujourd'hui"},
 ];
 
 // ─── Helpers Supabase ─────────────────────────────────────────────────────────
@@ -42,7 +42,11 @@ function supabaseGet(path) {
             let data = "";
             res.on("data", (c) => data += c);
             res.on("end", () => {
-                try { resolve(JSON.parse(data)); } catch (_) { resolve([]); }
+                try {
+                    resolve(JSON.parse(data));
+                } catch (_) {
+                    resolve([]);
+                }
             });
         });
         req.on("error", reject);
