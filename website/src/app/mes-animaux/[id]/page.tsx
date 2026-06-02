@@ -1265,8 +1265,8 @@ export default function AnimalFichePage() {
             )}
           </div>
 
-          {/* Pedigree (éleveur) */}
-          {isEleveur && editing && (
+          {/* Pedigree */}
+          {editing && (
             <div className="bg-white rounded-2xl p-4 space-y-4 shadow-sm">
               <h3 className="font-bold text-[#1F2A2E] text-sm uppercase tracking-wide" style={{ fontFamily:'Galey,sans-serif' }}>🏅 Pedigree & Registre de race</h3>
               <div>
@@ -1315,8 +1315,8 @@ export default function AnimalFichePage() {
               )}
             </div>
           )}
-          {/* Pedigree — vue (éleveur) */}
-          {isEleveur && !editing && (animal.pedigree_lof || animal.club_registre || animal.pedigree_url) && (
+          {/* Pedigree — vue */}
+          {!editing && (animal.pedigree_lof || animal.club_registre || animal.pedigree_url) && (
             <div className="bg-white rounded-2xl p-4 space-y-2 shadow-sm">
               <h3 className="font-bold text-[#1F2A2E] text-sm uppercase tracking-wide mb-2" style={{ fontFamily:'Galey,sans-serif' }}>🏅 Pedigree & Registre</h3>
               {animal.pedigree_lof && (
@@ -1394,8 +1394,8 @@ export default function AnimalFichePage() {
             </div>
           )}
 
-          {/* Contacts urgence (éleveur) */}
-          {isEleveur && (
+          {/* Contacts urgence */}
+          {(
             <div className="bg-white rounded-2xl p-4 space-y-3 shadow-sm">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-[#1F2A2E] text-sm uppercase tracking-wide" style={{ fontFamily:'Galey,sans-serif' }}>Contacts urgence</h3>
