@@ -39,17 +39,26 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   String? _alerteStatut; // 'perdu' or 'retrouve'
 
   // Identity fields
-  final _nomCtrl = TextEditingController();
-  final _raceCtrl = TextEditingController();
-  final _couleurCtrl = TextEditingController();
-  final _identCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
-  final _descCtrl = TextEditingController();
+  final _nomCtrl      = TextEditingController();
+  final _raceCtrl     = TextEditingController();
+  final _couleurCtrl  = TextEditingController();
+  final _identCtrl    = TextEditingController();
+  final _notesCtrl    = TextEditingController();
+  final _descCtrl     = TextEditingController();
+  final _passeportCtrl = TextEditingController();
+  final _tailleCtrl   = TextEditingController();
+  final _poidsCtrl    = TextEditingController();
 
   String _espece = 'chien';
   String _sexe = 'male';
   bool _sterilise = false;
   DateTime? _dateNaissance;
+  String? _typePoil;
+  bool _pedigree = false;
+  String? _pedigreeLof;
+  final _clubRegistreCtrl = TextEditingController();
+
+  bool _editing = false;
 
   String? _photoUrl;
   File? _photoFile;
@@ -76,6 +85,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
     _animalId = widget.animalId;
+    _editing = widget.animalId == null; // nouveau animal → direct en édition
     _fillFromData(widget.initialData);
     _loadBreeds();
     if (_animalId != null) { _loadHealthRecords(); _loadActiveAlerte(); _refreshFromSupabase(); }
@@ -90,6 +100,10 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     _identCtrl.dispose();
     _notesCtrl.dispose();
     _descCtrl.dispose();
+    _passeportCtrl.dispose();
+    _tailleCtrl.dispose();
+    _poidsCtrl.dispose();
+    _clubRegistreCtrl.dispose();
     super.dispose();
   }
 
@@ -102,16 +116,23 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   void _fillFromData(Map<String, dynamic>? d) {
     if (d == null) return;
-    _nomCtrl.text = d['nom'] ?? '';
-    _raceCtrl.text = d['race'] ?? '';
-    _couleurCtrl.text = d['couleur'] ?? '';
-    _identCtrl.text = d['identification'] ?? '';
-    _notesCtrl.text = d['notes'] ?? '';
-    _descCtrl.text = d['description'] ?? '';
-    _espece = d['espece'] ?? 'chien';
-    _sexe = d['sexe'] ?? 'male';
+    _nomCtrl.text      = d['nom'] ?? '';
+    _raceCtrl.text     = d['race'] ?? '';
+    _couleurCtrl.text  = d['couleur'] ?? '';
+    _identCtrl.text    = d['identification'] ?? '';
+    _notesCtrl.text    = d['notes'] ?? '';
+    _descCtrl.text     = d['description'] ?? '';
+    _passeportCtrl.text    = d['passeport_europeen'] ?? '';
+    _tailleCtrl.text       = d['taille']?.toString() ?? '';
+    _poidsCtrl.text        = d['poids']?.toString() ?? '';
+    _typePoil              = d['type_poil'] as String?;
+    _pedigree              = d['pedigree'] ?? false;
+    _pedigreeLof           = d['pedigree_lof'] as String?;
+    _clubRegistreCtrl.text = d['club_registre'] ?? '';
+    _espece    = d['espece'] ?? 'chien';
+    _sexe      = d['sexe'] ?? 'male';
     _sterilise = d['sterilise'] ?? false;
-    _photoUrl = d['photo_url'];
+    _photoUrl  = d['photo_url'];
     if (d['date_naissance'] != null) {
       try { _dateNaissance = DateTime.parse(d['date_naissance'].toString()); } catch (_) {}
     }
@@ -195,6 +216,13 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'sterilise': _sterilise,
         'couleur': _couleurCtrl.text.trim().isEmpty ? null : _couleurCtrl.text.trim(),
         'identification': _identCtrl.text.trim().isEmpty ? null : _identCtrl.text.trim(),
+        'passeport_europeen': _passeportCtrl.text.trim().isEmpty ? null : _passeportCtrl.text.trim(),
+        'type_poil': _typePoil,
+        'taille': _tailleCtrl.text.trim().isEmpty ? null : double.tryParse(_tailleCtrl.text.trim()),
+        'poids': _poidsCtrl.text.trim().isEmpty ? null : double.tryParse(_poidsCtrl.text.trim()),
+        'pedigree': _pedigree,
+        'pedigree_lof': _pedigreeLof,
+        'club_registre': _clubRegistreCtrl.text.trim().isEmpty ? null : _clubRegistreCtrl.text.trim(),
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         'description': _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
         'photo_url': photoUrl,
@@ -211,7 +239,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           ...data,
           'created_at': DateTime.now().toIso8601String(),
         });
-        setState(() { _animalId = id; _photoFile = null; _photoUrl = photoUrl; });
+        setState(() { _animalId = id; _photoFile = null; _photoUrl = photoUrl; _editing = false; });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Animal ajouté ✓'), backgroundColor: _green));
@@ -219,7 +247,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         }
       } else {
         await _supa.from('animaux').update(data).eq('id', _animalId!);
-        setState(() { _photoFile = null; _photoUrl = photoUrl; });
+        setState(() { _photoFile = null; _photoUrl = photoUrl; _editing = false; });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Modifications enregistrées ✓'), backgroundColor: _green));
@@ -249,16 +277,29 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           if (_saving)
             const Padding(
               padding: EdgeInsets.all(14),
-              child: SizedBox(
-                  width: 20, height: 20,
+              child: SizedBox(width: 20, height: 20,
                   child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
             )
+          else if (_editing)
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              if (_animalId != null)
+                TextButton(
+                  onPressed: () => setState(() { _editing = false; _refreshFromSupabase(); }),
+                  child: const Text('Annuler',
+                      style: TextStyle(fontFamily: 'Galey', color: Colors.white70)),
+                ),
+              TextButton(
+                onPressed: _save,
+                child: const Text('Enregistrer',
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700)),
+              ),
+            ])
           else
-            TextButton(
-              onPressed: _save,
-              child: const Text('Enregistrer',
-                  style: TextStyle(
-                      fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700)),
+            TextButton.icon(
+              onPressed: () => setState(() => _editing = true),
+              icon: const Icon(Icons.edit_outlined, size: 16, color: Colors.white),
+              label: const Text('Modifier',
+                  style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
             ),
         ],
         bottom: TabBar(
@@ -279,7 +320,170 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   // ── Identité ──────────────────────────────────────────────────────────────────
 
-  Widget _buildIdentiteTab() {
+  Widget _buildIdentiteTab() => _editing ? _buildIdentiteForm() : _buildIdentiteView();
+
+  // Vue lecture ─────────────────────────────────────────────────────────────────
+
+  Widget _buildIdentiteView() {
+    final dob = _dateNaissance;
+    String? ageStr;
+    if (dob != null) {
+      final now = DateTime.now();
+      final years = now.year - dob.year -
+          ((now.month < dob.month || (now.month == dob.month && now.day < dob.day)) ? 1 : 0);
+      ageStr = years == 0
+          ? '${((now.difference(dob).inDays) / 30.5).floor()} mois'
+          : '$years an${years > 1 ? 's' : ''}';
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 100),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Photo
+        Center(
+          child: CircleAvatar(
+            radius: 60,
+            backgroundColor: const Color(0xFFCCE8EE),
+            backgroundImage: _photoUrl != null && _photoUrl!.isNotEmpty
+                ? CachedNetworkImageProvider(_photoUrl!) : null,
+            child: (_photoUrl == null || _photoUrl!.isEmpty)
+                ? const Icon(Icons.pets, size: 48, color: _teal) : null,
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Nom centré
+        Center(
+          child: Text(_nomCtrl.text.isNotEmpty ? _nomCtrl.text : 'Sans nom',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 22,
+                  fontWeight: FontWeight.w800, color: Color(0xFF1F2A2E))),
+        ),
+        if (ageStr != null) ...[
+          const SizedBox(height: 4),
+          Center(child: Text(ageStr,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500))),
+        ],
+        const SizedBox(height: 16),
+
+        // Chips espèce / sexe / stérilisé
+        Center(
+          child: Wrap(spacing: 8, runSpacing: 8, children: [
+            _viewChip(_capitalize(_espece), _teal),
+            _viewChip(
+              _sexe == 'male' ? '♂ Mâle' : _sexe == 'femelle' ? '♀ Femelle' : 'Sexe inconnu',
+              Colors.blueGrey,
+            ),
+            if (_sterilise) _viewChip('✂️ Stérilisé(e)', _green),
+          ]),
+        ),
+        const SizedBox(height: 24),
+
+        // Infos
+        if (_raceCtrl.text.isNotEmpty) _infoRow('Race', _raceCtrl.text),
+        if (dob != null) _infoRow('Date de naissance', DateFormat('dd/MM/yyyy').format(dob)),
+        if (_couleurCtrl.text.isNotEmpty) _infoRow('Couleur / robe', _couleurCtrl.text),
+        if (_typePoil != null) _infoRow('Type de poil', _typePoil!),
+        if (_tailleCtrl.text.isNotEmpty) _infoRow(_tailleLabelFor(_espece), '${_tailleCtrl.text} cm'),
+        if (_poidsCtrl.text.isNotEmpty) _infoRow('Poids', '${_poidsCtrl.text} kg'),
+        if (_identCtrl.text.isNotEmpty) _infoRow('Identification', _identCtrl.text),
+        if (_passeportCtrl.text.isNotEmpty) _infoRow('Passeport européen', _passeportCtrl.text),
+        if (_pedigree) ...[
+          _infoRow(_pediConfig(_espece).sectionLabel,
+              [if (_pedigreeLof != null) _pedigreeLof!, if (_clubRegistreCtrl.text.isNotEmpty) _clubRegistreCtrl.text].join(' — ')),
+        ],
+        if (_descCtrl.text.isNotEmpty) _infoRow('Description', _descCtrl.text),
+        if (_notesCtrl.text.isNotEmpty) _infoRow('Notes', _notesCtrl.text),
+
+        // Actions (alerte perdu + transfert)
+        if (_animalId != null) ...[
+          const SizedBox(height: 8),
+          if (_alerteStatut == 'perdu') ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700, size: 20),
+                const SizedBox(width: 10),
+                Expanded(child: Text('Alerte perdu active',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                        fontWeight: FontWeight.w600, color: Colors.orange.shade800))),
+              ]),
+            ),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: _BigActionBtn(
+                label: 'Modifier l\'alerte',
+                icon: Icons.edit_outlined,
+                color: Colors.orange.shade700,
+                onPressed: () async {
+                  await Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => AlertePerduFormPage(alerteId: _activeAlerteId)));
+                  _loadActiveAlerte();
+                },
+              )),
+              const SizedBox(width: 10),
+              Expanded(child: _BigActionBtn(
+                label: 'Retrouvé !',
+                icon: Icons.check_circle_outline,
+                color: _green,
+                onPressed: _marquerRetrouve,
+              )),
+            ]),
+          ] else ...[
+            _BigActionBtn(
+              label: 'Déclarer perdu',
+              icon: Icons.location_searching,
+              color: Colors.orange.shade700,
+              onPressed: () async {
+                await Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => AlertePerduFormPage(
+                    animalId: _animalId,
+                    nom: _nomCtrl.text,
+                    espece: _espece,
+                    race: _raceCtrl.text,
+                    sexe: _sexe,
+                    couleur: _couleurCtrl.text,
+                    photoUrl: _photoUrl,
+                  ),
+                ));
+                _loadActiveAlerte();
+              },
+            ),
+          ],
+        ],
+      ]),
+    );
+  }
+
+  Widget _infoRow(String label, String value) => Padding(
+    padding: const EdgeInsets.only(bottom: 14),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+          fontWeight: FontWeight.w600, color: Colors.grey.shade500, letterSpacing: 0.4)),
+      const SizedBox(height: 4),
+      Text(value, style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: Color(0xFF1F2A2E))),
+      const Divider(height: 20, color: Color(0xFFEEEEEE)),
+    ]),
+  );
+
+  Widget _viewChip(String label, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.10),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: color.withOpacity(0.25)),
+    ),
+    child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+        fontWeight: FontWeight.w600, color: color)),
+  );
+
+  // Formulaire d'édition ────────────────────────────────────────────────────────
+
+  Widget _buildIdentiteForm() {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 100),
       child: Column(
@@ -358,17 +562,48 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           _FField(controller: _identCtrl, hint: 'Numéro de puce ou tatouage'),
           const SizedBox(height: 18),
 
-          Row(
-            children: [
-              _FLabel('Stérilisé(e)'),
-              const Spacer(),
-              Switch(
-                value: _sterilise,
-                activeColor: _teal,
-                onChanged: (v) => setState(() => _sterilise = v),
-              ),
-            ],
+          Row(children: [
+            _FLabel('Stérilisé(e)'),
+            const Spacer(),
+            Switch(
+              value: _sterilise,
+              activeColor: _teal,
+              onChanged: (v) => setState(() => _sterilise = v),
+            ),
+          ]),
+          const SizedBox(height: 18),
+
+          _FLabel('Passeport européen n°'),
+          const SizedBox(height: 6),
+          _FField(controller: _passeportCtrl, hint: 'Numéro de passeport'),
+          const SizedBox(height: 18),
+
+          if (_espece == 'chien' || _espece == 'chat') ...[
+            _FLabel('Type de poil'),
+            const SizedBox(height: 6),
+            _buildTypePoilDropdown(),
+            const SizedBox(height: 18),
+          ],
+
+          _FLabel(_tailleLabelFor(_espece)),
+          const SizedBox(height: 6),
+          _FField(
+            controller: _tailleCtrl,
+            hint: 'Ex: 65',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
+          const SizedBox(height: 18),
+
+          _FLabel('Poids (kg)'),
+          const SizedBox(height: 6),
+          _FField(
+            controller: _poidsCtrl,
+            hint: 'Ex: 12.5',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          const SizedBox(height: 18),
+
+          _buildPedigreeSection(),
           const SizedBox(height: 18),
 
           _FLabel('Description'),
@@ -380,73 +615,6 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           const SizedBox(height: 6),
           _FMultiField(controller: _notesCtrl, hint: 'Notes personnelles...'),
           const SizedBox(height: 32),
-
-          if (_animalId != null) ...[
-            // ── Alerte perdu section ──
-            if (_alerteStatut == 'perdu') ...[
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.orange.shade200),
-                ),
-                child: Row(children: [
-                  Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text('Alerte perdu active',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Colors.orange.shade800))),
-                ]),
-              ),
-              const SizedBox(height: 10),
-              Row(children: [
-                Expanded(child: _BigActionBtn(
-                  label: 'Modifier l\'alerte',
-                  icon: Icons.edit_outlined,
-                  color: Colors.orange.shade700,
-                  onPressed: () async {
-                    await Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => AlertePerduFormPage(alerteId: _activeAlerteId)));
-                    _loadActiveAlerte();
-                  },
-                )),
-                const SizedBox(width: 10),
-                Expanded(child: _BigActionBtn(
-                  label: 'Retrouvé !',
-                  icon: Icons.check_circle_outline,
-                  color: const Color(0xFF6E9E57),
-                  onPressed: _marquerRetrouve,
-                )),
-              ]),
-            ] else ...[
-              _BigActionBtn(
-                label: 'Déclarer perdu',
-                icon: Icons.location_searching,
-                color: Colors.orange.shade700,
-                onPressed: () async {
-                  await Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => AlertePerduFormPage(
-                      animalId: _animalId,
-                      nom: _nomCtrl.text,
-                      espece: _espece,
-                      race: _raceCtrl.text,
-                      sexe: _sexe,
-                      couleur: _couleurCtrl.text,
-                      photoUrl: _photoUrl,
-                    ),
-                  ));
-                  _loadActiveAlerte();
-                },
-              ),
-            ],
-            const SizedBox(height: 12),
-            _BigActionBtn(
-              label: 'Transférer la propriété',
-              icon: Icons.swap_horiz,
-              color: _teal,
-              onPressed: _showTransfertDialog,
-            ),
-          ],
         ],
       ),
     );
@@ -463,6 +631,155 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     );
   }
 
+  static String _tailleLabelFor(String espece) {
+    if (espece == 'cheval') return 'Taille au garrot (cm)';
+    if (espece == 'oiseau') return 'Envergure (cm)';
+    return 'Taille (cm)';
+  }
+
+  Widget _buildTypePoilDropdown() {
+    const options = ['Court', 'Mi-long', 'Long', 'Frisé', 'Fil de soie', 'Ras'];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 0),
+      child: DropdownButtonFormField<String>(
+        value: _typePoil,
+        hint: const Text('Type de poil', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E)),
+        decoration: InputDecoration(
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _teal)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          isDense: true,
+        ),
+        items: options.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
+        onChanged: (v) => setState(() => _typePoil = v),
+      ),
+    );
+  }
+
+  static const _pedigreeConfigs = <String, ({
+    String sectionLabel, String yesLabel, String typeLabel,
+    List<String> typeOptions, String clubLabel,
+  })>{
+    'chien': (sectionLabel: 'Pedigree', yesLabel: 'Avec pedigree',
+      typeLabel: 'Type LOF', typeOptions: ['LOF', 'Non-LOF'],
+      clubLabel: 'Club de race (SCC, etc.)'),
+    'chat': (sectionLabel: 'Pedigree', yesLabel: 'Avec pedigree',
+      typeLabel: 'Type LOOF', typeOptions: ['LOOF', 'Non-LOOF'],
+      clubLabel: 'Club de race (LOOF, etc.)'),
+    'cheval': (sectionLabel: 'Stud-book / SIRE', yesLabel: 'Inscrit',
+      typeLabel: 'Registre', typeOptions: ['Stud-book', 'Registre d\'élevage', 'Non-inscrit'],
+      clubLabel: 'Studbook / Association'),
+    'lapin': (sectionLabel: 'Livre de race', yesLabel: 'Inscrit',
+      typeLabel: 'Type', typeOptions: ['Livre de race', 'Non-inscrit'],
+      clubLabel: 'Club / Association (ASCC, etc.)'),
+    'oiseau': (sectionLabel: 'Bague / Origine', yesLabel: 'Bagué',
+      typeLabel: 'Type', typeOptions: ['Bagué fermé', 'Bagué ouvert', 'Non-bagué'],
+      clubLabel: 'Éleveur / Association'),
+    'ovin': (sectionLabel: 'Livre généalogique', yesLabel: 'Inscrit',
+      typeLabel: 'Type', typeOptions: ['Livre généalogique', 'Non-inscrit'],
+      clubLabel: 'Association de race'),
+    'caprin': (sectionLabel: 'Livre généalogique', yesLabel: 'Inscrit',
+      typeLabel: 'Type', typeOptions: ['Livre généalogique', 'Non-inscrit'],
+      clubLabel: 'Association de race'),
+    'porcin': (sectionLabel: 'Livre généalogique', yesLabel: 'Inscrit',
+      typeLabel: 'Type', typeOptions: ['Livre généalogique LG', 'Non-inscrit'],
+      clubLabel: 'Association de race'),
+    'nac': (sectionLabel: 'Registre / Origine', yesLabel: 'Avec registre',
+      typeLabel: 'Type', typeOptions: ['Registre d\'élevage', 'Non-inscrit'],
+      clubLabel: 'Éleveur / Club'),
+  };
+
+  static ({String sectionLabel, String yesLabel, String typeLabel, List<String> typeOptions, String clubLabel})
+      _pediConfig(String espece) =>
+      _pedigreeConfigs[espece] ?? (
+        sectionLabel: 'Registre / Origine', yesLabel: 'Avec registre',
+        typeLabel: 'Type', typeOptions: ['Inscrit', 'Non-inscrit'],
+        clubLabel: 'Club / Association');
+
+  Widget _buildPedigreeSection() {
+    final cfg = _pediConfig(_espece);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _FLabel(cfg.sectionLabel),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(child: GestureDetector(
+          onTap: () => setState(() => _pedigree = false),
+          child: Container(
+            margin: const EdgeInsets.only(right: 6),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: !_pedigree ? _green : Colors.transparent,
+              border: Border.all(color: !_pedigree ? _green : Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text('Non', textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    color: !_pedigree ? Colors.white : const Color(0xFF1F2A2E))),
+          ),
+        )),
+        Expanded(child: GestureDetector(
+          onTap: () => setState(() => _pedigree = true),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: _pedigree ? _green : Colors.transparent,
+              border: Border.all(color: _pedigree ? _green : Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(cfg.yesLabel, textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    color: _pedigree ? Colors.white : const Color(0xFF1F2A2E))),
+          ),
+        )),
+      ]),
+      if (_pedigree) ...[
+        const SizedBox(height: 12),
+        Text(cfg.typeLabel,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
+        const SizedBox(height: 6),
+        Wrap(spacing: 6, runSpacing: 6,
+          children: cfg.typeOptions.map((opt) {
+            final active = _pedigreeLof == opt;
+            return GestureDetector(
+              onTap: () => setState(() => _pedigreeLof = opt),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: active ? _teal : Colors.transparent,
+                  border: Border.all(color: active ? _teal : Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(opt, textAlign: TextAlign.center,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        color: active ? Colors.white : const Color(0xFF1F2A2E))),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _clubRegistreCtrl,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+          decoration: InputDecoration(
+            labelText: cfg.clubLabel,
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _teal)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            isDense: true,
+          ),
+        ),
+      ],
+    ]);
+  }
+
   Future<void> _openRaceBreedPicker(List<String> breeds) async {
     final selected = await showModalBottomSheet<String>(
       context: context,
@@ -474,78 +791,6 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       builder: (_) => _BreedPickerSheet(breeds: breeds, label: 'Race', current: _raceCtrl.text),
     );
     if (selected != null) setState(() => _raceCtrl.text = selected);
-  }
-
-  void _showTransfertDialog() {
-    final emailCtrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Transférer la propriété',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-                "Entrez l'email de l'acheteur. Il recevra un lien pour confirmer le transfert.",
-                style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              style: const TextStyle(fontFamily: 'Galey'),
-              decoration: InputDecoration(
-                hintText: 'email@exemple.com',
-                hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _teal),
-            onPressed: () async {
-              final email = emailCtrl.text.trim();
-              if (email.isEmpty || !email.contains('@')) return;
-              Navigator.pop(ctx);
-              await _initiateTransfert(email);
-            },
-            child: const Text('Envoyer',
-                style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _initiateTransfert(String email) async {
-    try {
-      final token =
-          '${DateTime.now().millisecondsSinceEpoch}${User_Info.uid.hashCode.abs()}';
-      await _supa.from('transferts_propriete').insert({
-        'id': DateTime.now().millisecondsSinceEpoch.toString(),
-        'uid_eleveur': User_Info.uid,
-        'animal_id': _animalId,
-        'email_acheteur': email,
-        'token': token,
-        'statut': 'pending',
-        'created_at': DateTime.now().toIso8601String(),
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Transfert initié vers $email'),
-                backgroundColor: _green));
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red));
-    }
   }
 
   Future<void> _loadActiveAlerte() async {
@@ -1352,7 +1597,8 @@ class _FLabel extends StatelessWidget {
 class _FField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
-  const _FField({required this.controller, required this.hint});
+  final TextInputType? keyboardType;
+  const _FField({required this.controller, required this.hint, this.keyboardType});
   @override
   Widget build(BuildContext context) => Container(
         decoration: BoxDecoration(
@@ -1362,6 +1608,7 @@ class _FField extends StatelessWidget {
         ),
         child: TextField(
           controller: controller,
+          keyboardType: keyboardType,
           style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
           decoration: InputDecoration(
             hintText: hint,
