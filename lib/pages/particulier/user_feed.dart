@@ -824,8 +824,14 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
                 : RefreshIndicator(
                     onRefresh: _fetchAnimaux,
                     color: _teal,
-                    child: ListView.builder(
+                    child: GridView.builder(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        childAspectRatio: 0.68,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                      ),
                       itemCount: _animaux.length,
                       itemBuilder: (_, i) => _AnimalCard(
                         data: _animaux[i],
@@ -1050,80 +1056,118 @@ class _AnimalCard extends StatelessWidget {
     final espece = data['espece'] as String?;
     final race = data['race'] as String?;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 3)),
-        ],
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(50),
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: () {
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: Colors.transparent,
+          builder: (_) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: 40, height: 4,
+                  decoration: BoxDecoration(color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 14),
+              Text(nom, style: const TextStyle(fontFamily: 'Galey',
+                  fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
+              const SizedBox(height: 6),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                title: const Text('Supprimer',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.redAccent)),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      title: const Text('Supprimer cet animal ?',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                      content: Text('La fiche de $nom sera définitivement supprimée.',
+                          style: const TextStyle(fontFamily: 'Galey')),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Supprimer',
+                              style: TextStyle(fontFamily: 'Galey', color: Colors.redAccent,
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirm == true) onDelete();
+                },
+              ),
+            ]),
+          ),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 3)),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              child: AspectRatio(
+                aspectRatio: 1.0,
                 child: photoUrl != null && photoUrl.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: photoUrl, width: 64, height: 64, fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => _EmojiAvatar(emoji: _emoji(espece)))
-                    : _EmojiAvatar(emoji: _emoji(espece)),
+                    ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => _placeholder(_emoji(espece)))
+                    : _placeholder(_emoji(espece)),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(nom,
-                        style: const TextStyle(
-                            fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-                    if (espece != null || race != null)
-                      Text(
-                        [if (espece != null) _capitalize(espece), if (race != null) race].join(' · '),
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(nom,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                          fontSize: 14, color: Color(0xFF1F2A2E))),
+                  if (race != null && race.isNotEmpty)
+                    Text(race, maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+                  const SizedBox(height: 5),
+                  if (espece != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0C5C6C).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                  ],
-                ),
-              ),
-              PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert, color: Colors.grey.shade400, size: 20),
-                onSelected: (v) { if (v == 'delete') onDelete(); },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(children: [
-                      Icon(Icons.delete_outline, color: Colors.red, size: 18),
-                      SizedBox(width: 8),
-                      Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red)),
-                    ]),
-                  ),
+                      child: Text(_capitalize(espece),
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 10,
+                              fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
+                    ),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
-}
 
-class _EmojiAvatar extends StatelessWidget {
-  final String emoji;
-  const _EmojiAvatar({required this.emoji});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 64, height: 64,
-      decoration: BoxDecoration(color: const Color(0xFFE0F0F3), borderRadius: BorderRadius.circular(50)),
-      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 30))),
-    );
-  }
+  Widget _placeholder(String emoji) => Container(
+    color: const Color(0xFFE0F0F3),
+    child: Center(child: Text(emoji, style: const TextStyle(fontSize: 44))),
+  );
 }
 
 // ── Alerte card ───────────────────────────────────────────────────────────────

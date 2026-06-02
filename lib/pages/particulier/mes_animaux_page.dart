@@ -67,17 +67,19 @@ class MesAnimauxPage extends StatelessWidget {
             );
           }
 
-          return ListView.builder(
+          return GridView.builder(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 0.78,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
             itemCount: pets.length,
             itemBuilder: (context, index) {
               final data = pets[index].data() as Map<String, dynamic>;
               final petId = pets[index].id;
-              return _AnimalCard(
-                petId: petId,
-                data: data,
-                uid: uid ?? '',
-              );
+              return _AnimalCard(petId: petId, data: data, uid: uid ?? '');
             },
           );
         },
@@ -93,194 +95,138 @@ class _AnimalCard extends StatelessWidget {
 
   const _AnimalCard({required this.petId, required this.data, required this.uid});
 
-  String _speciesEmoji(String? species) {
-    switch (species) {
-      case 'Chien': return '🐕';
-      case 'Chat': return '🐈';
-      case 'Oiseau': return '🐦';
-      case 'Lapin': return '🐇';
-      default: return '🐾';
-    }
-  }
+  Color _speciesColor(String? s) => switch ((s ?? '').toLowerCase()) {
+    'chien'  => const Color(0xFF8B6F47),
+    'chat'   => const Color(0xFF7B68EE),
+    'oiseau' => const Color(0xFF4FC3F7),
+    'lapin'  => const Color(0xFFFF8A80),
+    _        => const Color(0xFF6E9E57),
+  };
+
+  String _speciesEmoji(String? s) => switch ((s ?? '').toLowerCase()) {
+    'chien'  => '🐕',
+    'chat'   => '🐈',
+    'oiseau' => '🐦',
+    'lapin'  => '🐇',
+    _        => '🐾',
+  };
 
   @override
   Widget build(BuildContext context) {
     final photoUrl = data['photoUrl'] as String?;
-    final name = data['name'] as String? ?? 'Sans nom';
+    final name    = data['name']    as String? ?? 'Sans nom';
     final species = data['species'] as String?;
-    final breed = data['breed'] as String?;
-    final description = data['description'] as String?;
+    final breed   = data['breed']   as String?;
+    final color   = _speciesColor(species);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 3)),
-        ],
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AnimalFormPage(petId: petId, existing: data),
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AnimalFormPage(petId: petId, existing: data))),
+      onLongPress: () => showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (_) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
-        ),
-        onLongPress: () async {
-          final confirm = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: const Text('Supprimer cet animal ?',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-              content: Text('La fiche de $name sera définitivement supprimée.',
-                  style: const TextStyle(fontFamily: 'Galey')),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
-                TextButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('Supprimer',
-                        style: TextStyle(fontFamily: 'Galey', color: Colors.redAccent,
-                            fontWeight: FontWeight.w700))),
-              ],
-            ),
-          );
-          if (confirm == true) {
-            await FirebaseFirestore.instance
-                .collection('users')
-                .doc(uid)
-                .collection('pets')
-                .doc(petId)
-                .delete();
-          }
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              // Photo or emoji
-              ClipRRect(
-                borderRadius: BorderRadius.circular(50),
-                child: photoUrl != null && photoUrl.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: photoUrl,
-                        width: 64,
-                        height: 64,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) =>
-                            const CircularProgressIndicator(),
-                        errorWidget: (_, __, ___) => _EmojiAvatar(
-                            emoji: _speciesEmoji(species)),
-                      )
-                    : _EmojiAvatar(emoji: _speciesEmoji(species)),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name,
-                        style: const TextStyle(
-                            fontFamily: 'Galey',
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16)),
-                    if (species != null || breed != null)
-                      Text(
-                        [if (species != null) species, if (breed != null) breed]
-                            .join(' · '),
-                        style: TextStyle(
-                            fontFamily: 'Galey',
-                            fontSize: 13,
-                            color: Colors.grey.shade600),
-                      ),
-                    if (description != null && description.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(description,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontFamily: 'Galey',
-                                fontSize: 12,
-                                color: Colors.grey.shade500)),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert, color: Colors.grey.shade400, size: 20),
-                onSelected: (value) async {
-                  if (value == 'delete') {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Supprimer cet animal ?'),
-                        content: Text('$name sera supprimé définitivement.'),
-                        actions: [
-                          TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: const Text('Annuler')),
-                          TextButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text('Supprimer',
-                                  style: TextStyle(color: Colors.red))),
-                        ],
-                      ),
-                    );
-                    if (confirm == true) {
-                      await FirebaseFirestore.instance
-                          .collection('users')
-                          .doc(uid)
-                          .collection('pets')
-                          .doc(petId)
-                          .delete();
-                    }
-                  }
-                },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(children: [
-                      Icon(Icons.delete_outline, color: Colors.red, size: 18),
-                      SizedBox(width: 8),
-                      Text('Supprimer',
-                          style: TextStyle(fontFamily: 'Galey', color: Colors.red)),
-                    ]),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 14),
+            Text(name, style: const TextStyle(fontFamily: 'Galey',
+                fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
+            const SizedBox(height: 6),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              title: const Text('Supprimer',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.redAccent)),
+              onTap: () async {
+                Navigator.pop(context);
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    title: const Text('Supprimer cet animal ?',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                    content: Text('La fiche de $name sera définitivement supprimée.',
+                        style: const TextStyle(fontFamily: 'Galey')),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+                      TextButton(onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey',
+                              color: Colors.redAccent, fontWeight: FontWeight.w700))),
+                    ],
                   ),
-                ],
-              ),
-            ],
-          ),
+                );
+                if (confirm == true) {
+                  await FirebaseFirestore.instance
+                      .collection('users').doc(uid).collection('pets').doc(petId).delete();
+                }
+              },
+            ),
+          ]),
         ),
       ),
-    );
-  }
-}
-
-class _EmojiAvatar extends StatelessWidget {
-  final String emoji;
-  const _EmojiAvatar({required this.emoji});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 64,
-      height: 64,
-      decoration: BoxDecoration(
-        color: const Color(0xFFEEF5EA),
-        borderRadius: BorderRadius.circular(50),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(
+              color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 3))],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            child: AspectRatio(
+              aspectRatio: 1.0,
+              child: photoUrl != null && photoUrl.isNotEmpty
+                  ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(color: color.withOpacity(0.08)),
+                      errorWidget: (_, __, ___) => _placeholder(species, color))
+                  : _placeholder(species, color),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(name,
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 14, color: Color(0xFF1F2A2E)),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (breed != null && breed.isNotEmpty)
+                Text(breed,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                        color: Color(0xFF6F767B)),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 6),
+              if (species != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(species,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                          fontWeight: FontWeight.w600, color: color)),
+                ),
+            ]),
+          ),
+        ]),
       ),
-      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 30))),
     );
   }
+
+  Widget _placeholder(String? species, Color color) => Container(
+    color: color.withOpacity(0.10),
+    child: Center(child: Text(_speciesEmoji(species),
+        style: const TextStyle(fontSize: 44))),
+  );
 }
 
 // ── Add / Edit form ──────────────────────────────────────────────────────────

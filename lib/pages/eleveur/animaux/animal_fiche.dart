@@ -5974,88 +5974,121 @@ class _AlimentationTabState extends State<_AlimentationTab> {
           const SizedBox(height: 20),
         ],
 
-        // ── ÉTAT REPRODUCTEUR (femelles uniquement) ─────────────
-        if (widget.s._sexe == 'femelle') ...[
+        // ── ÉTAT REPRODUCTEUR ───────────────────────────────────
+        if (widget.s._sterilise || widget.s._sexe == 'femelle') ...[
           Row(children: [
             const _AlimSection('État reproducteur'),
             const SizedBox(width: 8),
-            if (_etatRepro == null) Container(
+            if (!widget.s._sterilise && _etatRepro == null) Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(color:Colors.grey.shade100, borderRadius:BorderRadius.circular(10)),
               child: Text('auto', style:TextStyle(fontFamily:'Galey',fontSize:10,color:Colors.grey.shade500)),
             ),
           ]),
           const SizedBox(height: 8),
-          Wrap(spacing: 8, runSpacing: 8, children: [
-            for (final e in [
-              ('normal',          'Normal', '⚪'),
-              ('gestation_debut', 'Gestation (début)', '🤰'),
-              ('gestation_fin',   'Gestation (fin)', '🍼'),
-              ('lactation',       'Lactation', '🤱'),
-            ])
-              GestureDetector(
-                onTap: () => setState(() => _etatRepro = e.$1 == _etatReproEffectif && _etatRepro != null ? null : e.$1),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: _etatReproEffectif == e.$1 ? const Color(0xFF0C5C6C) : Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: _etatReproEffectif == e.$1 ? const Color(0xFF0C5C6C) : Colors.grey.shade200),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text(e.$3, style: const TextStyle(fontSize: 13)),
-                    const SizedBox(width: 4),
-                    Text(e.$2, style: TextStyle(fontFamily:'Galey', fontSize: 12,
-                      color: _etatReproEffectif == e.$1 ? Colors.white : const Color(0xFF1F2A2E),
-                      fontWeight: _etatReproEffectif == e.$1 ? FontWeight.w700 : FontWeight.normal)),
-                    if (e.$1 == _etatReproAuto && _etatRepro == null) ...[
-                      const SizedBox(width: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: _etatReproEffectif == e.$1 ? Colors.white.withOpacity(0.25) : Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(6)),
-                        child: Text('auto', style: TextStyle(fontFamily:'Galey', fontSize: 9,
-                          color: _etatReproEffectif == e.$1 ? Colors.white : Colors.grey.shade500)),
-                      ),
-                    ],
-                  ]),
-                ),
-              ),
-          ]),
-          // Recommandations spécifiques selon l'état
-          if (_etatReproEffectif != 'normal') ...[
-            const SizedBox(height: 10),
+          if (widget.s._sterilise) ...[
+            // Chip stérilisé pré-sélectionné (non modifiable — vient de la fiche identité)
             Container(
-              margin: const EdgeInsets.only(top: 2),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFFE8F4F7),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF0C5C6C).withOpacity(0.2)),
+                color: const Color(0xFF6E9E57),
+                borderRadius: BorderRadius.circular(20),
               ),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  const Text('🥗 ', style: TextStyle(fontSize: 14)),
-                  Expanded(child: Text(
-                    _etatReproEffectif == 'gestation_debut'
-                      ? 'Gestation (début) — Apports +10%'
-                      : _etatReproEffectif == 'gestation_fin'
-                        ? 'Gestation (fin) — Apports +30%'
-                        : 'Lactation — Apports +50%',
-                    style: const TextStyle(fontFamily:'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C)))),
-                ]),
-                const SizedBox(height: 6),
-                Text(
-                  _etatReproEffectif == 'gestation_debut'
-                    ? 'Augmentez progressivement les rations. Préférez une alimentation riche en protéines de qualité. Ne modifiez pas l\'alimentation brutalement.'
-                    : _etatReproEffectif == 'gestation_fin'
-                      ? 'Dernières semaines : augmentez les apports progressivement. Fractionnez les repas (3–4/j pour les chiens/chats). Alimentation gestante ou aliment jeune recommandé.'
-                      : 'Alimentation à volonté recommandée (chiens/chats). Eau fraîche disponible en permanence. Besoins pouvant atteindre +75% selon le nombre de petits.',
-                  style: TextStyle(fontFamily:'Galey', fontSize: 11, color: Colors.grey.shade700)),
+              child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                Text('✂️', style: TextStyle(fontSize: 13)),
+                SizedBox(width: 4),
+                Text('Stérilisé(e)', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    color: Colors.white, fontWeight: FontWeight.w700)),
               ]),
             ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6E9E57).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF6E9E57).withOpacity(0.25)),
+              ),
+              child: Row(children: [
+                const Text('✂️', style: TextStyle(fontSize: 14)),
+                const SizedBox(width: 8),
+                Expanded(child: Text(
+                  'Réduction stérilisé appliquée : ×${widget.s._espece == 'chat' ? '0.7' : '0.8'} sur les besoins énergétiques',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF4A7C39)))),
+              ]),
+            ),
+          ] else ...[
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final e in [
+                ('normal',          'Normal', '⚪'),
+                ('gestation_debut', 'Gestation (début)', '🤰'),
+                ('gestation_fin',   'Gestation (fin)', '🍼'),
+                ('lactation',       'Lactation', '🤱'),
+              ])
+                GestureDetector(
+                  onTap: () => setState(() => _etatRepro = e.$1 == _etatReproEffectif && _etatRepro != null ? null : e.$1),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _etatReproEffectif == e.$1 ? const Color(0xFF0C5C6C) : Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: _etatReproEffectif == e.$1 ? const Color(0xFF0C5C6C) : Colors.grey.shade200),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(e.$3, style: const TextStyle(fontSize: 13)),
+                      const SizedBox(width: 4),
+                      Text(e.$2, style: TextStyle(fontFamily:'Galey', fontSize: 12,
+                        color: _etatReproEffectif == e.$1 ? Colors.white : const Color(0xFF1F2A2E),
+                        fontWeight: _etatReproEffectif == e.$1 ? FontWeight.w700 : FontWeight.normal)),
+                      if (e.$1 == _etatReproAuto && _etatRepro == null) ...[
+                        const SizedBox(width: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: _etatReproEffectif == e.$1 ? Colors.white.withOpacity(0.25) : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(6)),
+                          child: Text('auto', style: TextStyle(fontFamily:'Galey', fontSize: 9,
+                            color: _etatReproEffectif == e.$1 ? Colors.white : Colors.grey.shade500)),
+                        ),
+                      ],
+                    ]),
+                  ),
+                ),
+            ]),
+            // Recommandations spécifiques selon l'état
+            if (_etatReproEffectif != 'normal') ...[
+              const SizedBox(height: 10),
+              Container(
+                margin: const EdgeInsets.only(top: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F4F7),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF0C5C6C).withOpacity(0.2)),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    const Text('🥗 ', style: TextStyle(fontSize: 14)),
+                    Expanded(child: Text(
+                      _etatReproEffectif == 'gestation_debut'
+                        ? 'Gestation (début) — Apports +10%'
+                        : _etatReproEffectif == 'gestation_fin'
+                          ? 'Gestation (fin) — Apports +30%'
+                          : 'Lactation — Apports +50%',
+                      style: const TextStyle(fontFamily:'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C)))),
+                  ]),
+                  const SizedBox(height: 6),
+                  Text(
+                    _etatReproEffectif == 'gestation_debut'
+                      ? 'Augmentez progressivement les rations. Préférez une alimentation riche en protéines de qualité. Ne modifiez pas l\'alimentation brutalement.'
+                      : _etatReproEffectif == 'gestation_fin'
+                        ? 'Dernières semaines : augmentez les apports progressivement. Fractionnez les repas (3–4/j pour les chiens/chats). Alimentation gestante ou aliment jeune recommandé.'
+                        : 'Alimentation à volonté recommandée (chiens/chats). Eau fraîche disponible en permanence. Besoins pouvant atteindre +75% selon le nombre de petits.',
+                    style: TextStyle(fontFamily:'Galey', fontSize: 11, color: Colors.grey.shade700)),
+                ]),
+              ),
+            ],
           ],
           const SizedBox(height: 20),
         ],
