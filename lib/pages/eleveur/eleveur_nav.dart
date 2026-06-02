@@ -318,6 +318,14 @@ class _EleveurNavState extends State<EleveurNav> {
                   ],
                 ),
                 _DrawerItem(
+                  icon: Icons.calendar_month_outlined,
+                  label: 'Mon Agenda',
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(() => _selectedIndex = 3);
+                  },
+                ),
+                _DrawerItem(
                   icon: Icons.favorite_border,
                   label: 'Favoris',
                   onTap: () {

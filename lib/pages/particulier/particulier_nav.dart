@@ -19,6 +19,7 @@ import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
+import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 class ParticulierNav extends StatefulWidget {
@@ -57,6 +58,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
   Widget _tabContent(int index) => switch (index) {
         1 => MessagePage(),
         2 => const NotificationsPage(),
+        3 => const AgendaPage(),
         _ => const ParticulierHomePage(),
       };
 
@@ -96,6 +98,13 @@ class _ParticulierNavState extends State<ParticulierNav> {
                   activeIcon: Icons.notifications,
                   active: _selectedIndex == 2,
                   onTap: () => setState(() => _selectedIndex = 2),
+                ),
+                _NavItem(
+                  icon: Icons.calendar_month_outlined,
+                  activeIcon: Icons.calendar_month_rounded,
+                  label: 'Agenda',
+                  active: _selectedIndex == 3,
+                  onTap: () => setState(() => _selectedIndex = 3),
                 ),
                 _NavItem(
                   icon: Icons.menu, activeIcon: Icons.menu,
@@ -230,6 +239,14 @@ class _ParticulierNavState extends State<ParticulierNav> {
                       ));
                     },
                   ),
+                _DrawerItem(
+                  icon: Icons.calendar_month_outlined,
+                  label: 'Mon Agenda',
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(() => _selectedIndex = 3);
+                  },
+                ),
                 _DrawerItem(
                   icon: Icons.favorite_border,
                   label: 'Favoris',
