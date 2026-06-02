@@ -91,7 +91,7 @@
 | # | Tâche | Priorité | Repo | Notes |
 |---|---|---|---|---|
 | ~~T03~~ | ~~Animaux perdus — contact via messagerie (objet auto)~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
-| T07 | Carnet de santé — notifications vaccins/antiparasitaires (J-7, J-1, J) | Haute | App | Roadmap §III.A.b |
+| ~~T07~~ | ~~Carnet de santé — notifications vaccins/antiparasitaires (J-7, J-1, J)~~ | ~~Haute~~ | ~~App~~ | ✅ Terminé 2026-06-02 — `functions/sante.js` : Cloud Function quotidienne 8h, 3 tables (vaccinations/vermifuges/antiparasitaires), paliers J-7/J-1/J-0, dédup notifs_sent | Roadmap §III.A.b |
 | T08 | Fiche animal — courbe de poids (croissance + adulte) | Moyenne | App + Web | Roadmap §III.A.b |
 | T09 | Transfert de propriété animal (vente → email acheteur) | Haute | App + Web | Roadmap §III.A.c |
 | ~~T10~~ | ~~Annonces — likes sur portée/bébé + notification éleveur + favoris~~ | ~~Haute~~ | ~~Web d'abord~~ | ✅ Déjà terminé |
@@ -199,6 +199,7 @@
 |---|---|---|---|
 | S15b/S15c/S15d/S17/S18/S19/S20 — Pôle Santé (ostéo, kiné, naturo, assurances), Marketplace, Adoption, Sorties & Voyages, UI uniforme 5 catégories | 2026-05-31 | App + Web | `veterinaires_page.dart`, `services_page.dart`, `src/app/services/page.tsx` |
 | AG03 fix — rappels RDV : notif client + pro avec nom animal, colonnes `reminder_24h/1h_sent` ajoutées, déployé et testé | 2026-05-31 | Firebase Functions | `functions/agenda.js` |
+| T07 — Santé rappels : Cloud Function quotidienne 8h, vaccinations + vermifuges + antiparasitaires, J-7/J-1/J-0, dédup notifs_sent | 2026-06-02 | Firebase Functions | `functions/sante.js`, `functions/index.js` |
 | Fix — `_deptCtrl` manquant dans `animal_trouve_form_page.dart` (crash au lancement) | 2026-05-31 | App | `animal_trouve_form_page.dart` |
 | S13 — Admin gestion profils pro : liste panel admin, valider/refuser/suspendre, édition manuelle | 2026-05-27 | App + Web | `admin_panel.dart`, `user_detail.dart`, `src/app/admin/page.tsx` |
 | S14 — Vue admin web : reflet admin mobile (utilisateurs, filtres, fiche, validation pro, suppression) | 2026-05-27 | Web | `src/app/admin/page.tsx` |

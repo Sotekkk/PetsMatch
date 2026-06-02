@@ -5,17 +5,14 @@ const agendaFunctions = require("./agenda");
 const chaleursFunctions = require("./chaleurs");
 const retraiteFunctions = require("./retraite");
 const tachesFunctions = require("./taches");
-const testFunctions = require("./stripe");
+const santeFunctions = require("./sante");
 
-// Export your Stripe functions
+// Stripe + messagerie
 exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
-exports.helloWorld = testFunctions.helloWorld;
 exports.createStripeSubscription = stripeFunctions.createStripeSubscription;
 exports.cancelStripeSubscription = stripeFunctions.cancelStripeSubscription;
 exports.stripeWebhook = stripeFunctions.stripeWebhook;
 exports.sendNotificationOnNewMessage = stripeFunctions.sendNotificationOnNewMessage;
-exports.sendVaccinationReminders = stripeFunctions.sendVaccinationReminders;
-exports.triggerVaccinationReminder = stripeFunctions.triggerVaccinationReminder;
 exports.sendPushNotification = stripeFunctions.sendPushNotification;
 
 // Alertes perdus + likes + trouvés
@@ -37,3 +34,6 @@ exports.sendRetraiteReminders = retraiteFunctions.sendRetraiteReminders;
 
 // Tâches employés — push FCM à l'assignation
 exports.notifyTacheAssignee = tachesFunctions.notifyTacheAssignee;
+
+// Santé — rappels vaccins, vermifuges, antiparasitaires (J-7, J-1, J-0)
+exports.sendSanteReminders = santeFunctions.sendSanteReminders;
