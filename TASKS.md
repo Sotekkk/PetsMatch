@@ -25,7 +25,7 @@
 | A09 | Suivi repro — saillie extérieure : accès infos mâle (photo, nom, puce, race) depuis éleveur externe | Moyenne | App + Web | À créer `suivi_repro.dart` + table `saillie_acces` |
 | A12 | Admin — validation automatique profils éleveur/pro : algorithme (SIRET, cohérence, doublons) + envoi à l'admin si suspect | Haute | App + Web | `admin_panel.dart`, `verification_detail.dart` |
 | A13 | Admin — validation automatique annonces : algorithme (cohérence espèce/race/prix, contenu signalé) + envoi à l'admin si suspect | Haute | App + Web | Panel admin |
-| A14 | Vue fiche animal pour particuliers — identique à la vue profil éleveur | Haute | **Web** | ✅ App terminé 2026-06-02 — Web à faire (`website/src/app/mes-animaux/`) |
+| A14 | Vue fiche animal pour particuliers — identique à la vue profil éleveur | Haute | App + Web | ✅ Terminé 2026-06-02 (app + web) |
 | A15 | Profil particulier — revoir mise en page (app) | Moyenne | App | `particulier_home.dart`, `info_utilisateur.dart` |
 | A16 | Vue admin dans l'appli web | Haute | Web | `src/app/admin/` à créer |
 | A16b | Panel admin — tableau de bord stats : nombre d'annonces en ligne, nombre d'animaux par espèce | Haute | App + Web | `admin_panel.dart`, `src/app/admin/page.tsx` |
@@ -197,7 +197,8 @@
 
 | Tâche | Date | Repo | Fichiers modifiés |
 |---|---|---|---|
-| A14 (app) — Onglet Alimentation particulier : calculateur DER/RER complet (croquettes avec sélecteur marque Supabase, BARF avec sliders %, mixte, ménagère), vue résumé dashboard + vue calculateur, plan de repas par espèce, stérilisation pré-sélectionnée dans état reproducteur (chip vert ×0.7/×0.8). Grille animaux 2 colonnes (mes animaux + feed éleveur particulier) + long-press actions rapides. Stérilisation affichée dans l'onglet alimentation éleveur aussi. | 2026-06-02 | App | `animal_fiche_particulier.dart`, `mes_animaux_page.dart`, `user_feed.dart`, `animal_fiche.dart` |
+| A14 (app) — Fiche animal particulier : onglet Alimentation (calculateur DER/RER complet, BARF, plan repas, stérilisation), mode lecture/édition onglet Identité, passeport européen, type de poil, taille, poids, pedigree/registre adapté par espèce (LOF/LOOF/Stud-book…), stérilisation affichée dans l'onglet alimentation éleveur aussi. | 2026-06-02 | App | `animal_fiche_particulier.dart`, `mes_animaux_page.dart`, `user_feed.dart`, `animal_fiche.dart` |
+| A14 (web) — Onglet Alimentation particulier web : calculateur DER/RER, BARF, plan repas, sélecteur marque Supabase, stérilisation, mode résumé dashboard. | 2026-06-02 | Web | `AlimentationTab.tsx`, `mes-animaux/[id]/page.tsx` |
 | S15b/S15c/S15d/S17/S18/S19/S20 — Pôle Santé (ostéo, kiné, naturo, assurances), Marketplace, Adoption, Sorties & Voyages, UI uniforme 5 catégories | 2026-05-31 | App + Web | `veterinaires_page.dart`, `services_page.dart`, `src/app/services/page.tsx` |
 | AG03 fix — rappels RDV : notif client + pro avec nom animal, colonnes `reminder_24h/1h_sent` ajoutées, déployé et testé | 2026-05-31 | Firebase Functions | `functions/agenda.js` |
 | A30 — Annonces expiration : sélecteur durée 30/60/90j (app+web), badge "Expire dans Xj", bouton Renouveler, CF `sendAnnonceExpirationReminders` (expire auto + FCM J-7/J-1) | 2026-06-02 | App + Web + Firebase Functions | `create_annonce_page.dart`, `mes_annonces_page.dart`, `annonces/creer/page.tsx`, `mes-annonces/page.tsx`, `functions/annonces.js` |
