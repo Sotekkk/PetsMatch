@@ -1,7 +1,6 @@
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart' show speciesIcon, speciesLabel;
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/annonces_map_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -95,29 +94,14 @@ class _TrouverCompagnonPageState extends State<TrouverCompagnonPage> {
                       builder: (_) => const AnnoncesFeedPage())),
                 ),
                 const SizedBox(height: 10),
-                Row(children: [
-                  Expanded(
-                    child: _ModeCardSmall(
-                      icon: Icons.search_rounded,
-                      color: _teal,
-                      title: 'Recherche',
-                      subtitle: 'Filtrez par espèce, race, région…',
-                      onTap: () => Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnnoncesPublicPage())),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _ModeCardSmall(
-                      icon: Icons.map_outlined,
-                      color: const Color(0xFF5B8648),
-                      title: 'Carte',
-                      subtitle: 'Annonces autour de vous',
-                      onTap: () => Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnnoncesMapPage())),
-                    ),
-                  ),
-                ]),
+                _ModeCard(
+                  icon: Icons.search_rounded,
+                  color: _teal,
+                  title: 'Recherche',
+                  subtitle: 'Filtrez par espèce, race, région…',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const AnnoncesPublicPage())),
+                ),
 
                 const SizedBox(height: 28),
 
@@ -254,57 +238,6 @@ class _ModeCard extends StatelessWidget {
   }
 }
 
-// ── Carte mode petite (demi-largeur) ─────────────────────────────────────────
-
-class _ModeCardSmall extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-  const _ModeCardSmall({
-    required this.icon, required this.color, required this.title,
-    required this.subtitle, required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 8, offset: const Offset(0, 3))],
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(height: 10),
-          Text(title,
-              style: const TextStyle(fontFamily: 'Galey',
-                  fontWeight: FontWeight.w700, fontSize: 14,
-                  color: Color(0xFF1F2A2E))),
-          const SizedBox(height: 3),
-          Text(subtitle,
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
-                  color: Color(0xFF6F767B)),
-              maxLines: 2),
-        ]),
-      ),
-    );
-  }
-}
 
 // ── Mini card annonce horizontale ─────────────────────────────────────────────
 
