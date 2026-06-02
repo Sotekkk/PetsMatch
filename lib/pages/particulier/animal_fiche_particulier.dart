@@ -13,6 +13,15 @@ import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 
+class _ContactUrgenceP {
+  final TextEditingController nom;
+  final TextEditingController tel;
+  _ContactUrgenceP({String nomVal = '', String telVal = ''})
+      : nom = TextEditingController(text: nomVal),
+        tel = TextEditingController(text: telVal);
+  void dispose() { nom.dispose(); tel.dispose(); }
+}
+
 class AnimalFicheParticulierPage extends StatefulWidget {
   final String? animalId;
   final Map<String, dynamic>? initialData;
@@ -57,6 +66,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   bool _pedigree = false;
   String? _pedigreeLof;
   final _clubRegistreCtrl = TextEditingController();
+  final List<_ContactUrgenceP> _contactsUrgence = [];
 
   bool _editing = false;
 
@@ -104,6 +114,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     _tailleCtrl.dispose();
     _poidsCtrl.dispose();
     _clubRegistreCtrl.dispose();
+    for (final c in _contactsUrgence) c.dispose();
     super.dispose();
   }
 
@@ -129,6 +140,13 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     _pedigree              = d['pedigree'] ?? false;
     _pedigreeLof           = d['pedigree_lof'] as String?;
     _clubRegistreCtrl.text = d['club_registre'] ?? '';
+    for (final c in _contactsUrgence) c.dispose();
+    _contactsUrgence.clear();
+    final contacts = d['contacts_urgence'];
+    for (final raw in (contacts is List ? contacts : [])) {
+      _contactsUrgence.add(_ContactUrgenceP(
+          nomVal: raw['nom'] ?? '', telVal: raw['tel'] ?? ''));
+    }
     _espece    = d['espece'] ?? 'chien';
     _sexe      = d['sexe'] ?? 'male';
     _sterilise = d['sterilise'] ?? false;
@@ -223,6 +241,10 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'pedigree': _pedigree,
         'pedigree_lof': _pedigreeLof,
         'club_registre': _clubRegistreCtrl.text.trim().isEmpty ? null : _clubRegistreCtrl.text.trim(),
+        'contacts_urgence': _contactsUrgence
+            .map((c) => {'nom': c.nom.text.trim(), 'tel': c.tel.text.trim()})
+            .where((c) => c['nom']!.isNotEmpty || c['tel']!.isNotEmpty)
+            .toList(),
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         'description': _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
         'photo_url': photoUrl,
@@ -390,6 +412,30 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         if (_pedigree) ...[
           _infoRow(_pediConfig(_espece).sectionLabel,
               [if (_pedigreeLof != null) _pedigreeLof!, if (_clubRegistreCtrl.text.isNotEmpty) _clubRegistreCtrl.text].join(' — ')),
+        ],
+        if (_contactsUrgence.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Contacts urgence', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                  fontWeight: FontWeight.w600, color: Colors.grey.shade500, letterSpacing: 0.4)),
+              const SizedBox(height: 6),
+              ..._contactsUrgence.where((c) => c.nom.text.isNotEmpty || c.tel.text.isNotEmpty).map((c) =>
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(children: [
+                    const Icon(Icons.phone_outlined, size: 15, color: Color(0xFF0C5C6C)),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(
+                      [if (c.nom.text.isNotEmpty) c.nom.text, if (c.tel.text.isNotEmpty) c.tel.text].join(' — '),
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E)),
+                    )),
+                  ]),
+                ),
+              ),
+              const Divider(height: 20, color: Color(0xFFEEEEEE)),
+            ]),
+          ),
         ],
         if (_descCtrl.text.isNotEmpty) _infoRow('Description', _descCtrl.text),
         if (_notesCtrl.text.isNotEmpty) _infoRow('Notes', _notesCtrl.text),
@@ -606,6 +652,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           _buildPedigreeSection(),
           const SizedBox(height: 18),
 
+          _buildContactsUrgenceSection(),
+          const SizedBox(height: 18),
+
           _FLabel('Description'),
           const SizedBox(height: 6),
           _FMultiField(controller: _descCtrl, hint: 'Décrivez votre animal...'),
@@ -778,6 +827,87 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         ),
       ],
     ]);
+  }
+
+  Widget _buildContactsUrgenceSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('Contacts urgence',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                  fontSize: 14, color: Color(0xFF1F2A2E))),
+          TextButton.icon(
+            onPressed: () => setState(() => _contactsUrgence.add(_ContactUrgenceP())),
+            icon: const Icon(Icons.add, size: 16, color: _green),
+            label: const Text('Ajouter',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green)),
+            style: TextButton.styleFrom(padding: EdgeInsets.zero),
+          ),
+        ]),
+        if (_contactsUrgence.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 6),
+            child: Text('Aucun contact',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
+          ),
+        ..._contactsUrgence.asMap().entries.map((e) {
+          final i = e.key;
+          final c = e.value;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Column(children: [
+                TextFormField(
+                  controller: c.nom,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                  decoration: InputDecoration(
+                    labelText: 'Nom',
+                    labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: _teal)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: c.tel,
+                  keyboardType: TextInputType.phone,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                  decoration: InputDecoration(
+                    labelText: 'Téléphone',
+                    labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: _teal)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    isDense: true,
+                  ),
+                ),
+              ])),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                onPressed: () => setState(() {
+                  _contactsUrgence[i].dispose();
+                  _contactsUrgence.removeAt(i);
+                }),
+              ),
+            ]),
+          );
+        }),
+      ]),
+    );
   }
 
   Future<void> _openRaceBreedPicker(List<String> breeds) async {
