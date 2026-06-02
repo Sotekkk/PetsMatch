@@ -133,7 +133,7 @@ class _AnnoncesList extends StatelessWidget {
           switch (filter) {
             case 'actives':   return s == 'disponible' || s == 'reserve';
             case 'pause':     return s == 'pause';
-            case 'terminees': return s == 'vendu' || s == 'cede' || s == 'expire';
+            case 'terminees': return s == 'vendu' || s == 'cede' || s == 'expiree';
             default:          return s != 'supprime';
           }
         }).toList();
@@ -211,7 +211,7 @@ class _AnnonceCardState extends State<_AnnonceCard> {
     'pause'      => 'En pause',
     'vendu'      => 'Vendu',
     'cede'       => 'Cédé',
-    'expire'     => 'Expiré',
+    'expiree'    => 'Expirée',
     _            => s,
   };
 
@@ -223,6 +223,22 @@ class _AnnonceCardState extends State<_AnnonceCard> {
       await Supabase.instance.client.from('annonces').update({'statut': next}).eq('id', widget.id);
     } catch (e) {
       setState(() => _statut = prev);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur: $e', style: const TextStyle(fontFamily: 'Galey'))));
+      }
+    }
+  }
+
+  Future<void> _renew() async {
+    final newExpires = DateTime.now().add(const Duration(days: 30)).toIso8601String();
+    setState(() => _statut = 'disponible');
+    try {
+      await Supabase.instance.client.from('annonces').update({
+        'statut': 'disponible', 'expires_at': newExpires,
+      }).eq('id', widget.id);
+    } catch (e) {
+      setState(() => _statut = 'expiree');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Erreur: $e', style: const TextStyle(fontFamily: 'Galey'))));
@@ -281,7 +297,7 @@ class _AnnonceCardState extends State<_AnnonceCard> {
     final createdAt  = widget.data['createdAt'] as Timestamp?;
     final expiresAt  = widget.data['expiresAt'] as Timestamp?;
     final isPaused   = _statut == 'pause';
-    final isTermine  = _statut == 'vendu' || _statut == 'cede' || _statut == 'expire' || _statut == 'supprime';
+    final isTermine  = _statut == 'vendu' || _statut == 'cede' || _statut == 'expiree' || _statut == 'supprime';
 
     final displayTitle = titre.isNotEmpty ? titre
         : race.isNotEmpty ? race : speciesLabel(espece);
@@ -418,6 +434,25 @@ class _AnnonceCardState extends State<_AnnonceCard> {
                 ),
                 const Spacer(),
                 // Supprimer
+                _ActionBtn(
+                  icon: Icons.delete_outline,
+                  label: 'Supprimer',
+                  color: Colors.redAccent,
+                  onTap: () => _confirmDelete(context),
+                ),
+              ]),
+            )
+          else if (_statut == 'expiree')
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Row(children: [
+                _ActionBtn(
+                  icon: Icons.refresh_outlined,
+                  label: 'Renouveler',
+                  color: _teal,
+                  onTap: _renew,
+                ),
+                const Spacer(),
                 _ActionBtn(
                   icon: Icons.delete_outline,
                   label: 'Supprimer',

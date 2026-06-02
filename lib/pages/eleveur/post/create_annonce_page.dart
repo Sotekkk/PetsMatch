@@ -49,6 +49,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   final _prixCtrl  = TextEditingController();
   bool   _prixNegociable = false;
   String _statut = 'disponible';
+  int _dureeAnnonce = 30;
 
   // ── Portée ───────────────────────────────────────────────────────────────────
   DateTime? _dateNaissance;
@@ -531,7 +532,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         supaData['id']         = '${DateTime.now().millisecondsSinceEpoch}';
         supaData['created_at'] = now;
         supaData['expires_at'] =
-            DateTime.now().add(const Duration(days: 30)).toIso8601String();
+            DateTime.now().add(Duration(days: _dureeAnnonce)).toIso8601String();
         supaData['vues']     = 0;
         supaData['contacts'] = 0;
         await Supabase.instance.client.from('annonces').insert(supaData);
@@ -999,6 +1000,21 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             child: Text(s.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                 fontWeight: FontWeight.w600,
                 color: _statut == s.$1 ? Colors.white : Colors.black87)))),
+    ]),
+    const SizedBox(height: 16),
+    _label('Durée de l\'annonce'),
+    Wrap(spacing: 8, runSpacing: 6, children: [
+      for (final d in [30, 60, 90])
+        GestureDetector(onTap: () => setState(() => _dureeAnnonce = d),
+          child: AnimatedContainer(duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: _dureeAnnonce == d ? _teal : Colors.transparent,
+              border: Border.all(color: _dureeAnnonce == d ? _teal : Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(20)),
+            child: Text('$d jours', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: _dureeAnnonce == d ? Colors.white : Colors.black87)))),
     ]),
   ]);
 

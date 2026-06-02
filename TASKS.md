@@ -41,7 +41,7 @@
 | ~~A27~~ | ~~Fiche animal — modification du poids (ajouter/éditer une entrée poids) depuis l'onglet courbe de poids~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | ~~A28~~ | ~~Feed annonces — description manquante sur les fiches animaux individuels (hors portée)~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | ~~A29~~ | ~~Mes annonces — après création d'annonce, la liste ne se rafraîchit pas automatiquement au retour~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
-| A30 | Annonces — durée de vie configurable (ex. 30/60/90 jours) : expiration automatique + badge "Expire dans X jours" + notification éleveur avant expiration + possibilité de renouveler | Haute | App + Web + Firebase Functions | `create_annonce_page.dart`, `mes_annonces_page.dart`, `annonces/creer/page.tsx`, `mes-annonces/page.tsx`, colonne `expires_at` Supabase |
+| ~~A30~~ | ~~Annonces — durée de vie configurable (ex. 30/60/90 jours) : expiration automatique + badge "Expire dans X jours" + notification éleveur avant expiration + possibilité de renouveler~~ | ~~Haute~~ | ~~App + Web + Firebase Functions~~ | ✅ Terminé 2026-06-02 |
 | ~~A31~~ | ~~Annonces / Fiche animal — âge des bébés affiché en semaines si moins de 3 mois, en mois sinon (ex. "6 semaines" vs "4 mois")~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | ~~A32~~ | ~~Annonces — bouton "Pause" pour suspendre temporairement une annonce (statut `pause`), réactivation en un clic~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-31 |
 | A36 | Profil — rendre obligatoires les champs essentiels à la complétion du profil (adresse email, numéro de téléphone, adresse postale, ville/CP) : validation côté formulaire + message d'alerte si profil incomplet au login (bannière ou modal "Complétez votre profil"). App éleveur + particulier + pro. | Haute | App + Web | `info_utilisateur.dart`, `profil/page.tsx`, `pro_profile_edit.dart` | **→ Nabil** |
@@ -199,6 +199,7 @@
 |---|---|---|---|
 | S15b/S15c/S15d/S17/S18/S19/S20 — Pôle Santé (ostéo, kiné, naturo, assurances), Marketplace, Adoption, Sorties & Voyages, UI uniforme 5 catégories | 2026-05-31 | App + Web | `veterinaires_page.dart`, `services_page.dart`, `src/app/services/page.tsx` |
 | AG03 fix — rappels RDV : notif client + pro avec nom animal, colonnes `reminder_24h/1h_sent` ajoutées, déployé et testé | 2026-05-31 | Firebase Functions | `functions/agenda.js` |
+| A30 — Annonces expiration : sélecteur durée 30/60/90j (app+web), badge "Expire dans Xj", bouton Renouveler, CF `sendAnnonceExpirationReminders` (expire auto + FCM J-7/J-1) | 2026-06-02 | App + Web + Firebase Functions | `create_annonce_page.dart`, `mes_annonces_page.dart`, `annonces/creer/page.tsx`, `mes-annonces/page.tsx`, `functions/annonces.js` |
 | T07 — Santé rappels : Cloud Function quotidienne 8h, vaccinations + vermifuges + antiparasitaires, J-7/J-1/J-0, dédup notifs_sent | 2026-06-02 | Firebase Functions | `functions/sante.js`, `functions/index.js` |
 | Fix — `_deptCtrl` manquant dans `animal_trouve_form_page.dart` (crash au lancement) | 2026-05-31 | App | `animal_trouve_form_page.dart` |
 | S13 — Admin gestion profils pro : liste panel admin, valider/refuser/suspendre, édition manuelle | 2026-05-27 | App + Web | `admin_panel.dart`, `user_detail.dart`, `src/app/admin/page.tsx` |

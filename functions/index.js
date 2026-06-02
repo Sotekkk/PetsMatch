@@ -6,6 +6,7 @@ const chaleursFunctions = require("./chaleurs");
 const retraiteFunctions = require("./retraite");
 const tachesFunctions = require("./taches");
 const santeFunctions = require("./sante");
+const annonceFunctions = require("./annonces");
 
 // Stripe + messagerie
 exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
@@ -37,3 +38,6 @@ exports.notifyTacheAssignee = tachesFunctions.notifyTacheAssignee;
 
 // Santé — rappels vaccins, vermifuges, antiparasitaires (J-7, J-1, J-0)
 exports.sendSanteReminders = santeFunctions.sendSanteReminders;
+
+// Annonces — expiration auto + rappels J-7 et J-1
+exports.sendAnnonceExpirationReminders = annonceFunctions.sendAnnonceExpirationReminders;

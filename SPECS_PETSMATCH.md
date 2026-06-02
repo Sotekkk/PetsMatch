@@ -344,7 +344,7 @@ Doses calculées depuis formule DER (adulte × 1.6 chien / × 1.4 chat ; junior 
 
 | # | Fonctionnalité | Priorité | Support |
 |---|---|---|---|
-| A30 | Durée de vie configurable (30/60/90 jours) : expiration auto + badge "Expire dans X jours" + notification avant expiration + renouvellement | Haute | App + Web |
+| ~~A30~~ | ~~Durée de vie configurable (30/60/90 jours) : expiration auto + badge "Expire dans X jours" + notification avant expiration + renouvellement~~ | ✅ Terminé 2026-06-02 | App + Web + Firebase |
 | — | Description père/mère visible sur fiche annonce (particulier) | Moyenne | App + Web |
 | — | Identification mère obligatoire selon espèce | Moyenne | App + Web |
 | A20 | Carte annonces compagnons avec filtres (espèce, race, région, ville, département) | Haute | App |
@@ -477,7 +477,7 @@ Doses calculées depuis formule DER (adulte × 1.6 chien / × 1.4 chat ; junior 
 2. **Migration SQL `gestations`** — ajouter colonnes `reminder_j7/j3/j1_sent` (requis par la Cloud Function mise-bas A37)
 
 ### Haute priorité
-3. Durée de vie annonces (A30) — colonne `expires_at` + expiration auto + notification
+3. ~~Durée de vie annonces (A30)~~ ✅ Terminé 2026-06-02
 4. RGPD V1 — 7 points obligatoires avant lancement public (RGPD01 à RGPD07)
 5. Onboarding éleveur / particulier / pro (A39–A41)
 6. Vue fiche animal pour particuliers (A14)
