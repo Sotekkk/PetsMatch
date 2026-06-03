@@ -2585,6 +2585,7 @@ class _SimpleCard extends StatelessWidget {
 
   static const _excludedKeys = {
     'date', 'id', 'animal_id', 'created_at', 'partenaire_animal_id', 'gestation_confirmee',
+    'reminder_j7_sent', 'reminder_j3_sent', 'reminder_j1_sent',
   };
 
   static String _fmt(String key, dynamic val) {
