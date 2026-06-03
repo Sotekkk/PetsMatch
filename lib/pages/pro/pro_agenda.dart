@@ -386,12 +386,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     });
     try {
       if (isBlocked) {
+        final heureDebut = '${hour.toString().padLeft(2, '0')}:00:00';
         await Supabase.instance.client
             .from('creneaux_pro')
             .delete()
             .eq('pro_uid', uid)
             .eq('date', date)
-            .like('heure_debut', '$hour:%');
+            .eq('heure_debut', heureDebut);
       } else {
         final heureDebut = '${hour.toString().padLeft(2, '0')}:00:00';
         final heureFin   = '${(hour + 1).toString().padLeft(2, '0')}:00:00';
