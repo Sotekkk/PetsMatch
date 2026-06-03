@@ -1152,87 +1152,76 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
       ));
     }
 
-    return Column(children: [
-      _buildFilters(),
-      Expanded(
-        child: Stack(children: [
-          GoogleMap(
-            initialCameraPosition: const CameraPosition(
-              target: LatLng(46.603354, 1.888334),
-              zoom: 5.5,
-            ),
-            markers: markers,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: true,
-            onMapCreated: (c) => _mapController = c,
-          ),
-          Positioned(
-            right: 12,
-            bottom: 100,
-            child: FloatingActionButton.small(
-              heroTag: 'recenter',
-              backgroundColor: Colors.white,
-              onPressed: _locating ? null : _recenterMap,
-              child: _locating
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: _accentColor))
-                  : Icon(Icons.my_location, color: _accentColor, size: 20),
-            ),
-          ),
-          // Legend
-          Positioned(
-            left: 12,
-            bottom: 16,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.92),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Container(width: 10, height: 10, decoration: const BoxDecoration(color: Color(0xFFE65100), shape: BoxShape.circle)),
-                  const SizedBox(width: 6),
-                  const Text('Perdu', style: TextStyle(fontFamily: 'Galey', fontSize: 11)),
-                ]),
-                const SizedBox(height: 4),
-                Row(children: [
-                  Container(width: 10, height: 10, decoration: const BoxDecoration(color: Color(0xFF22C55E), shape: BoxShape.circle)),
-                  const SizedBox(width: 6),
-                  const Text('Trouvé', style: TextStyle(fontFamily: 'Galey', fontSize: 11)),
-                ]),
-              ]),
-            ),
-          ),
-          if (markers.isEmpty && list.isNotEmpty)
-            Positioned(
-              bottom: 16,
-              left: 80,
-              right: 16,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.orange.shade200),
-                ),
-                child: Text(
-                  'Certaines déclarations n\'ont pas de coordonnées GPS.',
-                  style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontSize: 12,
-                      color: Colors.orange.shade800),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-        ]),
+    return Stack(children: [
+      // ── Carte plein écran ────────────────────────────────────────────────
+      GoogleMap(
+        initialCameraPosition: const CameraPosition(
+          target: LatLng(46.603354, 1.888334),
+          zoom: 5.5,
+        ),
+        markers: markers,
+        myLocationButtonEnabled: false,
+        zoomControlsEnabled: true,
+        onMapCreated: (c) => _mapController = c,
       ),
+
+      // ── Bouton recentrer ─────────────────────────────────────────────────
+      Positioned(
+        right: 12, bottom: 80,
+        child: FloatingActionButton.small(
+          heroTag: 'recenter',
+          backgroundColor: Colors.white,
+          onPressed: _locating ? null : _recenterMap,
+          child: _locating
+              ? SizedBox(width: 18, height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor))
+              : Icon(Icons.my_location, color: _accentColor, size: 20),
+        ),
+      ),
+
+      // ── Légende ──────────────────────────────────────────────────────────
+      Positioned(
+        left: 12, bottom: 16,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(width: 10, height: 10, decoration: const BoxDecoration(color: Color(0xFFE65100), shape: BoxShape.circle)),
+              const SizedBox(width: 6),
+              const Text('Perdu', style: TextStyle(fontFamily: 'Galey', fontSize: 11)),
+            ]),
+            const SizedBox(height: 4),
+            Row(children: [
+              Container(width: 10, height: 10, decoration: const BoxDecoration(color: Color(0xFF22C55E), shape: BoxShape.circle)),
+              const SizedBox(width: 6),
+              const Text('Trouvé', style: TextStyle(fontFamily: 'Galey', fontSize: 11)),
+            ]),
+          ]),
+        ),
+      ),
+
+      if (markers.isEmpty && list.isNotEmpty)
+        Positioned(
+          bottom: 16, left: 80, right: 16,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Text(
+              'Certaines déclarations n\'ont pas de coordonnées GPS.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.orange.shade800),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
     ]);
   }
 }
