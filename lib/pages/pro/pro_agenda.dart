@@ -430,7 +430,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     return Column(children: [
       // Navigation semaine
       Padding(
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
         child: Row(children: [
           IconButton(
             onPressed: () {
@@ -464,10 +464,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       ),
       // Sélecteur de jour
       SizedBox(
-        height: 68,
+        height: 62,
         child: ListView.builder(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           itemCount: 7,
           itemBuilder: (_, i) {
             final day = days[i];
