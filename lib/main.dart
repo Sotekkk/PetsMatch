@@ -275,6 +275,23 @@ class User_Info {
     if (raw is! List) return fallback;
     return raw.whereType<String>().toList();
   }
+
+  static bool isProfileComplete() {
+    if (isAdmin) return true;
+    if (isPro) {
+      return villeElevage.isNotEmpty && codePostalElevage.isNotEmpty;
+    }
+    if (isElevage) {
+      return numeroElevage.isNotEmpty &&
+             numeroElevage != '0000000000' &&
+             villeElevage.isNotEmpty &&
+             codePostalElevage.isNotEmpty;
+    }
+    return phone_number.isNotEmpty &&
+           phone_number != '0000000000' &&
+           ville.isNotEmpty &&
+           codePostal.isNotEmpty;
+  }
 }
 
 String getApiKey() {

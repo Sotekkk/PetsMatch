@@ -5,6 +5,7 @@ import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
+import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
@@ -100,6 +101,10 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
                         _buildStatsRow(),
+                        if (!User_Info.isProfileComplete()) ...[
+                          const SizedBox(height: 16),
+                          _buildProfileIncompleteBanner(context),
+                        ],
                         if (_mesAlertes.isNotEmpty) ...[
                           const SizedBox(height: 16),
                           _buildAlerteBanner(context),
@@ -227,6 +232,47 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
           fontSize: 17,
           color: Color(0xFF1F2A2E),
         ));
+  }
+
+  Widget _buildProfileIncompleteBanner(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => User_Info.isPro
+              ? const ProProfileEditPage()
+              : const InfoUserSettings())),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.amber.shade50,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.amber.shade400, width: 1.5),
+        ),
+        child: Row(children: [
+          CircleAvatar(
+            backgroundColor: Colors.amber.shade100,
+            child: Icon(Icons.person_outline, color: Colors.amber.shade800, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                'Complétez votre profil',
+                style: TextStyle(
+                    fontFamily: 'Galey',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: Colors.amber.shade900),
+              ),
+              Text(
+                'Téléphone, ville et code postal manquants',
+                style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 12, color: Colors.amber.shade700)),
+            ]),
+          ),
+          Icon(Icons.chevron_right, color: Colors.amber.shade400),
+        ]),
+      ),
+    );
   }
 
   Widget _buildAlerteBanner(BuildContext context) {

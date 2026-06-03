@@ -120,6 +120,38 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   }
 
   void _updateUserInfo() async {
+    // Validation des champs obligatoires
+    final bool isElevageOrPro = User_Info.isElevage || User_Info.isPro;
+    if (isElevageOrPro) {
+      if (_elevagePhoneController.text.trim().isEmpty ||
+          _villeElevageController.text.trim().isEmpty ||
+          _codePostalElevageController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Téléphone, ville et code postal sont obligatoires',
+                style: TextStyle(fontFamily: 'Galey')),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    } else {
+      if (_phoneController.text.trim().isEmpty ||
+          _villeController.text.trim().isEmpty ||
+          _codePostalController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Téléphone, ville et code postal sont obligatoires',
+                style: TextStyle(fontFamily: 'Galey')),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
+
     // Mettre à jour les informations dans Firebase
     await FirebaseFirestore.instance
         .collection('users')

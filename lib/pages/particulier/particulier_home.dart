@@ -14,6 +14,7 @@ import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
+import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 
 class ParticulierHomePage extends StatefulWidget {
   const ParticulierHomePage({super.key});
@@ -204,6 +205,10 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
+                  if (!User_Info.isProfileComplete()) ...[
+                    _buildProfileIncompleteBanner(),
+                    const SizedBox(height: 16),
+                  ],
                   if (_animaux.isNotEmpty) ...[
                     _buildMesAnimauxSection(),
                     const SizedBox(height: 20),
@@ -222,6 +227,45 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildProfileIncompleteBanner() {
+    return GestureDetector(
+      onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const InfoUserSettings())),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.amber.shade50,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.amber.shade400, width: 1.5),
+        ),
+        child: Row(children: [
+          CircleAvatar(
+            backgroundColor: Colors.amber.shade100,
+            child: Icon(Icons.person_outline, color: Colors.amber.shade800, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                'Complétez votre profil',
+                style: TextStyle(
+                    fontFamily: 'Galey',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: Colors.amber.shade900),
+              ),
+              Text(
+                'Téléphone, ville et code postal manquants',
+                style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 12, color: Colors.amber.shade700)),
+            ]),
+          ),
+          Icon(Icons.chevron_right, color: Colors.amber.shade400),
+        ]),
       ),
     );
   }
