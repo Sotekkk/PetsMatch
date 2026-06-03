@@ -68,12 +68,11 @@ class AnimauxPerdusPage extends StatefulWidget {
   State<AnimauxPerdusPage> createState() => _AnimauxPerdusPageState();
 }
 
-class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
-    with SingleTickerProviderStateMixin {
+class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
   static const _orange = Color(0xFFE65100);
   static const _teal   = Color(0xFF0C5C6C);
 
-  late TabController _tabController;
+  bool _showMap = false;
   List<Map<String, dynamic>> _alertes = [];
   List<Map<String, dynamic>> _trouves = [];
   bool _loading = true;
@@ -122,6 +121,14 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
   };
 
   Color get _accentColor => _filterType == 'trouve' ? _teal : _orange;
+
+  int get _activeFilterCount => [
+    _filterType != 'tous' ? 1 : 0,
+    (_filterEspece != null && _filterEspece != 'tous') ? 1 : 0,
+    _filterRace.isNotEmpty ? 1 : 0,
+    _searchLieu.isNotEmpty ? 1 : 0,
+    _filterDistanceKm != null ? 1 : 0,
+  ].fold(0, (a, b) => a + b);
 
   List<Map<String, dynamic>> get _filtered {
     List<Map<String, dynamic>> all = [];
@@ -175,7 +182,6 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     _places = GoogleMapsPlaces(apiKey: getApiKey());
     _load();
     _loadDefaultVille();
@@ -192,7 +198,6 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
 
   @override
   void dispose() {
-    _tabController.dispose();
     _mapController?.dispose();
     _raceFocusNode.dispose();
     _raceCtrl.dispose();
@@ -677,60 +682,272 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
 
   @override
   Widget build(BuildContext context) {
-    final title = _filterType == 'trouve'
-        ? 'Animaux trouvés'
-        : _filterType == 'tous'
-            ? 'Perdus & Trouvés'
-            : 'Perdus & Trouvés';
-
+    final active = _activeFilterCount;
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       appBar: AppBar(
         backgroundColor: _accentColor,
         iconTheme: const IconThemeData(color: Colors.white),
-        title: Text(title,
-            style: const TextStyle(
-                fontFamily: 'Galey',
-                fontWeight: FontWeight.w700,
-                color: Colors.white)),
+        title: Text(
+          _showMap ? 'Carte — Perdus & Trouvés' : 'Perdus & Trouvés',
+          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.nfc_outlined, color: Colors.white),
             tooltip: 'Recherche par puce',
             onPressed: _showChipSearch,
           ),
+          Stack(clipBehavior: Clip.none, children: [
+            IconButton(
+              icon: const Icon(Icons.tune_outlined, color: Colors.white),
+              tooltip: 'Filtres',
+              onPressed: _openFilterSheet,
+            ),
+            if (active > 0)
+              Positioned(
+                right: 6, top: 6,
+                child: Container(
+                  width: 16, height: 16,
+                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                  child: Center(
+                    child: Text('$active',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: _accentColor)),
+                  ),
+                ),
+              ),
+          ]),
+          IconButton(
+            icon: Icon(_showMap ? Icons.list_alt_outlined : Icons.map_outlined, color: Colors.white),
+            tooltip: _showMap ? 'Vue liste' : 'Vue carte',
+            onPressed: () => setState(() => _showMap = !_showMap),
+          ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white60,
-          tabs: const [
-            Tab(icon: Icon(Icons.list_alt_outlined), text: 'Liste'),
-            Tab(icon: Icon(Icons.map_outlined), text: 'Carte'),
-          ],
-        ),
       ),
       body: _loading
           ? Center(child: CircularProgressIndicator(color: _accentColor))
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                RefreshIndicator(
+          : _showMap
+              ? _buildMap()
+              : RefreshIndicator(
                   onRefresh: _load,
                   color: _accentColor,
                   child: _buildList(),
                 ),
-                _buildMap(),
-              ],
+    );
+  }
+
+  Future<void> _openFilterSheet() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          void applyFilter(VoidCallback fn) { setState(fn); setSheet(() {}); }
+          return DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.75,
+            maxChildSize: 0.95,
+            builder: (_, ctrl) => SingleChildScrollView(
+              controller: ctrl,
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                // Handle
+                Center(child: Container(width: 40, height: 4,
+                    decoration: BoxDecoration(color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2)))),
+                const SizedBox(height: 16),
+
+                // Type
+                const Text('Type', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                const SizedBox(height: 8),
+                Row(children: [
+                  for (final entry in [('perdu', '🚨 Perdus'), ('trouve', '🐾 Trouvés'), ('tous', 'Tous')])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () => applyFilter(() => _filterType = entry.$1),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: _filterType == entry.$1 ? _accentColor : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(entry.$2,
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                                  color: _filterType == entry.$1 ? Colors.white : Colors.black87)),
+                        ),
+                      ),
+                    ),
+                ]),
+                const SizedBox(height: 16),
+
+                // Espèce
+                const Text('Espèce', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 8, children: _especes.map((e) {
+                  final isAll = e == 'tous';
+                  final selected = isAll ? (_filterEspece == null || _filterEspece == 'tous') : _filterEspece == e;
+                  return GestureDetector(
+                    onTap: () => applyFilter(() { _filterEspece = isAll ? null : e; if (!isAll) _loadBreeds(e); }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: selected ? (_especeText[e] ?? _accentColor) : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        isAll ? 'Toutes' : '${_especeEmoji[e] ?? ''} ${e[0].toUpperCase()}${e.substring(1)}',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                            color: selected ? Colors.white : Colors.black87),
+                      ),
+                    ),
+                  );
+                }).toList()),
+                const SizedBox(height: 16),
+
+                // Lieu
+                const Text('Lieu', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _lieuCtrl,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Ville, région, lieu…',
+                    hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey),
+                    prefixIcon: const Icon(Icons.location_on_outlined, size: 18, color: Colors.grey),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _accentColor)),
+                    filled: true, fillColor: const Color(0xFFF8F8F8),
+                    suffixIcon: _searchLieu.isNotEmpty
+                        ? IconButton(icon: const Icon(Icons.clear, size: 16), onPressed: () => applyFilter(() { _lieuCtrl.clear(); _searchLieu = ''; _filterRegion = ''; _filterPays = ''; }))
+                        : null,
+                  ),
+                  onChanged: (v) => applyFilter(() => _searchLieu = v),
+                ),
+                const SizedBox(height: 12),
+
+                // Geo dropdowns
+                Row(children: [
+                  Expanded(child: _GeoDropdown(
+                    value: _filterPays.isEmpty ? null : _filterPays,
+                    hint: 'Pays',
+                    items: const ['France', 'Belgique', 'Suisse', 'Luxembourg'],
+                    onChanged: (v) => applyFilter(() { _filterPays = v ?? ''; _filterRegion = ''; _filterDept = ''; }),
+                  )),
+                  const SizedBox(width: 8),
+                  Expanded(child: _GeoDropdown(
+                    value: _filterRegion.isEmpty ? null : _filterRegion,
+                    hint: 'Région',
+                    items: _filterPays.isNotEmpty ? (_regionsByPaysList[_filterPays] ?? []) : [],
+                    onChanged: (v) => applyFilter(() { _filterRegion = v ?? ''; _filterDept = ''; }),
+                  )),
+                  const SizedBox(width: 8),
+                  Expanded(child: _GeoDropdown(
+                    value: _filterDept.isEmpty ? null : _filterDept,
+                    hint: 'Dép.',
+                    items: _filterRegion.isNotEmpty ? FrenchGeo.departmentsInRegion(_filterRegion) : [],
+                    onChanged: (v) => applyFilter(() => _filterDept = v ?? ''),
+                  )),
+                ]),
+
+                // Distance
+                if (_userLat != null) ...[
+                  const SizedBox(height: 12),
+                  const Text('Rayon', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, children: [null, 5, 10, 25, 50, 100].map((d) {
+                    final selected = _filterDistanceKm == d;
+                    return GestureDetector(
+                      onTap: () => applyFilter(() => _filterDistanceKm = d),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: selected ? _accentColor : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(d == null ? 'Tous' : '$d km',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                                color: selected ? Colors.white : Colors.black87)),
+                      ),
+                    );
+                  }).toList()),
+                ],
+
+                const SizedBox(height: 24),
+                Row(children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => applyFilter(() {
+                        _filterType = 'perdu'; _filterEspece = null; _filterRace = ''; _raceCtrl.clear();
+                        _searchLieu = ''; _lieuCtrl.clear(); _filterRegion = ''; _filterPays = ''; _filterDept = ''; _filterDistanceKm = null;
+                      }),
+                      style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.grey.shade300), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                      child: const Text('Réinitialiser', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: ElevatedButton.styleFrom(backgroundColor: _accentColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                      child: const Text('Appliquer', style: TextStyle(color: Colors.white, fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                ]),
+              ]),
             ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildActiveFilterChips() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          if (_filterType != 'tous')
+            _ActiveFilterChip(
+              label: _filterType == 'perdu' ? '🚨 Perdus' : '🐾 Trouvés',
+              onRemove: () => setState(() => _filterType = 'tous'),
+            ),
+          if (_filterEspece != null && _filterEspece != 'tous')
+            _ActiveFilterChip(
+              label: '${_especeEmoji[_filterEspece] ?? ''} ${_filterEspece![0].toUpperCase()}${_filterEspece!.substring(1)}',
+              onRemove: () => setState(() => _filterEspece = null),
+            ),
+          if (_filterRace.isNotEmpty)
+            _ActiveFilterChip(
+              label: _filterRace,
+              onRemove: () => setState(() { _filterRace = ''; _raceCtrl.clear(); }),
+            ),
+          if (_searchLieu.isNotEmpty)
+            _ActiveFilterChip(
+              label: '📍 $_searchLieu',
+              onRemove: () => setState(() { _searchLieu = ''; _lieuCtrl.clear(); _filterRegion = ''; _filterPays = ''; }),
+            ),
+          if (_filterDistanceKm != null)
+            _ActiveFilterChip(
+              label: '${_filterDistanceKm} km',
+              onRemove: () => setState(() => _filterDistanceKm = null),
+            ),
+        ]),
+      ),
     );
   }
 
   Widget _buildList() {
     final list = _filtered;
     return Column(children: [
-      _buildFilters(),
+      if (_activeFilterCount > 0) _buildActiveFilterChips(),
       Expanded(
         child: list.isEmpty
             ? Center(
@@ -1223,6 +1440,36 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
           ),
         ),
     ]);
+  }
+}
+
+// ── Active filter chip (dans la barre de filtres actifs) ──────────────────────
+
+class _ActiveFilterChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onRemove;
+  const _ActiveFilterChip({required this.label, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(right: 6),
+      padding: const EdgeInsets.fromLTRB(10, 4, 4, 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0C5C6C).withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF0C5C6C).withValues(alpha: 0.3)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
+            fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
+        const SizedBox(width: 4),
+        GestureDetector(
+          onTap: onRemove,
+          child: const Icon(Icons.close, size: 14, color: Color(0xFF0C5C6C)),
+        ),
+      ]),
+    );
   }
 }
 
