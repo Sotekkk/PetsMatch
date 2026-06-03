@@ -32,6 +32,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   bool _saving = false;
   List<Map<String, dynamic>> _animaux = [];
   List<Map<String, dynamic>> _proRdvs = [];
+  List<Map<String, dynamic>> _proCreneauxBloques = [];
 
   @override
   void initState() {
@@ -74,12 +75,31 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           .eq('pro_uid', widget.proUid)
           .inFilter('statut', ['confirme', 'demande'])
           .gte('date_heure', DateTime.now().toIso8601String());
-      if (mounted) setState(() => _proRdvs = List<Map<String, dynamic>>.from(rows));
+      final creneaux = await Supabase.instance.client
+          .from('creneaux_pro')
+          .select('date, heure_debut, heure_fin')
+          .eq('pro_uid', widget.proUid)
+          .gte('date', DateTime.now().toIso8601String().substring(0, 10));
+      if (mounted) {
+        setState(() {
+          _proRdvs = List<Map<String, dynamic>>.from(rows);
+          _proCreneauxBloques = List<Map<String, dynamic>>.from(creneaux);
+        });
+      }
     } catch (_) {}
   }
 
   bool _isBusy(int h, int m) {
     final selDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    // Créneaux bloqués par le pro
+    final dateStr = _selectedDate.toIso8601String().substring(0, 10);
+    for (final c in _proCreneauxBloques) {
+      if (c['date'] != dateStr) continue;
+      final startH = int.parse((c['heure_debut'] as String).split(':')[0]);
+      final endH   = int.parse((c['heure_fin']   as String).split(':')[0]);
+      if (h >= startH && h < endH) return true;
+    }
+    // RDV déjà confirmés / en demande
     for (final r in _proRdvs) {
       final dh = DateTime.tryParse(r['date_heure'] ?? '')?.toLocal();
       if (dh == null) continue;

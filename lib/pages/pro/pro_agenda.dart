@@ -16,16 +16,28 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     with SingleTickerProviderStateMixin {
   static const _teal = Color(0xFF0C5C6C);
   static const _bg = Color(0xFFF8F8F8);
+  static const _jours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+  static const _mois = ['jan.', 'fév.', 'mar.', 'avr.', 'mai', 'juin',
+      'juil.', 'août', 'sep.', 'oct.', 'nov.', 'déc.'];
 
   late TabController _tabCtrl;
   bool _loading = true;
   List<Map<String, dynamic>> _rdvs = [];
 
+  // AG08 — créneaux
+  late DateTime _weekStart;
+  int _selectedDayIdx = 0;
+  final Map<String, bool> _blockedSlots = {};
+
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 3, vsync: this);
+    _tabCtrl = TabController(length: 4, vsync: this);
+    final now = DateTime.now();
+    _weekStart = now.subtract(Duration(days: now.weekday - 1));
+    _selectedDayIdx = now.weekday - 1;
     _loadRdvs();
+    _loadCreneaux();
   }
 
   @override
@@ -316,6 +328,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             Tab(text: 'Demandes${_demandes.isNotEmpty ? " (${_demandes.length})" : ""}'),
             const Tab(text: 'À venir'),
             const Tab(text: 'Historique'),
+            const Tab(text: 'Créneaux'),
           ],
         ),
       ),
@@ -330,10 +343,255 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   _buildList(_demandes, showActions: true),
                   _buildList(_avenir, showCancel: true),
                   _buildList(_historique),
+                  _buildCreneauxTab(),
                 ],
               ),
             ),
     );
+  }
+
+  // ── AG08 — Créneaux ──────────────────────────────────────────────────────────
+
+  Future<void> _loadCreneaux() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final weekEnd = _weekStart.add(const Duration(days: 6));
+    try {
+      final rows = await Supabase.instance.client
+          .from('creneaux_pro')
+          .select()
+          .eq('pro_uid', uid)
+          .gte('date', _weekStart.toIso8601String().substring(0, 10))
+          .lte('date', weekEnd.toIso8601String().substring(0, 10));
+      if (!mounted) return;
+      setState(() {
+        _blockedSlots.clear();
+        for (final row in rows) {
+          final date = row['date'] as String;
+          final heureDebut = (row['heure_debut'] as String).split(':')[0];
+          _blockedSlots['${date}_$heureDebut'] = true;
+        }
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _toggleSlot(String date, int hour) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final key = '${date}_$hour';
+    final isBlocked = _blockedSlots[key] == true;
+    setState(() {
+      if (isBlocked) _blockedSlots.remove(key);
+      else _blockedSlots[key] = true;
+    });
+    try {
+      if (isBlocked) {
+        await Supabase.instance.client
+            .from('creneaux_pro')
+            .delete()
+            .eq('pro_uid', uid)
+            .eq('date', date)
+            .like('heure_debut', '$hour:%');
+      } else {
+        final heureDebut = '${hour.toString().padLeft(2, '0')}:00:00';
+        final heureFin   = '${(hour + 1).toString().padLeft(2, '0')}:00:00';
+        await Supabase.instance.client.from('creneaux_pro').upsert({
+          'pro_uid':     uid,
+          'date':        date,
+          'heure_debut': heureDebut,
+          'heure_fin':   heureFin,
+          'statut':      'bloque',
+        }, onConflict: 'pro_uid,date,heure_debut');
+      }
+    } catch (e) {
+      // Rollback optimiste
+      setState(() {
+        if (isBlocked) _blockedSlots[key] = true;
+        else _blockedSlots.remove(key);
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  Widget _buildCreneauxTab() {
+    final days = List.generate(7, (i) => _weekStart.add(Duration(days: i)));
+    final selectedDay = days[_selectedDayIdx];
+    final dateStr = selectedDay.toIso8601String().substring(0, 10);
+
+    return Column(children: [
+      // Navigation semaine
+      Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+        child: Row(children: [
+          IconButton(
+            onPressed: () {
+              setState(() {
+                _weekStart = _weekStart.subtract(const Duration(days: 7));
+                _blockedSlots.clear();
+              });
+              _loadCreneaux();
+            },
+            icon: const Icon(Icons.chevron_left, color: _teal),
+          ),
+          Expanded(
+            child: Text(
+              'Semaine du ${_weekStart.day} ${_mois[_weekStart.month - 1]}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+          ),
+          IconButton(
+            onPressed: () {
+              setState(() {
+                _weekStart = _weekStart.add(const Duration(days: 7));
+                _blockedSlots.clear();
+              });
+              _loadCreneaux();
+            },
+            icon: const Icon(Icons.chevron_right, color: _teal),
+          ),
+        ]),
+      ),
+      // Sélecteur de jour
+      SizedBox(
+        height: 68,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          itemCount: 7,
+          itemBuilder: (_, i) {
+            final day = days[i];
+            final sel = i == _selectedDayIdx;
+            final isToday = _sameDay(day, DateTime.now());
+            return GestureDetector(
+              onTap: () => setState(() => _selectedDayIdx = i),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: sel ? _teal : (isToday ? const Color(0x1A0C5C6C) : Colors.white),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: sel ? _teal : (isToday ? _teal : const Color(0xFFE4E7E2)),
+                  ),
+                ),
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Text(_jours[day.weekday - 1],
+                      style: TextStyle(
+                          fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600,
+                          color: sel ? Colors.white : Colors.grey)),
+                  const SizedBox(height: 2),
+                  Text('${day.day}',
+                      style: TextStyle(
+                          fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700,
+                          color: sel ? Colors.white : (isToday ? _teal : Colors.black87))),
+                ]),
+              ),
+            );
+          },
+        ),
+      ),
+      // Légende
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: Row(children: [
+          _LegendDot(color: Colors.white, border: const Color(0xFF6E9E57), label: 'Disponible'),
+          const SizedBox(width: 16),
+          _LegendDot(color: const Color(0xFFEEEEEE), border: Colors.grey, label: 'Bloqué'),
+          const SizedBox(width: 16),
+          _LegendDot(color: const Color(0x1A0C5C6C), border: _teal, label: 'RDV'),
+        ]),
+      ),
+      const Divider(height: 1),
+      // Grille horaire
+      Expanded(
+        child: ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+          itemCount: 12, // 8h → 19h
+          itemBuilder: (_, i) {
+            final hour = 8 + i;
+            final key = '${dateStr}_$hour';
+            final isBlocked = _blockedSlots[key] == true;
+            final hasRdv = _rdvs.any((r) {
+              final s = r['statut'] as String? ?? '';
+              if (s != 'confirme' && s != 'demande') return false;
+              final dh = DateTime.tryParse(r['date_heure'] ?? '')?.toLocal();
+              if (dh == null || !_sameDay(dh, selectedDay)) return false;
+              final dur = (r['duree_minutes'] as num?)?.toInt() ?? 60;
+              final rdvStart = dh.hour;
+              final rdvEnd = rdvStart + (dur / 60).ceil();
+              return hour >= rdvStart && hour < rdvEnd;
+            });
+
+            Color bgColor;
+            Color borderColor;
+            Color textColor;
+            if (hasRdv) {
+              bgColor = const Color(0x1A0C5C6C);
+              borderColor = _teal;
+              textColor = _teal;
+            } else if (isBlocked) {
+              bgColor = const Color(0xFFEEEEEE);
+              borderColor = Colors.grey;
+              textColor = Colors.grey.shade600;
+            } else {
+              bgColor = Colors.white;
+              borderColor = const Color(0xFF6E9E57);
+              textColor = Colors.black87;
+            }
+
+            return GestureDetector(
+              onTap: hasRdv ? null : () => _toggleSlot(dateStr, hour),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: borderColor),
+                ),
+                child: Row(children: [
+                  Text(
+                    '${hour.toString().padLeft(2, '0')}:00 — ${(hour + 1).toString().padLeft(2, '0')}:00',
+                    style: TextStyle(
+                        fontFamily: 'Galey',
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: textColor),
+                  ),
+                  const Spacer(),
+                  if (hasRdv)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0x260C5C6C),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text('RDV',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                              fontWeight: FontWeight.w600, color: _teal)),
+                    )
+                  else if (isBlocked)
+                    const Icon(Icons.block, size: 18, color: Colors.grey)
+                  else
+                    Icon(Icons.check_circle_outline, size: 18, color: Colors.green.shade400),
+                ]),
+              ),
+            );
+          },
+        ),
+      ),
+    ]);
   }
 
   Widget _buildList(List<Map<String, dynamic>> rdvs,
@@ -386,6 +644,31 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         );
       },
     );
+  }
+}
+
+// ── Légende créneaux ──────────────────────────────────────────────────────────
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final Color border;
+  final String label;
+  const _LegendDot({required this.color, required this.border, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+        width: 14, height: 14,
+        decoration: BoxDecoration(
+          color: color,
+          border: Border.all(color: border),
+          borderRadius: BorderRadius.circular(4),
+        ),
+      ),
+      const SizedBox(width: 5),
+      Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+    ]);
   }
 }
 
