@@ -72,8 +72,8 @@
 | ~~PT06~~ | ~~**[V1]** Saisie manuelle numéro puce → recherche dans alertes perdus + animaux trouvés + animaux de l'élevage~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
 | ~~PT07~~ | ~~**[V1]** Notifications de proximité pour les animaux trouvés (rayon 20 km d'une alerte active) — Firebase Cloud Function `notifyNearFoundAnimal`~~ | ~~Haute~~ | ~~Firebase Functions~~ | ✅ Terminé 2026-05-30 |
 | ~~PT08~~ | ~~**[V1]** Messagerie automatique perdu/trouvé — conversation Firestore avec objet + message prérempli au contact~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
-| PT09 | **[V2]** Matching automatique perdu ↔ trouvé — score pondéré (espèce+race+sexe+zone+date+couleur+puce) + notification si ≥ 90% | Haute | Firebase Functions + App + Web | Créer `matchLostFound` Cloud Function |
-| PT10 | **[V2]** Table `alertes_correspondances` — stocker les paires matchées pour éviter doublons de notif | Moyenne | Supabase | Dashboard SQL Editor |
+| ~~PT09~~ | ~~**[V2]** Matching automatique perdu ↔ trouvé — score pondéré (espèce+race+sexe+zone+date+couleur+puce) + notification si ≥ 90%~~ | ~~Haute~~ | ~~Firebase Functions + App + Web~~ | ✅ Terminé 2026-06-03 — `functions/match.js` + export `index.js` + `runMatchLostFound()` dans `alertes_notifications.dart` + appels depuis `alerte_perdu_form_page.dart` (type=perdu) et `animal_trouve_form_page.dart` (type=trouve) |
+| ~~PT10~~ | ~~**[V2]** Table `alertes_correspondances` — stocker les paires matchées pour éviter doublons de notif~~ | ~~Moyenne~~ | ~~Supabase~~ | ✅ Terminé 2026-06-03 — SQL à exécuter dans Supabase Dashboard : `CREATE TABLE alertes_correspondances (id UUID PK DEFAULT gen_random_uuid(), alerte_id TEXT, trouve_id TEXT, score INT, score_pct INT, notifie BOOL DEFAULT false, created_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(alerte_id, trouve_id))` + RLS |
 | PT11 | **[V2]** Lecteur puce Bluetooth — `ChipScannerService` (connect/disconnect/listen/parseChip/searchAnimal), protocoles BLE + ISO11784/11785. **3 contextes** : (1) élevage → ouvre fiche animal directement, (2) animal trouvé → ouvre alerte liée, (3) inconnu → propose créer/déclarer | Haute | App | Créer `lib/services/chip_scanner_service.dart` |
 | PT12 | **[V2]** Statuts animaux trouvés — workflow (Trouvé → Pris en charge → Propriétaire contacté → Restitué → Clôturé) | Moyenne | App + Web | `animal_trouve_form_page.dart` |
 | PT13 | **[V3]** IA rapprochement photos animaux perdus/trouvés | Basse | Backend | À évaluer |
@@ -85,6 +85,37 @@
 |---|---|---|---|---|
 | ~~AL01~~ | ~~**[V1]** Onglet alimentation — calcul ration journalière (croquettes marque/produit, BARF, ration ménagère) + objectif de poids~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-05-30 |
 | AL02 | **[V2]** Recettes ration ménagère — bibliothèque par espèce (chien, chat) avec ingrédients + quantités auto-adaptées au poids | Moyenne | App + Web | Créer `lib/pages/alimentation/` + `src/app/alimentation/` |
+
+### Facturation éleveur — Module métier indépendant (EF01–EF08)
+
+> Profil éleveur uniquement · Abonnement PRO+ · Non couplé au billing PetsMatch
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| EF01 | **[V2]** Tables Supabase — `breeder_invoices`, `breeder_invoice_items`, `breeder_customers`, `breeder_payments`, `breeder_invoice_animal_link` + RLS par `uid_eleveur` | Haute | Supabase | SQL Editor |
+| EF02 | **[V2]** `BreederInvoiceService` Dart — CRUD factures, gestion statuts (brouillon/envoyée/payée/acompte/partielle/annulée), association animal + portée + contrat optionnels, historique règlements | Haute | App | Créer `lib/services/breeder_invoice_service.dart` |
+| EF03 | **[V2]** UI Mobile — Création/édition facture : infos vendeur (auto depuis profil élevage), acheteur (depuis `breeder_customers`), animal vendu (`animal_id` + `portee_id` optionnel), prix, TVA, date, conditions, notes | Haute | App | Créer `lib/pages/eleveur/facturation/breeder_invoice_form_page.dart` |
+| EF04 | **[V2]** UI Mobile — Liste factures + tableau de bord élevage : CA total, nombre ventes, factures ouvertes, acomptes en attente, montants restants | Haute | App | Créer `lib/pages/eleveur/facturation/breeder_invoices_page.dart` |
+| EF05 | **[V2]** UI Mobile — Gestion acomptes & paiements partiels : montant acompte, reste à payer, date paiement prévu, historique règlements par facture | Moyenne | App | `breeder_invoice_form_page.dart` + service |
+| EF06 | **[V2]** Génération PDF éleveur — logo élevage, coordonnées élevage, coordonnées client, détail animal, prix HT + TVA + TTC, conditions de vente, zone signature optionnelle | Haute | App + Web | `pdf` package Flutter + Edge Function ou `pdfmake` web |
+| EF07 | **[V2]** Exports — PDF (facture unitaire), Excel (liste factures), CSV (comptabilité) | Moyenne | App + Web | `excel` package + `pdf` package |
+| EF08 | **[V2]** UI Web — Module facturation synchronisé mobile : liste factures, création, tableau de bord, téléchargement PDF | Moyenne | Web | Créer `src/app/elevage/facturation/page.tsx` |
+
+### Facturation PetsMatch — Billing plateforme (BL01–BL08)
+
+> Profils éleveur et pro uniquement · Abonnements · Achats ponctuels · Factures PDF automatiques · Non couplé à la facturation éleveur
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| BL01 | **[V2]** Tables Supabase — `subscriptions` (plan, billing_cycle, statut, dates, provider_id, **profile_type** breeder/pro/pension) + `payments` (type, amount, currency, statut, provider_transaction_id) + `invoices` (numéro PM-YYYY-N, PDF URL, TVA) + RLS par `user_id` | Haute | Supabase | SQL Editor |
+| BL02 | **[V2]** `PaymentService` Dart — provider abstrait : `createPayment()`, `verifyPayment()`, `cancelSubscription()`, `refund()`. Patterns Repository + DTO. Stripe en implémentation par défaut (existante) | Haute | App | Créer `lib/services/billing/payment_service.dart` |
+| BL03 | **[V2]** `InvoiceService` Dart — `generateInvoice()` (après paiement), `downloadInvoice()` (depuis Supabase Storage), `sendInvoice()` (email). Numérotation auto `PM-YYYY-000001` | Haute | App + Web | Créer `lib/services/billing/invoice_service.dart` |
+| BL04 | **[V2]** UI Mobile — Page abonnements éleveur : FREE / PRO 15€ (149€/an) / PREMIUM 25€ (249€/an) ; comparatif fonctionnalités, upgrade, downgrade, annulation, renouvellement auto PREMIUM | Haute | App | Créer `lib/pages/billing/subscription_page.dart` |
+| BL04b | **[V2]** UI Mobile — Page abonnements pro : FREE / PRO 12€/mois / PENSION 19€/mois ; grille distincte de l'éleveur, plan PENSION non proposé aux vétos/comportementalistes | Haute | App | `subscription_page.dart` (variante pro) |
+| BL05 | **[V2]** UI Mobile — Page "Mes paiements" : liste abonnements actifs, historique achats ponctuels (boost 1,99€/48h · mise à la une 4,99€/7j · remontée 0,99€ · pack 3 boosts 4,99€ · annonce sup. 2,99€), statuts, téléchargement facture PDF | Haute | App | Créer `lib/pages/billing/mes_paiements_page.dart` |
+| BL06 | **[V2]** Génération PDF facture PetsMatch — logo PetsMatch, numéro `PM-YYYY-NNNNNN`, date, nom+adresse client, détail produit, montant HT + TVA 20% + TTC, conditions, QR code optionnel. Stockage Supabase Storage `/invoices/` | Haute | App + Web | `pdf` package + Supabase Storage |
+| BL07 | **[V2]** UI Web — Module billing web : page abonnements (grille éleveur ou pro selon profil), historique paiements, téléchargement factures | Moyenne | Web | Créer `src/app/billing/page.tsx` + `src/app/billing/abonnements/page.tsx` |
+| BL08 | **[V2]** Admin — Panel facturation : liste tous paiements, liste abonnements actifs, échecs de paiement, remboursements, stats revenus (CA mensuel, MRR, ARR) | Haute | App + Web | `admin_panel.dart` + `src/app/admin/billing/page.tsx` |
 
 ### App mobile + Web (synchronisés)
 

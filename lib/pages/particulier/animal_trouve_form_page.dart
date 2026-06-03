@@ -410,6 +410,12 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
                 });
           } catch (_) {}
         }
+
+        // Match against open lost-animal alerts (fire-and-forget)
+        FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('matchLostFound')
+            .call({'alerteId': inserted['id'] ?? '', 'type': 'trouve'})
+            .catchError((_) {});
       }
 
       if (mounted) {

@@ -586,22 +586,30 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
         'statut':                  'perdu',
       };
 
+      String? newAlertId;
       if (_isEdit) {
         await _supa.from('alertes_perdus').update(payload).eq('id', widget.alerteId!);
       } else {
+        newAlertId = '${DateTime.now().millisecondsSinceEpoch}';
         await _supa.from('alertes_perdus').insert({
-          'id': '${DateTime.now().millisecondsSinceEpoch}',
+          'id': newAlertId,
           ...payload,
         });
       }
+
+      final effectiveAlertId = _isEdit ? widget.alerteId! : newAlertId!;
 
       if (_lat != null && _lng != null) {
         notifyNearbyUsersAboutLostAnimal(
           lat: _lat!, lng: _lng!,
           nomAnimal: _nomCtrl.text.trim(), espece: _espece,
-          alerteId: _isEdit ? widget.alerteId! : '${DateTime.now().millisecondsSinceEpoch}',
+          alerteId: effectiveAlertId,
           proprietaireUid: User_Info.uid,
         );
+      }
+
+      if (!_isEdit) {
+        runMatchLostFound(alerteId: effectiveAlertId, type: 'perdu');
       }
 
       if (mounted) {

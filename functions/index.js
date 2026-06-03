@@ -7,6 +7,7 @@ const retraiteFunctions = require("./retraite");
 const tachesFunctions = require("./taches");
 const santeFunctions = require("./sante");
 const annonceFunctions = require("./annonces");
+const matchFunctions   = require("./match");
 
 // Stripe + messagerie
 exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
@@ -41,3 +42,6 @@ exports.sendSanteReminders = santeFunctions.sendSanteReminders;
 
 // Annonces — expiration auto + rappels J-7 et J-1
 exports.sendAnnonceExpirationReminders = annonceFunctions.sendAnnonceExpirationReminders;
+
+// Matching perdu ↔ trouvé — score pondéré + notification ≥ 90%
+exports.matchLostFound = matchFunctions.matchLostFound;

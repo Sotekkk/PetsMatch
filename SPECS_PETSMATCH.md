@@ -421,6 +421,246 @@ Doses calculées depuis formule DER (adulte × 1.6 chien / × 1.4 chat ; junior 
 
 ---
 
+### 5.11 Facturation éleveur — Module métier indépendant
+
+> **Profil éleveur · Abonnement PRO+ · Non couplé au billing PetsMatch**
+
+Module métier permettant aux éleveurs de gérer leur facturation clients de manière autonome, réutilisable et compatible Web / Mobile.
+
+#### Périmètre fonctionnel
+
+**Création de facture**
+
+- Informations vendeur (auto-remplies depuis profil élevage : SIRET, nom, adresse, logo)
+- Informations acheteur (depuis table `breeder_customers` : nom, adresse, email, téléphone)
+- Animal vendu : `animal_id`, `portee_id` (optionnel), `contrat_id` (optionnel)
+- Prix HT, taux TVA (0%, 5.5%, 10%, 20%), total TTC
+- Date de facturation, date d'échéance
+- Conditions de vente, notes libres
+
+**Liaison animal vendu**
+
+- Association `animal_id` → historique ventes affiché dans la fiche animal
+- `portee_id` optionnel (vente issue d'une portée)
+- `contrat_id` optionnel (lien vers contrat de réservation existant)
+
+**Gestion des paiements et statuts**
+
+| Statut | Description |
+|---|---|
+| `brouillon` | Facture non envoyée — modifiable |
+| `envoyée` | Envoyée au client (email/PDF) |
+| `acompte` | Acompte reçu — reste à payer > 0 |
+| `partiellement_payée` | Plusieurs règlements partiels |
+| `payée` | Soldée intégralement |
+| `annulée` | Annulation avec avoir optionnel |
+
+**Gestion des acomptes**
+
+- Montant acompte prévu
+- Reste à payer calculé automatiquement
+- Date de paiement prévue / réelle
+- Historique règlements par facture (`breeder_payments`)
+
+**Génération PDF**
+
+- Logo élevage (depuis profil)
+- Coordonnées élevage + coordonnées client
+- Tableau détail animal (race, date naissance, puce, LOF)
+- Prix HT + TVA + TTC
+- Conditions de vente
+- Zone signature optionnelle
+- Numéro de facture auto-incrémenté (ex: `ELEVAGE-2026-0001`)
+
+**Exports**
+
+- PDF — facture unitaire téléchargeable
+- Excel — liste de toutes les factures (CA, statuts, échéances)
+- CSV — export comptabilité (compatible Quadratus, EBP, Sage)
+
+**Tableau de bord élevage**
+
+- CA total (année en cours + historique)
+- Nombre de ventes par période
+- Factures ouvertes (envoyées non payées)
+- Acomptes reçus en attente de solde
+- Montants en attente (total impayés)
+
+#### Tables Supabase
+
+| Table | Colonnes principales |
+|---|---|
+| `breeder_invoices` | `id UUID`, `uid_eleveur TEXT`, `customer_id UUID`, `animal_id TEXT`, `portee_id UUID?`, `contrat_id UUID?`, `numero TEXT`, `statut TEXT`, `date_facture DATE`, `date_echeance DATE?`, `prix_ht NUMERIC`, `taux_tva NUMERIC`, `total_ttc NUMERIC`, `conditions TEXT`, `notes TEXT`, `created_at TIMESTAMPTZ` |
+| `breeder_invoice_items` | `id UUID`, `invoice_id UUID`, `description TEXT`, `quantite INT`, `prix_unitaire_ht NUMERIC`, `taux_tva NUMERIC` |
+| `breeder_customers` | `id UUID`, `uid_eleveur TEXT`, `nom TEXT`, `prenom TEXT`, `email TEXT`, `telephone TEXT`, `adresse TEXT`, `cp TEXT`, `ville TEXT`, `pays TEXT` |
+| `breeder_payments` | `id UUID`, `invoice_id UUID`, `montant NUMERIC`, `date_paiement DATE`, `mode TEXT` (virement/chèque/espèces/CB), `notes TEXT` |
+| `breeder_invoice_animal_link` | `invoice_id UUID`, `animal_id TEXT`, `portee_id UUID?` |
+
+RLS : toutes les tables filtrées par `uid_eleveur = auth.uid()` (données privées).
+
+#### Permissions
+
+- Profil éleveur uniquement
+- Abonnement PRO+ requis (vérification `abonnement` Supabase)
+- Données strictement privées (RLS par UID)
+
+#### Évolutions futures (V3+)
+
+- Facturation électronique (norme Chorus Pro)
+- API comptabilité (Quadratus, EBP, Sage)
+- Signature électronique (DocuSign / Yousign)
+- Multi-TVA intracommunautaire
+
+---
+
+### 5.12 Facturation PetsMatch — Billing plateforme
+
+> **Profils éleveur et pro uniquement · V1 = abonnements + achats ponctuels + factures PDF · Non couplé à la facturation éleveur**
+
+Module léger, production-ready, scalable V2. Aucune dette technique. Pas de plateforme de facturation électronique.
+
+#### Plans d'abonnement — Éleveur
+
+| Plan | Prix mensuel | Prix annuel | Cible |
+|---|---|---|---|
+| FREE | 0€ | 0€ | Éleveurs débutants |
+| PRO | 15€/mois | 149€/an | Éleveurs actifs |
+| PREMIUM | 25€/mois | 249€/an | Éleveurs pro + module facturation |
+
+Note : PREMIUM = PRO+ dans le code (champ `plan` Supabase = `'premium'`).
+
+| Fonctionnalité | FREE | PRO | PREMIUM |
+|---|---|---|---|
+| Annonces actives | 3 | 10 | Illimité |
+| Durée annonce | 30j | 45j | 60j |
+| Renouvellement annonce | Manuel | Manuel + rappel J-5 | Auto-renouvellement |
+| Boost inclus/mois | 0 | 1 | 3 |
+| Gestion employés | ❌ | 2 max | Illimité |
+| Registre + contrats PDF | Basique | Complet | Complet + export CSV/Excel |
+| Module facturation éleveur (5.11) | ❌ | ❌ | ✅ |
+| Badge élevage vérifié | ❌ | ✅ | ✅ |
+| Statistiques annonces | ❌ | Basique | Avancées |
+
+> **Contexte métier :** les chiots et chatons sont vendus entre 8 et 12 semaines. Une annonce de portée est publiée ~4 semaines avant la mise en vente. La durée maximale de 60 jours (PREMIUM) couvre l'ensemble du cycle de vente sans générer d'annonces obsolètes. Le renouvellement automatique (PREMIUM) est la vraie valeur différenciante, pas la durée brute.
+
+Fonctionnalités abonnement : upgrade, downgrade, annulation immédiate ou en fin de période, renouvellement automatique.
+
+#### Plans d'abonnement — Professionnel
+
+Trois plans distincts pour les profils pro (vétérinaire, comportementaliste, pet sitter, pension).
+
+| Plan | Prix mensuel | Cible |
+|---|---|---|
+| FREE | 0€ | Visibilité de base |
+| PRO | 12€/mois | Agenda avancé + badge vérifié |
+| PENSION | 19€/mois | Pet sitters et pensionnaires |
+
+Note : vétérinaires et comportementalistes utilisent généralement leur propre logiciel métier — le plan PENSION ne leur est pas proposé par défaut.
+
+| Fonctionnalité | FREE | PRO | PENSION |
+|---|---|---|---|
+| Annuaire visible | ✅ basique | ✅ mis en avant + badge vérifié | ✅ mis en avant + badge vérifié |
+| Zone d'intervention carte | ✅ | ✅ | ✅ |
+| Agenda RDV | ✅ | ✅ + créneaux avancés (AG08) | ✅ + créneaux avancés (AG08) |
+| Messagerie prioritaire | ❌ | ✅ | ✅ |
+| Registre pension (entrées/sorties) | ❌ | ❌ | ✅ |
+| Fiche santé animaux en pension (lecture via token partage) | ❌ | ❌ | ✅ |
+| Contrats pension PDF | ❌ | ❌ | ✅ |
+| Facturation clients (module 5.11) | ❌ | ❌ | ✅ |
+
+#### Achats ponctuels (boosts)
+
+| Produit | Prix | Durée | Description |
+|---|---|---|---|
+| Boost annonce | 1,99€ | 48h | Remontée temporaire en tête de feed |
+| Mise à la une | 4,99€ | 7 jours | Badge + position prioritaire |
+| Remontée annonce | 0,99€ | Instantané | Re-publication dans le feed |
+| Annonce supplémentaire | 2,99€ | Selon plan | Quota annonces au-delà du plan |
+| Pack 3 boosts 48h | 4,99€ | 3 × 48h | Bundle (économie vs 3 × 1,99€) |
+
+#### Architecture modules
+
+```
+billing/
+  subscriptions/   — plans, upgrade/downgrade, annulation
+  payments/        — paiements ponctuels + provider abstrait
+  invoice/         — génération PDF, stockage, envoi
+  admin_billing/   — tableau de bord admin revenus
+```
+
+Patterns : Repository, Providers séparés, DTO dédiés. L'UI ne connaît pas le provider de paiement.
+
+#### PaymentService — Interface abstraite
+
+- `createPayment(userId, type, amount, currency)` → `Payment`
+- `verifyPayment(paymentId)` → `PaymentStatus`
+- `cancelSubscription(subscriptionId)` → `bool`
+- `refund(paymentId, amount?)` → `bool`
+
+Implémentation par défaut : **Stripe** (Cloud Functions existantes `createStripePaymentIntent` / `createStripeSubscription`).
+
+#### InvoiceService
+
+- `generateInvoice(paymentId)` → PDF créé et stocké dans Supabase Storage `/invoices/PM-YYYY-NNNNNN.pdf`
+- `downloadInvoice(invoiceId)` → URL signée
+- `sendInvoice(invoiceId, email)` → envoi email
+
+Numérotation automatique : `PM-YYYY-000001` (séquence Supabase).
+
+#### Contenu PDF facture
+
+- Logo PetsMatch
+- Numéro de facture (`PM-YYYY-NNNNNN`)
+- Date de facturation
+- Nom et adresse client
+- Détail produit / plan
+- Montant HT + taux TVA (20%) + Montant TTC
+- Conditions générales de vente (extrait)
+- QR code optionnel (lien vérification)
+
+#### Tables Supabase
+
+| Table | Colonnes principales |
+|---|---|
+| `subscriptions` | `id UUID`, `user_id TEXT`, `plan TEXT`, `billing_cycle TEXT` (monthly/annual), `status TEXT`, `price NUMERIC`, `start_date DATE`, `end_date DATE`, `payment_provider_id TEXT`, `profile_type TEXT` (breeder/pro/pension), `created_at TIMESTAMPTZ` |
+| `payments` | `id UUID`, `user_id TEXT`, `type TEXT` (subscription/boost/une/remontee/annonce_sup), `amount NUMERIC`, `currency TEXT`, `status TEXT` (pending/succeeded/failed/refunded), `provider_transaction_id TEXT`, `created_at TIMESTAMPTZ` |
+| `invoices` | `id UUID`, `user_id TEXT`, `payment_id UUID`, `numero TEXT` UNIQUE, `pdf_url TEXT`, `montant_ht NUMERIC`, `taux_tva NUMERIC`, `montant_ttc NUMERIC`, `sent_at TIMESTAMPTZ`, `created_at TIMESTAMPTZ` |
+
+RLS : toutes les tables filtrées par `user_id = auth.uid()` (lecture/écriture). Admin via service role.
+
+#### UI utilisateur
+
+**Mobile — Page abonnements**
+- Affichage plans FREE / PRO / PREMIUM (éleveur) ou FREE / PRO / PENSION (pro) avec comparatif fonctionnalités
+- Boutons upgrade / downgrade / annuler avec confirmation
+- Badge "Plan actuel" + date renouvellement
+
+**Mobile — Page "Mes paiements"**
+- Onglets : Abonnements | Achats | Factures
+- Téléchargement PDF par facture
+- Statut visuels (payé ✓ / échec ✗ / remboursé ↩)
+
+**Web — Billing page**
+- Synchronisé avec mobile
+- Téléchargement PDF depuis navigateur
+
+#### Admin billing
+
+- Liste tous paiements (filtre statut, plan, période)
+- Liste abonnements actifs + churn
+- Échecs de paiement (retry manuel)
+- Remboursements
+- Stats revenus : CA mensuel, MRR (Monthly Recurring Revenue), ARR
+
+#### Évolutions V2+
+
+- Facturation électronique (Chorus Pro)
+- Multi-devises (CHF, GBP, USD)
+- Factures TVA intracommunautaire
+- API export comptabilité (Quadratus, Sage)
+
+---
+
 ## 6. Sécurité / Conformité RGPD
 
 ### V1 — Obligatoire avant lancement public
