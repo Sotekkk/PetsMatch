@@ -1,5 +1,6 @@
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_form_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/portee_poids_page.dart';
 import 'package:PetsMatch/services/chaleurs_notif_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -1019,6 +1020,23 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                 child: Text('${members.length}',
                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                         fontSize: 13, color: _teal)),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => PorteePoidsPage(
+                    animals: members,
+                    dateNaissance: dn,
+                  ),
+                )),
+                child: Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: _teal.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.bar_chart, size: 18, color: _teal),
+                ),
               ),
             ]),
           ),
