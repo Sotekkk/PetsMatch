@@ -80,11 +80,11 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
   bool _locating = false;
 
   // Filtres
-  String _filterType = 'perdu'; // 'perdu', 'trouve', 'tous'
+  String _filterType = 'tous';
   String? _filterEspece;
   String _searchLieu = '';
   String _filterRace = '';
-  String _filterPays = '';
+  String _filterPays = 'France';
   String _filterRegion = '';
   String _filterDept = '';
   int? _filterDistanceKm;
@@ -128,6 +128,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
     _filterRace.isNotEmpty ? 1 : 0,
     _searchLieu.isNotEmpty ? 1 : 0,
     _filterDistanceKm != null ? 1 : 0,
+    (_filterRegion.isNotEmpty || _filterDept.isNotEmpty) ? 1 : 0,
   ].fold(0, (a, b) => a + b);
 
   List<Map<String, dynamic>> get _filtered {
@@ -883,8 +884,8 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => applyFilter(() {
-                        _filterType = 'perdu'; _filterEspece = null; _filterRace = ''; _raceCtrl.clear();
-                        _searchLieu = ''; _lieuCtrl.clear(); _filterRegion = ''; _filterPays = ''; _filterDept = ''; _filterDistanceKm = null;
+                        _filterType = 'tous'; _filterEspece = null; _filterRace = ''; _raceCtrl.clear();
+                        _searchLieu = ''; _lieuCtrl.clear(); _filterRegion = ''; _filterPays = 'France'; _filterDept = ''; _filterDistanceKm = null;
                       }),
                       style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.grey.shade300), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                       child: const Text('Réinitialiser', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
