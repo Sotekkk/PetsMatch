@@ -491,9 +491,11 @@ class _PorteeCard extends StatelessWidget {
         if (disponibles > 0)
           _InfoChip(Icons.check_circle_outline,
               '$disponibles disponible${disponibles > 1 ? 's' : ''}', _green),
+        if (dateNaissance != null && ageStr.isNotEmpty)
+          _InfoChip(Icons.cake_outlined, ageStr),
         if (dateNaissance != null)
           _InfoChip(Icons.calendar_today_outlined,
-              ageStr.isNotEmpty ? ageStr : fmt.format(dateNaissance.toDate())),
+              'Né(e) le ${fmt.format(dateNaissance.toDate())}'),
         if (prixMin != null || prixMax != null)
           _InfoChip(Icons.euro_outlined,
             prixMin != null && prixMax != null
@@ -781,6 +783,9 @@ class _AnimalCard extends StatelessWidget {
           sexe == 'male' ? _teal : const Color(0xFFEC4899)),
         if (couleur.isNotEmpty) _InfoChip(Icons.palette_outlined, couleur),
         if (ageStr.isNotEmpty) _InfoChip(Icons.cake_outlined, ageStr),
+        if (dateNaiss != null)
+          _InfoChip(Icons.calendar_today_outlined,
+              'Né(e) le ${DateFormat('dd/MM/yyyy').format(dateNaiss.toDate())}'),
         if (sterilise) _InfoChip(Icons.cut_outlined, 'Stérilisé(e)', Colors.orange),
       ]),
     ]);
