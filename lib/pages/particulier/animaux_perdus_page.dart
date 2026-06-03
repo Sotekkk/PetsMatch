@@ -456,6 +456,118 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
     _load();
   }
 
+  static const _statutLabels = {
+    'trouve':                'Trouvé',
+    'pris_en_charge':        'Pris en charge',
+    'proprietaire_contacte': 'Propriétaire contacté',
+    'restitue':              'Restitué',
+    'cloture':               'Clôturé',
+  };
+  static const _statutOrder = [
+    'trouve', 'pris_en_charge', 'proprietaire_contacte', 'restitue', 'cloture',
+  ];
+  static const _statutColors = {
+    'trouve':                Color(0xFF0C5C6C),
+    'pris_en_charge':        Color(0xFFE08050),
+    'proprietaire_contacte': Color(0xFF7E57C2),
+    'restitue':              Color(0xFF6E9E57),
+    'cloture':               Color(0xFF6F767B),
+  };
+
+  Future<void> _changeStatutTrouve(String id, String currentStatut) async {
+    final currentIndex = _statutOrder.indexOf(currentStatut);
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const Text(
+              'Statut de l\'animal trouvé',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            ..._statutOrder.asMap().entries.map((entry) {
+              final index = entry.key;
+              final statut = entry.value;
+              final label = _statutLabels[statut]!;
+              final color = _statutColors[statut]!;
+              final isCurrent = statut == currentStatut;
+              final isDone = index < currentIndex;
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                leading: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: isCurrent
+                      ? color
+                      : isDone
+                          ? color.withValues(alpha: 0.25)
+                          : Colors.grey.shade100,
+                  child: Icon(
+                    isCurrent
+                        ? Icons.radio_button_checked
+                        : isDone
+                            ? Icons.check
+                            : Icons.radio_button_unchecked,
+                    color: isCurrent
+                        ? Colors.white
+                        : isDone
+                            ? color
+                            : Colors.grey.shade400,
+                    size: 18,
+                  ),
+                ),
+                title: Text(
+                  label,
+                  style: TextStyle(
+                    fontFamily: 'Galey',
+                    fontWeight: isCurrent ? FontWeight.w700 : FontWeight.normal,
+                    color: isCurrent ? color : const Color(0xFF3D4852),
+                    fontSize: 14,
+                  ),
+                ),
+                trailing: isCurrent
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text('Actuel',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: color)),
+                      )
+                    : null,
+                onTap: isCurrent ? null : () async {
+                  Navigator.pop(ctx);
+                  await Supabase.instance.client
+                      .from('animaux_trouves')
+                      .update({'statut': statut})
+                      .eq('id', id);
+                  _load();
+                },
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showAlertDetail(Map<String, dynamic> a) {
     showModalBottomSheet(
       context: context,
@@ -970,7 +1082,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
                   final type = item['__type'] as String;
                   final ownerId = type == 'perdu'
                       ? item['uid_proprietaire']
-                      : item['uid_declarant'];
+                      : item['user_uid'];
                   final isOwn = ownerId == _currentUid;
                   return _AlertCard(
                     alerte: item,
@@ -987,6 +1099,12 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
                         ? () => Navigator.push(context, MaterialPageRoute(
                               builder: (_) => AnimalTrouveFormPage(existing: item)))
                             .then((_) => _load())
+                        : null,
+                    onChangeStatut: (type == 'trouve' && isOwn)
+                        ? () => _changeStatutTrouve(
+                              item['id'] as String,
+                              (item['statut'] as String?) ?? 'trouve',
+                            )
                         : null,
                     onDelete: isOwn
                         ? () => type == 'perdu'
@@ -1525,6 +1643,7 @@ class _AlertCard extends StatelessWidget {
   final VoidCallback? onRetrouve;
   final VoidCallback? onDelete;
   final VoidCallback? onEdit;
+  final VoidCallback? onChangeStatut;
 
   const _AlertCard({
     required this.alerte,
@@ -1535,6 +1654,7 @@ class _AlertCard extends StatelessWidget {
     this.onRetrouve,
     this.onDelete,
     this.onEdit,
+    this.onChangeStatut,
   });
 
   static const _teal = Color(0xFF0C5C6C);
@@ -1571,6 +1691,21 @@ class _AlertCard extends StatelessWidget {
               onTap: () {
                 Navigator.pop(context);
                 onEdit!();
+              },
+            ),
+          if (onChangeStatut != null)
+            ListTile(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              leading: const CircleAvatar(
+                backgroundColor: Color(0xFFF3EFF9),
+                child: Icon(Icons.swap_horiz_rounded, color: Color(0xFF7E57C2)),
+              ),
+              title: const Text('Changer le statut',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              onTap: () {
+                Navigator.pop(context);
+                onChangeStatut!();
               },
             ),
           if (onRetrouve != null)
@@ -1653,13 +1788,28 @@ class _AlertCard extends StatelessWidget {
     final cardBg = _especeBg[espece] ?? Colors.white;
     final emoji = _especeEmoji[espece] ?? '🐾';
     final badge = isPerdu ? '$emoji PERDU' : '$emoji TROUVÉ';
+    final statut = isPerdu ? null : (alerte['statut'] as String?) ?? 'trouve';
+    final statutLabel = statut != null && statut != 'trouve'
+        ? const {
+            'pris_en_charge':        'Pris en charge',
+            'proprietaire_contacte': 'Propriétaire contacté',
+            'restitue':              'Restitué ✓',
+            'cloture':               'Clôturé',
+          }[statut]
+        : null;
+    final statutColor = const {
+      'pris_en_charge':        Color(0xFFE08050),
+      'proprietaire_contacte': Color(0xFF7E57C2),
+      'restitue':              Color(0xFF6E9E57),
+      'cloture':               Color(0xFF6F767B),
+    }[statut ?? ''];
     final displayName = nom.isNotEmpty
         ? nom
         : '${espece.isNotEmpty ? espece[0].toUpperCase() + espece.substring(1) : 'Animal'} trouvé';
 
     return GestureDetector(
       onTap: onTap,
-      onLongPress: (onRetrouve != null || onDelete != null)
+      onLongPress: (onRetrouve != null || onDelete != null || onChangeStatut != null || onEdit != null)
           ? () => _showOwnerActions(context)
           : null,
       child: Container(
@@ -1714,6 +1864,22 @@ class _AlertCard extends StatelessWidget {
                             color: Colors.white,
                             fontWeight: FontWeight.w700)),
                   ),
+                  if (statutLabel != null && statutColor != null) ...[
+                    const SizedBox(width: 5),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                          color: statutColor.withValues(alpha: 0.13),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: statutColor.withValues(alpha: 0.4))),
+                      child: Text(statutLabel,
+                          style: TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 9,
+                              color: statutColor,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                  ],
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(displayName,
