@@ -64,10 +64,10 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _AnnoncesList(key: ValueKey('all_$_refreshKey'),    uid: _uid, filter: 'all'),
-          _AnnoncesList(key: ValueKey('act_$_refreshKey'),    uid: _uid, filter: 'actives'),
-          _AnnoncesList(key: ValueKey('pause_$_refreshKey'),  uid: _uid, filter: 'pause'),
-          _AnnoncesList(key: ValueKey('fin_$_refreshKey'),    uid: _uid, filter: 'terminees'),
+          _AnnoncesList(uid: _uid, filter: 'all',      refreshKey: _refreshKey),
+          _AnnoncesList(uid: _uid, filter: 'actives',  refreshKey: _refreshKey),
+          _AnnoncesList(uid: _uid, filter: 'pause',    refreshKey: _refreshKey),
+          _AnnoncesList(uid: _uid, filter: 'terminees',refreshKey: _refreshKey),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -86,10 +86,21 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
 
 // ─── Liste filtrée ────────────────────────────────────────────────────────────
 
-class _AnnoncesList extends StatelessWidget {
+class _AnnoncesList extends StatefulWidget {
   final String? uid;
   final String filter;
-  const _AnnoncesList({super.key, required this.uid, required this.filter});
+  final int refreshKey;
+  const _AnnoncesList({required this.uid, required this.filter, required this.refreshKey});
+
+  @override
+  State<_AnnoncesList> createState() => _AnnoncesListState();
+}
+
+class _AnnoncesListState extends State<_AnnoncesList> {
+  static const _teal = Color(0xFF0C5C6C);
+
+  List<Map<String, dynamic>> _rows = [];
+  bool _loading = true;
 
   static Timestamp? _ts(dynamic v) {
     if (v == null) return null;
@@ -110,60 +121,76 @@ class _AnnoncesList extends StatelessWidget {
   };
 
   @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_AnnoncesList old) {
+    super.didUpdateWidget(old);
+    if (old.refreshKey != widget.refreshKey) _load();
+  }
+
+  Future<void> _load() async {
+    if (widget.uid == null) return;
+    if (mounted) setState(() => _loading = true);
+    try {
+      final data = await Supabase.instance.client
+          .from('annonces')
+          .select()
+          .eq('uid_eleveur', widget.uid!)
+          .order('created_at', ascending: false);
+      if (!mounted) return;
+      var rows = (data as List).map((r) => _norm(Map<String, dynamic>.from(r))).toList();
+      rows = rows.where((d) {
+        final s = (d['statut'] as String?) ?? '';
+        switch (widget.filter) {
+          case 'actives':   return s == 'disponible' || s == 'reserve';
+          case 'pause':     return s == 'pause';
+          case 'terminees': return s == 'vendu' || s == 'cede' || s == 'expiree';
+          default:          return s != 'supprime';
+        }
+      }).toList();
+      setState(() { _rows = rows; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (uid == null) return const Center(child: Text('Non connecté'));
-
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: Supabase.instance.client.from('annonces')
-          .stream(primaryKey: ['id'])
-          .eq('uid_eleveur', uid!)
-          .order('created_at', ascending: false),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
-          return const Center(child: CircularProgressIndicator(color: Color(0xFF0C5C6C)));
-        }
-        if (snap.hasError) {
-          return Center(child: Text('Erreur : ${snap.error}',
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.redAccent)));
-        }
-        var rows = (snap.data ?? []).map(_norm).toList();
-
-        rows = rows.where((d) {
-          final s = (d['statut'] as String?) ?? '';
-          switch (filter) {
-            case 'actives':   return s == 'disponible' || s == 'reserve';
-            case 'pause':     return s == 'pause';
-            case 'terminees': return s == 'vendu' || s == 'cede' || s == 'expiree';
-            default:          return s != 'supprime';
-          }
-        }).toList();
-
-        if (rows.isEmpty) {
-          return Center(
-            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.campaign_outlined, size: 64, color: Colors.grey.shade300),
-              const SizedBox(height: 12),
-              Text(
-                filter == 'pause' ? 'Aucune annonce en pause'
-                    : filter == 'terminees' ? 'Aucune annonce terminée'
-                    : 'Aucune annonce',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 16, color: Colors.grey.shade500)),
-              const SizedBox(height: 6),
-              if (filter == 'all' || filter == 'actives')
-                Text('Appuyez sur + pour créer votre première annonce',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400),
-                    textAlign: TextAlign.center),
-            ]),
-          );
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-          itemCount: rows.length,
-          itemBuilder: (context, i) => _AnnonceCard(
-              id: rows[i]['id'] as String, data: rows[i]),
-        );
-      },
+    if (widget.uid == null) return const Center(child: Text('Non connecté'));
+    if (_loading && _rows.isEmpty) {
+      return const Center(child: CircularProgressIndicator(color: _teal));
+    }
+    if (_rows.isEmpty) {
+      return Center(
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.campaign_outlined, size: 64, color: Colors.grey.shade300),
+          const SizedBox(height: 12),
+          Text(
+            widget.filter == 'pause' ? 'Aucune annonce en pause'
+                : widget.filter == 'terminees' ? 'Aucune annonce terminée'
+                : 'Aucune annonce',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 16, color: Colors.grey.shade500)),
+          const SizedBox(height: 6),
+          if (widget.filter == 'all' || widget.filter == 'actives')
+            Text('Appuyez sur + pour créer votre première annonce',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400),
+                textAlign: TextAlign.center),
+        ]),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _load,
+      color: _teal,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+        itemCount: _rows.length,
+        itemBuilder: (context, i) => _AnnonceCard(
+            id: _rows[i]['id'] as String, data: _rows[i], onRefresh: _load),
+      ),
     );
   }
 }
@@ -173,7 +200,8 @@ class _AnnoncesList extends StatelessWidget {
 class _AnnonceCard extends StatefulWidget {
   final String id;
   final Map<String, dynamic> data;
-  const _AnnonceCard({required this.id, required this.data});
+  final VoidCallback onRefresh;
+  const _AnnonceCard({required this.id, required this.data, required this.onRefresh});
   @override
   State<_AnnonceCard> createState() => _AnnonceCardState();
 }
@@ -221,6 +249,7 @@ class _AnnonceCardState extends State<_AnnonceCard> {
     setState(() => _statut = next);
     try {
       await Supabase.instance.client.from('annonces').update({'statut': next}).eq('id', widget.id);
+      widget.onRefresh();
     } catch (e) {
       setState(() => _statut = prev);
       if (mounted) {
@@ -237,6 +266,7 @@ class _AnnonceCardState extends State<_AnnonceCard> {
       await Supabase.instance.client.from('annonces').update({
         'statut': 'disponible', 'expires_at': newExpires,
       }).eq('id', widget.id);
+      widget.onRefresh();
     } catch (e) {
       setState(() => _statut = 'expiree');
       if (mounted) {
@@ -270,6 +300,7 @@ class _AnnonceCardState extends State<_AnnonceCard> {
     if (ok == true) {
       try {
         await Supabase.instance.client.from('annonces').update({'statut': 'supprime'}).eq('id', widget.id);
+        widget.onRefresh();
       } catch (e) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
