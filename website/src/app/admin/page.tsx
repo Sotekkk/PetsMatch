@@ -35,12 +35,14 @@ interface SupaProData {
 type FilterType = 'tous' | 'eleveur' | 'particulier' | 'pro' | 'admin';
 
 const CAT_LABELS: Record<string, string> = {
-  sante: 'Santé',
-  veterinaire: 'Vétérinaire',
-  education: 'Éducation',
-  garde: 'Pension / Garde',
-  referencement: 'Référencement',
-  autre: 'Autre',
+  sante:          'Santé',
+  veterinaire:    'Vétérinaire',
+  education:      'Éducation',
+  garde:          'Pet sitter / Promeneur',
+  pension:        'Pension pour animaux',
+  toilettage:     'Toilettage',
+  referencement:  'Commerce / Animalerie',
+  autre:          'Autre',
 };
 
 const STATUT_STYLE: Record<string, { label: string; color: string; bg: string }> = {

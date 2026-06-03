@@ -11,6 +11,7 @@ export interface UserData {
   isElevage?: boolean;
   isValidate?: boolean;
   isPro?: boolean;
+  catPro?: string;
   nameElevage?: string;
   ville?: string;
   codePostal?: string;
@@ -67,6 +68,7 @@ function mapUser(d: Record<string, unknown>): UserData {
     isElevage:             d.is_elevage as boolean | undefined,
     isValidate:            d.is_validate as boolean | undefined,
     isPro:                 d.is_pro as boolean | undefined,
+    catPro:                d.cat_pro as string | undefined,
     nameElevage:           d.name_elevage as string | undefined,
     ville:                 d.ville as string | undefined,
     codePostal:            d.code_postal as string | undefined,

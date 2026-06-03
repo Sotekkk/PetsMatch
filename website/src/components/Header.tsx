@@ -87,6 +87,25 @@ const MENU_ELEVEUR = [
   },
 ];
 
+const MENU_PENSION = [
+  {
+    section: 'Ma Pension',
+    icon: '🏡',
+    items: [
+      { href: '/pension/registre',  label: 'Registre pension',     icon: '📋' },
+      { href: '/pension/demandes',  label: 'Demandes d\'accès',    icon: '🔑' },
+      { href: '/agenda',            label: 'Mon agenda RDV',       icon: '📅' },
+    ],
+  },
+  {
+    section: 'Services',
+    icon: '🏥',
+    items: [
+      { href: '/services', label: 'Annuaire des services', icon: '🔎' },
+    ],
+  },
+];
+
 const MENU_PARTICULIER = [
   {
     section: 'Mon Profil',
@@ -131,17 +150,21 @@ export default function Header() {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [pensionDialog, setPensionDialog] = useState<Notif | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
 
   const isEleveur = userData?.isElevage === true;
+  const isPension = userData?.isPro === true && userData?.catPro === 'pension';
   const displayName = userData?.nameElevage ?? userData?.firstname ?? user?.email ?? '';
   const avatar = userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
 
   const navLinks = loading || !user ? NAV_GUEST : isEleveur ? NAV_ELEVEUR : NAV_PARTICULIER;
-  const menuSections = isEleveur ? MENU_ELEVEUR : MENU_PARTICULIER;
+  const menuSections = isEleveur
+    ? (isPension ? MENU_PENSION : MENU_ELEVEUR)
+    : MENU_PARTICULIER;
 
   // Écoute des messages non lus (identique éleveur + particulier)
   useEffect(() => {
@@ -307,11 +330,18 @@ export default function Header() {
                             : n.type === 'like' ? '❤️'
                             : n.type === 'chaleur' ? '🌸'
                             : n.type === 'rappel_vaccin' ? '💉'
+                            : n.type === 'pension_acces' ? '🏡'
                             : '🔔'}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-[#1F2A2E]">{n.title}</p>
                           <p className="text-xs text-gray-500 truncate">{n.body}</p>
+                          {n.type === 'pension_acces' && (
+                            <button
+                              onClick={() => { setBellOpen(false); setPensionDialog(n); }}
+                              className="mt-2 text-xs font-bold text-[#0C5C6C] underline cursor-pointer bg-none border-none p-0"
+                            >Répondre →</button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -542,6 +572,104 @@ export default function Header() {
           )}
         </div>
       )}
+
+      {/* Dialog pension_acces — accepter / refuser */}
+      {pensionDialog && user && (
+        <PensionAccesDialog
+          notif={pensionDialog}
+          ownerUid={user.uid}
+          onClose={() => setPensionDialog(null)}
+          onDone={async (approved: boolean) => {
+            const d = pensionDialog.data ?? {};
+            const pensionUid = d.pensionUid;
+            const animalId   = d.animalId;
+            const animalNom  = d.animalNom ?? 'cet animal';
+            const pensionNom = d.pensionNom ?? 'La pension';
+            if (!pensionUid || !animalId) { setPensionDialog(null); return; }
+
+            const newStatut = approved ? 'approved' : 'refused';
+            await supabase.from('pension_acces').update({ statut: newStatut })
+              .eq('pro_uid', pensionUid).eq('animal_id', animalId);
+
+            await supabase.from('notifications').insert({
+              uid:   pensionUid,
+              type:  'pension_acces_reponse',
+              title: approved ? `Accès accordé pour ${animalNom}` : `Demande refusée pour ${animalNom}`,
+              body:  approved
+                ? `Le propriétaire vous a autorisé à consulter la fiche de ${animalNom}.`
+                : `Le propriétaire a refusé votre demande pour ${animalNom}.`,
+              data:  { animalId, animalNom, approved: String(approved) },
+              read:  false,
+            });
+
+            await supabase.from('notifications').delete().eq('id', pensionDialog.id);
+            setNotifs(prev => prev.filter(n => n.id !== pensionDialog.id));
+            setPensionDialog(null);
+          }}
+        />
+      )}
     </header>
+  );
+}
+
+// ── Dialog Autoriser / Refuser accès pension ──────────────────────────────────
+
+function PensionAccesDialog({ notif, ownerUid: _ownerUid, onClose, onDone }: {
+  notif: Notif;
+  ownerUid: string;
+  onClose: () => void;
+  onDone: (approved: boolean) => Promise<void>;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  async function handle(approved: boolean) {
+    setLoading(true);
+    await onDone(approved);
+    setLoading(false);
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      zIndex: 2000, padding: 16,
+    }}>
+      <div style={{
+        background: 'white', borderRadius: 20, padding: 28,
+        maxWidth: 440, width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+      }}>
+        <div style={{ textAlign: 'center', marginBottom: 20 }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🏡</div>
+          <h2 style={{ margin: '0 0 8px', fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 18, color: '#1F2A2E' }}>
+            {notif.title}
+          </h2>
+          <p style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontSize: 14, color: '#6F767B', lineHeight: 1.5 }}>
+            {notif.body}
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button disabled={loading} onClick={() => handle(false)} style={{
+            flex: 1, padding: '12px 0', borderRadius: 10,
+            border: '1px solid #d32f2f', background: 'transparent',
+            color: '#d32f2f', fontFamily: 'Galey, sans-serif',
+            fontWeight: 700, fontSize: 14, cursor: loading ? 'not-allowed' : 'pointer',
+          }}>Refuser</button>
+
+          <button disabled={loading} onClick={() => handle(true)} style={{
+            flex: 1, padding: '12px 0', borderRadius: 10,
+            border: 'none', background: '#0C5C6C', color: 'white',
+            fontFamily: 'Galey, sans-serif', fontWeight: 700,
+            fontSize: 14, cursor: loading ? 'not-allowed' : 'pointer',
+            opacity: loading ? 0.7 : 1,
+          }}>{loading ? '…' : 'Autoriser'}</button>
+        </div>
+
+        <button onClick={onClose} style={{
+          display: 'block', margin: '16px auto 0', background: 'none', border: 'none',
+          color: '#9ca3af', fontFamily: 'Galey, sans-serif', fontSize: 13, cursor: 'pointer',
+        }}>Annuler</button>
+      </div>
+    </div>
   );
 }

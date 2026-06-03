@@ -24,6 +24,8 @@ const CAT_COLORS: Record<string, string> = {
   veterinaire:    '#2196F3',  // bleu
   education:      '#FF9800',  // orange
   garde:          '#4CAF50',  // vert
+  pension:        '#8BC34A',  // vert clair
+  toilettage:     '#00BCD4',  // cyan
   referencement:  '#CDDC39',  // jaune
 };
 const DEFAULT_COLOR = '#9C27B0'; // violet
@@ -32,7 +34,9 @@ const CAT_EMOJI: Record<string, string> = {
   sante:         '🩺',
   veterinaire:   '🩺',
   education:     '🎓',
-  garde:         '🏡',
+  garde:         '🐾',
+  pension:       '🏡',
+  toilettage:    '✂️',
   referencement: '📋',
 };
 const DEFAULT_EMOJI = '💼';
