@@ -113,10 +113,12 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
                         _buildSectionTitle('Accès rapide'),
                         const SizedBox(height: 12),
                         _buildQuickAccess(context),
-                        const SizedBox(height: 24),
-                        _buildSectionTitle('Dernières annonces'),
-                        const SizedBox(height: 12),
-                        _buildRecentPosts(),
+                        if (!User_Info.isPro) ...[
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('Dernières annonces'),
+                          const SizedBox(height: 12),
+                          _buildRecentPosts(),
+                        ],
                       ]),
                     ),
                   ),
@@ -318,10 +320,12 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
 
   Widget _buildQuickAccess(BuildContext context) {
     final tiles = [
-      _QuickTile(icon: Icons.cruelty_free_outlined, label: 'Mes\nAnimaux', color: _green,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnimauxPage()))),
-      _QuickTile(icon: Icons.campaign_outlined, label: 'Mes\nAnnonces', color: _teal,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnnoncesPage()))),
+      if (!User_Info.isPro) ...[
+        _QuickTile(icon: Icons.cruelty_free_outlined, label: 'Mes\nAnimaux', color: _green,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnimauxPage()))),
+        _QuickTile(icon: Icons.campaign_outlined, label: 'Mes\nAnnonces', color: _teal,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnnoncesPage()))),
+      ],
       _QuickTile(icon: Icons.home_work_outlined, label: 'Élevages', color: const Color(0xFF5B8648),
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EleveurListPage()))),
       _QuickTile(icon: Icons.storefront_outlined, label: 'Services', color: const Color(0xFF5F9EAA),
@@ -352,40 +356,42 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
         childAspectRatio: 1.6,
         children: tiles,
       ),
-      const SizedBox(height: 12),
-      GestureDetector(
-        onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const TrouverCompagnonPage())),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: _teal.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _teal.withValues(alpha: 0.25)),
-          ),
-          child: Row(children: [
-            Container(
-              width: 44, height: 44,
-              decoration: BoxDecoration(
-                color: _teal.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.pets, color: _teal, size: 24),
+      if (!User_Info.isPro) ...[
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const TrouverCompagnonPage())),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: _teal.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _teal.withValues(alpha: 0.25)),
             ),
-            const SizedBox(width: 12),
-            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Trouver un compagnon',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                      fontSize: 15, color: Color(0xFF0C5C6C))),
-              SizedBox(height: 2),
-              Text('Feed · Recherche · Carte',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                      color: Color(0xFF5F9EAA))),
-            ])),
-            const Icon(Icons.chevron_right, color: Color(0xFF5F9EAA)),
-          ]),
+            child: Row(children: [
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: _teal.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.pets, color: _teal, size: 24),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Trouver un compagnon',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 15, color: Color(0xFF0C5C6C))),
+                SizedBox(height: 2),
+                Text('Feed · Recherche · Carte',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        color: Color(0xFF5F9EAA))),
+              ])),
+              const Icon(Icons.chevron_right, color: Color(0xFF5F9EAA)),
+            ]),
+          ),
         ),
-      ),
+      ],
     ]);
   }
 

@@ -325,16 +325,17 @@ class _EleveurNavState extends State<EleveurNav> {
                     setState(() => _selectedIndex = 3);
                   },
                 ),
-                _DrawerItem(
-                  icon: Icons.favorite_border,
-                  label: 'Favoris',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => LikesPage(),
-                    ));
-                  },
-                ),
+                if (!User_Info.isPro)
+                  _DrawerItem(
+                    icon: Icons.favorite_border,
+                    label: 'Favoris',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => LikesPage(),
+                      ));
+                    },
+                  ),
                 _DrawerItem(
                   icon: Icons.storefront_outlined,
                   label: 'Services',
