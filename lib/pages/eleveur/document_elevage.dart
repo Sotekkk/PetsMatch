@@ -37,6 +37,7 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
       'Educateurs comportementalistes', 'Handleurs', 'Mushers',
       'Promeneurs de chiens', 'Petsitter', 'Toiletteur',
     ],
+    'Pension pour animaux': ['Pension pour animaux'],
     'Santé animal': ['Vétérinaire', 'Auxiliaire de santé', 'Spécialistes de santé'],
   };
 

@@ -95,6 +95,21 @@ class _NotificationsPageState extends State<NotificationsPage> {
     _deleteNotif(notif);
 
     if (!mounted) return;
+    if (type == 'pension_acces') {
+      final pensionUid = data is Map ? data['pensionUid'] as String? : null;
+      final pensionNom = data is Map ? data['pensionNom'] as String? : null;
+      final animalId   = data is Map ? data['animalId']   as String? : null;
+      final animalNom  = data is Map ? data['animalNom']  as String? : null;
+      if (pensionUid != null && animalId != null) {
+        await _showPensionAccesDialog(
+          pensionUid: pensionUid,
+          pensionNom: pensionNom ?? 'La pension',
+          animalId: animalId,
+          animalNom: animalNom ?? 'votre animal',
+        );
+      }
+      return;
+    }
     if (type == 'alerte_perdu') {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => AnimauxPerdusPage(initialAlertId: alerteId),
@@ -141,24 +156,95 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   IconData _iconFor(String? type) {
     switch (type) {
-      case 'alerte_perdu': return Icons.location_searching;
-      case 'message':      return Icons.chat_bubble_outline;
-      case 'like':         return Icons.favorite;
-      case 'chaleur':      return Icons.spa;
-      case 'tache':        return Icons.task_alt;
-      default:             return Icons.notifications_outlined;
+      case 'alerte_perdu':  return Icons.location_searching;
+      case 'message':       return Icons.chat_bubble_outline;
+      case 'like':          return Icons.favorite;
+      case 'chaleur':       return Icons.spa;
+      case 'tache':         return Icons.task_alt;
+      case 'pension_acces':          return Icons.home_work_outlined;
+      case 'pension_acces_reponse':  return Icons.check_circle_outline;
+      default:                       return Icons.notifications_outlined;
     }
   }
 
   Color _colorFor(String? type) {
     switch (type) {
-      case 'alerte_perdu': return _orange;
-      case 'message':      return _teal;
-      case 'like':         return Colors.redAccent;
-      case 'chaleur':      return const Color(0xFFE91E8C);
-      case 'tache':        return const Color(0xFF6E9E57);
-      default:             return Colors.grey;
+      case 'alerte_perdu':  return _orange;
+      case 'message':       return _teal;
+      case 'like':          return Colors.redAccent;
+      case 'chaleur':       return const Color(0xFFE91E8C);
+      case 'tache':         return const Color(0xFF6E9E57);
+      case 'pension_acces':         return const Color(0xFF7B5EA7);
+      case 'pension_acces_reponse': return const Color(0xFF6E9E57);
+      default:                      return Colors.grey;
     }
+  }
+
+  Future<void> _showPensionAccesDialog({
+    required String pensionUid,
+    required String pensionNom,
+    required String animalId,
+    required String animalNom,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Demande d\'accès à la fiche de $animalNom',
+          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        content: Text(
+          '$pensionNom souhaite consulter la fiche de $animalNom (santé, alimentation, comportement) en lecture seule.',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Refuser', style: TextStyle(fontFamily: 'Galey', color: Colors.red)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF0C5C6C),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Autoriser', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+
+    if (result == null || !mounted) return;
+    final newStatut = result ? 'approved' : 'refused';
+
+    try {
+      await _supa
+          .from('pension_acces')
+          .update({'statut': newStatut})
+          .eq('pro_uid', pensionUid)
+          .eq('animal_id', animalId);
+
+      // Notification retour à la pension
+      await _supa.from('notifications').insert({
+        'uid':   pensionUid,
+        'type':  'pension_acces_reponse',
+        'title': result
+            ? 'Accès accordé pour $animalNom'
+            : 'Demande refusée pour $animalNom',
+        'body': result
+            ? 'Le propriétaire vous a autorisé à consulter la fiche de $animalNom.'
+            : 'Le propriétaire a refusé votre demande pour $animalNom.',
+        'data':  {'animalId': animalId, 'animalNom': animalNom, 'approved': result},
+        'read':  false,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(result
+              ? 'Accès accordé à $pensionNom'
+              : 'Demande refusée'),
+          backgroundColor: result ? const Color(0xFF6E9E57) : Colors.red,
+        ));
+      }
+    } catch (_) {}
   }
 
   @override

@@ -2,6 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/services/chip_scanner_service.dart';
 
 class RegistrePensionPage extends StatefulWidget {
   const RegistrePensionPage({super.key});
@@ -84,6 +86,95 @@ class _RegistrePensionPageState extends State<RegistrePensionPage>
     if (added == true) _loadEntrees();
   }
 
+  Future<void> _scanAndRequest() async {
+    final chip = await ChipScannerService.showScanner(context);
+    if (chip == null || chip.isEmpty) return;
+    if (!mounted) return;
+
+    final normalized = chip.replaceAll(RegExp(r'[\s\-]'), '');
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: _teal)),
+    );
+
+    Map<String, dynamic>? found;
+    try {
+      final rows = await _supa
+          .from('animaux')
+          .select('id,nom,espece,race,identification,photo,uid_eleveur,uid_proprietaire')
+          .not('identification', 'is', null)
+          .limit(2000);
+      for (final row in rows as List) {
+        final id = ((row as Map)['identification'] ?? '').toString()
+            .replaceAll(RegExp(r'[\s\-]'), '');
+        if (id.isNotEmpty && id == normalized) {
+          found = Map<String, dynamic>.from(row);
+          break;
+        }
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+    Navigator.pop(context); // ferme loading
+
+    if (found == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aucun animal enregistré avec ce numéro de puce.')),
+      );
+      return;
+    }
+
+    final pensionNom = User_Info.nameElevage.isNotEmpty
+        ? User_Info.nameElevage
+        : '${User_Info.firstname} ${User_Info.lastname}'.trim();
+
+    final foundAnimal = found;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => _AccessRequestSheet(
+        animal: foundAnimal,
+        chip: normalized,
+        pensionUid: _uid,
+        pensionNom: pensionNom,
+        supa: _supa,
+        onSent: () {
+          Navigator.pop(ctx);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Demande envoyée au propriétaire ✓'),
+                backgroundColor: Color(0xFF6E9E57),
+              ),
+            );
+          }
+        },
+        onAlreadyApproved: (animalNom) {
+          Navigator.pop(ctx);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Accès déjà accordé pour $animalNom')),
+            );
+          }
+        },
+        onAlreadyPending: (animalNom) {
+          Navigator.pop(ctx);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Demande déjà en cours pour $animalNom')),
+            );
+          }
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -97,6 +188,13 @@ class _RegistrePensionPageState extends State<RegistrePensionPage>
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.sensors_rounded, color: Colors.white),
+            tooltip: 'Scanner une puce',
+            onPressed: _scanAndRequest,
+          ),
+        ],
         bottom: TabBar(
           controller: _tabCtrl,
           indicatorColor: Colors.white,
@@ -617,4 +715,202 @@ class _DateTile extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Sheet demande d'accès fiche animal ──────────────────────────────────────
+
+class _AccessRequestSheet extends StatefulWidget {
+  final Map<String, dynamic> animal;
+  final String chip;
+  final String pensionUid;
+  final String pensionNom;
+  final SupabaseClient supa;
+  final VoidCallback onSent;
+  final void Function(String animalNom) onAlreadyApproved;
+  final void Function(String animalNom) onAlreadyPending;
+
+  const _AccessRequestSheet({
+    required this.animal,
+    required this.chip,
+    required this.pensionUid,
+    required this.pensionNom,
+    required this.supa,
+    required this.onSent,
+    required this.onAlreadyApproved,
+    required this.onAlreadyPending,
+  });
+
+  @override
+  State<_AccessRequestSheet> createState() => _AccessRequestSheetState();
+}
+
+class _AccessRequestSheetState extends State<_AccessRequestSheet> {
+  static const _teal = Color(0xFF0C5C6C);
+  bool _sending = false;
+
+  Future<void> _send() async {
+    setState(() => _sending = true);
+    try {
+      final ownerUid = (widget.animal['uid_eleveur'] ?? widget.animal['uid_proprietaire'])?.toString() ?? '';
+      if (ownerUid.isEmpty) throw Exception('Propriétaire introuvable');
+
+      final animalId  = widget.animal['id']?.toString()  ?? '';
+      final animalNom = widget.animal['nom']?.toString()  ?? 'Animal';
+
+      // Vérifie si une demande existe déjà
+      final existing = await widget.supa
+          .from('pension_acces')
+          .select('id,statut')
+          .eq('pro_uid', widget.pensionUid)
+          .eq('animal_id', animalId)
+          .maybeSingle();
+
+      if (existing != null) {
+        final statut = existing['statut'] as String? ?? '';
+        if (statut == 'approved') { widget.onAlreadyApproved(animalNom); return; }
+        if (statut == 'pending')  { widget.onAlreadyPending(animalNom);  return; }
+        // Si refusée, relance la demande
+        await widget.supa.from('pension_acces').update({
+          'statut': 'pending',
+          'created_at': DateTime.now().toIso8601String(),
+        }).eq('id', existing['id']);
+      } else {
+        await widget.supa.from('pension_acces').insert({
+          'pro_uid':    widget.pensionUid,
+          'animal_id':  animalId,
+          'owner_uid':  ownerUid,
+          'statut':     'pending',
+          'pro_nom':    widget.pensionNom,
+          'animal_nom': animalNom,
+        });
+      }
+
+      // Notification in-app pour le propriétaire
+      await widget.supa.from('notifications').insert({
+        'uid':   ownerUid,
+        'type':  'pension_acces',
+        'title': 'Demande d\'accès à la fiche de $animalNom',
+        'body':  '${widget.pensionNom} souhaite consulter la fiche de $animalNom (lecture seule).',
+        'data':  {
+          'pensionUid': widget.pensionUid,
+          'pensionNom': widget.pensionNom,
+          'animalId':   animalId,
+          'animalNom':  animalNom,
+        },
+        'read': false,
+      });
+
+      if (mounted) widget.onSent();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _sending = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nom    = widget.animal['nom']?.toString()    ?? '';
+    final espece = widget.animal['espece']?.toString() ?? '';
+    final race   = widget.animal['race']?.toString()   ?? '';
+    final photo  = widget.animal['photo']?.toString()  ?? '';
+    final especeRace = [espece, race].where((s) => s.isNotEmpty).join(' · ');
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(
+        left: 24, right: 24, top: 12,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 36,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(child: Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: const Color(0xFFDDE1E7),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          )),
+          const SizedBox(height: 20),
+
+          const Text('Animal identifié',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+          const SizedBox(height: 4),
+          Text('Puce : ${widget.chip}',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+          const SizedBox(height: 16),
+
+          // Carte animal
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: _teal.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _teal.withValues(alpha: 0.2)),
+            ),
+            child: Row(children: [
+              if (photo.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(photo, width: 56, height: 56, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _animalAvatar()),
+                )
+              else
+                _animalAvatar(),
+              const SizedBox(width: 14),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(nom.isNotEmpty ? nom : 'Animal sans nom',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
+                if (especeRace.isNotEmpty)
+                  Text(especeRace,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
+              ])),
+            ]),
+          ),
+          const SizedBox(height: 16),
+
+          const Text(
+            'Pour consulter les informations de santé et d\'alimentation, vous devez demander l\'accès au propriétaire de cet animal.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B), height: 1.5),
+          ),
+          const SizedBox(height: 24),
+
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _sending ? null : _send,
+              icon: _sending
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Icon(Icons.send_rounded, size: 18),
+              label: Text(_sending ? 'Envoi en cours…' : 'Demander l\'accès à la fiche',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              style: FilledButton.styleFrom(
+                backgroundColor: _teal,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _animalAvatar() => Container(
+    width: 56, height: 56,
+    decoration: BoxDecoration(
+      color: _teal.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: const Icon(Icons.pets, size: 32, color: _teal),
+  );
 }

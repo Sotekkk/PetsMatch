@@ -48,8 +48,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   static const _especesList = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
   List<String> _especesAcceptees = [];
 
-  final _jours = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
-  late final Map<String, TextEditingController> _horairesCtrl;
+  static const _jours = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+  late Map<String, _HoraireJour> _horaires;
 
   List<Map<String, String>> _certifications = [];
 
@@ -57,7 +57,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   void initState() {
     super.initState();
     _places = GoogleMapsPlaces(apiKey: getApiKey());
-    _horairesCtrl = {for (var j in _jours) j: TextEditingController()};
+    _horaires = {for (var j in _jours) j: _HoraireJour()};
     _loadProProfile();
   }
 
@@ -70,7 +70,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       _siteWebCtrl, _instagramCtrl, _facebookCtrl,
       _addressSearchCtrl, _rueCtrl, _villeCtrl, _cpCtrl, _paysCtrl,
     ]) { c.dispose(); }
-    for (final c in _horairesCtrl.values) { c.dispose(); }
     super.dispose();
   }
 
@@ -112,7 +111,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         }
         if (row['horaires'] is Map) {
           for (final j in _jours) {
-            _horairesCtrl[j]!.text = row['horaires'][j] ?? '';
+            final txt = (row['horaires'][j] ?? '').toString();
+            _horaires[j] = _HoraireJour.fromText(txt);
           }
         }
         if (row['certifications'] is List) {
@@ -236,13 +236,13 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     try {
       final horairesMap = {
         for (final j in _jours)
-          if (_horairesCtrl[j]!.text.trim().isNotEmpty) j: _horairesCtrl[j]!.text.trim()
+          j: _horaires[j]!.toText(),
       };
 
       final adresse = [_rueCtrl.text.trim(), _cpCtrl.text.trim(), _villeCtrl.text.trim()]
           .where((s) => s.isNotEmpty).join(', ');
 
-      _catPro = _inferCatPro(_professionCtrl.text.trim());
+      if (_catPro.isEmpty) _catPro = _inferCatPro(_professionCtrl.text.trim());
 
       await _supa.from('users').upsert({
         'uid':                  User_Info.uid,
@@ -356,6 +356,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 12),
                   _field(_professionCtrl, 'Profession', Icons.work_outline),
                   const SizedBox(height: 12),
+                  _sectionTitle('Type d\'activité'),
+                  const SizedBox(height: 10),
+                  _catProSelector(),
+                  const SizedBox(height: 12),
                   _field(_descCtrl, 'Description de l\'activité', Icons.description_outlined, maxLines: 4),
                   const SizedBox(height: 12),
                   _field(_tarifsCtrl, 'Tarifs (description libre)', Icons.euro_outlined, maxLines: 3),
@@ -387,8 +391,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 24),
                   _sectionTitle('Disponibilité & intervention'),
                   const SizedBox(height: 12),
-                  _zoneTile(),
-                  const SizedBox(height: 16),
+                  if (_catPro != 'pension') ...[
+                    _zoneTile(),
+                    const SizedBox(height: 16),
+                  ],
                   _acceptClientsToggle(),
 
                   // ── Espèces ───────────────────────────────────────────────
@@ -403,7 +409,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 12),
                   ..._jours.map((j) => Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: _field(_horairesCtrl[j]!, j, Icons.schedule_outlined, hint: 'ex: 9h-18h ou Fermé'),
+                    child: _HoraireTile(
+                      jour: j,
+                      horaire: _horaires[j]!,
+                      onChanged: (h) => setState(() => _horaires[j] = h),
+                    ),
                   )),
 
                   // ── Réseaux & site web ────────────────────────────────────
@@ -574,6 +584,50 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           const Icon(Icons.chevron_right_rounded, color: Color(0xFFBBBBBB)),
         ]),
       ),
+    );
+  }
+
+  static const _kCatOptions = [
+    ('veterinaire', 'Vétérinaire',          Icons.medical_services_outlined),
+    ('sante',       'Santé & Bien-être',     Icons.spa_outlined),
+    ('education',   'Éducation',             Icons.school_outlined),
+    ('garde',       'Pet sitter / Promeneur',Icons.directions_walk_outlined),
+    ('pension',     'Pension pour animaux',  Icons.home_work_outlined),
+    ('toilettage',  'Toilettage',            Icons.content_cut_outlined),
+    ('referencement','Commerce / Animalerie',Icons.storefront_outlined),
+  ];
+
+  Widget _catProSelector() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _kCatOptions.map((opt) {
+        final (value, label, icon) = opt;
+        final selected = _catPro == value;
+        return FilterChip(
+          avatar: Icon(icon,
+            size: 16,
+            color: selected ? Colors.white : const Color(0xFF6F767B)),
+          label: Text(label,
+            style: TextStyle(
+              fontFamily: 'Galey',
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
+              color: selected ? Colors.white : const Color(0xFF3D4852),
+            )),
+          selected: selected,
+          onSelected: (_) => setState(() => _catPro = value),
+          selectedColor: const Color(0xFF0C5C6C),
+          backgroundColor: const Color(0xFFF4F4F4),
+          checkmarkColor: Colors.white,
+          showCheckmark: false,
+          side: BorderSide(
+            color: selected ? const Color(0xFF0C5C6C) : Colors.grey.shade300,
+          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        );
+      }).toList(),
     );
   }
 
@@ -766,7 +820,10 @@ String _inferCatPro(String profession) {
       p.contains('dresseur') || p.contains('maitre-chien') || p.contains('maitre chien')) {
     return 'education';
   }
-  if (p.contains('sitter') || p.contains('pension') || p.contains('promeneur') ||
+  if (p.contains('pension') || p.contains('pensionnaire') || p.contains('garderie')) {
+    return 'pension';
+  }
+  if (p.contains('sitter') || p.contains('promeneur') ||
       p.contains('garde') || p.contains('dog walker')) {
     return 'garde';
   }
@@ -778,4 +835,170 @@ String _inferCatPro(String profession) {
     return 'referencement';
   }
   return 'sante';
+}
+
+// ─── Modèle horaire d'un jour ─────────────────────────────────────────────────
+
+class _HoraireJour {
+  bool ferme;
+  TimeOfDay? ouverture;
+  TimeOfDay? fermeture;
+
+  _HoraireJour({this.ferme = false, this.ouverture, this.fermeture});
+
+  static _HoraireJour fromText(String text) {
+    final t = text.trim().toLowerCase();
+    if (t.isEmpty || t == 'fermé' || t == 'ferme') return _HoraireJour(ferme: true);
+    // Formats : "09:00 - 18:00", "9h-18h", "9h00-18h", "09:00-18:00"
+    final clean = t.replaceAll('h', ':').replaceAll(' ', '');
+    final parts = clean.split('-');
+    if (parts.length < 2) return _HoraireJour();
+    TimeOfDay? parseTime(String s) {
+      final sub = s.replaceAll(':', '').padRight(4, '0');
+      final h = int.tryParse(sub.substring(0, 2));
+      final m = int.tryParse(sub.substring(2, 4));
+      if (h == null || m == null || h > 23 || m > 59) return null;
+      return TimeOfDay(hour: h, minute: m);
+    }
+    return _HoraireJour(
+      ouverture: parseTime(parts[0]),
+      fermeture: parseTime(parts[1]),
+    );
+  }
+
+  String toText() {
+    if (ferme || ouverture == null || fermeture == null) return 'Fermé';
+    String f(TimeOfDay t) =>
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    return '${f(ouverture!)} - ${f(fermeture!)}';
+  }
+}
+
+// ─── Widget tile horaire d'un jour ───────────────────────────────────────────
+
+class _HoraireTile extends StatelessWidget {
+  final String jour;
+  final _HoraireJour horaire;
+  final ValueChanged<_HoraireJour> onChanged;
+
+  static const _teal = Color(0xFF0C5C6C);
+
+  const _HoraireTile({
+    required this.jour,
+    required this.horaire,
+    required this.onChanged,
+  });
+
+  Future<void> _pickTime(BuildContext context, bool isOuverture) async {
+    final initial = isOuverture
+        ? (horaire.ouverture ?? const TimeOfDay(hour: 9, minute: 0))
+        : (horaire.fermeture ?? const TimeOfDay(hour: 18, minute: 0));
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      helpText: isOuverture ? 'Heure d\'ouverture' : 'Heure de fermeture',
+      builder: (ctx, child) => Theme(
+        data: ThemeData.light().copyWith(
+          colorScheme: const ColorScheme.light(primary: _teal)),
+        child: child!,
+      ),
+    );
+    if (picked == null) return;
+    final updated = _HoraireJour(
+      ferme: false,
+      ouverture: isOuverture ? picked : horaire.ouverture,
+      fermeture: isOuverture ? horaire.fermeture : picked,
+    );
+    onChanged(updated);
+  }
+
+  static String _fmtTime(TimeOfDay? t) {
+    if (t == null) return '--:--';
+    return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: horaire.ferme ? const Color(0xFFF4F4F4) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(children: [
+        SizedBox(
+          width: 80,
+          child: Text(jour,
+            style: TextStyle(
+              fontFamily: 'Galey',
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              color: horaire.ferme ? Colors.grey : const Color(0xFF1E2025),
+            )),
+        ),
+        if (horaire.ferme)
+          Expanded(
+            child: Text('Fermé',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+          )
+        else ...[
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _pickTime(context, true),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _teal.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _teal.withValues(alpha: 0.2)),
+                ),
+                child: Text(_fmtTime(horaire.ouverture),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: _teal)),
+              ),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 6),
+            child: Text('–', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w700)),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _pickTime(context, false),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _teal.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _teal.withValues(alpha: 0.2)),
+                ),
+                child: Text(_fmtTime(horaire.fermeture),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: _teal)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+        GestureDetector(
+          onTap: () {
+            if (horaire.ferme) {
+              onChanged(_HoraireJour(
+                ouverture: const TimeOfDay(hour: 9, minute: 0),
+                fermeture: const TimeOfDay(hour: 18, minute: 0),
+              ));
+            } else {
+              onChanged(_HoraireJour(ferme: true));
+            }
+          },
+          child: Icon(
+            horaire.ferme ? Icons.toggle_off_outlined : Icons.toggle_on_rounded,
+            color: horaire.ferme ? Colors.grey.shade400 : _teal,
+            size: 28,
+          ),
+        ),
+      ]),
+    );
+  }
 }

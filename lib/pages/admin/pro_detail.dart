@@ -10,8 +10,10 @@ const _kCatLabels = <String, String>{
   'sante': 'Santé',
   'veterinaire': 'Vétérinaire',
   'education': 'Éducation',
-  'garde': 'Pension / Garde',
-  'referencement': 'Référencement',
+  'garde': 'Pet sitter / Promeneur',
+  'pension': 'Pension pour animaux',
+  'toilettage': 'Toilettage',
+  'referencement': 'Commerce / Animalerie',
   'autre': 'Autre',
 };
 
