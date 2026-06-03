@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
+import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
@@ -134,7 +136,23 @@ class ChipScannerService {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => _ResultSheet(chip: chip, alerte: alerte, trouve: trouve),
+      builder: (ctx) => _ResultSheet(
+        chip: chip,
+        alerte: alerte,
+        trouve: trouve,
+        onDeclarePerdu: () {
+          Navigator.pop(ctx);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => AlertePerduFormPage(identification: chip),
+          ));
+        },
+        onDeclareTrouve: () {
+          Navigator.pop(ctx);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => AnimalTrouveFormPage(initialPuce: chip),
+          ));
+        },
+      ),
     );
   }
 }
@@ -149,10 +167,32 @@ class _ScannerDialog extends StatefulWidget {
 
 class _ScannerDialogState extends State<_ScannerDialog>
     with SingleTickerProviderStateMixin {
-  final _ctrl      = TextEditingController();
-  final _focusNode = FocusNode();
   late AnimationController _animCtrl;
   late Animation<double>   _pulse;
+  String _buffer    = '';
+  bool   _completed = false;
+
+  // Capture directe des keystrokes HID — pas de TextField, pas de focus Android
+  bool _handleKey(KeyEvent event) {
+    if (_completed || !mounted) return false;
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
+
+    final char = event.character;
+    if (char != null && char != '\r' && char != '\n' && char.isNotEmpty) {
+      if (mounted) setState(() => _buffer += char);
+    } else if (event.logicalKey == LogicalKeyboardKey.enter ||
+               event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      if (_buffer.length >= 10) {
+        _completed = true;
+        final chip = _buffer.trim();
+        _buffer = '';
+        Navigator.pop(context, chip);
+      } else {
+        if (mounted) setState(() => _buffer = '');
+      }
+    }
+    return true;
+  }
 
   @override
   void initState() {
@@ -164,30 +204,14 @@ class _ScannerDialogState extends State<_ScannerDialog>
     _pulse = Tween<double>(begin: 0.88, end: 1.12).animate(
       CurvedAnimation(parent: _animCtrl, curve: Curves.easeInOut),
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _focusNode.requestFocus();
-      // Cache le clavier logiciel tout en conservant la capture HID
-      SystemChannels.textInput.invokeMethod('TextInput.hide');
-    });
+    HardwareKeyboard.instance.addHandler(_handleKey);
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKey);
     _animCtrl.dispose();
-    _ctrl.dispose();
-    _focusNode.dispose();
     super.dispose();
-  }
-
-  void _onSubmitted(String value) {
-    final chip = value.replaceAll('\n', '').trim();
-    if (chip.length >= 10) {
-      Navigator.pop(context, chip);
-    } else {
-      _ctrl.clear();
-      _focusNode.requestFocus();
-      SystemChannels.textInput.invokeMethod('TextInput.hide');
-    }
   }
 
   @override
@@ -201,26 +225,12 @@ class _ScannerDialogState extends State<_ScannerDialog>
           color: Colors.white,
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha:0.15), blurRadius: 24),
+            BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 24),
           ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Champ invisible — capture l'input HID clavier
-            SizedBox(
-              width: 0,
-              height: 0,
-              child: TextField(
-                controller: _ctrl,
-                focusNode: _focusNode,
-                autofocus: true,
-                onSubmitted: _onSubmitted,
-                style: const TextStyle(fontSize: 0, color: Colors.transparent),
-                decoration: const InputDecoration(border: InputBorder.none),
-              ),
-            ),
-
             // Animation pulsée
             ScaleTransition(
               scale: _pulse,
@@ -228,7 +238,7 @@ class _ScannerDialogState extends State<_ScannerDialog>
                 width: 88,
                 height: 88,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0C5C6C).withValues(alpha:0.10),
+                  color: const Color(0xFF0C5C6C).withValues(alpha: 0.10),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -250,16 +260,41 @@ class _ScannerDialogState extends State<_ScannerDialog>
               ),
             ),
             const SizedBox(height: 10),
-            const Text(
-              'Approchez le lecteur de la puce\nde votre animal',
+
+            // Indicateur de progression si le lecteur envoie des données
+            if (_buffer.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  '${_buffer.length} chiffre${_buffer.length > 1 ? "s" : ""} reçu${_buffer.length > 1 ? "s" : ""}…',
+                  style: const TextStyle(
+                    fontFamily: 'Galey',
+                    fontSize: 13,
+                    color: Color(0xFF0C5C6C),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+
+            Text(
+              _buffer.isEmpty
+                  ? 'Approchez le lecteur de la puce\nde votre animal'
+                  : _buffer.replaceAll(RegExp(r'.{4}'), r'$0 ').trim(),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'Galey',
-                fontSize: 14,
-                color: Color(0xFF6F767B),
+                fontSize: _buffer.isEmpty ? 14 : 16,
+                color: _buffer.isEmpty
+                    ? const Color(0xFF6F767B)
+                    : const Color(0xFF1F2A2E),
                 height: 1.5,
+                letterSpacing: _buffer.isEmpty ? 0 : 1.5,
+                fontWeight: _buffer.isEmpty
+                    ? FontWeight.normal
+                    : FontWeight.w600,
               ),
             ),
+
             const SizedBox(height: 28),
             TextButton(
               onPressed: () => Navigator.pop(context, null),
@@ -285,11 +320,15 @@ class _ResultSheet extends StatelessWidget {
   final String chip;
   final Map<String, dynamic>? alerte;
   final Map<String, dynamic>? trouve;
+  final VoidCallback? onDeclarePerdu;
+  final VoidCallback? onDeclareTrouve;
 
   const _ResultSheet({
     required this.chip,
     this.alerte,
     this.trouve,
+    this.onDeclarePerdu,
+    this.onDeclareTrouve,
   });
 
   @override
@@ -377,7 +416,7 @@ class _ResultSheet extends StatelessWidget {
             Row(children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: onDeclarePerdu,
                   icon: const Icon(Icons.search_off_rounded, size: 18),
                   label: const Text('Déclarer perdu'),
                   style: OutlinedButton.styleFrom(
@@ -391,7 +430,7 @@ class _ResultSheet extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: onDeclareTrouve,
                   icon: const Icon(Icons.add_location_alt_rounded, size: 18),
                   label: const Text('Déclarer trouvé'),
                   style: OutlinedButton.styleFrom(
