@@ -13,6 +13,7 @@ import 'package:geocoding/geocoding.dart' as geo;
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
 class AnimalTrouveFormPage extends StatefulWidget {
@@ -415,7 +416,7 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
         FirebaseFunctions.instanceFor(region: 'europe-west1')
             .httpsCallable('matchLostFound')
             .call({'alerteId': inserted['id'] ?? '', 'type': 'trouve'})
-            .catchError((_) {});
+            .catchError((_) => null);
       }
 
       if (mounted) {
@@ -510,8 +511,36 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
           // ── N° de puce ────────────────────────────────────────────────────────
           const _FLabel('Numéro de puce (si visible)'),
           const SizedBox(height: 6),
-          _FField(controller: _puceCtrl, hint: 'Ex : 250269802345678',
-              inputType: TextInputType.number),
+          Row(children: [
+            Expanded(
+              child: _FField(
+                controller: _puceCtrl,
+                hint: 'Ex : 250269802345678',
+                inputType: TextInputType.number,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Tooltip(
+              message: 'Scanner la puce',
+              child: Material(
+                color: _teal,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () async {
+                    final chip = await ChipScannerService.scanForField(context);
+                    if (chip != null && mounted) {
+                      setState(() => _puceCtrl.text = chip);
+                    }
+                  },
+                  child: const SizedBox(
+                    width: 48, height: 48,
+                    child: Icon(Icons.sensors_rounded, color: Colors.white, size: 22),
+                  ),
+                ),
+              ),
+            ),
+          ]),
           const SizedBox(height: 18),
 
           // ── Date de découverte ────────────────────────────────────────────────

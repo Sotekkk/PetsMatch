@@ -1,5 +1,6 @@
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_form_page.dart';
+import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_poids_page.dart';
 import 'package:PetsMatch/services/chaleurs_notif_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -708,6 +709,12 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               icon: const Icon(Icons.checklist_outlined),
               onPressed: () => setState(() { _selectMode = true; _selectedIds.clear(); }),
               tooltip: 'Sélectionner',
+            ),
+          if (_uid != null)
+            IconButton(
+              icon: const Icon(Icons.sensors_rounded),
+              onPressed: () => ChipScannerService.scanFromElevage(context, _uid),
+              tooltip: 'Scanner une puce',
             ),
           Padding(
             padding: const EdgeInsets.only(right: 8),

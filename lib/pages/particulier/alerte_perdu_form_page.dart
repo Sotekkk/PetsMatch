@@ -15,6 +15,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/services/alertes_notifications.dart';
+import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class AlertePerduFormPage extends StatefulWidget {
@@ -714,7 +715,32 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
           // ── Identification ─────────────────────────────────────────────────
           const _FLabel('Identification (puce / tatouage)'),
           const SizedBox(height: 6),
-          _FField(controller: _identCtrl, hint: 'N° de puce ou tatouage'),
+          Row(children: [
+            Expanded(
+              child: _FField(controller: _identCtrl, hint: 'N° de puce ou tatouage'),
+            ),
+            const SizedBox(width: 8),
+            Tooltip(
+              message: 'Scanner la puce',
+              child: Material(
+                color: const Color(0xFF6E9E57),
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () async {
+                    final chip = await ChipScannerService.scanForField(context);
+                    if (chip != null && mounted) {
+                      setState(() => _identCtrl.text = chip);
+                    }
+                  },
+                  child: const SizedBox(
+                    width: 48, height: 48,
+                    child: Icon(Icons.sensors_rounded, color: Colors.white, size: 22),
+                  ),
+                ),
+              ),
+            ),
+          ]),
           const SizedBox(height: 18),
 
           // ── Espèce ─────────────────────────────────────────────────────────
