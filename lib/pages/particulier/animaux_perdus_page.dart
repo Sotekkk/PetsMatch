@@ -711,18 +711,6 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage>
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'declare_trouve',
-        backgroundColor: _teal,
-        icon: const Icon(Icons.pets, color: Colors.white, size: 20),
-        label: const Text('J\'ai trouvé un animal',
-            style: TextStyle(
-                fontFamily: 'Galey',
-                fontWeight: FontWeight.w700,
-                color: Colors.white)),
-        onPressed: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const AnimalTrouveFormPage())),
-      ),
       body: _loading
           ? Center(child: CircularProgressIndicator(color: _accentColor))
           : TabBarView(

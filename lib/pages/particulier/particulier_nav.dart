@@ -179,7 +179,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Voir les animaux perdus',
+                      label: 'Animaux perdus/trouvés',
                       icon: Icons.location_searching,
                       onTap: () {
                         Navigator.pop(context);
