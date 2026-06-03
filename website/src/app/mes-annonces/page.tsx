@@ -64,8 +64,7 @@ export default function MesAnnoncesPage() {
       .then(({ data }) => {
         setAnnonces((data ?? []) as Annonce[]);
         setFetching(false);
-      })
-      .catch(() => setFetching(false));
+      }, () => setFetching(false));
 
     const channel = supabase
       .channel(`mes-annonces-${user.uid}`)

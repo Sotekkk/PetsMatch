@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import {
@@ -79,7 +79,7 @@ function fmtDate(ts: Timestamp | null): string {
   return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
-export default function MessagesPage() {
+function MessagesPageInner() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -459,5 +459,13 @@ export default function MessagesPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function MessagesPage() {
+  return (
+    <Suspense>
+      <MessagesPageInner />
+    </Suspense>
   );
 }

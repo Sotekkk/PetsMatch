@@ -1688,7 +1688,7 @@ export default function AnimalFichePage() {
               return (
                 <>
                   {sorted.length >= 2 && (
-                    <WeightChartSVG data={sorted} isJuvenile={isJuvenile} dateNaissance={animal.date_naissance} />
+                    <WeightChartSVG data={sorted as { date?: unknown; valeur?: unknown }[]} isJuvenile={isJuvenile} dateNaissance={animal.date_naissance} />
                   )}
                   {sorted.map(r => {
                     const val = parseFloat(String(r.valeur??'0'));
