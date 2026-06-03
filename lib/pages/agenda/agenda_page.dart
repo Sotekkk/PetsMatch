@@ -83,7 +83,7 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    if (_events.isEmpty) setState(() => _loading = true);
     try {
       final from = DateTime(_focusedMonth.year, _focusedMonth.month - 1, 1).toUtc();
       final to   = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0, 23, 59, 59).toUtc();
@@ -237,58 +237,62 @@ class _AgendaPageState extends State<AgendaPage> {
     final rows        = (totalCells / 7).ceil();
     final today       = DateTime.now();
 
-    return GridView.builder(
-      padding: const EdgeInsets.all(8),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 7, childAspectRatio: 0.85, mainAxisSpacing: 4, crossAxisSpacing: 4),
-      itemCount: rows * 7,
-      itemBuilder: (_, index) {
-        final dayNum = index - startOffset + 1;
-        if (dayNum < 1 || dayNum > last.day) return const SizedBox();
-        final day = DateTime(_focusedMonth.year, _focusedMonth.month, dayNum);
-        final evts = _eventsForDay(day);
-        final isToday = day.year == today.year && day.month == today.month && day.day == today.day;
-        final isSelected = _selectedDay != null &&
-            day.year == _selectedDay!.year && day.month == _selectedDay!.month && day.day == _selectedDay!.day;
+    return RefreshIndicator(
+      onRefresh: _load,
+      color: _kTeal,
+      child: GridView.builder(
+        padding: const EdgeInsets.all(8),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7, childAspectRatio: 0.85, mainAxisSpacing: 4, crossAxisSpacing: 4),
+        itemCount: rows * 7,
+        itemBuilder: (_, index) {
+          final dayNum = index - startOffset + 1;
+          if (dayNum < 1 || dayNum > last.day) return const SizedBox();
+          final day = DateTime(_focusedMonth.year, _focusedMonth.month, dayNum);
+          final evts = _eventsForDay(day);
+          final isToday = day.year == today.year && day.month == today.month && day.day == today.day;
+          final isSelected = _selectedDay != null &&
+              day.year == _selectedDay!.year && day.month == _selectedDay!.month && day.day == _selectedDay!.day;
 
-        return GestureDetector(
-          onTap: () { setState(() => _selectedDay = day); _showDaySheet(day); },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            decoration: BoxDecoration(
-              color: isSelected ? _kTeal : isToday ? _kTeal.withValues(alpha: 0.1) : Colors.white,
-              borderRadius: BorderRadius.circular(10),
-              border: isToday && !isSelected ? Border.all(color: _kTeal, width: 1.5) : null,
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('$dayNum',
-                  style: TextStyle(
-                    fontFamily: 'Galey',
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                    color: isSelected ? Colors.white : const Color(0xFF1E2025),
-                  )),
-                if (evts.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 2,
-                    children: evts.take(3).map((e) => Container(
-                      width: 6, height: 6,
-                      decoration: BoxDecoration(
-                        color: isSelected ? Colors.white.withValues(alpha: 0.8) : _colorFor(e),
-                        shape: BoxShape.circle,
-                      ),
-                    )).toList(),
-                  ),
+          return GestureDetector(
+            onTap: () { setState(() => _selectedDay = day); _showDaySheet(day); },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              decoration: BoxDecoration(
+                color: isSelected ? _kTeal : isToday ? _kTeal.withValues(alpha: 0.1) : Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: isToday && !isSelected ? Border.all(color: _kTeal, width: 1.5) : null,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('$dayNum',
+                    style: TextStyle(
+                      fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: isSelected ? Colors.white : const Color(0xFF1E2025),
+                    )),
+                  if (evts.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 2,
+                      children: evts.take(3).map((e) => Container(
+                        width: 6, height: 6,
+                        decoration: BoxDecoration(
+                          color: isSelected ? Colors.white.withValues(alpha: 0.8) : _colorFor(e),
+                          shape: BoxShape.circle,
+                        ),
+                      )).toList(),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -318,42 +322,46 @@ class _AgendaPageState extends State<AgendaPage> {
     }
     final keys = grouped.keys.toList()..sort();
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: keys.length,
-      itemBuilder: (_, i) {
-        final key  = keys[i];
-        final day  = DateTime.parse(key);
-        final evts = grouped[key]!;
-        final today = DateTime.now();
-        final isToday = day.year == today.year && day.month == today.month && day.day == today.day;
+    return RefreshIndicator(
+      onRefresh: _load,
+      color: _kTeal,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(12),
+        itemCount: keys.length,
+        itemBuilder: (_, i) {
+          final key  = keys[i];
+          final day  = DateTime.parse(key);
+          final evts = grouped[key]!;
+          final today = DateTime.now();
+          final isToday = day.year == today.year && day.month == today.month && day.day == today.day;
 
-        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 6, top: 12),
-            child: Row(children: [
-              Text(
-                isToday ? "Aujourd'hui" : DateFormat('EEEE d MMMM', 'fr').format(day),
-                style: TextStyle(
-                  fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13,
-                  color: isToday ? _kTeal : const Color(0xFF555555),
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 6, top: 12),
+              child: Row(children: [
+                Text(
+                  isToday ? "Aujourd'hui" : DateFormat('EEEE d MMMM', 'fr').format(day),
+                  style: TextStyle(
+                    fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13,
+                    color: isToday ? _kTeal : const Color(0xFF555555),
+                  ),
                 ),
-              ),
-              if (isToday) ...[
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(color: _kTeal, borderRadius: BorderRadius.circular(10)),
-                  child: const Text('Aujourd\'hui',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 10,
-                        fontWeight: FontWeight.w700, color: Colors.white)),
-                ),
-              ]
-            ]),
-          ),
-          ...evts.map((e) => _EventTile(event: e, onRefresh: _load)),
-        ]);
-      },
+                if (isToday) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: _kTeal, borderRadius: BorderRadius.circular(10)),
+                    child: const Text('Aujourd\'hui',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                          fontWeight: FontWeight.w700, color: Colors.white)),
+                  ),
+                ]
+              ]),
+            ),
+            ...evts.map((e) => _EventTile(event: e, onRefresh: _load)),
+          ]);
+        },
+      ),
     );
   }
 }

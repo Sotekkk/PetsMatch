@@ -110,7 +110,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
   Future<void> _loadAnimaux() async {
     if (_uid == null) { setState(() => _loading = false); return; }
-    setState(() => _loading = true);
+    if (_animauxData.isEmpty) setState(() => _loading = true);
     try {
       final supa = Supabase.instance.client;
       final rows = await supa.from('animaux').select().eq('uid_eleveur', _uid!);
@@ -922,36 +922,40 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
     if (_presentsSubTab == 'bebes') return _buildPorteeGroupedView(docs);
 
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.68,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
+    return RefreshIndicator(
+      onRefresh: _loadAnimaux,
+      color: _green,
+      child: GridView.builder(
+        padding: const EdgeInsets.all(16),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 0.68,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: docs.length,
+        itemBuilder: (_, i) {
+          final data = docs[i];
+          final id = data['id'] as String? ?? '';
+          return _AnimalCard(
+            id: id,
+            data: data,
+            reproducteur: data['reproducteur'] == true,
+            chaleurFlag:  _chaleurFlags[id]  ?? false,
+            gestanteFlag: _gestanteFlags[id] ?? false,
+            selectMode: _selectMode,
+            selected: _selectedIds.contains(id),
+            onTap: _selectMode
+                ? () => setState(() {
+                    if (_selectedIds.contains(id)) _selectedIds.remove(id);
+                    else _selectedIds.add(id);
+                  })
+                : () => _openFiche(context, id, data: data),
+            onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
+            onToggleReproducteur: id.isEmpty ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
+          );
+        },
       ),
-      itemCount: docs.length,
-      itemBuilder: (_, i) {
-        final data = docs[i];
-        final id = data['id'] as String? ?? '';
-        return _AnimalCard(
-          id: id,
-          data: data,
-          reproducteur: data['reproducteur'] == true,
-          chaleurFlag:  _chaleurFlags[id]  ?? false,
-          gestanteFlag: _gestanteFlags[id] ?? false,
-          selectMode: _selectMode,
-          selected: _selectedIds.contains(id),
-          onTap: _selectMode
-              ? () => setState(() {
-                  if (_selectedIds.contains(id)) _selectedIds.remove(id);
-                  else _selectedIds.add(id);
-                })
-              : () => _openFiche(context, id, data: data),
-          onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
-          onToggleReproducteur: id.isEmpty ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
-        );
-      },
     );
   }
 
@@ -972,10 +976,13 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         return db.compareTo(da);
       });
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: sortedKeys.length,
-      itemBuilder: (_, gi) {
+    return RefreshIndicator(
+      onRefresh: _loadAnimaux,
+      color: _green,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: sortedKeys.length,
+        itemBuilder: (_, gi) {
         final pid      = sortedKeys[gi];
         final members  = groups[pid]!;
         final first    = members.first;
@@ -1078,7 +1085,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             },
           ),
         ]);
-      },
+        },
+      ),
     );
   }
 
@@ -1188,28 +1196,32 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       );
     }
 
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.68,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
+    return RefreshIndicator(
+      onRefresh: _loadAnimaux,
+      color: _green,
+      child: GridView.builder(
+        padding: const EdgeInsets.all(16),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 0.68,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: docs.length,
+        itemBuilder: (_, i) {
+          final data = docs[i];
+          final id = data['id'] as String? ?? '';
+          return _AnimalCard(
+            id: id,
+            data: data,
+            showStatut: true,
+            chaleurFlag:  _chaleurFlags[id]  ?? false,
+            gestanteFlag: _gestanteFlags[id] ?? false,
+            onTap: () => _openFiche(context, id, data: data),
+            onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
+          );
+        },
       ),
-      itemCount: docs.length,
-      itemBuilder: (_, i) {
-        final data = docs[i];
-        final id = data['id'] as String? ?? '';
-        return _AnimalCard(
-          id: id,
-          data: data,
-          showStatut: true,
-          chaleurFlag:  _chaleurFlags[id]  ?? false,
-          gestanteFlag: _gestanteFlags[id] ?? false,
-          onTap: () => _openFiche(context, id, data: data),
-          onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
-        );
-      },
     );
   }
 
