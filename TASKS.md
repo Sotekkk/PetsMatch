@@ -129,6 +129,47 @@
 | ~~AG06~~ | ~~**Rappels médicaments & alimentation** : antiparasitaire/vaccin/visite → `agenda_events type=medication`~~ | ~~Moyenne~~ | ~~App~~ | ✅ Terminé 2026-05-30 |
 | ~~AG07~~ | ~~**RDV pro — sélection animal obligatoire** : dans le formulaire de réservation, afficher clairement l'animal concerné (sélecteur prominent, nom affiché dans la liste RDV du pro et dans les notifications)~~ | ~~Haute~~ | ~~App~~ | ✅ Terminé 2026-05-31 |
 | ~~AG08~~ | ~~**Agenda pro — créneaux disponibles/indisponibles** : permettre au professionnel de définir ses créneaux horaires (disponible / réservé / bloqué) depuis son agenda (`pro_agenda.dart`). Vue semaine avec cases cliquables. Stockage dans table Supabase `creneaux_pro` (`pro_uid`, `date`, `heure_debut`, `heure_fin`, `statut`). Les créneaux bloqués ne sont pas proposés lors de la réservation côté client.~~ | ~~Haute~~ | ~~App~~ | ✅ Terminé 2026-06-03 — onglet "Créneaux" dans pro_agenda (sélecteur semaine + grille 8h-19h, tap pour bloquer/débloquer, RDV visibles). Côté client rdv_booking_page filtre aussi les créneaux bloqués. ⚠️ **SQL requis** : `CREATE TABLE creneaux_pro (id uuid DEFAULT gen_random_uuid() PRIMARY KEY, pro_uid text NOT NULL, date date NOT NULL, heure_debut time NOT NULL, heure_fin time NOT NULL, statut text NOT NULL DEFAULT 'bloque', created_at timestamptz DEFAULT now(), UNIQUE(pro_uid, date, heure_debut));` |
+| AG09 | **Bug agenda — onglet "Demandes à approuver" vide** : les RDV apparaissent dans l'icône agenda mais l'onglet "Demandes à approuver" du menu "Mon agenda RDV" est vide. Vérifier la requête Supabase (`statut=eq.en_attente`), la correspondance `uid_pro`, et si les nouveaux RDV ont bien le statut attendu. | Haute | App | `pro_agenda.dart` |
+| AG10 | **Bug horaires pro — créneaux à des heures nocturnes aberrantes** : le profil pro affiche des créneaux à des horaires impossibles (ex. 04h42) alors que les créneaux configurés sont en journée. Vérifier le parsing/formatage des `heure_debut`/`heure_fin` (timezone UTC vs locale, `TimeOfDay`, ISO 8601) dans `pro_agenda.dart` et `pro_profile_edit.dart`. | Haute | App | `pro_agenda.dart`, `pro_profile_edit.dart` |
+
+### Profil pro — Refonte & nouvelles fonctionnalités
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| A47 | **Agenda pro refonte** — créneaux horaires configurables par catégorie de pro (vétérinaire, éducateur, maréchal-ferrant, pet sitter, promeneur, pôle santé, pension) avec : jours/plages horaires, capacité d'animaux simultanés (pension), vue client propre selon catégorie. Étendre `creneaux_pro` si besoin. | Haute | App + Web | `pro_agenda.dart`, `pro_profile_edit.dart`, `rdv_booking_page.dart` |
+| A48 | **Accès carnet santé animal par les pros de santé** — lecture seule pour ostéo/kiné/naturo/assurances, lecture + écriture pour vétérinaires. Vérifier colonne `cat_pro` pour filtrer le niveau d'accès. Étendre `animal_acces_page.dart`. | Haute | App + Web | `animal_acces_page.dart`, `pro_agenda.dart` |
+| A60 | **Accès carnet santé auto sans validation propriétaire** — actuellement le propriétaire doit valider la demande d'accès du pro. Changer le flux : le pro valide seul (accès automatiquement accordé à la confirmation du RDV ou sur demande directe du pro). Pas de workflow d'approbation côté propriétaire. | Haute | App + Web | `animal_acces_page.dart`, `pro_agenda.dart` |
+
+### Tarification
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| A49 | **Tarification éleveur** — définir les plans (fonctionnalités incluses, limites, prix). Intégration paiement (Stripe). À préciser avec Angélique. | Haute | App + Web | `info_utilisateur.dart`, `profil/page.tsx`, à créer `abonnement/page.tsx` |
+| A50 | **Tarification professionnels** — plans spécifiques pro selon catégorie. Intégration paiement (Stripe). À préciser avec Angélique. | Haute | App + Web | `pro_profile_edit.dart`, `abonnement/page.tsx` |
+
+### Admin — Statistiques avancées
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| A51 | **Statistiques admin** — tableau de bord enrichi : nombre d'animaux par espèce, race, profil (éleveur/particulier/pro), volume de stockage utilisé (Firebase Storage), volume messagerie (Firestore), volume notifications. | Haute | App + Web | `admin_panel.dart`, `src/app/admin/page.tsx` |
+
+### Partage & confidentialité
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| A52 | **Partage temporaire fiche animal (garde)** — éleveurs ET particuliers peuvent partager la fiche d'un animal avec un utilisateur en lecture seule, sur une durée définie, avec arrêt possible à tout moment. Inclut : prescriptions actives, alertes médicaments, alimentation spécifique. Table `partage_animal` (`token`, `animal_id`, `uid_partageur`, `uid_destinataire`, `expire_at`, `actif`). | Haute | App + Web | Créer `partage_animal_page.dart`, `src/app/partage/[token]/page.tsx` |
+| A59 | **Paramètres de confidentialité** — refonte de la page pour le profil particulier + création de la page pour le profil éleveur (actuellement absente). Contenu : visibilité profil, qui peut contacter, données partagées, notifications. | Haute | App | `info_utilisateur.dart`, `particulier_nav.dart`, `eleveur_nav.dart` |
+
+### UX / petites corrections
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| A53 | **Forum — espèce et race sur le topic** — lors de la création d'un sujet forum, proposer (optionnel) de sélectionner l'espèce et/ou la race concernée. Filtre côté liste par espèce/race. | Moyenne | App + Web | `forum_page.dart` |
+| A54 | **Rester connecté / mémorisation MDP** — option "Se souvenir de moi" à la connexion. Sur web : `localStorage` + cookie longue durée. Sur app : `SharedPreferences` + Firebase Auth `setPersistence`. | Moyenne | App + Web | `login_page.dart`, `connexion/page.tsx` |
+| ~~A55~~ | ~~**Fiche animal éleveur — masquer ligne reminder gestation** — ne pas afficher la ligne "Reminder gestation" dans la fiche animal (profil éleveur). Les rappels restent actifs mais la ligne UI est supprimée.~~ | ~~Haute~~ | ~~App~~ | ✅ Terminé 2026-06-03 — `reminder_j7/j3/j1_sent` ajoutés à `_excludedKeys` dans `_SimpleCard` |
+| A56 | **Fiche animal éleveur — reproducteur sans changement de position** — quand on passe un animal en "reproducteur", il ne doit pas changer d'emplacement dans la liste "Mes animaux". Garder l'ordre initial (date ajout ou alphabétique). | Haute | App | `mes_animaux.dart` |
+| A57 | **Pull-to-refresh sur toutes les pages liste** — ajouter `RefreshIndicator` (pull down) sur les pages qui n'en ont pas encore : mes animaux éleveur, mes animaux particulier, feed annonces, animaux perdus/trouvés, agenda, etc. | Haute | App | `mes_animaux.dart`, `animaux_perdus_page.dart`, `agenda_page.dart` |
+| A58 | **Vue détail annonce — date de naissance** — afficher la date de naissance de l'animal dans la vue détail d'une annonce (pas dans le feed). | Moyenne | App + Web | `annonce_detail_page.dart`, `annonces/[id]/page.tsx` |
 ### Conseils pratiques — **Angélique**
 
 | # | Tâche | Priorité | Repo | Notes |

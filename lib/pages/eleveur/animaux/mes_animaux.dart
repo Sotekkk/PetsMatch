@@ -194,7 +194,10 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     try {
       await Supabase.instance.client.from('animaux')
           .update({'reproducteur': !current}).eq('id', id);
-      if (mounted) _loadAnimaux();
+      if (mounted) setState(() {
+        final idx = _animauxData.indexWhere((a) => a['id']?.toString() == id);
+        if (idx >= 0) _animauxData[idx] = {..._animauxData[idx], 'reproducteur': !current};
+      });
     } catch (_) {}
   }
 
