@@ -373,11 +373,356 @@ class _EventTile extends StatelessWidget {
   final VoidCallback onRefresh;
   const _EventTile({required this.event, required this.onRefresh});
 
+  bool get _isRdv => event['type'] == 'rdv';
+  String? get _rdvId => event['rdv_id']?.toString().let((v) => v.isNotEmpty ? v : null);
+  bool get _canCancelRdv {
+    if (_rdvId == null) return false;
+    final d = _parseDate(event['date_debut'] as String);
+    return d.isAfter(DateTime.now().add(const Duration(hours: 24)));
+  }
+
+  Future<void> _showCancelOrModify(BuildContext context) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+          const Text('Que souhaitez-vous faire ?',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 16),
+          ListTile(
+            leading: const Icon(Icons.edit_calendar_outlined, color: _kTeal),
+            title: const Text('Modifier le rendez-vous',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            subtitle: const Text('Choisir un autre créneau disponible',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10),
+                side: BorderSide(color: Colors.grey.shade200)),
+            onTap: () => Navigator.pop(ctx, 'modifier'),
+          ),
+          const SizedBox(height: 8),
+          ListTile(
+            leading: const Icon(Icons.cancel_outlined, color: Colors.red),
+            title: const Text('Annuler définitivement',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Colors.red)),
+            subtitle: const Text('Le professionnel sera notifié',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10),
+                side: BorderSide(color: Colors.grey.shade200)),
+            onTap: () => Navigator.pop(ctx, 'annuler'),
+          ),
+        ]),
+      ),
+    );
+    if (choice == 'modifier' && context.mounted) {
+      await _proposeNewSlot(context);
+    } else if (choice == 'annuler' && context.mounted) {
+      await _cancelRdv(context);
+    }
+  }
+
+  Future<void> _proposeNewSlot(BuildContext context) async {
+    final supa = Supabase.instance.client;
+    final rdvId = _rdvId!;
+
+    // Charger le pro_uid depuis le rdv
+    final rdvRows = await supa.from('rdv').select('pro_uid').eq('id', rdvId);
+    if (rdvRows.isEmpty || !context.mounted) return;
+    final proUid = rdvRows[0]['pro_uid'] as String;
+
+    // Charger les créneaux disponibles de la pension
+    final today  = DateTime.now().toIso8601String().substring(0, 10);
+    final future = DateTime.now().add(const Duration(days: 90)).toIso8601String().substring(0, 10);
+    final slotsData = await supa
+        .from('creneaux_pro')
+        .select('date, heure_debut')
+        .eq('pro_uid', proUid)
+        .eq('statut', 'disponible')
+        .gte('date', today)
+        .lte('date', future)
+        .order('date')
+        .order('heure_debut');
+
+    if (!context.mounted) return;
+
+    // Grouper par date
+    final Map<String, List<int>> slotsByDate = {};
+    for (final s in slotsData) {
+      final date = s['date'] as String;
+      final hour = int.tryParse((s['heure_debut'] as String).split(':').first) ?? 0;
+      slotsByDate.putIfAbsent(date, () => []).add(hour);
+    }
+
+    if (slotsByDate.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Aucun créneau disponible chez cette pension.',
+            style: TextStyle(fontFamily: 'Galey')),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+
+    final dates = slotsByDate.keys.toList()..sort();
+    String selDate = dates.first;
+    int? selHour;
+
+    final chosen = await showModalBottomSheet<DateTime>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => Padding(
+          padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            const Text('Modifier le rendez-vous',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 4),
+            const Text('Choisissez parmi les créneaux disponibles.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 16),
+            const Text('Date', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: dates.map((d) {
+                  final dt = DateTime.parse(d);
+                  final label = DateFormat('EEE d MMM', 'fr').format(dt);
+                  final sel = d == selDate;
+                  return GestureDetector(
+                    onTap: () => setModal(() { selDate = d; selHour = null; }),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: sel ? _kTeal : Colors.white,
+                        border: Border.all(color: sel ? _kTeal : Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(label, style: TextStyle(
+                          fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                          color: sel ? Colors.white : const Color(0xFF1E2025))),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Heure', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8, runSpacing: 8,
+              children: (slotsByDate[selDate] ?? []).map((h) {
+                final sel = h == selHour;
+                return GestureDetector(
+                  onTap: () => setModal(() => selHour = h),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: sel ? _kTeal : Colors.white,
+                      border: Border.all(color: sel ? _kTeal : Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text('${h.toString().padLeft(2, "0")}h00',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                            color: sel ? Colors.white : const Color(0xFF1E2025))),
+                  ),
+                );
+              }).toList(),
+            ),
+            if (selHour != null) ...[
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    final dt = DateTime.parse(selDate);
+                    Navigator.pop(ctx, DateTime(dt.year, dt.month, dt.day, selHour!));
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kTeal, foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                  child: const Text('Proposer ce créneau',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                ),
+              ),
+            ],
+          ]),
+        ),
+      ),
+    );
+
+    if (chosen == null || !context.mounted) return;
+
+    try {
+      await supa.from('rdv').update({
+        'statut': 'contre_proposition',
+        'date_heure': chosen.toUtc().toIso8601String(),
+      }).eq('id', rdvId);
+
+      final clientName = FirebaseAuth.instance.currentUser?.displayName ?? 'Le client';
+      final dateStr = DateFormat('d MMM à HH:mm', 'fr').format(chosen);
+      await supa.from('notifications').insert({
+        'uid':   proUid,
+        'type':  'rdv_contre_proposition',
+        'title': 'Modification demandée par $clientName',
+        'body':  '$clientName souhaite déplacer le RDV au $dateStr',
+        'data':  {'rdv_id': rdvId},
+        'read':  false,
+      });
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Proposition envoyée au professionnel',
+              style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: _kTeal,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      onRefresh();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  Future<void> _cancelRdv(BuildContext context) async {
+    final ctrl = TextEditingController();
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+          const Text('Annuler définitivement',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 4),
+          const Text('Le professionnel sera notifié de votre annulation.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+          const SizedBox(height: 16),
+          TextField(
+            controller: ctrl,
+            maxLines: 2,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Motif de l\'annulation (optionnel)…',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              contentPadding: const EdgeInsets.all(12),
+            ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade600, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              child: const Text('Confirmer l\'annulation',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+            ),
+          ),
+        ]),
+      ),
+    );
+    ctrl.dispose();
+    if (ok != true) return;
+
+    try {
+      final supa = Supabase.instance.client;
+      final rdvId = _rdvId!;
+      final motif = ctrl.text.trim();
+
+      // Load rdv to get pro_uid
+      final rdvRows = await supa.from('rdv').select('pro_uid').eq('id', rdvId);
+      final proUid = rdvRows.isNotEmpty ? rdvRows[0]['pro_uid'] as String? : null;
+
+      // Cancel the RDV
+      await supa.from('rdv').update({
+        'statut': 'annule',
+        if (motif.isNotEmpty) 'notes_annulation': motif,
+      }).eq('id', rdvId);
+
+      // Remove from agenda
+      await supa.from('agenda_events').delete().eq('id', event['id']);
+
+      // Notify pro
+      if (proUid != null) {
+        final clientName = FirebaseAuth.instance.currentUser?.displayName ?? 'Le client';
+        final motifPart = motif.isNotEmpty ? ' — Motif : $motif' : '';
+        await supa.from('notifications').insert({
+          'uid':   proUid,
+          'type':  'rdv_annule_client',
+          'title': 'RDV annulé par $clientName',
+          'body':  '$clientName a annulé son rendez-vous$motifPart',
+          'data':  {'rdv_id': rdvId},
+          'read':  false,
+        });
+      }
+
+      onRefresh();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final color  = _colorFor(event);
-    final time   = DateFormat('HH:mm').format(_parseDate(event['date_debut'] as String));
-    final type   = event['type'] as String? ?? 'autre';
+    final color = _colorFor(event);
+    final time  = DateFormat('HH:mm').format(_parseDate(event['date_debut'] as String));
+    final type  = event['type'] as String? ?? 'autre';
+
+    Widget trailing;
+    if (_isRdv && _rdvId != null) {
+      if (_canCancelRdv) {
+        trailing = IconButton(
+          icon: const Icon(Icons.edit_calendar_outlined, size: 20, color: _kTeal),
+          tooltip: 'Annuler ou modifier',
+          onPressed: () => _showCancelOrModify(context),
+        );
+      } else {
+        trailing = const Tooltip(
+          message: 'Annulation impossible (< 24h)',
+          child: Icon(Icons.lock_outline, size: 18, color: Colors.grey),
+        );
+      }
+    } else {
+      trailing = IconButton(
+        icon: const Icon(Icons.delete_outline, size: 18, color: Colors.grey),
+        onPressed: () async {
+          final supa = Supabase.instance.client;
+          await supa.from('agenda_events').delete().eq('id', event['id']);
+          onRefresh();
+        },
+      );
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -399,17 +744,14 @@ class _EventTile extends StatelessWidget {
                 fontSize: 14, color: Color(0xFF1E2025))),
         subtitle: Text(_eventSubtitle(time, type, event['duree_minutes']),
             style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
-        trailing: IconButton(
-          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.grey),
-          onPressed: () async {
-            final supa = Supabase.instance.client;
-            await supa.from('agenda_events').delete().eq('id', event['id']);
-            onRefresh();
-          },
-        ),
+        trailing: trailing,
       ),
     );
   }
+}
+
+extension _Let<T> on T {
+  R let<R>(R Function(T) block) => block(this);
 }
 
 // ── DaySheet ─────────────────────────────────────────────────────────────────

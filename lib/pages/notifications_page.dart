@@ -7,6 +7,9 @@ import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
+import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart';
+import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -44,8 +47,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         _notifs = List<Map<String, dynamic>>.from(data);
         _loading = false;
       });
-      // Marquer toutes comme lues → met à jour le badge via realtime
-      await _supa.from('notifications').update({'read': true}).eq('uid', _uid).eq('read', false);
+      // Badge mis à jour via realtime — pas de marquage automatique ici
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -79,6 +81,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
     } catch (_) {}
   }
 
+  Future<void> _markRead(Map<String, dynamic> notif) async {
+    if (notif['read'] == true) return;
+    try {
+      await _supa.from('notifications').update({'read': true}).eq('id', notif['id']);
+      if (mounted) setState(() {
+        final idx = _notifs.indexWhere((n) => n['id'] == notif['id']);
+        if (idx != -1) _notifs[idx] = {..._notifs[idx], 'read': true};
+      });
+    } catch (_) {}
+  }
+
   Future<void> _handleTap(Map<String, dynamic> notif) async {
     final type = notif['type'] as String?;
     final data = notif['data'];
@@ -92,9 +105,20 @@ class _NotificationsPageState extends State<NotificationsPage> {
       bebeIndex = raw is int ? raw : (raw is num ? raw.toInt() : null);
     }
 
-    _deleteNotif(notif);
+    await _markRead(notif);
 
     if (!mounted) return;
+
+    // RDV notifications → pages agenda
+    if (type == 'rdv_demande' || type == 'rdv_annule_client' || type == 'rdv_contre_proposition') {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage()));
+      return;
+    }
+    if (type == 'rdv_confirme' || type == 'rdv_refuse' || type == 'rdv_annule') {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const AgendaPage()));
+      return;
+    }
+
     if (type == 'pension_acces') {
       final pensionUid = data is Map ? data['pensionUid'] as String? : null;
       final pensionNom = data is Map ? data['pensionNom'] as String? : null;
@@ -107,6 +131,20 @@ class _NotificationsPageState extends State<NotificationsPage> {
           animalId: animalId,
           animalNom: animalNom ?? 'votre animal',
         );
+      }
+      return;
+    }
+    if (type == 'pension_acces_reponse') {
+      final animalId  = data is Map ? data['animalId']  as String? : null;
+      final animalNom = data is Map ? data['animalNom'] as String? : null;
+      final approved  = data is Map ? data['approved']  as bool?   : null;
+      if (approved == true && animalId != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AnimalFichePensionPage(
+            animalId: animalId,
+            animalNom: animalNom,
+          ),
+        ));
       }
       return;
     }
@@ -163,6 +201,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'tache':         return Icons.task_alt;
       case 'pension_acces':          return Icons.home_work_outlined;
       case 'pension_acces_reponse':  return Icons.check_circle_outline;
+      case 'rdv_demande':            return Icons.event_note_outlined;
+      case 'rdv_confirme':           return Icons.event_available_outlined;
+      case 'rdv_refuse':             return Icons.event_busy_outlined;
+      case 'rdv_annule':
+      case 'rdv_annule_client':      return Icons.cancel_outlined;
+      case 'rdv_contre_proposition': return Icons.edit_calendar_outlined;
       default:                       return Icons.notifications_outlined;
     }
   }
@@ -174,9 +218,15 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'like':          return Colors.redAccent;
       case 'chaleur':       return const Color(0xFFE91E8C);
       case 'tache':         return const Color(0xFF6E9E57);
-      case 'pension_acces':         return const Color(0xFF7B5EA7);
-      case 'pension_acces_reponse': return const Color(0xFF6E9E57);
-      default:                      return Colors.grey;
+      case 'pension_acces':          return const Color(0xFF7B5EA7);
+      case 'pension_acces_reponse':  return const Color(0xFF6E9E57);
+      case 'rdv_demande':
+      case 'rdv_contre_proposition': return _teal;
+      case 'rdv_confirme':           return const Color(0xFF6E9E57);
+      case 'rdv_refuse':
+      case 'rdv_annule':
+      case 'rdv_annule_client':      return Colors.redAccent;
+      default:                       return Colors.grey;
     }
   }
 

@@ -83,7 +83,7 @@ async function insertCorrespondance(alerteId, trouveId, score, scorePct) {
         const req = https.request(options, (res) => {
             res.resume();
             res.on("end", () => {
-                if (res.statusCode === 201) resolve(true);   // inserted
+                if (res.statusCode === 201) resolve(true); // inserted
                 else if (res.statusCode === 200) resolve(false); // duplicate ignored
                 else reject(new Error(`insertCorrespondance: ${res.statusCode}`));
             });
@@ -135,7 +135,10 @@ async function insertNotification(uid, title, body, data) {
                 "Prefer": "return=minimal",
             },
         };
-        const req = https.request(options, (res) => { res.resume(); res.on("end", resolve); });
+        const req = https.request(options, (res) => {
+            res.resume();
+            res.on("end", resolve);
+        });
         req.on("error", resolve);
         req.write(payload);
         req.end();
@@ -181,7 +184,7 @@ function calcScore(perdu, trouve) {
 
     // Puce : match certain
     const p = (perdu.identification || "").toLowerCase().replace(/\s/g, "");
-    const t = (trouve.numero_puce  || "").toLowerCase().replace(/\s/g, "");
+    const t = (trouve.numero_puce || "").toLowerCase().replace(/\s/g, "");
     if (p && t && p === t) {
         return {score: 100, pct: 100, puceMatch: true};
     }
@@ -277,11 +280,11 @@ exports.matchLostFound = functions
         const {alerteId, type} = data;
         if (!alerteId || !type) return {matches: 0};
 
-        const cutoff30  = new Date(Date.now() - 30 * 86400 * 1000).toISOString();
-        const cutoff90  = new Date(Date.now() - 90 * 86400 * 1000).toISOString();
+        const cutoff30 = new Date(Date.now() - 30 * 86400 * 1000).toISOString();
+        const cutoff90 = new Date(Date.now() - 90 * 86400 * 1000).toISOString();
 
         let notified = 0;
-        let stored   = 0;
+        let stored = 0;
 
         try {
             if (type === "perdu") {
@@ -309,7 +312,7 @@ exports.matchLostFound = functions
 
                     if (pct >= 90) {
                         const title = "🐾 Correspondance animaux perdu/trouvé";
-                        const body  = `Un animal trouvé correspond à ${pct}% à votre alerte`;
+                        const body = `Un animal trouvé correspond à ${pct}% à votre alerte`;
                         await notify(perdu.uid_proprietaire, title, body, {
                             alerteId,
                             trouveId: trouve.id,
@@ -331,7 +334,8 @@ exports.matchLostFound = functions
                 const candidats = await supabaseGet("alertes_perdus", {
                     "espece": `eq.${trouve.espece}`,
                     "created_at": `gte.${cutoff90}`,
-                    "select": "id,uid_proprietaire,espece,race,sexe,couleur,identification,date_disparition,lat,lng,nom_animal",
+                    "select": "id,uid_proprietaire,espece,race,sexe,couleur," +
+                        "identification,date_disparition,lat,lng,nom_animal",
                 });
 
                 for (const perdu of candidats) {
@@ -346,7 +350,7 @@ exports.matchLostFound = functions
                     if (pct >= 90) {
                         const nomAnimal = perdu.nom_animal || "Animal";
                         const title = "🐾 Correspondance animaux perdu/trouvé";
-                        const body  = `${nomAnimal} signalé perdu correspond à ${pct}% à un animal trouvé`;
+                        const body = `${nomAnimal} signalé perdu correspond à ${pct}% à un animal trouvé`;
                         await notify(perdu.uid_proprietaire, title, body, {
                             alerteId: perdu.id,
                             trouveId: trouve.id,

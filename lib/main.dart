@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:PetsMatch/pages/admin/admin_panel.dart';
+import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/eleveur/verification_page.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -25,6 +27,22 @@ const AndroidNotificationChannel channel = AndroidNotificationChannel(
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+void _handleNotifNavigation(Map<String, dynamic> data) {
+  final type = data['type'] as String? ?? '';
+  final ctx = navigatorKey.currentState;
+  if (ctx == null) return;
+  // Pension-side: new RDV request or counter-proposal
+  if (type == 'rdv_demande' || type == 'rdv_contre_proposition' || type == 'rdv_annule_client') {
+    ctx.push(MaterialPageRoute(builder: (_) => const ProAgendaPage()));
+  }
+  // Client-side: RDV confirmed, refused, cancelled by pro
+  else if (type == 'rdv_confirme' || type == 'rdv_refuse' || type == 'rdv_annule') {
+    ctx.push(MaterialPageRoute(builder: (_) => const AgendaPage()));
+  }
+}
 
 Future<void> setupNotifications() async {
   await flutterLocalNotificationsPlugin
@@ -403,9 +421,14 @@ Future<void> main() async {
   });
 
   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-    print("Notification cliquée : ${message.data}");
-    // Navigation vers une page spécifique
+    _handleNotifNavigation(message.data);
   });
+
+  // App ouverte depuis une notif (état terminé)
+  final initialMsg = await FirebaseMessaging.instance.getInitialMessage();
+  if (initialMsg != null) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _handleNotifNavigation(initialMsg.data));
+  }
   WidgetsBinding.instance.addObserver(AppLifecycleObserver());
   try {
     await requestPermissions();
@@ -445,6 +468,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+          navigatorKey: navigatorKey,
           locale:
               Locale('fr', 'FR'), // Force l'application à utiliser le français
           supportedLocales: [

@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/pro/animal_acces_page.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
+import 'package:PetsMatch/pages/message.dart';
 
 class ProAgendaPage extends StatefulWidget {
   const ProAgendaPage({super.key});
@@ -143,73 +144,449 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   Future<void> _showAcceptDialog(Map<String, dynamic> rdv) async {
     int duree = 60;
-    final confirmed = await showModalBottomSheet<bool>(
+
+    final requestedDh = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
+    int preciseHour   = requestedDh?.hour   ?? 10;
+    int preciseMinute = requestedDh?.minute  ?? 0;
+
+    // Counter-proposal state
+    bool isCounter         = false;
+    DateTime counterDate   = requestedDh ?? DateTime.now().add(const Duration(days: 1));
+    int counterHour        = requestedDh?.hour ?? 10;
+    int counterMinute      = 0;
+
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModal) => Padding(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Durée du rendez-vous',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-            const SizedBox(height: 6),
-            const Text('Le client ne verra pas cette durée — elle sert à bloquer votre agenda.',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-            const SizedBox(height: 18),
-            Wrap(spacing: 10, runSpacing: 10, children: [30, 45, 60, 90, 120].map((d) {
-              final sel = duree == d;
-              return GestureDetector(
-                onTap: () => setModal(() => duree = d),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: sel ? _teal : Colors.white,
-                    border: Border.all(color: sel ? _teal : const Color(0xFFE4E7E2)),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    d < 60 ? '$d min' : (d == 60 ? '1 h' : '${d ~/ 60} h${d % 60 > 0 ? " ${d % 60}" : ""}'),
-                    style: TextStyle(
-                        fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
-                        color: sel ? Colors.white : const Color(0xFF1E2025)),
+          padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // Handle
+              Center(child: Container(
+                  width: 36, height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+
+              // ── Toggle Confirmer / Contre-proposition (pension only) ───────
+              if (_isPension) ...[
+                Row(children: [
+                  Expanded(child: GestureDetector(
+                    onTap: () => setModal(() => isCounter = false),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: !isCounter ? _teal : Colors.white,
+                        border: Border.all(color: _teal),
+                        borderRadius: const BorderRadius.horizontal(left: Radius.circular(10)),
+                      ),
+                      child: Center(child: Text('Confirmer',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14,
+                              color: !isCounter ? Colors.white : _teal))),
+                    ),
+                  )),
+                  Expanded(child: GestureDetector(
+                    onTap: () => setModal(() => isCounter = true),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isCounter ? _teal : Colors.white,
+                        border: Border.all(color: _teal),
+                        borderRadius: const BorderRadius.horizontal(right: Radius.circular(10)),
+                      ),
+                      child: Center(child: Text('Autre créneau',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14,
+                              color: isCounter ? Colors.white : _teal))),
+                    ),
+                  )),
+                ]),
+                const SizedBox(height: 20),
+              ],
+
+              if (_isPension && isCounter) ...[
+                // ── Contre-proposition : date + heure ─────────────────────────
+                const Text('Proposer un autre créneau',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+                const SizedBox(height: 4),
+                const Text('Le client recevra une notification avec votre proposition.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 14),
+                // Date selector
+                GestureDetector(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: ctx,
+                      initialDate: counterDate,
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                      locale: const Locale('fr'),
+                    );
+                    if (picked != null) setModal(() => counterDate = picked);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: _teal),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.calendar_today_outlined, color: _teal, size: 18),
+                      const SizedBox(width: 10),
+                      Text(
+                        '${counterDate.day.toString().padLeft(2, "0")}/${counterDate.month.toString().padLeft(2, "0")}/${counterDate.year}',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: _teal),
+                      ),
+                    ]),
                   ),
                 ),
-              );
-            }).toList()),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _teal, foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  elevation: 0,
+                const SizedBox(height: 14),
+                // Counter hours
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: List.generate(14, (i) => i + 7).map((h) {
+                      final sel = counterHour == h;
+                      return GestureDetector(
+                        onTap: () => setModal(() => counterHour = h),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: sel ? _teal : Colors.white,
+                            border: Border.all(color: sel ? _teal : const Color(0xFFE4E7E2)),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text('$h h', style: TextStyle(
+                              fontFamily: 'Galey', fontSize: 13,
+                              fontWeight: sel ? FontWeight.w700 : FontWeight.normal,
+                              color: sel ? Colors.white : const Color(0xFF1E2025))),
+                        ),
+                      );
+                    }).toList(),
+                  ),
                 ),
-                child: const Text('Confirmer le RDV',
-                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-              ),
-            ),
-          ]),
+                const SizedBox(height: 10),
+                // Counter minutes
+                Row(children: [0, 15, 30, 45].map((m) {
+                  final sel = counterMinute == m;
+                  return GestureDetector(
+                    onTap: () => setModal(() => counterMinute = m),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: sel ? _teal : Colors.white,
+                        border: Border.all(color: sel ? _teal : const Color(0xFFE4E7E2)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(m == 0 ? '00' : '$m',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                              fontWeight: sel ? FontWeight.w700 : FontWeight.normal,
+                              color: sel ? Colors.white : const Color(0xFF1E2025))),
+                    ),
+                  );
+                }).toList()),
+                const SizedBox(height: 6),
+                Text(
+                  'Proposition : ${counterDate.day.toString().padLeft(2,"0")}/${counterDate.month.toString().padLeft(2,"0")} à ${counterHour.toString().padLeft(2,"0")}h${counterMinute.toString().padLeft(2,"0")}',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, {
+                      'confirmed':     false,
+                      'isCounter':     true,
+                      'counterYear':   counterDate.year,
+                      'counterMonth':  counterDate.month,
+                      'counterDay':    counterDate.day,
+                      'counterHour':   counterHour,
+                      'counterMinute': counterMinute,
+                    }),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _teal, foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
+                    ),
+                    child: const Text('Envoyer la contre-proposition',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                  ),
+                ),
+              ] else ...[
+                if (_isPension) ...[
+                  // ── Confirmer : heure exacte dans le créneau demandé ────────
+                  const Text('Heure exacte du rendez-vous',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+                  const SizedBox(height: 4),
+                  Text(
+                    requestedDh != null
+                        ? 'Créneau demandé : ${requestedDh.hour.toString().padLeft(2,"0")}h — ajustez si besoin'
+                        : 'Proposez l\'heure exacte au client',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 16),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: List.generate(14, (i) => i + 7).map((h) {
+                        final sel = preciseHour == h;
+                        return GestureDetector(
+                          onTap: () => setModal(() => preciseHour = h),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 120),
+                            margin: const EdgeInsets.only(right: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: sel ? _teal : Colors.white,
+                              border: Border.all(color: sel ? _teal : const Color(0xFFE4E7E2)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text('$h h', style: TextStyle(
+                                fontFamily: 'Galey', fontSize: 13,
+                                fontWeight: sel ? FontWeight.w700 : FontWeight.normal,
+                                color: sel ? Colors.white : const Color(0xFF1E2025))),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(children: [0, 15, 30, 45].map((m) {
+                    final sel = preciseMinute == m;
+                    return GestureDetector(
+                      onTap: () => setModal(() => preciseMinute = m),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 120),
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: sel ? _teal : Colors.white,
+                          border: Border.all(color: sel ? _teal : const Color(0xFFE4E7E2)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(m == 0 ? '00' : '$m',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                                fontWeight: sel ? FontWeight.w700 : FontWeight.normal,
+                                color: sel ? Colors.white : const Color(0xFF1E2025))),
+                      ),
+                    );
+                  }).toList()),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Heure confirmée : ${preciseHour.toString().padLeft(2, "0")}h${preciseMinute.toString().padLeft(2, "0")}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+
+                // ── Durée (commun) ──────────────────────────────────────────
+                const Text('Durée du rendez-vous',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+                const SizedBox(height: 6),
+                const Text('Sert à bloquer votre agenda — le client ne la verra pas.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 14),
+                Wrap(spacing: 10, runSpacing: 10, children: [30, 45, 60, 90, 120].map((d) {
+                  final sel = duree == d;
+                  return GestureDetector(
+                    onTap: () => setModal(() => duree = d),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: sel ? _teal : Colors.white,
+                        border: Border.all(color: sel ? _teal : const Color(0xFFE4E7E2)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        d < 60 ? '$d min' : (d == 60 ? '1 h' : '${d ~/ 60} h${d % 60 > 0 ? " ${d % 60}" : ""}'),
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                            color: sel ? Colors.white : const Color(0xFF1E2025)),
+                      ),
+                    ),
+                  );
+                }).toList()),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, {
+                      'confirmed': true,
+                      'isCounter': false,
+                      'preciseHour': preciseHour,
+                      'preciseMinute': preciseMinute,
+                      'duree': duree,
+                    }),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _teal, foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
+                    ),
+                    child: const Text('Confirmer le RDV',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                  ),
+                ),
+              ],
+            ]),
+          ),
         ),
       ),
     );
-    if (confirmed == true) {
-      await _updateStatut(rdv['id'].toString(), 'confirme', dureeMinutes: duree);
+
+    if (result == null) return;
+
+    // ── Contre-proposition ────────────────────────────────────────────────────
+    if (result['isCounter'] == true) {
+      final counterDh = DateTime(
+        result['counterYear'] as int, result['counterMonth'] as int, result['counterDay'] as int,
+        result['counterHour'] as int, result['counterMinute'] as int,
+      ).toUtc();
+      await _sendCounterProposal(rdv, counterDh);
+      return;
+    }
+
+    if (result['confirmed'] != true) return;
+
+    final dureeMinutes = result['duree'] as int;
+
+    if (_isPension && requestedDh != null) {
+      // Update date_heure with the precise time chosen by pension
+      final preciseDh = DateTime(
+        requestedDh.year, requestedDh.month, requestedDh.day,
+        result['preciseHour'] as int, result['preciseMinute'] as int,
+      ).toUtc();
+      await _updateStatutWithPreciseTime(rdv['id'].toString(), preciseDh, dureeMinutes);
+    } else {
+      await _updateStatut(rdv['id'].toString(), 'confirme', dureeMinutes: dureeMinutes);
     }
   }
 
-  Future<void> _updateStatut(String rdvId, String statut, {int? dureeMinutes}) async {
+  Future<void> _sendCounterProposal(Map<String, dynamic> rdv, DateTime counterDh) async {
+    try {
+      final supa = Supabase.instance.client;
+      await supa.from('rdv').update({
+        'statut':     'contre_proposition',
+        'date_heure': counterDh.toIso8601String(),
+      }).eq('id', rdv['id']);
+
+      final clientUid = rdv['client_uid'] as String?;
+      if (clientUid != null) {
+        final proName = User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : 'La pension';
+        final local = counterDh.toLocal();
+        final dateStr =
+            '${local.day.toString().padLeft(2, "0")}/${local.month.toString().padLeft(2, "0")} '
+            'à ${local.hour.toString().padLeft(2, "0")}h${local.minute.toString().padLeft(2, "0")}';
+        await supa.from('notifications').insert({
+          'uid':   clientUid,
+          'type':  'rdv_contre_proposition',
+          'title': '$proName vous propose un autre créneau',
+          'body':  'Nouvelle proposition : le $dateStr — confirmez ou refusez dans vos RDV.',
+          'data':  {'rdv_id': rdv['id']},
+          'read':  false,
+        });
+      }
+      await _loadRdvs();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Contre-proposition envoyée au client.',
+              style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Color(0xFF6E9E57),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  Future<void> _updateStatutWithPreciseTime(String rdvId, DateTime preciseDh, int dureeMinutes) async {
+    try {
+      final supa = Supabase.instance.client;
+      await supa.from('rdv').update({
+        'statut':         'confirme',
+        'duree_minutes':  dureeMinutes,
+        'date_heure':     preciseDh.toIso8601String(),
+      }).eq('id', rdvId);
+
+      final rdv = _rdvs.firstWhere((r) => r['id'].toString() == rdvId, orElse: () => {});
+      final clientUid = rdv['client_uid'] as String?;
+      final proUid    = FirebaseAuth.instance.currentUser?.uid;
+      final proName   = User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : 'La pension';
+      final clientName = rdv['_client_name']?.toString() ?? 'Client';
+      // Agenda client
+      if (clientUid != null) {
+        await supa.from('agenda_events').upsert({
+          'uid':           clientUid,
+          'titre':         'RDV avec $proName',
+          'type':          'rdv',
+          'date_debut':    preciseDh.toIso8601String(),
+          'animal_id':     rdv['animal_id'],
+          'notes':         rdv['motif'],
+          'rdv_id':        rdv['id'],
+          'duree_minutes': dureeMinutes,
+        }, onConflict: 'rdv_id');
+        // Notify client
+        await supa.from('notifications').insert({
+          'uid':   clientUid,
+          'type':  'rdv_confirme',
+          'title': 'RDV confirmé par $proName',
+          'body':  'Votre rendez-vous est confirmé pour le ${preciseDh.toLocal().day.toString().padLeft(2,"0")}/${preciseDh.toLocal().month.toString().padLeft(2,"0")} à ${preciseDh.toLocal().hour.toString().padLeft(2,"0")}h${preciseDh.toLocal().minute.toString().padLeft(2,"0")}',
+          'data':  {'rdv_id': rdv['id']},
+          'read':  false,
+        });
+      }
+      // Agenda pension — nécessite la contrainte unique (uid, rdv_id) en base
+      if (proUid != null) {
+        try {
+          await supa.from('agenda_events').upsert({
+            'uid':           proUid,
+            'titre':         'RDV avec $clientName',
+            'type':          'rdv',
+            'date_debut':    preciseDh.toIso8601String(),
+            'animal_id':     rdv['animal_id'],
+            'notes':         rdv['motif'],
+            'rdv_id':        rdv['id'],
+            'duree_minutes': dureeMinutes,
+          }, onConflict: 'uid,rdv_id');
+        } catch (_) {}
+      }
+      await _loadRdvs();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  Future<void> _updateStatut(String rdvId, String statut,
+      {int? dureeMinutes, String? motifAnnulation}) async {
     try {
       final supa = Supabase.instance.client;
       final update = <String, dynamic>{'statut': statut};
       if (dureeMinutes != null) update['duree_minutes'] = dureeMinutes;
+      if (motifAnnulation != null) update['notes_annulation'] = motifAnnulation;
       await supa.from('rdv').update(update).eq('id', rdvId);
 
-      // Sync agenda du client
       final rdv = _rdvs.firstWhere(
         (r) => r['id'].toString() == rdvId,
         orElse: () => {},
@@ -217,12 +594,15 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final clientUid = rdv['client_uid'] as String?;
 
       if (statut == 'confirme' && clientUid != null) {
+        final proUid2   = FirebaseAuth.instance.currentUser?.uid;
         final proName = User_Info.nameElevage.isNotEmpty
             ? User_Info.nameElevage
             : User_Info.professionPro.isNotEmpty
                 ? User_Info.professionPro
                 : 'Professionnel';
+        final clientName2 = rdv['_client_name']?.toString() ?? 'Client';
         final dhUtc = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toUtc();
+        // Agenda client
         await supa.from('agenda_events').upsert({
           'uid':           clientUid,
           'titre':         'RDV avec $proName',
@@ -233,8 +613,41 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'rdv_id':        rdv['id'],
           if (dureeMinutes != null) 'duree_minutes': dureeMinutes,
         }, onConflict: 'rdv_id');
+        // Agenda pension — nécessite la contrainte unique (uid, rdv_id) en base
+        if (proUid2 != null) {
+          try {
+            await supa.from('agenda_events').upsert({
+              'uid':           proUid2,
+              'titre':         'RDV avec $clientName2',
+              'type':          'rdv',
+              'date_debut':    dhUtc?.toIso8601String() ?? rdv['date_heure'],
+              'animal_id':     rdv['animal_id'],
+              'notes':         rdv['motif'],
+              'rdv_id':        rdv['id'],
+              if (dureeMinutes != null) 'duree_minutes': dureeMinutes,
+            }, onConflict: 'uid,rdv_id');
+          } catch (_) {}
+        }
       } else if ((statut == 'annule' || statut == 'refuse') && rdv.isNotEmpty) {
         await supa.from('agenda_events').delete().eq('rdv_id', rdv['id']);
+
+        // Notify client
+        if (clientUid != null) {
+          final proName = User_Info.nameElevage.isNotEmpty
+              ? User_Info.nameElevage
+              : User_Info.professionPro.isNotEmpty ? User_Info.professionPro : 'Le professionnel';
+          final motifPart = (motifAnnulation?.isNotEmpty == true) ? ' — Motif : $motifAnnulation' : '';
+          await supa.from('notifications').insert({
+            'uid':   clientUid,
+            'type':  statut == 'refuse' ? 'rdv_refuse' : 'rdv_annule',
+            'title': statut == 'refuse' ? 'Demande de RDV refusée' : 'RDV annulé',
+            'body':  statut == 'refuse'
+                ? '$proName a refusé votre demande de RDV$motifPart'
+                : 'Votre RDV avec $proName a été annulé$motifPart',
+            'data':  {'rdv_id': rdv['id']},
+            'read':  false,
+          });
+        }
       }
 
       await _loadRdvs();
@@ -247,6 +660,96 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         ));
       }
     }
+  }
+
+  Future<void> _showCancelDialog(Map<String, dynamic> rdv, {bool isRefus = false}) async {
+    final ctrl = TextEditingController();
+    final label = isRefus ? 'Refuser' : 'Annuler';
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+          Text('$label ce RDV',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 4),
+          const Text('Un motif (optionnel) sera envoyé au client.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+          const SizedBox(height: 16),
+          TextField(
+            controller: ctrl,
+            maxLines: 2,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Empêchement, motif… (optionnel)',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              contentPadding: const EdgeInsets.all(12),
+            ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade600, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              child: Text('$label ce RDV',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+            ),
+          ),
+        ]),
+      ),
+    );
+    ctrl.dispose();
+    if (ok != true || !mounted) return;
+    await _updateStatut(rdv['id'].toString(), 'annule',
+        motifAnnulation: ctrl.text.trim().isEmpty ? null : ctrl.text.trim());
+  }
+
+  void _contactClient(Map<String, dynamic> rdv) {
+    final name = rdv['_client_name']?.toString() ?? 'le client';
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+          Text('Contacter $name',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 12),
+          const Text('Utilisez la messagerie intégrée pour contacter ce client directement.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey)),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => MessagePage()));
+              },
+              icon: const Icon(Icons.message_outlined),
+              label: const Text('Ouvrir la messagerie', style: TextStyle(fontFamily: 'Galey')),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _teal,
+                side: const BorderSide(color: _teal),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        ]),
+      ),
+    );
   }
 
   Future<void> _showNotesDialog(Map<String, dynamic> rdv) async {
@@ -342,7 +845,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 children: [
                   _buildList(_demandes, showActions: true),
                   _buildList(_avenir, showCancel: true),
-                  _buildList(_historique),
+                  _buildList(_historique, showDelete: true),
                   _buildCreneauxTab(),
                 ],
               ),
@@ -352,17 +855,25 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   // ── AG08 — Créneaux ──────────────────────────────────────────────────────────
 
+  bool get _isPension => User_Info.catPro == 'pension';
+
   Future<void> _loadCreneaux() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final weekEnd = _weekStart.add(const Duration(days: 6));
     try {
-      final rows = await Supabase.instance.client
+      final query = Supabase.instance.client
           .from('creneaux_pro')
           .select()
           .eq('pro_uid', uid)
           .gte('date', _weekStart.toIso8601String().substring(0, 10))
           .lte('date', weekEnd.toIso8601String().substring(0, 10));
+
+      // Pension: load 'disponible' slots; others: load 'bloque' slots
+      final rows = await (_isPension
+          ? query.eq('statut', 'disponible')
+          : query.eq('statut', 'bloque'));
+
       if (!mounted) return;
       setState(() {
         _blockedSlots.clear();
@@ -379,14 +890,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final key = '${date}_$hour';
-    final isBlocked = _blockedSlots[key] == true;
+    final isActive = _blockedSlots[key] == true;
     setState(() {
-      if (isBlocked) _blockedSlots.remove(key);
-      else _blockedSlots[key] = true;
+      if (isActive) { _blockedSlots.remove(key); } else { _blockedSlots[key] = true; }
     });
     try {
-      if (isBlocked) {
-        final heureDebut = '${hour.toString().padLeft(2, '0')}:00:00';
+      final heureDebut = '${hour.toString().padLeft(2, '0')}:00:00';
+      if (isActive) {
         await Supabase.instance.client
             .from('creneaux_pro')
             .delete()
@@ -394,22 +904,115 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             .eq('date', date)
             .eq('heure_debut', heureDebut);
       } else {
-        final heureDebut = '${hour.toString().padLeft(2, '0')}:00:00';
-        final heureFin   = '${(hour + 1).toString().padLeft(2, '0')}:00:00';
+        final heureFin = '${(hour + 1).toString().padLeft(2, '0')}:00:00';
+        // Pension: publishes disponible slots; others: blocks slots
+        final statut = _isPension ? 'disponible' : 'bloque';
         await Supabase.instance.client.from('creneaux_pro').upsert({
           'pro_uid':     uid,
           'date':        date,
           'heure_debut': heureDebut,
           'heure_fin':   heureFin,
-          'statut':      'bloque',
+          'statut':      statut,
         }, onConflict: 'pro_uid,date,heure_debut');
       }
     } catch (e) {
-      // Rollback optimiste
       setState(() {
-        if (isBlocked) _blockedSlots[key] = true;
-        else _blockedSlots.remove(key);
+        if (isActive) { _blockedSlots[key] = true; } else { _blockedSlots.remove(key); }
       });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  Future<void> _replicateWeek() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    // Collect all current week's disponible slots
+    final weekSlots = _blockedSlots.entries.where((e) => e.value == true).toList();
+    if (weekSlots.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Aucun créneau à répliquer cette semaine.',
+              style: TextStyle(fontFamily: 'Galey')),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return;
+    }
+
+    // Confirm with user
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Répliquer les créneaux',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+        content: Text(
+          '${weekSlots.length} créneau(x) de cette semaine seront copiés sur les 4 semaines suivantes.',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Répliquer',
+                style: TextStyle(color: _teal, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    try {
+      final supa = Supabase.instance.client;
+      final rows = <Map<String, dynamic>>[];
+
+      for (int week = 1; week <= 4; week++) {
+        for (final entry in weekSlots) {
+          // key format: 'YYYY-MM-DD_H'
+          final parts = entry.key.split('_');
+          if (parts.length < 2) continue;
+          final originalDate = DateTime.tryParse(parts[0]);
+          final hour = int.tryParse(parts[1]);
+          if (originalDate == null || hour == null) continue;
+
+          final targetDate = originalDate.add(Duration(days: 7 * week));
+          final dateStr = targetDate.toIso8601String().substring(0, 10);
+          final heureDebut = '${hour.toString().padLeft(2, '0')}:00:00';
+          final heureFin = '${(hour + 1).toString().padLeft(2, '0')}:00:00';
+
+          rows.add({
+            'pro_uid':     uid,
+            'date':        dateStr,
+            'heure_debut': heureDebut,
+            'heure_fin':   heureFin,
+            'statut':      'disponible',
+          });
+        }
+      }
+
+      await supa.from('creneaux_pro').upsert(rows, onConflict: 'pro_uid,date,heure_debut');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            '${rows.length} créneau(x) ajoutés sur 4 semaines.',
+            style: const TextStyle(fontFamily: 'Galey'),
+          ),
+          backgroundColor: const Color(0xFF6E9E57),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
@@ -505,14 +1108,42 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       // Légende
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: Row(children: [
-          _LegendDot(color: Colors.white, border: const Color(0xFF6E9E57), label: 'Disponible'),
-          const SizedBox(width: 16),
-          _LegendDot(color: const Color(0xFFEEEEEE), border: Colors.grey, label: 'Bloqué'),
-          const SizedBox(width: 16),
-          _LegendDot(color: const Color(0x1A0C5C6C), border: _teal, label: 'RDV'),
-        ]),
+        child: _isPension
+            ? Row(children: [
+                _LegendDot(color: const Color(0xFF6E9E57).withValues(alpha: 0.15), border: const Color(0xFF6E9E57), label: 'Proposé'),
+                const SizedBox(width: 16),
+                _LegendDot(color: Colors.white, border: const Color(0xFFCCCCCC), label: 'Non proposé'),
+                const SizedBox(width: 16),
+                _LegendDot(color: const Color(0x1A0C5C6C), border: _teal, label: 'RDV'),
+              ])
+            : Row(children: [
+                _LegendDot(color: Colors.white, border: const Color(0xFF6E9E57), label: 'Disponible'),
+                const SizedBox(width: 16),
+                _LegendDot(color: const Color(0xFFEEEEEE), border: Colors.grey, label: 'Bloqué'),
+                const SizedBox(width: 16),
+                _LegendDot(color: const Color(0x1A0C5C6C), border: _teal, label: 'RDV'),
+              ]),
       ),
+      if (_isPension) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _replicateWeek,
+              icon: const Icon(Icons.repeat, size: 16),
+              label: const Text('Répliquer aux 4 semaines suivantes',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _teal,
+                side: const BorderSide(color: _teal),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+        ),
+      ],
       const Divider(height: 1),
       // Grille horaire
       Expanded(
@@ -537,18 +1168,40 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             Color bgColor;
             Color borderColor;
             Color textColor;
+            IconData? trailingIcon;
+            String? trailingLabel;
+
             if (hasRdv) {
               bgColor = const Color(0x1A0C5C6C);
               borderColor = _teal;
               textColor = _teal;
-            } else if (isBlocked) {
-              bgColor = const Color(0xFFEEEEEE);
-              borderColor = Colors.grey;
-              textColor = Colors.grey.shade600;
+              trailingLabel = 'RDV';
+            } else if (_isPension) {
+              // Pension: isBlocked means "proposed/disponible"
+              if (isBlocked) {
+                bgColor = const Color(0xFF6E9E57).withValues(alpha: 0.12);
+                borderColor = const Color(0xFF6E9E57);
+                textColor = const Color(0xFF4A7A32);
+                trailingIcon = Icons.check_circle_outline;
+              } else {
+                bgColor = Colors.white;
+                borderColor = const Color(0xFFCCCCCC);
+                textColor = Colors.grey.shade500;
+                trailingIcon = Icons.add_circle_outline;
+              }
             } else {
-              bgColor = Colors.white;
-              borderColor = const Color(0xFF6E9E57);
-              textColor = Colors.black87;
+              // Non-pension: isBlocked means unavailable
+              if (isBlocked) {
+                bgColor = const Color(0xFFEEEEEE);
+                borderColor = Colors.grey;
+                textColor = Colors.grey.shade600;
+                trailingIcon = Icons.block;
+              } else {
+                bgColor = Colors.white;
+                borderColor = const Color(0xFF6E9E57);
+                textColor = Colors.black87;
+                trailingIcon = Icons.check_circle_outline;
+              }
             }
 
             return GestureDetector(
@@ -565,27 +1218,30 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   Text(
                     '${hour.toString().padLeft(2, '0')}:00 — ${(hour + 1).toString().padLeft(2, '0')}:00',
                     style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        color: textColor),
+                        fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                        fontSize: 14, color: textColor),
                   ),
                   const Spacer(),
-                  if (hasRdv)
+                  if (trailingLabel != null)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: const Color(0x260C5C6C),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Text('RDV',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                      child: Text(trailingLabel,
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
                               fontWeight: FontWeight.w600, color: _teal)),
                     )
-                  else if (isBlocked)
-                    const Icon(Icons.block, size: 18, color: Colors.grey)
-                  else
-                    Icon(Icons.check_circle_outline, size: 18, color: Colors.green.shade400),
+                  else if (trailingIcon != null)
+                    Icon(trailingIcon, size: 18,
+                        color: _isPension && isBlocked
+                            ? const Color(0xFF6E9E57)
+                            : _isPension
+                                ? Colors.grey.shade400
+                                : isBlocked
+                                    ? Colors.grey
+                                    : Colors.green.shade400),
                 ]),
               ),
             );
@@ -596,7 +1252,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   }
 
   Widget _buildList(List<Map<String, dynamic>> rdvs,
-      {bool showActions = false, bool showCancel = false}) {
+      {bool showActions = false, bool showCancel = false, bool showDelete = false}) {
     if (rdvs.isEmpty) {
       return ListView(children: [
         const SizedBox(height: 80),
@@ -622,8 +1278,30 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           showActions: showActions,
           showCancel: showCancel,
           onAccept:  () => _showAcceptDialog(rdv),
-          onDecline: () => _updateStatut(rdv['id'].toString(), 'annule'),
-          onCancel:  () => _updateStatut(rdv['id'].toString(), 'annule'),
+          onDecline: () => _showCancelDialog(rdv, isRefus: true),
+          onCancel:  () => _showCancelDialog(rdv),
+          onContact: showCancel ? () => _contactClient(rdv) : null,
+          onDelete: showDelete ? () async {
+            final ok = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                title: const Text('Supprimer de l\'historique',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                content: const Text('Ce RDV sera supprimé définitivement.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
+                  TextButton(onPressed: () => Navigator.pop(ctx, true),
+                      child: Text('Supprimer', style: TextStyle(color: Colors.red.shade600, fontWeight: FontWeight.w600))),
+                ],
+              ),
+            );
+            if (ok != true || !mounted) return;
+            await Supabase.instance.client.from('rdv').delete().eq('id', rdv['id']);
+            await _loadRdvs();
+          } : null,
           onDone:    () => _updateStatut(rdv['id'].toString(), 'termine'),
           onNotes:   () => _showNotesDialog(rdv),
           onCarnetSante: (showProTools && hasAnimal)
@@ -640,6 +1318,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     rdv: rdv,
                     clientName: rdv['_client_name']?.toString() ?? 'Client',
                     categoryColor: _teal,
+                    isPension: _isPension,
                   )))
               : null,
         );
@@ -686,6 +1365,8 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback onNotes;
   final VoidCallback? onCarnetSante;
   final VoidCallback? onCompteRendu;
+  final VoidCallback? onContact;
+  final VoidCallback? onDelete;
 
   const _RdvCard({
     required this.rdv,
@@ -698,6 +1379,8 @@ class _RdvCard extends StatelessWidget {
     required this.onNotes,
     this.onCarnetSante,
     this.onCompteRendu,
+    this.onContact,
+    this.onDelete,
   });
 
   @override
@@ -811,6 +1494,16 @@ class _RdvCard extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
+              if (onDelete != null) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                  tooltip: 'Supprimer',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
               if (onCarnetSante != null) ...[
                 const SizedBox(width: 6),
                 IconButton(
@@ -862,6 +1555,16 @@ class _RdvCard extends StatelessWidget {
                   child: const Text('Accepter', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
                 ),
               ] else if (showCancel) ...[
+                if (onContact != null) ...[
+                  const SizedBox(width: 4),
+                  IconButton(
+                    onPressed: onContact,
+                    icon: const Icon(Icons.message_outlined, size: 20, color: Color(0xFF0C5C6C)),
+                    tooltip: 'Contacter le client',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
                 const Spacer(),
                 TextButton(
                   onPressed: onDone,

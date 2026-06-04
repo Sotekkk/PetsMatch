@@ -161,9 +161,10 @@ exports.notifyProNewRdv = functions
         if (!fcmToken) return {sent: false, reason: "no_fcmToken"};
 
         const title = "📅 Nouvelle demande de RDV";
+        const motifPart = data.motif ? ` — motif : ${data.motif}` : "";
         const body = dateStr ?
-            `${clientName || "Un client"} souhaite un RDV le ${dateStr}` :
-            `${clientName || "Un client"} souhaite prendre un RDV avec vous`;
+            `${clientName || "Un client"} souhaite un RDV le ${dateStr}${motifPart}` :
+            `${clientName || "Un client"} souhaite prendre un RDV avec vous${motifPart}`;
 
         await sendPush(proUid, title, body, {type: "rdv_demande"});
         console.log(`notifyProNewRdv: push envoyé à ${proUid}`);
@@ -183,7 +184,6 @@ exports.sendRdvReminders = functions
     .onRun(async () => {
         const now = new Date();
         let sent24 = 0;
-        let sent1 = 0;
 
         // ── Rappel 24h ────────────────────────────────────────────────────────
         const from24 = new Date(now.getTime() + 23 * 3600 * 1000).toISOString();
@@ -229,50 +229,77 @@ exports.sendRdvReminders = functions
             sent24++;
         }
 
-        // ── Rappel 1h ─────────────────────────────────────────────────────────
-        const from1 = new Date(now.getTime() + 30 * 60 * 1000).toISOString();
-        const to1 = new Date(now.getTime() + 90 * 60 * 1000).toISOString();
+        // ── Rappel 2h ─────────────────────────────────────────────────────────
+        const from2h = new Date(now.getTime() + 90 * 60 * 1000).toISOString();
+        const to2h = new Date(now.getTime() + 150 * 60 * 1000).toISOString();
 
-        const rdvs1 = await supabaseSelect("rdv",
-            `statut=eq.confirme&reminder_1h_sent=eq.false` +
-            `&date_heure=gte.${encodeURIComponent(from1)}` +
-            `&date_heure=lte.${encodeURIComponent(to1)}`);
+        const rdvs2h = await supabaseSelect("rdv",
+            `statut=eq.confirme&reminder_2h_sent=eq.false` +
+            `&date_heure=gte.${encodeURIComponent(from2h)}` +
+            `&date_heure=lte.${encodeURIComponent(to2h)}`);
 
-        for (const rdv of rdvs1) {
+        let sent2h = 0;
+        for (const rdv of rdvs2h) {
             const timeStr = new Date(rdv.date_heure).toLocaleString("fr-FR", {
                 hour: "2-digit", minute: "2-digit",
             });
-
             const [animalNom, proNom, clientNom] = await Promise.all([
                 getAnimalNom(rdv.animal_id),
                 getUserNom(rdv.pro_uid),
                 getUserNom(rdv.client_uid),
             ]);
-
             const animalPart = animalNom ? ` pour ${animalNom}` : "";
-            const rdvData = {rdvId: String(rdv.id)};
+            const rdvData = {rdvId: String(rdv.id), type: "rdv_confirme"};
 
-            // → Client
-            await sendPush(
-                rdv.client_uid,
-                "⏰ Rappel RDV — dans 1 heure",
-                `Votre RDV${animalPart} chez ${proNom || "votre prestataire"} commence à ${timeStr}`,
-                rdvData,
-            );
-
-            // → Pro
-            await sendPush(
-                rdv.pro_uid,
-                "⏰ RDV dans 1 heure",
+            await sendPush(rdv.client_uid,
+                "⏰ Rappel RDV — dans 2 heures",
+                `Votre RDV${animalPart} chez ${proNom || "votre prestataire"} est à ${timeStr}`,
+                rdvData);
+            await sendPush(rdv.pro_uid,
+                "⏰ RDV dans 2 heures",
                 `RDV avec ${clientNom || "un client"}${animalPart} — à ${timeStr}`,
-                rdvData,
-            );
+                rdvData);
 
-            await supabasePatch("rdv", rdv.id, {reminder_1h_sent: true});
-            sent1++;
+            await supabasePatch("rdv", rdv.id, {reminder_2h_sent: true});
+            sent2h++;
         }
 
-        console.log(`sendRdvReminders: ${sent24} rappels 24h, ${sent1} rappels 1h traités`);
+        // ── Rappel 30min ──────────────────────────────────────────────────────
+        const from30 = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
+        const to30 = new Date(now.getTime() + 50 * 60 * 1000).toISOString();
+
+        const rdvs30 = await supabaseSelect("rdv",
+            `statut=eq.confirme&reminder_30min_sent=eq.false` +
+            `&date_heure=gte.${encodeURIComponent(from30)}` +
+            `&date_heure=lte.${encodeURIComponent(to30)}`);
+
+        let sent30 = 0;
+        for (const rdv of rdvs30) {
+            const timeStr = new Date(rdv.date_heure).toLocaleString("fr-FR", {
+                hour: "2-digit", minute: "2-digit",
+            });
+            const [animalNom, proNom, clientNom] = await Promise.all([
+                getAnimalNom(rdv.animal_id),
+                getUserNom(rdv.pro_uid),
+                getUserNom(rdv.client_uid),
+            ]);
+            const animalPart = animalNom ? ` pour ${animalNom}` : "";
+            const rdvData = {rdvId: String(rdv.id), type: "rdv_confirme"};
+
+            await sendPush(rdv.client_uid,
+                "⏰ Rappel RDV — dans 30 minutes",
+                `Votre RDV${animalPart} chez ${proNom || "votre prestataire"} commence bientôt (${timeStr})`,
+                rdvData);
+            await sendPush(rdv.pro_uid,
+                "⏰ RDV dans 30 minutes",
+                `RDV avec ${clientNom || "un client"}${animalPart} — à ${timeStr}`,
+                rdvData);
+
+            await supabasePatch("rdv", rdv.id, {reminder_30min_sent: true});
+            sent30++;
+        }
+
+        console.log(`sendRdvReminders: ${sent24} rappels 24h, ${sent2h} rappels 2h, ${sent30} rappels 30min traités`);
         return null;
     });
 

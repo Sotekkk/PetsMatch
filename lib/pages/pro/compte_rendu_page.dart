@@ -7,12 +7,14 @@ class CompteRenduPage extends StatefulWidget {
   final Map<String, dynamic> rdv;
   final String clientName;
   final Color categoryColor;
+  final bool isPension;
 
   const CompteRenduPage({
     super.key,
     required this.rdv,
     required this.clientName,
     required this.categoryColor,
+    this.isPension = false,
   });
 
   @override
@@ -42,7 +44,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(length: widget.isPension ? 1 : 2, vsync: this);
     _loadExisting();
   }
 
@@ -173,8 +175,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('CR & Ordonnances',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+            Text(widget.isPension ? 'Compte rendu' : 'CR & Ordonnances',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
             Text(widget.clientName,
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white70)),
           ],
@@ -187,7 +189,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
           tabs: [
             Tab(text: 'Compte rendu${_crs.isNotEmpty ? " (${_crs.length})" : ""}'),
-            Tab(text: 'Ordonnances${_ordos.isNotEmpty ? " (${_ordos.length})" : ""}'),
+            if (!widget.isPension)
+              Tab(text: 'Ordonnances${_ordos.isNotEmpty ? " (${_ordos.length})" : ""}'),
           ],
         ),
       ),
@@ -197,7 +200,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
               controller: _tabCtrl,
               children: [
                 _buildCompteRenduTab(),
-                _buildOrdonnanceTab(),
+                if (!widget.isPension) _buildOrdonnanceTab(),
               ],
             ),
     );

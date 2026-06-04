@@ -7,7 +7,7 @@ const retraiteFunctions = require("./retraite");
 const tachesFunctions = require("./taches");
 const santeFunctions = require("./sante");
 const annonceFunctions = require("./annonces");
-const matchFunctions   = require("./match");
+const matchFunctions = require("./match");
 
 // Stripe + messagerie
 exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
