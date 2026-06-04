@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -106,7 +107,8 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   String get _siteWeb => _proData?['site_web'] ?? '';
   String get _instagram => _proData?['instagram'] ?? '';
   String get _facebook => _proData?['facebook'] ?? '';
-  String get _photoUrl => _proData?['profile_picture_url'] ?? '';
+  String get _photoUrl  => _proData?['profile_picture_url_elevage'] ?? _proData?['profile_picture_url'] ?? '';
+  String get _bannerUrl => _proData?['banner_url'] ?? '';
   int get _rayon {
     final raw = _proData?['rayon_intervention'];
     if (raw is int) return raw;
@@ -161,7 +163,17 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
               ? _emptyState()
               : NestedScrollView(
                   headerSliverBuilder: (ctx, _) => [
-                    _buildAppBar(),
+                    // Simple barre de navigation (pas d'expanded)
+                    SliverAppBar(
+                      pinned: true,
+                      backgroundColor: const Color(0xFF1E2025),
+                      leading: IconButton(
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ),
+                    // Bannière + bulle photo (même pattern que l'éleveur)
+                    SliverToBoxAdapter(child: _buildBannerSection()),
                     SliverToBoxAdapter(child: _buildHeader()),
                     SliverToBoxAdapter(child: _buildTabBar()),
                   ],
@@ -193,36 +205,58 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     );
   }
 
-  SliverAppBar _buildAppBar() {
-    return SliverAppBar(
-      expandedHeight: 200,
-      pinned: true,
-      backgroundColor: const Color(0xFF1E2025),
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-        onPressed: () => Navigator.pop(context),
-      ),
-      flexibleSpace: FlexibleSpaceBar(
-        background: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (_photoUrl.isNotEmpty)
-              Image.network(_photoUrl, fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _gradientBg())
-            else
-              _gradientBg(),
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)],
+  // Bannière 200px + bulle photo 88px chevauchante — identique au profil éleveur
+  Widget _buildBannerSection() {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Column(children: [
+          // Bannière
+          SizedBox(
+            height: 200,
+            width: double.infinity,
+            child: Stack(fit: StackFit.expand, children: [
+              _bannerUrl.isNotEmpty
+                  ? CachedNetworkImage(imageUrl: _bannerUrl, fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => _gradientBg())
+                  : (_photoUrl.isNotEmpty
+                      ? CachedNetworkImage(imageUrl: _photoUrl, fit: BoxFit.cover,
+                          color: Colors.black26, colorBlendMode: BlendMode.darken,
+                          errorWidget: (_, __, ___) => _gradientBg())
+                      : _gradientBg()),
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Colors.black45],
+                  ),
                 ),
               ),
+            ]),
+          ),
+          // Espace blanc pour accueillir la moitié basse de la bulle
+          Container(color: Colors.white, height: 52),
+        ]),
+        // Bulle photo chevauchant bannière / section blanche
+        Positioned(
+          top: 156, // 200 - 88/2
+          left: 16,
+          child: Container(
+            width: 88, height: 88,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 8)],
             ),
-          ],
+            child: ClipOval(
+              child: _photoUrl.isNotEmpty
+                  ? CachedNetworkImage(imageUrl: _photoUrl, fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => _photoBubblePlaceholder())
+                  : _photoBubblePlaceholder(),
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -241,68 +275,67 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   Widget _buildHeader() {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(_nomStructure,
-                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 22, color: Color(0xFF1E2025))),
-                    const SizedBox(height: 4),
-                    Text(_profession,
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: widget.categoryColor, fontWeight: FontWeight.w600)),
-                  ],
-                ),
-              ),
-              _statusBadge(),
-            ],
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Nom + badge alignés à droite de la bulle (88px + 8px gap)
+        Row(children: [
+          const SizedBox(width: 96),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(_nomStructure,
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Color(0xFF1E2025))),
+              const SizedBox(height: 2),
+              Text(_profession,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: widget.categoryColor, fontWeight: FontWeight.w600)),
+            ]),
           ),
-          if (_ville.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Row(children: [
-              Icon(Icons.location_on_outlined, size: 15, color: Colors.grey.shade500),
-              const SizedBox(width: 4),
-              Text(_ville, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
-              if (_rayon > 0) ...[
-                Text(' · ', style: TextStyle(color: Colors.grey.shade400)),
-                Text('$_rayon km', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
-              ],
-            ]),
-          ],
-          if (_especes.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: _especes.map((e) => Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: widget.categoryColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(e, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: widget.categoryColor, fontWeight: FontWeight.w600)),
-              )).toList(),
-            ),
-          ],
-          // Réseaux sociaux
-          if (_siteWeb.isNotEmpty || _instagram.isNotEmpty || _facebook.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Row(children: [
-              if (_siteWeb.isNotEmpty)
-                _socialBtn(Icons.language_outlined, 'Site web', () => _launch(_siteWeb)),
-              if (_instagram.isNotEmpty)
-                _socialBtn(Icons.camera_alt_outlined, 'Instagram', () => _launch('https://instagram.com/${_instagram.replaceAll('@', '')}')),
-              if (_facebook.isNotEmpty)
-                _socialBtn(Icons.facebook_outlined, 'Facebook', () => _launch(_facebook)),
-            ]),
-          ],
+          _statusBadge(),
+        ]),
+        if (_ville.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Row(children: [
+            Icon(Icons.location_on_outlined, size: 15, color: Colors.grey.shade500),
+            const SizedBox(width: 4),
+            Text(_ville, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+            if (_rayon > 0) ...[
+              Text(' · ', style: TextStyle(color: Colors.grey.shade400)),
+              Text('$_rayon km', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+            ],
+          ]),
         ],
-      ),
+        if (_especes.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 6, runSpacing: 6,
+            children: _especes.map((e) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: widget.categoryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(e, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: widget.categoryColor, fontWeight: FontWeight.w600)),
+            )).toList(),
+          ),
+        ],
+        if (_siteWeb.isNotEmpty || _instagram.isNotEmpty || _facebook.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Row(children: [
+            if (_siteWeb.isNotEmpty)
+              _socialBtn(Icons.language_outlined, 'Site web', () => _launch(_siteWeb)),
+            if (_instagram.isNotEmpty)
+              _socialBtn(Icons.camera_alt_outlined, 'Instagram', () => _launch('https://instagram.com/${_instagram.replaceAll('@', '')}')),
+            if (_facebook.isNotEmpty)
+              _socialBtn(Icons.facebook_outlined, 'Facebook', () => _launch(_facebook)),
+          ]),
+        ],
+      ]),
+    );
+  }
+
+  Widget _photoBubblePlaceholder() {
+    return Container(
+      color: widget.categoryColor.withValues(alpha: 0.15),
+      child: Icon(Icons.store_outlined, size: 36, color: widget.categoryColor),
     );
   }
 
@@ -482,6 +515,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                       proUid: widget.proUid,
                       proName: _nomStructure,
                       categoryColor: widget.categoryColor,
+                      isPension: _proData?['cat_pro'] == 'pension',
                     )))
                 : null,
             icon: const Icon(Icons.calendar_month_outlined, size: 18),

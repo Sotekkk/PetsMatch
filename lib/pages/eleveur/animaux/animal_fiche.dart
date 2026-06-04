@@ -61,6 +61,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   static const _green = Color(0xFF6E9E57);
   static const _teal = Color(0xFF0C5C6C);
 
+  // Pension access
+  List<Map<String, dynamic>> _pensionAcces = [];
+
   // ── Champs identité
   final _nomCtrl    = TextEditingController();
   final _raceCtrl   = TextEditingController();
@@ -150,6 +153,49 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           .single();
       if (mounted) setState(() => _fillFromData(Map<String, dynamic>.from(data)));
     } catch (_) {}
+    _loadPensionAcces();
+  }
+
+  Future<void> _loadPensionAcces() async {
+    if (widget.animalId == null) return;
+    try {
+      final rows = await _supa
+          .from('pension_acces')
+          .select('id, pro_uid, pro_nom, created_at')
+          .eq('animal_id', widget.animalId!)
+          .eq('statut', 'approved');
+      if (mounted) setState(() => _pensionAcces = List<Map<String, dynamic>>.from(rows));
+    } catch (_) {}
+  }
+
+  Future<void> _revokePensionAcces(BuildContext context, String accesId, String proNom) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Révoquer l\'accès ?',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text(
+          '$proNom n\'aura plus accès à la fiche de ${_nomCtrl.text}.',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Révoquer', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true && mounted) {
+      await _supa.from('pension_acces').delete().eq('id', accesId);
+      _loadPensionAcces();
+    }
   }
 
   Future<void> _loadBreeds() async {
@@ -850,9 +896,63 @@ class _IdentiteTab extends StatelessWidget {
           _documentsSection(context),
           const SizedBox(height: 12),
           _alerteSection(context),
+          if (s._pensionAcces.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _pensionAccesSection(context),
+          ],
           const SizedBox(height: 80),
         ],
       ),
+    );
+  }
+
+  Widget _pensionAccesSection(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF7B5EA7).withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF7B5EA7).withValues(alpha: 0.2)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Row(children: [
+          Icon(Icons.home_work_outlined, size: 16, color: Color(0xFF7B5EA7)),
+          SizedBox(width: 6),
+          Text('Accès pension actifs',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  fontWeight: FontWeight.w700, color: Color(0xFF7B5EA7))),
+        ]),
+        const SizedBox(height: 10),
+        for (final a in s._pensionAcces)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(a['pro_nom']?.toString() ?? 'Structure',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                        fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
+                if (a['created_at'] != null)
+                  Text(() {
+                    try {
+                      return 'Depuis le ${DateFormat('dd/MM/yyyy').format(DateTime.parse(a['created_at'].toString()))}';
+                    } catch (_) { return ''; }
+                  }(),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        color: Color(0xFF9CA3AF))),
+              ])),
+              TextButton(
+                onPressed: () => s._revokePensionAcces(
+                    context, a['id'] as String, a['pro_nom']?.toString() ?? 'Structure'),
+                style: TextButton.styleFrom(
+                    foregroundColor: Colors.red.shade600,
+                    padding: const EdgeInsets.symmetric(horizontal: 8)),
+                child: const Text('Révoquer',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ]),
+          ),
+      ]),
     );
   }
 

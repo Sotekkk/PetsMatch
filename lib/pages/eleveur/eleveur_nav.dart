@@ -19,6 +19,8 @@ import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
+import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
+import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/eleveur/user_elevage_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
@@ -371,6 +373,26 @@ class _EleveurNavState extends State<EleveurNav> {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(
                         builder: (_) => const RegistrePensionPage(),
+                      ));
+                    },
+                  ),
+                  if (User_Info.catPro == 'pension') _DrawerItem(
+                    icon: Icons.folder_shared_outlined,
+                    label: 'Fiches accessibles',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const FichesPensionPage(),
+                      ));
+                    },
+                  ),
+                  if (User_Info.catPro == 'pension') _DrawerItem(
+                    icon: Icons.folder_outlined,
+                    label: 'Documents',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const PensionDocumentsPage(),
                       ));
                     },
                   ),

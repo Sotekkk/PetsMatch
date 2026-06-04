@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart' as geo;
 import 'package:geolocator/geolocator.dart';
@@ -6,6 +10,8 @@ import 'package:google_maps_webservice/places.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/pro/pro_zone_page.dart';
+import 'package:PetsMatch/utils/image_pick.dart';
+import 'package:PetsMatch/utils/storage_helper.dart';
 
 class ProProfileEditPage extends StatefulWidget {
   const ProProfileEditPage({super.key});
@@ -20,6 +26,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   bool _saving  = false;
   bool _loading = true;
   bool _locating = false;
+
+  File?   _photoFile;
+  String? _photoUrl;
+  File?   _bannerFile;
+  String? _bannerUrl;
   bool _loadingPredictions = false;
   Timer? _searchDebounce;
   List<Prediction> _predictions = [];
@@ -84,6 +95,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           .maybeSingle();
 
       if (row != null) {
+        _photoUrl  = row['profile_picture_url_elevage'] as String?;
+        _bannerUrl = row['banner_url'] as String?;
         _nomStructureCtrl.text = row['name_elevage']    ?? User_Info.nameElevage;
         _professionCtrl.text   = row['profession_pro']  ?? User_Info.professionPro;
         _descCtrl.text         = row['desc_entreprise'] ?? User_Info.descEntreprise;
@@ -234,6 +247,18 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
     setState(() => _saving = true);
     try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid;
+
+      String? photoUrl = _photoUrl;
+      if (_photoFile != null) {
+        photoUrl = await uploadPhoto(_photoFile!, 'profiles/$uid/photo.jpg');
+      }
+
+      String? bannerUrl = _bannerUrl;
+      if (_bannerFile != null) {
+        bannerUrl = await uploadPhoto(_bannerFile!, 'profiles/$uid/banner.jpg');
+      }
+
       final horairesMap = {
         for (final j in _jours)
           j: _horaires[j]!.toText(),
@@ -268,9 +293,25 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         'adress_elevage':       adresse,
         'lat':                  _lat,
         'lng':                  _lng,
+        if (photoUrl  != null) 'profile_picture_url_elevage': photoUrl,
+        if (bannerUrl != null) 'banner_url': bannerUrl,
       }, onConflict: 'uid');
 
+      // Mettre à jour Firestore (source de vérité au démarrage — clés camelCase)
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .update({
+            'catPro': _catPro,
+            if (photoUrl  != null) 'profilePictureUrlElevage': photoUrl,
+            if (bannerUrl != null) 'bannerUrl': bannerUrl,
+          });
+
       // Mettre à jour User_Info en mémoire
+      if (photoUrl  != null) User_Info.profilePictureUrlElevage = photoUrl;
+      if (bannerUrl != null) setState(() { _bannerUrl = bannerUrl; _bannerFile = null; });
+      if (photoUrl  != null) setState(() { _photoUrl  = photoUrl;  _photoFile  = null; });
+      User_Info.catPro            = _catPro;
       User_Info.nameElevage       = _nomStructureCtrl.text.trim();
       User_Info.professionPro     = _professionCtrl.text.trim();
       User_Info.descEntreprise    = _descCtrl.text.trim();
@@ -349,6 +390,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 120),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
+                  // ── Bannière + photo de profil ────────────────────────────
+                  _photoSection(),
+                  const SizedBox(height: 24),
+
                   // ── Informations générales ────────────────────────────────
                   _sectionTitle('Informations générales'),
                   const SizedBox(height: 12),
@@ -456,6 +501,105 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         ],
       ),
     );
+  }
+
+  // ── Photos (bannière + profil) ────────────────────────────────────────────────
+
+  Widget _photoSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Bannière
+        GestureDetector(
+          onTap: _pickBanner,
+          child: Stack(children: [
+            SizedBox(
+              width: double.infinity,
+              height: 130,
+              child: _bannerFile != null
+                  ? Image.file(_bannerFile!, fit: BoxFit.cover)
+                  : (_bannerUrl != null
+                      ? CachedNetworkImage(imageUrl: _bannerUrl!, fit: BoxFit.cover)
+                      : Container(
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Color(0xFF0C5C6C), Color(0xFF6E9E57)],
+                              begin: Alignment.topLeft, end: Alignment.bottomRight,
+                            ),
+                          ),
+                          child: const Center(child: Icon(Icons.landscape, size: 40, color: Colors.white38)),
+                        )),
+            ),
+            Positioned(
+              right: 8, bottom: 8,
+              child: CircleAvatar(
+                radius: 14, backgroundColor: Colors.black45,
+                child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
+              ),
+            ),
+            const Positioned(
+              left: 8, bottom: 8,
+              child: Text('Bannière', style: TextStyle(color: Colors.white70, fontSize: 11, fontFamily: 'Galey')),
+            ),
+          ]),
+        ),
+        // Photo profil
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Row(children: [
+            Transform.translate(
+              offset: const Offset(0, -24),
+              child: GestureDetector(
+                onTap: _pickPhoto,
+                child: Stack(children: [
+                  Container(
+                    width: 80, height: 80,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 3),
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8)],
+                    ),
+                    child: ClipOval(
+                      child: _photoFile != null
+                          ? Image.file(_photoFile!, fit: BoxFit.cover)
+                          : (_photoUrl != null
+                              ? CachedNetworkImage(imageUrl: _photoUrl!, fit: BoxFit.cover)
+                              : Container(color: const Color(0xFFEEF5EA),
+                                  child: const Icon(Icons.store_outlined, size: 30, color: Color(0xFF6E9E57)))),
+                    ),
+                  ),
+                  const Positioned(
+                    bottom: 2, right: 2,
+                    child: CircleAvatar(radius: 12, backgroundColor: Color(0xFF6E9E57),
+                        child: Icon(Icons.camera_alt, size: 12, color: Colors.white)),
+                  ),
+                ]),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text('Photo de profil\n(visible sur votre fiche)',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+            ),
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  Future<void> _pickBanner() async {
+    final file = await pickAndCropBanner();
+    if (file != null && mounted) setState(() => _bannerFile = file);
+  }
+
+  Future<void> _pickPhoto() async {
+    final file = await pickAndCropSquare();
+    if (file != null && mounted) setState(() => _photoFile = file);
   }
 
   // ── Address block ─────────────────────────────────────────────────────────────

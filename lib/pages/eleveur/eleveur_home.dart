@@ -13,6 +13,10 @@ import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
+import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
+import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart';
+import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -319,17 +323,32 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
   }
 
   Widget _buildQuickAccess(BuildContext context) {
+    final isPension = User_Info.isPro && User_Info.catPro == 'pension';
+
     final tiles = [
       if (!User_Info.isPro) ...[
         _QuickTile(icon: Icons.cruelty_free_outlined, label: 'Mes\nAnimaux', color: _green,
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnimauxPage()))),
         _QuickTile(icon: Icons.campaign_outlined, label: 'Mes\nAnnonces', color: _teal,
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnnoncesPage()))),
+      ] else if (isPension) ...[
+        _QuickTile(icon: Icons.menu_book_outlined, label: 'Registre', color: _teal,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RegistrePensionPage()))),
+        _QuickTile(icon: Icons.pets, label: 'Fiches\nanimaux', color: _green,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FichesPensionPage()))),
+        _QuickTile(icon: Icons.calendar_month_outlined, label: 'Agenda', color: const Color(0xFF5B8648),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage()))),
+        _QuickTile(icon: Icons.storefront_outlined, label: 'Services', color: const Color(0xFF5F9EAA),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ServicesPage()))),
+        _QuickTile(icon: Icons.folder_outlined, label: 'Documents', color: const Color(0xFF374151),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PensionDocumentsPage()))),
       ],
-      _QuickTile(icon: Icons.home_work_outlined, label: 'Élevages', color: const Color(0xFF5B8648),
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EleveurListPage()))),
-      _QuickTile(icon: Icons.storefront_outlined, label: 'Services', color: const Color(0xFF5F9EAA),
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ServicesPage()))),
+      if (!isPension) ...[
+        _QuickTile(icon: Icons.home_work_outlined, label: 'Élevages', color: const Color(0xFF5B8648),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EleveurListPage()))),
+        _QuickTile(icon: Icons.storefront_outlined, label: 'Services', color: const Color(0xFF5F9EAA),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ServicesPage()))),
+      ],
       _QuickTile(icon: Icons.location_searching, label: 'Animaux\nperdus', color: Colors.orange.shade700,
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AnimauxPerdusPage()))),
       _QuickTile(icon: Icons.add_alert_outlined, label: 'Déclarer\nperdu', color: Colors.orange.shade800,

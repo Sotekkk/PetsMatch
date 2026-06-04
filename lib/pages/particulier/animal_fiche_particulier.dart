@@ -74,6 +74,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   String? _photoUrl;
   File? _photoFile;
 
+  // Pension access (read-only accesses granted to pros)
+  List<Map<String, dynamic>> _pensionAcces = [];
+
   // Health records
   bool _loadingHealth = false;
   List<Map<String, dynamic>> _vaccinations = [];
@@ -124,6 +127,49 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       final data = await _supa.from('animaux').select('*').eq('id', _animalId!).single();
       if (mounted) setState(() => _fillFromData(Map<String, dynamic>.from(data)));
     } catch (_) {}
+    _loadPensionAcces();
+  }
+
+  Future<void> _loadPensionAcces() async {
+    if (_animalId == null) return;
+    try {
+      final rows = await _supa
+          .from('pension_acces')
+          .select('id, pro_uid, pro_nom, created_at')
+          .eq('animal_id', _animalId!)
+          .eq('statut', 'approved');
+      if (mounted) setState(() => _pensionAcces = List<Map<String, dynamic>>.from(rows));
+    } catch (_) {}
+  }
+
+  Future<void> _revokePensionAcces(String accesId, String proNom) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Révoquer l\'accès ?',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text(
+          '$proNom n\'aura plus accès à la fiche de ${_nomCtrl.text}.',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Révoquer', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true && mounted) {
+      await _supa.from('pension_acces').delete().eq('id', accesId);
+      _loadPensionAcces();
+    }
   }
 
   void _fillFromData(Map<String, dynamic>? d) {
@@ -440,6 +486,54 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         ],
         if (_descCtrl.text.isNotEmpty) _infoRow('Description', _descCtrl.text),
         if (_notesCtrl.text.isNotEmpty) _infoRow('Notes', _notesCtrl.text),
+
+        // Accès lecture pension actifs
+        if (_pensionAcces.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Accès pension actifs',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade500, letterSpacing: 0.4)),
+              const SizedBox(height: 8),
+              for (final a in _pensionAcces)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF7B5EA7).withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF7B5EA7).withValues(alpha: 0.2)),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.home_work_outlined, size: 18, color: Color(0xFF7B5EA7)),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(a['pro_nom']?.toString() ?? 'Structure',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                              fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
+                      if (a['created_at'] != null)
+                        Text('Depuis le ${_fmtDate(a['created_at'].toString().substring(0, 10))}',
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                color: Color(0xFF9CA3AF))),
+                    ])),
+                    TextButton(
+                      onPressed: () => _revokePensionAcces(
+                          a['id'] as String, a['pro_nom']?.toString() ?? 'Structure'),
+                      style: TextButton.styleFrom(
+                          foregroundColor: Colors.red.shade600,
+                          padding: const EdgeInsets.symmetric(horizontal: 8)),
+                      child: const Text('Révoquer',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ]),
+                ),
+              const Divider(height: 20, color: Color(0xFFEEEEEE)),
+            ]),
+          ),
+        ],
 
         // Actions (alerte perdu + transfert)
         if (_animalId != null) ...[

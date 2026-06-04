@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -388,7 +389,7 @@ class _ProMapSheet extends StatelessWidget {
     final nom      = pro['name_elevage'] ?? pro['firstname'] ?? 'Professionnel';
     final prof     = pro['profession_pro'] ?? '';
     final ville    = pro['ville_elevage'] ?? pro['ville'] ?? '';
-    final photo    = pro['profile_picture_url'] ?? '';
+    final photo    = pro['profile_picture_url_elevage'] ?? pro['profile_picture_url'] ?? '';
     final accept   = pro['accept_new_clients'] ?? true;
     final especes  = (pro['especes_acceptees'] as List? ?? []).map((e) => e.toString()).toList();
 
@@ -404,8 +405,8 @@ class _ProMapSheet extends StatelessWidget {
             decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: categoryColor.withValues(alpha: 0.12)),
             child: photo.isNotEmpty
                 ? ClipRRect(borderRadius: BorderRadius.circular(14),
-                    child: Image.network(photo, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Icon(Icons.person_outline, color: categoryColor, size: 28)))
+                    child: CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => Icon(Icons.person_outline, color: categoryColor, size: 28)))
                 : Icon(Icons.person_outline, color: categoryColor, size: 28),
           ),
           const SizedBox(width: 12),
@@ -463,7 +464,7 @@ class _ProMapSheet extends StatelessWidget {
   }
 }
 
-// ── Carte professionnel ───────────────────────────────────────────────────────
+// ── Carte professionnel (avec bannière, style profil éleveur) ─────────────────
 
 class _ProCard extends StatelessWidget {
   final Map<String, dynamic> pro;
@@ -477,7 +478,8 @@ class _ProCard extends StatelessWidget {
     final nom        = pro['name_elevage'] ?? pro['firstname'] ?? 'Professionnel';
     final profession = pro['profession_pro'] ?? '';
     final ville      = pro['ville_elevage'] ?? pro['ville'] ?? '';
-    final photo      = pro['profile_picture_url'] ?? '';
+    final photo      = pro['profile_picture_url_elevage'] ?? pro['profile_picture_url'] ?? '';
+    final banner     = pro['banner_url'] ?? '';
     final accept     = pro['accept_new_clients'] ?? true;
     final especes    = pro['especes_acceptees'];
     final especeList = especes is List ? List<String>.from(especes) : <String>[];
@@ -490,78 +492,113 @@ class _ProCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 3))],
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              // Avatar
-              Container(
-                width: 56, height: 56,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  color: categoryColor.withValues(alpha: 0.12),
-                ),
-                child: photo.isNotEmpty
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Image.network(photo, fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Icon(Icons.person_outline, color: categoryColor, size: 28)),
-                      )
-                    : Icon(Icons.person_outline, color: categoryColor, size: 28),
-              ),
-              const SizedBox(width: 12),
-              // Infos
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(nom.toString(), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-                    if (profession.isNotEmpty)
-                      Text(profession.toString(), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: categoryColor, fontWeight: FontWeight.w600)),
-                    if (ville.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Row(children: [
-                        Icon(Icons.location_on_outlined, size: 12, color: Colors.grey.shade400),
-                        const SizedBox(width: 2),
-                        Text(ville.toString(), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
-                      ]),
-                    ],
-                    if (especeList.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Wrap(spacing: 4, runSpacing: 4, children: especeList.take(3).map((e) =>
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: categoryColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-                          child: Text(e, style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: categoryColor, fontWeight: FontWeight.w600)),
-                        )
-                      ).toList()),
-                    ],
-                  ],
-                ),
-              ),
-              // Badge dispo + flèche
-              Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: accept ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      accept ? 'Dispo' : 'Complet',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700,
-                        color: accept ? const Color(0xFF388E3C) : const Color(0xFFF57C00)),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // Bannière
+              SizedBox(
+                height: 100,
+                width: double.infinity,
+                child: Stack(fit: StackFit.expand, children: [
+                  banner.isNotEmpty
+                      ? CachedNetworkImage(imageUrl: banner, fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => _gradient())
+                      : (photo.isNotEmpty
+                          ? CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover,
+                              color: Colors.black26, colorBlendMode: BlendMode.darken,
+                              errorWidget: (_, __, ___) => _gradient())
+                          : _gradient()),
+                  // Badge dispo en haut à droite
+                  Positioned(
+                    top: 8, right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: accept ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        accept ? '✓ Dispo' : 'Complet',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700,
+                          color: accept ? const Color(0xFF388E3C) : const Color(0xFFF57C00)),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Icon(Icons.arrow_forward_ios_rounded, size: 13, color: Colors.grey.shade400),
-                ],
+                ]),
               ),
-            ],
-          ),
+              // Infos — padding top 28 pour laisser place à la moitié basse de la bulle
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 28, 12, 12),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(nom.toString(),
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1E2025))),
+                  if (profession.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(profession.toString(),
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: categoryColor, fontWeight: FontWeight.w600)),
+                  ],
+                  if (ville.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      Icon(Icons.location_on_outlined, size: 12, color: Colors.grey.shade400),
+                      const SizedBox(width: 2),
+                      Text(ville.toString(), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+                    ]),
+                  ],
+                  if (especeList.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(spacing: 4, runSpacing: 4, children: especeList.take(4).map((e) =>
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: categoryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(e, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: categoryColor, fontWeight: FontWeight.w600)),
+                      )
+                    ).toList()),
+                  ],
+                ]),
+              ),
+            ]),
+            // Bulle photo chevauchant la bannière / section blanche
+            Positioned(
+              top: 58, // 100 - 42 (moitié de 84)
+              left: 12,
+              child: Container(
+                width: 56, height: 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2.5),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 6)],
+                ),
+                child: ClipOval(
+                  child: photo.isNotEmpty
+                      ? CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => _avatarPlaceholder())
+                      : _avatarPlaceholder(),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
+
+  Widget _gradient() => Container(
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: [categoryColor.withValues(alpha: 0.8), const Color(0xFF1E2025)],
+        begin: Alignment.topLeft, end: Alignment.bottomRight,
+      ),
+    ),
+  );
+
+  Widget _avatarPlaceholder() => Container(
+    color: categoryColor.withValues(alpha: 0.15),
+    child: Icon(Icons.store_outlined, size: 26, color: categoryColor),
+  );
 }

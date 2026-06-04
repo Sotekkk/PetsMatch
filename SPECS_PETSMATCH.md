@@ -661,6 +661,504 @@ RLS : toutes les tables filtrées par `user_id = auth.uid()` (lecture/écriture)
 
 ---
 
+### 5.14 Profil vétérinaire — add-in carnet de santé
+
+> **Profil pro sous-type vétérinaire · 3 niveaux · Positionné comme canal 
+> de visibilité + gain de temps consultation, non comme logiciel vétérinaire**
+
+Le vétérinaire utilise déjà son logiciel métier (Vétocom, Vetup, Covetrus...). 
+PetsMatch lui apporte l'accès aux carnets santé déjà remplis par les éleveurs 
+et propriétaires, sans double saisie, et une visibilité locale auprès d'une 
+communauté d'éleveurs actifs.
+
+---
+
+#### Plans vétérinaire
+
+| Plan | Prix | Cible |
+|---|---|---|
+| Basique | 0€ (inclus dans PRO Pro) | Visibilité annuaire + lecture via token |
+| Avancé | 29€/mois | Cabinets indépendants 1-3 praticiens |
+| Clinique | 49€/mois | Cliniques multi-praticiens |
+
+---
+
+#### Fonctionnalités par plan
+
+| Fonctionnalité | Basique | Avancé | Clinique |
+|---|---|---|---|
+| **Annuaire & visibilité** | | | |
+| Profil visible dans le pôle santé (carte + liste) | ✅ | ✅ | ✅ |
+| Badge "Vétérinaire vérifié" (validation SIRET/RPPS) | ✅ | ✅ | ✅ |
+| Fiche détaillée (spécialités, espèces, horaires, photos) | Basique | Complète | Complète |
+| Position mise en avant dans les résultats | ❌ | ✅ | ✅ |
+| **Carnet santé — lecture** | | | |
+| Lecture via token 72h partagé par le propriétaire | ✅ | ✅ | ✅ |
+| Accès lecture permanent si propriétaire l'autorise | ❌ | ✅ | ✅ |
+| Vue consolidée multi-animaux d'un élevage (si éleveur autorise) | ❌ | ✅ | ✅ |
+| **Carnet santé — écriture** | | | |
+| Ajouter vaccinations depuis la consultation | ❌ | ✅ | ✅ |
+| Ajouter antiparasitaires / vermifuges | ❌ | ✅ | ✅ |
+| Ajouter compte-rendu visite (texte libre + date) | ❌ | ✅ | ✅ |
+| Ajouter ordonnance (PDF uploadé) | ❌ | ✅ | ✅ |
+| Rappels automatiques push au propriétaire (rappels vaccins ajoutés) | ❌ | ✅ | ✅ |
+| **Agenda & RDV** | | | |
+| Réception demandes RDV via PetsMatch | ✅ | ✅ | ✅ |
+| Créneaux disponibles/indisponibles (AG08) | ❌ | ✅ | ✅ |
+| **Multi-praticiens** | | | |
+| Comptes praticiens multiples rattachés à la clinique | ❌ | ❌ | ✅ (5 max) |
+| Historique des interventions par praticien | ❌ | ❌ | ✅ |
+| **Exports** | | | |
+| Export PDF historique animal (pour remise au propriétaire) | ❌ | ✅ | ✅ |
+| Export CSV données patients (compatible logiciels vétérinaires) | ❌ | ❌ | ✅ |
+
+---
+
+#### Flux d'accès au carnet santé
+
+**Accès temporaire (tous plans)**
+1. Le propriétaire ou éleveur génère un lien token depuis la fiche animal
+2. Le token est valide 72h (table `partage_tokens` — SEC04)
+3. Le vétérinaire ouvre le lien → vue lecture seule du carnet santé complet
+4. Aucune authentification requise pour la lecture via token
+
+**Accès permanent (Avancé + Clinique)**
+1. Le vétérinaire envoie une demande d'accès à l'éleveur/propriétaire depuis sa fiche
+2. L'éleveur approuve depuis son app → stocké dans `vet_access_grants`
+3. Le vétérinaire voit l'animal dans sa liste "Mes patients" 
+4. L'éleveur peut révoquer l'accès à tout moment
+
+**Écriture dans le carnet (Avancé + Clinique)**
+- Chaque entrée créée par le vétérinaire est taguée `source: 'veterinaire'` + `vet_id`
+- L'éleveur/propriétaire reçoit une notification push à chaque ajout
+- Les entrées vétérinaires sont en lecture seule pour l'éleveur (non modifiables)
+- Le vétérinaire peut corriger ses propres entrées dans les 24h
+
+---
+
+#### Tables Supabase à créer
+
+| Table | Colonnes principales |
+|---|---|
+| `vet_access_grants` | `id UUID`, `vet_id TEXT`, `owner_id TEXT`, `animal_id TEXT`, `granted_at TIMESTAMPTZ`, `revoked_at TIMESTAMPTZ`, `status TEXT` (active/revoked) |
+| `vet_consultations` | `id UUID`, `vet_id TEXT`, `animal_id TEXT`, `date DATE`, `motif TEXT`, `compte_rendu TEXT`, `ordonnance_url TEXT`, `created_at TIMESTAMPTZ` |
+| `vet_praticiens` | `id UUID`, `clinique_id TEXT` (uid compte clinique), `nom TEXT`, `prenom TEXT`, `rpps TEXT`, `specialites TEXT[]`, `created_at TIMESTAMPTZ` |
+
+Colonnes à ajouter sur tables existantes :
+- `vaccinations` : `source TEXT DEFAULT 'owner'` (owner/veterinaire), `vet_id TEXT`
+- `traitements` : `source TEXT DEFAULT 'owner'`, `vet_id TEXT`
+- `visites` : `source TEXT DEFAULT 'owner'`, `vet_id TEXT`, `ordonnance_url TEXT`
+
+RLS : `vet_access_grants` lisible par `vet_id = auth.uid()` ET `owner_id = auth.uid()`.
+Écriture dans `vaccinations`/`traitements`/`visites` autorisée si `vet_access_grants` 
+actif pour cet animal.
+
+---
+
+#### UI vétérinaire
+
+**Dashboard vétérinaire (app + web)**
+- Liste "Mes patients" : animaux avec accès permanent accordé
+- Recherche patient par nom / puce / propriétaire
+- Accès rapide "Scanner un token" (QR code ou saisie manuelle)
+- Agenda RDV du jour en vue prioritaire
+
+**Fiche animal — vue vétérinaire**
+- Identité : espèce, race, sexe, âge, poids, puce (lecture seule)
+- Onglet Carnet santé : vaccinations, traitements, visites (lecture + écriture selon plan)
+- Onglet Généalogie : père/mère (lecture seule, utile pour races à risque génétique)
+- Bouton "Ajouter une entrée" → bottom sheet avec type (vaccin / traitement / visite / ordonnance)
+- Badge source sur chaque entrée : "Ajouté par Dr. Dupont" vs "Ajouté par l'éleveur"
+
+**Onboarding vétérinaire**
+- Étape 1 : Vérification RPPS (numéro 11 chiffres) ou SIRET cabinet
+- Étape 2 : Profil cabinet (nom, adresse, espèces traitées, spécialités, photo)
+- Étape 3 : Zone d'intervention sur carte
+- Étape 4 : Choix du plan (Basique / Avancé / Clinique) avec 3 mois offerts Avancé
+  au lancement si zone avec >10 éleveurs PetsMatch actifs
+
+---
+
+#### Stratégie de lancement
+
+- Offrir 3 mois Avancé gratuits aux vétérinaires dans les zones avec ≥10 éleveurs 
+  PetsMatch actifs → créer le cercle vertueux (éleveur voit son vet sur PetsMatch → 
+  partage son carnet → vet voit la valeur → souscrit)
+- Ne pas prospecter les vétérinaires sans éleveurs actifs dans leur zone d'abord
+- Priorité : éleveurs canins (34% des chiens achetés chez éleveurs selon données ICAD)
+
+---
+
+#### Évolutions V3+
+
+- Intégration API sortante vers logiciels vétérinaires (Vétocom, Vetup) via webhook
+- Signature électronique ordonnances (Yousign)
+- Téléconsultation vétérinaire (lien vidéo depuis la fiche animal)
+- Score de santé animal (indicateur synthétique basé sur historique carnet)
+
+---
+
+### 5.15 Profils soins & para-médicaux — ostéo/kiné et maréchal-ferrant
+
+> **Groupe A — Soins · Architecture similaire au profil vétérinaire (5.14) dont ils héritent la base · Différenciés par leurs spécificités métier**
+
+Ces profils interviennent physiquement sur l'animal. Ils ont besoin de lire le carnet santé et d'y ajouter leurs propres entrées. Le maréchal-ferrant est spécifique aux équidés et dispose en plus d'un onglet dédié dans la fiche animal.
+
+---
+
+#### Sous-profils concernés
+
+| Sous-profil | Espèces cibles | Validation identité |
+|---|---|---|
+| Ostéopathe animalier | Toutes | Diplôme ostéopathie animale (upload PDF) |
+| Kinésithérapeute animalier | Toutes | Diplôme kiné animale (upload PDF) |
+| Maréchal-ferrant | Équidés uniquement (cheval, âne, poney) | Brevet professionnel maréchalerie (upload PDF) |
+
+---
+
+#### Plans tarifaires
+
+| Plan | Prix | Fonctionnalités clés |
+|---|---|---|
+| FREE | 0€ | Annuaire basique, lecture via token 72h |
+| Essentiel | 19€/mois | Accès lecture permanent, ajout entrées carnet santé, agenda avancé |
+| Pro | 29€/mois | + Facturation clients, exports PDF/CSV, multi-intervenants (3 max) |
+
+Réduction annuelle : Essentiel 190€/an · Pro 290€/an (2 mois offerts)
+
+---
+
+#### Fonctionnalités communes ostéo/kiné + maréchal
+
+| Fonctionnalité | FREE | Essentiel | Pro |
+|---|---|---|---|
+| Profil annuaire (carte + liste + fiche détaillée) | Basique | Complet + mis en avant | Complet + mis en avant |
+| Badge professionnel vérifié | ✅ | ✅ | ✅ |
+| Zone d'intervention carte | ✅ | ✅ | ✅ |
+| Agenda RDV (réception demandes) | ✅ | ✅ + créneaux avancés | ✅ + créneaux avancés |
+| Messagerie clients | ✅ | ✅ | ✅ |
+| Lecture carnet santé via token 72h | ✅ | ✅ | ✅ |
+| Accès lecture permanent (si propriétaire autorise) | ❌ | ✅ | ✅ |
+| Ajouter séance dans carnet santé (date, type, notes, compte-rendu) | ❌ | ✅ | ✅ |
+| Notification push propriétaire à chaque ajout | ❌ | ✅ | ✅ |
+| Export PDF compte-rendu séance | ❌ | ✅ | ✅ |
+| Facturation clients (module 5.11 adapté) | ❌ | ❌ | ✅ |
+| Export CSV données patients | ❌ | ❌ | ✅ |
+| Comptes multi-intervenants (cabinet) | ❌ | ❌ | ✅ (3 max) |
+
+---
+
+#### Onglet équestre dédié — maréchal-ferrant uniquement
+
+Onglet "Maréchalerie" ajouté dans la fiche animal pour les équidés uniquement (espèce = cheval / âne / poney). Visible par le propriétaire ET le maréchal si accès accordé.
+
+**Données trackées par pied (ant. gauche / ant. droit / post. gauche / post. droit) :**
+
+| Champ | Type |
+|---|---|
+| Date de passage | DATE |
+| Type d'intervention | TEXT (parage / ferrure / déferrage / rééquilibrage) |
+| Type de fer posé | TEXT (fer classique / plastique / orthopédique / déferré) |
+| Prochain passage prévu | DATE |
+| Observations (aplombs, pathologie) | TEXT |
+| Photos (avant/après) | ARRAY url Firebase Storage |
+| Maréchal intervenant | TEXT (vet_id → table `vet_praticiens` adaptée) |
+
+**Rappel push FCM** : J-7 avant le prochain passage prévu → propriétaire ET maréchal.
+
+**Tables Supabase à créer :**
+
+| Table | Colonnes principales |
+|---|---|
+| `marechalerie_passages` | `id UUID`, `animal_id TEXT`, `marechal_id TEXT`, `date DATE`, `prochain_passage DATE`, `pied TEXT` (ant_gauche/ant_droit/post_gauche/post_droit), `type_intervention TEXT`, `type_fer TEXT`, `observations TEXT`, `photos TEXT[]`, `created_at TIMESTAMPTZ` |
+
+Colonnes à ajouter sur `animaux` :
+- `marechal_id TEXT` (maréchal habituel — accès permanent)
+- `dernier_passage_marechal DATE`
+- `prochain_passage_marechal DATE`
+
+---
+
+#### Accès carnet santé — règles identiques au vétérinaire (5.14)
+
+Utilise les mêmes tables `vet_access_grants` et le même flux d'autorisation. Champ `pro_type TEXT` ajouté sur `vet_access_grants` : valeurs : 'veterinaire' / 'osteo' / 'kine' / 'marechal'
+
+Les entrées carnet santé créées par ces profils sont taguées `source: 'pro_sante'` + `pro_id` + `pro_type`.
+
+---
+
+#### UI spécifique
+
+**Dashboard ostéo/kiné**
+- Liste "Mes patients" avec dernière séance + prochain RDV
+- Vue agenda : séances du jour avec fiche animal accessible en 1 clic
+- Bouton rapide "Ajouter séance" depuis la liste patients
+
+**Dashboard maréchal-ferrant**
+- Liste "Mes chevaux" triée par date prochain passage (les plus urgents en premier)
+- Alerte rouge si prochain passage dépassé
+- Vue carte : localisation géographique de ses clients (optimisation tournées)
+- Bouton "Planifier tournée" → liste ordonnée par zone géographique
+
+---
+
+#### Évolutions V3+
+
+- Intégration agenda tournées maréchal (optimisation itinéraire multi-clients)
+- Bilan ostéo/kiné avec schéma corporel annoté (zones travaillées)
+- Partage compte-rendu ostéo avec le vétérinaire traitant (inter-pros)
+
+---
+
+### 5.16 Profils garde & mobilité — pet sitter et promeneur
+
+> **Groupe B — Garde · Profils distincts · Partagent la base agenda + messagerie + zone intervention · Différenciés par leur logique métier**
+
+Pet sitter et promeneur sont deux profils distincts dans l'app mais partagent la même architecture technique de base. Le pet sitter gère des séjours (entrée/sortie, hébergement), le promeneur gère des sorties ponctuelles (durée, groupe, notes). Tous deux peuvent cumuler les deux activités en activant les deux sous-profils depuis leurs paramètres.
+
+---
+
+#### Plans tarifaires
+
+| Plan | Pet sitter | Promeneur |
+|---|---|---|
+| FREE | 0€ | 0€ |
+| Essentiel | 12€/mois | 9€/mois |
+| Pro | 19€/mois | 15€/mois |
+
+Réduction annuelle : Pet sitter Essentiel 120€/an · Pro 190€/an — Promeneur Essentiel 90€/an · Pro 150€/an
+
+---
+
+#### Fonctionnalités pet sitter
+
+| Fonctionnalité | FREE | Essentiel | Pro |
+|---|---|---|---|
+| Profil annuaire (carte, espèces acceptées, capacité max) | Basique | Complet + mis en avant | Complet + mis en avant |
+| Badge vérifié + avis clients | ✅ | ✅ | ✅ |
+| Zone d'intervention / rayon d'accueil | ✅ | ✅ | ✅ |
+| Agenda réservations (vue calendrier) | ✅ | ✅ + créneaux avancés | ✅ + créneaux avancés |
+| Messagerie clients | ✅ | ✅ | ✅ |
+| Registre entrées/sorties animaux en pension | ❌ | ✅ | ✅ |
+| Fiche animal en lecture seule pendant le séjour | ❌ | ✅ | ✅ |
+| Accès carnet santé lecture (urgences vétérinaires) | ❌ | ✅ | ✅ |
+| Journal de séjour (photos + notes quotidiennes envoyées au propriétaire) | ❌ | ✅ | ✅ |
+| Contrats de garde PDF (modèle personnalisable) | ❌ | ✅ | ✅ |
+| Facturation clients (module 5.11 adapté) | ❌ | ❌ | ✅ |
+| Statistiques activité (taux remplissage, CA mensuel) | ❌ | ❌ | ✅ |
+
+---
+
+#### Fonctionnalités promeneur
+
+| Fonctionnalité | FREE | Essentiel | Pro |
+|---|---|---|---|
+| Profil annuaire (carte, races acceptées, taille groupe max) | Basique | Complet + mis en avant | Complet + mis en avant |
+| Badge vérifié + avis clients | ✅ | ✅ | ✅ |
+| Zone de promenade (carte polygone) | ✅ | ✅ | ✅ |
+| Agenda sorties (récurrentes + ponctuelles) | ✅ | ✅ + créneaux avancés | ✅ + créneaux avancés |
+| Messagerie clients | ✅ | ✅ | ✅ |
+| Fiche animal en lecture seule pendant la sortie | ❌ | ✅ | ✅ |
+| Rapport de sortie (durée réelle, notes, photos) envoyé au propriétaire | ❌ | ✅ | ✅ |
+| Gestion groupe (liste chiens, capacité max, liste d'attente) | ❌ | ✅ | ✅ |
+| Contrats prestation PDF | ❌ | ✅ | ✅ |
+| Facturation clients | ❌ | ❌ | ✅ |
+| Abonnements clients (ex : 10 sorties/mois) | ❌ | ❌ | ✅ |
+
+---
+
+#### Tables Supabase à créer
+
+| Table | Colonnes principales |
+|---|---|
+| `pension_sejours` | `id UUID`, `petsitter_id TEXT`, `animal_id TEXT`, `owner_id TEXT`, `date_entree TIMESTAMPTZ`, `date_sortie TIMESTAMPTZ`, `statut TEXT` (confirmé/en_cours/terminé), `notes TEXT`, `created_at TIMESTAMPTZ` |
+| `pension_journal` | `id UUID`, `sejour_id UUID`, `date DATE`, `notes TEXT`, `photos TEXT[]`, `sent_to_owner BOOLEAN` |
+| `promenade_sorties` | `id UUID`, `promeneur_id TEXT`, `date TIMESTAMPTZ`, `duree_min INT`, `animaux_ids TEXT[]`, `notes TEXT`, `photos TEXT[]`, `rapport_envoye BOOLEAN` |
+| `promenade_groupes` | `id UUID`, `promeneur_id TEXT`, `nom TEXT`, `capacite_max INT`, `recurrence TEXT` (JSON), `animaux_inscrits TEXT[]` |
+
+---
+
+#### Liens avec propriétaires et éleveurs
+
+- Le propriétaire reçoit une notification push à chaque rapport de sortie ou journal de séjour envoyé
+- Le propriétaire peut donner accès lecture à la fiche animal + carnet santé pour la durée du séjour uniquement (accès révoqué automatiquement à `date_sortie` dans `pension_sejours`)
+- L'éleveur peut référencer ses pet sitters/promeneurs habituels dans son profil élevage (recommandations)
+
+---
+
+#### Évolutions V3+
+
+- Géolocalisation live pendant la promenade (opt-in propriétaire)
+- Assurance responsabilité civile intégrée (partenariat assureur)
+- Système d'avis vérifiés post-séjour
+
+---
+
+### 5.17 Profils éducation & comportement
+
+> **Groupe C — Éducation · Profil unique avec deux sous-types · Spécificité : carnet comportemental distinct du carnet santé médical**
+
+L'éducateur canin travaille sur l'obéissance et la socialisation. Le comportementaliste traite les troubles comportementaux (peurs, agressivité, TOC). Leurs outils sont similaires mais la profondeur du suivi diffère. Ils n'écrivent pas dans le carnet santé médical — ils ont leur propre "carnet comportemental" dans la fiche animal.
+
+---
+
+#### Sous-profils
+
+| Sous-profil | Espèces principales | Validation |
+|---|---|---|
+| Éducateur canin | Chien | Attestation ACACED + certification éducation (upload) |
+| Comportementaliste | Toutes espèces | Diplôme comportement animal (upload) |
+
+---
+
+#### Plans tarifaires
+
+| Plan | Prix | Fonctionnalités clés |
+|---|---|---|
+| FREE | 0€ | Annuaire basique, messagerie |
+| Essentiel | 19€/mois | Carnet comportemental, suivi séances, agenda avancé |
+| Pro | 29€/mois | + Programmes personnalisés, facturation, contrats, rapports PDF |
+
+---
+
+#### Fonctionnalités
+
+| Fonctionnalité | FREE | Essentiel | Pro |
+|---|---|---|---|
+| Profil annuaire (espèces, méthodes, zone) | Basique | Complet + mis en avant | Complet + mis en avant |
+| Badge vérifié | ✅ | ✅ | ✅ |
+| Agenda RDV + créneaux | ✅ | ✅ avancé | ✅ avancé |
+| Messagerie clients | ✅ | ✅ | ✅ |
+| Lecture carnet santé (contexte médical) | ❌ | ✅ lecture seule | ✅ lecture seule |
+| Carnet comportemental — ajouter séance | ❌ | ✅ | ✅ |
+| Carnet comportemental — évaluation initiale | ❌ | ✅ | ✅ |
+| Programme d'entraînement personnalisé (étapes, objectifs) | ❌ | ❌ | ✅ |
+| Suivi progression (scores par exercice, graphique) | ❌ | ❌ | ✅ |
+| Rapport comportemental PDF (remis au propriétaire) | ❌ | ✅ basique | ✅ complet |
+| Contrats de prestation PDF | ❌ | ✅ | ✅ |
+| Facturation clients | ❌ | ❌ | ✅ |
+| Partage rapport avec vétérinaire traitant | ❌ | ❌ | ✅ |
+
+---
+
+#### Carnet comportemental — structure
+
+Onglet "Comportement" ajouté dans la fiche animal, visible par le propriétaire et les pros comportement ayant un accès accordé.
+
+**Évaluation initiale :**
+- Problèmes déclarés (multiselect : peurs / agressivité / destruction / fugue / aboiements / propreté / socialisation / autre)
+- Contexte de vie (logement, temps seul, activité physique)
+- Historique comportemental (texte libre)
+- Score initial par axe (1-5) : sociabilité chiens / humains / calme / obéissance / gestion frustration
+
+**Séance :**
+- Date, durée, lieu (domicile / club / extérieur)
+- Exercices travaillés (texte libre + tags)
+- Observations du jour
+- Score de progression par exercice (1-5)
+- Devoirs pour le propriétaire
+
+**Tables Supabase à créer :**
+
+| Table | Colonnes principales |
+|---|---|
+| `comportement_evaluations` | `id UUID`, `animal_id TEXT`, `pro_id TEXT`, `date DATE`, `problemes TEXT[]`, `scores JSONB`, `contexte TEXT`, `historique TEXT`, `created_at TIMESTAMPTZ` |
+| `comportement_seances` | `id UUID`, `animal_id TEXT`, `pro_id TEXT`, `date DATE`, `duree_min INT`, `lieu TEXT`, `exercices TEXT[]`, `observations TEXT`, `scores_progression JSONB`, `devoirs TEXT`, `created_at TIMESTAMPTZ` |
+| `comportement_programmes` | `id UUID`, `animal_id TEXT`, `pro_id TEXT`, `titre TEXT`, `objectifs TEXT[]`, `etapes JSONB`, `statut TEXT` (actif/terminé), `created_at TIMESTAMPTZ` |
+
+---
+
+#### Liens avec propriétaires et éleveurs
+
+- Le propriétaire reçoit les "devoirs" en notification push après chaque séance
+- L'éleveur peut recommander un éducateur dans la fiche de son élevage (champ `educateur_recommande_id`)
+- Le comportementaliste peut partager un rapport PDF directement au vétérinaire traitant si accès mutuellement accordé (inter-pros)
+- À la vente d'un chiot, l'éleveur peut inclure un bon de réduction éducateur partenaire (futur : V3)
+
+---
+
+#### Évolutions V3+
+
+- Vidéos courtes attachées aux séances (avant/après exercice)
+- Programme d'entraînement partageable (éleveur → acheteur chiot)
+- Mise en relation comportementaliste ↔ vétérinaire pour cas complexes
+
+---
+
+### 5.18 Profil photographe animalier
+
+> **Groupe D — Créatif · Profil le plus simple · Valeur = visibilité et portfolio · Pas d'accès aux fiches animaux sauf partage volontaire**
+
+Le photographe animalier n'intervient pas médicalement sur l'animal. Sa présence sur PetsMatch lui apporte une visibilité auprès d'une communauté de propriétaires et d'éleveurs (séances portées, séances famille, photos officielles pedigree). Il est accessible uniquement via l'annuaire.
+
+---
+
+#### Plans tarifaires
+
+| Plan | Prix | Fonctionnalités clés |
+|---|---|---|
+| FREE | 0€ | Profil basique, 5 photos portfolio |
+| Essentiel | 9€/mois | Portfolio complet, mis en avant, agenda |
+| Pro | — | Non applicable |
+
+Réduction annuelle : Essentiel 90€/an (1 mois offert)
+
+---
+
+#### Fonctionnalités
+
+| Fonctionnalité | FREE | Essentiel |
+|---|---|---|
+| Profil annuaire (zone, espèces, style photographique) | Basique | Complet + mis en avant |
+| Portfolio photos (galerie) | 5 photos max | Illimité |
+| Badge vérifié (SIRET ou auto-entrepreneur) | ✅ | ✅ |
+| Zone d'intervention carte | ✅ | ✅ |
+| Agenda RDV (réception demandes de séance) | ✅ | ✅ + créneaux avancés |
+| Messagerie clients | ✅ | ✅ |
+| Accès fiche animal (si propriétaire partage) | Lecture seule race/couleur/nom | Lecture seule race/couleur/nom |
+| Mise en avant dans les résultats de recherche | ❌ | ✅ |
+| Statistiques profil (vues, demandes RDV) | ❌ | ✅ |
+
+Note : le photographe ne peut jamais écrire dans le carnet santé ni accéder aux données médicales, même si le propriétaire lui accorde un accès.
+
+---
+
+#### Spécificité éleveurs
+
+Les éleveurs peuvent référencer un photographe partenaire dans leur profil élevage pour les séances de portées. La photo principale d'une annonce peut être taguée "Photo professionnelle" si prise par un photographe PetsMatch vérifié, ce qui améliore la crédibilité de l'annonce.
+
+---
+
+#### Tables Supabase
+
+Pas de nouvelles tables nécessaires. Utilise les tables existantes :
+- `users` : `cat_pro = 'photographe'`, `portfolio_urls TEXT[]` (nouveau champ)
+- `agenda_events` : séances photo comme tout autre RDV
+- `creneaux_pro` : disponibilités AG08
+
+Colonnes à ajouter sur `annonces` :
+- `photo_pro_id TEXT` (uid du photographe si photo professionnelle)
+- `photo_pro_verified BOOLEAN DEFAULT false`
+
+---
+
+#### PSN08 — Envoi facture au propriétaire + signature contrat
+
+**Envoi facture (implémenté v2) :**
+- Génération PDF en mémoire (bytes)
+- Upload Firebase Storage : `factures/{pensionUid}/{invoiceNum}.pdf`
+- Lookup propriétaire par email → Supabase `users.uid` + `fcm_token`
+- Insertion `notifications` : `type = 'facture_pension'`, `data.url` = URL de téléchargement
+- Push FCM : "Votre facture de séjour est disponible"
+
+**Signature contrat — YouSign (V3+) :**
+- Intégration API YouSign pour signature électronique du contrat de pension
+- Flux : pension crée le contrat PDF → envoie lien YouSign au propriétaire → signature → PDF signé stocké dans Firebase Storage
+- Statut de signature visible dans l'onglet Documents du profil pension
+- Conforme RGPD + valeur juridique (eIDAS niveau simple)
+
+---
+
 ## 6. Sécurité / Conformité RGPD
 
 ### V1 — Obligatoire avant lancement public
