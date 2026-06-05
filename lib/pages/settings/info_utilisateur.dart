@@ -423,7 +423,15 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
                       Padding(
                         padding: const EdgeInsets.only(left: 8, bottom: 8),
                         child: Text(
-                          'Espèces élevées',
+                          User_Info.isPro
+                              ? (User_Info.catPro == 'sante' || User_Info.catPro == 'veterinaire'
+                                  ? 'Espèces soignées'
+                                  : User_Info.catPro == 'pension' || User_Info.catPro == 'garde'
+                                      ? 'Espèces gardées'
+                                      : User_Info.catPro == 'education' || User_Info.catPro == 'comportement' || User_Info.catPro == 'educateur'
+                                          ? 'Espèces prises en charge'
+                                          : 'Espèces acceptées')
+                              : 'Espèces élevées',
                           style: TextStyle(
                             fontFamily: 'Galey',
                             fontWeight: FontWeight.w500,
