@@ -55,6 +55,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
   bool _acceptNewClients = true;
   String _catPro = '';
+  String _siret = '';
+  String _ordreVeterinaire = '';
 
   static const _especesList = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
   List<String> _especesAcceptees = [];
@@ -109,7 +111,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         _lat                   = (row['lat'] as num?)?.toDouble();
         _lng                   = (row['lng'] as num?)?.toDouble();
 
-        // Adresse
+        // Infos fixes
+        _siret          = row['siret']                 ?? User_Info.siret;
         _catPro         = row['cat_pro']               ?? '';
         _rueCtrl.text   = row['rue_elevage']          ?? '';
         _villeCtrl.text = row['ville_elevage']         ?? '';
@@ -134,6 +137,13 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
               (e as Map).map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')),
             )),
           );
+          // Extrait le numéro d'ordre vétérinaire s'il existe
+          for (final c in _certifications) {
+            if ((c['nom'] ?? '').toLowerCase().contains('ordre')) {
+              _ordreVeterinaire = c['numero'] ?? '';
+              break;
+            }
+          }
         }
       }
     } catch (_) {}
@@ -404,6 +414,14 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   _sectionTitle('Type d\'activité'),
                   const SizedBox(height: 10),
                   _catProSelector(),
+                  if (_siret.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _readOnlyInfo('SIRET', _siret, Icons.business_center_outlined),
+                  ],
+                  if (_ordreVeterinaire.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _readOnlyInfo('N° ordre vétérinaire', _ordreVeterinaire, Icons.verified_outlined),
+                  ],
                   const SizedBox(height: 12),
                   _field(_descCtrl, 'Description de l\'activité', Icons.description_outlined, maxLines: 4),
                   const SizedBox(height: 12),
@@ -778,6 +796,26 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   Widget _sectionTitle(String title) {
     return Text(title,
       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1E2025)));
+  }
+
+  Widget _readOnlyInfo(String label, String value, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F6F4),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE0E0E0)),
+      ),
+      child: Row(children: [
+        Icon(icon, size: 18, color: const Color(0xFF6E9E57)),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+          Text(value, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+        ])),
+        const Icon(Icons.lock_outline, size: 14, color: Colors.grey),
+      ]),
+    );
   }
 
   Widget _field(

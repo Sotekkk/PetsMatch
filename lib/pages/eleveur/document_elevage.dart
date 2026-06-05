@@ -151,7 +151,7 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
         _showError('SIRET (numéro + document), catégorie et profession sont obligatoires.');
         return;
       }
-      User_Info.catPro = _selectedCategory!;
+      User_Info.catPro = _catProFromSelection(_selectedCategory!, _selectedProfession!);
       User_Info.professionPro = _selectedProfession!;
       if (_isVet) {
         if (_ordreCtrl.text.trim().isEmpty) {
@@ -446,6 +446,15 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
           onChanged: onChanged,
         ),
       );
+}
+
+String _catProFromSelection(String category, String profession) {
+  if (profession == 'Vétérinaire') return 'veterinaire';
+  if (category == 'Santé animal') return 'sante';
+  if (category == 'Pension pour animaux') return 'pension';
+  if (profession == 'Toiletteur') return 'toilettage';
+  if (profession == 'Promeneurs de chiens' || profession == 'Petsitter') return 'garde';
+  return 'education';
 }
 
 class _StepBar extends StatelessWidget {

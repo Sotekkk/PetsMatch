@@ -149,39 +149,74 @@ Future<Object> registerElevage(String email, String password) async {
 
     // Sync to Supabase users table
     try {
+      final geoPerso  = FrenchGeo.fromPostalCode(User_Info.codePostal);
+      final geoElev   = FrenchGeo.fromPostalCode(User_Info.codePostalElevage);
+
+      // especes_elevees : format [{espece, races}] pour éleveurs
+      final especesEleveesJson = User_Info.isElevage
+          ? User_Info.especesElevees.map((e) => {
+              'espece': e,
+              'races': e == 'chien'
+                  ? User_Info.dogBreeds
+                  : e == 'chat'
+                      ? User_Info.catBreeds
+                      : <String>[],
+            }).toList()
+          : null;
+
+      // especes_acceptees : liste capitalisée pour pros
+      final especesAccepteesJson = User_Info.isPro
+          ? User_Info.especesElevees
+              .map((e) => e.isEmpty ? e : e[0].toUpperCase() + e.substring(1))
+              .toList()
+          : null;
+
       await Supabase.instance.client.from('users').upsert({
-        'uid':                 uid,
-        'firstname':           User_Info.firstname,
-        'lastname':            User_Info.lastname,
-        'email':               User_Info.email,
-        'phone_number':        User_Info.phone_number,
-        'code_iso':            User_Info.codeISO,
-        'adress':              User_Info.adress,
-        'rue':                 User_Info.rue,
-        'ville':               User_Info.ville,
-        'code_postal':         User_Info.codePostal,
-        'pays':                User_Info.pays,
-        ...() {
-          final geo = FrenchGeo.fromPostalCode(User_Info.codePostal);
-          return {
-            'departement': geo?.departement ?? '',
-            'region':      geo?.region      ?? '',
-          };
-        }(),
-        'profile_picture_url': User_Info.profilePictureUrl,
-        'is_elevage':          User_Info.isElevage,
-        'is_validate':         User_Info.isValidate,
-        'name_elevage':        User_Info.nameElevage,
-        'adress_elevage':      User_Info.adressElevage,
-        'rue_elevage':         User_Info.rueElevage,
-        'ville_elevage':       User_Info.villeElevage,
-        'code_postal_elevage': User_Info.codePostalElevage,
-        'pays_elevage':        User_Info.paysElevage,
-        'is_pub':              User_Info.isPub,
-        'is_pro':              User_Info.isPro,
-        'is_partenaire':       User_Info.isPartenaire,
-        'is_admin':            User_Info.isAdmin,
-        'is_dev':              User_Info.isDev,
+        'uid':                   uid,
+        'firstname':             User_Info.firstname,
+        'lastname':              User_Info.lastname,
+        'email':                 User_Info.email,
+        'phone_number':          User_Info.phone_number,
+        'code_iso':              User_Info.codeISO,
+        'adress':                User_Info.adress,
+        'rue':                   User_Info.rue,
+        'ville':                 User_Info.ville,
+        'code_postal':           User_Info.codePostal,
+        'pays':                  User_Info.pays,
+        'departement':           geoPerso?.departement ?? '',
+        'region':                geoPerso?.region      ?? '',
+        'profile_picture_url':   User_Info.profilePictureUrl,
+        'is_elevage':            User_Info.isElevage,
+        'is_validate':           User_Info.isValidate,
+        'name_elevage':          User_Info.nameElevage,
+        'adress_elevage':        User_Info.adressElevage,
+        'rue_elevage':           User_Info.rueElevage,
+        'ville_elevage':         User_Info.villeElevage,
+        'code_postal_elevage':   User_Info.codePostalElevage,
+        'pays_elevage':          User_Info.paysElevage,
+        'departement_elevage':   geoElev?.departement ?? '',
+        'region_elevage':        geoElev?.region      ?? '',
+        'numero_elevage':        User_Info.numeroElevage,
+        'code_iso_elevage':      User_Info.codeISOElevage,
+        'is_pub':                User_Info.isPub,
+        'is_pro':                User_Info.isPro,
+        'is_partenaire':         User_Info.isPartenaire,
+        'is_admin':              User_Info.isAdmin,
+        'is_dev':                User_Info.isDev,
+        // Champs pro/éleveur
+        'cat_pro':               User_Info.catPro,
+        'profession_pro':        User_Info.professionPro,
+        'desc_entreprise':       User_Info.descEntreprise,
+        'siret':                 User_Info.siret,
+        'numero_tva':            User_Info.numeroTVA,
+        'is_dog':                User_Info.isDog,
+        'is_cat':                User_Info.isCat,
+        'dog_breeds':            User_Info.dogBreeds,
+        'cat_breeds':            User_Info.catBreeds,
+        if (especesEleveesJson != null)    'especes_elevees':    especesEleveesJson,
+        if (especesAccepteesJson != null)  'especes_acceptees':  especesAccepteesJson,
+        if (User_Info.certifications.isNotEmpty) 'certifications': User_Info.certifications,
+        if (User_Info.isPro || User_Info.isElevage) 'statut_pro': 'en_attente',
         if (User_Info.bannerUrl.isNotEmpty) 'banner_url': User_Info.bannerUrl,
         if (User_Info.profilePictureUrlElevage.isNotEmpty)
           'profile_picture_url_elevage': User_Info.profilePictureUrlElevage,
