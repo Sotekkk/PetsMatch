@@ -67,6 +67,7 @@ dependencies:
   image_cropper: ^9.1.0
   google_maps_webservice: 0.0.20-nullsafety.5
   share_plus: ^10.0.1
+  qr_flutter: ^4.1.0
   flutter_cache_manager: ^3.4.1
   flutter_native_splash: ^2.4.0
 

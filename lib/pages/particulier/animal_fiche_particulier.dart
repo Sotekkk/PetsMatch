@@ -13,6 +13,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
+import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 
 class _ContactUrgenceP {
   final TextEditingController nom;
@@ -343,6 +344,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
             style: const TextStyle(
                 fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
         actions: [
+          if (_animalId != null)
+            IconButton(
+              icon: const Icon(Icons.share_outlined, size: 20),
+              tooltip: 'Partager avec mon vétérinaire',
+              onPressed: () => showVetShareSheet(context, _animalId!),
+            ),
           if (_saving)
             const Padding(
               padding: EdgeInsets.all(14),

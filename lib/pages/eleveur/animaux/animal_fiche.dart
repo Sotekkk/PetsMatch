@@ -18,6 +18,7 @@ import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
 
@@ -760,6 +761,12 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          if (widget.animalId != null)
+            IconButton(
+              icon: const Icon(Icons.share_outlined, size: 20),
+              tooltip: 'Partager avec mon vétérinaire',
+              onPressed: () => showVetShareSheet(context, widget.animalId!),
+            ),
           if (widget.readOnly)
             const Padding(
               padding: EdgeInsets.only(right: 16),

@@ -171,6 +171,42 @@
 | A48 | **Accès carnet santé animal par les pros de santé** — lecture seule pour ostéo/kiné/naturo/assurances, lecture + écriture pour vétérinaires. Vérifier colonne `cat_pro` pour filtrer le niveau d'accès. Étendre `animal_acces_page.dart`. | Haute | App + Web | `animal_acces_page.dart`, `pro_agenda.dart` |
 | A60 | **Accès carnet santé auto sans validation propriétaire** — actuellement le propriétaire doit valider la demande d'accès du pro. Changer le flux : le pro valide seul (accès automatiquement accordé à la confirmation du RDV ou sur demande directe du pro). Pas de workflow d'approbation côté propriétaire. | Haute | App + Web | `animal_acces_page.dart`, `pro_agenda.dart` |
 
+### Profil vétérinaire — Spec 5.14 (par étapes)
+
+> Implémentation en 6 étapes séquentielles. Chaque étape est indépendante et livrable séparément.
+
+#### Étape 1 — Infrastructure Supabase (prérequis de tout le reste)
+
+| # | Tâche | Priorité | Repo | Notes |
+|---|---|---|---|---|
+| ~~VET01~~ | ~~**Tables Supabase vétérinaire** — créer `vet_access_grants`, `vet_consultations`, `partage_tokens`. Colonnes `source`+`vet_id` sur `vaccinations`, `traitements`, `visites`. RLS permissives.~~ | ~~Haute~~ | ~~Supabase~~ | ✅ Terminé 2026-06-05 |
+
+#### Étape 2 — Token 72h (accès temporaire, plan Basique)
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| VET02 | **Génération token 72h depuis la fiche animal** — bouton "Partager avec mon vétérinaire" dans la fiche animal (éleveur + particulier) → génère un token UUID dans `partage_tokens` valide 72h → affiche QR code + lien copiable. Si token actif existant, propose de le réutiliser ou d'en générer un nouveau. | Haute | App + Web | `animal_fiche_eleveur.dart`, `animal_fiche_particulier.dart`, `src/app/mes-animaux/[id]/page.tsx` |
+| VET03 | **Vue carnet santé via token (sans authentification)** — page web `/sante/[token]` et écran Flutter accessible par lien deeplink : lecture seule du carnet santé complet (identité animal, vaccinations, traitements, visites), badge "Accès expiré" si token > 72h, aucune auth requise. Marque `used_at` à la première consultation. | Haute | App + Web | Créer `src/app/sante/[token]/page.tsx` + `lib/pages/pro/vet_token_view.dart` |
+
+#### Étape 3 — Dashboard vétérinaire "Mes patients"
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| VET04 | **Dashboard vétérinaire — "Mes patients"** — écran dédié accessible depuis le menu pro (cat_pro = 'veterinaire' uniquement) : liste des animaux avec accès permanent accordé (`vet_access_grants.status = 'active'`), recherche par nom / numéro de puce / nom propriétaire, bouton "Scanner un token" (ouvre la caméra QR ou saisie manuelle du token). Chaque ligne affiche : photo, nom, espèce, race, dernier RDV. | Haute | App + Web | Créer `lib/pages/pro/vet_patients_page.dart` + `src/app/pro/patients/page.tsx` |
+
+#### Étape 4 — Accès permanent + écriture carnet santé
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| VET05 | **Demande d'accès permanent vét → propriétaire** — depuis la fiche pro du vétérinaire (vue client) ou depuis le dashboard vét : bouton "Demander l'accès au carnet santé" → saisie numéro de puce ou nom animal → notification push + in-app au propriétaire → approbation → entrée dans `vet_access_grants`. L'éleveur peut révoquer depuis la fiche animal. | Haute | App + Web | `animal_fiche_eleveur.dart`, `animal_fiche_particulier.dart`, `vet_patients_page.dart` |
+| VET06 | **Écriture dans le carnet santé par le vétérinaire** — depuis la fiche animal (vue vétérinaire avec accès accordé) : bouton "Ajouter une entrée" → bottom sheet choix (vaccin / traitement antiparasitaire / visite / ordonnance PDF). Chaque entrée taguée `source: 'veterinaire'` + `vet_id`. Entrées vét affichées avec badge "Dr. [nom]" dans le carnet. L'éleveur reçoit une notification push. Les entrées vét sont en lecture seule pour l'éleveur. | Haute | App + Web | `animal_fiche_eleveur.dart`, `animal_fiche_particulier.dart`, `vet_patients_page.dart` |
+
+#### Étape 5 — Alertes retard agenda
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| VET07 | **Alertes retard agenda pro** — bouton "Signaler un retard" dans l'agenda pro du jour → curseur délai (15/30/45/60/90+ min) + message optionnel (140 car.) → push FCM à tous les patients avec RDV dans les 3h suivantes. Si délai ≥ 60 min : propose 3 créneaux alternatifs. Si ≥ 90 min : alerte admin. Tables : `agenda_retards` + `agenda_retard_responses`. Cloud Function `onRetardDeclared` (Firestore/Supabase trigger). Badge orange "En retard" visible dans l'agenda pro. | Moyenne | App + Web + Firebase Functions | `pro_agenda.dart`, créer `functions/retard.js` |
+
 ### Tarification
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
