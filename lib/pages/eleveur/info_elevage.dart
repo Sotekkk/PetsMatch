@@ -531,10 +531,10 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
               ),
             ]),
 
-            // ── Races (dynamique) ────────────────────────────────────────────
-            if (_selectedEspeces.isNotEmpty) ...[
+            // ── Races (éleveurs seulement) ───────────────────────────────────
+            if (_selectedEspeces.isNotEmpty && !User_Info.isPro) ...[
               const SizedBox(height: 20),
-              _sectionTitle(User_Info.isPro ? 'Races prises en charge' : 'Races élevées'),
+              _sectionTitle('Races élevées'),
               const SizedBox(height: 4),
               Text('Pour chaque espèce, précisez les races (optionnel).',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
