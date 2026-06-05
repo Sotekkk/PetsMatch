@@ -39,7 +39,6 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   List<Map<String, dynamic>> _existingRdvs = [];
   String? _selectedDateKey;
   Map<String, dynamic>? _selectedSlot;
-
   // Pension-specific
   String? _selectedMotif;
   bool? _premiereVisite;
@@ -105,7 +104,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   Future<void> _loadAvailableSlots() async {
     try {
-      final today = DateTime.now().toIso8601String().substring(0, 10);
+      final now = DateTime.now();
+      final today = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
+      final maxDt = DateTime(now.year, now.month + 3, now.day);
+      final maxDate = '${maxDt.year}-${maxDt.month.toString().padLeft(2,'0')}-${maxDt.day.toString().padLeft(2,'0')}';
       final results = await Future.wait([
         Supabase.instance.client
             .from('creneaux_pro')
@@ -113,14 +115,16 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             .eq('pro_uid', widget.proUid)
             .eq('statut', 'disponible')
             .gte('date', today)
+            .lte('date', maxDate)
             .order('date')
-            .order('heure_debut'),
+            .order('heure_debut')
+            .limit(1000),
         Supabase.instance.client
             .from('rdv')
             .select('date_heure, duree_minutes, statut')
             .eq('pro_uid', widget.proUid)
             .inFilter('statut', ['confirme', 'demande'])
-            .gte('date_heure', DateTime.now().toIso8601String()),
+            .gte('date_heure', now.toUtc().toIso8601String()),
       ]);
 
       if (mounted) {
