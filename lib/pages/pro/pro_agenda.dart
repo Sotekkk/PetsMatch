@@ -139,7 +139,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }
   }
 
-  List<Map<String, dynamic>> get _demandes => _rdvs.where((r) => r['statut'] == 'demande').toList();
+  List<Map<String, dynamic>> get _demandes => _rdvs.where((r) =>
+      r['statut'] == 'demande' || r['statut'] == 'contre_proposition').toList();
   List<Map<String, dynamic>> get _avenir {
     final now = DateTime.now();
     return _rdvs.where((r) {
@@ -152,6 +153,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     final now = DateTime.now();
     return _rdvs.where((r) {
       if (r['statut'] == 'demande') return false;
+      if (r['statut'] == 'contre_proposition') return false;
       if (r['statut'] == 'confirme') {
         final dh = DateTime.tryParse(r['date_heure'] ?? '');
         return dh != null && dh.isBefore(now);
@@ -1650,19 +1652,21 @@ class _RdvCard extends StatelessWidget {
   }
 
   Color _statutColor(String s) => switch (s) {
-    'confirme' => const Color(0xFF0C5C6C),
-    'termine'  => const Color(0xFF6E9E57),
-    'annule'   => Colors.red,
-    'no_show'  => Colors.orange,
-    _          => const Color(0xFFF59E0B),
+    'confirme'            => const Color(0xFF0C5C6C),
+    'termine'             => const Color(0xFF6E9E57),
+    'annule'              => Colors.red,
+    'no_show'             => Colors.orange,
+    'contre_proposition'  => const Color(0xFF1565C0),
+    _                     => const Color(0xFFF59E0B),
   };
 
   String _statutLabel(String s) => switch (s) {
-    'confirme' => 'Confirmé',
-    'termine'  => 'Terminé',
-    'annule'   => 'Annulé',
-    'no_show'  => 'Non présenté',
-    _          => 'En attente',
+    'confirme'            => 'Confirmé',
+    'termine'             => 'Terminé',
+    'annule'              => 'Annulé',
+    'no_show'             => 'Non présenté',
+    'contre_proposition'  => 'Modif. demandée',
+    _                     => 'En attente',
   };
 
   String _formatDateTime(DateTime d) {

@@ -147,7 +147,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     return map;
   }
 
-  List<String> get _availableDates => _slotsByDate.keys.toList();
+  List<String> get _availableDates => _slotsByDate.keys.toList()..sort();
 
   // ── Non-pension: busy check ───────────────────────────────────────────────────
 
