@@ -2,36 +2,56 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart';
 
 const _kTeal = Color(0xFF0C5C6C);
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-const _kTypes = ['rdv', 'mise_bas', 'medication', 'visite', 'autre'];
+// ── Types (catalogue complet — le sous-ensemble affiché dépend du profil) ─────
 
 const _kTypeLabel = {
-  'rdv':       'RDV',
-  'mise_bas':  'Mise-bas',
-  'medication':'Médicament',
-  'visite':    'Visite',
-  'autre':     'Autre',
+  'rdv':        'RDV',
+  'mise_bas':   'Mise-bas',
+  'medication': 'Médicament',
+  'visite':     'Visite',
+  'formation':  'Formation',
+  'reunion':    'Réunion',
+  'absence':    'Absence',
+  'autre':      'Autre',
 };
 
 const _kTypeIcon = {
-  'rdv':       '🩺',
-  'mise_bas':  '🐣',
-  'medication':'💊',
-  'visite':    '👀',
-  'autre':     '📅',
+  'rdv':        '🩺',
+  'mise_bas':   '🐣',
+  'medication': '💊',
+  'visite':     '👀',
+  'formation':  '📚',
+  'reunion':    '🤝',
+  'absence':    '🏖️',
+  'autre':      '📅',
 };
 
 const _kTypeColor = {
-  'rdv':       Color(0xFF2196F3),
-  'mise_bas':  Color(0xFFE91E63),
-  'medication':Color(0xFFFF9800),
-  'visite':    Color(0xFF4CAF50),
-  'autre':     Color(0xFF9E9E9E),
+  'rdv':        Color(0xFF2196F3),
+  'mise_bas':   Color(0xFFE91E63),
+  'medication': Color(0xFFFF9800),
+  'visite':     Color(0xFF4CAF50),
+  'formation':  Color(0xFF7B1FA2),
+  'reunion':    Color(0xFF0288D1),
+  'absence':    Color(0xFF78909C),
+  'autre':      Color(0xFF9E9E9E),
 };
+
+/// Types disponibles selon le profil connecté.
+List<String> _typesForProfile() {
+  if (User_Info.isPro) {
+    return ['rdv', 'formation', 'reunion', 'absence', 'autre'];
+  }
+  if (User_Info.isElevage) {
+    return ['rdv', 'mise_bas', 'medication', 'visite', 'autre'];
+  }
+  // Particulier
+  return ['rdv', 'visite', 'autre'];
+}
 
 String _eventSubtitle(String time, String type, dynamic dureeMinutes) {
   final label = _kTypeLabel[type] ?? type;
@@ -921,7 +941,7 @@ class _AddEventSheetState extends State<_AddEventSheet> {
   final _supa   = Supabase.instance.client;
   final _titreCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
-  String _type = 'autre';
+  late String _type;
   late DateTime _dateDebut;
   bool _saving = false;
 
@@ -929,6 +949,8 @@ class _AddEventSheetState extends State<_AddEventSheet> {
   void initState() {
     super.initState();
     _dateDebut = widget.initialDate;
+    final types = _typesForProfile();
+    _type = types.contains('autre') ? 'autre' : types.last;
   }
 
   @override
@@ -1006,7 +1028,7 @@ class _AddEventSheetState extends State<_AddEventSheet> {
         // Type chips
         const Text('Type', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
         const SizedBox(height: 6),
-        Wrap(spacing: 6, runSpacing: 6, children: _kTypes.map((t) {
+        Wrap(spacing: 6, runSpacing: 6, children: _typesForProfile().map((t) {
           final sel = _type == t;
           final col = _kTypeColor[t]!;
           return GestureDetector(
