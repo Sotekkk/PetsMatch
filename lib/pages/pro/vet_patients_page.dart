@@ -671,17 +671,20 @@ class _RdvJourCard extends StatelessWidget {
               ),
             ]),
           ),
-          // Photo animal
-          if (photo.isNotEmpty)
-            ClipRRect(
-              child: CachedNetworkImage(imageUrl: photo, width: 52, height: 52, fit: BoxFit.cover,
-                  errorWidget: (_, __, ___) => Container(width: 52, height: 52,
-                      color: teal.withValues(alpha: 0.08),
-                      child: Icon(Icons.pets, color: teal, size: 24))),
-            )
-          else
-            Container(width: 52, height: 52, color: teal.withValues(alpha: 0.08),
-                child: Icon(Icons.pets, color: teal, size: 24)),
+          // Photo animal circulaire
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: CircleAvatar(
+              radius: 26,
+              backgroundColor: teal.withValues(alpha: 0.10),
+              backgroundImage: photo.isNotEmpty
+                  ? CachedNetworkImageProvider(photo) as ImageProvider
+                  : null,
+              child: photo.isEmpty
+                  ? Icon(Icons.pets, color: teal, size: 24)
+                  : null,
+            ),
+          ),
           // Infos
           Expanded(
             child: Padding(
