@@ -94,7 +94,8 @@ const MENU_PENSION = [
     items: [
       { href: '/pension/registre',  label: 'Registre pension',     icon: '📋' },
       { href: '/pension/demandes',  label: 'Demandes d\'accès',    icon: '🔑' },
-      { href: '/agenda',            label: 'Mon agenda RDV',       icon: '📅' },
+      { href: '/pension/rdv',       label: 'Gestion des RDV',      icon: '🗓️' },
+      { href: '/agenda',            label: 'Mon agenda',           icon: '📅' },
     ],
   },
   {
