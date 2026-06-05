@@ -153,6 +153,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         map.putIfAbsent(date, () => []).add(s);
       }
     }
+    // Tri croissant par heure_debut dans chaque jour
+    for (final list in map.values) {
+      list.sort((a, b) =>
+          (a['heure_debut'] as String).compareTo(b['heure_debut'] as String));
+    }
     return map;
   }
 
@@ -598,27 +603,29 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       ),
     ],
     const SizedBox(height: 20),
-    _sectionTitle('Durée estimée'),
+    _sectionTitle('Première visite ?'),
     const SizedBox(height: 10),
-    Row(children: [15, 30, 45, 60].map((d) {
-      final sel = _selectedVetDuration == d;
-      return GestureDetector(
-        onTap: () => setState(() => _selectedVetDuration = d),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          margin: const EdgeInsets.only(right: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-          decoration: BoxDecoration(
-            color: sel ? widget.categoryColor : Colors.white,
-            border: Border.all(color: sel ? widget.categoryColor : const Color(0xFFE4E7E2)),
-            borderRadius: BorderRadius.circular(10),
+    Row(children: [
+      for (final v in [(true, 'Première visite'), (false, 'Déjà patient·e')]) ...[
+        GestureDetector(
+          onTap: () => setState(() => _premiereVisite = v.$1),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: _premiereVisite == v.$1 ? widget.categoryColor : Colors.white,
+              border: Border.all(color: _premiereVisite == v.$1
+                  ? widget.categoryColor : const Color(0xFFE4E7E2)),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Text(v.$2, style: TextStyle(
+                fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                color: _premiereVisite == v.$1 ? Colors.white : const Color(0xFF1E2025))),
           ),
-          child: Text(d < 60 ? '$d min' : '1 h',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
-                  color: sel ? Colors.white : const Color(0xFF1E2025))),
         ),
-      );
-    }).toList()),
+        const SizedBox(width: 8),
+      ],
+    ]),
   ];
 
   // ── Standard motif ────────────────────────────────────────────────────────────

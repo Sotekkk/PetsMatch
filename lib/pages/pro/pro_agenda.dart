@@ -1032,19 +1032,26 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final supa = Supabase.instance.client;
       final rows = <Map<String, dynamic>>[];
 
-      for (DateTime target = _weekStart.add(const Duration(days: 7));
-           !target.isAfter(endDate);
+      // Utilise la date UTC pure pour éviter les décalages timezone
+      final weekStartUtc = DateTime.utc(_weekStart.year, _weekStart.month, _weekStart.day);
+      final endDateUtc = DateTime.utc(endDate.year, endDate.month, endDate.day);
+
+      for (DateTime target = weekStartUtc.add(const Duration(days: 7));
+           !target.isAfter(endDateUtc);
            target = target.add(const Duration(days: 7))) {
         for (final entry in weekSlots) {
           final parts = entry.key.split('_');
           if (parts.length < 2) continue;
-          final originalDate = DateTime.tryParse(parts[0]);
+          final dateParts = parts[0].split('-');
+          if (dateParts.length < 3) continue;
+          final origUtc = DateTime.utc(
+            int.parse(dateParts[0]), int.parse(dateParts[1]), int.parse(dateParts[2]));
           final hour = int.tryParse(parts[1]);
-          if (originalDate == null || hour == null) continue;
+          if (hour == null) continue;
 
-          final diff = originalDate.difference(_weekStart).inDays;
+          final diff = origUtc.difference(weekStartUtc).inDays;
           final targetDate = target.add(Duration(days: diff));
-          final dateStr = targetDate.toIso8601String().substring(0, 10);
+          final dateStr = '${targetDate.year}-${targetDate.month.toString().padLeft(2,'0')}-${targetDate.day.toString().padLeft(2,'0')}';
           final heureDebut = '${hour.toString().padLeft(2, '0')}:00:00';
           final heureFin = '${(hour + 1).toString().padLeft(2, '0')}:00:00';
 
@@ -1066,13 +1073,19 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         return;
       }
 
-      await supa.from('creneaux_pro').upsert(rows, onConflict: 'pro_uid,date,heure_debut');
+      // Dédoublonnage par (date, heure_debut) avant upsert
+      final seen = <String>{};
+      final deduped = rows.where((r) =>
+          seen.add('${r["date"]}_${r["heure_debut"]}')
+      ).toList();
+
+      await supa.from('creneaux_pro').upsert(deduped, onConflict: 'pro_uid,date,heure_debut');
 
       if (mounted) {
-        final nbSemaines = rows.length ~/ weekSlots.length;
+        final nbSemaines = deduped.length ~/ weekSlots.length;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
-            '${rows.length} créneau(x) ajoutés sur $nbSemaines semaine(s).',
+            '${deduped.length} créneau(x) ajoutés sur $nbSemaines semaine(s).',
             style: const TextStyle(fontFamily: 'Galey'),
           ),
           backgroundColor: const Color(0xFF6E9E57),
