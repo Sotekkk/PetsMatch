@@ -616,13 +616,14 @@ class _VetResultSheetState extends State<_VetResultSheet> {
 
     setState(() => _saving = true);
     try {
-      await Supabase.instance.client.from('vet_access_grants').insert({
-        'vet_id':    vetUid,
-        'owner_id':  ownerId,
-        'animal_id': animal['id']?.toString(),
-        'status':    'demande',
+      await Supabase.instance.client.from('vet_access_grants').upsert({
+        'vet_id':     vetUid,
+        'owner_id':   ownerId,
+        'animal_id':  animal['id']?.toString(),
+        'status':     'demande',
         'granted_at': DateTime.now().toUtc().toIso8601String(),
-      });
+        'revoked_at': null,
+      }, onConflict: 'vet_id,animal_id');
       await Supabase.instance.client.from('notifications').insert({
         'uid':   ownerId,
         'type':  'vet_access_demande',
