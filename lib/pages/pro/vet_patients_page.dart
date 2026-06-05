@@ -12,14 +12,23 @@ class VetPatientsPage extends StatefulWidget {
   State<VetPatientsPage> createState() => _VetPatientsPageState();
 }
 
-class _VetPatientsPageState extends State<VetPatientsPage> {
+class _VetPatientsPageState extends State<VetPatientsPage>
+    with SingleTickerProviderStateMixin {
   static const _teal = Color(0xFF26A69A);
   static const _bg = Color(0xFFF8F8F8);
 
+  late TabController _tabCtrl;
+
+  // Onglet Patients
   bool _loading = true;
   List<Map<String, dynamic>> _patients = [];
   String _search = '';
   String? _filterEspece;
+
+  // Onglet Agenda
+  bool _loadingAgenda = false;
+  DateTime _agendaDate = DateTime.now();
+  List<Map<String, dynamic>> _rdvsJour = []; // rdv + animal info
 
   static const _especes = ['chien','chat','cheval','lapin','oiseau','nac','ovin','caprin','porcin','ane','autre'];
   static const _especeEmoji = {'chien':'🐕','chat':'🐈','cheval':'🐴','lapin':'🐰',
@@ -28,7 +37,19 @@ class _VetPatientsPageState extends State<VetPatientsPage> {
   @override
   void initState() {
     super.initState();
+    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl.addListener(() {
+      if (_tabCtrl.index == 1 && _rdvsJour.isEmpty && !_loadingAgenda) {
+        _loadAgenda();
+      }
+    });
     _loadPatients();
+  }
+
+  @override
+  void dispose() {
+    _tabCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadPatients() async {
@@ -126,6 +147,61 @@ class _VetPatientsPageState extends State<VetPatientsPage> {
     _loadPatients();
   }
 
+  Future<void> _loadAgenda() async {
+    final vetUid = FirebaseAuth.instance.currentUser?.uid;
+    if (vetUid == null) return;
+    setState(() => _loadingAgenda = true);
+    try {
+      final dayStart = DateTime(_agendaDate.year, _agendaDate.month, _agendaDate.day).toUtc().toIso8601String();
+      final dayEnd   = DateTime(_agendaDate.year, _agendaDate.month, _agendaDate.day, 23, 59, 59).toUtc().toIso8601String();
+
+      final rdvs = await Supabase.instance.client
+          .from('rdv')
+          .select('id, date_heure, motif, statut, animal_id, client_uid, duree_minutes')
+          .eq('pro_uid', vetUid)
+          .gte('date_heure', dayStart)
+          .lte('date_heure', dayEnd)
+          .inFilter('statut', ['confirme', 'demande'])
+          .order('date_heure');
+
+      // Charger les infos animaux
+      final animalIds = (rdvs as List)
+          .map((r) => r['animal_id']?.toString())
+          .whereType<String>()
+          .toSet().toList();
+
+      Map<String, Map<String, dynamic>> animauxMap = {};
+      if (animalIds.isNotEmpty) {
+        final animals = await Supabase.instance.client
+            .from('animaux')
+            .select('id, nom, espece, race, photo_url, identification')
+            .inFilter('id', animalIds);
+        for (final a in animals as List) {
+          animauxMap[a['id']?.toString() ?? ''] = Map<String, dynamic>.from(a as Map);
+        }
+      }
+
+      final list = (rdvs as List).map((r) {
+        final m = Map<String, dynamic>.from(r as Map);
+        final animalId = r['animal_id']?.toString() ?? '';
+        m['animal'] = animauxMap[animalId];
+        return m;
+      }).toList();
+
+      if (mounted) setState(() { _rdvsJour = list; _loadingAgenda = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loadingAgenda = false);
+    }
+  }
+
+  void _changeAgendaDay(int delta) {
+    setState(() {
+      _agendaDate = _agendaDate.add(Duration(days: delta));
+      _rdvsJour = [];
+    });
+    _loadAgenda();
+  }
+
   Future<void> _openPatient(Map<String, dynamic> animal) async {
     if (animal['grant_status'] != 'active') {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -173,16 +249,42 @@ class _VetPatientsPageState extends State<VetPatientsPage> {
             },
           ),
         ],
+        bottom: TabBar(
+          controller: _tabCtrl,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white60,
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
+          tabs: const [Tab(text: 'Patients'), Tab(text: 'Agenda')],
+        ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _teal))
-          : RefreshIndicator(
+      body: TabBarView(
+        controller: _tabCtrl,
+        children: [
+          _buildPatientsTab(),
+          _buildAgendaTab(),
+        ],
+      ),
+    );
+  }
+
+  // ── Onglet patients ────────────────────────────────────────────────────────
+
+  Widget _buildPatientsTab() {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
+    return RefreshIndicator(
               onRefresh: _loadPatients,
               color: _teal,
               child: CustomScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
-                  SliverToBoxAdapter(
+                slivers: [_buildPatientsBody()],
+              ),
+            );
+  }
+
+  Widget _buildPatientsBody() {
+    return SliverMainAxisGroup(slivers: [
+      SliverToBoxAdapter(
                     child: Column(children: [
                       Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -229,7 +331,7 @@ class _VetPatientsPageState extends State<VetPatientsPage> {
                     ),
                     const SizedBox(height: 8),
                   ])),
-                  if (_filtered.isEmpty)
+      if (_filtered.isEmpty)
                     SliverFillRemaining(
                       hasScrollBody: false,
                       child: Center(
@@ -283,11 +385,99 @@ class _VetPatientsPageState extends State<VetPatientsPage> {
                         ),
                       ),
                     ),
-                ],
-              ),
-            ),
-    );
+    ]);
   }
+
+  // ── Onglet agenda ──────────────────────────────────────────────────────────
+
+  Widget _buildAgendaTab() {
+    return Column(children: [
+      // Navigation jour
+      Container(
+        color: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left_rounded),
+            onPressed: () => _changeAgendaDay(-1),
+          ),
+          Expanded(child: GestureDetector(
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: _agendaDate,
+                firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                lastDate: DateTime.now().add(const Duration(days: 365)),
+                locale: const Locale('fr'),
+              );
+              if (picked != null && mounted) {
+                setState(() { _agendaDate = picked; _rdvsJour = []; });
+                _loadAgenda();
+              }
+            },
+            child: Center(child: Text(
+              _fmtAgendaDate(_agendaDate),
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                  fontSize: 16, color: Color(0xFF1F2A2E)),
+            )),
+          )),
+          IconButton(
+            icon: const Icon(Icons.chevron_right_rounded),
+            onPressed: () => _changeAgendaDay(1),
+          ),
+          // Retour à aujourd'hui
+          if (!_isToday(_agendaDate))
+            TextButton(
+              onPressed: () {
+                setState(() { _agendaDate = DateTime.now(); _rdvsJour = []; });
+                _loadAgenda();
+              },
+              child: const Text("Auj.", style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  color: _teal, fontWeight: FontWeight.w600)),
+            ),
+        ]),
+      ),
+      const Divider(height: 1, color: Color(0xFFF0F0F0)),
+      Expanded(
+        child: _loadingAgenda
+            ? const Center(child: CircularProgressIndicator(color: _teal))
+            : _rdvsJour.isEmpty
+                ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.event_available_outlined, size: 64, color: Colors.grey.shade200),
+                    const SizedBox(height: 12),
+                    Text('Aucun RDV ce jour', style: TextStyle(
+                        fontFamily: 'Galey', fontSize: 15,
+                        color: Colors.grey.shade400, fontWeight: FontWeight.w600)),
+                  ]))
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                    itemCount: _rdvsJour.length,
+                    itemBuilder: (_, i) => _RdvJourCard(
+                      rdv: _rdvsJour[i],
+                      teal: _teal,
+                      onTap: () {
+                        final animal = _rdvsJour[i]['animal'] as Map<String, dynamic>?;
+                        if (animal != null) _openPatient({...animal, 'grant_status': 'active'});
+                      },
+                    ),
+                  ),
+      ),
+    ]);
+  }
+
+  String _fmtAgendaDate(DateTime d) {
+    const jours = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+    const mois = ['janvier','février','mars','avril','mai','juin',
+                  'juillet','août','septembre','octobre','novembre','décembre'];
+    if (_isToday(d)) return 'Aujourd\'hui ${d.day} ${mois[d.month - 1]}';
+    return '${jours[d.weekday - 1]} ${d.day} ${mois[d.month - 1]}';
+  }
+
+  bool _isToday(DateTime d) {
+    final now = DateTime.now();
+    return d.year == now.year && d.month == now.month && d.day == now.day;
+  }
+
 }
 
 // ─── Carte patient ────────────────────────────────────────────────────────────
@@ -413,6 +603,109 @@ class _PatientCard extends StatelessWidget {
           ),
           Icon(isPending ? Icons.schedule_rounded : Icons.chevron_right_rounded,
               color: isPending ? Colors.amber.shade400 : Colors.grey),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─── Carte RDV du jour ────────────────────────────────────────────────────────
+
+class _RdvJourCard extends StatelessWidget {
+  final Map<String, dynamic> rdv;
+  final Color teal;
+  final VoidCallback onTap;
+
+  const _RdvJourCard({required this.rdv, required this.teal, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final animal = rdv['animal'] as Map<String, dynamic>?;
+    final nom    = animal?['nom']?.toString() ?? 'Animal';
+    final espece = animal?['espece']?.toString() ?? '';
+    final race   = animal?['race']?.toString() ?? '';
+    final photo  = animal?['photo_url']?.toString() ?? '';
+    final puce   = animal?['identification']?.toString() ?? '';
+    final motif  = rdv['motif']?.toString() ?? '';
+    final statut = rdv['statut']?.toString() ?? '';
+
+    DateTime? dh;
+    try { dh = DateTime.parse(rdv['date_heure'].toString()).toLocal(); } catch (_) {}
+    final heure = dh != null
+        ? '${dh.hour.toString().padLeft(2,'0')}:${dh.minute.toString().padLeft(2,'0')}'
+        : '—';
+
+    final isConfirme = statut == 'confirme';
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+        ),
+        child: Row(children: [
+          // Heure
+          Container(
+            width: 56,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            decoration: BoxDecoration(
+              color: teal.withValues(alpha: 0.10),
+              borderRadius: const BorderRadius.horizontal(left: Radius.circular(14)),
+            ),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Text(heure, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800,
+                  fontSize: 14, color: teal)),
+              const SizedBox(height: 2),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: isConfirme ? Colors.green.shade100 : Colors.amber.shade100,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(isConfirme ? 'Conf.' : 'Dem.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 8, fontWeight: FontWeight.w700,
+                        color: isConfirme ? Colors.green.shade800 : Colors.amber.shade800)),
+              ),
+            ]),
+          ),
+          // Photo animal
+          if (photo.isNotEmpty)
+            ClipRRect(
+              child: CachedNetworkImage(imageUrl: photo, width: 52, height: 52, fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => Container(width: 52, height: 52,
+                      color: teal.withValues(alpha: 0.08),
+                      child: Icon(Icons.pets, color: teal, size: 24))),
+            )
+          else
+            Container(width: 52, height: 52, color: teal.withValues(alpha: 0.08),
+                child: Icon(Icons.pets, color: teal, size: 24)),
+          // Infos
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(nom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 14, color: Color(0xFF1F2A2E))),
+                if (espece.isNotEmpty || race.isNotEmpty)
+                  Text([espece, race].where((s) => s.isNotEmpty).join(' · '),
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                          color: teal, fontWeight: FontWeight.w600)),
+                if (puce.isNotEmpty)
+                  Text('🔖 $puce', style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                      color: Colors.grey.shade500)),
+                if (motif.isNotEmpty)
+                  Text('Motif : $motif', style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                      color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+              ]),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(right: 12),
+            child: Icon(Icons.chevron_right_rounded, color: Colors.grey),
+          ),
         ]),
       ),
     );

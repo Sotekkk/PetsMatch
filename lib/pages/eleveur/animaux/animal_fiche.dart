@@ -20,6 +20,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
@@ -1076,17 +1077,26 @@ class _IdentiteTab extends StatelessWidget {
                   ),
                 ),
               ])),
+              if (g['status'] == 'active')
+                IconButton(
+                  icon: const Icon(Icons.calendar_month_outlined, color: Color(0xFF26A69A), size: 22),
+                  tooltip: 'Prendre RDV',
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => RdvBookingPage(
+                      proUid: g['vet_id']?.toString() ?? '',
+                      proName: 'Dr. ${g['vet_nom'] ?? 'Vétérinaire'}',
+                      categoryColor: const Color(0xFF26A69A),
+                      isVet: true,
+                      preselectedAnimalId: s.widget.animalId,
+                    ),
+                  )),
+                ),
               if (g['status'] == 'demande')
                 IconButton(
                   icon: const Icon(Icons.check_circle_outline, color: Color(0xFF26A69A), size: 22),
                   tooltip: 'Approuver',
                   onPressed: () => s._approveVetAcces(g['id']?.toString() ?? ''),
                 ),
-              IconButton(
-                icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 22),
-                tooltip: g['status'] == 'demande' ? 'Refuser' : 'Révoquer',
-                onPressed: () => s._revokeVetAcces(g['id']?.toString() ?? ''),
-              ),
             ]),
           ),
       ]),
@@ -3155,7 +3165,8 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
     try {
       final row = await Supabase.instance.client
           .from('users')
-          .select('uid, firstname, lastname, email, phone_number, rue, ville, code_postal')
+          .select('uid, firstname, lastname, email, phone_number, rue, ville, code_postal, '
+                  'isElevage, isPro, numeroElevage, rueElevage, villeElevage, codePostalElevage')
           .eq('uid', widget.ownerUid!)
           .maybeSingle();
       if (mounted) setState(() { _owner = row != null ? Map<String, dynamic>.from(row) : null; _loading = false; });
@@ -3214,12 +3225,21 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
     }
 
     final o = _owner!;
+    final isElevageOrPro = (o['isElevage'] == true) || (o['isPro'] == true);
     final nom = '${o['firstname'] ?? ''} ${o['lastname'] ?? ''}'.trim();
     final email = o['email']?.toString() ?? '';
-    final tel = o['phone_number']?.toString() ?? '';
-    final rue = o['rue']?.toString() ?? '';
-    final ville = o['ville']?.toString() ?? '';
-    final cp = o['code_postal']?.toString() ?? '';
+    final tel = isElevageOrPro
+        ? (o['numeroElevage']?.toString() ?? o['phone_number']?.toString() ?? '')
+        : (o['phone_number']?.toString() ?? '');
+    final rue = isElevageOrPro
+        ? (o['rueElevage']?.toString() ?? o['rue']?.toString() ?? '')
+        : (o['rue']?.toString() ?? '');
+    final ville = isElevageOrPro
+        ? (o['villeElevage']?.toString() ?? o['ville']?.toString() ?? '')
+        : (o['ville']?.toString() ?? '');
+    final cp = isElevageOrPro
+        ? (o['codePostalElevage']?.toString() ?? o['code_postal']?.toString() ?? '')
+        : (o['code_postal']?.toString() ?? '');
     final adresse = [if (rue.isNotEmpty) rue, if (cp.isNotEmpty || ville.isNotEmpty) '$cp $ville'.trim()].join(', ');
 
     return SingleChildScrollView(

@@ -9,6 +9,7 @@ class RdvBookingPage extends StatefulWidget {
   final Color categoryColor;
   final bool isPension;
   final bool isVet;
+  final String? preselectedAnimalId;
 
   const RdvBookingPage({
     super.key,
@@ -17,6 +18,7 @@ class RdvBookingPage extends StatefulWidget {
     required this.categoryColor,
     this.isPension = false,
     this.isVet = false,
+    this.preselectedAnimalId,
   });
 
   @override
@@ -96,6 +98,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           .order('nom');
       if (mounted) {
         _animaux = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        // Pré-sélection animal si fourni
+        if (widget.preselectedAnimalId != null) {
+          _selectedAnimal = _animaux.where(
+              (a) => a['id']?.toString() == widget.preselectedAnimalId).firstOrNull;
+        }
       }
     } catch (_) {}
   }
