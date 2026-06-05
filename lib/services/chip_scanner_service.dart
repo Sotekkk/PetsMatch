@@ -573,33 +573,93 @@ class _VetResultSheet extends StatefulWidget {
 class _VetResultSheetState extends State<_VetResultSheet> {
   static const _teal = Color(0xFF26A69A);
   bool _saving = false;
+  bool _loadingStatus = true;
+  String? _existingStatus; // null = pas de grant, 'demande', 'active'
 
-  Future<void> _accederCarnet() async {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.animal != null) _loadGrant();
+  }
+
+  Future<void> _loadGrant() async {
+    final vetUid = FirebaseAuth.instance.currentUser?.uid;
+    final animalId = widget.animal?['id']?.toString();
+    if (vetUid == null || animalId == null) {
+      if (mounted) setState(() => _loadingStatus = false);
+      return;
+    }
+    try {
+      final row = await Supabase.instance.client
+          .from('vet_access_grants')
+          .select('status')
+          .eq('vet_id', vetUid)
+          .eq('animal_id', animalId)
+          .neq('status', 'revoked')
+          .limit(1)
+          .maybeSingle();
+      if (mounted) setState(() {
+        _existingStatus = row?['status'] as String?;
+        _loadingStatus = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingStatus = false);
+    }
+  }
+
+  Future<void> _demanderAcces() async {
     final vetUid = FirebaseAuth.instance.currentUser?.uid;
     final animal = widget.animal;
     if (vetUid == null || animal == null) return;
-
     final ownerId = (animal['uid_eleveur'] ?? animal['uid_proprietaire'])?.toString();
     if (ownerId == null) return;
 
     setState(() => _saving = true);
     try {
-      await Supabase.instance.client.from('vet_access_grants').upsert({
+      await Supabase.instance.client.from('vet_access_grants').insert({
         'vet_id':    vetUid,
         'owner_id':  ownerId,
         'animal_id': animal['id']?.toString(),
-        'status':    'active',
+        'status':    'demande',
         'granted_at': DateTime.now().toUtc().toIso8601String(),
-      }, onConflict: 'vet_id,animal_id');
-    } catch (_) {}
+      });
+      await Supabase.instance.client.from('notifications').insert({
+        'uid':   ownerId,
+        'type':  'vet_access_demande',
+        'title': 'Demande d\'accès vétérinaire',
+        'body':  'Un vétérinaire demande l\'accès au carnet de santé de ${animal['nom'] ?? 'votre animal'}.',
+        'data':  <String, dynamic>{'animal_id': animal['id']?.toString(), 'vet_id': vetUid},
+        'read':  false,
+      });
+      if (mounted) {
+        setState(() { _existingStatus = 'demande'; _saving = false; });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Demande envoyée au propriétaire',
+              style: TextStyle(fontFamily: 'Galey')),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
 
-    if (!mounted) return;
+  void _ouvrirFiche() {
+    final animal = widget.animal;
+    if (animal == null) return;
     Navigator.pop(context);
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => AnimalFichePage(
         animalId: animal['id']?.toString(),
         initialData: animal,
         readOnly: true,
+        vetMode: true,
       ),
     ));
   }
@@ -688,49 +748,88 @@ class _VetResultSheetState extends State<_VetResultSheet> {
             ),
             const SizedBox(height: 16),
 
-            // Accéder au carnet
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _saving ? null : _accederCarnet,
-                icon: _saving
-                    ? const SizedBox(width: 16, height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.medical_information_outlined),
-                label: Text(_saving ? 'Chargement…' : 'Accéder au carnet de santé',
-                    style: const TextStyle(fontFamily: 'Galey',
-                        fontWeight: FontWeight.w600, fontSize: 15)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _teal,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  elevation: 0,
+            // Boutons selon statut
+            if (_loadingStatus)
+              const Center(child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: CircularProgressIndicator(color: _teal, strokeWidth: 2),
+              ))
+            else if (_existingStatus == 'active') ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _ouvrirFiche,
+                  icon: const Icon(Icons.medical_information_outlined),
+                  label: const Text('Consulter le carnet de santé',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _teal, foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14), elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
                 ),
               ),
-            ),
+            ] else if (_existingStatus == 'demande') ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.amber.shade200),
+                ),
+                child: Row(children: [
+                  Icon(Icons.schedule_rounded, color: Colors.amber.shade700, size: 20),
+                  const SizedBox(width: 10),
+                  const Expanded(child: Text('Demande en attente d\'approbation par le propriétaire.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4))),
+                ]),
+              ),
+            ] else ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _saving ? null : _demanderAcces,
+                  icon: _saving
+                      ? const SizedBox(width: 16, height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.send_outlined),
+                  label: Text(_saving ? 'Envoi…' : 'Demander l\'accès au carnet',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _teal, foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14), elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text('Le propriétaire devra approuver votre demande.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+            ],
             const SizedBox(height: 10),
 
-            // Partager la fiche
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.pop(context);
-                  showVetShareSheet(context, animal['id']?.toString() ?? '');
-                },
-                icon: const Icon(Icons.share_outlined, size: 18),
-                label: const Text('Partager la fiche',
-                    style: TextStyle(fontFamily: 'Galey',
-                        fontWeight: FontWeight.w600, fontSize: 14)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF0C5C6C),
-                  side: const BorderSide(color: Color(0xFF0C5C6C)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            // Partager la fiche (seulement si accès actif)
+            if (_existingStatus == 'active')
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    showVetShareSheet(context, animal['id']?.toString() ?? '');
+                  },
+                  icon: const Icon(Icons.share_outlined, size: 18),
+                  label: const Text('Partager la fiche',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF0C5C6C),
+                    side: const BorderSide(color: Color(0xFF0C5C6C)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
                 ),
               ),
-            ),
           ] else ...[
             Text('Aucun animal enregistré sur PetsMatch avec ce numéro de puce.',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 14,

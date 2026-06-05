@@ -38,6 +38,7 @@ class AnimalFichePage extends StatefulWidget {
   final Map<String, dynamic>? initialData;
   final String? preselectedEspece;
   final bool readOnly;
+  final bool vetMode;
   final String? eleveurUidOverride;
 
   const AnimalFichePage({
@@ -46,6 +47,7 @@ class AnimalFichePage extends StatefulWidget {
     this.initialData,
     this.preselectedEspece,
     this.readOnly = false,
+    this.vetMode = false,
     this.eleveurUidOverride,
   });
 
@@ -64,6 +66,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
   // Pension access
   List<Map<String, dynamic>> _pensionAcces = [];
+  // Vet access (visible au propriétaire)
+  List<Map<String, dynamic>> _vetAcces = [];
 
   // ── Champs identité
   final _nomCtrl    = TextEditingController();
@@ -132,7 +136,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 4, vsync: this);
+    _tabs = TabController(length: widget.vetMode ? 3 : 4, vsync: this);
     _editing = widget.animalId == null; // new animal → edit mode directly
     if (widget.preselectedEspece != null) _espece = widget.preselectedEspece!;
     _fillFromData(widget.initialData); // pre-fill instantly from cached data
@@ -141,8 +145,58 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _loadEleveurProfile();
     if (widget.animalId != null) {
       _loadActiveAlerte();
-      _refreshFromSupabase(); // then silently refresh with latest Supabase data
+      _refreshFromSupabase();
+      if (!widget.vetMode) _loadVetAcces();
     }
+  }
+
+  Future<void> _loadVetAcces() async {
+    if (widget.animalId == null) return;
+    try {
+      final grants = await _supa
+          .from('vet_access_grants')
+          .select('id, vet_id, status, granted_at')
+          .eq('animal_id', widget.animalId!)
+          .neq('status', 'revoked');
+      final vetIds = (grants as List).map((g) => g['vet_id']?.toString()).whereType<String>().toList();
+      final vetNames = <String, String>{};
+      if (vetIds.isNotEmpty) {
+        final users = await _supa.from('users')
+            .select('uid, firstname, lastname')
+            .inFilter('uid', vetIds);
+        for (final u in users as List) {
+          final uid = u['uid']?.toString() ?? '';
+          final nom = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+          vetNames[uid] = nom.isNotEmpty ? nom : 'Vétérinaire';
+        }
+      }
+      final list = (grants as List).map((g) {
+        final m = Map<String, dynamic>.from(g as Map);
+        m['vet_nom'] = vetNames[g['vet_id']?.toString()] ?? 'Vétérinaire';
+        return m;
+      }).toList();
+      if (mounted) setState(() => _vetAcces = list);
+    } catch (_) {}
+  }
+
+  Future<void> _approveVetAcces(String grantId) async {
+    try {
+      await _supa.from('vet_access_grants').update({
+        'status': 'active',
+        'granted_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', grantId);
+      _loadVetAcces();
+    } catch (_) {}
+  }
+
+  Future<void> _revokeVetAcces(String grantId) async {
+    try {
+      await _supa.from('vet_access_grants').update({
+        'status': 'revoked',
+        'revoked_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', grantId);
+      _loadVetAcces();
+    } catch (_) {}
   }
 
   Future<void> _refreshFromSupabase() async {
@@ -794,17 +848,25 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white60,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
-          tabs: const [Tab(text: 'Identité'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation')],
+          tabs: widget.vetMode
+              ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro')]
+              : const [Tab(text: 'Identité'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation')],
         ),
       ),
       body: TabBarView(
         controller: _tabs,
-        children: [
-          _IdentiteTab(this),
-          _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
-          _CarnetSanteTab(animalId: widget.animalId),
-          _AlimentationTab(this),
-        ],
+        children: widget.vetMode
+            ? [
+                _IdentiteTab(this),
+                _CarnetSanteTab(animalId: widget.animalId),
+                _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
+              ]
+            : [
+                _IdentiteTab(this),
+                _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
+                _CarnetSanteTab(animalId: widget.animalId),
+                _AlimentationTab(this),
+              ],
       ),
     );
   }
@@ -895,17 +957,23 @@ class _IdentiteTab extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          _card([_pedigreeSection(context)]),
-          const SizedBox(height: 12),
-          _registreSection(context),
-          const SizedBox(height: 12),
-          _documentsSection(context),
-          const SizedBox(height: 12),
-          _alerteSection(context),
-          if (s._pensionAcces.isNotEmpty) ...[
+          if (!s.widget.vetMode) ...[
+            const SizedBox(height: 12),
+            _card([_pedigreeSection(context)]),
+            const SizedBox(height: 12),
+            _registreSection(context),
+            const SizedBox(height: 12),
+            _documentsSection(context),
+            const SizedBox(height: 12),
+            _alerteSection(context),
+          ],
+          if (s._pensionAcces.isNotEmpty && !s.widget.vetMode) ...[
             const SizedBox(height: 12),
             _pensionAccesSection(context),
+          ],
+          if (s._vetAcces.isNotEmpty && !s.widget.vetMode) ...[
+            const SizedBox(height: 12),
+            _vetAccesSection(context),
           ],
           const SizedBox(height: 80),
         ],
@@ -956,6 +1024,62 @@ class _IdentiteTab extends StatelessWidget {
                 child: const Text('Révoquer',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                         fontWeight: FontWeight.w600)),
+              ),
+            ]),
+          ),
+      ]),
+    );
+  }
+
+  Widget _vetAccesSection(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF26A69A).withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF26A69A).withValues(alpha: 0.2)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Row(children: [
+          Icon(Icons.medical_services_outlined, size: 16, color: Color(0xFF26A69A)),
+          SizedBox(width: 6),
+          Text('Accès vétérinaires',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  fontWeight: FontWeight.w700, color: Color(0xFF26A69A))),
+        ]),
+        const SizedBox(height: 10),
+        for (final g in s._vetAcces)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Dr. ${g['vet_nom'] ?? 'Vétérinaire'}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
+                        fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
+                Container(
+                  margin: const EdgeInsets.only(top: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: g['status'] == 'demande' ? Colors.amber.shade100 : Colors.green.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    g['status'] == 'demande' ? 'En attente' : 'Accès accordé',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600,
+                        color: g['status'] == 'demande' ? Colors.amber.shade800 : Colors.green.shade800),
+                  ),
+                ),
+              ])),
+              if (g['status'] == 'demande')
+                IconButton(
+                  icon: const Icon(Icons.check_circle_outline, color: Color(0xFF26A69A), size: 22),
+                  tooltip: 'Approuver',
+                  onPressed: () => s._approveVetAcces(g['id']?.toString() ?? ''),
+                ),
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 22),
+                tooltip: g['status'] == 'demande' ? 'Refuser' : 'Révoquer',
+                onPressed: () => s._revokeVetAcces(g['id']?.toString() ?? ''),
               ),
             ]),
           ),

@@ -19,6 +19,11 @@ class _VetPatientsPageState extends State<VetPatientsPage> {
   bool _loading = true;
   List<Map<String, dynamic>> _patients = [];
   String _search = '';
+  String? _filterEspece;
+
+  static const _especes = ['chien','chat','cheval','lapin','oiseau','nac','ovin','caprin','porcin','ane','autre'];
+  static const _especeEmoji = {'chien':'🐕','chat':'🐈','cheval':'🐴','lapin':'🐰',
+      'oiseau':'🦜','nac':'🦎','ovin':'🐑','caprin':'🐐','porcin':'🐷','ane':'🐴','autre':'🐾'};
 
   @override
   void initState() {
@@ -32,9 +37,9 @@ class _VetPatientsPageState extends State<VetPatientsPage> {
     try {
       final grants = await Supabase.instance.client
           .from('vet_access_grants')
-          .select('animal_id, granted_at')
+          .select('id, animal_id, granted_at, status')
           .eq('vet_id', vetUid)
-          .eq('status', 'active')
+          .neq('status', 'revoked')
           .order('granted_at', ascending: false);
 
       final animalIds = (grants as List)
@@ -52,14 +57,21 @@ class _VetPatientsPageState extends State<VetPatientsPage> {
           .select('id, nom, espece, race, photo_url, date_naissance, identification')
           .inFilter('id', animalIds);
 
-      final grantsMap = <String, String>{
+      final grantsMap = <String, Map<String, String>>{
         for (final g in (grants as List))
-          if (g['animal_id'] != null) g['animal_id'].toString(): (g['granted_at'] ?? '').toString()
+          if (g['animal_id'] != null) g['animal_id'].toString(): {
+            'granted_at': (g['granted_at'] ?? '').toString(),
+            'status': (g['status'] ?? 'demande').toString(),
+            'grant_id': (g['id'] ?? '').toString(),
+          }
       };
 
       final list = (animals as List).map((a) {
         final m = Map<String, dynamic>.from(a as Map);
-        m['granted_at'] = grantsMap[a['id']?.toString()] ?? '';
+        final info = grantsMap[a['id']?.toString()] ?? {};
+        m['granted_at'] = info['granted_at'] ?? '';
+        m['grant_status'] = info['status'] ?? 'demande';
+        m['grant_id'] = info['grant_id'] ?? '';
         return m;
       }).toList();
 
@@ -72,9 +84,10 @@ class _VetPatientsPageState extends State<VetPatientsPage> {
   }
 
   List<Map<String, dynamic>> get _filtered {
-    if (_search.trim().isEmpty) return _patients;
-    final q = _search.toLowerCase();
     return _patients.where((p) {
+      if (_filterEspece != null && p['espece']?.toString() != _filterEspece) return false;
+      if (_search.trim().isEmpty) return true;
+      final q = _search.toLowerCase();
       return (p['nom'] ?? '').toString().toLowerCase().contains(q)
           || (p['espece'] ?? '').toString().toLowerCase().contains(q)
           || (p['race'] ?? '').toString().toLowerCase().contains(q)
@@ -82,12 +95,52 @@ class _VetPatientsPageState extends State<VetPatientsPage> {
     }).toList();
   }
 
+  Future<void> _revoquerPatient(Map<String, dynamic> patient) async {
+    final grantId = patient['grant_id']?.toString() ?? '';
+    if (grantId.isEmpty) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Retirer ce patient ?',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        content: Text('${patient['nom'] ?? 'Cet animal'} sera retiré de votre liste de patients.',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Retirer', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    await Supabase.instance.client.from('vet_access_grants')
+        .update({'status': 'revoked', 'revoked_at': DateTime.now().toUtc().toIso8601String()})
+        .eq('id', grantId);
+    _loadPatients();
+  }
+
   Future<void> _openPatient(Map<String, dynamic> animal) async {
+    if (animal['grant_status'] != 'active') {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Accès en attente d\'approbation par le propriétaire',
+            style: TextStyle(fontFamily: 'Galey')),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
     await Navigator.push(context, MaterialPageRoute(
       builder: (_) => AnimalFichePage(
         animalId: animal['id']?.toString(),
         initialData: animal,
         readOnly: true,
+        vetMode: true,
       ),
     ));
   }
@@ -130,7 +183,8 @@ class _VetPatientsPageState extends State<VetPatientsPage> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 slivers: [
                   SliverToBoxAdapter(
-                    child: Padding(
+                    child: Column(children: [
+                      Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: TextField(
                         onChanged: (v) => setState(() => _search = v),
@@ -154,7 +208,27 @@ class _VetPatientsPageState extends State<VetPatientsPage> {
                         ),
                       ),
                     ),
-                  ),
+                    // Filtres espèce
+                    SizedBox(
+                      height: 40,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        children: [
+                          _EspeceChip(label: 'Tous', selected: _filterEspece == null,
+                              color: _teal, onTap: () => setState(() => _filterEspece = null)),
+                          ..._especes.where((e) => _patients.any((p) => p['espece'] == e)).map((e) =>
+                            _EspeceChip(
+                              label: '${_especeEmoji[e] ?? ''} ${e[0].toUpperCase()}${e.substring(1)}',
+                              selected: _filterEspece == e,
+                              color: _teal,
+                              onTap: () => setState(() => _filterEspece = e),
+                            )),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ])),
                   if (_filtered.isEmpty)
                     SliverFillRemaining(
                       hasScrollBody: false,
@@ -203,6 +277,7 @@ class _VetPatientsPageState extends State<VetPatientsPage> {
                             animal: _filtered[i],
                             teal: _teal,
                             onTap: () => _openPatient(_filtered[i]),
+                            onLongPress: () => _revoquerPatient(_filtered[i]),
                           ),
                           childCount: _filtered.length,
                         ),
@@ -217,12 +292,46 @@ class _VetPatientsPageState extends State<VetPatientsPage> {
 
 // ─── Carte patient ────────────────────────────────────────────────────────────
 
+// ─── Chip filtre espèce ───────────────────────────────────────────────────────
+
+class _EspeceChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _EspeceChip({required this.label, required this.selected,
+      required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      margin: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color: selected ? color : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: selected ? color : const Color(0xFFE4E7E2)),
+      ),
+      child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: selected ? Colors.white : const Color(0xFF1F2A2E))),
+    ),
+  );
+}
+
+// ─── Carte patient ────────────────────────────────────────────────────────────
+
 class _PatientCard extends StatelessWidget {
   final Map<String, dynamic> animal;
   final Color teal;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
-  const _PatientCard({required this.animal, required this.teal, required this.onTap});
+  const _PatientCard({required this.animal, required this.teal,
+      required this.onTap, required this.onLongPress});
 
   @override
   Widget build(BuildContext context) {
@@ -244,8 +353,11 @@ class _PatientCard extends StatelessWidget {
       }
     }
 
+    final isPending = animal['grant_status']?.toString() == 'demande';
+
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(14),
@@ -285,9 +397,22 @@ class _PatientCard extends StatelessWidget {
                 Text(
                   [if (age.isNotEmpty) age, if (puce.isNotEmpty) '🔖 $puce'].join('  '),
                   style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+              if (isPending)
+                Container(
+                  margin: const EdgeInsets.only(top: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text('En attente d\'approbation',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                        fontWeight: FontWeight.w600, color: Colors.amber.shade800)),
+                ),
             ]),
           ),
-          const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+          Icon(isPending ? Icons.schedule_rounded : Icons.chevron_right_rounded,
+              color: isPending ? Colors.amber.shade400 : Colors.grey),
         ]),
       ),
     );
