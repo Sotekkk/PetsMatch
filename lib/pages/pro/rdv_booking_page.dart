@@ -32,20 +32,15 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   List<Map<String, dynamic>> _animaux = [];
   Map<String, dynamic>? _selectedAnimal;
   final _notesCtrl = TextEditingController();
-
-  // Non-pension
-  DateTime _selectedDate = DateTime.now().add(const Duration(days: 1));
-  int _selectedHour = 10;
-  int _selectedMinute = 0;
   final _motifCtrl = TextEditingController();
-  List<Map<String, dynamic>> _proRdvs = [];
-  List<Map<String, dynamic>> _proCreneauxBloques = [];
 
-  // Pension-specific
+  // Créneaux (tous les pros)
   List<Map<String, dynamic>> _availableSlots = [];
   List<Map<String, dynamic>> _existingRdvs = [];
-  String? _selectedDateKey;    // 'YYYY-MM-DD'
+  String? _selectedDateKey;
   Map<String, dynamic>? _selectedSlot;
+
+  // Pension-specific
   String? _selectedMotif;
   bool? _premiereVisite;
 
@@ -84,7 +79,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   Future<void> _loadAll() async {
     await Future.wait([
       _loadAnimaux(),
-      if (widget.isPension) _loadPensionData() else _loadProRdvs(),
+      _loadAvailableSlots(),
     ]);
     if (mounted) setState(() => _loadingData = false);
   }
@@ -106,9 +101,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     } catch (_) {}
   }
 
-  // ── Pension data ──────────────────────────────────────────────────────────────
+  // ── Créneaux disponibles (tous les pros) ─────────────────────────────────────
 
-  Future<void> _loadPensionData() async {
+  Future<void> _loadAvailableSlots() async {
     try {
       final today = DateTime.now().toIso8601String().substring(0, 10);
       final results = await Future.wait([
@@ -163,51 +158,6 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   List<String> get _availableDates => _slotsByDate.keys.toList()..sort();
 
-  // ── Non-pension: busy check ───────────────────────────────────────────────────
-
-  Future<void> _loadProRdvs() async {
-    try {
-      final results = await Future.wait([
-        Supabase.instance.client
-            .from('rdv')
-            .select('date_heure, duree_minutes, statut')
-            .eq('pro_uid', widget.proUid)
-            .inFilter('statut', ['confirme', 'demande'])
-            .gte('date_heure', DateTime.now().toIso8601String()),
-        Supabase.instance.client
-            .from('creneaux_pro')
-            .select('date, heure_debut, heure_fin')
-            .eq('pro_uid', widget.proUid)
-            .eq('statut', 'bloque')
-            .gte('date', DateTime.now().toIso8601String().substring(0, 10)),
-      ]);
-      if (mounted) {
-        _proRdvs = (results[0] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        _proCreneauxBloques = (results[1] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      }
-    } catch (_) {}
-  }
-
-  bool _isBusy(int h, int m) {
-    final selDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
-    final dateStr = _selectedDate.toIso8601String().substring(0, 10);
-    for (final c in _proCreneauxBloques) {
-      if (c['date'] != dateStr) continue;
-      final startH = int.parse((c['heure_debut'] as String).split(':')[0]);
-      final endH   = int.parse((c['heure_fin']   as String).split(':')[0]);
-      if (h >= startH && h < endH) return true;
-    }
-    for (final r in _proRdvs) {
-      final dh = DateTime.tryParse(r['date_heure'] as String? ?? '')?.toLocal();
-      if (dh == null) continue;
-      if (dh.year != selDay.year || dh.month != selDay.month || dh.day != selDay.day) continue;
-      final dur = (r['duree_minutes'] as num?)?.toInt() ?? 30;
-      final rdvStart = dh.hour * 60 + dh.minute;
-      final proposed = h * 60 + m;
-      if (proposed >= rdvStart && proposed < rdvStart + dur) return true;
-    }
-    return false;
-  }
 
   // ── Submit ────────────────────────────────────────────────────────────────────
 
@@ -215,10 +165,13 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
+    // Validation créneau (tous les pros)
+    if (_selectedSlot == null) {
+      _snack('Veuillez sélectionner un créneau disponible', color: Colors.orange); return;
+    }
+
+    // Validation motif selon type
     if (widget.isPension) {
-      if (_selectedSlot == null) {
-        _snack('Veuillez sélectionner un créneau disponible', color: Colors.orange); return;
-      }
       if (_selectedMotif == null) {
         _snack('Veuillez choisir le motif du rendez-vous', color: Colors.orange); return;
       }
@@ -232,13 +185,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       if (_selectedVetMotif == 'autre' && _motifCtrl.text.trim().isEmpty) {
         _snack('Précisez le motif dans le champ "Autre"', color: Colors.orange); return;
       }
-      if (_isBusy(_selectedHour, _selectedMinute)) {
-        _snack('Ce créneau est déjà réservé.', color: Colors.orange); return;
-      }
     } else {
-      if (_isBusy(_selectedHour, _selectedMinute)) {
-        _snack('Ce créneau est déjà réservé.', color: Colors.orange); return;
-      }
       if (_motifCtrl.text.trim().isEmpty) {
         _snack('Veuillez indiquer le motif du rendez-vous', color: Colors.orange); return;
       }
@@ -246,26 +193,22 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
     setState(() => _saving = true);
     try {
-      final DateTime dateHeure;
-      final String motif;
+      // Tous les pros : créneau sélectionné depuis creneaux_pro
+      final slotDate = DateTime.parse(_selectedSlot!['date'] as String);
+      final heureDebut = (_selectedSlot!['heure_debut'] as String).split(':');
+      final dateHeure = DateTime(slotDate.year, slotDate.month, slotDate.day,
+          int.parse(heureDebut[0]), int.parse(heureDebut[1])).toUtc();
 
+      final String motif;
       if (widget.isPension) {
-        final slotDate = DateTime.parse(_selectedSlot!['date'] as String);
-        final heureDebut = (_selectedSlot!['heure_debut'] as String).split(':');
-        dateHeure = DateTime(slotDate.year, slotDate.month, slotDate.day,
-            int.parse(heureDebut[0]), int.parse(heureDebut[1])).toUtc();
         motif = _selectedMotif == 'autre'
             ? _notesCtrl.text.trim()
             : _pensionMotifs.firstWhere((m) => m.$1 == _selectedMotif).$2;
       } else if (widget.isVet) {
-        dateHeure = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day,
-            _selectedHour, _selectedMinute).toUtc();
         motif = _selectedVetMotif == 'autre'
             ? _motifCtrl.text.trim()
             : _vetMotifs.firstWhere((m) => m.$1 == _selectedVetMotif).$2;
       } else {
-        dateHeure = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day,
-            _selectedHour, _selectedMinute).toUtc();
         motif = _motifCtrl.text.trim();
       }
 
@@ -283,11 +226,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         'date_heure': dateHeure.toIso8601String(),
         'motif':      motif,
         if (widget.isPension && _premiereVisite != null) 'premiere_visite': _premiereVisite,
-        if (widget.isPension && _notesCtrl.text.trim().isNotEmpty && _selectedMotif != 'autre')
+        if (_notesCtrl.text.trim().isNotEmpty && (widget.isPension ? _selectedMotif != 'autre' : true))
           'notes_client': _notesCtrl.text.trim(),
         if (widget.isVet) 'duree_minutes': _selectedVetDuration,
-        if (widget.isVet && _notesCtrl.text.trim().isNotEmpty)
-          'notes_client': _notesCtrl.text.trim(),
         'statut': 'demande',
       });
 
@@ -361,9 +302,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                 children: [
                   _buildProBanner(),
                   const SizedBox(height: 20),
-                  if (widget.isPension) ..._buildPensionFields()
-                  else if (widget.isVet) ..._buildVetFields()
-                  else ..._buildStandardFields(),
+                  ..._buildMotifSection(),
+                  const SizedBox(height: 20),
+                  ..._buildSlotPicker(),
                   const SizedBox(height: 20),
                   _buildAnimalSection(),
                   const SizedBox(height: 20),
@@ -406,10 +347,25 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     ]),
   );
 
-  // ── Pension fields ────────────────────────────────────────────────────────────
+  // ── Motif section (varie selon type de pro) ──────────────────────────────────
 
-  List<Widget> _buildPensionFields() => [
-    // Motif chips
+  List<Widget> _buildMotifSection() {
+    if (widget.isPension) return _buildPensionMotif();
+    if (widget.isVet) return _buildVetMotif();
+    return _buildStandardMotif();
+  }
+
+  // ── Slot picker (commun à tous les pros) ─────────────────────────────────────
+
+  List<Widget> _buildSlotPicker() => [
+    _sectionTitle('Choisir un créneau *'),
+    const SizedBox(height: 10),
+    _buildSlotSelector(),
+  ];
+
+  // ── Pension motif ─────────────────────────────────────────────────────────────
+
+  List<Widget> _buildPensionMotif() => [
     _sectionTitle('Motif du rendez-vous *'),
     const SizedBox(height: 10),
     Wrap(
@@ -479,10 +435,6 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     ]),
     const SizedBox(height: 20),
 
-    // Créneau selector
-    _sectionTitle('Choisir un créneau *'),
-    const SizedBox(height: 10),
-    _buildSlotSelector(),
   ];
 
   Widget _buildSlotSelector() {
@@ -501,7 +453,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
               textAlign: TextAlign.center,
               style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
           const SizedBox(height: 4),
-          Text('Contactez la pension pour plus d\'informations',
+          Text('Contactez le professionnel pour plus d\'informations',
               textAlign: TextAlign.center,
               style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400)),
         ])),
@@ -601,9 +553,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     );
   }
 
-  // ── Vet fields ────────────────────────────────────────────────────────────────
+  // ── Vet motif ─────────────────────────────────────────────────────────────────
 
-  List<Widget> _buildVetFields() => [
+  List<Widget> _buildVetMotif() => [
     _sectionTitle('Motif de la consultation *'),
     const SizedBox(height: 10),
     Wrap(
@@ -646,7 +598,6 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       ),
     ],
     const SizedBox(height: 20),
-
     _sectionTitle('Durée estimée'),
     const SizedBox(height: 10),
     Row(children: [15, 30, 45, 60].map((d) {
@@ -662,71 +613,17 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             border: Border.all(color: sel ? widget.categoryColor : const Color(0xFFE4E7E2)),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Text(
-            d < 60 ? '$d min' : '1 h',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
-                color: sel ? Colors.white : const Color(0xFF1E2025)),
-          ),
+          child: Text(d < 60 ? '$d min' : '1 h',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                  color: sel ? Colors.white : const Color(0xFF1E2025))),
         ),
       );
     }).toList()),
-    const SizedBox(height: 20),
-
-    _sectionTitle('Date du rendez-vous'),
-    const SizedBox(height: 8),
-    GestureDetector(
-      onTap: _pickDate,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE4E7E2)),
-        ),
-        child: Row(children: [
-          Icon(Icons.calendar_today_outlined, color: widget.categoryColor, size: 18),
-          const SizedBox(width: 12),
-          Text(_formatDate(_selectedDate),
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
-          const Spacer(),
-          const Icon(Icons.chevron_right, color: Colors.grey, size: 18),
-        ]),
-      ),
-    ),
-    const SizedBox(height: 20),
-
-    _sectionTitle('Heure souhaitée'),
-    const SizedBox(height: 8),
-    _buildTimeSelector(),
   ];
 
-  // ── Standard (non-pension) fields ────────────────────────────────────────────
+  // ── Standard motif ────────────────────────────────────────────────────────────
 
-  List<Widget> _buildStandardFields() => [
-    _sectionTitle('Date du rendez-vous'),
-    const SizedBox(height: 8),
-    GestureDetector(
-      onTap: _pickDate,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE4E7E2)),
-        ),
-        child: Row(children: [
-          Icon(Icons.calendar_today_outlined, color: widget.categoryColor, size: 18),
-          const SizedBox(width: 12),
-          Text(_formatDate(_selectedDate),
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
-          const Spacer(),
-          const Icon(Icons.chevron_right, color: Colors.grey, size: 18),
-        ]),
-      ),
-    ),
-    const SizedBox(height: 20),
-    _sectionTitle('Heure'),
-    const SizedBox(height: 8),
-    _buildTimeSelector(),
-    const SizedBox(height: 20),
+  List<Widget> _buildStandardMotif() => [
     _sectionTitle('Motif du rendez-vous *'),
     const SizedBox(height: 8),
     TextField(
@@ -736,95 +633,6 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       decoration: _inputDecoration('Décrivez la raison de votre demande de RDV…'),
     ),
   ];
-
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: now.add(const Duration(days: 1)),
-      lastDate: now.add(const Duration(days: 90)),
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(colorScheme: ColorScheme.light(primary: widget.categoryColor)),
-        child: child!,
-      ),
-    );
-    if (picked != null) setState(() => _selectedDate = picked);
-  }
-
-  Widget _buildTimeSelector() {
-    final busyWarning = _isBusy(_selectedHour, _selectedMinute);
-    return Column(children: [
-      SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: List.generate(13, (i) => i + 8).map((h) {
-            final sel = _selectedHour == h;
-            final busy = _isBusy(h, _selectedMinute);
-            return GestureDetector(
-              onTap: busy ? null : () => setState(() => _selectedHour = h),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                margin: const EdgeInsets.only(right: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: busy ? const Color(0xFFF0F0F0) : sel ? widget.categoryColor : Colors.white,
-                  border: Border.all(color: busy ? const Color(0xFFCCCCCC)
-                      : sel ? widget.categoryColor : const Color(0xFFE4E7E2)),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(busy ? '$h h ✕' : '$h h',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                        color: busy ? Colors.grey : sel ? Colors.white : const Color(0xFF1E2025),
-                        fontWeight: sel && !busy ? FontWeight.w700 : FontWeight.normal,
-                        decoration: busy ? TextDecoration.lineThrough : null)),
-              ),
-            );
-          }).toList(),
-        ),
-      ),
-      const SizedBox(height: 8),
-      Row(children: [0, 15, 30, 45].map((m) {
-        final sel = _selectedMinute == m;
-        final busy = _isBusy(_selectedHour, m);
-        return GestureDetector(
-          onTap: busy ? null : () => setState(() => _selectedMinute = m),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            margin: const EdgeInsets.only(right: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: busy ? const Color(0xFFF0F0F0) : sel ? widget.categoryColor : Colors.white,
-              border: Border.all(color: busy ? const Color(0xFFCCCCCC)
-                  : sel ? widget.categoryColor : const Color(0xFFE4E7E2)),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(m == 0 ? '00 min' : '$m min',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                    color: busy ? Colors.grey : sel ? Colors.white : const Color(0xFF1E2025),
-                    fontWeight: sel && !busy ? FontWeight.w700 : FontWeight.normal,
-                    decoration: busy ? TextDecoration.lineThrough : null)),
-          ),
-        );
-      }).toList()),
-      if (busyWarning) ...[
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.orange.shade50, borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.orange.shade200),
-          ),
-          child: const Row(children: [
-            Icon(Icons.warning_amber_outlined, size: 15, color: Colors.orange),
-            SizedBox(width: 8),
-            Expanded(child: Text('Ce créneau est déjà réservé.',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.orange))),
-          ]),
-        ),
-      ],
-    ]);
-  }
 
   // ── Animal & notes sections ───────────────────────────────────────────────────
 

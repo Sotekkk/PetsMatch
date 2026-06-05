@@ -191,9 +191,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
 
-              // ── Toggle Confirmer / Contre-proposition (pension only) ───────
-              if (_isPension) ...[
-                Row(children: [
+              // ── Toggle Confirmer / Contre-proposition ─────────────────────
+              Row(children: [
                   Expanded(child: GestureDetector(
                     onTap: () => setModal(() => isCounter = false),
                     child: AnimatedContainer(
@@ -225,10 +224,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     ),
                   )),
                 ]),
-                const SizedBox(height: 20),
-              ],
+              const SizedBox(height: 20),
 
-              if (_isPension && isCounter) ...[
+              if (isCounter) ...[
                 // ── Contre-proposition : date + heure ─────────────────────────
                 const Text('Proposer un autre créneau',
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
@@ -343,7 +341,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   ),
                 ),
               ] else ...[
-                if (_isPension) ...[
+                ...[
                   // ── Confirmer : heure exacte dans le créneau demandé ────────
                   const Text('Heure exacte du rendez-vous',
                       style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
@@ -479,8 +477,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
     final dureeMinutes = result['duree'] as int;
 
-    if (_isPension && requestedDh != null) {
-      // Update date_heure with the precise time chosen by pension
+    if (requestedDh != null) {
+      // Update date_heure with the precise time chosen by the pro
       final preciseDh = DateTime(
         requestedDh.year, requestedDh.month, requestedDh.day,
         result['preciseHour'] as int, result['preciseMinute'] as int,
@@ -886,24 +884,18 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   // ── AG08 — Créneaux ──────────────────────────────────────────────────────────
 
-  bool get _isPension => User_Info.catPro == 'pension';
-
   Future<void> _loadCreneaux() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final weekEnd = _weekStart.add(const Duration(days: 6));
     try {
-      final query = Supabase.instance.client
+      final rows = await Supabase.instance.client
           .from('creneaux_pro')
           .select()
           .eq('pro_uid', uid)
+          .eq('statut', 'disponible')
           .gte('date', _weekStart.toIso8601String().substring(0, 10))
           .lte('date', weekEnd.toIso8601String().substring(0, 10));
-
-      // Pension: load 'disponible' slots; others: load 'bloque' slots
-      final rows = await (_isPension
-          ? query.eq('statut', 'disponible')
-          : query.eq('statut', 'bloque'));
 
       if (!mounted) return;
       setState(() {
@@ -936,14 +928,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             .eq('heure_debut', heureDebut);
       } else {
         final heureFin = '${(hour + 1).toString().padLeft(2, '0')}:00:00';
-        // Pension: publishes disponible slots; others: blocks slots
-        final statut = _isPension ? 'disponible' : 'bloque';
         await Supabase.instance.client.from('creneaux_pro').upsert({
           'pro_uid':     uid,
           'date':        date,
           'heure_debut': heureDebut,
           'heure_fin':   heureFin,
-          'statut':      statut,
+          'statut':      'disponible',
         }, onConflict: 'pro_uid,date,heure_debut');
       }
     } catch (e) {
@@ -964,7 +954,6 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
-    // Collect all current week's disponible slots
     final weekSlots = _blockedSlots.entries.where((e) => e.value == true).toList();
     if (weekSlots.isEmpty) {
       if (mounted) {
@@ -977,46 +966,84 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       return;
     }
 
-    // Confirm with user
-    final ok = await showDialog<bool>(
+    // Dialog : choisir la durée de réplication
+    String _choice = '4semaines';
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Répliquer les créneaux',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-        content: Text(
-          '${weekSlots.length} créneau(x) de cette semaine seront copiés sur les 4 semaines suivantes.',
-          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Répliquer les créneaux',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('${weekSlots.length} créneau(x) de cette semaine à répliquer.',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
+            const SizedBox(height: 12),
+            for (final opt in [
+              ('4semaines',  '4 semaines suivantes'),
+              ('annee',      "Jusqu'à la fin de l'année"),
+              ('perso',      'Date personnalisée…'),
+            ])
+              RadioListTile<String>(
+                dense: true,
+                activeColor: _teal,
+                value: opt.$1,
+                groupValue: _choice,
+                title: Text(opt.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                onChanged: (v) => setS(() => _choice = v!),
+              ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
+            TextButton(onPressed: () => Navigator.pop(ctx, true),
+                child: Text('Répliquer',
+                    style: TextStyle(color: _teal, fontWeight: FontWeight.w600))),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annuler', style: TextStyle(color: Colors.grey)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Répliquer',
-                style: TextStyle(color: _teal, fontWeight: FontWeight.w600)),
-          ),
-        ],
       ),
     );
-    if (ok != true || !mounted) return;
+    if (confirmed != true || !mounted) return;
+
+    // Résoudre la date de fin
+    DateTime endDate;
+    if (_choice == 'annee') {
+      endDate = DateTime(_weekStart.year, 12, 31);
+    } else if (_choice == 'perso') {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: _weekStart.add(const Duration(days: 28)),
+        firstDate: _weekStart.add(const Duration(days: 7)),
+        lastDate: DateTime(_weekStart.year + 1, 12, 31),
+        helpText: 'Répliquer jusqu\'au…',
+        builder: (ctx, child) => Theme(
+          data: ThemeData.light().copyWith(
+            colorScheme: const ColorScheme.light(primary: _teal)),
+          child: child!,
+        ),
+      );
+      if (picked == null || !mounted) return;
+      endDate = picked;
+    } else {
+      endDate = _weekStart.add(const Duration(days: 28));
+    }
 
     try {
       final supa = Supabase.instance.client;
       final rows = <Map<String, dynamic>>[];
 
-      for (int week = 1; week <= 4; week++) {
+      for (DateTime target = _weekStart.add(const Duration(days: 7));
+           !target.isAfter(endDate);
+           target = target.add(const Duration(days: 7))) {
         for (final entry in weekSlots) {
-          // key format: 'YYYY-MM-DD_H'
           final parts = entry.key.split('_');
           if (parts.length < 2) continue;
           final originalDate = DateTime.tryParse(parts[0]);
           final hour = int.tryParse(parts[1]);
           if (originalDate == null || hour == null) continue;
 
-          final targetDate = originalDate.add(Duration(days: 7 * week));
+          final diff = originalDate.difference(_weekStart).inDays;
+          final targetDate = target.add(Duration(days: diff));
           final dateStr = targetDate.toIso8601String().substring(0, 10);
           final heureDebut = '${hour.toString().padLeft(2, '0')}:00:00';
           final heureFin = '${(hour + 1).toString().padLeft(2, '0')}:00:00';
@@ -1031,12 +1058,21 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         }
       }
 
+      if (rows.isEmpty) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Aucun créneau à ajouter.', style: TextStyle(fontFamily: 'Galey')),
+          behavior: SnackBarBehavior.floating,
+        ));
+        return;
+      }
+
       await supa.from('creneaux_pro').upsert(rows, onConflict: 'pro_uid,date,heure_debut');
 
       if (mounted) {
+        final nbSemaines = rows.length ~/ weekSlots.length;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
-            '${rows.length} créneau(x) ajoutés sur 4 semaines.',
+            '${rows.length} créneau(x) ajoutés sur $nbSemaines semaine(s).',
             style: const TextStyle(fontFamily: 'Galey'),
           ),
           backgroundColor: const Color(0xFF6E9E57),
@@ -1139,42 +1175,32 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       // Légende
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: _isPension
-            ? Row(children: [
-                _LegendDot(color: const Color(0xFF6E9E57).withValues(alpha: 0.15), border: const Color(0xFF6E9E57), label: 'Proposé'),
-                const SizedBox(width: 16),
-                _LegendDot(color: Colors.white, border: const Color(0xFFCCCCCC), label: 'Non proposé'),
-                const SizedBox(width: 16),
-                _LegendDot(color: const Color(0x1A0C5C6C), border: _teal, label: 'RDV'),
-              ])
-            : Row(children: [
-                _LegendDot(color: Colors.white, border: const Color(0xFF6E9E57), label: 'Disponible'),
-                const SizedBox(width: 16),
-                _LegendDot(color: const Color(0xFFEEEEEE), border: Colors.grey, label: 'Bloqué'),
-                const SizedBox(width: 16),
-                _LegendDot(color: const Color(0x1A0C5C6C), border: _teal, label: 'RDV'),
-              ]),
+        child: Row(children: [
+          _LegendDot(color: const Color(0xFF6E9E57).withValues(alpha: 0.15), border: const Color(0xFF6E9E57), label: 'Proposé'),
+          const SizedBox(width: 16),
+          _LegendDot(color: Colors.white, border: const Color(0xFFCCCCCC), label: 'Non proposé'),
+          const SizedBox(width: 16),
+          _LegendDot(color: const Color(0x1A0C5C6C), border: _teal, label: 'RDV'),
+        ]),
       ),
-      if (_isPension) ...[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _replicateWeek,
-              icon: const Icon(Icons.repeat, size: 16),
-              label: const Text('Répliquer aux 4 semaines suivantes',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _teal,
-                side: const BorderSide(color: _teal),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+        child: SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _replicateWeek,
+            icon: const Icon(Icons.repeat, size: 16),
+            label: const Text('Répliquer cette semaine…',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _teal,
+              side: const BorderSide(color: _teal),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
           ),
         ),
-      ],
+      ),
       const Divider(height: 1),
       // Grille horaire
       Expanded(
@@ -1207,32 +1233,16 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               borderColor = _teal;
               textColor = _teal;
               trailingLabel = 'RDV';
-            } else if (_isPension) {
-              // Pension: isBlocked means "proposed/disponible"
-              if (isBlocked) {
-                bgColor = const Color(0xFF6E9E57).withValues(alpha: 0.12);
-                borderColor = const Color(0xFF6E9E57);
-                textColor = const Color(0xFF4A7A32);
-                trailingIcon = Icons.check_circle_outline;
-              } else {
-                bgColor = Colors.white;
-                borderColor = const Color(0xFFCCCCCC);
-                textColor = Colors.grey.shade500;
-                trailingIcon = Icons.add_circle_outline;
-              }
+            } else if (isBlocked) {
+              bgColor = const Color(0xFF6E9E57).withValues(alpha: 0.12);
+              borderColor = const Color(0xFF6E9E57);
+              textColor = const Color(0xFF4A7A32);
+              trailingIcon = Icons.check_circle_outline;
             } else {
-              // Non-pension: isBlocked means unavailable
-              if (isBlocked) {
-                bgColor = const Color(0xFFEEEEEE);
-                borderColor = Colors.grey;
-                textColor = Colors.grey.shade600;
-                trailingIcon = Icons.block;
-              } else {
-                bgColor = Colors.white;
-                borderColor = const Color(0xFF6E9E57);
-                textColor = Colors.black87;
-                trailingIcon = Icons.check_circle_outline;
-              }
+              bgColor = Colors.white;
+              borderColor = const Color(0xFFCCCCCC);
+              textColor = Colors.grey.shade500;
+              trailingIcon = Icons.add_circle_outline;
             }
 
             return GestureDetector(
@@ -1266,13 +1276,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     )
                   else if (trailingIcon != null)
                     Icon(trailingIcon, size: 18,
-                        color: _isPension && isBlocked
+                        color: isBlocked
                             ? const Color(0xFF6E9E57)
-                            : _isPension
-                                ? Colors.grey.shade400
-                                : isBlocked
-                                    ? Colors.grey
-                                    : Colors.green.shade400),
+                            : Colors.grey.shade400),
                 ]),
               ),
             );
@@ -1358,7 +1364,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     rdv: rdv,
                     clientName: rdv['_client_name']?.toString() ?? 'Client',
                     categoryColor: _teal,
-                    isPension: _isPension,
+                    isPension: User_Info.catPro == 'pension',
                   )))
               : null,
         );
