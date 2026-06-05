@@ -153,7 +153,11 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
       }
       User_Info.catPro = _selectedCategory!;
       User_Info.professionPro = _selectedProfession!;
-      if (_isVet && _ordreCtrl.text.trim().isNotEmpty) {
+      if (_isVet) {
+        if (_ordreCtrl.text.trim().isEmpty) {
+          _showError('Le numéro d\'ordre vétérinaire est obligatoire.');
+          return;
+        }
         User_Info.certifications = [
           {'nom': 'Numéro d\'ordre vétérinaire', 'organisme': 'Ordre national des vétérinaires', 'numero': _ordreCtrl.text.trim()}
         ];
@@ -277,7 +281,7 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
                   ),
                 if (_isVet) ...[
                   const SizedBox(height: 12),
-                  _textField('Numéro d\'ordre vétérinaire (optionnel)', _ordreCtrl),
+                  _textField('Numéro d\'ordre vétérinaire *', _ordreCtrl),
                 ],
               ]),
               const SizedBox(height: 20),

@@ -534,7 +534,7 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
             // ── Races (dynamique) ────────────────────────────────────────────
             if (_selectedEspeces.isNotEmpty) ...[
               const SizedBox(height: 20),
-              _sectionTitle('Races élevées'),
+              _sectionTitle(User_Info.isPro ? 'Races prises en charge' : 'Races élevées'),
               const SizedBox(height: 4),
               Text('Pour chaque espèce, précisez les races (optionnel).',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),

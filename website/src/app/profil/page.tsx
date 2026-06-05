@@ -792,7 +792,14 @@ export default function ProfilPage() {
 
         {/* ── Espèces élevées ── */}
         {isEleveur && (
-          <Card title="Espèces élevées">
+          <Card title={
+            userData?.isPro
+              ? (userData.catPro === 'sante' || userData.catPro === 'veterinaire' ? 'Espèces soignées'
+                : userData.catPro === 'pension' || userData.catPro === 'garde' ? 'Espèces gardées'
+                : userData.catPro === 'education' || userData.catPro === 'comportement' || userData.catPro === 'educateur' ? 'Espèces prises en charge'
+                : 'Espèces acceptées')
+              : 'Espèces élevées'
+          }>
             <div className="flex flex-wrap gap-2 mb-4">
               {ESPECES_CONFIG.map(sp => {
                 const active = especesElevees.some(e => e.espece === sp.value);
