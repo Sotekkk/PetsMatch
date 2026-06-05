@@ -21,6 +21,7 @@ import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
+import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/eleveur/user_elevage_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
@@ -373,6 +374,16 @@ class _EleveurNavState extends State<EleveurNav> {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(
                         builder: (_) => const RegistrePensionPage(),
+                      ));
+                    },
+                  ),
+                  if (User_Info.catPro == 'veterinaire') _DrawerItem(
+                    icon: Icons.medical_information_outlined,
+                    label: 'Mes patients',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const VetPatientsPage(),
                       ));
                     },
                   ),

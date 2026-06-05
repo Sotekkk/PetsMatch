@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
+import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
@@ -29,6 +32,100 @@ class ChipScannerService {
 
   // Contexte formulaire : scan → retourne le numéro pour pré-remplir un champ.
   static Future<String?> scanForField(BuildContext context) => showScanner(context);
+
+  // Contexte vétérinaire : scan puce → cherche dans tous les animaux → fiche.
+  static Future<void> scanFromVet(BuildContext context) async {
+    final chip = await showScanner(context);
+    if (chip == null || chip.isEmpty || !context.mounted) return;
+    await _searchForVet(context, chip);
+  }
+
+  // Saisie manuelle pour le vétérinaire.
+  static Future<void> enterPuceForVet(BuildContext context) async {
+    final ctrl = TextEditingController();
+    final chip = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Saisir le numéro de puce',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          style: const TextStyle(fontFamily: 'Galey'),
+          decoration: const InputDecoration(
+            hintText: 'Ex: 250269802005832',
+            hintStyle: TextStyle(fontFamily: 'Galey'),
+          ),
+          onSubmitted: (v) { if (v.trim().isNotEmpty) Navigator.pop(ctx, v.trim()); },
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx),
+              child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF26A69A),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () { if (ctrl.text.trim().isNotEmpty) Navigator.pop(ctx, ctrl.text.trim()); },
+            child: const Text('Rechercher', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (chip == null || chip.isEmpty || !context.mounted) return;
+    await _searchForVet(context, chip);
+  }
+
+  // ── Recherche vétérinaire (tous animaux) ─────────────────────────────────────
+
+  static Future<void> _searchForVet(BuildContext context, String chip) async {
+    final normalized = chip.replaceAll(RegExp(r'[\s\-]'), '');
+    if (!context.mounted) return;
+    _showLoading(context);
+
+    Map<String, dynamic>? animal;
+    try {
+      // 1. Match exact sur le champ normalisé
+      final exact = await _supa
+          .from('animaux')
+          .select('id, nom, espece, race, sexe, date_naissance, photo_url, identification, uid_eleveur, uid_proprietaire, couleur')
+          .eq('identification', normalized)
+          .limit(1)
+          .maybeSingle();
+      if (exact != null) {
+        animal = Map<String, dynamic>.from(exact);
+      } else {
+        // 2. Fallback : ilike avec wildcards + normalisation client
+        final rows = await _supa
+            .from('animaux')
+            .select('id, nom, espece, race, sexe, date_naissance, photo_url, identification, uid_eleveur, uid_proprietaire, couleur')
+            .ilike('identification', '%$normalized%')
+            .limit(20);
+        for (final row in rows as List) {
+          final id = ((row as Map)['identification'] ?? '').toString()
+              .replaceAll(RegExp(r'[\s\-]'), '');
+          if (id == normalized) {
+            animal = Map<String, dynamic>.from(row);
+            break;
+          }
+        }
+      }
+    } catch (_) {}
+
+    if (!context.mounted) return;
+    Navigator.pop(context); // ferme loading
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _VetResultSheet(chip: normalized, animal: animal),
+    );
+  }
 
   // ── Recherche multi-tables ─────────────────────────────────────────────────
 
@@ -462,6 +559,204 @@ class _ResultSheet extends StatelessWidget {
     );
   }
 }
+
+// ─── Feuille de résultat vétérinaire ─────────────────────────────────────────
+
+class _VetResultSheet extends StatefulWidget {
+  final String chip;
+  final Map<String, dynamic>? animal;
+  const _VetResultSheet({required this.chip, this.animal});
+  @override
+  State<_VetResultSheet> createState() => _VetResultSheetState();
+}
+
+class _VetResultSheetState extends State<_VetResultSheet> {
+  static const _teal = Color(0xFF26A69A);
+  bool _saving = false;
+
+  Future<void> _accederCarnet() async {
+    final vetUid = FirebaseAuth.instance.currentUser?.uid;
+    final animal = widget.animal;
+    if (vetUid == null || animal == null) return;
+
+    final ownerId = (animal['uid_eleveur'] ?? animal['uid_proprietaire'])?.toString();
+    if (ownerId == null) return;
+
+    setState(() => _saving = true);
+    try {
+      await Supabase.instance.client.from('vet_access_grants').upsert({
+        'vet_id':    vetUid,
+        'owner_id':  ownerId,
+        'animal_id': animal['id']?.toString(),
+        'status':    'active',
+        'granted_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'vet_id,animal_id');
+    } catch (_) {}
+
+    if (!mounted) return;
+    Navigator.pop(context);
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => AnimalFichePage(
+        animalId: animal['id']?.toString(),
+        initialData: animal,
+        readOnly: true,
+      ),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final animal = widget.animal;
+    final found  = animal != null;
+    final photo  = animal?['photo_url']?.toString() ?? '';
+    final nom    = animal?['nom']?.toString() ?? 'Animal';
+    final espece = animal?['espece']?.toString() ?? '';
+    final race   = animal?['race']?.toString() ?? '';
+    final dob    = animal?['date_naissance']?.toString();
+
+    String age = '';
+    if (dob != null) {
+      final date = DateTime.tryParse(dob);
+      if (date != null) {
+        final diff = DateTime.now().difference(date);
+        final years = (diff.inDays / 365).floor();
+        final months = ((diff.inDays % 365) / 30).floor();
+        age = years > 0 ? '$years an${years > 1 ? "s" : ""}' : '$months mois';
+      }
+    }
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          // Handle bar
+          Center(child: Container(width: 40, height: 4,
+              decoration: BoxDecoration(
+                  color: const Color(0xFFDDE1E7),
+                  borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 20),
+
+          Row(children: [
+            Icon(found ? Icons.check_circle_rounded : Icons.help_outline_rounded,
+                color: found ? _teal : const Color(0xFFE08080), size: 22),
+            const SizedBox(width: 8),
+            Expanded(child: Text('Puce ${widget.chip}',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 16,
+                    fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E)))),
+          ]),
+          const SizedBox(height: 16),
+
+          if (found) ...[
+            // Carte animal
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: _teal.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _teal.withValues(alpha: 0.25)),
+              ),
+              child: Row(children: [
+                Container(
+                  width: 56, height: 56,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: _teal.withValues(alpha: 0.15),
+                  ),
+                  child: photo.isNotEmpty
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) => Icon(Icons.pets, color: _teal, size: 28)))
+                      : Icon(Icons.pets, color: _teal, size: 28),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(nom, style: const TextStyle(fontFamily: 'Galey',
+                        fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1F2A2E))),
+                    if (espece.isNotEmpty || race.isNotEmpty)
+                      Text([espece, race].where((s) => s.isNotEmpty).join(' · '),
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                              color: _teal, fontWeight: FontWeight.w600)),
+                    if (age.isNotEmpty)
+                      Text(age, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                          color: Colors.grey.shade500)),
+                  ],
+                )),
+              ]),
+            ),
+            const SizedBox(height: 16),
+
+            // Accéder au carnet
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _saving ? null : _accederCarnet,
+                icon: _saving
+                    ? const SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.medical_information_outlined),
+                label: Text(_saving ? 'Chargement…' : 'Accéder au carnet de santé',
+                    style: const TextStyle(fontFamily: 'Galey',
+                        fontWeight: FontWeight.w600, fontSize: 15)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _teal,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 0,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Partager la fiche
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  showVetShareSheet(context, animal['id']?.toString() ?? '');
+                },
+                icon: const Icon(Icons.share_outlined, size: 18),
+                label: const Text('Partager la fiche',
+                    style: TextStyle(fontFamily: 'Galey',
+                        fontWeight: FontWeight.w600, fontSize: 14)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF0C5C6C),
+                  side: const BorderSide(color: Color(0xFF0C5C6C)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+          ] else ...[
+            Text('Aucun animal enregistré sur PetsMatch avec ce numéro de puce.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                    color: Colors.grey.shade500, height: 1.5)),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0C5C6C),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('OK', style: TextStyle(fontFamily: 'Galey', fontSize: 15)),
+              ),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+// ─── Feuille de résultats ─────────────────────────────────────────────────────
 
 class _ResultCard extends StatelessWidget {
   final IconData icon;
