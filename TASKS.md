@@ -185,20 +185,20 @@
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
-| VET02 | **Génération token 72h depuis la fiche animal** — bouton "Partager avec mon vétérinaire" dans la fiche animal (éleveur + particulier) → génère un token UUID dans `partage_tokens` valide 72h → affiche QR code + lien copiable. Si token actif existant, propose de le réutiliser ou d'en générer un nouveau. | Haute | App + Web | `animal_fiche_eleveur.dart`, `animal_fiche_particulier.dart`, `src/app/mes-animaux/[id]/page.tsx` |
+| ~~VET02~~ | ~~**Génération token 72h depuis la fiche animal** — bouton 🩺 dans AppBar fiche animal (éleveur + particulier) → génère token `partage_tokens` 72h → QR code + lien copiable + partage. Réutilise token actif si existant. Widget partagé `vet_share_dialog.dart`. Idem côté web (bouton + modale QR via qrserver.com).~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-05 — `lib/widgets/vet_share_dialog.dart`, `animal_fiche.dart`, `animal_fiche_particulier.dart`, `mes-animaux/[id]/page.tsx` |
 | VET03 | **Vue carnet santé via token (sans authentification)** — page web `/sante/[token]` et écran Flutter accessible par lien deeplink : lecture seule du carnet santé complet (identité animal, vaccinations, traitements, visites), badge "Accès expiré" si token > 72h, aucune auth requise. Marque `used_at` à la première consultation. | Haute | App + Web | Créer `src/app/sante/[token]/page.tsx` + `lib/pages/pro/vet_token_view.dart` |
 
 #### Étape 3 — Dashboard vétérinaire "Mes patients"
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
-| VET04 | **Dashboard vétérinaire — "Mes patients"** — écran dédié accessible depuis le menu pro (cat_pro = 'veterinaire' uniquement) : liste des animaux avec accès permanent accordé (`vet_access_grants.status = 'active'`), recherche par nom / numéro de puce / nom propriétaire, bouton "Scanner un token" (ouvre la caméra QR ou saisie manuelle du token). Chaque ligne affiche : photo, nom, espèce, race, dernier RDV. | Haute | App + Web | Créer `lib/pages/pro/vet_patients_page.dart` + `src/app/pro/patients/page.tsx` |
+| ~~VET04~~ | ~~**Dashboard vétérinaire — "Mes patients"**~~ | ~~Haute~~ | ~~App~~ | ✅ Terminé 2026-06-05 — `vet_patients_page.dart` : onglet Patients (liste, recherche, filtre espèce, long press révoquer) + onglet Agenda (filtre jour, RDVs triés par heure, photo circulaire, tap → fiche). Scan puce RFID + saisie manuelle dans AppBar. Accès via drawer (cat_pro=veterinaire). Flux demande accès : scan → `status=demande` + notif propriétaire → approbation via notification_page dialog → `status=active`. Fiche animal en `vetMode=true` : 4 onglets (Identité, Santé, Repro, Propriétaire), sans Alimentation/Registre/Documents. RDV depuis fiche animal propriétaire : bouton 📅 dans section "Accès vétérinaires" avec animal pré-sélectionné. ⚠️ SQL requis : `ALTER TABLE vet_access_grants DROP CONSTRAINT vet_access_grants_status_check; ADD CONSTRAINT ... CHECK (status IN ('active','revoked','demande')); ALTER COLUMN status SET DEFAULT 'demande';` |
 
 #### Étape 4 — Accès permanent + écriture carnet santé
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
-| VET05 | **Demande d'accès permanent vét → propriétaire** — depuis la fiche pro du vétérinaire (vue client) ou depuis le dashboard vét : bouton "Demander l'accès au carnet santé" → saisie numéro de puce ou nom animal → notification push + in-app au propriétaire → approbation → entrée dans `vet_access_grants`. L'éleveur peut révoquer depuis la fiche animal. | Haute | App + Web | `animal_fiche_eleveur.dart`, `animal_fiche_particulier.dart`, `vet_patients_page.dart` |
+| ~~VET05~~ | ~~**Demande d'accès permanent vét → propriétaire**~~ | ~~Haute~~ | ~~App~~ | ✅ Intégré dans VET04 2026-06-05 — scan puce → upsert `vet_access_grants(status=demande)` + notif in-app au propriétaire. Dialog confirmation depuis notifications_page. Propriétaire voit les demandes dans l'onglet Identité de la fiche animal (section "Accès vétérinaires" avec bouton Approuver). |
 | VET06 | **Écriture dans le carnet santé par le vétérinaire** — depuis la fiche animal (vue vétérinaire avec accès accordé) : bouton "Ajouter une entrée" → bottom sheet choix (vaccin / traitement antiparasitaire / visite / ordonnance PDF). Chaque entrée taguée `source: 'veterinaire'` + `vet_id`. Entrées vét affichées avec badge "Dr. [nom]" dans le carnet. L'éleveur reçoit une notification push. Les entrées vét sont en lecture seule pour l'éleveur. | Haute | App + Web | `animal_fiche_eleveur.dart`, `animal_fiche_particulier.dart`, `vet_patients_page.dart` |
 
 #### Étape 5 — Alertes retard agenda
