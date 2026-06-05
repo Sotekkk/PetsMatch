@@ -71,7 +71,8 @@ class _AgendaPageState extends State<AgendaPage> {
 
   List<Map<String, dynamic>> _events = [];
   bool _loading = true;
-  bool _showCalendar = true;
+  // 0 = mois, 1 = jour, 2 = liste
+  int _viewMode = 0;
   DateTime _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
   DateTime? _selectedDay;
 
@@ -166,9 +167,9 @@ class _AgendaPageState extends State<AgendaPage> {
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
           IconButton(
-            tooltip: _showCalendar ? 'Vue liste' : 'Vue calendrier',
-            icon: Icon(_showCalendar ? Icons.list_rounded : Icons.calendar_month_rounded),
-            onPressed: () => setState(() => _showCalendar = !_showCalendar),
+            tooltip: _viewMode == 0 ? 'Vue jour' : _viewMode == 1 ? 'Vue liste' : 'Vue calendrier',
+            icon: Icon(_viewMode == 0 ? Icons.view_day_outlined : _viewMode == 1 ? Icons.list_rounded : Icons.calendar_month_rounded),
+            onPressed: () => setState(() => _viewMode = (_viewMode + 1) % 3),
           ),
         ],
       ),
@@ -180,7 +181,9 @@ class _AgendaPageState extends State<AgendaPage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _kTeal))
-          : _showCalendar ? _calendarView() : _listView(),
+          : _viewMode == 0 ? _calendarView()
+          : _viewMode == 1 ? _dayView()
+          : _listView(),
     );
   }
 
@@ -255,7 +258,7 @@ class _AgendaPageState extends State<AgendaPage> {
               day.year == _selectedDay!.year && day.month == _selectedDay!.month && day.day == _selectedDay!.day;
 
           return GestureDetector(
-            onTap: () { setState(() => _selectedDay = day); _showDaySheet(day); },
+            onTap: () { setState(() { _selectedDay = day; _viewMode = 1; }); },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               decoration: BoxDecoration(
@@ -294,6 +297,101 @@ class _AgendaPageState extends State<AgendaPage> {
         },
       ),
     );
+  }
+
+  // ── Day view ───────────────────────────────────────────────────────────────
+
+  Widget _dayView() {
+    final day = _selectedDay ?? DateTime.now();
+    final evts = _eventsForDay(day);
+
+    return Column(children: [
+      // Navigation jour
+      Container(
+        color: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Row(children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left, color: _kTeal),
+            onPressed: () => setState(() => _selectedDay = day.subtract(const Duration(days: 1))),
+          ),
+          Expanded(
+            child: Text(
+              DateFormat('EEEE d MMMM', 'fr').format(day),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                  fontSize: 15, color: Color(0xFF1E2025)),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right, color: _kTeal),
+            onPressed: () => setState(() => _selectedDay = day.add(const Duration(days: 1))),
+          ),
+        ]),
+      ),
+      const Divider(height: 1),
+      Expanded(
+        child: RefreshIndicator(
+          onRefresh: _load,
+          color: _kTeal,
+          child: ListView.builder(
+            padding: const EdgeInsets.only(bottom: 80),
+            itemCount: 16, // 7h → 22h
+            itemBuilder: (_, i) {
+              final hour = 7 + i;
+              final hLabel = '${hour.toString().padLeft(2, "0")}:00';
+              // Événements qui démarrent dans cette heure
+              final startingHere = evts.where((e) {
+                final s = _parseDate(e['date_debut'] as String);
+                return s.hour == hour;
+              }).toList();
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Colonne heure
+                  SizedBox(
+                    width: 56,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8, top: 10),
+                      child: Text(hLabel,
+                          textAlign: TextAlign.right,
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                              color: Colors.grey.shade400, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  // Ligne verticale
+                  Container(width: 1, color: const Color(0xFFEEEEEE)),
+                  const SizedBox(width: 8),
+                  // Événements ou slot vide
+                  Expanded(
+                    child: startingHere.isEmpty
+                        ? GestureDetector(
+                            onTap: () => _showAddSheet(
+                                initialDate: DateTime(day.year, day.month, day.day, hour)),
+                            child: Container(
+                              height: 52,
+                              margin: const EdgeInsets.only(right: 12, bottom: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          )
+                        : Column(
+                            children: startingHere.map((e) => Padding(
+                              padding: const EdgeInsets.only(right: 12, top: 4, bottom: 4),
+                              child: _EventTile(event: e, onRefresh: _load),
+                            )).toList(),
+                          ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    ]);
   }
 
   // ── List view ──────────────────────────────────────────────────────────────
@@ -443,8 +541,8 @@ class _EventTile extends StatelessWidget {
         .eq('statut', 'disponible')
         .gte('date', today)
         .lte('date', future)
-        .order('date')
-        .order('heure_debut');
+        .order('date', ascending: true)
+        .order('heure_debut', ascending: true);
 
     if (!context.mounted) return;
 
@@ -456,20 +554,31 @@ class _EventTile extends StatelessWidget {
       slotsByDate.putIfAbsent(date, () => []).add(hour);
     }
 
-    if (slotsByDate.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Aucun créneau disponible chez cette pension.',
-            style: TextStyle(fontFamily: 'Galey')),
-        behavior: SnackBarBehavior.floating,
-      ));
-      return;
-    }
+    DateTime? chosen;
 
-    final dates = slotsByDate.keys.toList()..sort();
+    if (slotsByDate.isEmpty) {
+      // Fallback: free date+time picker when pension has no creneaux configured
+      final pickedDate = await showDatePicker(
+        context: context,
+        initialDate: DateTime.now().add(const Duration(days: 1)),
+        firstDate: DateTime.now(),
+        lastDate: DateTime.now().add(const Duration(days: 365)),
+        locale: const Locale('fr'),
+      );
+      if (pickedDate == null || !context.mounted) return;
+      final pickedTime = await showTimePicker(
+        context: context,
+        initialTime: const TimeOfDay(hour: 10, minute: 0),
+      );
+      if (pickedTime == null || !context.mounted) return;
+      chosen = DateTime(pickedDate.year, pickedDate.month, pickedDate.day,
+          pickedTime.hour, pickedTime.minute);
+    } else {
+    final dates = slotsByDate.keys.toList()..sort((a, b) => a.compareTo(b));
     String selDate = dates.first;
     int? selHour;
 
-    final chosen = await showModalBottomSheet<DateTime>(
+    chosen = await showModalBottomSheet<DateTime>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -561,6 +670,7 @@ class _EventTile extends StatelessWidget {
         ),
       ),
     );
+    } // end else (slots available)
 
     if (chosen == null || !context.mounted) return;
 

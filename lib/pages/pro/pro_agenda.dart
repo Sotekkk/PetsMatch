@@ -102,6 +102,23 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         } catch (_) {}
       }
 
+      // Compter les visites précédentes par client (confirme + terminé)
+      Map<String, int> visitCounts = {};
+      if (clientUids.isNotEmpty) {
+        try {
+          final history = await Supabase.instance.client
+              .from('rdv')
+              .select('client_uid')
+              .eq('pro_uid', uid)
+              .inFilter('client_uid', clientUids)
+              .inFilter('statut', ['confirme', 'termine']);
+          for (final h in history) {
+            final cUid = h['client_uid'] as String? ?? '';
+            if (cUid.isNotEmpty) visitCounts[cUid] = (visitCounts[cUid] ?? 0) + 1;
+          }
+        } catch (_) {}
+      }
+
       if (mounted) {
         setState(() {
           _rdvs = rows.map((r) {
@@ -111,6 +128,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               ...r,
               '_client_name': cUid != null ? (clientNames[cUid] ?? 'Client') : 'Client',
               '_animal_nom': aId != null ? (animalNames[aId] ?? '') : '',
+              '_visit_count': cUid != null ? (visitCounts[cUid] ?? 0) : 0,
             };
           }).toList();
           _loading = false;
@@ -395,7 +413,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 const Text('Sert à bloquer votre agenda — le client ne la verra pas.',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
                 const SizedBox(height: 14),
-                Wrap(spacing: 10, runSpacing: 10, children: [30, 45, 60, 90, 120].map((d) {
+                Wrap(spacing: 10, runSpacing: 10, children: [15, 30, 45, 60, 90, 120].map((d) {
                   final sel = duree == d;
                   return GestureDetector(
                     onTap: () => setModal(() => duree = d),
@@ -551,19 +569,21 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'read':  false,
         });
       }
-      // Agenda pension — nécessite la contrainte unique (uid, rdv_id) en base
+      // Agenda pension — couleur trick (no unique constraint needed)
       if (proUid != null) {
         try {
-          await supa.from('agenda_events').upsert({
+          await supa.from('agenda_events').delete()
+              .eq('uid', proUid).eq('couleur', 'rdv:${rdv['id']}');
+          await supa.from('agenda_events').insert({
             'uid':           proUid,
             'titre':         'RDV avec $clientName',
             'type':          'rdv',
             'date_debut':    preciseDh.toIso8601String(),
             'animal_id':     rdv['animal_id'],
             'notes':         rdv['motif'],
-            'rdv_id':        rdv['id'],
             'duree_minutes': dureeMinutes,
-          }, onConflict: 'uid,rdv_id');
+            'couleur':       'rdv:${rdv['id']}',
+          });
         } catch (_) {}
       }
       await _loadRdvs();
@@ -613,23 +633,32 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'rdv_id':        rdv['id'],
           if (dureeMinutes != null) 'duree_minutes': dureeMinutes,
         }, onConflict: 'rdv_id');
-        // Agenda pension — nécessite la contrainte unique (uid, rdv_id) en base
+        // Agenda pension — couleur trick (no unique constraint needed)
         if (proUid2 != null) {
           try {
-            await supa.from('agenda_events').upsert({
+            await supa.from('agenda_events').delete()
+                .eq('uid', proUid2).eq('couleur', 'rdv:${rdv['id']}');
+            await supa.from('agenda_events').insert({
               'uid':           proUid2,
               'titre':         'RDV avec $clientName2',
               'type':          'rdv',
               'date_debut':    dhUtc?.toIso8601String() ?? rdv['date_heure'],
               'animal_id':     rdv['animal_id'],
               'notes':         rdv['motif'],
-              'rdv_id':        rdv['id'],
               if (dureeMinutes != null) 'duree_minutes': dureeMinutes,
-            }, onConflict: 'uid,rdv_id');
+              'couleur':       'rdv:${rdv['id']}',
+            });
           } catch (_) {}
         }
       } else if ((statut == 'annule' || statut == 'refuse') && rdv.isNotEmpty) {
-        await supa.from('agenda_events').delete().eq('rdv_id', rdv['id']);
+        await supa.from('agenda_events').delete().eq('rdv_id', rdv['id']); // client
+        final proUidDel = FirebaseAuth.instance.currentUser?.uid;
+        if (proUidDel != null) {
+          try {
+            await supa.from('agenda_events').delete()
+                .eq('uid', proUidDel).eq('couleur', 'rdv:${rdv['id']}');
+          } catch (_) {}
+        }
 
         // Notify client
         if (clientUid != null) {
@@ -1299,7 +1328,16 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               ),
             );
             if (ok != true || !mounted) return;
-            await Supabase.instance.client.from('rdv').delete().eq('id', rdv['id']);
+            final supa = Supabase.instance.client;
+            await supa.from('agenda_events').delete().eq('rdv_id', rdv['id']);
+            final proUidDel = FirebaseAuth.instance.currentUser?.uid;
+            if (proUidDel != null) {
+              try {
+                await supa.from('agenda_events').delete()
+                    .eq('uid', proUidDel).eq('couleur', 'rdv:${rdv['id']}');
+              } catch (_) {}
+            }
+            await supa.from('rdv').delete().eq('id', rdv['id']);
             await _loadRdvs();
           } : null,
           onDone:    () => _updateStatut(rdv['id'].toString(), 'termine'),
@@ -1393,6 +1431,8 @@ class _RdvCard extends StatelessWidget {
     final notes = rdv['notes_pro']?.toString() ?? '';
     final statut = rdv['statut']?.toString() ?? '';
     final hasNotes = notes.isNotEmpty;
+    final visitCount = (rdv['_visit_count'] as int?) ?? 0;
+    final isFirstVisit = visitCount <= 1;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1437,13 +1477,31 @@ class _RdvCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              // Client
+              // Client + badge visite
               Row(children: [
                 const CircleAvatar(radius: 14, backgroundColor: Color(0xFFE8F5E9),
                     child: Icon(Icons.person_outline, size: 16, color: Color(0xFF0C5C6C))),
                 const SizedBox(width: 10),
-                Text(clientName, style: const TextStyle(fontFamily: 'Galey',
-                    fontWeight: FontWeight.w600, fontSize: 14)),
+                Expanded(child: Text(clientName, style: const TextStyle(fontFamily: 'Galey',
+                    fontWeight: FontWeight.w600, fontSize: 14))),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isFirstVisit ? Colors.amber.shade50 : Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: isFirstVisit ? Colors.amber.shade300 : Colors.blue.shade200),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(isFirstVisit ? Icons.star_outline : Icons.repeat,
+                        size: 12, color: isFirstVisit ? Colors.amber.shade700 : Colors.blue.shade600),
+                    const SizedBox(width: 4),
+                    Text(
+                      isFirstVisit ? 'Première visite' : '$visitCount visites',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600,
+                          color: isFirstVisit ? Colors.amber.shade700 : Colors.blue.shade600),
+                    ),
+                  ]),
+                ),
               ]),
               if (animalNom.isNotEmpty) ...[
                 const SizedBox(height: 6),
