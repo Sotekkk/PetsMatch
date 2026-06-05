@@ -17,9 +17,10 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
   static const _teal = Color(0xFF0C5C6C);
   static const _bg = Color(0xFFF8F8F6);
 
-  final _siretCtrl = TextEditingController();
-  final _tvaCtrl = TextEditingController();
+  final _siretCtrl  = TextEditingController();
+  final _tvaCtrl    = TextEditingController();
   final _acacedCtrl = TextEditingController();
+  final _ordreCtrl  = TextEditingController();
 
   DateTime? _acacedDate;
   bool _uploading = false;
@@ -41,11 +42,14 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
     'Santé animal': ['Vétérinaire', 'Auxiliaire de santé', 'Spécialistes de santé'],
   };
 
+  bool get _isVet => _selectedProfession == 'Vétérinaire';
+
   @override
   void dispose() {
     _siretCtrl.dispose();
     _tvaCtrl.dispose();
     _acacedCtrl.dispose();
+    _ordreCtrl.dispose();
     super.dispose();
   }
 
@@ -149,6 +153,11 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
       }
       User_Info.catPro = _selectedCategory!;
       User_Info.professionPro = _selectedProfession!;
+      if (_isVet && _ordreCtrl.text.trim().isNotEmpty) {
+        User_Info.certifications = [
+          {'nom': 'Numéro d\'ordre vétérinaire', 'organisme': 'Ordre national des vétérinaires', 'numero': _ordreCtrl.text.trim()}
+        ];
+      }
     } else {
       if (!_siretUploaded || _siretCtrl.text.trim().isEmpty) {
         _showError('Le numéro SIRET et son justificatif sont obligatoires.');
@@ -264,8 +273,12 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
                     label: 'Profession',
                     value: _selectedProfession,
                     items: _professions[_selectedCategory]!,
-                    onChanged: (v) => setState(() => _selectedProfession = v),
+                    onChanged: (v) => setState(() { _selectedProfession = v; _ordreCtrl.clear(); }),
                   ),
+                if (_isVet) ...[
+                  const SizedBox(height: 12),
+                  _textField('Numéro d\'ordre vétérinaire (optionnel)', _ordreCtrl),
+                ],
               ]),
               const SizedBox(height: 20),
             ],

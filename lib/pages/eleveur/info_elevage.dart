@@ -494,11 +494,15 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
             ]),
             const SizedBox(height: 20),
 
-            // ── Espèces élevées ──────────────────────────────────────────────
-            _sectionTitle('Espèces élevées *'),
+            // ── Espèces ──────────────────────────────────────────────────────
+            _sectionTitle(User_Info.isPro ? 'Espèces prises en charge *' : 'Espèces élevées *'),
             const SizedBox(height: 4),
-            Text('Sélectionnez toutes les espèces que vous élevez.',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+            Text(
+              User_Info.isPro
+                  ? 'Sélectionnez toutes les espèces que vous prenez en charge.'
+                  : 'Sélectionnez toutes les espèces que vous élevez.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+            ),
             const SizedBox(height: 10),
             _card([
               Wrap(
