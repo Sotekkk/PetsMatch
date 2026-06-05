@@ -444,7 +444,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
                   // ── Espèces ───────────────────────────────────────────────
                   const SizedBox(height: 24),
-                  _sectionTitle('Espèces acceptées'),
+                  _sectionTitle(_especesLabel),
                   const SizedBox(height: 12),
                   _especesSelector(),
 
@@ -838,6 +838,23 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         ),
       ]),
     );
+  }
+
+  String get _especesLabel {
+    switch (_catPro) {
+      case 'sante':
+      case 'veterinaire':
+        return 'Espèces soignées';
+      case 'pension':
+      case 'garde':
+        return 'Espèces gardées';
+      case 'education':
+      case 'comportement':
+      case 'educateur':
+        return 'Espèces prises en charge';
+      default:
+        return 'Espèces acceptées';
+    }
   }
 
   Widget _especesSelector() {

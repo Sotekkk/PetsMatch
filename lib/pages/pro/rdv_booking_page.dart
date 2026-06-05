@@ -8,6 +8,7 @@ class RdvBookingPage extends StatefulWidget {
   final String proName;
   final Color categoryColor;
   final bool isPension;
+  final bool isVet;
 
   const RdvBookingPage({
     super.key,
@@ -15,6 +16,7 @@ class RdvBookingPage extends StatefulWidget {
     required this.proName,
     required this.categoryColor,
     this.isPension = false,
+    this.isVet = false,
   });
 
   @override
@@ -53,6 +55,18 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     ('depart',  'Départ de l\'animal',   Icons.logout_outlined),
     ('autre',   'Autre',                 Icons.more_horiz_outlined),
   ];
+
+  static const _vetMotifs = [
+    ('consultation', 'Consultation',  Icons.medical_services_outlined),
+    ('vaccination',  'Vaccination',   Icons.medication_outlined),
+    ('bilan',        'Bilan annuel',  Icons.assignment_outlined),
+    ('urgence',      'Urgence',       Icons.warning_amber_outlined),
+    ('chirurgie',    'Chirurgie',     Icons.healing_outlined),
+    ('autre',        'Autre',         Icons.more_horiz_outlined),
+  ];
+
+  String? _selectedVetMotif;
+  int _selectedVetDuration = 30;
 
   @override
   void initState() {
@@ -211,6 +225,16 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       if (_selectedMotif == 'autre' && _notesCtrl.text.trim().isEmpty) {
         _snack('Précisez le motif dans le champ "Autre"', color: Colors.orange); return;
       }
+    } else if (widget.isVet) {
+      if (_selectedVetMotif == null) {
+        _snack('Veuillez choisir le motif de la consultation', color: Colors.orange); return;
+      }
+      if (_selectedVetMotif == 'autre' && _motifCtrl.text.trim().isEmpty) {
+        _snack('Précisez le motif dans le champ "Autre"', color: Colors.orange); return;
+      }
+      if (_isBusy(_selectedHour, _selectedMinute)) {
+        _snack('Ce créneau est déjà réservé.', color: Colors.orange); return;
+      }
     } else {
       if (_isBusy(_selectedHour, _selectedMinute)) {
         _snack('Ce créneau est déjà réservé.', color: Colors.orange); return;
@@ -233,6 +257,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         motif = _selectedMotif == 'autre'
             ? _notesCtrl.text.trim()
             : _pensionMotifs.firstWhere((m) => m.$1 == _selectedMotif).$2;
+      } else if (widget.isVet) {
+        dateHeure = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day,
+            _selectedHour, _selectedMinute).toUtc();
+        motif = _selectedVetMotif == 'autre'
+            ? _motifCtrl.text.trim()
+            : _vetMotifs.firstWhere((m) => m.$1 == _selectedVetMotif).$2;
       } else {
         dateHeure = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day,
             _selectedHour, _selectedMinute).toUtc();
@@ -254,6 +284,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         'motif':      motif,
         if (widget.isPension && _premiereVisite != null) 'premiere_visite': _premiereVisite,
         if (widget.isPension && _notesCtrl.text.trim().isNotEmpty && _selectedMotif != 'autre')
+          'notes_client': _notesCtrl.text.trim(),
+        if (widget.isVet) 'duree_minutes': _selectedVetDuration,
+        if (widget.isVet && _notesCtrl.text.trim().isNotEmpty)
           'notes_client': _notesCtrl.text.trim(),
         'statut': 'demande',
       });
@@ -328,7 +361,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                 children: [
                   _buildProBanner(),
                   const SizedBox(height: 20),
-                  if (widget.isPension) ..._buildPensionFields() else ..._buildStandardFields(),
+                  if (widget.isPension) ..._buildPensionFields()
+                  else if (widget.isVet) ..._buildVetFields()
+                  else ..._buildStandardFields(),
                   const SizedBox(height: 20),
                   _buildAnimalSection(),
                   const SizedBox(height: 20),
@@ -339,7 +374,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                   Center(child: Text(
                     widget.isPension
                         ? 'La pension vous confirmera l\'heure exacte de votre RDV.'
-                        : 'Le professionnel confirmera votre rendez-vous.',
+                        : widget.isVet
+                            ? 'Le vétérinaire confirmera votre rendez-vous.'
+                            : 'Le professionnel confirmera votre rendez-vous.',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
                     textAlign: TextAlign.center,
                   )),
@@ -358,7 +395,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       border: Border.all(color: widget.categoryColor.withValues(alpha: 0.3)),
     ),
     child: Row(children: [
-      Icon(widget.isPension ? Icons.home_work_outlined : Icons.person_outlined,
+      Icon(widget.isPension ? Icons.home_work_outlined
+          : widget.isVet ? Icons.medical_services_outlined
+          : Icons.person_outlined,
           color: widget.categoryColor, size: 20),
       const SizedBox(width: 10),
       Expanded(child: Text(widget.proName,
@@ -562,6 +601,104 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     );
   }
 
+  // ── Vet fields ────────────────────────────────────────────────────────────────
+
+  List<Widget> _buildVetFields() => [
+    _sectionTitle('Motif de la consultation *'),
+    const SizedBox(height: 10),
+    Wrap(
+      spacing: 8, runSpacing: 8,
+      children: _vetMotifs.map((m) {
+        final sel = _selectedVetMotif == m.$1;
+        return GestureDetector(
+          onTap: () => setState(() {
+            _selectedVetMotif = m.$1;
+            if (m.$1 != 'autre') _motifCtrl.clear();
+          }),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: sel ? widget.categoryColor : Colors.white,
+              border: Border.all(color: sel ? widget.categoryColor : const Color(0xFFE4E7E2)),
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: sel ? [BoxShadow(color: widget.categoryColor.withValues(alpha: 0.2),
+                  blurRadius: 6, offset: const Offset(0, 2))] : [],
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(m.$3, size: 16, color: sel ? Colors.white : Colors.grey.shade500),
+              const SizedBox(width: 6),
+              Text(m.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: sel ? Colors.white : const Color(0xFF1E2025))),
+            ]),
+          ),
+        );
+      }).toList(),
+    ),
+    if (_selectedVetMotif == 'autre') ...[
+      const SizedBox(height: 10),
+      TextField(
+        controller: _motifCtrl,
+        maxLines: 2,
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+        decoration: _inputDecoration('Précisez le motif de la consultation…'),
+      ),
+    ],
+    const SizedBox(height: 20),
+
+    _sectionTitle('Durée estimée'),
+    const SizedBox(height: 10),
+    Row(children: [15, 30, 45, 60].map((d) {
+      final sel = _selectedVetDuration == d;
+      return GestureDetector(
+        onTap: () => setState(() => _selectedVetDuration = d),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          margin: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          decoration: BoxDecoration(
+            color: sel ? widget.categoryColor : Colors.white,
+            border: Border.all(color: sel ? widget.categoryColor : const Color(0xFFE4E7E2)),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            d < 60 ? '$d min' : '1 h',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                color: sel ? Colors.white : const Color(0xFF1E2025)),
+          ),
+        ),
+      );
+    }).toList()),
+    const SizedBox(height: 20),
+
+    _sectionTitle('Date du rendez-vous'),
+    const SizedBox(height: 8),
+    GestureDetector(
+      onTap: _pickDate,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white, borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE4E7E2)),
+        ),
+        child: Row(children: [
+          Icon(Icons.calendar_today_outlined, color: widget.categoryColor, size: 18),
+          const SizedBox(width: 12),
+          Text(_formatDate(_selectedDate),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+          const Spacer(),
+          const Icon(Icons.chevron_right, color: Colors.grey, size: 18),
+        ]),
+      ),
+    ),
+    const SizedBox(height: 20),
+
+    _sectionTitle('Heure souhaitée'),
+    const SizedBox(height: 8),
+    _buildTimeSelector(),
+  ];
+
   // ── Standard (non-pension) fields ────────────────────────────────────────────
 
   List<Widget> _buildStandardFields() => [
@@ -724,8 +861,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   Widget _buildNotesSection() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _sectionTitle(widget.isPension && _selectedMotif != 'autre'
-          ? 'Notes (optionnel)' : 'Notes'),
+      _sectionTitle('Notes (optionnel)'),
       const SizedBox(height: 8),
       if (widget.isPension && _selectedMotif == 'autre') const SizedBox.shrink()
       else TextField(
@@ -734,7 +870,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
         decoration: _inputDecoration(widget.isPension
             ? 'Informations complémentaires pour la pension…'
-            : 'Informations complémentaires…'),
+            : widget.isVet
+                ? 'Informations complémentaires pour le vétérinaire…'
+                : 'Informations complémentaires…'),
       ),
     ],
   );

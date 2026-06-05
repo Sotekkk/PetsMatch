@@ -367,7 +367,12 @@ function UserModal({
               {supa.rayon_intervention != null && <InfoRow label="Rayon" value={`${supa.rayon_intervention} km`} />}
               {(supa.especes_acceptees ?? []).length > 0 && (
                 <div>
-                  <p className="text-xs text-gray-400 mb-1">Espèces acceptées</p>
+                  <p className="text-xs text-gray-400 mb-1">
+                    {supa.cat_pro === 'sante' || supa.cat_pro === 'veterinaire' ? 'Espèces soignées'
+                      : supa.cat_pro === 'pension' || supa.cat_pro === 'garde' ? 'Espèces gardées'
+                      : supa.cat_pro === 'education' || supa.cat_pro === 'comportement' || supa.cat_pro === 'educateur' ? 'Espèces prises en charge'
+                      : 'Espèces acceptées'}
+                  </p>
                   <div className="flex flex-wrap gap-1">
                     {(supa.especes_acceptees ?? []).map(e => <Badge key={e} label={e} color="#0C5C6C" />)}
                   </div>
