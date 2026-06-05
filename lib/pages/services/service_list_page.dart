@@ -1,18 +1,18 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/services/service_detail_page.dart';
+import 'package:PetsMatch/utils/french_geo.dart';
 
 /// Page annuaire — liste des professionnels d'une catégorie.
 class ServiceListPage extends StatefulWidget {
   final String categoryLabel;
   final Color categoryColor;
   final IconData categoryIcon;
-  /// Valeurs de `cat_pro` Supabase à filtrer (ex: ['sante', 'veterinaire']).
   final List<String> catProValues;
-  /// Valeurs de `profession_pro` à filtrer (optionnel — affinement).
   final List<String>? professionValues;
 
   const ServiceListPage({
@@ -38,13 +38,51 @@ class _ServiceListPageState extends State<ServiceListPage> {
   bool _locating = false;
   double? _userLat;
   double? _userLng;
+
   String _search = '';
   String _filterEspece = '';
+  String _filterRegion = '';
+  String _filterDept = '';
+
   GoogleMapController? _mapCtrl;
 
   static const _especes = ['Toutes', 'Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
 
-  // ── Carte ─────────────────────────────────────────────────────────────────
+  static const _regions = [
+    'Île-de-France', 'Auvergne-Rhône-Alpes', 'Bretagne', 'Normandie',
+    'Hauts-de-France', 'Grand Est', 'Pays de la Loire', 'Nouvelle-Aquitaine',
+    'Occitanie', "Provence-Alpes-Côte d'Azur", 'Bourgogne-Franche-Comté',
+    'Centre-Val de Loire', 'Corse',
+  ];
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPros();
+  }
+
+  Future<void> _loadPros() async {
+    try {
+      final rows = await _supa
+          .from('users')
+          .select()
+          .inFilter('cat_pro', widget.catProValues)
+          .order('name_elevage');
+      if (mounted) {
+        setState(() {
+          _pros = List<Map<String, dynamic>>.from(rows);
+          _filtered = _pros;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // ── Markers ────────────────────────────────────────────────────────────────
 
   double _hueForCat(String cat) => switch (cat) {
     'sante' || 'veterinaire' => BitmapDescriptor.hueAzure,
@@ -81,75 +119,61 @@ class _ServiceListPageState extends State<ServiceListPage> {
     );
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _loadPros();
-  }
-
-  Future<void> _loadPros() async {
-    try {
-      var query = _supa.from('users').select().eq('is_pro', true);
-
-      // Filtre sur la catégorie — on utilise le premier catProValue comme base
-      if (widget.catProValues.isNotEmpty) {
-        query = query.inFilter('cat_pro', widget.catProValues);
-      }
-
-      final rows = await query.order('name_elevage');
-      if (mounted) {
-        setState(() {
-          _pros = List<Map<String, dynamic>>.from(rows);
-          _filtered = _pros;
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
+  // ── "Proche de moi" — lat/lng du profil Supabase, fetchés au tap ────────
 
   Future<void> _toggleNearMe() async {
     if (_nearMe) {
-      setState(() { _nearMe = false; _applyFilters(); });
+      setState(() { _nearMe = false; _userLat = null; _userLng = null; });
+      _applyFilters();
       return;
     }
     setState(() => _locating = true);
     try {
-      var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-      }
-      if (perm == LocationPermission.deniedForever || perm == LocationPermission.denied) {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Localisation refusée', style: TextStyle(fontFamily: 'Galey')),
+          content: Text('Connectez-vous pour utiliser cette fonctionnalité.',
+              style: TextStyle(fontFamily: 'Galey')),
         ));
         return;
       }
-      final pos = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium));
+      final row = await _supa
+          .from('users')
+          .select('lat, lng')
+          .eq('uid', uid)
+          .maybeSingle();
+      final lat = (row?['lat'] as num?)?.toDouble();
+      final lng = (row?['lng'] as num?)?.toDouble();
+      if (lat == null || lng == null) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Position introuvable dans votre profil. Renseignez votre adresse dans les paramètres.',
+              style: TextStyle(fontFamily: 'Galey')),
+        ));
+        return;
+      }
       if (mounted) {
-        setState(() {
-          _userLat = pos.latitude;
-          _userLng = pos.longitude;
-          _nearMe = true;
-        });
+        setState(() { _userLat = lat; _userLng = lng; _nearMe = true; });
         _applyFilters();
+        if (_showMap && _mapCtrl != null) {
+          _mapCtrl!.animateCamera(CameraUpdate.newLatLngZoom(LatLng(lat, lng), 10));
+        }
       }
     } catch (_) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Impossible d\'obtenir la position', style: TextStyle(fontFamily: 'Galey')),
+        content: Text('Impossible de récupérer votre position.', style: TextStyle(fontFamily: 'Galey')),
       ));
     } finally {
       if (mounted) setState(() => _locating = false);
     }
   }
 
+  // ── Filtres ────────────────────────────────────────────────────────────────
+
   void _applyFilters() {
     setState(() {
       _filtered = _pros.where((p) {
-        final nom = ((p['name_elevage'] ?? p['firstname'] ?? '') as String).toLowerCase();
-        final ville = ((p['ville_elevage'] ?? p['ville'] ?? '') as String).toLowerCase();
+        final nom      = ((p['name_elevage'] ?? p['firstname'] ?? '') as String).toLowerCase();
+        final ville    = ((p['ville_elevage'] ?? p['ville'] ?? '') as String).toLowerCase();
         final profession = ((p['profession_pro'] ?? '') as String).toLowerCase();
         final matchSearch = _search.isEmpty ||
             nom.contains(_search.toLowerCase()) ||
@@ -161,6 +185,19 @@ class _ServiceListPageState extends State<ServiceListPage> {
             _filterEspece == 'Toutes' ||
             (especes is List && especes.contains(_filterEspece));
 
+        // Filtre région/département — lit aussi les colonnes *_elevage
+        final loc = '$ville '
+            '${(p['region_elevage'] ?? p['region'] ?? '').toString().toLowerCase()} '
+            '${(p['departement_elevage'] ?? p['departement'] ?? '').toString().toLowerCase()}';
+        bool matchRegion = true;
+        if (_filterRegion.isNotEmpty) {
+          final depts = FrenchGeo.departmentsInRegion(_filterRegion);
+          matchRegion = loc.contains(_filterRegion.toLowerCase()) ||
+              depts.any((d) => loc.contains(d.toLowerCase()));
+        }
+        final matchDept = _filterDept.isEmpty || loc.contains(_filterDept.toLowerCase());
+
+        // Filtre "proche de moi"
         bool matchNearMe = true;
         if (_nearMe && _userLat != null && _userLng != null) {
           final pLat = (p['lat'] as num?)?.toDouble();
@@ -168,24 +205,272 @@ class _ServiceListPageState extends State<ServiceListPage> {
           if (pLat == null || pLng == null) {
             matchNearMe = false;
           } else {
-            final rayon = (p['rayon_intervention'] as num?)?.toDouble() ?? 30;
-            final distKm = Geolocator.distanceBetween(_userLat!, _userLng!, pLat, pLng) / 1000;
-            matchNearMe = distKm <= rayon;
+            // rayon = 0 signifie non configuré → on utilise 50 km par défaut
+            final rawRayon = (p['rayon_intervention'] as num?)?.toDouble() ?? 0;
+            final rayon = rawRayon > 0 ? rawRayon : 50.0;
+            final distM = Geolocator.distanceBetween(_userLat!, _userLng!, pLat, pLng);
+            matchNearMe = distM / 1000 <= rayon;
           }
         }
 
-        return matchSearch && matchEspece && matchNearMe;
+        return matchSearch && matchEspece && matchRegion && matchDept && matchNearMe;
       }).toList();
     });
   }
 
+  bool get _hasActiveFilters =>
+      _nearMe || _filterEspece.isNotEmpty || _filterRegion.isNotEmpty || _filterDept.isNotEmpty || _search.isNotEmpty;
+
+  // ── Barre de filtres ───────────────────────────────────────────────────────
+
+  Widget _buildFiltersBar() {
+    final depts = _filterRegion.isNotEmpty
+        ? FrenchGeo.departmentsInRegion(_filterRegion)
+        : <String>[];
+
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Recherche texte
+          TextField(
+            onChanged: (v) { _search = v; _applyFilters(); },
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Rechercher par nom, ville, profession...',
+              hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+              prefixIcon: const Icon(Icons.search, size: 20, color: Colors.grey),
+              filled: true,
+              fillColor: const Color(0xFFF0F0F0),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Région + Département
+          Row(children: [
+            Expanded(
+              child: _GeoDropdown(
+                value: _filterRegion.isEmpty ? null : _filterRegion,
+                hint: 'Région',
+                items: _regions,
+                color: widget.categoryColor,
+                onChanged: (v) {
+                  setState(() { _filterRegion = v ?? ''; _filterDept = ''; });
+                  _applyFilters();
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _GeoDropdown(
+                value: _filterDept.isEmpty ? null : _filterDept,
+                hint: 'Département',
+                items: depts,
+                color: widget.categoryColor,
+                onChanged: (v) {
+                  setState(() => _filterDept = v ?? '');
+                  _applyFilters();
+                },
+              ),
+            ),
+          ]),
+          const SizedBox(height: 10),
+
+          // Espèces
+          SizedBox(
+            height: 32,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _especes.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              itemBuilder: (_, i) {
+                final e = _especes[i];
+                final selected = (_filterEspece.isEmpty && e == 'Toutes') || (_filterEspece == e);
+                return GestureDetector(
+                  onTap: () { _filterEspece = e == 'Toutes' ? '' : e; _applyFilters(); },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: selected ? widget.categoryColor : const Color(0xFFF0F0F0),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(e, style: TextStyle(
+                      fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                      color: selected ? Colors.white : const Color(0xFF555555),
+                    )),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Proche de moi + reset filtres
+          Row(children: [
+            GestureDetector(
+              onTap: _locating ? null : _toggleNearMe,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  color: _nearMe ? widget.categoryColor : const Color(0xFFF0F0F0),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (_locating)
+                    SizedBox(width: 14, height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2,
+                        color: _nearMe ? Colors.white : widget.categoryColor))
+                  else
+                    Icon(Icons.near_me_rounded, size: 14,
+                      color: _nearMe ? Colors.white : const Color(0xFF555555)),
+                  const SizedBox(width: 6),
+                  Text('Proche de moi', style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                    color: _nearMe ? Colors.white : const Color(0xFF555555),
+                  )),
+                ]),
+              ),
+            ),
+            if (_hasActiveFilters) ...[
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _nearMe = false; _userLat = null; _userLng = null;
+                    _search = ''; _filterEspece = ''; _filterRegion = ''; _filterDept = '';
+                  });
+                  _applyFilters();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0F0F0),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text('Réinitialiser', style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                    color: Color(0xFF888888),
+                  )),
+                ),
+              ),
+            ],
+          ]),
+        ],
+      ),
+    );
+  }
+
+  // ── Vue carte plein écran ─────────────────────────────────────────────────
+
+  Widget _buildMapView() {
+    final markers = _buildMarkers();
+    final initialTarget = _userLat != null ? LatLng(_userLat!, _userLng!) : const LatLng(46.5, 2.5);
+    final initialZoom = _userLat != null ? 10.0 : 6.0;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF1E2025),
+      body: Stack(
+        children: [
+          if (_loading)
+            const Center(child: CircularProgressIndicator(color: Color(0xFF6E9E57)))
+          else if (markers.isEmpty)
+            Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(widget.categoryIcon, size: 64, color: Colors.white30),
+                const SizedBox(height: 12),
+                Text(
+                  _filtered.isEmpty ? 'Aucun professionnel trouvé' : 'Aucun professionnel\navec position GPS',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.white54),
+                ),
+              ]),
+            )
+          else
+            GoogleMap(
+              initialCameraPosition: CameraPosition(target: initialTarget, zoom: initialZoom),
+              markers: markers,
+              onMapCreated: (c) => _mapCtrl = c,
+              myLocationEnabled: true,
+              myLocationButtonEnabled: true,
+              zoomControlsEnabled: true,
+              zoomGesturesEnabled: true,
+              scrollGesturesEnabled: true,
+              rotateGesturesEnabled: true,
+              tiltGesturesEnabled: false,
+            ),
+
+          // Overlay
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Row(children: [
+                _mapIconButton(Icons.arrow_back_ios_new_rounded, () => Navigator.pop(context)),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _locating ? null : _toggleNearMe,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _nearMe ? widget.categoryColor : Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8)],
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      if (_locating)
+                        SizedBox(width: 14, height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2,
+                            color: _nearMe ? Colors.white : widget.categoryColor))
+                      else
+                        Icon(Icons.near_me_rounded, size: 14,
+                          color: _nearMe ? Colors.white : widget.categoryColor),
+                      const SizedBox(width: 6),
+                      Text('Proche de moi', style: TextStyle(
+                        fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                        color: _nearMe ? Colors.white : const Color(0xFF333333),
+                      )),
+                    ]),
+                  ),
+                ),
+                const Spacer(),
+                _mapIconButton(Icons.list_rounded, () => setState(() => _showMap = false)),
+              ]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mapIconButton(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40, height: 40,
+        decoration: BoxDecoration(
+          color: Colors.white, shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8)],
+        ),
+        child: Icon(icon, size: 18, color: const Color(0xFF1E2025)),
+      ),
+    );
+  }
+
+  // ── Build principal ────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
+    if (_showMap) return _buildMapView();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       body: CustomScrollView(
         slivers: [
-          // AppBar
           SliverAppBar(
             expandedHeight: 130,
             pinned: true,
@@ -196,142 +481,35 @@ class _ServiceListPageState extends State<ServiceListPage> {
             ),
             actions: [
               IconButton(
-                icon: Icon(_showMap ? Icons.list_rounded : Icons.map_outlined, color: Colors.white),
-                tooltip: _showMap ? 'Vue liste' : 'Vue carte',
-                onPressed: () => setState(() => _showMap = !_showMap),
+                icon: const Icon(Icons.map_outlined, color: Colors.white),
+                tooltip: 'Vue carte',
+                onPressed: () => setState(() => _showMap = true),
               ),
             ],
             flexibleSpace: FlexibleSpaceBar(
               centerTitle: false,
               titlePadding: const EdgeInsets.fromLTRB(56, 0, 60, 16),
-              title: Text(
-                widget.categoryLabel,
-                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white),
-              ),
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [widget.categoryColor.withValues(alpha: 0.85), const Color(0xFF1E2025)],
-                      ),
+              title: Text(widget.categoryLabel,
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white)),
+              background: Stack(fit: StackFit.expand, children: [
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft, end: Alignment.bottomRight,
+                      colors: [widget.categoryColor.withValues(alpha: 0.85), const Color(0xFF1E2025)],
                     ),
                   ),
-                  Positioned(
-                    right: -20, top: -10,
-                    child: Icon(widget.categoryIcon, size: 130, color: Colors.white.withValues(alpha: 0.07)),
-                  ),
-                ],
-              ),
+                ),
+                Positioned(right: -20, top: -10,
+                  child: Icon(widget.categoryIcon, size: 130, color: Colors.white.withValues(alpha: 0.07))),
+              ]),
             ),
           ),
 
-          // Barre de recherche + filtre espèce
-          SliverToBoxAdapter(
-            child: Container(
-              color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              child: Column(
-                children: [
-                  // Champ de recherche
-                  TextField(
-                    onChanged: (v) { _search = v; _applyFilters(); },
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: 'Rechercher par nom, ville...',
-                      hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13),
-                      prefixIcon: const Icon(Icons.search, size: 20, color: Colors.grey),
-                      filled: true,
-                      fillColor: const Color(0xFFF0F0F0),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  // Filtres espèces
-                  SizedBox(
-                    height: 32,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _especes.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 6),
-                      itemBuilder: (_, i) {
-                        final e = _especes[i];
-                        final selected = (_filterEspece.isEmpty && e == 'Toutes') ||
-                            (_filterEspece == e);
-                        return GestureDetector(
-                          onTap: () {
-                            _filterEspece = e == 'Toutes' ? '' : e;
-                            _applyFilters();
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: selected ? widget.categoryColor : const Color(0xFFF0F0F0),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(e,
-                              style: TextStyle(
-                                fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-                                color: selected ? Colors.white : const Color(0xFF555555),
-                              )),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Filtre "Proche de moi"
-                  GestureDetector(
-                    onTap: _locating ? null : _toggleNearMe,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: _nearMe ? widget.categoryColor : const Color(0xFFF0F0F0),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        if (_locating)
-                          SizedBox(width: 14, height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2,
-                              color: _nearMe ? Colors.white : widget.categoryColor))
-                        else
-                          Icon(Icons.near_me_rounded, size: 14,
-                            color: _nearMe ? Colors.white : const Color(0xFF555555)),
-                        const SizedBox(width: 6),
-                        Text('Proche de moi',
-                          style: TextStyle(
-                            fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-                            color: _nearMe ? Colors.white : const Color(0xFF555555),
-                          )),
-                      ]),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          SliverToBoxAdapter(child: _buildFiltersBar()),
 
-          // Résultats — liste ou carte
           if (_loading)
             const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: Color(0xFF6E9E57))))
-          else if (_showMap)
-            SliverFillRemaining(
-              child: _filtered.isEmpty
-                  ? Center(child: Text('Aucun professionnel avec position GPS',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500)))
-                  : GoogleMap(
-                      initialCameraPosition: const CameraPosition(target: LatLng(46.5, 2.5), zoom: 6),
-                      markers: _buildMarkers(),
-                      onMapCreated: (c) => _mapCtrl = c,
-                      myLocationEnabled: true,
-                      myLocationButtonEnabled: true,
-                    ),
-            )
           else if (_filtered.isEmpty)
             SliverFillRemaining(
               child: Center(
@@ -341,7 +519,7 @@ class _ServiceListPageState extends State<ServiceListPage> {
                   Text('Aucun professionnel trouvé',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 16, color: Colors.grey.shade500)),
                   const SizedBox(height: 6),
-                  Text('Soyez le premier à vous inscrire !',
+                  Text('Essayez d\'élargir vos filtres.',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400)),
                 ]),
               ),
@@ -375,6 +553,53 @@ class _ServiceListPageState extends State<ServiceListPage> {
   }
 }
 
+// ── Dropdown géographique ─────────────────────────────────────────────────────
+
+class _GeoDropdown extends StatelessWidget {
+  final String? value;
+  final String hint;
+  final List<String> items;
+  final Color color;
+  final ValueChanged<String?> onChanged;
+
+  const _GeoDropdown({
+    required this.value,
+    required this.hint,
+    required this.items,
+    required this.color,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: value != null ? color.withValues(alpha: 0.1) : const Color(0xFFF0F0F0),
+        borderRadius: BorderRadius.circular(20),
+        border: value != null ? Border.all(color: color.withValues(alpha: 0.4)) : null,
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          hint: Text(hint, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+          isExpanded: true,
+          icon: Icon(Icons.keyboard_arrow_down_rounded, size: 16,
+            color: value != null ? color : Colors.grey.shade500),
+          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: value != null ? color : Colors.grey.shade700,
+            fontWeight: value != null ? FontWeight.w700 : FontWeight.normal),
+          items: [
+            DropdownMenuItem<String>(value: null, child: Text('— $hint', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500))),
+            ...items.map((s) => DropdownMenuItem<String>(value: s, child: Text(s))),
+          ],
+          onChanged: items.isEmpty ? null : onChanged,
+        ),
+      ),
+    );
+  }
+}
+
 // ── Bottom sheet carte ────────────────────────────────────────────────────────
 
 class _ProMapSheet extends StatelessWidget {
@@ -386,12 +611,12 @@ class _ProMapSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nom      = pro['name_elevage'] ?? pro['firstname'] ?? 'Professionnel';
-    final prof     = pro['profession_pro'] ?? '';
-    final ville    = pro['ville_elevage'] ?? pro['ville'] ?? '';
-    final photo    = pro['profile_picture_url_elevage'] ?? pro['profile_picture_url'] ?? '';
-    final accept   = pro['accept_new_clients'] ?? true;
-    final especes  = (pro['especes_acceptees'] as List? ?? []).map((e) => e.toString()).toList();
+    final nom    = pro['name_elevage'] ?? pro['firstname'] ?? 'Professionnel';
+    final prof   = pro['profession_pro'] ?? '';
+    final ville  = pro['ville_elevage'] ?? pro['ville'] ?? '';
+    final photo  = pro['profile_picture_url_elevage'] ?? pro['profile_picture_url'] ?? '';
+    final accept = pro['accept_new_clients'] ?? true;
+    final especes = (pro['especes_acceptees'] as List? ?? []).map((e) => e.toString()).toList();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
@@ -464,7 +689,7 @@ class _ProMapSheet extends StatelessWidget {
   }
 }
 
-// ── Carte professionnel (avec bannière, style profil éleveur) ─────────────────
+// ── Carte professionnel ───────────────────────────────────────────────────────
 
 class _ProCard extends StatelessWidget {
   final Map<String, dynamic> pro;
@@ -493,97 +718,84 @@ class _ProCard extends StatelessWidget {
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 3))],
         ),
         clipBehavior: Clip.antiAlias,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              // Bannière
-              SizedBox(
-                height: 100,
-                width: double.infinity,
-                child: Stack(fit: StackFit.expand, children: [
-                  banner.isNotEmpty
-                      ? CachedNetworkImage(imageUrl: banner, fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => _gradient())
-                      : (photo.isNotEmpty
-                          ? CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover,
-                              color: Colors.black26, colorBlendMode: BlendMode.darken,
-                              errorWidget: (_, __, ___) => _gradient())
-                          : _gradient()),
-                  // Badge dispo en haut à droite
-                  Positioned(
-                    top: 8, right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Stack(clipBehavior: Clip.none, children: [
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SizedBox(
+              height: 100, width: double.infinity,
+              child: Stack(fit: StackFit.expand, children: [
+                banner.isNotEmpty
+                    ? CachedNetworkImage(imageUrl: banner, fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => _gradient())
+                    : (photo.isNotEmpty
+                        ? CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover,
+                            color: Colors.black26, colorBlendMode: BlendMode.darken,
+                            errorWidget: (_, __, ___) => _gradient())
+                        : _gradient()),
+                Positioned(top: 8, right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: accept ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(accept ? '✓ Dispo' : 'Complet',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700,
+                        color: accept ? const Color(0xFF388E3C) : const Color(0xFFF57C00))),
+                  )),
+              ]),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 28, 12, 12),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(nom.toString(),
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1E2025))),
+                if (profession.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(profession.toString(),
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: categoryColor, fontWeight: FontWeight.w600)),
+                ],
+                if (ville.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(children: [
+                    Icon(Icons.location_on_outlined, size: 12, color: Colors.grey.shade400),
+                    const SizedBox(width: 2),
+                    Text(ville.toString(), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+                  ]),
+                ],
+                if (especeList.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 4, runSpacing: 4, children: especeList.take(4).map((e) =>
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                       decoration: BoxDecoration(
-                        color: accept ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
+                        color: categoryColor.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Text(
-                        accept ? '✓ Dispo' : 'Complet',
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700,
-                          color: accept ? const Color(0xFF388E3C) : const Color(0xFFF57C00)),
-                      ),
-                    ),
-                  ),
-                ]),
+                      child: Text(e, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: categoryColor, fontWeight: FontWeight.w600)),
+                    )
+                  ).toList()),
+                ],
+              ]),
+            ),
+          ]),
+          Positioned(
+            top: 58, left: 12,
+            child: Container(
+              width: 56, height: 56,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2.5),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 6)],
               ),
-              // Infos — padding top 28 pour laisser place à la moitié basse de la bulle
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 28, 12, 12),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(nom.toString(),
-                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1E2025))),
-                  if (profession.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(profession.toString(),
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: categoryColor, fontWeight: FontWeight.w600)),
-                  ],
-                  if (ville.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Row(children: [
-                      Icon(Icons.location_on_outlined, size: 12, color: Colors.grey.shade400),
-                      const SizedBox(width: 2),
-                      Text(ville.toString(), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
-                    ]),
-                  ],
-                  if (especeList.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Wrap(spacing: 4, runSpacing: 4, children: especeList.take(4).map((e) =>
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: categoryColor.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(e, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: categoryColor, fontWeight: FontWeight.w600)),
-                      )
-                    ).toList()),
-                  ],
-                ]),
-              ),
-            ]),
-            // Bulle photo chevauchant la bannière / section blanche
-            Positioned(
-              top: 58, // 100 - 42 (moitié de 84)
-              left: 12,
-              child: Container(
-                width: 56, height: 56,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2.5),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 6)],
-                ),
-                child: ClipOval(
-                  child: photo.isNotEmpty
-                      ? CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => _avatarPlaceholder())
-                      : _avatarPlaceholder(),
-                ),
+              child: ClipOval(
+                child: photo.isNotEmpty
+                    ? CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => _avatarPlaceholder())
+                    : _avatarPlaceholder(),
               ),
             ),
-          ],
-        ),
+          ),
+        ]),
       ),
     );
   }

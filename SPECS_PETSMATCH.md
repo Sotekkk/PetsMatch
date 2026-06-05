@@ -789,6 +789,112 @@ actif pour cet animal.
 
 ---
 
+#### Gestion des retards — alertes patients
+
+> **Disponible dès le plan Avancé (vétérinaire) et Essentiel (para-médicaux)**
+> **Déclenchement automatique · Notification push FCM + SMS optionnel**
+
+Le professionnel signale un retard depuis son dashboard.
+Tous les patients ayant un RDV dans les 3 heures suivantes
+reçoivent une alerte automatique avec le délai estimé.
+
+---
+
+##### Fonctionnement côté professionnel
+
+**Déclarer un retard :**
+1. Depuis le dashboard → vue agenda du jour → bouton "Signaler un retard"
+2. Saisie du délai estimé (curseur : 15 / 30 / 45 / 60 / 90+ min)
+3. Message optionnel personnalisé (texte libre, 140 caractères max)
+4. Confirmation → envoi automatique aux patients concernés
+
+**Règles de déclenchement des alertes :**
+
+| Délai déclaré | Action automatique |
+|---|---|
+| < 30 min | Aucune alerte envoyée (délai considéré acceptable) |
+| ≥ 30 min | Notification push à tous les patients RDV dans les 3h |
+| ≥ 60 min | Push + SMS (si numéro renseigné) + option report RDV proposée |
+| ≥ 90 min | Push + SMS + report automatique proposé + flag admin |
+
+**Mise à jour du retard :**
+Le professionnel peut mettre à jour le délai estimé à tout moment.
+Chaque mise à jour déclenche une nouvelle notification uniquement
+si le délai augmente (pas de spam si le retard se réduit).
+
+---
+
+##### Fonctionnement côté patient (propriétaire / éleveur)
+
+**Notification reçue (push FCM) :**
+🕐 Dr. Martin a du retard
+Votre RDV de 14h30 est décalé d'environ 45 min.
+→ Confirmer ma présence  |  Reporter mon RDV
+
+**Actions disponibles depuis la notification :**
+- **Confirmer ma présence** : le patient confirme qu'il peut attendre
+- **Reporter mon RDV** : ouvre le sélecteur de créneaux disponibles
+  du praticien pour choisir une nouvelle date
+- **Contacter le cabinet** : ouvre la messagerie in-app directement
+
+**Si retard ≥ 60 min — option report automatique :**
+Le patient reçoit une proposition de 3 créneaux alternatifs
+(prochains disponibles dans l'agenda du praticien).
+S'il ne répond pas dans les 30 min → RDV maintenu par défaut.
+
+---
+
+##### Tables Supabase
+
+| Table | Colonnes principales |
+|---|---|
+| `agenda_retards` | `id UUID`, `pro_id TEXT`, `date DATE`, `declared_at TIMESTAMPTZ`, `delai_min INT`, `message TEXT`, `statut TEXT` (actif/resolu), `updated_at TIMESTAMPTZ` |
+| `agenda_retard_responses` | `id UUID`, `retard_id UUID`, `event_id UUID` (RDV concerné), `patient_id TEXT`, `response TEXT` (confirme/reporte/nc), `responded_at TIMESTAMPTZ` |
+
+Colonne à ajouter sur `agenda_events` :
+- `retard_id UUID` (lien vers le retard actif s'il y en a un)
+- `retard_delai_min INT` (délai communiqué au patient)
+
+---
+
+##### Cloud Function `onRetardDeclared`
+
+Déclenchée à chaque INSERT ou UPDATE sur `agenda_retards`
+où `delai_min >= 30` :
+
+1. Récupère tous les `agenda_events` du pro pour les 3 prochaines heures
+   avec `statut = 'confirmé'`
+2. Pour chaque patient concerné :
+   - Envoie notification push FCM avec deeplink vers son RDV
+   - Si `delai_min >= 60` → envoie SMS via Twilio (si `phone` renseigné)
+3. Si `delai_min >= 60` → génère 3 créneaux alternatifs et les joint
+   à la notification
+4. Si `delai_min >= 90` → crée une alerte dans le dashboard admin
+   PetsMatch (suivi qualité)
+5. Logge chaque envoi dans `agenda_retard_responses`
+   avec `response = 'nc'` (en attente de réponse)
+
+---
+
+##### Résolution du retard
+
+Quand le professionnel marque le retard comme résolu
+(`statut = 'resolu'`) :
+- Notification push envoyée aux patients n'ayant pas encore répondu :
+  "Le retard est résorbé — votre RDV est maintenu à l'heure prévue"
+- Les patients ayant demandé un report conservent leur nouveau créneau
+
+---
+
+##### UI dashboard pro — vue agenda enrichie
+
+- Badge orange "En retard — 45 min" visible sur le RDV en cours
+- Bandeau en haut du dashboard si retard actif déclaré
+- Compteur temps réel : nb patients notifiés / nb confirmés / nb reports
+- Bouton "Mettre à jour le délai" et "Retard résorbé" toujours accessibles
+
+---
+
 #### Évolutions V3+
 
 - Intégration API sortante vers logiciels vétérinaires (Vétocom, Vetup) via webhook
@@ -899,6 +1005,112 @@ Les entrées carnet santé créées par ces profils sont taguées `source: 'pro_
 - Alerte rouge si prochain passage dépassé
 - Vue carte : localisation géographique de ses clients (optimisation tournées)
 - Bouton "Planifier tournée" → liste ordonnée par zone géographique
+
+---
+
+#### Gestion des retards — alertes patients
+
+> **Disponible dès le plan Avancé (vétérinaire) et Essentiel (para-médicaux)**
+> **Déclenchement automatique · Notification push FCM + SMS optionnel**
+
+Le professionnel signale un retard depuis son dashboard.
+Tous les patients ayant un RDV dans les 3 heures suivantes
+reçoivent une alerte automatique avec le délai estimé.
+
+---
+
+##### Fonctionnement côté professionnel
+
+**Déclarer un retard :**
+1. Depuis le dashboard → vue agenda du jour → bouton "Signaler un retard"
+2. Saisie du délai estimé (curseur : 15 / 30 / 45 / 60 / 90+ min)
+3. Message optionnel personnalisé (texte libre, 140 caractères max)
+4. Confirmation → envoi automatique aux patients concernés
+
+**Règles de déclenchement des alertes :**
+
+| Délai déclaré | Action automatique |
+|---|---|
+| < 30 min | Aucune alerte envoyée (délai considéré acceptable) |
+| ≥ 30 min | Notification push à tous les patients RDV dans les 3h |
+| ≥ 60 min | Push + SMS (si numéro renseigné) + option report RDV proposée |
+| ≥ 90 min | Push + SMS + report automatique proposé + flag admin |
+
+**Mise à jour du retard :**
+Le professionnel peut mettre à jour le délai estimé à tout moment.
+Chaque mise à jour déclenche une nouvelle notification uniquement
+si le délai augmente (pas de spam si le retard se réduit).
+
+---
+
+##### Fonctionnement côté patient (propriétaire / éleveur)
+
+**Notification reçue (push FCM) :**
+🕐 Dr. Martin a du retard
+Votre RDV de 14h30 est décalé d'environ 45 min.
+→ Confirmer ma présence  |  Reporter mon RDV
+
+**Actions disponibles depuis la notification :**
+- **Confirmer ma présence** : le patient confirme qu'il peut attendre
+- **Reporter mon RDV** : ouvre le sélecteur de créneaux disponibles
+  du praticien pour choisir une nouvelle date
+- **Contacter le cabinet** : ouvre la messagerie in-app directement
+
+**Si retard ≥ 60 min — option report automatique :**
+Le patient reçoit une proposition de 3 créneaux alternatifs
+(prochains disponibles dans l'agenda du praticien).
+S'il ne répond pas dans les 30 min → RDV maintenu par défaut.
+
+---
+
+##### Tables Supabase
+
+| Table | Colonnes principales |
+|---|---|
+| `agenda_retards` | `id UUID`, `pro_id TEXT`, `date DATE`, `declared_at TIMESTAMPTZ`, `delai_min INT`, `message TEXT`, `statut TEXT` (actif/resolu), `updated_at TIMESTAMPTZ` |
+| `agenda_retard_responses` | `id UUID`, `retard_id UUID`, `event_id UUID` (RDV concerné), `patient_id TEXT`, `response TEXT` (confirme/reporte/nc), `responded_at TIMESTAMPTZ` |
+
+Colonne à ajouter sur `agenda_events` :
+- `retard_id UUID` (lien vers le retard actif s'il y en a un)
+- `retard_delai_min INT` (délai communiqué au patient)
+
+---
+
+##### Cloud Function `onRetardDeclared`
+
+Déclenchée à chaque INSERT ou UPDATE sur `agenda_retards`
+où `delai_min >= 30` :
+
+1. Récupère tous les `agenda_events` du pro pour les 3 prochaines heures
+   avec `statut = 'confirmé'`
+2. Pour chaque patient concerné :
+   - Envoie notification push FCM avec deeplink vers son RDV
+   - Si `delai_min >= 60` → envoie SMS via Twilio (si `phone` renseigné)
+3. Si `delai_min >= 60` → génère 3 créneaux alternatifs et les joint
+   à la notification
+4. Si `delai_min >= 90` → crée une alerte dans le dashboard admin
+   PetsMatch (suivi qualité)
+5. Logge chaque envoi dans `agenda_retard_responses`
+   avec `response = 'nc'` (en attente de réponse)
+
+---
+
+##### Résolution du retard
+
+Quand le professionnel marque le retard comme résolu
+(`statut = 'resolu'`) :
+- Notification push envoyée aux patients n'ayant pas encore répondu :
+  "Le retard est résorbé — votre RDV est maintenu à l'heure prévue"
+- Les patients ayant demandé un report conservent leur nouveau créneau
+
+---
+
+##### UI dashboard pro — vue agenda enrichie
+
+- Badge orange "En retard — 45 min" visible sur le RDV en cours
+- Bandeau en haut du dashboard si retard actif déclaré
+- Compteur temps réel : nb patients notifiés / nb confirmés / nb reports
+- Bouton "Mettre à jour le délai" et "Retard résorbé" toujours accessibles
 
 ---
 
