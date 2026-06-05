@@ -18,6 +18,8 @@ import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
@@ -68,6 +70,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   List<Map<String, dynamic>> _pensionAcces = [];
   // Vet access (visible au propriétaire)
   List<Map<String, dynamic>> _vetAcces = [];
+  // Owner uid (utilisé dans le mode vétérinaire)
+  String? _ownerUid;
 
   // ── Champs identité
   final _nomCtrl    = TextEditingController();
@@ -136,7 +140,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: widget.vetMode ? 3 : 4, vsync: this);
+    _tabs = TabController(length: widget.vetMode ? 4 : 4, vsync: this);
     _editing = widget.animalId == null; // new animal → edit mode directly
     if (widget.preselectedEspece != null) _espece = widget.preselectedEspece!;
     _fillFromData(widget.initialData); // pre-fill instantly from cached data
@@ -365,6 +369,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
   void _fillFromData(Map<String, dynamic>? d) {
     if (d == null) return;
+    _ownerUid = (d['uid_eleveur'] ?? d['uid_proprietaire'])?.toString();
     _espece = d['espece'] ?? _espece;
     _descriptionCtrl.text = d['description'] ?? '';
     _nomCtrl.text   = d['nom'] ?? '';
@@ -815,7 +820,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          if (widget.animalId != null)
+          if (widget.animalId != null && !widget.vetMode)
             IconButton(
               icon: const Icon(Icons.share_outlined, size: 20),
               tooltip: 'Partager avec mon vétérinaire',
@@ -849,7 +854,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           unselectedLabelColor: Colors.white60,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
           tabs: widget.vetMode
-              ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro')]
+              ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire')]
               : const [Tab(text: 'Identité'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation')],
         ),
       ),
@@ -860,6 +865,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 _IdentiteTab(this),
                 _CarnetSanteTab(animalId: widget.animalId),
                 _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
+                _ProprietaireVetTab(ownerUid: _ownerUid),
               ]
             : [
                 _IdentiteTab(this),
@@ -3115,6 +3121,178 @@ class _SanteCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Onglet Propriétaire (vue vétérinaire) ───────────────────────────────────
+
+class _ProprietaireVetTab extends StatefulWidget {
+  final String? ownerUid;
+  const _ProprietaireVetTab({this.ownerUid});
+  @override
+  State<_ProprietaireVetTab> createState() => _ProprietaireVetTabState();
+}
+
+class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
+  static const _teal = Color(0xFF26A69A);
+  bool _loading = true;
+  Map<String, dynamic>? _owner;
+  bool _openingChat = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_ProprietaireVetTab old) {
+    super.didUpdateWidget(old);
+    if (old.ownerUid != widget.ownerUid) _load();
+  }
+
+  Future<void> _load() async {
+    if (widget.ownerUid == null) { setState(() => _loading = false); return; }
+    try {
+      final row = await Supabase.instance.client
+          .from('users')
+          .select('uid, firstname, lastname, email, phone_number, rue, ville, code_postal')
+          .eq('uid', widget.ownerUid!)
+          .maybeSingle();
+      if (mounted) setState(() { _owner = row != null ? Map<String, dynamic>.from(row) : null; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _openChat() async {
+    final owner = _owner;
+    if (owner == null) return;
+    final myUid = FirebaseAuth.instance.currentUser?.uid;
+    if (myUid == null) return;
+    setState(() => _openingChat = true);
+    try {
+      final sortedIds = [myUid, owner['uid'] as String]..sort();
+      final participantIds = sortedIds.join('_');
+      final snap = await FirebaseFirestore.instance
+          .collection('conversations')
+          .where('participantIds', isEqualTo: participantIds)
+          .limit(1)
+          .get();
+      final ref = snap.docs.isEmpty
+          ? await FirebaseFirestore.instance.collection('conversations').add({
+              'participants': [myUid, owner['uid']],
+              'participantIds': participantIds,
+              'lastMessage': '',
+              'timestamp': FieldValue.serverTimestamp(),
+              'categorie': 'services',
+            })
+          : snap.docs.first.reference;
+      if (mounted) {
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ChatScreen(conversationId: ref.id, eleveurId: owner['uid'] as String),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _openingChat = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
+    if (_owner == null) {
+      return Center(child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.person_off_outlined, size: 64, color: Colors.grey.shade200),
+          const SizedBox(height: 12),
+          Text('Informations du propriétaire indisponibles',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500)),
+        ]),
+      ));
+    }
+
+    final o = _owner!;
+    final nom = '${o['firstname'] ?? ''} ${o['lastname'] ?? ''}'.trim();
+    final email = o['email']?.toString() ?? '';
+    final tel = o['phone_number']?.toString() ?? '';
+    final rue = o['rue']?.toString() ?? '';
+    final ville = o['ville']?.toString() ?? '';
+    final cp = o['code_postal']?.toString() ?? '';
+    final adresse = [if (rue.isNotEmpty) rue, if (cp.isNotEmpty || ville.isNotEmpty) '$cp $ville'.trim()].join(', ');
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(children: [
+        // Carte identité propriétaire
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              CircleAvatar(radius: 26, backgroundColor: _teal.withValues(alpha: 0.12),
+                  child: const Icon(Icons.person_outlined, color: _teal, size: 28)),
+              const SizedBox(width: 14),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(nom.isNotEmpty ? nom : 'Propriétaire',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 18, color: Color(0xFF1F2A2E))),
+                const Text('Propriétaire',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+              ])),
+            ]),
+            const SizedBox(height: 18),
+            const Divider(height: 1, color: Color(0xFFF0F0F0)),
+            const SizedBox(height: 14),
+            if (email.isNotEmpty) _infoRow(Icons.email_outlined, 'Email', email),
+            if (tel.isNotEmpty) _infoRow(Icons.phone_outlined, 'Téléphone', tel),
+            if (adresse.isNotEmpty) _infoRow(Icons.location_on_outlined, 'Adresse', adresse),
+            if (email.isEmpty && tel.isEmpty && adresse.isEmpty)
+              Text('Aucune information de contact disponible.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+          ]),
+        ),
+        const SizedBox(height: 20),
+        // Bouton Message
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _openingChat ? null : _openChat,
+            icon: _openingChat
+                ? const SizedBox(width: 18, height: 18,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.message_outlined),
+            label: const Text('Envoyer un message',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _teal, foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14), elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String label, String value) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Icon(icon, size: 18, color: Colors.grey.shade400),
+      const SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+            color: Colors.grey, fontWeight: FontWeight.w600)),
+        Text(value, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E))),
+      ])),
+    ]),
+  );
 }
 
 // ─── Onglet Poids ─────────────────────────────────────────────────────────────
