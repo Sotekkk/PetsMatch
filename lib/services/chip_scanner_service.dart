@@ -624,12 +624,28 @@ class _VetResultSheetState extends State<_VetResultSheet> {
         'granted_at': DateTime.now().toUtc().toIso8601String(),
         'revoked_at': null,
       }, onConflict: 'vet_id,animal_id');
+      // Récupérer le nom du vétérinaire
+      String vetNom = '';
+      try {
+        final vetUser = await Supabase.instance.client
+            .from('users').select('firstname, lastname').eq('uid', vetUid).maybeSingle();
+        if (vetUser != null) {
+          vetNom = '${vetUser['firstname'] ?? ''} ${vetUser['lastname'] ?? ''}'.trim();
+        }
+      } catch (_) {}
+
+      final animalNom = animal['nom']?.toString() ?? 'votre animal';
       await Supabase.instance.client.from('notifications').insert({
         'uid':   ownerId,
         'type':  'vet_access_demande',
         'title': 'Demande d\'accès vétérinaire',
-        'body':  'Un vétérinaire demande l\'accès au carnet de santé de ${animal['nom'] ?? 'votre animal'}.',
-        'data':  <String, dynamic>{'animal_id': animal['id']?.toString(), 'vet_id': vetUid},
+        'body':  'Dr. ${vetNom.isNotEmpty ? vetNom : 'Un vétérinaire'} demande l\'accès au carnet de santé de $animalNom.',
+        'data':  <String, dynamic>{
+          'animal_id':  animal['id']?.toString(),
+          'vet_id':     vetUid,
+          'vet_nom':    vetNom,
+          'animal_nom': animalNom,
+        },
         'read':  false,
       });
       if (mounted) {

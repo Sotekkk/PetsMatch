@@ -6,6 +6,7 @@ import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/eleveur/verification_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
+import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -41,6 +42,10 @@ void _handleNotifNavigation(Map<String, dynamic> data) {
   // Client-side: RDV confirmed, refused, cancelled by pro
   else if (type == 'rdv_confirme' || type == 'rdv_refuse' || type == 'rdv_annule') {
     ctx.push(MaterialPageRoute(builder: (_) => const AgendaPage()));
+  }
+  // Vet access request → notifications page (dialog shown on tap in-app)
+  else if (type == 'vet_access_demande' || type == 'vet_access_reponse') {
+    ctx.push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
   }
 }
 

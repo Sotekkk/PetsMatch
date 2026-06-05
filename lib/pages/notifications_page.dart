@@ -9,6 +9,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
+import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 
 class NotificationsPage extends StatefulWidget {
@@ -119,6 +120,30 @@ class _NotificationsPageState extends State<NotificationsPage> {
       return;
     }
 
+    if (type == 'vet_access_demande') {
+      final vetId    = data is Map ? data['vet_id']     as String? : null;
+      final vetNom   = data is Map ? (data['vet_nom']   as String? ?? '') : '';
+      final animalId = data is Map ? data['animal_id']  as String? : null;
+      final animalNom = data is Map ? (data['animal_nom'] as String? ?? 'votre animal') : 'votre animal';
+      if (vetId != null && animalId != null) {
+        await _showVetAccesDialog(
+          vetId: vetId,
+          vetNom: vetNom,
+          animalId: animalId,
+          animalNom: animalNom,
+        );
+      }
+      return;
+    }
+    if (type == 'vet_access_reponse') {
+      final approved = data is Map ? data['approved'] as bool? : null;
+      if (approved == true) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const VetPatientsPage(),
+        ));
+      }
+      return;
+    }
     if (type == 'pension_acces') {
       final pensionUid = data is Map ? data['pensionUid'] as String? : null;
       final pensionNom = data is Map ? data['pensionNom'] as String? : null;
@@ -199,6 +224,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'like':          return Icons.favorite;
       case 'chaleur':       return Icons.spa;
       case 'tache':         return Icons.task_alt;
+      case 'vet_access_demande':       return Icons.medical_services_outlined;
+      case 'vet_access_reponse':       return Icons.check_circle_outline;
       case 'pension_acces':          return Icons.home_work_outlined;
       case 'pension_acces_reponse':  return Icons.check_circle_outline;
       case 'rdv_demande':            return Icons.event_note_outlined;
@@ -218,6 +245,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'like':          return Colors.redAccent;
       case 'chaleur':       return const Color(0xFFE91E8C);
       case 'tache':         return const Color(0xFF6E9E57);
+      case 'vet_access_demande':       return const Color(0xFF26A69A);
+      case 'vet_access_reponse':       return const Color(0xFF6E9E57);
       case 'pension_acces':          return const Color(0xFF7B5EA7);
       case 'pension_acces_reponse':  return const Color(0xFF6E9E57);
       case 'rdv_demande':
@@ -292,6 +321,81 @@ class _NotificationsPageState extends State<NotificationsPage> {
               ? 'Accès accordé à $pensionNom'
               : 'Demande refusée'),
           backgroundColor: result ? const Color(0xFF6E9E57) : Colors.red,
+        ));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _showVetAccesDialog({
+    required String vetId,
+    required String vetNom,
+    required String animalId,
+    required String animalNom,
+  }) async {
+    final displayNom = vetNom.isNotEmpty ? 'Dr. $vetNom' : 'Un vétérinaire';
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(children: [
+          const Icon(Icons.medical_services_outlined, color: Color(0xFF26A69A), size: 22),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('Demande d\'accès vétérinaire',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15))),
+        ]),
+        content: Text(
+          '$displayNom souhaite accéder au carnet de santé de $animalNom '
+          '(identité, santé, repro) en lecture seule.',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Refuser', style: TextStyle(fontFamily: 'Galey', color: Colors.red)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF26A69A),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Autoriser', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+
+    if (result == null || !mounted) return;
+    try {
+      if (result) {
+        await _supa.from('vet_access_grants').update({
+          'status': 'active',
+          'granted_at': DateTime.now().toUtc().toIso8601String(),
+        }).eq('vet_id', vetId).eq('animal_id', animalId);
+      } else {
+        await _supa.from('vet_access_grants').update({
+          'status': 'revoked',
+          'revoked_at': DateTime.now().toUtc().toIso8601String(),
+        }).eq('vet_id', vetId).eq('animal_id', animalId);
+      }
+
+      // Notification retour au vétérinaire
+      await _supa.from('notifications').insert({
+        'uid':   vetId,
+        'type':  'vet_access_reponse',
+        'title': result ? 'Accès accordé — $animalNom' : 'Demande refusée — $animalNom',
+        'body':  result
+            ? 'Le propriétaire vous a autorisé à consulter la fiche de $animalNom.'
+            : 'Le propriétaire a refusé votre demande pour $animalNom.',
+        'data':  <String, dynamic>{'animal_id': animalId, 'animal_nom': animalNom, 'approved': result},
+        'read':  false,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(result ? 'Accès accordé à $displayNom' : 'Demande refusée',
+              style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: result ? const Color(0xFF26A69A) : Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
         ));
       }
     } catch (_) {}
