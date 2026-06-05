@@ -186,7 +186,7 @@
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
 | ~~VET02~~ | ~~**Génération token 72h depuis la fiche animal** — bouton 🩺 dans AppBar fiche animal (éleveur + particulier) → génère token `partage_tokens` 72h → QR code + lien copiable + partage. Réutilise token actif si existant. Widget partagé `vet_share_dialog.dart`. Idem côté web (bouton + modale QR via qrserver.com).~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-05 — `lib/widgets/vet_share_dialog.dart`, `animal_fiche.dart`, `animal_fiche_particulier.dart`, `mes-animaux/[id]/page.tsx` |
-| VET03 | **Vue carnet santé via token (sans authentification)** — page web `/sante/[token]` et écran Flutter accessible par lien deeplink : lecture seule du carnet santé complet (identité animal, vaccinations, traitements, visites), badge "Accès expiré" si token > 72h, aucune auth requise. Marque `used_at` à la première consultation. | Haute | App + Web | Créer `src/app/sante/[token]/page.tsx` + `lib/pages/pro/vet_token_view.dart` |
+| ~~VET03~~ | ~~**Vue carnet santé via token (sans authentification)**~~ | ~~Haute~~ | ~~Web~~ | ✅ Terminé 2026-06-05 — `src/app/sante/[token]/page.tsx` : vérif token, badge expiré/valide, carte identité animal, 6 sections santé dépliables, badge Dr. pour entrées vétérinaires. Aucune auth. Flutter deeplink à faire (VET03b). |
 
 #### Étape 3 — Dashboard vétérinaire "Mes patients"
 
