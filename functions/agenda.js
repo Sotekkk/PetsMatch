@@ -175,17 +175,52 @@ exports.notifyProNewRdv = functions
 
 /**
  * Schedulée toutes les 30 minutes.
- * Envoie des rappels FCM 24h et 1h avant chaque RDV confirmé
+ * Envoie des rappels FCM 48h, 24h (la veille) et 1h avant chaque RDV confirmé
  * au client ET au professionnel, avec le nom de l'animal concerné.
+ * SQL requis : ALTER TABLE rdv ADD COLUMN IF NOT EXISTS reminder_48h_sent boolean DEFAULT false;
  */
 exports.sendRdvReminders = functions
     .region("europe-west1")
     .pubsub.schedule("every 30 minutes")
     .onRun(async () => {
         const now = new Date();
-        let sent24 = 0;
 
-        // ── Rappel 24h ────────────────────────────────────────────────────────
+        // ── Rappel 48h ────────────────────────────────────────────────────────
+        const from48 = new Date(now.getTime() + 47 * 3600 * 1000).toISOString();
+        const to48 = new Date(now.getTime() + 49 * 3600 * 1000).toISOString();
+
+        const rdvs48 = await supabaseSelect("rdv",
+            `statut=eq.confirme&reminder_48h_sent=eq.false` +
+            `&date_heure=gte.${encodeURIComponent(from48)}` +
+            `&date_heure=lte.${encodeURIComponent(to48)}`);
+
+        let sent48 = 0;
+        for (const rdv of rdvs48) {
+            const dateStr = new Date(rdv.date_heure).toLocaleString("fr-FR", {
+                weekday: "long", day: "numeric", month: "long",
+                hour: "2-digit", minute: "2-digit",
+            });
+            const [animalNom, proNom] = await Promise.all([
+                getAnimalNom(rdv.animal_id),
+                getUserNom(rdv.pro_uid),
+            ]);
+            const animalPart = animalNom ? ` pour ${animalNom}` : "";
+            const rdvData = {rdvId: String(rdv.id), type: "rdv_confirme"};
+            const prestataire = proNom || "votre prestataire";
+
+            // → Client uniquement (rappel 48h)
+            await sendPush(
+                rdv.client_uid,
+                "📅 Rappel RDV — dans 2 jours",
+                `Votre RDV${animalPart} chez ${prestataire} est prévu le ${dateStr}`,
+                rdvData,
+            );
+            await supabasePatch("rdv", rdv.id, {reminder_48h_sent: true});
+            sent48++;
+        }
+
+        // ── Rappel 24h (la veille) ────────────────────────────────────────────
+        let sent24 = 0;
         const from24 = new Date(now.getTime() + 23 * 3600 * 1000).toISOString();
         const to24 = new Date(now.getTime() + 25 * 3600 * 1000).toISOString();
 
@@ -229,14 +264,14 @@ exports.sendRdvReminders = functions
             sent24++;
         }
 
-        // ── Rappel 2h ─────────────────────────────────────────────────────────
-        const from2h = new Date(now.getTime() + 90 * 60 * 1000).toISOString();
-        const to2h = new Date(now.getTime() + 150 * 60 * 1000).toISOString();
+        // ── Rappel 1h ─────────────────────────────────────────────────────────
+        const from1h = new Date(now.getTime() + 45 * 60 * 1000).toISOString();
+        const to1h = new Date(now.getTime() + 75 * 60 * 1000).toISOString();
 
         const rdvs2h = await supabaseSelect("rdv",
             `statut=eq.confirme&reminder_2h_sent=eq.false` +
-            `&date_heure=gte.${encodeURIComponent(from2h)}` +
-            `&date_heure=lte.${encodeURIComponent(to2h)}`);
+            `&date_heure=gte.${encodeURIComponent(from1h)}` +
+            `&date_heure=lte.${encodeURIComponent(to1h)}`);
 
         let sent2h = 0;
         for (const rdv of rdvs2h) {
@@ -251,12 +286,14 @@ exports.sendRdvReminders = functions
             const animalPart = animalNom ? ` pour ${animalNom}` : "";
             const rdvData = {rdvId: String(rdv.id), type: "rdv_confirme"};
 
+            // → Client
             await sendPush(rdv.client_uid,
-                "⏰ Rappel RDV — dans 2 heures",
+                "⏰ Rappel RDV — dans 1 heure",
                 `Votre RDV${animalPart} chez ${proNom || "votre prestataire"} est à ${timeStr}`,
                 rdvData);
+            // → Pro
             await sendPush(rdv.pro_uid,
-                "⏰ RDV dans 2 heures",
+                "⏰ RDV dans 1 heure",
                 `RDV avec ${clientNom || "un client"}${animalPart} — à ${timeStr}`,
                 rdvData);
 
@@ -299,7 +336,9 @@ exports.sendRdvReminders = functions
             sent30++;
         }
 
-        console.log(`sendRdvReminders: ${sent24} rappels 24h, ${sent2h} rappels 2h, ${sent30} rappels 30min traités`);
+        console.log(
+            `sendRdvReminders: ${sent48}×48h, ${sent24}×24h, ${sent2h}×1h, ${sent30}×30min`,
+        );
         return null;
     });
 

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/pages/pro/vet_token_view.dart';
 
 const _kVetBaseUrl = 'https://petsmatch.fr/sante/';
 
@@ -165,6 +166,25 @@ class _VetShareDialog extends StatelessWidget {
               ),
             ),
           ]),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => VetTokenView(token: token),
+                ));
+              },
+              icon: const Icon(Icons.visibility_outlined, size: 14),
+              label: const Text('Consulter dans l\'appli',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF26A69A),
+                side: const BorderSide(color: Color(0xFF26A69A)),
+              ),
+            ),
+          ),
           if (isExisting) ...[
             const SizedBox(height: 4),
             TextButton(
