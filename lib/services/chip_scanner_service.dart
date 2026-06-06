@@ -624,26 +624,40 @@ class _VetResultSheetState extends State<_VetResultSheet> {
         'granted_at': DateTime.now().toUtc().toIso8601String(),
         'revoked_at': null,
       }, onConflict: 'vet_id,animal_id');
-      // Récupérer le nom du vétérinaire
+      // Récupérer le nom de la structure ou du vétérinaire
       String vetNom = '';
+      bool isClinic = false;
       try {
         final vetUser = await Supabase.instance.client
-            .from('users').select('firstname, lastname').eq('uid', vetUid).maybeSingle();
+            .from('users')
+            .select('firstname, lastname, name_elevage')
+            .eq('uid', vetUid)
+            .maybeSingle();
         if (vetUser != null) {
-          vetNom = '${vetUser['firstname'] ?? ''} ${vetUser['lastname'] ?? ''}'.trim();
+          final clinic = (vetUser['name_elevage'] ?? '').toString().trim();
+          final fname  = (vetUser['firstname']   ?? '').toString().trim();
+          final lname  = (vetUser['lastname']    ?? '').toString().trim();
+          if (clinic.isNotEmpty) {
+            vetNom  = clinic;
+            isClinic = true;
+          } else {
+            vetNom = '$fname $lname'.trim();
+          }
         }
       } catch (_) {}
 
       final animalNom = animal['nom']?.toString() ?? 'votre animal';
+      final vetDisplay = isClinic ? vetNom : (vetNom.isNotEmpty ? 'Dr. $vetNom' : 'Un vétérinaire');
       await Supabase.instance.client.from('notifications').insert({
         'uid':   ownerId,
         'type':  'vet_access_demande',
-        'title': 'Demande d\'accès vétérinaire',
-        'body':  'Dr. ${vetNom.isNotEmpty ? vetNom : 'Un vétérinaire'} demande l\'accès au carnet de santé de $animalNom.',
+        'title': 'Demande d\'accès — $vetDisplay',
+        'body':  '$vetDisplay demande l\'accès au carnet de santé de $animalNom.',
         'data':  <String, dynamic>{
           'animal_id':  animal['id']?.toString(),
           'vet_id':     vetUid,
           'vet_nom':    vetNom,
+          'is_clinic':  isClinic,
           'animal_nom': animalNom,
         },
         'read':  false,

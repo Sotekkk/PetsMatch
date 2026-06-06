@@ -121,14 +121,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
 
     if (type == 'vet_access_demande') {
-      final vetId    = data is Map ? data['vet_id']     as String? : null;
-      final vetNom   = data is Map ? (data['vet_nom']   as String? ?? '') : '';
-      final animalId = data is Map ? data['animal_id']  as String? : null;
+      final vetId     = data is Map ? data['vet_id']    as String? : null;
+      final vetNom    = data is Map ? (data['vet_nom']  as String? ?? '') : '';
+      final isClinic  = data is Map ? (data['is_clinic'] as bool? ?? false) : false;
+      final animalId  = data is Map ? data['animal_id'] as String? : null;
       final animalNom = data is Map ? (data['animal_nom'] as String? ?? 'votre animal') : 'votre animal';
       if (vetId != null && animalId != null) {
         await _showVetAccesDialog(
           vetId: vetId,
           vetNom: vetNom,
+          isClinic: isClinic,
           animalId: animalId,
           animalNom: animalNom,
         );
@@ -329,10 +331,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
   Future<void> _showVetAccesDialog({
     required String vetId,
     required String vetNom,
+    required bool isClinic,
     required String animalId,
     required String animalNom,
   }) async {
-    final displayNom = vetNom.isNotEmpty ? 'Dr. $vetNom' : 'Un vétérinaire';
+    final displayNom = vetNom.isNotEmpty
+        ? (isClinic ? vetNom : 'Dr. $vetNom')
+        : 'Un vétérinaire';
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
