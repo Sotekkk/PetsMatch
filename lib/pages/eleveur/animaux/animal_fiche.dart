@@ -3166,7 +3166,7 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
       final row = await Supabase.instance.client
           .from('users')
           .select('uid, firstname, lastname, email, phone_number, rue, ville, code_postal, '
-                  'isElevage, isPro, numeroElevage, rueElevage, villeElevage, codePostalElevage')
+                  'isElevage, isPro, name_elevage, numeroElevage, rueElevage, villeElevage, codePostalElevage')
           .eq('uid', widget.ownerUid!)
           .maybeSingle();
       if (mounted) setState(() { _owner = row != null ? Map<String, dynamic>.from(row) : null; _loading = false; });
@@ -3226,10 +3226,13 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
 
     final o = _owner!;
     final isElevageOrPro = (o['isElevage'] == true) || (o['isPro'] == true);
+    final nameElevage = o['name_elevage']?.toString() ?? '';
     final nom = '${o['firstname'] ?? ''} ${o['lastname'] ?? ''}'.trim();
     final email = o['email']?.toString() ?? '';
     final tel = isElevageOrPro
-        ? (o['numeroElevage']?.toString() ?? o['phone_number']?.toString() ?? '')
+        ? (o['numeroElevage']?.toString().trim().isNotEmpty == true
+            ? o['numeroElevage'].toString()
+            : o['phone_number']?.toString() ?? '')
         : (o['phone_number']?.toString() ?? '');
     final rue = isElevageOrPro
         ? (o['rueElevage']?.toString() ?? o['rue']?.toString() ?? '')
@@ -3240,7 +3243,10 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
     final cp = isElevageOrPro
         ? (o['codePostalElevage']?.toString() ?? o['code_postal']?.toString() ?? '')
         : (o['code_postal']?.toString() ?? '');
-    final adresse = [if (rue.isNotEmpty) rue, if (cp.isNotEmpty || ville.isNotEmpty) '$cp $ville'.trim()].join(', ');
+    final adresse = [
+      if (rue.isNotEmpty) rue,
+      if (cp.isNotEmpty || ville.isNotEmpty) '$cp $ville'.trim(),
+    ].join(', ');
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -3252,30 +3258,51 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 8, offset: const Offset(0, 2))],
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              CircleAvatar(radius: 26, backgroundColor: _teal.withValues(alpha: 0.12),
-                  child: const Icon(Icons.person_outlined, color: _teal, size: 28)),
+              CircleAvatar(
+                radius: 26,
+                backgroundColor: _teal.withValues(alpha: 0.12),
+                child: Icon(
+                  isElevageOrPro ? Icons.home_work_outlined : Icons.person_outlined,
+                  color: _teal, size: 26),
+              ),
               const SizedBox(width: 14),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(nom.isNotEmpty ? nom : 'Propriétaire',
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                        fontSize: 18, color: Color(0xFF1F2A2E))),
-                const Text('Propriétaire',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                // Nom de la structure (élevage) en titre si disponible
+                if (isElevageOrPro && nameElevage.isNotEmpty)
+                  Text(nameElevage,
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                          fontSize: 17, color: Color(0xFF1F2A2E))),
+                // Prénom + nom du contact
+                if (nom.isNotEmpty)
+                  Text(nom,
+                      style: TextStyle(
+                        fontFamily: 'Galey',
+                        fontWeight: isElevageOrPro && nameElevage.isNotEmpty
+                            ? FontWeight.w400 : FontWeight.w700,
+                        fontSize: isElevageOrPro && nameElevage.isNotEmpty ? 13 : 17,
+                        color: isElevageOrPro && nameElevage.isNotEmpty
+                            ? Colors.grey.shade600 : const Color(0xFF1F2A2E),
+                      )),
+                Text(isElevageOrPro ? 'Éleveur / Professionnel' : 'Particulier',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                        color: Colors.grey)),
               ])),
             ]),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             const Divider(height: 1, color: Color(0xFFF0F0F0)),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             if (email.isNotEmpty) _infoRow(Icons.email_outlined, 'Email', email),
             if (tel.isNotEmpty) _infoRow(Icons.phone_outlined, 'Téléphone', tel),
             if (adresse.isNotEmpty) _infoRow(Icons.location_on_outlined, 'Adresse', adresse),
             if (email.isEmpty && tel.isEmpty && adresse.isEmpty)
               Text('Aucune information de contact disponible.',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                      color: Colors.grey.shade500)),
           ]),
         ),
         const SizedBox(height: 20),

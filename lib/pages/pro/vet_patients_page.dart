@@ -75,7 +75,7 @@ class _VetPatientsPageState extends State<VetPatientsPage>
 
       final animals = await Supabase.instance.client
           .from('animaux')
-          .select('id, nom, espece, race, photo_url, date_naissance, identification')
+          .select('id, nom, espece, race, photo_url, date_naissance, identification, uid_eleveur, uid_proprietaire')
           .inFilter('id', animalIds);
 
       final grantsMap = <String, Map<String, String>>{
@@ -167,24 +167,40 @@ class _VetPatientsPageState extends State<VetPatientsPage>
       // Charger les infos animaux
       final animalIds = (rdvs as List)
           .map((r) => r['animal_id']?.toString())
-          .whereType<String>()
-          .toSet().toList();
+          .whereType<String>().toSet().toList();
 
       Map<String, Map<String, dynamic>> animauxMap = {};
       if (animalIds.isNotEmpty) {
         final animals = await Supabase.instance.client
             .from('animaux')
-            .select('id, nom, espece, race, photo_url, identification')
+            .select('id, nom, espece, race, photo_url, identification, uid_eleveur, uid_proprietaire')
             .inFilter('id', animalIds);
         for (final a in animals as List) {
           animauxMap[a['id']?.toString() ?? ''] = Map<String, dynamic>.from(a as Map);
         }
       }
 
+      // Charger les infos clients
+      final clientUids = (rdvs as List)
+          .map((r) => r['client_uid']?.toString())
+          .whereType<String>().toSet().toList();
+
+      Map<String, Map<String, dynamic>> clientsMap = {};
+      if (clientUids.isNotEmpty) {
+        final clients = await Supabase.instance.client
+            .from('users')
+            .select('uid, firstname, lastname, name_elevage, isElevage, isPro, '
+                    'phone_number, numeroElevage, email')
+            .inFilter('uid', clientUids);
+        for (final c in clients as List) {
+          clientsMap[c['uid']?.toString() ?? ''] = Map<String, dynamic>.from(c as Map);
+        }
+      }
+
       final list = (rdvs as List).map((r) {
         final m = Map<String, dynamic>.from(r as Map);
-        final animalId = r['animal_id']?.toString() ?? '';
-        m['animal'] = animauxMap[animalId];
+        m['animal'] = animauxMap[r['animal_id']?.toString() ?? ''];
+        m['client'] = clientsMap[r['client_uid']?.toString() ?? ''];
         return m;
       }).toList();
 
@@ -620,21 +636,29 @@ class _RdvJourCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final animal = rdv['animal'] as Map<String, dynamic>?;
-    final nom    = animal?['nom']?.toString() ?? 'Animal';
-    final espece = animal?['espece']?.toString() ?? '';
-    final race   = animal?['race']?.toString() ?? '';
-    final photo  = animal?['photo_url']?.toString() ?? '';
-    final puce   = animal?['identification']?.toString() ?? '';
-    final motif  = rdv['motif']?.toString() ?? '';
-    final statut = rdv['statut']?.toString() ?? '';
+    final animal  = rdv['animal'] as Map<String, dynamic>?;
+    final client  = rdv['client'] as Map<String, dynamic>?;
+    final nom     = animal?['nom']?.toString() ?? 'Animal';
+    final espece  = animal?['espece']?.toString() ?? '';
+    final race    = animal?['race']?.toString() ?? '';
+    final photo   = animal?['photo_url']?.toString() ?? '';
+    final motif   = rdv['motif']?.toString() ?? '';
+    final statut  = rdv['statut']?.toString() ?? '';
+
+    // Nom du client (éleveur → name_elevage ou prénom, particulier → prénom nom)
+    final isElevage = client?['isElevage'] == true || client?['isPro'] == true;
+    final nameElevage = client?['name_elevage']?.toString() ?? '';
+    final fn = client?['firstname']?.toString() ?? '';
+    final ln = client?['lastname']?.toString() ?? '';
+    final clientNom = isElevage && nameElevage.isNotEmpty
+        ? nameElevage
+        : '$fn $ln'.trim().isNotEmpty ? '$fn $ln'.trim() : 'Propriétaire';
 
     DateTime? dh;
     try { dh = DateTime.parse(rdv['date_heure'].toString()).toLocal(); } catch (_) {}
     final heure = dh != null
         ? '${dh.hour.toString().padLeft(2,'0')}:${dh.minute.toString().padLeft(2,'0')}'
         : '—';
-
     final isConfirme = statut == 'confirme';
 
     return GestureDetector(
@@ -644,21 +668,22 @@ class _RdvJourCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 8, offset: const Offset(0, 2))],
         ),
         child: Row(children: [
-          // Heure
+          // Heure + statut
           Container(
             width: 56,
-            padding: const EdgeInsets.symmetric(vertical: 16),
+            padding: const EdgeInsets.symmetric(vertical: 14),
             decoration: BoxDecoration(
               color: teal.withValues(alpha: 0.10),
               borderRadius: const BorderRadius.horizontal(left: Radius.circular(14)),
             ),
             child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Text(heure, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800,
-                  fontSize: 14, color: teal)),
-              const SizedBox(height: 2),
+              Text(heure, style: TextStyle(fontFamily: 'Galey',
+                  fontWeight: FontWeight.w800, fontSize: 14, color: teal)),
+              const SizedBox(height: 3),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                 decoration: BoxDecoration(
@@ -666,7 +691,8 @@ class _RdvJourCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(isConfirme ? 'Conf.' : 'Dem.',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 8, fontWeight: FontWeight.w700,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 8,
+                        fontWeight: FontWeight.w700,
                         color: isConfirme ? Colors.green.shade800 : Colors.amber.shade800)),
               ),
             ]),
@@ -680,28 +706,34 @@ class _RdvJourCard extends StatelessWidget {
               backgroundImage: photo.isNotEmpty
                   ? CachedNetworkImageProvider(photo) as ImageProvider
                   : null,
-              child: photo.isEmpty
-                  ? Icon(Icons.pets, color: teal, size: 24)
-                  : null,
+              child: photo.isEmpty ? Icon(Icons.pets, color: teal, size: 22) : null,
             ),
           ),
-          // Infos
+          // Infos animal + client
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(nom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                    fontSize: 14, color: Color(0xFF1F2A2E))),
+                // Nom animal + espèce/race
+                Text(nom, style: const TextStyle(fontFamily: 'Galey',
+                    fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E))),
                 if (espece.isNotEmpty || race.isNotEmpty)
                   Text([espece, race].where((s) => s.isNotEmpty).join(' · '),
                       style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                           color: teal, fontWeight: FontWeight.w600)),
-                if (puce.isNotEmpty)
-                  Text('🔖 $puce', style: TextStyle(fontFamily: 'Galey', fontSize: 10,
-                      color: Colors.grey.shade500)),
+                // Séparateur
+                const SizedBox(height: 4),
+                // Client
+                Row(children: [
+                  Icon(Icons.person_outline_rounded, size: 12, color: Colors.grey.shade400),
+                  const SizedBox(width: 4),
+                  Text(clientNom, style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                      color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
+                ]),
                 if (motif.isNotEmpty)
-                  Text('Motif : $motif', style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
-                      color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text('Motif : $motif', style: TextStyle(fontFamily: 'Galey',
+                      fontSize: 11, color: Colors.grey.shade400),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
               ]),
             ),
           ),
