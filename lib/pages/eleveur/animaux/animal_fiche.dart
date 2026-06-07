@@ -866,7 +866,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 _IdentiteTab(this),
                 _CarnetSanteTab(animalId: widget.animalId),
                 _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
-                _ProprietaireVetTab(ownerUid: _ownerUid),
+                _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
               ]
             : [
                 _IdentiteTab(this),
@@ -3137,7 +3137,8 @@ class _SanteCard extends StatelessWidget {
 
 class _ProprietaireVetTab extends StatefulWidget {
   final String? ownerUid;
-  const _ProprietaireVetTab({this.ownerUid});
+  final String? animalId;
+  const _ProprietaireVetTab({this.ownerUid, this.animalId});
   @override
   State<_ProprietaireVetTab> createState() => _ProprietaireVetTabState();
 }
@@ -3161,16 +3162,37 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
   }
 
   Future<void> _load() async {
-    if (widget.ownerUid == null) { setState(() => _loading = false); return; }
+    String? uid = widget.ownerUid;
+
+    // Fallback : si ownerUid absent, le charger depuis l'animal
+    if ((uid == null || uid.isEmpty) && widget.animalId != null) {
+      try {
+        final row = await Supabase.instance.client
+            .from('animaux')
+            .select('uid_eleveur, uid_proprietaire')
+            .eq('id', widget.animalId!)
+            .maybeSingle();
+        uid = (row?['uid_eleveur'] ?? row?['uid_proprietaire'])?.toString();
+      } catch (_) {}
+    }
+
+    if (uid == null || uid.isEmpty) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+
     try {
+      // select(*) évite les erreurs de casse sur les noms de colonnes
       final row = await Supabase.instance.client
           .from('users')
-          .select('uid, firstname, lastname, email, phone_number, rue, ville, code_postal, '
-                  'isElevage, isPro, name_elevage, numeroElevage, rueElevage, villeElevage, codePostalElevage')
-          .eq('uid', widget.ownerUid!)
+          .select('*')
+          .eq('uid', uid)
           .maybeSingle();
-      if (mounted) setState(() { _owner = row != null ? Map<String, dynamic>.from(row) : null; _loading = false; });
-    } catch (_) {
+      if (mounted) setState(() {
+        _owner = row != null ? Map<String, dynamic>.from(row) : null;
+        _loading = false;
+      });
+    } catch (e) {
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -3225,24 +3247,28 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
     }
 
     final o = _owner!;
-    final isElevageOrPro = (o['isElevage'] == true) || (o['isPro'] == true);
-    final nameElevage = o['name_elevage']?.toString() ?? '';
+    // Gère camelCase (isElevage) et snake_case (is_elevage) selon config Supabase
+    final isElevageOrPro = (o['isElevage'] == true || o['is_elevage'] == true)
+        || (o['isPro'] == true || o['is_pro'] == true);
+    final nameElevage = (o['name_elevage'] ?? o['nameElevage'] ?? '').toString();
     final nom = '${o['firstname'] ?? ''} ${o['lastname'] ?? ''}'.trim();
-    final email = o['email']?.toString() ?? '';
+    final email = (o['email'] ?? '').toString();
+    // Téléphone : élevage ou perso
+    final telElevage = (o['numeroElevage'] ?? o['numero_elevage'] ?? '').toString().trim();
+    final telPerso   = (o['phone_number'] ?? '').toString().trim();
     final tel = isElevageOrPro
-        ? (o['numeroElevage']?.toString().trim().isNotEmpty == true
-            ? o['numeroElevage'].toString()
-            : o['phone_number']?.toString() ?? '')
-        : (o['phone_number']?.toString() ?? '');
-    final rue = isElevageOrPro
-        ? (o['rueElevage']?.toString() ?? o['rue']?.toString() ?? '')
-        : (o['rue']?.toString() ?? '');
-    final ville = isElevageOrPro
-        ? (o['villeElevage']?.toString() ?? o['ville']?.toString() ?? '')
-        : (o['ville']?.toString() ?? '');
-    final cp = isElevageOrPro
-        ? (o['codePostalElevage']?.toString() ?? o['code_postal']?.toString() ?? '')
-        : (o['code_postal']?.toString() ?? '');
+        ? (telElevage.isNotEmpty ? telElevage : telPerso)
+        : telPerso;
+    // Adresse : élevage ou perso
+    final rueElevage  = (o['rueElevage']        ?? o['rue_elevage']         ?? '').toString();
+    final villeElev   = (o['villeElevage']       ?? o['ville_elevage']       ?? '').toString();
+    final cpElev      = (o['codePostalElevage']  ?? o['code_postal_elevage'] ?? '').toString();
+    final ruePerso    = (o['rue']  ?? '').toString();
+    final villePerso  = (o['ville'] ?? '').toString();
+    final cpPerso     = (o['code_postal'] ?? '').toString();
+    final rue   = isElevageOrPro ? (rueElevage.isNotEmpty   ? rueElevage  : ruePerso)  : ruePerso;
+    final ville = isElevageOrPro ? (villeElev.isNotEmpty    ? villeElev   : villePerso) : villePerso;
+    final cp    = isElevageOrPro ? (cpElev.isNotEmpty       ? cpElev      : cpPerso)   : cpPerso;
     final adresse = [
       if (rue.isNotEmpty) rue,
       if (cp.isNotEmpty || ville.isNotEmpty) '$cp $ville'.trim(),

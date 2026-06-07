@@ -35,18 +35,10 @@ void _handleNotifNavigation(Map<String, dynamic> data) {
   final type = data['type'] as String? ?? '';
   final ctx = navigatorKey.currentState;
   if (ctx == null) return;
-  // Pension-side: new RDV request or counter-proposal
-  if (type == 'rdv_demande' || type == 'rdv_contre_proposition' || type == 'rdv_annule_client') {
-    ctx.push(MaterialPageRoute(builder: (_) => const ProAgendaPage()));
-  }
-  // Client-side: RDV confirmed, refused, cancelled by pro
-  else if (type == 'rdv_confirme' || type == 'rdv_refuse' || type == 'rdv_annule') {
-    ctx.push(MaterialPageRoute(builder: (_) => const AgendaPage()));
-  }
-  // Vet access request → notifications page (dialog shown on tap in-app)
-  else if (type == 'vet_access_demande' || type == 'vet_access_reponse') {
-    ctx.push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
-  }
+
+  // Toutes les notifications ouvrent d'abord la page notifications (cloche)
+  // Les types spécifiques naviguent ensuite vers la page métier appropriée
+  ctx.push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
 }
 
 Future<void> setupNotifications() async {
