@@ -35,6 +35,7 @@ const NAV_ELEVEUR = [
   { href: '/mes-annonces',   label: 'Mes Annonces' },
   { href: '/animaux-perdus', label: 'Animaux perdus' },
   { href: '/services',       label: 'Services' },
+  { href: '/marketplace',    label: 'Marketplace' },
   { href: '/messages',       label: 'Messages' },
 ];
 
@@ -44,6 +45,7 @@ const NAV_PARTICULIER = [
   { href: '/annonces',       label: 'Annonces' },
   { href: '/animaux-perdus', label: 'Animaux perdus' },
   { href: '/services',       label: 'Services' },
+  { href: '/marketplace',    label: 'Marketplace' },
   { href: '/messages',       label: 'Messages' },
 ];
 

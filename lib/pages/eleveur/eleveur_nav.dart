@@ -28,6 +28,7 @@ import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/utils.dart';
+import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -357,6 +358,16 @@ class _EleveurNavState extends State<EleveurNav> {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(
                       builder: (_) => const ServicesPage(),
+                    ));
+                  },
+                ),
+                _DrawerItem(
+                  icon: Icons.local_offer_outlined,
+                  label: 'Marketplace',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const MarketplacePage(),
                     ));
                   },
                 ),

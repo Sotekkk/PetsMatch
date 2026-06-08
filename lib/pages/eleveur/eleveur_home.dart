@@ -1,4 +1,5 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/widgets/marketplace_banner.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
@@ -117,6 +118,11 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
                         _buildSectionTitle('Accès rapide'),
                         const SizedBox(height: 12),
                         _buildQuickAccess(context),
+                        const SizedBox(height: 8),
+                        MarketplaceBanner(
+                          espece: null,
+                          placement: 'dashboard',
+                        ),
                         if (!User_Info.isPro) ...[
                           const SizedBox(height: 24),
                           _buildSectionTitle('Dernières annonces'),

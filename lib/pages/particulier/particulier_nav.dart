@@ -6,6 +6,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
+import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/particulier/particulier_home.dart';
@@ -259,6 +260,14 @@ class _ParticulierNavState extends State<ParticulierNav> {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const ServicesPage()));
+                  },
+                ),
+                _DrawerItem(
+                  icon: Icons.local_offer_outlined,
+                  label: 'Marketplace',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const MarketplacePage()));
                   },
                 ),
                 const Divider(height: 24),

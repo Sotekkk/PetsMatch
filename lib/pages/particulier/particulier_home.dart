@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/widgets/marketplace_banner.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart' show speciesIcon, speciesLabel;
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
@@ -222,6 +223,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
                   _buildAnnoncesSection(),
                   const SizedBox(height: 24),
                   _buildAnimauxPerdusSection(),
+                  const MarketplaceBanner(placement: 'dashboard'),
                 ]),
               ),
             ),
