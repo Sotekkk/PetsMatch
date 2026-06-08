@@ -95,8 +95,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   final _prixMinPorteeCtrl = TextEditingController();
   final _prixMaxPorteeCtrl = TextEditingController();
 
-  // ── Animal individuel / Étalon ────────────────────────────────────────────────
+  // ── Animal individuel / Étalon / Retraité ────────────────────────────────────
   String?   _etalonAnimalId;
+  String?   _retraiteAnimalNom; // nom affiché dans le bouton picker retraite
   String    _sexe = 'male';
   final _couleurCtrl = TextEditingController();
   DateTime? _dateNaissanceAnimal;
@@ -393,6 +394,45 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       if (_descCtrl.text.isEmpty && (r['description'] ?? '').isNotEmpty) {
         _descCtrl.text = r['description'];
       }
+      // Pré-remplir section Père avec les infos de l'étalon
+      _pereAnimalId         = r['id'];
+      _pereNomCtrl.text     = r['nom']            ?? '';
+      _perePuceCtrl.text    = r['identification'] ?? '';
+      _pereRaceCtrl.text    = r['race']           ?? '';
+      _perePhotoUrl         = r['photoUrl'] as String?;
+      // Pedigree étalon → section Père
+      final lof     = (r['pedigree_lof']  ?? '').toString();
+      final club    = (r['club_registre'] ?? '').toString();
+      if (lof.isNotEmpty)  _pereRegistre = lof;
+      if (club.isNotEmpty) _clubPedigreeCtrl.text = club;
+    });
+  }
+
+  Future<void> _pickRetraite() async {
+    final r = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+      builder: (_) => _AnimalPickerSheet(espece: _espece),
+    );
+    if (r != null && mounted) setState(() {
+      _etalonAnimalId       = r['id'];
+      _retraiteAnimalNom    = r['nom'] as String?;
+      _sexe                 = (r['sexe'] as String?)?.isNotEmpty == true ? r['sexe'] : 'male';
+      _couleurCtrl.text     = r['couleur']  ?? '';
+      if (_raceCtrl.text.isEmpty) _raceCtrl.text = r['race'] ?? '';
+      if (r['photoUrl'] != null) { _photosUrls = [r['photoUrl']]; _photosFiles = []; }
+      final dn = r['dateNaissance'] as Timestamp?;
+      if (dn != null) _dateNaissanceAnimal = dn.toDate();
+      if (_titreCtrl.text.isEmpty && (r['nom'] ?? '').isNotEmpty) {
+        _titreCtrl.text = '${r['nom']} — Retraité d\'élevage';
+      }
+      if (_descCtrl.text.isEmpty && (r['description'] ?? '').isNotEmpty) {
+        _descCtrl.text = r['description'];
+      }
+      // Pré-remplir pedigree depuis l'animal
+      final lof  = (r['pedigree_lof']  ?? '').toString();
+      final club = (r['club_registre'] ?? '').toString();
+      if (lof.isNotEmpty)  _registreType = lof;
+      if (club.isNotEmpty) _clubPedigreeCtrl.text = club;
     });
   }
 
@@ -475,7 +515,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         'titre':                _titreCtrl.text.trim(),
         'description':          _descCtrl.text.trim(),
         'photos':               allPhotos,
-        'prix': _typeVente == 'vente' ? double.tryParse(_prixCtrl.text) : null,
+        'prix': (_typeVente == 'vente' || _typeVente == 'retraite') ? double.tryParse(_prixCtrl.text) : null,
         'prix_negociable':      _prixNegociable,
         'statut':               _statut,
         'date_naissance': _type == 'portee' && _dateNaissance != null
@@ -552,7 +592,8 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
 
   @override
   Widget build(BuildContext context) {
-    final isSaillie = _typeVente == 'saillie';
+    final isSaillie  = _typeVente == 'saillie';
+    final isRetraite = _typeVente == 'retraite';
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F0),
       appBar: AppBar(
@@ -583,8 +624,8 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             if (_type == 'portee') ...[_sectionPortee(), const SizedBox(height: 12)],
             if (_type == 'animal') ...[_sectionAnimal(), const SizedBox(height: 12)],
             if (isSaillie) ...[_sectionSaillie(), const SizedBox(height: 12)],
-            if (!isSaillie) ...[_sectionMere(), const SizedBox(height: 12)],
-            if (!isSaillie) ...[_sectionPere(), const SizedBox(height: 12)],
+            if (!isSaillie && !isRetraite) ...[_sectionMere(), const SizedBox(height: 12)],
+            if (!isSaillie && !isRetraite) ...[_sectionPere(), const SizedBox(height: 12)],
             _sectionPedigree(),     const SizedBox(height: 12),
             _sectionSante(),
             if (_type == 'portee') ...[const SizedBox(height: 12), _sectionAnimauxPortee()],
@@ -820,11 +861,12 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     Wrap(spacing: 8, runSpacing: 6, children: [
       for (final v in [('vente', 'Vente €', Icons.sell_outlined),
                        ('adoption', 'Adoption / Don', Icons.favorite_outline),
-                       ('saillie', 'Saillie', Icons.diversity_1_outlined)])
+                       ('saillie', 'Saillie', Icons.diversity_1_outlined),
+                       ('retraite', 'Retraité d\'élevage', Icons.elderly_outlined)])
         GestureDetector(
           onTap: () => setState(() {
             _typeVente = v.$1;
-            if (v.$1 == 'saillie') _type = 'animal';
+            if (v.$1 == 'saillie' || v.$1 == 'retraite') _type = 'animal';
           }),
           child: AnimatedContainer(duration: const Duration(milliseconds: 150),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -843,7 +885,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         ),
     ]),
     const SizedBox(height: 14),
-    if (_typeVente != 'saillie') ...[
+    if (_typeVente != 'saillie' && _typeVente != 'retraite') ...[
       _label('Que souhaitez-vous publier ?'),
       Row(children: [
         for (final t in [('portee', 'Portée', Icons.group_outlined),
@@ -874,8 +916,11 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       child: Row(children: [
         const Icon(Icons.info_outline, size: 13, color: Color(0xFF6F767B)),
         const SizedBox(width: 5),
-        Text('La saillie s\'applique à un animal individuel',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+        Expanded(child: Text(
+          _typeVente == 'retraite'
+              ? 'Sélectionnez l\'animal retraité dans votre élevage ci-dessous'
+              : 'La saillie s\'applique à un animal individuel',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500))),
       ]),
     ),
   ]);
@@ -970,7 +1015,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     const SizedBox(height: 10),
     _label('Description'),
     _textField(_descCtrl, 'Décrivez l\'annonce, la famille, les conditions...', maxLines: 4),
-    if (_typeVente == 'vente') ...[
+    if (_typeVente == 'vente' || _typeVente == 'retraite') ...[
       const SizedBox(height: 10),
       _label('Prix (€)'),
       Row(children: [
@@ -1050,8 +1095,12 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   ]);
 
   Widget _sectionAnimal() => _card(
-    _typeVente == 'saillie' ? 'Étalon / Reproducteur' : 'Animal',
-    _typeVente == 'saillie' ? Icons.diversity_1_outlined : Icons.cruelty_free_outlined,
+    _typeVente == 'saillie' ? 'Étalon / Reproducteur'
+        : _typeVente == 'retraite' ? 'Animal retraité'
+        : 'Animal',
+    _typeVente == 'saillie' ? Icons.diversity_1_outlined
+        : _typeVente == 'retraite' ? Icons.elderly_outlined
+        : Icons.cruelty_free_outlined,
     [
       // Saillie : bouton "chercher dans mes animaux"
       if (_typeVente == 'saillie') ...[
@@ -1071,6 +1120,35 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             const SizedBox(width: 4),
             Text('Animal lié — vous pouvez modifier les champs ci-dessous',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          ]),
+        ],
+        const SizedBox(height: 10),
+      ],
+      // Retraité d'élevage : picker depuis la liste de l'éleveur
+      if (_typeVente == 'retraite') ...[
+        OutlinedButton.icon(
+          onPressed: _pickRetraite,
+          icon: const Icon(Icons.search, size: 16, color: _teal),
+          label: Text(
+            _retraiteAnimalNom != null
+                ? 'Changer l\'animal (actuel : $_retraiteAnimalNom)'
+                : 'Sélectionner l\'animal retraité',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal),
+            overflow: TextOverflow.ellipsis,
+          ),
+          style: OutlinedButton.styleFrom(side: const BorderSide(color: _teal),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14)),
+        ),
+        if (_retraiteAnimalNom != null) ...[
+          const SizedBox(height: 6),
+          Row(children: [
+            const Icon(Icons.check_circle, size: 14, color: _green),
+            const SizedBox(width: 4),
+            Expanded(child: Text(
+              '$_retraiteAnimalNom — infos pré-remplies, modifiez si besoin',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
+            )),
           ]),
         ],
         const SizedBox(height: 10),
@@ -1525,6 +1603,10 @@ class _AnimalPickerSheet extends StatelessWidget {
                             'dateNaissance':  dateNaiss != null
                                 ? Timestamp.fromDate(dateNaiss) : null,
                             'description':    d['description'] ?? '',
+                            // Pedigree — pour pré-remplissage étalon et retraité
+                            'pedigree_lof':  d['pedigree_lof']  ?? '',
+                            'club_registre': d['club_registre'] ?? '',
+                            'pedigree_url':  d['pedigree_url']  ?? '',
                           }),
                         );
                       },

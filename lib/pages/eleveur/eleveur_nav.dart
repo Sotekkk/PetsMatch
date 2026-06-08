@@ -3,6 +3,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/eleveur_home.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
@@ -251,6 +252,16 @@ class _EleveurNavState extends State<EleveurNav> {
                     icon: Icons.campaign_outlined,
                     label: 'Annonces',
                     children: [
+                      _DrawerSubItem(
+                        label: 'Déposer une annonce',
+                        icon: Icons.add_circle_outline_rounded,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const CreateAnnoncePage(),
+                          ));
+                        },
+                      ),
                       _DrawerSubItem(
                         label: 'Trouver un compagnon',
                         icon: Icons.pets_outlined,
