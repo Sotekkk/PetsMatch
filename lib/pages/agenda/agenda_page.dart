@@ -2,6 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/widgets/pro_day_timeline.dart';
 
@@ -389,19 +391,33 @@ class _AgendaPageState extends State<AgendaPage> {
                   date: day,
                   heureDebut: 7,
                   heureFin: 22,
-                  onRdvTap: (e) => showModalBottomSheet(
-                    context: context,
-                    useSafeArea: true,
-                    backgroundColor: Colors.white,
-                    shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-                    builder: (_) => _DaySheet(
-                      day: day,
-                      events: [e],
-                      onAdd: () { Navigator.pop(context); _showAddSheet(initialDate: day); },
-                      onRefresh: _load,
-                    ),
-                  ),
+                  onRdvTap: (e) {
+                    if (e['type'] == 'rdv' && e['rdv_id'] != null) {
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        useSafeArea: true,
+                        backgroundColor: Colors.white,
+                        shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+                        builder: (_) => _RdvDetailSheet(event: e, onRefresh: _load),
+                      );
+                    } else {
+                      showModalBottomSheet(
+                        context: context,
+                        useSafeArea: true,
+                        backgroundColor: Colors.white,
+                        shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                        builder: (_) => _DaySheet(
+                          day: day,
+                          events: [e],
+                          onAdd: () { Navigator.pop(context); _showAddSheet(initialDate: day); },
+                          onRefresh: _load,
+                        ),
+                      );
+                    }
+                  },
                   showCurrentTimeLine: true,
                 ),
         ),
@@ -870,6 +886,17 @@ class _EventTile extends StatelessWidget {
         subtitle: Text(_eventSubtitle(time, type, event['duree_minutes']),
             style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
         trailing: trailing,
+        onTap: _isRdv && _rdvId != null
+            ? () => showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                useSafeArea: true,
+                backgroundColor: Colors.white,
+                shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+                builder: (_) => _RdvDetailSheet(event: event, onRefresh: onRefresh),
+              )
+            : null,
       ),
     );
   }
@@ -877,6 +904,291 @@ class _EventTile extends StatelessWidget {
 
 extension _Let<T> on T {
   R let<R>(R Function(T) block) => block(this);
+}
+
+// ── Vue détail RDV (client) ───────────────────────────────────────────────────
+
+class _RdvDetailSheet extends StatefulWidget {
+  final Map<String, dynamic> event; // agenda_event row
+  final VoidCallback onRefresh;
+  const _RdvDetailSheet({required this.event, required this.onRefresh});
+
+  @override
+  State<_RdvDetailSheet> createState() => _RdvDetailSheetState();
+}
+
+class _RdvDetailSheetState extends State<_RdvDetailSheet> {
+  static const _teal = Color(0xFF0C5C6C);
+  final _supa = Supabase.instance.client;
+
+  bool _loading = true;
+  Map<String, dynamic>? _rdv;
+  Map<String, dynamic>? _pro;
+  Map<String, dynamic>? _animal;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final rdvId = widget.event['rdv_id']?.toString();
+    if (rdvId == null) { setState(() => _loading = false); return; }
+    try {
+      final rdvRows = await _supa.from('rdv')
+          .select('id, pro_uid, client_uid, animal_id, date_heure, motif, statut, duree_minutes, notes_client')
+          .eq('id', rdvId).maybeSingle();
+      if (rdvRows == null) { setState(() => _loading = false); return; }
+      _rdv = Map<String, dynamic>.from(rdvRows);
+
+      // Pro profile (adresse, GPS)
+      try {
+        final proRows = await _supa.from('users')
+            .select('uid, firstname, lastname, name_elevage, profession_pro, adress_elevage, lat, lng, profile_picture_url_elevage')
+            .eq('uid', _rdv!['pro_uid']).maybeSingle();
+        if (proRows != null) _pro = Map<String, dynamic>.from(proRows);
+      } catch (_) {}
+
+      // Animal info
+      final animalId = _rdv!['animal_id']?.toString();
+      if (animalId != null && animalId.isNotEmpty) {
+        try {
+          final aRows = await _supa.from('animaux')
+              .select('id, nom, espece, race, photo_url').eq('id', animalId).maybeSingle();
+          if (aRows != null) _animal = Map<String, dynamic>.from(aRows);
+        } catch (_) {}
+      }
+
+      if (mounted) setState(() => _loading = false);
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  bool get _canModify {
+    final d = _parseDate(widget.event['date_debut'] as String);
+    return d.isAfter(DateTime.now().add(const Duration(hours: 24)));
+  }
+
+  String _proName() {
+    if (_pro == null) return widget.event['titre']?.toString() ?? 'Professionnel';
+    final elevage = _pro!['name_elevage']?.toString() ?? '';
+    if (elevage.isNotEmpty) return elevage;
+    final fn = _pro!['firstname']?.toString() ?? '';
+    final ln = _pro!['lastname']?.toString() ?? '';
+    final prof = _pro!['profession_pro']?.toString() ?? '';
+    final name = '$fn $ln'.trim();
+    if (name.isNotEmpty) return prof.isNotEmpty ? '$prof — $name' : name;
+    return prof.isNotEmpty ? prof : 'Professionnel';
+  }
+
+  Future<void> _openNav() async {
+    final lat = (_pro?['lat'] as num?)?.toDouble();
+    final lng = (_pro?['lng'] as num?)?.toDouble();
+    if (lat == null || lng == null) return;
+
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+          const Text('Ouvrir l\'itinéraire dans',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 16),
+          ListTile(
+            leading: const CircleAvatar(backgroundColor: Color(0xFF00CFFD),
+                child: Text('W', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800))),
+            title: const Text('Waze', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            onTap: () async {
+              Navigator.pop(ctx);
+              final uri = Uri.parse('waze://?ll=$lat,$lng&navigate=yes');
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri);
+              } else {
+                await launchUrl(Uri.parse('https://waze.com/ul?ll=$lat,$lng&navigate=yes'),
+                    mode: LaunchMode.externalApplication);
+              }
+            },
+          ),
+          ListTile(
+            leading: const CircleAvatar(backgroundColor: Color(0xFF4285F4),
+                child: Icon(Icons.map_outlined, color: Colors.white, size: 20)),
+            title: const Text('Google Maps', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            onTap: () async {
+              Navigator.pop(ctx);
+              await launchUrl(
+                Uri.parse('https://maps.google.com/?q=$lat,$lng'),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+          ),
+        ]),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final eventTile = _EventTile(event: widget.event, onRefresh: () {
+      Navigator.pop(context);
+      widget.onRefresh();
+    });
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      maxChildSize: 0.9,
+      minChildSize: 0.4,
+      builder: (_, scroll) => _loading
+          ? const Center(child: Padding(
+              padding: EdgeInsets.all(40),
+              child: CircularProgressIndicator(color: _teal)))
+          : SingleChildScrollView(
+              controller: scroll,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  // Handle
+                  Center(child: Container(width: 40, height: 4,
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2)))),
+
+                  // ── Animal ────────────────────────────────────────────────
+                  if (_animal != null) ...[
+                    Row(children: [
+                      CircleAvatar(
+                        radius: 28,
+                        backgroundColor: _teal.withValues(alpha: 0.10),
+                        backgroundImage: (_animal!['photo_url']?.toString() ?? '').isNotEmpty
+                            ? CachedNetworkImageProvider(_animal!['photo_url'].toString()) as ImageProvider
+                            : null,
+                        child: (_animal!['photo_url']?.toString() ?? '').isEmpty
+                            ? const Icon(Icons.pets, color: _teal, size: 24) : null,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(_animal!['nom']?.toString() ?? '',
+                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800,
+                                fontSize: 18, color: Color(0xFF1F2A2E))),
+                        if ((_animal!['espece']?.toString() ?? '').isNotEmpty)
+                          Text(
+                            [_animal!['espece'], _animal!['race']].where((s) => s?.toString().isNotEmpty == true).join(' · '),
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal, fontWeight: FontWeight.w600),
+                          ),
+                      ])),
+                    ]),
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // ── Date + heure + motif ──────────────────────────────────
+                  _InfoRow(
+                    icon: Icons.calendar_today_outlined,
+                    text: DateFormat("EEEE d MMMM 'à' HH'h'mm", 'fr').format(
+                        _parseDate(widget.event['date_debut'] as String)),
+                  ),
+                  if (_rdv?['motif']?.toString().isNotEmpty == true) ...[
+                    const SizedBox(height: 8),
+                    _InfoRow(icon: Icons.medical_services_outlined,
+                        text: _rdv!['motif'].toString()),
+                  ],
+                  if (_rdv?['duree_minutes'] != null) ...[
+                    const SizedBox(height: 8),
+                    _InfoRow(icon: Icons.timer_outlined,
+                        text: _durationLabel((_rdv!['duree_minutes'] as num).toInt())),
+                  ],
+                  const SizedBox(height: 12),
+
+                  // ── Professionnel ─────────────────────────────────────────
+                  const Divider(),
+                  const SizedBox(height: 12),
+                  _InfoRow(icon: Icons.person_outlined, text: _proName(), bold: true),
+                  if ((_pro?['adress_elevage']?.toString() ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _InfoRow(icon: Icons.location_on_outlined,
+                        text: _pro!['adress_elevage'].toString()),
+                  ],
+
+                  // ── Bouton GPS ────────────────────────────────────────────
+                  if (_pro?['lat'] != null && _pro?['lng'] != null) ...[
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _openNav,
+                        icon: const Icon(Icons.navigation_outlined),
+                        label: const Text('Calculer l\'itinéraire',
+                            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _teal,
+                          side: const BorderSide(color: _teal),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+
+                  // ── Actions (modifier / annuler) ──────────────────────────
+                  if (_canModify) ...[
+                    const Divider(),
+                    const SizedBox(height: 12),
+                    eventTile,
+                  ] else ...[
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      const Icon(Icons.lock_outline, size: 14, color: Colors.grey),
+                      const SizedBox(width: 6),
+                      Text('Modification impossible — RDV dans moins de 24h.',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                              color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text('Contactez directement le cabinet pour annuler.',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                            color: Colors.grey.shade400)),
+                  ],
+                ]),
+              ),
+            ),
+    );
+  }
+
+  String _durationLabel(int min) {
+    if (min < 60) return '$min min';
+    final h = min ~/ 60; final m = min % 60;
+    return m > 0 ? '${h}h$m' : '${h}h';
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final bool bold;
+  const _InfoRow({required this.icon, required this.text, this.bold = false});
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 16, color: Colors.grey.shade500),
+      const SizedBox(width: 10),
+      Expanded(child: Text(text, style: TextStyle(
+          fontFamily: 'Galey',
+          fontSize: 14,
+          fontWeight: bold ? FontWeight.w700 : FontWeight.normal,
+          color: const Color(0xFF1E2025),
+          height: 1.4))),
+    ],
+  );
 }
 
 // ── DaySheet ─────────────────────────────────────────────────────────────────
