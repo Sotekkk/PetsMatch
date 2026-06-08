@@ -55,7 +55,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           .from('rdv')
           .select()
           .eq('pro_uid', uid)
-          .order('date_heure');
+          .order('date_heure', ascending: true);
 
       // Load client names in batch
       final clientUids = rows

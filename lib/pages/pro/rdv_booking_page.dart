@@ -228,17 +228,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         motif = _motifCtrl.text.trim();
       }
 
-      // Explicit int cast for animal_id (bigint column)
-      final animalId = _selectedAnimal != null
-          ? ((_selectedAnimal!['id'] is int)
-              ? _selectedAnimal!['id'] as int
-              : int.tryParse(_selectedAnimal!['id'].toString()))
-          : null;
+      final animalId = _selectedAnimal?['id']?.toString();
 
       await Supabase.instance.client.from('rdv').insert({
         'pro_uid':    widget.proUid,
         'client_uid': uid,
-        if (animalId != null) 'animal_id': animalId,
+        if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
         'date_heure': dateHeure.toIso8601String(),
         'motif':      motif,
         if (widget.isPension && _premiereVisite != null) 'premiere_visite': _premiereVisite,

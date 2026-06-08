@@ -165,7 +165,7 @@ class _VetPatientsPageState extends State<VetPatientsPage>
           .gte('date_heure', dayStart)
           .lte('date_heure', dayEnd)
           .inFilter('statut', ['confirme', 'demande'])
-          .order('date_heure');
+          .order('date_heure', ascending: true);
 
       // Charger les infos animaux
       final animalIds = (rdvs as List)
