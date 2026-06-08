@@ -37,6 +37,21 @@ async function _upload(blob: Blob, storagePath: string): Promise<string> {
 }
 
 /**
+ * Upload a document (PDF or image) to the `documents` bucket.
+ * Returns the public URL.
+ */
+export async function uploadDocument(
+  file: File,
+  storagePath: string,
+): Promise<string> {
+  const { error } = await supabase.storage
+    .from('documents')
+    .upload(storagePath, file, { upsert: true });
+  if (error) throw new Error(error.message);
+  return supabase.storage.from('documents').getPublicUrl(storagePath).data.publicUrl;
+}
+
+/**
  * Transform a Supabase Storage URL for thumbnail display.
  * Returns the original URL unchanged if not a Supabase Storage URL.
  */

@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { loadBreeds } from '@/lib/breeds';
 import HealthSection from '@/components/animaux/HealthSection';
-import { uploadBlob } from '@/lib/upload-media';
+import { uploadBlob, uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
 import AlimentationTab from './AlimentationTab';
 
@@ -233,6 +233,76 @@ function HealthRecord({ fields, record, onDelete }:
             </div>
           ) : null)}
           <button onClick={onDelete} className="mt-2 text-xs text-red-400 hover:text-red-600 font-medium">Supprimer</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Upload + affichage documents vétérinaires ──────────────────────────────
+
+function DocUploadForm({ onSave, onCancel, saving }:
+  { onSave:(file:File,notes:string,date:string)=>void; onCancel:()=>void; saving:boolean }) {
+  const [file, setFile] = useState<File|null>(null);
+  const [notes, setNotes] = useState('');
+  const [date, setDate] = useState('');
+  const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Date</label>
+        <input type="date" value={date} onChange={e=>setDate(e.target.value)} className={cls}/>
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Fichier (PDF / image) <span className="text-red-400">*</span></label>
+        <label className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 text-sm">
+          <span className="text-lg">📎</span>
+          <span className="flex-1 text-gray-600 truncate">{file ? file.name : 'Sélectionner un fichier…'}</span>
+          <input type="file" accept=".pdf,image/*" className="hidden" onChange={e=>setFile(e.target.files?.[0]??null)}/>
+        </label>
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Notes (optionnel)</label>
+        <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={2} className={cls} placeholder="Observations…"/>
+      </div>
+      <div className="flex gap-2 pt-1">
+        <button onClick={onCancel} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
+        <button onClick={()=>{ if(file) onSave(file,notes,date); }} disabled={saving||!file}
+          className="flex-1 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold hover:bg-[#094F5D] disabled:opacity-50">
+          {saving ? '…' : 'Enregistrer'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DocCard({ record, onDelete }:
+  { record:HealthRecord; onDelete:()=>void }) {
+  const [open, setOpen] = useState(false);
+  const docUrl = record.doc_url as string | undefined;
+  const date = record.date as string | undefined;
+  const notes = record.notes as string | undefined;
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-center gap-2 cursor-pointer" onClick={()=>setOpen(!open)}>
+        <div className="flex-1">
+          <p className="text-sm font-medium text-[#1F2A2E]">{date ? fmtDate(date) : 'Document'}</p>
+          {notes && <p className="text-xs text-gray-400 truncate">{notes}</p>}
+        </div>
+        <svg className={`w-4 h-4 text-gray-400 transition-transform ${open?'rotate-180':''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
+        </svg>
+      </div>
+      {open && (
+        <div className="mt-2 space-y-2">
+          {docUrl && (
+            <a href={docUrl} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-[#0C5C6C] font-semibold hover:underline">
+              <span>📎</span> Voir le document
+            </a>
+          )}
+          {notes && <p className="text-xs text-gray-500">{notes}</p>}
+          <button onClick={onDelete} className="block text-xs text-red-400 hover:text-red-600 font-medium">Supprimer</button>
         </div>
       )}
     </div>
@@ -736,6 +806,13 @@ export default function AnimalFichePage() {
   const [savingHealth, setSavingHealth] = useState(false);
   const [editPoids, setEditPoids] = useState<string|null>(null);
 
+  // ── État documents vétérinaires
+  const [ordonnances, setOrdonnances] = useState<HealthRecord[]>([]);
+  const [radios, setRadios] = useState<HealthRecord[]>([]);
+  const [crs, setCrs] = useState<HealthRecord[]>([]);
+  const [addDocOpen, setAddDocOpen] = useState<string|null>(null);
+  const [savingDoc, setSavingDoc] = useState(false);
+
   // ── État repro
   const [chaleurs, setChaleurs] = useState<HealthRecord[]>([]);
   const [saillies, setSaillies] = useState<HealthRecord[]>([]);
@@ -795,8 +872,20 @@ export default function AnimalFichePage() {
     if (data) { setAlerteId(data.id); setAlerteStatut(data.statut); }
   }, [id, isNew]);
 
+  const loadDocs = useCallback(async () => {
+    if (!id || isNew) return;
+    const [ord, rad, cr] = await Promise.all([
+      supabase.from('ordonnances').select('*').eq('animal_id', id).order('date', { ascending: false }),
+      supabase.from('radios').select('*').eq('animal_id', id).order('date', { ascending: false }),
+      supabase.from('comptes_rendus').select('*').eq('animal_id', id).order('date', { ascending: false }),
+    ]);
+    setOrdonnances((ord.data ?? []) as HealthRecord[]);
+    setRadios((rad.data ?? []) as HealthRecord[]);
+    setCrs((cr.data ?? []) as HealthRecord[]);
+  }, [id, isNew]);
+
   useEffect(() => { loadBreeds(animal.espece ?? 'chien').then(setBreeds); }, [animal.espece]);
-  useEffect(() => { loadAnimal(); loadHealth(); loadRepro(); loadAlerte(); }, [loadAnimal, loadHealth, loadRepro, loadAlerte]);
+  useEffect(() => { loadAnimal(); loadHealth(); loadRepro(); loadAlerte(); loadDocs(); }, [loadAnimal, loadHealth, loadRepro, loadAlerte, loadDocs]);
   useEffect(() => {
     if (!user || !isEleveur) return;
     supabase.from('users').select('name_elevage, rue_elevage, ville_elevage').eq('uid', user.uid).maybeSingle()
@@ -942,6 +1031,29 @@ export default function AnimalFichePage() {
   async function deleteHealthRecord(table: string, recordId: string) {
     await supabase.from(table).delete().eq('id', recordId);
     await loadHealth();
+  }
+
+  async function saveDocRecord(table: string, file: File, notes: string, date: string) {
+    if (!id || !user) return;
+    setSavingDoc(true);
+    try {
+      const ext = file.name.split('.').pop() ?? 'pdf';
+      const path = `${table}/${user.uid}/${crypto.randomUUID()}.${ext}`;
+      const url = await uploadDocToStorage(file, path);
+      await supabase.from(table).insert({
+        id: crypto.randomUUID(), animal_id: id, pro_uid: user.uid,
+        doc_url: url, notes: notes || null, date: date || null,
+      });
+      await loadDocs();
+      setAddDocOpen(null);
+    } catch (e) { console.error(e); }
+    setSavingDoc(false);
+  }
+
+  async function deleteDocRecord(table: string, recordId: string) {
+    if (!confirm('Supprimer ce document ? Cette action est irréversible.')) return;
+    await supabase.from(table).delete().eq('id', recordId);
+    await loadDocs();
   }
 
   // ── Ajout repro
@@ -1736,6 +1848,42 @@ export default function AnimalFichePage() {
                 fields={[{key:'motif',label:'Motif'},{key:'date',label:'Date'},{key:'veterinaire',label:'Vétérinaire'},{key:'diagnostic',label:'Diagnostic'},{key:'notes',label:'Notes'}]}/>
             ))}
             {health.visites.length===0 && <p className="p-4 text-sm text-gray-400">Aucune visite</p>}
+          </HealthSection>
+
+          {/* Ordonnances */}
+          <HealthSection title="Ordonnances" icon="📋" color="#7B5EA7" count={ordonnances.length}
+            onAdd={()=>setAddDocOpen(addDocOpen==='ordonnances'?null:'ordonnances')}
+            addFormOpen={addDocOpen==='ordonnances'}
+            addForm={<DocUploadForm saving={savingDoc} onCancel={()=>setAddDocOpen(null)}
+              onSave={(f,n,d)=>saveDocRecord('ordonnances',f,n,d)}/>}>
+            {ordonnances.map(r=>(
+              <DocCard key={r.id} record={r} onDelete={()=>deleteDocRecord('ordonnances',r.id as string)}/>
+            ))}
+            {ordonnances.length===0 && <p className="p-4 text-sm text-gray-400">Aucune ordonnance</p>}
+          </HealthSection>
+
+          {/* Radios / Imagerie */}
+          <HealthSection title="Radios / Imagerie" icon="🩻" color="#546E7A" count={radios.length}
+            onAdd={()=>setAddDocOpen(addDocOpen==='radios'?null:'radios')}
+            addFormOpen={addDocOpen==='radios'}
+            addForm={<DocUploadForm saving={savingDoc} onCancel={()=>setAddDocOpen(null)}
+              onSave={(f,n,d)=>saveDocRecord('radios',f,n,d)}/>}>
+            {radios.map(r=>(
+              <DocCard key={r.id} record={r} onDelete={()=>deleteDocRecord('radios',r.id as string)}/>
+            ))}
+            {radios.length===0 && <p className="p-4 text-sm text-gray-400">Aucune radio / image</p>}
+          </HealthSection>
+
+          {/* Comptes rendus */}
+          <HealthSection title="Comptes rendus" icon="📄" color="#5F9EAA" count={crs.length}
+            onAdd={()=>setAddDocOpen(addDocOpen==='comptes_rendus'?null:'comptes_rendus')}
+            addFormOpen={addDocOpen==='comptes_rendus'}
+            addForm={<DocUploadForm saving={savingDoc} onCancel={()=>setAddDocOpen(null)}
+              onSave={(f,n,d)=>saveDocRecord('comptes_rendus',f,n,d)}/>}>
+            {crs.map(r=>(
+              <DocCard key={r.id} record={r} onDelete={()=>deleteDocRecord('comptes_rendus',r.id as string)}/>
+            ))}
+            {crs.length===0 && <p className="p-4 text-sm text-gray-400">Aucun compte rendu</p>}
           </HealthSection>
         </div>
       )}

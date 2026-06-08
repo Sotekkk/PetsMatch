@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/pro/animal_acces_page.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/message.dart';
 
 class ProAgendaPage extends StatefulWidget {
@@ -1398,10 +1399,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           onNotes:   () => _showNotesDialog(rdv),
           onCarnetSante: (showProTools && hasAnimal)
               ? () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => AnimalAccesPage(
+                  builder: (_) => AnimalFichePage(
                     animalId: animalId,
-                    ownerUid: rdv['client_uid']?.toString() ?? '',
-                    categoryColor: _teal,
+                    readOnly: true,
+                    vetMode: true,
+                    rdvId: rdv['id']?.toString(),
                   )))
               : null,
           onCompteRendu: showProTools

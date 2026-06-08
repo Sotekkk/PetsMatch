@@ -46,6 +46,7 @@ class AnimalFichePage extends StatefulWidget {
   final bool vetMode;
   final int? initialTabIndex;
   final String? eleveurUidOverride;
+  final String? rdvId;
 
   const AnimalFichePage({
     super.key,
@@ -56,6 +57,7 @@ class AnimalFichePage extends StatefulWidget {
     this.vetMode = false,
     this.initialTabIndex,
     this.eleveurUidOverride,
+    this.rdvId,
   });
 
   @override
@@ -876,7 +878,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 _CarnetSanteTab(animalId: widget.animalId),
                 _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
-                _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text),
+                _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
               ]
             : [
                 _IdentiteTab(this),
@@ -2813,6 +2815,7 @@ class _SanteListState extends State<_SanteList> {
                     return _SanteCard(
                       title: _title(d), data: d, icon: widget.icon,
                       onDelete: () => _delete(d['id']?.toString() ?? ''),
+                      collection: widget.collection,
                     );
                   },
                 ),
@@ -3029,8 +3032,9 @@ class _SanteCard extends StatelessWidget {
   final IconData icon;
   final VoidCallback onDelete;
   final VoidCallback? onTap;
+  final String? collection;
   const _SanteCard({required this.title, required this.data, required this.icon,
-      required this.onDelete, this.onTap});
+      required this.onDelete, this.onTap, this.collection});
 
   static const _labels = {
     'vaccin': 'Vaccin', 'lot': 'N° de lot', 'veterinaire': 'Vétérinaire',
@@ -3053,9 +3057,12 @@ class _SanteCard extends StatelessWidget {
   }
 
   void _showDetail(BuildContext context) {
-    const _skip = {'id', 'animal_id', 'created_at'};
+    const _skip = {'id', 'animal_id', 'created_at', 'vet_id', 'visite_ref',
+                   'source', 'pro_uid', 'owner_uid', 'rdv_id', 'extra_data'};
     final entries = data.entries.where((e) =>
         !_skip.contains(e.key) && e.value != null && e.value.toString().isNotEmpty).toList();
+    final visiteRef = data['visite_ref'] as String?;
+    final rdvId = data['rdv_id'] as String?;
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
@@ -3122,6 +3129,10 @@ class _SanteCard extends StatelessWidget {
                 ),
               );
             }),
+          if (collection == 'traitements' && (visiteRef ?? '').isNotEmpty)
+            _OrdonnanceLinkSection(visiteRef: visiteRef!),
+          if ((rdvId ?? '').isNotEmpty)
+            _RdvLinkSection(rdvId: rdvId!),
           ],
         ),
       ),
@@ -7682,7 +7693,8 @@ class _ConsultationsVetTab extends StatefulWidget {
   final String? animalId;
   final String? ownerUid;
   final String animalNom;
-  const _ConsultationsVetTab({required this.animalId, required this.ownerUid, required this.animalNom});
+  final String? rdvId;
+  const _ConsultationsVetTab({required this.animalId, required this.ownerUid, required this.animalNom, this.rdvId});
 
   @override
   State<_ConsultationsVetTab> createState() => _ConsultationsVetTabState();
@@ -7816,17 +7828,17 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
       case 'vaccin':
         dialog = _VetAddVaccinDialog(
             animalId: widget.animalId!, vetUid: vetUid, vetName: vetName,
-            visiteRef: _sessionVisiteRef);
+            visiteRef: _sessionVisiteRef, rdvId: widget.rdvId);
         break;
       case 'traitement':
         dialog = _VetAddTraitementDialog(
             animalId: widget.animalId!, vetUid: vetUid, vetName: vetName,
-            visiteRef: _sessionVisiteRef);
+            visiteRef: _sessionVisiteRef, rdvId: widget.rdvId);
         break;
       case 'ordo':
         dialog = _VetAddOrdoDialog(
             animalId: widget.animalId!, vetUid: vetUid, vetName: vetName,
-            ownerUid: widget.ownerUid);
+            ownerUid: widget.ownerUid, rdvId: widget.rdvId);
         break;
       case 'radio':
         dialog = _VetAddRadioDialog(
@@ -7836,7 +7848,7 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
       default:
         dialog = _VetAddVisiteDialog(
             animalId: widget.animalId!, vetUid: vetUid, vetName: vetName,
-            visiteRef: _sessionVisiteRef);
+            visiteRef: _sessionVisiteRef, rdvId: widget.rdvId);
     }
     final saved = await showDialog<bool>(context: context, builder: (_) => dialog);
     if (saved == true) {
@@ -7890,6 +7902,32 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
     }
   }
 
+  Future<void> _deleteDoc(String table, String id) async {
+    final ok = await showDialog<bool>(context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(table == 'comptes_rendus' ? 'Supprimer ce compte rendu ?' : 'Supprimer cette ordonnance ?',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('Cette action est irréversible.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          TextButton(onPressed: () => Navigator.pop(context, true),
+              child: const Text('Supprimer',
+                  style: TextStyle(fontFamily: 'Galey', color: Colors.red, fontWeight: FontWeight.w700))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _supa.from(table).delete().eq('id', id);
+      _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    }
+  }
+
   String _fmtDate(String? iso) {
     if (iso == null) return '';
     final d = DateTime.tryParse(iso)?.toLocal();
@@ -7926,7 +7964,8 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
             if (_crs.isEmpty)
               _VetConsultEmptyCard(message: 'Aucun compte rendu pour cet animal.')
             else
-              ..._crs.map((cr) => _VetConsultCrCard(cr: cr, color: _teal, fmtDate: _fmtDate)),
+              ..._crs.map((cr) => _VetConsultCrCard(cr: cr, color: _teal, fmtDate: _fmtDate,
+                  onDelete: () => _deleteDoc('comptes_rendus', cr['id']?.toString() ?? ''))),
             const SizedBox(height: 20),
             // ── Ordonnances ───────────────────────────────────────────────
             _VetConsultSectionHeader(label: 'Ordonnances', count: _ordos.length,
@@ -7935,7 +7974,8 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
             if (_ordos.isEmpty)
               _VetConsultEmptyCard(message: 'Aucune ordonnance pour cet animal.')
             else
-              ..._ordos.map((o) => _VetConsultOrdoCard(ordo: o, color: _teal, fmtDate: _fmtDate)),
+              ..._ordos.map((o) => _VetConsultOrdoCard(ordo: o, color: _teal, fmtDate: _fmtDate,
+                  onDelete: () => _deleteDoc('ordonnances', o['id']?.toString() ?? ''))),
           ]),
         ),
       ),
@@ -8145,7 +8185,8 @@ class _VetConsultEmptyCard extends StatelessWidget {
 
 class _VetConsultCrCard extends StatelessWidget {
   final Map<String, dynamic> cr; final Color color; final String Function(String?) fmtDate;
-  const _VetConsultCrCard({required this.cr, required this.color, required this.fmtDate});
+  final VoidCallback? onDelete;
+  const _VetConsultCrCard({required this.cr, required this.color, required this.fmtDate, this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -8159,8 +8200,12 @@ class _VetConsultCrCard extends StatelessWidget {
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 6, offset: const Offset(0, 2))]),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (date.isNotEmpty) Text(date, style: TextStyle(fontFamily: 'Galey',
-            fontSize: 11, color: Colors.grey.shade500)),
+        Row(children: [
+          if (date.isNotEmpty) Text(date, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          const Spacer(),
+          if (onDelete != null) GestureDetector(onTap: onDelete,
+            child: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFCCCCCC))),
+        ]),
         const SizedBox(height: 6),
         Text(contenu, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
         if (docUrl.isNotEmpty) ...[
@@ -8186,7 +8231,8 @@ class _VetConsultCrCard extends StatelessWidget {
 
 class _VetConsultOrdoCard extends StatelessWidget {
   final Map<String, dynamic> ordo; final Color color; final String Function(String?) fmtDate;
-  const _VetConsultOrdoCard({required this.ordo, required this.color, required this.fmtDate});
+  final VoidCallback? onDelete;
+  const _VetConsultOrdoCard({required this.ordo, required this.color, required this.fmtDate, this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -8203,9 +8249,11 @@ class _VetConsultOrdoCard extends StatelessWidget {
         Row(children: [
           Icon(Icons.description_outlined, size: 16, color: color),
           const SizedBox(width: 6),
-          Text('Ordonnance${dateEmit.isNotEmpty ? " du $dateEmit" : ""}',
+          Expanded(child: Text('Ordonnance${dateEmit.isNotEmpty ? " du $dateEmit" : ""}',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
-                  fontSize: 13, color: color)),
+                  fontSize: 13, color: color))),
+          if (onDelete != null) GestureDetector(onTap: onDelete,
+            child: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFCCCCCC))),
         ]),
         if (notes.isNotEmpty) ...[
           const SizedBox(height: 6),
@@ -8423,8 +8471,9 @@ class _VetSanteEntryCard extends StatelessWidget {
 
 class _VetAddVaccinDialog extends StatefulWidget {
   final String animalId, vetUid, vetName, visiteRef;
+  final String? rdvId;
   const _VetAddVaccinDialog({required this.animalId, required this.vetUid,
-      required this.vetName, required this.visiteRef});
+      required this.vetName, required this.visiteRef, this.rdvId});
   @override State<_VetAddVaccinDialog> createState() => _VetAddVaccinDialogState();
 }
 class _VetAddVaccinDialogState extends State<_VetAddVaccinDialog> {
@@ -8450,8 +8499,14 @@ class _VetAddVaccinDialogState extends State<_VetAddVaccinDialog> {
         'date_rappel': _rappel?.toIso8601String().substring(0, 10),
         'source': 'veterinaire', 'vet_id': widget.vetUid,
         'visite_ref': widget.visiteRef,
+        if (widget.rdvId != null) 'rdv_id': widget.rdvId!,
       });
       if (mounted) Navigator.pop(context, true);
+      RegistreHelper.writeActe(
+        animalId: widget.animalId, typeActe: 'vaccination', dateActe: _date!,
+        intervenant: widget.vetName,
+        description: 'Vaccin : ${_vaccin.text.trim()}${_lot.text.trim().isNotEmpty ? " (lot ${_lot.text.trim()})" : ""}',
+      );
       // fire-and-forget – ne bloque pas si l'agenda échoue
       if (_rappel != null) {
         _scheduleRappelAgenda(
@@ -8522,8 +8577,9 @@ class _VetAddVaccinDialogState extends State<_VetAddVaccinDialog> {
 
 class _VetAddTraitementDialog extends StatefulWidget {
   final String animalId, vetUid, vetName, visiteRef;
+  final String? rdvId;
   const _VetAddTraitementDialog({required this.animalId, required this.vetUid,
-      required this.vetName, required this.visiteRef});
+      required this.vetName, required this.visiteRef, this.rdvId});
   @override State<_VetAddTraitementDialog> createState() => _VetAddTraitementDialogState();
 }
 class _VetAddTraitementDialogState extends State<_VetAddTraitementDialog> {
@@ -8541,19 +8597,30 @@ class _VetAddTraitementDialogState extends State<_VetAddTraitementDialog> {
     if (_nom.text.trim().isEmpty || _date == null) return;
     setState(() => _saving = true);
     try {
-      final id = DateTime.now().microsecondsSinceEpoch.toString();
       await Supabase.instance.client.from('traitements').insert({
-        'id': id, 'animal_id': widget.animalId,
-        'type': _type, 'nom': _nom.text.trim(), 'posologie': _posologie.text.trim(),
+        'animal_id': widget.animalId,
+        'type': _type, 'nom': _nom.text.trim(),
+        'posologie': _posologieDansOrdo ? 'Voir ordonnance jointe' : _posologie.text.trim(),
         'date': _date!.toIso8601String().substring(0, 10),
         'date_fin': _dateFin?.toIso8601String().substring(0, 10),
         'source': 'veterinaire', 'vet_id': widget.vetUid,
         'veterinaire': widget.vetName, 'visite_ref': widget.visiteRef,
-        'posologie': _posologieDansOrdo
-            ? 'Voir ordonnance jointe'
-            : _posologie.text.trim(),
+        if (widget.rdvId != null) 'rdv_id': widget.rdvId!,
       });
       if (mounted) Navigator.pop(context, true);
+      RegistreHelper.writeActe(
+        animalId: widget.animalId, typeActe: 'traitement', dateActe: _date!,
+        intervenant: widget.vetName,
+        description: _nom.text.trim(),
+      );
+      if (_dateFin != null) {
+        _scheduleTraitementDailyReminders(
+          animalId: widget.animalId,
+          nom: _nom.text.trim(),
+          dateDebut: _date!,
+          dateFin: _dateFin!,
+        ).catchError((_) {});
+      }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erreur : $e')));
@@ -8649,8 +8716,9 @@ class _VetAddTraitementDialogState extends State<_VetAddTraitementDialog> {
 
 class _VetAddVisiteDialog extends StatefulWidget {
   final String animalId, vetUid, vetName, visiteRef;
+  final String? rdvId;
   const _VetAddVisiteDialog({required this.animalId, required this.vetUid,
-      required this.vetName, required this.visiteRef});
+      required this.vetName, required this.visiteRef, this.rdvId});
   @override State<_VetAddVisiteDialog> createState() => _VetAddVisiteDialogState();
 }
 class _VetAddVisiteDialogState extends State<_VetAddVisiteDialog> {
@@ -8676,8 +8744,14 @@ class _VetAddVisiteDialogState extends State<_VetAddVisiteDialog> {
         'diagnostic': _diag.text.trim(), 'notes': _notes.text.trim(),
         'source': 'veterinaire', 'vet_id': widget.vetUid,
         'visite_ref': widget.visiteRef,
+        if (widget.rdvId != null) 'rdv_id': widget.rdvId!,
       });
       if (mounted) Navigator.pop(context, true);
+      RegistreHelper.writeActe(
+        animalId: widget.animalId, typeActe: 'visite', dateActe: _date!,
+        intervenant: widget.vetName,
+        description: '$_motif${_diag.text.trim().isNotEmpty ? " — ${_diag.text.trim()}" : ""}',
+      );
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erreur : $e')));
@@ -8750,9 +8824,9 @@ class _VetAddVisiteDialogState extends State<_VetAddVisiteDialog> {
 
 class _VetAddOrdoDialog extends StatefulWidget {
   final String animalId, vetUid, vetName;
-  final String? ownerUid;
+  final String? ownerUid, rdvId;
   const _VetAddOrdoDialog({required this.animalId, required this.vetUid,
-      required this.vetName, this.ownerUid});
+      required this.vetName, this.ownerUid, this.rdvId});
   @override State<_VetAddOrdoDialog> createState() => _VetAddOrdoDialogState();
 }
 class _VetAddOrdoDialogState extends State<_VetAddOrdoDialog> {
@@ -8784,12 +8858,11 @@ class _VetAddOrdoDialogState extends State<_VetAddOrdoDialog> {
       final name  = '${DateTime.now().millisecondsSinceEpoch}.pdf';
       final url   = await uploadDocument(_pdfFile!, 'ordonnances/${widget.vetUid}/$name');
       final today = _date;
-      final id    = DateTime.now().microsecondsSinceEpoch.toString();
       await Supabase.instance.client.from('ordonnances').insert({
-        'id':        id,
         'pro_uid':   widget.vetUid,
         'animal_id': widget.animalId,
         if (widget.ownerUid != null) 'owner_uid': widget.ownerUid,
+        if (widget.rdvId != null) 'rdv_id': widget.rdvId!,
         'doc_url':   url,
         'date_emit': '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}',
         if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim(),
@@ -8901,9 +8974,7 @@ class _VetAddRadioDialogState extends State<_VetAddRadioDialog> {
     try {
       final name = '${DateTime.now().millisecondsSinceEpoch}.${_imgFile!.path.split('.').last}';
       final url  = await uploadDocument(_imgFile!, 'radios/${widget.vetUid}/$name');
-      final id   = DateTime.now().microsecondsSinceEpoch.toString();
       await Supabase.instance.client.from('radios').insert({
-        'id':          id,
         'animal_id':   widget.animalId,
         'vet_id':      widget.vetUid,
         'veterinaire': widget.vetName,
@@ -9024,9 +9095,8 @@ class _AddRadioDialogState extends State<_AddRadioDialog> {
       final uid  = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
       final name = '${DateTime.now().millisecondsSinceEpoch}.${_file!.path.split('.').last}';
       final url  = await uploadDocument(_file!, 'radios/$uid/$name');
-      final id   = DateTime.now().microsecondsSinceEpoch.toString();
       await Supabase.instance.client.from('radios').insert({
-        'id':        id, 'animal_id': widget.animalId,
+        'animal_id': widget.animalId,
         'titre':     _titre.text.trim().isNotEmpty ? _titre.text.trim() : 'Radio / Examen',
         'notes':     _notes.text.trim(), 'image_url': url,
         'date':      '${_date!.year}-${_date!.month.toString().padLeft(2,'0')}-${_date!.day.toString().padLeft(2,'0')}',
@@ -9059,4 +9129,143 @@ class _AddRadioDialogState extends State<_AddRadioDialog> {
       return false;
     },
   );
+}
+
+// ─── Rappels quotidiens traitement ───────────────────────────────────────────
+
+Future<void> _scheduleTraitementDailyReminders({
+  required String animalId,
+  required String nom,
+  required DateTime dateDebut,
+  required DateTime dateFin,
+}) async {
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return;
+  String animalNom = '';
+  try {
+    final a = await Supabase.instance.client
+        .from('animaux').select('nom').eq('id', animalId).maybeSingle();
+    animalNom = (a?['nom'] as String?) ?? '';
+  } catch (_) {}
+  final titre = 'Traitement${animalNom.isNotEmpty ? " $animalNom" : ""} — $nom';
+  final events = <Map<String, dynamic>>[];
+  var day = DateTime(dateDebut.year, dateDebut.month, dateDebut.day);
+  final end = DateTime(dateFin.year, dateFin.month, dateFin.day);
+  while (!day.isAfter(end)) {
+    events.add({
+      'uid':        uid,
+      'titre':      titre,
+      'type':       'medication',
+      'date_debut': DateTime(day.year, day.month, day.day, 8, 0).toIso8601String(),
+      'animal_id':  int.tryParse(animalId),
+    });
+    day = day.add(const Duration(days: 1));
+  }
+  if (events.isEmpty) return;
+  await Supabase.instance.client.from('agenda_events').insert(events);
+}
+
+// ─── Lien ordonnance liée (via visite_ref) ───────────────────────────────────
+
+class _OrdonnanceLinkSection extends StatefulWidget {
+  final String visiteRef;
+  const _OrdonnanceLinkSection({required this.visiteRef});
+  @override State<_OrdonnanceLinkSection> createState() => _OrdonnanceLinkSectionState();
+}
+class _OrdonnanceLinkSectionState extends State<_OrdonnanceLinkSection> {
+  String? _url;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('ordonnances').select('doc_url')
+          .eq('visite_ref', widget.visiteRef).limit(1);
+      final list = rows as List;
+      if (mounted) setState(() {
+        _url = list.isNotEmpty ? list.first['doc_url'] as String? : null;
+        _loaded = true;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loaded = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded || _url == null || _url!.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const SizedBox(width: 130,
+          child: Text('Ordonnance',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                color: Color(0xFF6F767B), fontWeight: FontWeight.w500))),
+        Expanded(child: GestureDetector(
+          onTap: () async {
+            final uri = Uri.tryParse(_url!);
+            if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+          },
+          child: const Text('Voir le document',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                fontWeight: FontWeight.w600, color: Color(0xFF6D28D9),
+                decoration: TextDecoration.underline)),
+        )),
+      ]),
+    );
+  }
+}
+
+// ─── Lien consultation vétérinaire (via rdv_id) ──────────────────────────────
+
+class _RdvLinkSection extends StatefulWidget {
+  final String rdvId;
+  const _RdvLinkSection({required this.rdvId});
+  @override State<_RdvLinkSection> createState() => _RdvLinkSectionState();
+}
+class _RdvLinkSectionState extends State<_RdvLinkSection> {
+  Map<String, dynamic>? _rdv;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final rdv = await Supabase.instance.client
+          .from('rdv').select('id, date_heure, cat_pro').eq('id', widget.rdvId).maybeSingle();
+      if (mounted) setState(() { _rdv = rdv; _loaded = true; });
+    } catch (_) {
+      if (mounted) setState(() => _loaded = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) return const SizedBox.shrink();
+    final label = _rdv != null
+        ? 'Consultation du ${_rdv!['date_heure'] != null ? DateFormat('dd/MM/yyyy').format(DateTime.tryParse(_rdv!['date_heure'].toString()) ?? DateTime.now()) : '—'}'
+        : 'Consultation vétérinaire';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const SizedBox(width: 130,
+          child: Text('Consultation',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                color: Color(0xFF6F767B), fontWeight: FontWeight.w500))),
+        Expanded(child: Text(label,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
+              color: Color(0xFF0C5C6C), fontWeight: FontWeight.w600))),
+      ]),
+    );
+  }
 }

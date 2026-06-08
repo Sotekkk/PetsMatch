@@ -1,6 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/utils/storage_helper.dart';
 
 /// S06 — Pro : écrire un compte rendu et/ou créer une ordonnance après un RDV.
 /// Peut être ouvert avec un RDV précis (`rdv`) ou directement depuis la fiche
@@ -34,12 +38,12 @@ class _CompteRenduPageState extends State<CompteRenduPage>
 
   // Compte rendu
   final _crContenuCtrl = TextEditingController();
-  final _crDocUrlCtrl  = TextEditingController();
+  File? _crFile;
   bool _crSaving = false;
 
   // Ordonnance
-  final _ordoDocUrlCtrl = TextEditingController();
-  final _ordoNotesCtrl  = TextEditingController();
+  final _ordoNotesCtrl = TextEditingController();
+  File? _ordoFile;
   bool _ordoSaving = false;
 
   // Existing docs
@@ -58,10 +62,49 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   void dispose() {
     _tabCtrl.dispose();
     _crContenuCtrl.dispose();
-    _crDocUrlCtrl.dispose();
-    _ordoDocUrlCtrl.dispose();
     _ordoNotesCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _deleteDoc(String table, String id) async {
+    final label = table == 'comptes_rendus' ? 'ce compte rendu' : 'cette ordonnance';
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Text('Supprimer $label ?',
+          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: const Text('Cette action est irréversible.',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+        TextButton(onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer',
+                style: TextStyle(fontFamily: 'Galey', color: Colors.red, fontWeight: FontWeight.w700))),
+      ],
+    ));
+    if (ok != true) return;
+    try {
+      await _supa.from(table).delete().eq('id', id);
+      await _loadExisting();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+              backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
+    }
+  }
+
+  Future<void> _pickCrFile() async {
+    final result = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png']);
+    if (result != null && result.files.single.path != null) {
+      setState(() => _crFile = File(result.files.single.path!));
+    }
+  }
+
+  Future<void> _pickOrdoFile() async {
+    final result = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png']);
+    if (result != null && result.files.single.path != null) {
+      setState(() => _ordoFile = File(result.files.single.path!));
+    }
   }
 
   Future<void> _loadExisting() async {
@@ -73,12 +116,15 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     }
     try {
       List crs, ordos;
+      final vetUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final aid = animalId ?? '';
       if (rdvId != null) {
         crs   = await _supa.from('comptes_rendus').select().eq('rdv_id', rdvId).order('created_at');
-        ordos = await _supa.from('ordonnances').select().eq('rdv_id', rdvId).order('created_at');
+        // Ordonnances liées au rdv OU ajoutées depuis la fiche animal (sans rdv_id)
+        ordos = await _supa.from('ordonnances').select()
+            .eq('animal_id', aid).eq('pro_uid', vetUid)
+            .order('date_emit', ascending: false);
       } else {
-        final vetUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-        final aid = animalId ?? '';
         crs   = await _supa.from('comptes_rendus').select()
             .eq('animal_id', aid).eq('pro_uid', vetUid).order('created_at');
         ordos = await _supa.from('ordonnances').select()
@@ -112,16 +158,21 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     final animalId = widget.animalId ?? widget.rdv?['animal_id'];
     final ownerUid = widget.ownerUid ?? widget.rdv?['client_uid'];
     try {
+      String? docUrl;
+      if (_crFile != null) {
+        final name = '${DateTime.now().millisecondsSinceEpoch}.${_crFile!.path.split('.').last}';
+        docUrl = await uploadDocument(_crFile!, 'comptes_rendus/$proUid/$name');
+      }
       await _supa.from('comptes_rendus').insert({
         'pro_uid'   : proUid,
         'animal_id' : animalId,
         'owner_uid' : ownerUid,
         if (rdvId != null) 'rdv_id': rdvId,
         'contenu'   : contenu,
-        if (_crDocUrlCtrl.text.trim().isNotEmpty) 'doc_url': _crDocUrlCtrl.text.trim(),
+        if (docUrl != null) 'doc_url': docUrl,
       });
       _crContenuCtrl.clear();
-      _crDocUrlCtrl.clear();
+      setState(() => _crFile = null);
       await _loadExisting();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -144,10 +195,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
 
   Future<void> _saveOrdonnance() async {
     final proUid = FirebaseAuth.instance.currentUser?.uid;
-    final docUrl = _ordoDocUrlCtrl.text.trim();
-    if (proUid == null || docUrl.isEmpty) {
+    if (proUid == null || _ordoFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('L\'URL du document est obligatoire.',
+        content: Text('Veuillez sélectionner un fichier PDF.',
             style: TextStyle(fontFamily: 'Galey')),
         behavior: SnackBarBehavior.floating,
       ));
@@ -158,7 +208,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     final animalId = widget.animalId ?? widget.rdv?['animal_id'];
     final ownerUid = widget.ownerUid ?? widget.rdv?['client_uid'];
     try {
-      final today = DateTime.now();
+      final name   = '${DateTime.now().millisecondsSinceEpoch}.${_ordoFile!.path.split('.').last}';
+      final docUrl = await uploadDocument(_ordoFile!, 'ordonnances/$proUid/$name');
+      final today  = DateTime.now();
       await _supa.from('ordonnances').insert({
         'pro_uid'  : proUid,
         'animal_id': animalId,
@@ -168,7 +220,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         'date_emit': '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}',
         if (_ordoNotesCtrl.text.trim().isNotEmpty) 'notes': _ordoNotesCtrl.text.trim(),
       });
-      _ordoDocUrlCtrl.clear();
+      setState(() => _ordoFile = null);
       _ordoNotesCtrl.clear();
       await _loadExisting();
       if (mounted) {
@@ -245,7 +297,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           if (_crs.isNotEmpty) ...[
             _sectionTitle('Comptes rendus existants'),
             const SizedBox(height: 8),
-            ..._crs.map((cr) => _CrCard(cr: cr, color: widget.categoryColor)),
+            ..._crs.map((cr) => _CrCard(cr: cr, color: widget.categoryColor, onDelete: () => _deleteDoc('comptes_rendus', cr['id'].toString()))),
             const SizedBox(height: 20),
             const Divider(),
             const SizedBox(height: 8),
@@ -265,14 +317,23 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           ),
           const SizedBox(height: 14),
 
-          // URL document (optionnel)
-          _inputLabel('Document joint (URL, optionnel)'),
+          // Document joint (optionnel)
+          _inputLabel('Document joint (optionnel)'),
           const SizedBox(height: 6),
-          TextFormField(
-            controller: _crDocUrlCtrl,
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-            decoration: _inputDeco('https://…'),
-            keyboardType: TextInputType.url,
+          OutlinedButton.icon(
+            onPressed: _pickCrFile,
+            icon: const Icon(Icons.upload_file, size: 18),
+            label: Text(
+              _crFile != null ? _crFile!.path.split('/').last : 'Joindre un PDF / image',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+            ),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 46),
+              side: BorderSide(color: _crFile != null ? widget.categoryColor : Colors.grey.shade300),
+              foregroundColor: widget.categoryColor,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
           ),
           const SizedBox(height: 20),
 
@@ -312,7 +373,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           if (_ordos.isNotEmpty) ...[
             _sectionTitle('Ordonnances existantes'),
             const SizedBox(height: 8),
-            ..._ordos.map((o) => _OrdoCard(ordo: o, color: widget.categoryColor)),
+            ..._ordos.map((o) => _OrdoCard(ordo: o, color: widget.categoryColor, onDelete: () => _deleteDoc('ordonnances', o['id'].toString()))),
             const SizedBox(height: 20),
             const Divider(),
             const SizedBox(height: 8),
@@ -321,14 +382,23 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           _sectionTitle('Nouvelle ordonnance'),
           const SizedBox(height: 12),
 
-          // URL document
-          _inputLabel('URL du document *'),
+          // Fichier ordonnance
+          _inputLabel('Fichier PDF *'),
           const SizedBox(height: 6),
-          TextFormField(
-            controller: _ordoDocUrlCtrl,
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-            decoration: _inputDeco('Lien vers l\'ordonnance (Firebase Storage, Drive…)'),
-            keyboardType: TextInputType.url,
+          OutlinedButton.icon(
+            onPressed: _pickOrdoFile,
+            icon: const Icon(Icons.upload_file, size: 18),
+            label: Text(
+              _ordoFile != null ? _ordoFile!.path.split('/').last : 'Sélectionner un PDF *',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+            ),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 46),
+              side: BorderSide(color: _ordoFile != null ? widget.categoryColor : Colors.grey.shade300),
+              foregroundColor: widget.categoryColor,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
           ),
           const SizedBox(height: 14),
 
@@ -390,7 +460,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
 class _CrCard extends StatelessWidget {
   final Map<String, dynamic> cr;
   final Color color;
-  const _CrCard({required this.cr, required this.color});
+  final VoidCallback? onDelete;
+  const _CrCard({required this.cr, required this.color, this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -407,20 +478,34 @@ class _CrCard extends StatelessWidget {
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (date != null)
-          Text('${date.day}/${date.month}/${date.year}',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+        Row(children: [
+          if (date != null)
+            Text('${date.day}/${date.month}/${date.year}',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          const Spacer(),
+          if (onDelete != null)
+            GestureDetector(onTap: onDelete,
+              child: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFCCCCCC))),
+        ]),
         const SizedBox(height: 6),
         Text(contenu,
             style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
         if (docUrl.isNotEmpty) ...[
           const SizedBox(height: 6),
-          Row(children: [
-            Icon(Icons.attach_file, size: 13, color: color),
-            const SizedBox(width: 4),
-            Expanded(child: Text(docUrl, maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: color))),
-          ]),
+          GestureDetector(
+            onTap: () async {
+              final uri = Uri.tryParse(docUrl);
+              if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+            },
+            child: Row(children: [
+              Icon(Icons.attach_file, size: 13, color: color),
+              const SizedBox(width: 4),
+              Text('Voir le document',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      color: color, fontWeight: FontWeight.w600,
+                      decoration: TextDecoration.underline)),
+            ]),
+          ),
         ],
       ]),
     );
@@ -430,7 +515,8 @@ class _CrCard extends StatelessWidget {
 class _OrdoCard extends StatelessWidget {
   final Map<String, dynamic> ordo;
   final Color color;
-  const _OrdoCard({required this.ordo, required this.color});
+  final VoidCallback? onDelete;
+  const _OrdoCard({required this.ordo, required this.color, this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -450,13 +536,28 @@ class _OrdoCard extends StatelessWidget {
         Row(children: [
           Icon(Icons.description_outlined, size: 16, color: color),
           const SizedBox(width: 6),
-          Text('Ordonnance du $dateEmit',
-              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: color)),
+          Expanded(child: Text('Ordonnance du $dateEmit',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: color))),
+          if (onDelete != null)
+            GestureDetector(onTap: onDelete,
+              child: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFCCCCCC))),
         ]),
         if (docUrl.isNotEmpty) ...[
           const SizedBox(height: 6),
-          Text(docUrl, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+          GestureDetector(
+            onTap: () async {
+              final uri = Uri.tryParse(docUrl);
+              if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+            },
+            child: Row(children: [
+              Icon(Icons.description_outlined, size: 14, color: color),
+              const SizedBox(width: 4),
+              Text('Voir l\'ordonnance',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      color: color, fontWeight: FontWeight.w600,
+                      decoration: TextDecoration.underline)),
+            ]),
+          ),
         ],
         if (notes.isNotEmpty) ...[
           const SizedBox(height: 6),
