@@ -3,6 +3,7 @@ const stripeFunctions = require("./stripe");
 const alertesFunctions = require("./alertes");
 const agendaFunctions = require("./agenda");
 const rdvRemindersFunctions = require("./rdv_reminders");
+const vetNotifFunctions = require("./vet_notifications");
 const chaleursFunctions = require("./chaleurs");
 const retraiteFunctions = require("./retraite");
 const tachesFunctions = require("./taches");
@@ -24,6 +25,9 @@ exports.notifyUsersNearLostAnimal = alertesFunctions.notifyUsersNearLostAnimal;
 exports.sendLikeNotification = alertesFunctions.sendLikeNotification;
 exports.notifyNearFoundAnimal = alertesFunctions.notifyNearFoundAnimal;
 exports.notifyAnimalOwner = alertesFunctions.notifyAnimalOwner;
+
+// Vétérinaire — notification propriétaire à l'ajout d'entrée carnet
+exports.notifyOwnerVetEntry = vetNotifFunctions.notifyOwnerVetEntry;
 
 // Agenda — rappels RDV + notifications RDV + mise-bas
 exports.sendRdvReminders = rdvRemindersFunctions.sendRdvReminders;

@@ -24,6 +24,7 @@ import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:cloud_functions/cloud_functions.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
 
@@ -8507,6 +8508,7 @@ class _VetAddVaccinDialogState extends State<_VetAddVaccinDialog> {
         intervenant: widget.vetName,
         description: 'Vaccin : ${_vaccin.text.trim()}${_lot.text.trim().isNotEmpty ? " (lot ${_lot.text.trim()})" : ""}',
       );
+      _notifyOwnerVetEntry(animalId: widget.animalId, vetName: widget.vetName, typeActe: 'vaccin').catchError((_) {});
       // fire-and-forget – ne bloque pas si l'agenda échoue
       if (_rappel != null) {
         _scheduleRappelAgenda(
@@ -8613,6 +8615,7 @@ class _VetAddTraitementDialogState extends State<_VetAddTraitementDialog> {
         intervenant: widget.vetName,
         description: _nom.text.trim(),
       );
+      _notifyOwnerVetEntry(animalId: widget.animalId, vetName: widget.vetName, typeActe: 'traitement').catchError((_) {});
       if (_dateFin != null) {
         _scheduleTraitementDailyReminders(
           animalId: widget.animalId,
@@ -8752,6 +8755,7 @@ class _VetAddVisiteDialogState extends State<_VetAddVisiteDialog> {
         intervenant: widget.vetName,
         description: '$_motif${_diag.text.trim().isNotEmpty ? " — ${_diag.text.trim()}" : ""}',
       );
+      _notifyOwnerVetEntry(animalId: widget.animalId, vetName: widget.vetName, typeActe: 'visite').catchError((_) {});
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erreur : $e')));
@@ -9268,4 +9272,19 @@ class _RdvLinkSectionState extends State<_RdvLinkSection> {
       ]),
     );
   }
+}
+
+// ─── Notification propriétaire — entrée vétérinaire ──────────────────────────
+
+/// Appel fire-and-forget depuis les dialogs vet pour notifier le proprio.
+Future<void> _notifyOwnerVetEntry({
+  required String animalId,
+  required String vetName,
+  required String typeActe, // 'vaccin' | 'traitement' | 'visite'
+}) async {
+  try {
+    final fn = FirebaseFunctions.instanceFor(region: 'europe-west1')
+        .httpsCallable('notifyOwnerVetEntry');
+    await fn.call({'animalId': animalId, 'vetName': vetName, 'typeActe': typeActe});
+  } catch (_) {} // fire-and-forget : n'interrompt pas le flux principal
 }

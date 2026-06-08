@@ -6,10 +6,12 @@ const stripe = new Stripe(
     "sk_test_51Pagp22MpEB6OUl5N3RDJvFx7l8dpxO1Az9RIWYEe8acl9eLtRz9xdfKd8W5GZKFuwJx1EX4sxHUP3CxLcPO0l0N00VDQZrUkb",
 );
 
-const supabase = createClient(
-    "https://zyvpngcvzrkdytypjlyq.supabase.co",
-    process.env.SUPABASE_SERVICE_ROLE_KEY || "",
-);
+// Lazy init pour éviter l'erreur "supabaseKey is required" au chargement du module
+function getSupabase() {
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY ||
+        (functions.config().supabase || {}).service_key || "";
+    return createClient("https://zyvpngcvzrkdytypjlyq.supabase.co", key);
+}
 
 // Tarifs CPM/CPL par défaut (€)
 const CPM = { banniere: 10, listing: 0 };
@@ -33,7 +35,7 @@ exports.marketplaceBillingMonthly = functions
         functions.logger.info(`💰 Facturation Marketplace ${month}/${year}`);
 
         // Récupère tous les partenaires actifs
-        const { data: partners, error: pErr } = await supabase
+        const { data: partners, error: pErr } = await getSupabase()
             .from("marketplace_partners")
             .select("id, nom, contact_email, budget_mensuel, plan")
             .eq("statut", "actif");
@@ -75,7 +77,7 @@ exports.marketplaceBillingManual = functions
         const firstDay = new Date(year, month - 1, 1).toISOString();
         const lastDay = new Date(year, month, 1).toISOString();
 
-        const { data: partners } = await supabase
+        const { data: partners } = await getSupabase()
             .from("marketplace_partners")
             .select("id, nom, contact_email, budget_mensuel, plan")
             .eq("statut", "actif");
@@ -150,7 +152,7 @@ async function _billPartner(partner, firstDay, lastDay, month, year) {
             metadata: { partner_id: partner.id },
         });
         customerId = customer.id;
-        await supabase
+        await getSupabase()
             .from("marketplace_partners")
             .update({ stripe_customer_id: customerId })
             .eq("id", partner.id);

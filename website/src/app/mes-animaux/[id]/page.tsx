@@ -239,6 +239,88 @@ function HealthRecord({ fields, record, onDelete }:
   );
 }
 
+// ─── Onglet Consultations vétérinaires (lecture seule) ───────────────────────
+
+function ConsultationsVetTab({ crs, ordonnances, vetNames }:
+  { crs: HealthRecord[]; ordonnances: HealthRecord[]; vetNames: Record<string,string> }) {
+
+  const isEmpty = crs.length === 0 && ordonnances.length === 0;
+
+  if (isEmpty) return (
+    <div className="flex flex-col items-center justify-center py-20 px-8 text-center">
+      <span className="text-6xl mb-4 opacity-20">🩺</span>
+      <p className="font-semibold text-[#1F2A2E] text-base mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+        Aucune consultation enregistrée
+      </p>
+      <p className="text-sm text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
+        Les comptes rendus et ordonnances rédigés par votre vétérinaire apparaîtront ici.
+      </p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      {crs.length > 0 && (
+        <HealthSection title="Comptes rendus" icon="📋" color="#0C5C6C" count={crs.length}>
+          {crs.map(cr => <VetDocCard key={cr.id as string} record={cr} vetNames={vetNames} />)}
+        </HealthSection>
+      )}
+      {ordonnances.length > 0 && (
+        <HealthSection title="Ordonnances" icon="💊" color="#0C5C6C" count={ordonnances.length}>
+          {ordonnances.map(o => <VetDocCard key={o.id as string} record={o} vetNames={vetNames} />)}
+        </HealthSection>
+      )}
+    </div>
+  );
+}
+
+function VetDocCard({ record, vetNames }:
+  { record: HealthRecord; vetNames: Record<string,string> }) {
+  const [open, setOpen] = useState(false);
+  const docUrl  = record.doc_url  as string | undefined;
+  const date    = record.date     as string | undefined;
+  const notes   = record.notes    as string | undefined;
+  const contenu = record.contenu  as string | undefined;
+  const proUid  = record.pro_uid  as string | undefined;
+  const vetName = proUid ? (vetNames[proUid] ?? 'Vétérinaire') : 'Vétérinaire';
+
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-center gap-2 cursor-pointer" onClick={() => setOpen(!open)}>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            {date && <span className="text-sm font-medium text-[#1F2A2E]">{fmtDate(date)}</span>}
+            <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
+              style={{ backgroundColor: '#0C5C6C20', color: '#0C5C6C' }}>
+              🩺 {vetName}
+            </span>
+          </div>
+          {(notes || contenu) && (
+            <p className="text-xs text-gray-400 truncate mt-0.5">{notes ?? contenu}</p>
+          )}
+        </div>
+        <svg className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </div>
+      {open && (
+        <div className="mt-2 space-y-1.5">
+          {(contenu || notes) && (
+            <p className="text-sm text-gray-600 leading-relaxed">{contenu ?? notes}</p>
+          )}
+          {docUrl && (
+            <a href={docUrl} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-[#0C5C6C] font-semibold hover:underline">
+              <span>📎</span> Voir le document
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Upload + affichage documents vétérinaires ──────────────────────────────
 
 function DocUploadForm({ onSave, onCancel, saving }:
@@ -786,7 +868,7 @@ export default function AnimalFichePage() {
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(isNew);
-  const [tab, setTab] = useState<'identite'|'sante'|'repro'|'alimentation'>('identite');
+  const [tab, setTab] = useState<'identite'|'sante'|'repro'|'alimentation'|'consultations'>('identite');
 
   const [animal, setAnimal] = useState<Animal>({ id:'', espece:'chien', sexe:'male' });
   const [breeds, setBreeds] = useState<string[]>([]);
@@ -812,6 +894,7 @@ export default function AnimalFichePage() {
   const [crs, setCrs] = useState<HealthRecord[]>([]);
   const [addDocOpen, setAddDocOpen] = useState<string|null>(null);
   const [savingDoc, setSavingDoc] = useState(false);
+  const [vetNames, setVetNames] = useState<Record<string,string>>({});
 
   // ── État repro
   const [chaleurs, setChaleurs] = useState<HealthRecord[]>([]);
@@ -879,9 +962,21 @@ export default function AnimalFichePage() {
       supabase.from('radios').select('*').eq('animal_id', id).order('date', { ascending: false }),
       supabase.from('comptes_rendus').select('*').eq('animal_id', id).order('date', { ascending: false }),
     ]);
+    const allDocs = [...(ord.data ?? []), ...(rad.data ?? []), ...(cr.data ?? [])] as HealthRecord[];
     setOrdonnances((ord.data ?? []) as HealthRecord[]);
     setRadios((rad.data ?? []) as HealthRecord[]);
     setCrs((cr.data ?? []) as HealthRecord[]);
+    // Résoudre les noms des vétérinaires
+    const proUids = [...new Set(allDocs.map(d => d.pro_uid as string).filter(Boolean))];
+    if (proUids.length > 0) {
+      const { data: users } = await supabase.from('users').select('uid, firstname, lastname').in('uid', proUids);
+      const names: Record<string,string> = {};
+      (users ?? []).forEach((u: Record<string,unknown>) => {
+        const nom = `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
+        names[u.uid as string] = nom ? `Dr. ${nom}` : 'Vétérinaire';
+      });
+      setVetNames(names);
+    }
   }, [id, isNew]);
 
   useEffect(() => { loadBreeds(animal.espece ?? 'chien').then(setBreeds); }, [animal.espece]);
@@ -1196,8 +1291,8 @@ export default function AnimalFichePage() {
   }
 
   const tabs = isEleveur
-    ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet Santé' }, { key:'repro', label:'Suivi Repro' }, { key:'alimentation', label:'Alimentation' }]
-    : [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet de santé' }, { key:'alimentation', label:'Alimentation' }];
+    ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet Santé' }, { key:'repro', label:'Suivi Repro' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }]
+    : [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet de santé' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }];
 
   const isMale = (animal.sexe ?? '').toLowerCase().startsWith('m');
   const showPoil = ['chien','chat'].includes(animal.espece ?? '');
@@ -1908,6 +2003,11 @@ export default function AnimalFichePage() {
           updateRepro={updateRepro}
           deleteRepro={deleteRepro}
         />
+      )}
+
+      {/* ── TAB CONSULTATIONS VÉTÉRINAIRES ───────────────────────────────── */}
+      {tab === 'consultations' && !isNew && (
+        <ConsultationsVetTab crs={crs} ordonnances={ordonnances} vetNames={vetNames} />
       )}
 
       {tab === 'alimentation' && !isNew && (
