@@ -8,6 +8,7 @@ const tachesFunctions = require("./taches");
 const santeFunctions = require("./sante");
 const annonceFunctions = require("./annonces");
 const matchFunctions = require("./match");
+const marketplaceBillingFunctions = require("./marketplace_billing");
 
 // Stripe + messagerie
 exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
@@ -45,3 +46,7 @@ exports.sendAnnonceExpirationReminders = annonceFunctions.sendAnnonceExpirationR
 
 // Matching perdu ↔ trouvé — score pondéré + notification ≥ 90%
 exports.matchLostFound = matchFunctions.matchLostFound;
+
+// Marketplace — facturation Stripe mensuelle + manuel
+exports.marketplaceBillingMonthly = marketplaceBillingFunctions.marketplaceBillingMonthly;
+exports.marketplaceBillingManual = marketplaceBillingFunctions.marketplaceBillingManual;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/marketplace/partner_signup_page.dart';
 
 class MarketplacePage extends StatefulWidget {
   const MarketplacePage({super.key});
@@ -284,8 +285,8 @@ class _MarketplacePageState extends State<MarketplacePage> {
                         ),
                         const SizedBox(height: 14),
                         ElevatedButton(
-                          onPressed: () => Navigator.pushNamed(
-                              context, '/marketplace/partenaire'),
+                          onPressed: () => Navigator.push(context,
+                              MaterialPageRoute(builder: (_) => const PartnerSignupPage())),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.white,
                             foregroundColor: const Color(0xFF4A7A3D),

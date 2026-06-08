@@ -13,7 +13,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
+import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class _ContactUrgenceP {
   final TextEditingController nom;
@@ -314,6 +316,11 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Animal ajouté ✓'), backgroundColor: _green));
           _loadHealthRecords();
+          final isYoung = _dateNaissance != null &&
+              DateTime.now().difference(_dateNaissance!).inDays < 120;
+          _showInsuranceCta(
+            reason: isYoung ? '🐾 Animal de moins de 4 mois — c\'est le moment idéal pour assurer !' : null,
+          );
         }
       } else {
         await _supa.from('animaux').update(data).eq('id', _animalId!);
@@ -332,6 +339,87 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     }
   }
 
+  Future<void> _showInsuranceCta({String? reason}) async {
+    try {
+      final partners = await _supa
+          .from('marketplace_partners')
+          .select('id, nom, site_url, description')
+          .eq('statut', 'actif')
+          .eq('categorie', 'assurance')
+          .limit(1);
+      if (partners.isEmpty || !mounted) return;
+      final partner = (partners as List).first as Map<String, dynamic>;
+
+      await _supa.from('marketplace_events').insert({
+        'partner_id': partner['id'],
+        'event_type': 'lead',
+        'placement': 'animal_creation',
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Text('🛡️ ', style: TextStyle(fontSize: 22)),
+              Expanded(
+                child: Text('Protégez votre animal',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (reason != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(reason,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.orange.shade700,
+                          fontWeight: FontWeight.w600)),
+                ),
+              Text('${partner['nom']} vous propose une couverture santé adaptée à votre compagnon.',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+              if ((partner['description'] as String?)?.isNotEmpty == true) ...[
+                const SizedBox(height: 6),
+                Text(partner['description'],
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Plus tard',
+                  style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade600)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6E9E57),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final url = partner['site_url'] as String?;
+                if (url != null && url.isNotEmpty) {
+                  final uri = Uri.tryParse(url);
+                  if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+              child: const Text('Obtenir un devis',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      );
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = _nomCtrl.text.isEmpty ? 'Nouvel animal' : _nomCtrl.text;
@@ -344,12 +432,19 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
             style: const TextStyle(
                 fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
         actions: [
-          if (_animalId != null)
+          if (_animalId != null) ...[
+            IconButton(
+              icon: const Icon(Icons.link, size: 20),
+              tooltip: 'Partager la fiche',
+              onPressed: () => showPartageAnimalSheet(
+                  context, _animalId!, _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text),
+            ),
             IconButton(
               icon: const Icon(Icons.share_outlined, size: 20),
               tooltip: 'Partager avec mon vétérinaire',
               onPressed: () => showVetShareSheet(context, _animalId!),
             ),
+          ],
           if (_saving)
             const Padding(
               padding: EdgeInsets.all(14),
@@ -1277,6 +1372,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     final motif = TextEditingController(), veto = TextEditingController(),
         diag = TextEditingController(), notes = TextEditingController();
     DateTime? date;
+    final isFirstVisit = _visites.isEmpty;
     _openSheet('Ajouter une visite', (ss) => [
       _SFld(ctrl: motif, label: 'Motif', hint: 'Ex: Contrôle annuel, Blessure...'),
       _SFld(ctrl: veto, label: 'Vétérinaire', hint: 'Nom du vétérinaire'),
@@ -1295,6 +1391,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'created_at': DateTime.now().toIso8601String(),
       });
       await _loadHealthRecords();
+      if (isFirstVisit) {
+        _showInsuranceCta(reason: '🩺 Première visite vétérinaire — pensez à assurer votre animal !');
+      }
     });
   }
 

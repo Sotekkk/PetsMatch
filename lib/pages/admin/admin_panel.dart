@@ -2,12 +2,14 @@ import 'package:PetsMatch/pages/admin/pro_list.dart';
 import 'package:PetsMatch/pages/admin/supabase_migration_page.dart';
 import 'package:PetsMatch/pages/admin/user_list.dart';
 import 'package:PetsMatch/pages/admin/verification_list.dart';
+import 'package:PetsMatch/pages/marketplace/admin_marketplace_tab.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/services/renewal_service.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AdminPanel extends StatefulWidget {
   const AdminPanel({super.key});
@@ -24,6 +26,7 @@ class _AdminPanelState extends State<AdminPanel> {
     const VerificationList(),
     const UserList(),
     const ProList(),
+    const AdminMarketplaceTab(),
   ];
 
   @override
@@ -82,6 +85,10 @@ class _AdminPanelState extends State<AdminPanel> {
           BottomNavigationBarItem(
             icon: Icon(Icons.work_outline),
             label: 'Pros',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.local_offer_outlined),
+            label: 'Marketplace',
           ),
         ],
       ),
@@ -189,6 +196,10 @@ class _DashboardTabState extends State<_DashboardTab> {
             onTap: () => Navigator.push(context, MaterialPageRoute(
                 builder: (_) => const SupabaseMigrationPage())),
           ),
+          const SizedBox(height: 20),
+
+          // Statistiques enrichies animaux & activité
+          const _AnimalStatsSection(),
           const SizedBox(height: 20),
 
           // Expirations à venir
@@ -461,6 +472,240 @@ class _RecentCard extends StatelessWidget {
           const Icon(Icons.chevron_right, color: Colors.grey),
         ],
       ),
+    );
+  }
+}
+
+// ── A51 — Statistiques enrichies animaux & activité ───────────────────────────
+
+class _AnimalStatsSection extends StatefulWidget {
+  const _AnimalStatsSection();
+
+  @override
+  State<_AnimalStatsSection> createState() => _AnimalStatsSectionState();
+}
+
+class _AnimalStatsSectionState extends State<_AnimalStatsSection> {
+  final _supa = Supabase.instance.client;
+
+  bool _loading = true;
+  int _totalAnimaux = 0;
+  Map<String, int> _parEspece = {};
+  int _particuliers = 0;
+  int _eleveurs = 0;
+  List<MapEntry<String, int>> _topRaces = [];
+  int _annoncesActives = 0;
+  int _alertesPerdus = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final animaux = await _supa.from('animaux').select('espece, race, uid_proprietaire, uid_eleveur');
+      final List<Map<String, dynamic>> rows = List<Map<String, dynamic>>.from(animaux);
+
+      final especeCount = <String, int>{};
+      final raceCount = <String, int>{};
+      int particuliers = 0, eleveurs = 0;
+      for (final r in rows) {
+        final e = r['espece'] as String? ?? 'autre';
+        especeCount[e] = (especeCount[e] ?? 0) + 1;
+        final race = r['race'] as String?;
+        if (race != null && race.isNotEmpty) {
+          raceCount[race] = (raceCount[race] ?? 0) + 1;
+        }
+        if (r['uid_eleveur'] != null) {
+          eleveurs++;
+        } else {
+          particuliers++;
+        }
+      }
+
+      final topRaces = raceCount.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+      final annoncesRes = await _supa.from('annonces').select('id').eq('statut', 'active');
+      final alertesRes = await _supa.from('alertes').select('id').eq('actif', true);
+
+      if (mounted) {
+        setState(() {
+          _totalAnimaux = rows.length;
+          _parEspece = especeCount;
+          _particuliers = particuliers;
+          _eleveurs = eleveurs;
+          _topRaces = topRaces.take(5).toList();
+          _annoncesActives = (annoncesRes as List).length;
+          _alertesPerdus = (alertesRes as List).length;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Animaux & activité',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+            if (_loading)
+              const SizedBox(width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF6E9E57)))
+            else
+              IconButton(
+                icon: const Icon(Icons.refresh, size: 18, color: Color(0xFF6E9E57)),
+                onPressed: _load,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (!_loading) ...[
+          // Total + profils
+          Row(
+            children: [
+              _InfoTile(label: 'Total animaux', value: '$_totalAnimaux', icon: Icons.pets, color: const Color(0xFF6E9E57)),
+              const SizedBox(width: 10),
+              _InfoTile(label: 'Particuliers', value: '$_particuliers', icon: Icons.person, color: Colors.blue),
+              const SizedBox(width: 10),
+              _InfoTile(label: 'Éleveurs', value: '$_eleveurs', icon: Icons.agriculture, color: Colors.orange),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Par espèce
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Par espèce',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    _EspeceChip(label: 'Chiens', count: _parEspece['chien'] ?? 0, color: const Color(0xFF1E88E5)),
+                    _EspeceChip(label: 'Chats', count: _parEspece['chat'] ?? 0, color: const Color(0xFF8E24AA)),
+                    _EspeceChip(label: 'Équidés', count: _parEspece['equide'] ?? 0, color: Colors.brown),
+                    _EspeceChip(label: 'Autres', count: _parEspece['autre'] ?? 0, color: Colors.grey),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          // Top races
+          if (_topRaces.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Top races',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  ..._topRaces.map((e) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text(e.key,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                        Text('${e.value}',
+                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                                fontSize: 13, color: Color(0xFF6E9E57))),
+                      ],
+                    ),
+                  )),
+                ],
+              ),
+            ),
+          const SizedBox(height: 10),
+          // Annonces & alertes
+          Row(
+            children: [
+              _InfoTile(label: 'Annonces actives', value: '$_annoncesActives', icon: Icons.campaign, color: Colors.teal),
+              const SizedBox(width: 10),
+              _InfoTile(label: 'Alertes perdus', value: '$_alertesPerdus', icon: Icons.warning_amber, color: Colors.red),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _InfoTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+  const _InfoTile({required this.label, required this.value, required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(height: 6),
+            Text(value,
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: color)),
+            Text(label,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade600)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EspeceChip extends StatelessWidget {
+  final String label;
+  final int count;
+  final Color color;
+  const _EspeceChip({required this.label, required this.count, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text('$label: $count',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: color, fontWeight: FontWeight.w600)),
     );
   }
 }

@@ -101,122 +101,119 @@ class _MarketplaceBannerState extends State<MarketplaceBanner> {
     final isAssurance = categorie == 'assurance';
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: GestureDetector(
         onTap: _onTap,
         child: Container(
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(color: Colors.grey.shade200),
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2))
+                  color: Colors.black.withValues(alpha: 0.07),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3))
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Row(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Logo
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                      color: const Color(0xFFF0F7EC),
-                      borderRadius: BorderRadius.circular(10)),
-                  child: logoUrl != null && logoUrl.isNotEmpty
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: Image.network(logoUrl,
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, __, ___) => Icon(
-                                  isAssurance
-                                      ? Icons.shield_outlined
-                                      : Icons.storefront_outlined,
-                                  color: const Color(0xFF6E9E57),
-                                  size: 22)))
-                      : Icon(
-                          isAssurance
-                              ? Icons.shield_outlined
-                              : Icons.storefront_outlined,
-                          color: const Color(0xFF6E9E57),
-                          size: 22),
-                ),
-                const SizedBox(width: 12),
-                // Texte
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                // En-tête : logo + nom + badge "Publicité"
+                Row(
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                          color: const Color(0xFFF0F7EC),
+                          borderRadius: BorderRadius.circular(14)),
+                      child: logoUrl != null && logoUrl.isNotEmpty
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: Image.network(logoUrl,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) => Icon(
+                                      isAssurance
+                                          ? Icons.shield_outlined
+                                          : Icons.storefront_outlined,
+                                      color: const Color(0xFF6E9E57),
+                                      size: 30)))
+                          : Icon(
+                              isAssurance
+                                  ? Icons.shield_outlined
+                                  : Icons.storefront_outlined,
+                              color: const Color(0xFF6E9E57),
+                              size: 30),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Text(nom,
-                                style: const TextStyle(
-                                    fontFamily: 'Galey',
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis),
-                          ),
+                          Text(nom,
+                              style: const TextStyle(
+                                  fontFamily: 'Galey',
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                          const SizedBox(height: 3),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 5, vertical: 1),
+                                horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
                                 color: Colors.grey.shade100,
                                 borderRadius: BorderRadius.circular(4)),
                             child: Text('Publicité',
                                 style: TextStyle(
                                     fontFamily: 'Galey',
-                                    fontSize: 9,
+                                    fontSize: 10,
                                     color: Colors.grey.shade500)),
                           ),
                         ],
                       ),
-                      if (desc != null && desc.isNotEmpty)
-                        Text(desc,
-                            style: TextStyle(
-                                fontFamily: 'Galey',
-                                fontSize: 11,
-                                color: Colors.grey.shade600),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
-                    ],
-                  ),
+                    ),
+                    GestureDetector(
+                      onTap: () => setState(() => _dismissed = true),
+                      child: Icon(Icons.close, size: 18, color: Colors.grey.shade400),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 10),
-                // CTA
-                if (isAssurance)
-                  ElevatedButton(
+                // Description
+                if (desc != null && desc.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(desc,
+                      style: TextStyle(
+                          fontFamily: 'Galey',
+                          fontSize: 13,
+                          color: Colors.grey.shade700),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                ],
+                const SizedBox(height: 14),
+                // CTA pleine largeur
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
                     onPressed: _onTap,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0C5C6C),
+                      backgroundColor: isAssurance
+                          ? const Color(0xFF0C5C6C)
+                          : const Color(0xFF6E9E57),
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
+                          borderRadius: BorderRadius.circular(12)),
                       textStyle: const TextStyle(
                           fontFamily: 'Galey',
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700),
                     ),
-                    child: const Text('Devis'),
-                  )
-                else
-                  Icon(Icons.arrow_forward_ios,
-                      size: 14, color: Colors.grey.shade500),
-                // Fermer
-                const SizedBox(width: 6),
-                GestureDetector(
-                  onTap: () => setState(() => _dismissed = true),
-                  child:
-                      Icon(Icons.close, size: 14, color: Colors.grey.shade400),
+                    child: Text(isAssurance ? 'Obtenir un devis' : 'Découvrir'),
+                  ),
                 ),
               ],
             ),
