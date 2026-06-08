@@ -37,6 +37,7 @@ class _FeedItem {
   final String? photoEleveur;
   final bool pedigree;
   final DateTime? dateNaissance;
+  final String? typeVente;
 
   const _FeedItem({
     required this.annonceId, required this.bebeIndex,
@@ -45,6 +46,7 @@ class _FeedItem {
     this.statut, this.description, this.ville,
     this.uidEleveur, this.nomEleveur, this.photoEleveur,
     this.pedigree = false, this.dateNaissance,
+    this.typeVente,
   });
 
   _FeedItem withPhoto(String? p) => _FeedItem(
@@ -52,7 +54,7 @@ class _FeedItem {
     race: race, espece: espece, sexe: sexe, prix: prix, statut: statut,
     description: description, ville: ville, uidEleveur: uidEleveur,
     nomEleveur: nomEleveur, photoEleveur: p, pedigree: pedigree,
-    dateNaissance: dateNaissance,
+    dateNaissance: dateNaissance, typeVente: typeVente,
   );
 }
 
@@ -116,6 +118,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
           uidEleveur: uid, nomEleveur: nomEleveur,
           pedigree: b['pedigree'] == true,
           dateNaissance: dateNaissancePortee,
+          typeVente: a['type_vente'] as String?,
         ));
       }
     } else if (aPhotos.isNotEmpty) {
@@ -135,6 +138,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
         ville: a['ville_eleveur'] as String?,
         uidEleveur: uid, nomEleveur: nomEleveur,
         dateNaissance: dateNaissanceAnimal,
+        typeVente: a['type_vente'] as String?,
       ));
     }
   }
@@ -1085,6 +1089,14 @@ class _FeedCardState extends State<_FeedCard> with SingleTickerProviderStateMixi
                   const SizedBox(height: 10),
                   // Ligne 2 : Badges
                   Wrap(spacing: 6, runSpacing: 6, children: [
+                    if (item.typeVente == 'saillie')
+                      _FeedBadge(
+                        label: '💜 Saillie',
+                        color: const Color(0xFF7C3AED).withValues(alpha: 0.80)),
+                    if (item.typeVente == 'retraite')
+                      _FeedBadge(
+                        label: '🏅 Retraité',
+                        color: const Color(0xFFB45309).withValues(alpha: 0.80)),
                     if (item.espece?.isNotEmpty == true)
                       _FeedBadge(
                         label: _especeLabel(item.espece!),

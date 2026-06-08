@@ -140,10 +140,13 @@ class _AnnoncesPublicPageState extends State<AnnoncesPublicPage> {
       if (!race.contains(q) && !titre.contains(q)) return false;
     }
     if (_prixMin != null || _prixMax != null) {
-      final type = (d['type'] as String?) ?? 'animal';
+      final type      = (d['type'] as String?) ?? 'animal';
+      final typeVente = (d['typeVente'] as String?) ?? 'vente';
       final prix = type == 'portee'
           ? (d['prixMinPortee'] as num?)?.toDouble()
-          : (d['prix'] as num?)?.toDouble();
+          : typeVente == 'saillie'
+              ? (d['sailliePrix'] as num?)?.toDouble()
+              : (d['prix'] as num?)?.toDouble();
       if (prix == null) return false;
       if (_prixMin != null && prix < _prixMin!) return false;
       if (_prixMax != null && prix > _prixMax!) return false;
@@ -881,6 +884,7 @@ class _AnnoncesList extends StatelessWidget {
     'regionEleveur':      row['region_eleveur'],
     'departementEleveur': row['departement_eleveur'],
     'typeVente':          row['type_vente'],
+    'sailliePrix':        row['saillie_prix'],
     'prixMinPortee':      row['prix_min_portee'],
     'prixMaxPortee':      row['prix_max_portee'],
     'nombreBebes':        row['nombre_bebes'],
@@ -957,6 +961,7 @@ class _AnnonceCard extends StatelessWidget {
     final type        = (data['type'] as String?) ?? 'animal';
     final photos      = List<String>.from(data['photos'] ?? []);
     final prix        = (data['prix'] as num?)?.toDouble();
+    final sailliePrix = (data['sailliePrix'] as num?)?.toDouble();
     final prixMin     = (data['prixMinPortee'] as num?)?.toDouble();
     final prixMax     = (data['prixMaxPortee'] as num?)?.toDouble();
     final nombreBebes = (data['nombreBebes'] as num?)?.toInt();
@@ -992,8 +997,12 @@ class _AnnonceCard extends StatelessWidget {
       prixLabel = 'Don gratuit';
       prixColor = _green;
     } else if (typeVente == 'saillie') {
-      prixLabel = 'Saillie';
-      prixColor = const Color(0xFF5B8648);
+      prixLabel = sailliePrix != null && sailliePrix > 0
+          ? '💜 ${sailliePrix.toInt()} €'
+          : '💜 Saillie';
+      prixColor = const Color(0xFF7C3AED);
+    } else if (typeVente == 'retraite') {
+      prixLabel = prix != null && prix > 0 ? '${prix.toInt()} €' : 'Retraité';
     }
 
     return Container(

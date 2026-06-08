@@ -30,7 +30,7 @@ class _TrouverCompagnonPageState extends State<TrouverCompagnonPage> {
     try {
       final rows = await Supabase.instance.client
           .from('annonces')
-          .select('id, titre, espece, race, photos, prix, prix_min_portee, prix_max_portee, type, type_vente, ville_eleveur')
+          .select('id, titre, espece, race, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, type, type_vente, ville_eleveur')
           .eq('statut', 'disponible')
           .order('created_at', ascending: false)
           .limit(8);
@@ -252,21 +252,28 @@ class _AnnonceMiniCard extends StatelessWidget {
     final espece   = (annonce['espece'] as String?) ?? '';
     final race     = (annonce['race'] as String?) ?? '';
     final titre    = (annonce['titre'] as String?) ?? '';
-    final typeVente = (annonce['type_vente'] as String?) ?? 'vente';
-    final type     = (annonce['type'] as String?) ?? 'animal';
-    final prix     = (annonce['prix'] as num?)?.toDouble();
-    final prixMin  = (annonce['prix_min_portee'] as num?)?.toDouble();
-    final ville    = (annonce['ville_eleveur'] as String?) ?? '';
-    final isSaillie = typeVente == 'saillie';
-    final display  = titre.isNotEmpty ? titre : (race.isNotEmpty ? race : speciesLabel(espece));
+    final typeVente   = (annonce['type_vente'] as String?) ?? 'vente';
+    final type        = (annonce['type'] as String?) ?? 'animal';
+    final prix        = (annonce['prix'] as num?)?.toDouble();
+    final sailliePrix = (annonce['saillie_prix'] as num?)?.toDouble();
+    final prixMin     = (annonce['prix_min_portee'] as num?)?.toDouble();
+    final ville       = (annonce['ville_eleveur'] as String?) ?? '';
+    final isSaillie   = typeVente == 'saillie';
+    final isRetraite  = typeVente == 'retraite';
+    final display     = titre.isNotEmpty ? titre : (race.isNotEmpty ? race : speciesLabel(espece));
 
     String prixLabel = '';
+    Color  prixColor = const Color(0xFF0C5C6C);
     if (type == 'portee' && prixMin != null) {
       prixLabel = 'dès ${prixMin.toInt()} €';
-    } else if (!isSaillie && prix != null && prix > 0) {
-      prixLabel = '${prix.toInt()} €';
     } else if (isSaillie) {
-      prixLabel = 'Saillie';
+      prixLabel = sailliePrix != null && sailliePrix > 0
+          ? '💜 ${sailliePrix.toInt()} €' : '💜 Saillie';
+      prixColor = const Color(0xFF7C3AED);
+    } else if (isRetraite) {
+      prixLabel = prix != null && prix > 0 ? '${prix.toInt()} €' : '🏅 Retraité';
+    } else if (prix != null && prix > 0) {
+      prixLabel = '${prix.toInt()} €';
     }
 
     return GestureDetector(
@@ -296,10 +303,12 @@ class _AnnonceMiniCard extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: isSaillie ? const Color(0xFF8B5CF6) : const Color(0xFF6E9E57),
+                      color: isSaillie ? const Color(0xFF8B5CF6)
+                          : isRetraite ? const Color(0xFFB45309)
+                          : const Color(0xFF6E9E57),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Text(isSaillie ? 'Saillie' : 'Compagnon',
+                    child: Text(isSaillie ? 'Saillie' : isRetraite ? 'Retraité' : 'Compagnon',
                         style: const TextStyle(fontFamily: 'Galey', fontSize: 9,
                             fontWeight: FontWeight.w700, color: Colors.white)),
                   ),
@@ -317,8 +326,8 @@ class _AnnonceMiniCard extends StatelessWidget {
                   maxLines: 1, overflow: TextOverflow.ellipsis),
               if (prixLabel.isNotEmpty)
                 Text(prixLabel,
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
-                        fontWeight: FontWeight.w800, color: Color(0xFF0C5C6C))),
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        fontWeight: FontWeight.w800, color: prixColor)),
               if (ville.isNotEmpty)
                 Text('📍 $ville',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 10,

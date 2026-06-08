@@ -418,7 +418,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       _retraiteAnimalNom    = r['nom'] as String?;
       _sexe                 = (r['sexe'] as String?)?.isNotEmpty == true ? r['sexe'] : 'male';
       _couleurCtrl.text     = r['couleur']  ?? '';
-      if (_raceCtrl.text.isEmpty) _raceCtrl.text = r['race'] ?? '';
+      // Auto-remplir espèce et race depuis l'animal
+      if ((r['espece'] as String?)?.isNotEmpty == true) _espece = r['espece'];
+      _raceCtrl.text = r['race'] ?? '';
       if (r['photoUrl'] != null) { _photosUrls = [r['photoUrl']]; _photosFiles = []; }
       final dn = r['dateNaissance'] as Timestamp?;
       if (dn != null) _dateNaissanceAnimal = dn.toDate();
@@ -911,18 +913,68 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             ),
           )),
       ]),
-    ] else Padding(
-      padding: const EdgeInsets.only(top: 0),
-      child: Row(children: [
-        const Icon(Icons.info_outline, size: 13, color: Color(0xFF6F767B)),
-        const SizedBox(width: 5),
-        Expanded(child: Text(
-          _typeVente == 'retraite'
-              ? 'Sélectionnez l\'animal retraité dans votre élevage ci-dessous'
-              : 'La saillie s\'applique à un animal individuel',
-          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500))),
-      ]),
-    ),
+    ] else ...[
+      Padding(
+        padding: const EdgeInsets.only(top: 0),
+        child: Row(children: [
+          const Icon(Icons.info_outline, size: 13, color: Color(0xFF6F767B)),
+          const SizedBox(width: 5),
+          Expanded(child: Text(
+            _typeVente == 'retraite'
+                ? 'Choisissez l\'animal — l\'espèce et la race seront pré-remplies'
+                : 'Sélectionnez l\'étalon — espèce, race et infos seront pré-remplis',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500))),
+        ]),
+      ),
+      const SizedBox(height: 12),
+      // Saillie : picker étalon (avant espèce) pour auto-remplissage
+      if (_typeVente == 'saillie') ...[
+        OutlinedButton.icon(
+          onPressed: _pickEtalon,
+          icon: const Icon(Icons.diversity_1_outlined, size: 16, color: _teal),
+          label: Text(
+            _etalonAnimalId != null
+                ? '${_pereNomCtrl.text.isNotEmpty ? _pereNomCtrl.text : 'Étalon sélectionné'} — changer'
+                : 'Sélectionner l\'étalon / reproducteur',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal),
+            overflow: TextOverflow.ellipsis,
+          ),
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: _teal),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+          ),
+        ),
+        if (_etalonAnimalId != null) ...[
+          const SizedBox(height: 4),
+          Row(children: [
+            const Icon(Icons.check_circle, size: 14, color: _green),
+            const SizedBox(width: 4),
+            Expanded(child: Text('Espèce, race et pedigree pré-remplis',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500))),
+          ]),
+        ],
+      ],
+      // Retraité : picker placé ICI (avant espèce) pour auto-remplissage
+      if (_typeVente == 'retraite') ...[
+        OutlinedButton.icon(
+          onPressed: _pickRetraite,
+          icon: const Icon(Icons.pets_outlined, size: 16, color: _teal),
+          label: Text(
+            _retraiteAnimalNom != null
+                ? '$_retraiteAnimalNom — changer'
+                : 'Sélectionner l\'animal retraité',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal),
+            overflow: TextOverflow.ellipsis,
+          ),
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: _teal),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+          ),
+        ),
+      ],
+    ],
   ]);
 
   Widget _sectionEspece() {
@@ -1124,33 +1176,16 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         ],
         const SizedBox(height: 10),
       ],
-      // Retraité d'élevage : picker depuis la liste de l'éleveur
-      if (_typeVente == 'retraite') ...[
-        OutlinedButton.icon(
-          onPressed: _pickRetraite,
-          icon: const Icon(Icons.search, size: 16, color: _teal),
-          label: Text(
-            _retraiteAnimalNom != null
-                ? 'Changer l\'animal (actuel : $_retraiteAnimalNom)'
-                : 'Sélectionner l\'animal retraité',
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal),
-            overflow: TextOverflow.ellipsis,
-          ),
-          style: OutlinedButton.styleFrom(side: const BorderSide(color: _teal),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14)),
-        ),
-        if (_retraiteAnimalNom != null) ...[
-          const SizedBox(height: 6),
-          Row(children: [
-            const Icon(Icons.check_circle, size: 14, color: _green),
-            const SizedBox(width: 4),
-            Expanded(child: Text(
-              '$_retraiteAnimalNom — infos pré-remplies, modifiez si besoin',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
-            )),
-          ]),
-        ],
+      // Retraité : l'animal est déjà sélectionné dans _sectionType — indiquer seulement si sélectionné
+      if (_typeVente == 'retraite' && _retraiteAnimalNom != null) ...[
+        Row(children: [
+          const Icon(Icons.check_circle, size: 14, color: _green),
+          const SizedBox(width: 4),
+          Expanded(child: Text(
+            '$_retraiteAnimalNom — modifiez les champs si besoin',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
+          )),
+        ]),
         const SizedBox(height: 10),
       ],
       _label('Sexe'),
@@ -1598,6 +1633,7 @@ class _AnimalPickerSheet extends StatelessWidget {
                             'photoUrl':       photoUrl,
                             'couleur':        d['couleur'] ?? '',
                             'sexe':           d['sexe'] ?? '',
+                            'espece':         d['espece'] ?? '',  // pour auto-fill espèce
                             'race':           d['race'] ?? '',
                             'identification': d['identification'] ?? '',
                             'dateNaissance':  dateNaiss != null

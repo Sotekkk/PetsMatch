@@ -45,19 +45,27 @@ interface MyAnimal {
   id: string;
   nom: string | null;
   sexe?: string | null;
+  espece?: string | null;
   race: string | null;
   couleur: string | null;
   description: string | null;
   identification: string | null;
   photo_url: string | null;
+  pedigree_lof?: string | null;
+  club_registre?: string | null;
 }
+
+const DB_TO_ESPECE: Record<string, string> = {
+  'chien': 'Chien', 'chat': 'Chat', 'lapin': 'Lapin', 'oiseau': 'Oiseau',
+  'cheval': 'Cheval', 'nac': 'Reptile', 'autre': 'Autre',
+};
 
 export default function CreerAnnoncePage() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
 
   // ── Type
-  const [type, setType] = useState<'compagnon' | 'portee' | 'saillie'>('compagnon');
+  const [type, setType] = useState<'compagnon' | 'portee' | 'saillie' | 'retraite'>('compagnon');
   const [cession, setCession] = useState<'vente' | 'adoption'>('vente');
 
   // ── Infos communes
@@ -110,6 +118,18 @@ export default function CreerAnnoncePage() {
   // ── Saillie
   const [sailliePrix, setSailliePrix] = useState('');
   const [saillieConditions, setSaillieConditions] = useState('');
+
+  // ── Retraité d'élevage
+  const [retraiteAnimalId, setRetraiteAnimalId] = useState<string | null>(null);
+  const [retraiteAnimalNom, setRetraiteAnimalNom] = useState<string | null>(null);
+  const [showRetraitePicker, setShowRetraitePicker] = useState(false);
+  const [myAnimalsAll, setMyAnimalsAll] = useState<MyAnimal[]>([]);
+  const [loadingRetraite, setLoadingRetraite] = useState(false);
+
+  // ── Saillie : picker étalon (avant espèce)
+  const [showEtalonPicker, setShowEtalonPicker] = useState(false);
+  const [myAllMales, setMyAllMales] = useState<MyAnimal[]>([]);
+  const [loadingAllMales, setLoadingAllMales] = useState(false);
 
   // ── Mère
   const [mereAnimalId, setMereAnimalId] = useState<string | null>(null);
@@ -179,12 +199,47 @@ export default function CreerAnnoncePage() {
   async function loadMales() {
     setLoadingMales(true);
     const { data } = await supabase.from('animaux')
-      .select('id, nom, sexe, race, couleur, description, identification, photo_url')
+      .select('id, nom, sexe, espece, race, couleur, description, identification, photo_url, pedigree_lof, club_registre')
       .eq('uid_eleveur', user!.uid)
       .eq('espece', ESPECE_DB[espece] ?? espece.toLowerCase())
       .eq('sexe', 'male').order('nom');
     setMyMales((data ?? []) as MyAnimal[]);
     setLoadingMales(false);
+  }
+
+  async function loadAllAnimals() {
+    setLoadingRetraite(true);
+    const { data } = await supabase.from('animaux')
+      .select('id, nom, sexe, espece, race, couleur, description, identification, photo_url, pedigree_lof, club_registre')
+      .eq('uid_eleveur', user!.uid).order('nom');
+    setMyAnimalsAll((data ?? []) as MyAnimal[]);
+    setLoadingRetraite(false);
+  }
+
+  async function loadAllMales() {
+    setLoadingAllMales(true);
+    const { data } = await supabase.from('animaux')
+      .select('id, nom, sexe, espece, race, couleur, description, identification, photo_url, pedigree_lof, club_registre')
+      .eq('uid_eleveur', user!.uid).eq('sexe', 'male').order('nom');
+    setMyAllMales((data ?? []) as MyAnimal[]);
+    setLoadingAllMales(false);
+  }
+
+  function selectEtalon(a: MyAnimal) {
+    // Remplit la section père (= étalon)
+    setPereAnimalId(a.id); setPereNom(a.nom ?? ''); setPerePuce(a.identification ?? '');
+    setPereRace(a.race ?? ''); setPereCouleur(a.couleur ?? ''); setPereDescription(a.description ?? '');
+    setPerePhotoPreview(a.photo_url ?? null); setPerePhotoBlob(null);
+    if (a.pedigree_lof) setPereRegistre(a.pedigree_lof);
+    if (a.club_registre) setClubPedigree(a.club_registre);
+    // Auto-fill espèce + race
+    if (a.espece) {
+      const especeDisplay = DB_TO_ESPECE[a.espece];
+      if (especeDisplay) setEspece(especeDisplay);
+    }
+    if (a.race) setRace(a.race);
+    if (!titre && a.nom) setTitre(`${a.nom} — Saillie`);
+    setShowEtalonPicker(false);
   }
 
   async function loadBabyPickerAnimals() {
@@ -215,7 +270,29 @@ export default function CreerAnnoncePage() {
     setPereAnimalId(a.id); setPereNom(a.nom ?? ''); setPerePuce(a.identification ?? '');
     setPereRace(a.race ?? ''); setPereCouleur(a.couleur ?? ''); setPereDescription(a.description ?? '');
     setPerePhotoPreview(a.photo_url ?? null);
+    // Pré-remplir pedigree étalon/père
+    if (a.pedigree_lof) setPereRegistre(a.pedigree_lof);
+    if (a.club_registre) setClubPedigree(a.club_registre);
     setPerePhotoBlob(null); setShowPerePicker(false);
+  }
+
+  function selectRetraite(a: MyAnimal) {
+    setRetraiteAnimalId(a.id);
+    setRetraiteAnimalNom(a.nom);
+    setSexeAnimal((a.sexe === 'femelle' ? 'femelle' : 'male') as 'male' | 'femelle');
+    setCouleurAnimal(a.couleur ?? '');
+    setRace(a.race ?? '');
+    if (a.description) setDescription(a.description);
+    // Auto-fill espèce (valeur DB → label affichage)
+    if (a.espece) {
+      const especeDisplay = DB_TO_ESPECE[a.espece];
+      if (especeDisplay) setEspece(especeDisplay);
+    }
+    if (!titre && a.nom) setTitre(`${a.nom} — Retraité d'élevage`);
+    // Pedigree
+    if (a.pedigree_lof) setNumRegistre(a.pedigree_lof);
+    if (a.club_registre) setClubPedigree(a.club_registre);
+    setShowRetraitePicker(false);
   }
   function clearPere() {
     setPereAnimalId(null); setPereNom(''); setPerePuce(''); setPereRace('');
@@ -380,9 +457,10 @@ export default function CreerAnnoncePage() {
         titre: titre || `${espece} ${race}`.trim(),
         espece: ESPECE_DB[espece] ?? espece.toLowerCase(), race,
         type: type === 'portee' ? 'portee' : 'animal',
-        type_vente: type === 'saillie' ? 'saillie' : cession,
+        type_vente: type === 'saillie' ? 'saillie' : type === 'retraite' ? 'retraite' : cession,
         photos: photoUrls, statut: 'disponible', description,
         ...(type === 'compagnon' && { prix: prix ? Number(prix) : null, sexe: sexeAnimal, couleur: couleurAnimal || null, sterilise }),
+        ...(type === 'retraite' && { prix: prix ? Number(prix) : null, sexe: sexeAnimal, couleur: couleurAnimal || null, etalon_animal_id: retraiteAnimalId }),
         ...(type === 'portee' && {
           date_naissance: dateNaissance || null,
           nombre_bebes: nombreBebes,
@@ -527,16 +605,43 @@ export default function CreerAnnoncePage() {
           {/* ── Type d'annonce ── */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Type d&apos;annonce</label>
-            <div className="flex gap-2">
-              {([['compagnon', '🐾 Animal individuel'], ['portee', '🐣 Portée complète'], ['saillie', '💜 Saillie']] as const).map(([v, l]) => (
-                <button key={v} type="button" onClick={() => setType(v)}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium border-2 transition-colors ${
+            <div className="grid grid-cols-2 gap-2">
+              {([['compagnon', '🐾 Animal individuel'], ['portee', '🐣 Portée complète'], ['saillie', '💜 Saillie'], ['retraite', '🏅 Retraité d\'élevage']] as [string, string][]).map(([v, l]) => (
+                <button key={v} type="button" onClick={() => setType(v as typeof type)}
+                  className={`py-2.5 rounded-xl text-sm font-medium border-2 transition-colors ${
                     type === v ? 'border-[#0C5C6C] bg-[#E8F4F6] text-[#0C5C6C]' : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   }`}>
                   {l}
                 </button>
               ))}
             </div>
+            {/* Saillie : picker étalon AVANT espèce pour auto-remplissage */}
+            {type === 'saillie' && (
+              <div className="mt-3 relative">
+                <button type="button"
+                  onClick={async () => { if (!showEtalonPicker) await loadAllMales(); setShowEtalonPicker(!showEtalonPicker); }}
+                  className="w-full flex items-center gap-2 px-4 py-3 border-2 border-[#7C3AED] text-[#7C3AED] rounded-xl text-sm font-semibold hover:bg-purple-50 transition-colors">
+                  <span>💜</span>
+                  <span>{pereAnimalId ? `${pereNom || 'Étalon sélectionné'} — changer` : 'Sélectionner l\'étalon / reproducteur (espèce & race auto-remplies)'}</span>
+                </button>
+                {!pereAnimalId && <p className="text-xs text-gray-400 mt-1">L&apos;espèce, la race et le pedigree seront pré-remplis automatiquement.</p>}
+                {pereAnimalId && <p className="text-xs text-green-600 mt-1">✓ Espèce, race et pedigree pré-remplis</p>}
+                {showEtalonPicker && <AnimalPickerList animals={myAllMales} isLoading={loadingAllMales} onSelect={selectEtalon} />}
+              </div>
+            )}
+            {/* Retraité : picker AVANT espèce pour auto-remplissage */}
+            {type === 'retraite' && (
+              <div className="mt-3 relative">
+                <button type="button"
+                  onClick={async () => { if (!showRetraitePicker) await loadAllAnimals(); setShowRetraitePicker(!showRetraitePicker); }}
+                  className="w-full flex items-center gap-2 px-4 py-3 border-2 border-[#0C5C6C] text-[#0C5C6C] rounded-xl text-sm font-semibold hover:bg-[#E8F4F6] transition-colors">
+                  <span>🐾</span>
+                  <span>{retraiteAnimalId ? `${retraiteAnimalNom} — changer` : 'Sélectionner l\'animal retraité (espèce & race auto-remplies)'}</span>
+                </button>
+                {!retraiteAnimalId && <p className="text-xs text-gray-400 mt-1">L&apos;espèce, la race et les infos seront pré-remplies automatiquement.</p>}
+                {showRetraitePicker && <AnimalPickerList animals={myAnimalsAll} isLoading={loadingRetraite} onSelect={selectRetraite} />}
+              </div>
+            )}
           </div>
 
           {/* ── Titre ── */}
@@ -563,8 +668,8 @@ export default function CreerAnnoncePage() {
             </div>
           </div>
 
-          {/* ── Compagnon ── */}
-          {type === 'compagnon' && (
+          {/* ── Compagnon / Retraité ── */}
+          {(type === 'compagnon' || type === 'retraite') && (
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Sexe</label>
@@ -712,7 +817,7 @@ export default function CreerAnnoncePage() {
           </div>
 
           {/* ── Mère ── */}
-          {type !== 'saillie' && (
+          {type !== 'saillie' && type !== 'retraite' && (
             <div className={sCls}>
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold text-gray-700">♀ Mère <span className="text-gray-400 font-normal">(optionnel)</span></p>
@@ -751,8 +856,8 @@ export default function CreerAnnoncePage() {
             </div>
           )}
 
-          {/* ── Père / Étalon ── */}
-          <div className={sCls}>
+          {/* ── Père / Étalon — masqué pour retraité ── */}
+          {type !== 'retraite' && <div className={sCls}>
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-gray-700">
                 ♂ {type === 'saillie' ? 'Étalon / Reproducteur' : 'Père'} <span className="text-gray-400 font-normal">(optionnel)</span>
@@ -790,7 +895,7 @@ export default function CreerAnnoncePage() {
             <div><label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
               <textarea value={pereDescription} onChange={e => setPereDescription(e.target.value)} rows={2}
                 placeholder="Caractère, morphologie…" className={`${iSmCls} resize-none`} /></div>
-          </div>
+          </div>}
 
           {/* ── Photos annonce ── */}
           <div>
