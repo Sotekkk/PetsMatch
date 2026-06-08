@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 
 class VetPatientsPage extends StatefulWidget {
@@ -240,6 +241,182 @@ class _VetPatientsPageState extends State<VetPatientsPage>
         vetMode: true,
       ),
     ));
+  }
+
+  void _showRdvDetail(Map<String, dynamic> rdv) {
+    final animal  = rdv['animal'] as Map<String, dynamic>?;
+    final client  = rdv['client'] as Map<String, dynamic>?;
+    final nom     = animal?['nom']?.toString() ?? 'Animal';
+    final espece  = animal?['espece']?.toString() ?? '';
+    final race    = animal?['race']?.toString() ?? '';
+    final photo   = animal?['photo_url']?.toString() ?? '';
+    final motif   = rdv['motif']?.toString() ?? '';
+    final statut  = rdv['statut']?.toString() ?? '';
+    final duree   = rdv['duree_minutes'];
+
+    final isElevage   = client?['isElevage'] == true || client?['isPro'] == true;
+    final nameElevage = client?['name_elevage']?.toString() ?? '';
+    final fn = client?['firstname']?.toString() ?? '';
+    final ln = client?['lastname']?.toString() ?? '';
+    final clientNom = isElevage && nameElevage.isNotEmpty
+        ? nameElevage
+        : '$fn $ln'.trim().isNotEmpty ? '$fn $ln'.trim() : 'Propriétaire';
+
+    DateTime? dh;
+    try { dh = DateTime.parse(rdv['date_heure'].toString()).toLocal(); } catch (_) {}
+    final heure = dh != null
+        ? '${dh.hour.toString().padLeft(2,'0')}:${dh.minute.toString().padLeft(2,'0')}'
+        : '—';
+    final isConfirme = statut == 'confirme';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 20, right: 20, top: 8,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 28,
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(child: Container(
+              width: 40, height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2)),
+            )),
+            // Header animal
+            Row(children: [
+              CircleAvatar(
+                radius: 30,
+                backgroundColor: _teal.withValues(alpha: 0.10),
+                backgroundImage: photo.isNotEmpty
+                    ? CachedNetworkImageProvider(photo) as ImageProvider : null,
+                child: photo.isEmpty ? Icon(Icons.pets, color: _teal, size: 26) : null,
+              ),
+              const SizedBox(width: 14),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(nom, style: const TextStyle(fontFamily: 'Galey',
+                    fontWeight: FontWeight.w800, fontSize: 18, color: Color(0xFF1F2A2E))),
+                if (espece.isNotEmpty || race.isNotEmpty)
+                  Text([espece, race].where((s) => s.isNotEmpty).join(' · '),
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                          color: _teal, fontWeight: FontWeight.w600)),
+              ])),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isConfirme ? Colors.green.shade100 : Colors.amber.shade100,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(isConfirme ? 'Confirmé' : 'Demande',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                        color: isConfirme ? Colors.green.shade800 : Colors.amber.shade800)),
+              ),
+            ]),
+            const SizedBox(height: 14),
+            const Divider(),
+            const SizedBox(height: 10),
+            // Heure + motif
+            Row(children: [
+              Icon(Icons.access_time_rounded, size: 16, color: Colors.grey.shade500),
+              const SizedBox(width: 8),
+              Text(heure, style: const TextStyle(fontFamily: 'Galey',
+                  fontWeight: FontWeight.w700, fontSize: 15)),
+              if (duree != null) ...[
+                const SizedBox(width: 6),
+                Text('($duree min)', style: TextStyle(fontFamily: 'Galey',
+                    fontSize: 12, color: Colors.grey.shade500)),
+              ],
+              if (motif.isNotEmpty) ...[
+                const SizedBox(width: 10),
+                Expanded(child: Text('• $motif',
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                        color: Colors.grey.shade600))),
+              ],
+            ]),
+            const SizedBox(height: 8),
+            Row(children: [
+              Icon(Icons.person_outline_rounded, size: 16, color: Colors.grey.shade500),
+              const SizedBox(width: 8),
+              Text(clientNom, style: TextStyle(fontFamily: 'Galey',
+                  fontSize: 13, color: Colors.grey.shade600)),
+            ]),
+            const SizedBox(height: 20),
+            // Bouton Voir la fiche
+            SizedBox(width: double.infinity, child: FilledButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                if (animal != null) _openPatient({...animal, 'grant_status': 'active'});
+              },
+              icon: const Icon(Icons.pets_outlined),
+              label: Text('Voir la fiche de $nom',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              style: FilledButton.styleFrom(
+                backgroundColor: _teal,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            )),
+            const SizedBox(height: 10),
+            // Bouton CR & Ordonnances
+            SizedBox(width: double.infinity, child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => CompteRenduPage(
+                    rdv: rdv,
+                    clientName: clientNom,
+                    categoryColor: _teal,
+                  ),
+                ));
+              },
+              icon: const Icon(Icons.description_outlined),
+              label: const Text('CR & Ordonnances',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _teal,
+                side: BorderSide(color: _teal),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            )),
+            if (isConfirme) ...[
+              const SizedBox(height: 10),
+              SizedBox(width: double.infinity, child: OutlinedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  await _terminerRdv(rdv['id']?.toString() ?? '');
+                },
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('Marquer terminé',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.grey.shade600,
+                  side: BorderSide(color: Colors.grey.shade400),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              )),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _terminerRdv(String rdvId) async {
+    if (rdvId.isEmpty) return;
+    try {
+      await Supabase.instance.client
+          .from('rdv').update({'statut': 'termine'}).eq('id', rdvId);
+      setState(() => _rdvsJour = []);
+      await _loadAgenda();
+    } catch (_) {}
   }
 
   @override
@@ -492,10 +669,7 @@ class _VetPatientsPageState extends State<VetPatientsPage>
                     itemBuilder: (_, i) => _RdvJourCard(
                       rdv: _rdvsJour[i],
                       teal: _teal,
-                      onTap: () {
-                        final animal = _rdvsJour[i]['animal'] as Map<String, dynamic>?;
-                        if (animal != null) _openPatient({...animal, 'grant_status': 'active'});
-                      },
+                      onTap: () => _showRdvDetail(_rdvsJour[i]),
                     ),
                   ),
               ),

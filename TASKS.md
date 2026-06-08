@@ -237,6 +237,43 @@
 | ~~A56~~ | ~~**Fiche animal éleveur — reproducteur sans changement de position** — quand on passe un animal en "reproducteur", il ne doit pas changer d'emplacement dans la liste "Mes animaux". Garder l'ordre initial (date ajout ou alphabétique).~~ | ~~Haute~~ | ~~App~~ | ✅ Terminé 2026-06-03 — `_toggleReproducteur` met à jour `_animauxData` en-place sans appeler `_loadAnimaux()` |
 | ~~A57~~ | ~~**Pull-to-refresh sur toutes les pages liste** — `RefreshIndicator` (swipe down) sur toutes les pages liste où des modifications peuvent être faites : mobile uniquement, tous profils (éleveur, particulier, pro).~~ | ~~Haute~~ | ~~App~~ | ✅ Terminé 2026-06-03 — `RefreshIndicator` ajouté : `mes_animaux.dart` (3 vues : présents/bébés/anciens), `agenda_page.dart` (vue calendrier + vue liste). Déjà présent dans : `mes_annonces_page.dart`, `user_feed.dart` (onglets animaux+perdus), `mes_alertes_page.dart`, `liked_page.dart`, `notifications_page.dart`, `registre_pension_page.dart`, `employes_page.dart`, `forum_page.dart`, `groupes_page.dart`, `evenements_page.dart` |
 | ~~A58~~ | ~~**Vue détail annonce — date de naissance** — afficher la date de naissance de l'animal dans la vue détail d'une annonce (pas dans le feed).~~ | ~~Moyenne~~ | ~~App + Web~~ | ✅ Terminé 2026-06-03 — chip "Né(e) le dd/MM/yyyy" dans `annonce_detail_page.dart` (`_AnimalCard` + `_PorteeCard`) + page `/annonces/[id]/page.tsx` créée (404 → page détail complète) |
+### Marketplace & partenaires — **Nabil** (Spec 5.19)
+
+> Modèle régie pub. Pas de panier ni de paiement in-app. Le partenaire paie pour la visibilité, le clic redirige vers son site externe.
+
+#### Infrastructure Supabase
+
+| # | Tâche | Priorité | Repo | Notes |
+|---|---|---|---|---|
+| MKT01 | **Tables Supabase Marketplace** — créer `marketplace_partners` (id, user_id, nom, logo_url, site_url, description, categorie, especes_cibles TEXT[], regions TEXT[], plan, statut), `marketplace_ads` (id, partner_id, type, placement, budget_mensuel, cpm, cpl, especes_cibles, regions, date_debut, date_fin, statut), `marketplace_events` (id, ad_id, partner_id, user_id, event_type, espece, race, region, created_at). RLS : partners/ads accessibles uniquement par leur `user_id` et admins. Events : insert client, lecture admin+partenaire. | Haute | Supabase | Cf. Spec 5.19 |
+
+#### Vue utilisateur
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| MKT02 | **Page Marketplace utilisateur (app + web)** — section dédiée depuis le menu principal. Grille partenaires avec filtre espèce (chien/chat/équidé/autre), badge "Partenaire vérifié", section assurances avec CTA "Obtenir un devis". Pas de pub dans les écrans métier (carnet santé, registre) sauf bannière discrète bas de page. | Haute | App + Web | Créer `lib/pages/marketplace/marketplace_page.dart`, `src/app/marketplace/page.tsx` |
+| MKT03 | **Bannières contextuelles in-app** — affichage bannières natives dans : fiche animal (bas de page), feed annonces (native card), carnet santé (post-visite vét), dashboard éleveur, onboarding ajout animal. Ciblage espèce/race/région côté Flutter. Comptage impressions via requête Supabase + Cloud Function anti-fraude. | Haute | App | Modifier `animal_fiche.dart`, `user_feed.dart`, `agenda_page.dart`, `info_utilisateur.dart` |
+| MKT04 | **Module CPL assurances** — CTA "Obtenir un devis" déclenché sur : ajout d'un animal, enregistrement chiot/chaton (<4 mois), première visite vét dans le carnet santé. Événement loggé dans `marketplace_events` (event_type='lead'). Redirection vers URL assureur avec paramètres UTM espèce/race. | Haute | App + Web | `animal_fiche.dart`, `rdv_booking_page.dart` |
+
+#### Onboarding partenaire
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| MKT05 | **Onboarding partenaire** — formulaire inscription partenaire (app + web) : nom, SIRET, logo, site, catégorie, espèces ciblées, régions, plan choisi. Soumission → statut `en_attente` + notification admin pour validation manuelle. Partenaire reçoit confirmation email après activation. | Haute | App + Web | Créer `lib/pages/marketplace/partner_signup_page.dart`, `src/app/marketplace/partenaire/page.tsx` |
+| MKT06 | **Dashboard partenaire — statistiques & facturation** — vue "Ma campagne" : métriques temps réel (impressions/clics/leads du mois), CTR moyen, CPL effectif, coût total, répartition par espèce/région (graphiques), évolution 30 jours. Facture PDF mensuelle téléchargeable (générée auto par Stripe). Modifier ciblage et budget. | Haute | App + Web | Créer `lib/pages/marketplace/partner_dashboard_page.dart`, `src/app/marketplace/dashboard/page.tsx` |
+
+#### Dashboard admin
+
+| # | Tâche | Priorité | Repo | Fichiers probables |
+|---|---|---|---|---|
+| MKT07 | **Dashboard admin Marketplace** — vue globale toutes campagnes : revenus totaux, impressions, clics, leads par partenaire et par segment (assurance/alimentation/accessoires). Alertes : partenaire proche plafond, CTR anormal, détection fraude (IP multiples). Export CSV mensuel. Graphiques de performance par segment. | Haute | App + Web | `admin_panel.dart`, `src/app/admin/marketplace/page.tsx` |
+
+#### Facturation automatique
+
+| # | Tâche | Priorité | Repo | Notes |
+|---|---|---|---|---|
+| MKT08 | **Facturation Stripe automatique** — fin de mois : Cloud Function calcule le total `marketplace_events` par partenaire, génère la facture Stripe, déclenche le paiement. Plafond mensuel configurable par partenaire. Rapport PDF envoyé automatiquement au partenaire. Erreur de paiement → alerte admin + suspension campagne. | Haute | Firebase Functions + Stripe | Créer `functions/marketplace_billing.js` |
+
 ### Conseils pratiques — **Angélique**
 
 | # | Tâche | Priorité | Repo | Notes |

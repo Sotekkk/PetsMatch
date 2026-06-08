@@ -1371,6 +1371,146 @@ Colonnes à ajouter sur `annonces` :
 
 ---
 
+### 5.19 Marketplace & partenaires — régie publicitaire ciblée
+
+> **Modèle régie pub, pas transactionnel · Pas de panier ni de paiement in-app · Le partenaire paie pour être visible auprès d'une audience qualifiée · Le clic redirige vers son site externe**
+
+PetsMatch monétise son audience (éleveurs, propriétaires, pros) via des formats publicitaires ciblés par espèce, race, région et profil. Aucune infrastructure e-commerce requise en V1.
+
+---
+
+#### Segments partenaires
+
+| Segment | Exemples | Ciblage principal |
+|---|---|---|
+| Créateurs artisanaux | Colliers sur mesure, jouets, vêtements, accessoires | Espèce, race, région |
+| Alimentation & friandises | Marques premium, cru, compléments alimentaires | Espèce, race, âge animal |
+| Boutiques généralistes | Animaleries en ligne, distributeurs | Espèce, région |
+| Assurances animaux | Santevet, Dalma, Lovys, April | Espèce, âge, statut chiot/adulte |
+
+Les assurances sont le segment à CPL le plus élevé du marché animalier français (15–40€ par lead qualifié). Priorité commerciale en V2.
+
+---
+
+#### Formats & tarification
+
+**Format 1 — Listing annuaire partenaire** (abonnement mensuel)
+
+Le partenaire apparaît dans la vue Marketplace, filtrable par catégorie et espèce. Pas de ciblage comportemental, visibilité passive.
+
+| Plan | Prix | Visibilité |
+|---|---|---|
+| Starter | 29€/mois | Logo + nom + lien site, listing basique |
+| Visible | 59€/mois | Mise en avant catégorie + badge "Partenaire vérifié" + description |
+| Premium | 99€/mois | Top catégorie + bannière profil + filtres race/espèce avancés |
+
+Réduction annuelle : Starter 290€/an · Visible 590€/an · Premium 990€/an
+
+**Format 2 — Bannières contextuelles in-app** (CPM)
+
+Bannières natives affichées dans des écrans spécifiques selon le contexte de navigation. Facturées au CPM (coût pour mille affichages).
+
+| Placement | CPM | Contexte & pertinence |
+|---|---|---|
+| Fiche animal (bas de page) | 8–12€/1000 | Ultra-ciblé espèce/race — idéal accessoires |
+| Feed annonces (native card) | 6–10€/1000 | Ciblé espèce — alimentation, jouets |
+| Carnet santé (post-visite vét) | 15–25€/1000 | Moment fort — idéal assurances |
+| Dashboard éleveur | 10–15€/1000 | Audience pro, forte intention d'achat |
+| Onboarding (ajout d'un animal) | 12–18€/1000 | Nouveau propriétaire — assurance, accessoires |
+
+Minimum de facturation : 500€/mois par partenaire bannière.
+Ciblage disponible : espèce, race, région, type de profil (éleveur/particulier/pro).
+
+**Format 3 — Lead generation assurances** (CPL)
+
+Uniquement pour les partenaires assureurs. Un CTA "Obtenir un devis" apparaît dans des moments clés du parcours utilisateur.
+
+| Modèle | Prix | Déclencheur |
+|---|---|---|
+| CPC (coût par clic) | 0,80–1,50€ | Clic bannière assurance |
+| CPL (coût par lead) | 12–20€ | Clic "Obtenir un devis" → redirection formulaire assureur |
+
+Moments déclencheurs CPL :
+- Ajout d'un nouvel animal dans l'app
+- Enregistrement d'un chiot/chaton (date naissance < 4 mois)
+- Première visite vétérinaire enregistrée dans le carnet santé
+- Achat d'une annonce éleveur (nouveau propriétaire potentiel)
+
+---
+
+#### Tables Supabase à créer
+
+| Table | Colonnes principales |
+|---|---|
+| `marketplace_partners` | `id UUID`, `user_id TEXT`, `nom TEXT`, `logo_url TEXT`, `site_url TEXT`, `description TEXT`, `categorie TEXT` (artisan/alimentation/boutique/assurance), `especes_cibles TEXT[]`, `regions TEXT[]`, `plan TEXT` (starter/visible/premium), `statut TEXT` (actif/suspendu/en_attente), `created_at TIMESTAMPTZ` |
+| `marketplace_ads` | `id UUID`, `partner_id UUID`, `type TEXT` (listing/banniere/cpl), `placement TEXT`, `budget_mensuel NUMERIC`, `cpm NUMERIC`, `cpl NUMERIC`, `especes_cibles TEXT[]`, `regions TEXT[]`, `date_debut DATE`, `date_fin DATE`, `statut TEXT` (actif/pause/termine), `created_at TIMESTAMPTZ` |
+| `marketplace_events` | `id UUID`, `ad_id UUID`, `partner_id UUID`, `user_id TEXT`, `event_type TEXT` (impression/clic/lead), `espece TEXT`, `race TEXT`, `region TEXT`, `created_at TIMESTAMPTZ` |
+
+RLS : `marketplace_partners` et `marketplace_ads` accessibles uniquement par le partenaire propriétaire (`user_id = auth.uid()`) et les admins. `marketplace_events` : insertion côté client, lecture réservée admin + partenaire.
+
+---
+
+#### UI partenaire — dashboard statistiques
+
+**Vue "Ma campagne"** (app + web, réservée partenaires connectés)
+- Métriques temps réel : impressions, clics, leads du mois en cours
+- CTR moyen, CPL effectif, coût total engagé
+- Répartition par espèce, race, région (graphiques barres/camembert)
+- Évolution temporelle (courbe 30 jours glissants)
+- Facture mensuelle téléchargeable (PDF auto-généré)
+- Modifier ciblage, budget et créatifs
+
+**Dashboard admin PetsMatch**
+- Vue globale toutes campagnes : revenus, impressions, clics, leads par partenaire
+- Alertes : partenaire proche du plafond mensuel, taux de fraude (IP multiples), CTR anormal
+- Export CSV mensuel complet
+- Graphiques de performance par segment (assurances vs alimentation vs accessoires)
+
+---
+
+#### Vue Marketplace utilisateur (app + web)
+
+Section dédiée accessible depuis le menu principal.
+
+**Architecture de la vue :**
+- Header : "Nos partenaires sélectionnés" + filtre espèce (chien/chat/équidé/autre)
+- Grille partenaires : carte logo + nom + catégorie + lien externe
+- Section "Assurances" : cards dédiées avec CTA "Obtenir un devis"
+- Badge "Partenaire vérifié PetsMatch" sur tous les listings
+- Pas de publicité intrusive dans les écrans métier (carnet santé, registre) sauf bannière discrète bas de page
+
+Règle éditoriale : tous les partenaires sont vérifiés manuellement avant activation (SIRET valide, site légitime, produits conformes réglementation animaux).
+
+---
+
+#### Tracking & facturation automatique
+
+- Impressions comptées côté serveur (Cloud Function), pas côté client (anti-fraude, ad-blockers non impactants sur le CPM)
+- Facture Stripe générée automatiquement en fin de mois selon les events réels (`marketplace_events`)
+- Plafond de dépenses mensuel configurable par partenaire
+- Rapport PDF mensuel envoyé automatiquement au partenaire
+
+---
+
+#### Conformité RGPD
+
+- Aucune donnée personnelle utilisateur transmise aux partenaires
+- Le ciblage est contextuel (espèce, région) et non nominatif
+- Mentions légales "Publicité" affichées sur tous les formats bannière
+- Opt-out publicité disponible dans les paramètres utilisateur (impact : bannières désactivées, listing annuaire toujours visible)
+
+---
+
+#### Évolutions V2+
+
+- Ciblage comportemental avancé (historique carnet santé, races possédées)
+- Self-service : onboarding partenaire autonome sans validation manuelle
+- Intégration Google Ad Manager pour partenaires >2 000€/mois de budget
+- Affiliation créateurs artisanaux (commission sur ventes trackées par UTM)
+- Programme "Partenaire éleveur" : éleveur recommande une marque → reçoit des boosts en échange (cross-fonctionnalité 5.13)
+
+---
+
 ## 6. Sécurité / Conformité RGPD
 
 ### V1 — Obligatoire avant lancement public

@@ -20,6 +20,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 
@@ -42,6 +43,7 @@ class AnimalFichePage extends StatefulWidget {
   final String? preselectedEspece;
   final bool readOnly;
   final bool vetMode;
+  final int? initialTabIndex;
   final String? eleveurUidOverride;
 
   const AnimalFichePage({
@@ -51,6 +53,7 @@ class AnimalFichePage extends StatefulWidget {
     this.preselectedEspece,
     this.readOnly = false,
     this.vetMode = false,
+    this.initialTabIndex,
     this.eleveurUidOverride,
   });
 
@@ -141,7 +144,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: widget.vetMode ? 4 : 4, vsync: this);
+    _tabs = TabController(length: 5, vsync: this);
     _editing = widget.animalId == null; // new animal → edit mode directly
     if (widget.preselectedEspece != null) _espece = widget.preselectedEspece!;
     _fillFromData(widget.initialData); // pre-fill instantly from cached data
@@ -855,8 +858,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           unselectedLabelColor: Colors.white60,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
           tabs: widget.vetMode
-              ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire')]
-              : const [Tab(text: 'Identité'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation')],
+              ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations')]
+              : const [Tab(text: 'Identité'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')],
         ),
       ),
       body: TabBarView(
@@ -867,12 +870,14 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 _CarnetSanteTab(animalId: widget.animalId),
                 _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
+                _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text),
               ]
             : [
                 _IdentiteTab(this),
                 _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
                 _CarnetSanteTab(animalId: widget.animalId),
                 _AlimentationTab(this),
+                _ConsultationsOwnerTab(animalId: widget.animalId),
               ],
       ),
     );
@@ -7557,6 +7562,7 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
     });
   }
 
+  // ─── _BreedSearchSheet.build ─────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
@@ -7620,6 +7626,488 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
           ),
         ]),
       ),
+    );
+  }
+}
+
+// ─── Onglet Consultations (vue vétérinaire) ──────────────────────────────────
+
+class _ConsultationsVetTab extends StatefulWidget {
+  final String? animalId;
+  final String? ownerUid;
+  final String animalNom;
+  const _ConsultationsVetTab({required this.animalId, required this.ownerUid, required this.animalNom});
+
+  @override
+  State<_ConsultationsVetTab> createState() => _ConsultationsVetTabState();
+}
+
+class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
+  static const _teal = Color(0xFF0C5C6C);
+  final _supa = Supabase.instance.client;
+
+  bool _loading = true;
+  List<Map<String, dynamic>> _crs   = [];
+  List<Map<String, dynamic>> _ordos = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (widget.animalId == null) { setState(() => _loading = false); return; }
+    final vetUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    try {
+      final crs   = await _supa.from('comptes_rendus').select()
+          .eq('animal_id', widget.animalId!).eq('pro_uid', vetUid)
+          .order('created_at', ascending: false);
+      final ordos = await _supa.from('ordonnances').select()
+          .eq('animal_id', widget.animalId!).eq('pro_uid', vetUid)
+          .order('created_at', ascending: false);
+      if (mounted) setState(() {
+        _crs   = List<Map<String, dynamic>>.from(crs);
+        _ordos = List<Map<String, dynamic>>.from(ordos);
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _openCrPage() {
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => CompteRenduPage(
+        animalId: widget.animalId,
+        ownerUid: widget.ownerUid,
+        clientName: widget.animalNom,
+        categoryColor: _teal,
+      ),
+    )).then((_) => _load());
+  }
+
+  String _fmtDate(String? iso) {
+    if (iso == null) return '';
+    final d = DateTime.tryParse(iso)?.toLocal();
+    if (d == null) return '';
+    return '${d.day.toString().padLeft(2,'0')}/${d.month.toString().padLeft(2,'0')}/${d.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
+    return Stack(children: [
+      RefreshIndicator(
+        onRefresh: _load,
+        color: _teal,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _VetConsultSectionHeader(label: 'Comptes rendus', count: _crs.length,
+                icon: Icons.assignment_outlined, color: _teal),
+            const SizedBox(height: 10),
+            if (_crs.isEmpty)
+              _VetConsultEmptyCard(message: 'Aucun compte rendu pour cet animal.')
+            else
+              ..._crs.map((cr) => _VetConsultCrCard(cr: cr, color: _teal, fmtDate: _fmtDate)),
+            const SizedBox(height: 20),
+            _VetConsultSectionHeader(label: 'Ordonnances', count: _ordos.length,
+                icon: Icons.description_outlined, color: _teal),
+            const SizedBox(height: 10),
+            if (_ordos.isEmpty)
+              _VetConsultEmptyCard(message: 'Aucune ordonnance pour cet animal.')
+            else
+              ..._ordos.map((o) => _VetConsultOrdoCard(ordo: o, color: _teal, fmtDate: _fmtDate)),
+          ]),
+        ),
+      ),
+      Positioned(
+        bottom: 16, left: 16, right: 16,
+        child: ElevatedButton.icon(
+          onPressed: _openCrPage,
+          icon: const Icon(Icons.edit_outlined),
+          label: const Text('Rédiger un CR / Ordonnance',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _teal, foregroundColor: Colors.white, elevation: 4,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+          ),
+        ),
+      ),
+    ]);
+  }
+}
+
+// ─── Onglet Consultations (vue propriétaire) ─────────────────────────────────
+
+class _ConsultationsOwnerTab extends StatefulWidget {
+  final String? animalId;
+  const _ConsultationsOwnerTab({required this.animalId});
+
+  @override
+  State<_ConsultationsOwnerTab> createState() => _ConsultationsOwnerTabState();
+}
+
+class _ConsultationsOwnerTabState extends State<_ConsultationsOwnerTab> {
+  static const _teal = Color(0xFF0C5C6C);
+  final _supa = Supabase.instance.client;
+
+  bool _loading = true;
+  List<Map<String, dynamic>> _crs   = [];
+  List<Map<String, dynamic>> _ordos = [];
+  Map<String, String> _vetNames = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (widget.animalId == null) { setState(() => _loading = false); return; }
+    try {
+      final crs   = await _supa.from('comptes_rendus').select()
+          .eq('animal_id', widget.animalId!).order('created_at', ascending: false);
+      final ordos = await _supa.from('ordonnances').select()
+          .eq('animal_id', widget.animalId!).order('created_at', ascending: false);
+
+      final allCrs   = List<Map<String, dynamic>>.from(crs);
+      final allOrdos = List<Map<String, dynamic>>.from(ordos);
+
+      final proUids = {
+        ...allCrs.map((r)  => r['pro_uid']?.toString()).whereType<String>(),
+        ...allOrdos.map((r) => r['pro_uid']?.toString()).whereType<String>(),
+      }.toList();
+
+      final vetNames = <String, String>{};
+      if (proUids.isNotEmpty) {
+        try {
+          final users = await _supa.from('users')
+              .select('uid, firstname, lastname').inFilter('uid', proUids);
+          for (final u in users as List) {
+            final uid = u['uid']?.toString() ?? '';
+            final nom = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+            vetNames[uid] = nom.isNotEmpty ? 'Dr. $nom' : 'Vétérinaire';
+          }
+        } catch (_) {}
+      }
+
+      if (mounted) setState(() {
+        _crs      = allCrs;
+        _ordos    = allOrdos;
+        _vetNames = vetNames;
+        _loading  = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _fmtDate(String? iso) {
+    if (iso == null) return '';
+    final d = DateTime.tryParse(iso)?.toLocal();
+    if (d == null) return '';
+    return '${d.day.toString().padLeft(2,'0')}/${d.month.toString().padLeft(2,'0')}/${d.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
+    final isEmpty = _crs.isEmpty && _ordos.isEmpty;
+    return RefreshIndicator(
+      onRefresh: _load,
+      color: _teal,
+      child: isEmpty
+          ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 80, left: 32, right: 32),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.assignment_outlined, size: 64, color: Colors.grey.shade200),
+                  const SizedBox(height: 16),
+                  const Text('Aucune consultation enregistrée',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                          fontSize: 16, color: Color(0xFF1F2A2E))),
+                  const SizedBox(height: 8),
+                  Text('Les comptes rendus et ordonnances\nrédigés par votre vétérinaire apparaîtront ici.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                          color: Colors.grey.shade500, height: 1.5)),
+                ]),
+              ),
+            ])
+          : SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (_crs.isNotEmpty) ...[
+                  _VetConsultSectionHeader(label: 'Comptes rendus', count: _crs.length,
+                      icon: Icons.assignment_outlined, color: _teal),
+                  const SizedBox(height: 10),
+                  ..._crs.map((cr) => _OwnerConsultCrCard(cr: cr, color: _teal,
+                      vetName: _vetNames[cr['pro_uid']?.toString()] ?? 'Vétérinaire',
+                      fmtDate: _fmtDate)),
+                  const SizedBox(height: 20),
+                ],
+                if (_ordos.isNotEmpty) ...[
+                  _VetConsultSectionHeader(label: 'Ordonnances', count: _ordos.length,
+                      icon: Icons.description_outlined, color: _teal),
+                  const SizedBox(height: 10),
+                  ..._ordos.map((o) => _OwnerConsultOrdoCard(ordo: o, color: _teal,
+                      vetName: _vetNames[o['pro_uid']?.toString()] ?? 'Vétérinaire',
+                      fmtDate: _fmtDate)),
+                ],
+              ]),
+            ),
+    );
+  }
+}
+
+// ─── Widgets helpers consultations ───────────────────────────────────────────
+
+class _VetConsultSectionHeader extends StatelessWidget {
+  final String label; final int count; final IconData icon; final Color color;
+  const _VetConsultSectionHeader({required this.label, required this.count,
+      required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+    Icon(icon, size: 18, color: color),
+    const SizedBox(width: 8),
+    Text(label, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+        fontSize: 15, color: color)),
+    if (count > 0) ...[
+      const SizedBox(width: 6),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20)),
+        child: Text('$count', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+            fontWeight: FontWeight.w700, color: color)),
+      ),
+    ],
+  ]);
+}
+
+class _VetConsultEmptyCard extends StatelessWidget {
+  final String message;
+  const _VetConsultEmptyCard({required this.message});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200)),
+    child: Text(message, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+        color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
+  );
+}
+
+class _VetConsultCrCard extends StatelessWidget {
+  final Map<String, dynamic> cr; final Color color; final String Function(String?) fmtDate;
+  const _VetConsultCrCard({required this.cr, required this.color, required this.fmtDate});
+
+  @override
+  Widget build(BuildContext context) {
+    final date   = fmtDate(cr['created_at']?.toString());
+    final contenu = cr['contenu']?.toString() ?? '';
+    final docUrl  = cr['doc_url']?.toString() ?? '';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6, offset: const Offset(0, 2))]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (date.isNotEmpty) Text(date, style: TextStyle(fontFamily: 'Galey',
+            fontSize: 11, color: Colors.grey.shade500)),
+        const SizedBox(height: 6),
+        Text(contenu, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
+        if (docUrl.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () async {
+              final uri = Uri.tryParse(docUrl);
+              if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+            },
+            child: Row(children: [
+              Icon(Icons.attach_file, size: 14, color: color),
+              const SizedBox(width: 4),
+              Expanded(child: Text('Document joint', maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      color: color, decoration: TextDecoration.underline))),
+            ]),
+          ),
+        ],
+      ]),
+    );
+  }
+}
+
+class _VetConsultOrdoCard extends StatelessWidget {
+  final Map<String, dynamic> ordo; final Color color; final String Function(String?) fmtDate;
+  const _VetConsultOrdoCard({required this.ordo, required this.color, required this.fmtDate});
+
+  @override
+  Widget build(BuildContext context) {
+    final dateEmit = fmtDate(ordo['date_emit']?.toString());
+    final docUrl   = ordo['doc_url']?.toString() ?? '';
+    final notes    = ordo['notes']?.toString() ?? '';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6, offset: const Offset(0, 2))]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.description_outlined, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text('Ordonnance${dateEmit.isNotEmpty ? " du $dateEmit" : ""}',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                  fontSize: 13, color: color)),
+        ]),
+        if (notes.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(notes, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
+        ],
+        if (docUrl.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () async {
+              final uri = Uri.tryParse(docUrl);
+              if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+            },
+            child: Row(children: [
+              Icon(Icons.attach_file, size: 14, color: color),
+              const SizedBox(width: 4),
+              Expanded(child: Text('Voir l\'ordonnance', maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      color: color, decoration: TextDecoration.underline))),
+            ]),
+          ),
+        ],
+      ]),
+    );
+  }
+}
+
+class _OwnerConsultCrCard extends StatelessWidget {
+  final Map<String, dynamic> cr; final Color color; final String vetName;
+  final String Function(String?) fmtDate;
+  const _OwnerConsultCrCard({required this.cr, required this.color,
+      required this.vetName, required this.fmtDate});
+
+  @override
+  Widget build(BuildContext context) {
+    final date    = fmtDate(cr['created_at']?.toString());
+    final contenu = cr['contenu']?.toString() ?? '';
+    final docUrl  = cr['doc_url']?.toString() ?? '';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6, offset: const Offset(0, 2))]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(20)),
+            child: Text(vetName, style: TextStyle(fontFamily: 'Galey',
+                fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+          ),
+          const Spacer(),
+          if (date.isNotEmpty) Text(date, style: TextStyle(fontFamily: 'Galey',
+              fontSize: 11, color: Colors.grey.shade500)),
+        ]),
+        const SizedBox(height: 8),
+        Text(contenu, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
+        if (docUrl.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () async {
+              final uri = Uri.tryParse(docUrl);
+              if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+            },
+            child: Row(children: [
+              Icon(Icons.attach_file, size: 14, color: color),
+              const SizedBox(width: 4),
+              Expanded(child: Text('Document joint', maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      color: color, decoration: TextDecoration.underline))),
+            ]),
+          ),
+        ],
+      ]),
+    );
+  }
+}
+
+class _OwnerConsultOrdoCard extends StatelessWidget {
+  final Map<String, dynamic> ordo; final Color color; final String vetName;
+  final String Function(String?) fmtDate;
+  const _OwnerConsultOrdoCard({required this.ordo, required this.color,
+      required this.vetName, required this.fmtDate});
+
+  @override
+  Widget build(BuildContext context) {
+    final dateEmit = fmtDate(ordo['date_emit']?.toString());
+    final docUrl   = ordo['doc_url']?.toString() ?? '';
+    final notes    = ordo['notes']?.toString() ?? '';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6, offset: const Offset(0, 2))]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(20)),
+            child: Text(vetName, style: TextStyle(fontFamily: 'Galey',
+                fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+          ),
+          const Spacer(),
+          if (dateEmit.isNotEmpty) Text(dateEmit, style: TextStyle(fontFamily: 'Galey',
+              fontSize: 11, color: Colors.grey.shade500)),
+        ]),
+        const SizedBox(height: 8),
+        Row(children: [
+          Icon(Icons.description_outlined, size: 15, color: color),
+          const SizedBox(width: 6),
+          Text('Ordonnance', style: TextStyle(fontFamily: 'Galey',
+              fontWeight: FontWeight.w600, fontSize: 13, color: color)),
+        ]),
+        if (notes.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(notes, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
+        ],
+        if (docUrl.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () async {
+              final uri = Uri.tryParse(docUrl);
+              if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+            },
+            child: Row(children: [
+              Icon(Icons.attach_file, size: 14, color: color),
+              const SizedBox(width: 4),
+              Expanded(child: Text('Voir l\'ordonnance', maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      color: color, decoration: TextDecoration.underline))),
+            ]),
+          ),
+        ],
+      ]),
     );
   }
 }

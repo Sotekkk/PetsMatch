@@ -3,16 +3,22 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// S06 — Pro : écrire un compte rendu et/ou créer une ordonnance après un RDV.
+/// Peut être ouvert avec un RDV précis (`rdv`) ou directement depuis la fiche
+/// animal (`animalId` + `ownerUid`).
 class CompteRenduPage extends StatefulWidget {
-  final Map<String, dynamic> rdv;
+  final Map<String, dynamic>? rdv;
+  final String? animalId;
+  final String? ownerUid;
   final String clientName;
   final Color categoryColor;
   final bool isPension;
 
   const CompteRenduPage({
     super.key,
-    required this.rdv,
-    required this.clientName,
+    this.rdv,
+    this.animalId,
+    this.ownerUid,
+    this.clientName = '',
     required this.categoryColor,
     this.isPension = false,
   });
@@ -59,11 +65,25 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   }
 
   Future<void> _loadExisting() async {
-    final rdvId = widget.rdv['id']?.toString();
-    if (rdvId == null) { setState(() => _loadingDocs = false); return; }
+    final rdvId    = widget.rdv?['id']?.toString();
+    final animalId = widget.animalId ?? widget.rdv?['animal_id']?.toString();
+    if (rdvId == null && animalId == null) {
+      setState(() => _loadingDocs = false);
+      return;
+    }
     try {
-      final crs   = await _supa.from('comptes_rendus').select().eq('rdv_id', rdvId).order('created_at');
-      final ordos = await _supa.from('ordonnances').select().eq('rdv_id', rdvId).order('created_at');
+      List crs, ordos;
+      if (rdvId != null) {
+        crs   = await _supa.from('comptes_rendus').select().eq('rdv_id', rdvId).order('created_at');
+        ordos = await _supa.from('ordonnances').select().eq('rdv_id', rdvId).order('created_at');
+      } else {
+        final vetUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final aid = animalId ?? '';
+        crs   = await _supa.from('comptes_rendus').select()
+            .eq('animal_id', aid).eq('pro_uid', vetUid).order('created_at');
+        ordos = await _supa.from('ordonnances').select()
+            .eq('animal_id', aid).eq('pro_uid', vetUid).order('created_at');
+      }
       if (mounted) {
         setState(() {
           _crs       = List<Map<String, dynamic>>.from(crs);
@@ -88,14 +108,17 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       return;
     }
     setState(() => _crSaving = true);
+    final rdvId    = widget.rdv?['id'];
+    final animalId = widget.animalId ?? widget.rdv?['animal_id'];
+    final ownerUid = widget.ownerUid ?? widget.rdv?['client_uid'];
     try {
       await _supa.from('comptes_rendus').insert({
         'pro_uid'   : proUid,
-        'animal_id' : widget.rdv['animal_id'],
-        'owner_uid' : widget.rdv['client_uid'],
-        'rdv_id'    : widget.rdv['id'],
+        'animal_id' : animalId,
+        'owner_uid' : ownerUid,
+        if (rdvId != null) 'rdv_id': rdvId,
         'contenu'   : contenu,
-        'doc_url'   : _crDocUrlCtrl.text.trim().isNotEmpty ? _crDocUrlCtrl.text.trim() : null,
+        if (_crDocUrlCtrl.text.trim().isNotEmpty) 'doc_url': _crDocUrlCtrl.text.trim(),
       });
       _crContenuCtrl.clear();
       _crDocUrlCtrl.clear();
@@ -131,16 +154,19 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       return;
     }
     setState(() => _ordoSaving = true);
+    final rdvId    = widget.rdv?['id'];
+    final animalId = widget.animalId ?? widget.rdv?['animal_id'];
+    final ownerUid = widget.ownerUid ?? widget.rdv?['client_uid'];
     try {
       final today = DateTime.now();
       await _supa.from('ordonnances').insert({
         'pro_uid'  : proUid,
-        'animal_id': widget.rdv['animal_id'],
-        'owner_uid': widget.rdv['client_uid'],
-        'rdv_id'   : widget.rdv['id'],
+        'animal_id': animalId,
+        'owner_uid': ownerUid,
+        if (rdvId != null) 'rdv_id': rdvId,
         'doc_url'  : docUrl,
         'date_emit': '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}',
-        'notes'    : _ordoNotesCtrl.text.trim().isNotEmpty ? _ordoNotesCtrl.text.trim() : null,
+        if (_ordoNotesCtrl.text.trim().isNotEmpty) 'notes': _ordoNotesCtrl.text.trim(),
       });
       _ordoDocUrlCtrl.clear();
       _ordoNotesCtrl.clear();
@@ -177,8 +203,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           children: [
             Text(widget.isPension ? 'Compte rendu' : 'CR & Ordonnances',
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-            Text(widget.clientName,
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white70)),
+            if (widget.clientName.isNotEmpty)
+              Text(widget.clientName,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white70)),
           ],
         ),
         bottom: TabBar(
