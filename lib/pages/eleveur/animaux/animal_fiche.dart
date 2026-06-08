@@ -23,6 +23,7 @@ import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
 
@@ -3108,12 +3109,14 @@ class _SanteCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rawDate = data['date'] as String?;
+    final rawDate  = data['date'] as String?;
     final date = rawDate != null && rawDate.isNotEmpty
         ? (DateTime.tryParse(rawDate) != null
             ? DateFormat('dd/MM/yyyy').format(DateTime.parse(rawDate))
             : rawDate)
         : '';
+    final isVet   = data['source'] == 'veterinaire';
+    final vetName = data['veterinaire'] as String?;
     return GestureDetector(
       onTap: () => _showDetail(context),
       child: Container(
@@ -3123,15 +3126,37 @@ class _SanteCard extends StatelessWidget {
             boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 5)]),
         child: Row(children: [
           Container(padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(12)),
-            child: Icon(icon, color: const Color(0xFF6E9E57), size: 22)),
+            decoration: BoxDecoration(
+              color: isVet
+                  ? const Color(0xFF0C5C6C).withValues(alpha: 0.10)
+                  : const Color(0xFFEEF5EA),
+              borderRadius: BorderRadius.circular(12)),
+            child: Icon(icon,
+                color: isVet ? const Color(0xFF0C5C6C) : const Color(0xFF6E9E57), size: 22)),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
             if (date.isNotEmpty) Text(date, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+            if (isVet) ...[
+              const SizedBox(height: 3),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0C5C6C).withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  vetName != null && vetName.isNotEmpty ? vetName : '🩺 Vétérinaire',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 10,
+                      fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C)),
+                ),
+              ),
+            ],
           ])),
           const Icon(Icons.chevron_right, color: Color(0xFFCCCCCC), size: 18),
-          IconButton(icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red), onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+          if (!isVet)
+            IconButton(icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
         ]),
       ),
     );
@@ -7643,33 +7668,49 @@ class _ConsultationsVetTab extends StatefulWidget {
 }
 
 class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
-  static const _teal = Color(0xFF0C5C6C);
+  static const _teal  = Color(0xFF0C5C6C);
+  static const _green = Color(0xFF6E9E57);
   final _supa = Supabase.instance.client;
 
   bool _loading = true;
-  List<Map<String, dynamic>> _crs   = [];
-  List<Map<String, dynamic>> _ordos = [];
+  List<Map<String, dynamic>> _crs        = [];
+  List<Map<String, dynamic>> _ordos      = [];
+  List<Map<String, dynamic>> _santeEntries = [];
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
+  void initState() { super.initState(); _load(); }
 
   Future<void> _load() async {
     if (widget.animalId == null) { setState(() => _loading = false); return; }
     final vetUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     try {
-      final crs   = await _supa.from('comptes_rendus').select()
-          .eq('animal_id', widget.animalId!).eq('pro_uid', vetUid)
-          .order('created_at', ascending: false);
-      final ordos = await _supa.from('ordonnances').select()
-          .eq('animal_id', widget.animalId!).eq('pro_uid', vetUid)
-          .order('created_at', ascending: false);
+      final results = await Future.wait([
+        _supa.from('comptes_rendus').select()
+            .eq('animal_id', widget.animalId!).eq('pro_uid', vetUid)
+            .order('created_at', ascending: false),
+        _supa.from('ordonnances').select()
+            .eq('animal_id', widget.animalId!).eq('pro_uid', vetUid)
+            .order('created_at', ascending: false),
+        _supa.from('vaccinations').select()
+            .eq('animal_id', widget.animalId!).eq('vet_id', vetUid)
+            .order('date', ascending: false),
+        _supa.from('traitements').select()
+            .eq('animal_id', widget.animalId!).eq('vet_id', vetUid)
+            .order('date', ascending: false),
+        _supa.from('visites').select()
+            .eq('animal_id', widget.animalId!).eq('vet_id', vetUid)
+            .order('date', ascending: false),
+      ]);
+      final entries = [
+        ...List<Map<String, dynamic>>.from(results[2]).map((v) => {...v, '_col': 'vaccinations', '_label': v['vaccin'] ?? 'Vaccin'}),
+        ...List<Map<String, dynamic>>.from(results[3]).map((t) => {...t, '_col': 'traitements',  '_label': t['nom'] ?? 'Traitement'}),
+        ...List<Map<String, dynamic>>.from(results[4]).map((v) => {...v, '_col': 'visites',      '_label': v['motif'] ?? 'Visite'}),
+      ]..sort((a, b) => (b['date'] ?? '').compareTo(a['date'] ?? ''));
       if (mounted) setState(() {
-        _crs   = List<Map<String, dynamic>>.from(crs);
-        _ordos = List<Map<String, dynamic>>.from(ordos);
-        _loading = false;
+        _crs         = List<Map<String, dynamic>>.from(results[0]);
+        _ordos       = List<Map<String, dynamic>>.from(results[1]);
+        _santeEntries = entries;
+        _loading     = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -7685,6 +7726,93 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
         categoryColor: _teal,
       ),
     )).then((_) => _load());
+  }
+
+  void _showAddCarnetSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          const Text('Ajouter au carnet de santé',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 20),
+          for (final opt in [
+            (Icons.vaccines_outlined,         const Color(0xFF0C5C6C),  '💉 Vaccin',              'vaccin'),
+            (Icons.medication_outlined,        const Color(0xFF8D6E63),  '💊 Traitement',           'traitement'),
+            (Icons.medical_services_outlined,  const Color(0xFF26A69A),  '🩺 Visite vétérinaire',   'visite'),
+          ]) ...[
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              tileColor: (opt.$2).withValues(alpha: 0.07),
+              leading: Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                    color: (opt.$2).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12)),
+                child: Icon(opt.$1, color: opt.$2),
+              ),
+              title: Text(opt.$3,
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              onTap: () {
+                Navigator.pop(context);
+                _openVetEntryDialog(opt.$4);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _openVetEntryDialog(String type) async {
+    if (widget.animalId == null) return;
+    final vetUid  = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final vetName = 'Dr. ${User_Info.firstname} ${User_Info.lastname}'.trim();
+    Widget dialog;
+    switch (type) {
+      case 'vaccin':
+        dialog = _VetAddVaccinDialog(
+            animalId: widget.animalId!, vetUid: vetUid, vetName: vetName);
+        break;
+      case 'traitement':
+        dialog = _VetAddTraitementDialog(
+            animalId: widget.animalId!, vetUid: vetUid, vetName: vetName);
+        break;
+      default:
+        dialog = _VetAddVisiteDialog(
+            animalId: widget.animalId!, vetUid: vetUid, vetName: vetName);
+    }
+    final saved = await showDialog<bool>(context: context, builder: (_) => dialog);
+    if (saved == true) {
+      _load();
+      _notifyOwner(type);
+    }
+  }
+
+  void _notifyOwner(String type) {
+    if (widget.ownerUid == null || widget.ownerUid!.isEmpty) return;
+    final vetName = 'Dr. ${User_Info.firstname} ${User_Info.lastname}'.trim();
+    final label   = type == 'vaccin' ? 'une vaccination'
+        : type == 'traitement' ? 'un traitement'
+        : 'une visite';
+    _supa.from('notifications').insert({
+      'uid':   widget.ownerUid,
+      'type':  'sante_vet',
+      'title': '🩺 Entrée vétérinaire ajoutée',
+      'body':  '$vetName a enregistré $label pour ${widget.animalNom}',
+      'data':  {'animalId': widget.animalId},
+      'read':  false,
+    }).catchError((_) {});
   }
 
   String _fmtDate(String? iso) {
@@ -7703,8 +7831,18 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
         color: _teal,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // ── Carnet de santé ──────────────────────────────────────────
+            _VetConsultSectionHeader(label: 'Carnet de santé', count: _santeEntries.length,
+                icon: Icons.health_and_safety_outlined, color: _green),
+            const SizedBox(height: 10),
+            if (_santeEntries.isEmpty)
+              _VetConsultEmptyCard(message: 'Aucune entrée de santé enregistrée.')
+            else
+              ..._santeEntries.map((e) => _VetSanteEntryCard(entry: e, fmtDate: _fmtDate)),
+            const SizedBox(height: 20),
+            // ── Comptes rendus ────────────────────────────────────────────
             _VetConsultSectionHeader(label: 'Comptes rendus', count: _crs.length,
                 icon: Icons.assignment_outlined, color: _teal),
             const SizedBox(height: 10),
@@ -7713,6 +7851,7 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
             else
               ..._crs.map((cr) => _VetConsultCrCard(cr: cr, color: _teal, fmtDate: _fmtDate)),
             const SizedBox(height: 20),
+            // ── Ordonnances ───────────────────────────────────────────────
             _VetConsultSectionHeader(label: 'Ordonnances', count: _ordos.length,
                 icon: Icons.description_outlined, color: _teal),
             const SizedBox(height: 10),
@@ -7723,19 +7862,38 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
           ]),
         ),
       ),
+      // ── Boutons bas ───────────────────────────────────────────────────────
       Positioned(
         bottom: 16, left: 16, right: 16,
-        child: ElevatedButton.icon(
-          onPressed: _openCrPage,
-          icon: const Icon(Icons.edit_outlined),
-          label: const Text('Rédiger un CR / Ordonnance',
-              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _teal, foregroundColor: Colors.white, elevation: 4,
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+        child: Row(children: [
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: _showAddCarnetSheet,
+              icon: const Icon(Icons.add_circle_outline, size: 18),
+              label: const Text('Ajouter au carnet',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _green, foregroundColor: Colors.white, elevation: 3,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+              ),
+            ),
           ),
-        ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: _openCrPage,
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('Rédiger un CR',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _teal, foregroundColor: Colors.white, elevation: 3,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+              ),
+            ),
+          ),
+        ]),
       ),
     ]);
   }
@@ -8108,6 +8266,360 @@ class _OwnerConsultOrdoCard extends StatelessWidget {
           ),
         ],
       ]),
+    );
+  }
+}
+
+// ─── VET06 : carte entrée santé vétérinaire ───────────────────────────────────
+
+class _VetSanteEntryCard extends StatelessWidget {
+  final Map<String, dynamic> entry;
+  final String Function(String?) fmtDate;
+  const _VetSanteEntryCard({required this.entry, required this.fmtDate});
+
+  static const _colIcon = {
+    'vaccinations': Icons.vaccines_outlined,
+    'traitements':  Icons.medication_outlined,
+    'visites':      Icons.medical_services_outlined,
+  };
+  static const _colColor = {
+    'vaccinations': Color(0xFF0C5C6C),
+    'traitements':  Color(0xFF8D6E63),
+    'visites':      Color(0xFF26A69A),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final col   = entry['_col'] as String? ?? 'visites';
+    final label = entry['_label'] as String? ?? 'Entrée';
+    final date  = fmtDate(entry['date']?.toString());
+    final color = _colColor[col] ?? const Color(0xFF0C5C6C);
+    final icon  = _colIcon[col]  ?? Icons.health_and_safety_outlined;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 5)]),
+      child: Row(children: [
+        Container(padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(12)),
+          child: Icon(icon, color: color, size: 22)),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+          if (date.isNotEmpty)
+            Text(date, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+        ])),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            col == 'vaccinations' ? 'Vaccin' : col == 'traitements' ? 'Traitement' : 'Visite',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                fontWeight: FontWeight.w600, color: color),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ─── VET06 : dialog ajout vaccin vétérinaire ─────────────────────────────────
+
+class _VetAddVaccinDialog extends StatefulWidget {
+  final String animalId, vetUid, vetName;
+  const _VetAddVaccinDialog({required this.animalId, required this.vetUid, required this.vetName});
+  @override State<_VetAddVaccinDialog> createState() => _VetAddVaccinDialogState();
+}
+class _VetAddVaccinDialogState extends State<_VetAddVaccinDialog> {
+  final _vaccin = TextEditingController();
+  final _lot    = TextEditingController();
+  DateTime? _date;
+  DateTime? _rappel;
+  bool _saving = false;
+
+  @override
+  void dispose() { _vaccin.dispose(); _lot.dispose(); super.dispose(); }
+
+  Future<void> _save() async {
+    if (_vaccin.text.trim().isEmpty || _date == null) return;
+    setState(() => _saving = true);
+    try {
+      final id = DateTime.now().microsecondsSinceEpoch.toString();
+      await Supabase.instance.client.from('vaccinations').insert({
+        'id': id, 'animal_id': widget.animalId,
+        'vaccin': _vaccin.text.trim(), 'lot': _lot.text.trim(),
+        'veterinaire': widget.vetName,
+        'date': _date!.toIso8601String().substring(0, 10),
+        'date_rappel': _rappel?.toIso8601String().substring(0, 10),
+        'source': 'veterinaire', 'vet_id': widget.vetUid,
+      });
+      if (_rappel != null) {
+        await _scheduleRappelAgenda(
+          animalId: widget.animalId, dateRappel: _rappel!,
+          titre: 'Rappel vaccin — ${_vaccin.text.trim()}',
+        );
+      }
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Widget _tf(String label, TextEditingController ctrl) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: TextFormField(controller: ctrl,
+      style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+      decoration: InputDecoration(labelText: label,
+        labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF6E9E57))),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true)));
+
+  Widget _dp(BuildContext ctx, String label, DateTime? val, ValueChanged<DateTime> onChanged) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: GestureDetector(onTap: () async {
+      final p = await showDatePicker(context: ctx, initialDate: val ?? DateTime.now(),
+        firstDate: DateTime(2000), lastDate: DateTime(2060),
+        builder: (c, child) => Theme(data: Theme.of(c).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))), child: child!));
+      if (p != null) onChanged(p);
+    }, child: InputDecorator(
+      decoration: InputDecoration(labelText: label,
+        labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true,
+        suffixIcon: const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF6E9E57))),
+      child: Text(val != null ? DateFormat('dd/MM/yyyy').format(val) : 'Sélectionner',
+        style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: val != null ? const Color(0xFF1F2A2E) : Colors.grey)))));
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: const Text('Vaccin (vétérinaire)', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        _tf('Vaccin *', _vaccin),
+        _tf('N° de lot', _lot),
+        _dp(context, 'Date *', _date, (d) => setState(() => _date = d)),
+        _dp(context, 'Date de rappel', _rappel, (d) => setState(() => _rappel = d)),
+      ])),
+      actions: _saving
+          ? [const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator())]
+          : [
+              TextButton(onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+              TextButton(onPressed: _save,
+                  child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+            ],
+    );
+  }
+}
+
+// ─── VET06 : dialog ajout traitement vétérinaire ─────────────────────────────
+
+class _VetAddTraitementDialog extends StatefulWidget {
+  final String animalId, vetUid, vetName;
+  const _VetAddTraitementDialog({required this.animalId, required this.vetUid, required this.vetName});
+  @override State<_VetAddTraitementDialog> createState() => _VetAddTraitementDialogState();
+}
+class _VetAddTraitementDialogState extends State<_VetAddTraitementDialog> {
+  final _nom       = TextEditingController();
+  final _posologie = TextEditingController();
+  String _type = 'medicament';
+  DateTime? _date, _dateFin;
+  bool _saving = false;
+
+  @override
+  void dispose() { _nom.dispose(); _posologie.dispose(); super.dispose(); }
+
+  Future<void> _save() async {
+    if (_nom.text.trim().isEmpty || _date == null) return;
+    setState(() => _saving = true);
+    try {
+      final id = DateTime.now().microsecondsSinceEpoch.toString();
+      await Supabase.instance.client.from('traitements').insert({
+        'id': id, 'animal_id': widget.animalId,
+        'type': _type, 'nom': _nom.text.trim(), 'posologie': _posologie.text.trim(),
+        'date': _date!.toIso8601String().substring(0, 10),
+        'date_fin': _dateFin?.toIso8601String().substring(0, 10),
+        'source': 'veterinaire', 'vet_id': widget.vetUid,
+        'veterinaire': widget.vetName,
+      });
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  static const _types = ['medicament', 'antiparasitaire', 'antibiotique', 'anti-inflammatoire', 'autre'];
+
+  Widget _tf(String label, TextEditingController ctrl, {int maxLines = 1}) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: TextFormField(controller: ctrl, maxLines: maxLines,
+      style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+      decoration: InputDecoration(labelText: label,
+        labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF6E9E57))),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true)));
+
+  Widget _dp(BuildContext ctx, String label, DateTime? val, ValueChanged<DateTime> onChanged) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: GestureDetector(onTap: () async {
+      final p = await showDatePicker(context: ctx, initialDate: val ?? DateTime.now(),
+        firstDate: DateTime(2000), lastDate: DateTime(2060),
+        builder: (c, child) => Theme(data: Theme.of(c).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))), child: child!));
+      if (p != null) onChanged(p);
+    }, child: InputDecorator(
+      decoration: InputDecoration(labelText: label,
+        labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true,
+        suffixIcon: const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF6E9E57))),
+      child: Text(val != null ? DateFormat('dd/MM/yyyy').format(val) : 'Sélectionner',
+        style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: val != null ? const Color(0xFF1F2A2E) : Colors.grey)))));
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: const Text('Traitement (vétérinaire)', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Padding(padding: const EdgeInsets.only(bottom: 10),
+          child: DropdownButtonFormField<String>(value: _type,
+            decoration: InputDecoration(labelText: 'Type',
+              labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
+            items: _types.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
+            onChanged: (v) { if (v != null) setState(() => _type = v); })),
+        _tf('Nom du produit *', _nom),
+        _tf('Posologie', _posologie),
+        _dp(context, 'Date début *', _date, (d) => setState(() => _date = d)),
+        _dp(context, 'Date fin', _dateFin, (d) => setState(() => _dateFin = d)),
+      ])),
+      actions: _saving
+          ? [const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator())]
+          : [
+              TextButton(onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+              TextButton(onPressed: _save,
+                  child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+            ],
+    );
+  }
+}
+
+// ─── VET06 : dialog ajout visite vétérinaire ─────────────────────────────────
+
+class _VetAddVisiteDialog extends StatefulWidget {
+  final String animalId, vetUid, vetName;
+  const _VetAddVisiteDialog({required this.animalId, required this.vetUid, required this.vetName});
+  @override State<_VetAddVisiteDialog> createState() => _VetAddVisiteDialogState();
+}
+class _VetAddVisiteDialogState extends State<_VetAddVisiteDialog> {
+  static const _motifs = ['Consultation', 'Rappel de vaccin', 'Urgence', 'Suivi post-opératoire', 'Contrôle', 'Autre'];
+  String _motif = 'Consultation';
+  final _diag  = TextEditingController();
+  final _notes = TextEditingController();
+  DateTime? _date;
+  bool _saving = false;
+
+  @override
+  void dispose() { _diag.dispose(); _notes.dispose(); super.dispose(); }
+
+  Future<void> _save() async {
+    if (_date == null) return;
+    setState(() => _saving = true);
+    try {
+      final id = DateTime.now().microsecondsSinceEpoch.toString();
+      await Supabase.instance.client.from('visites').insert({
+        'id': id, 'animal_id': widget.animalId,
+        'motif': _motif, 'veterinaire': widget.vetName,
+        'date': _date!.toIso8601String().substring(0, 10),
+        'diagnostic': _diag.text.trim(), 'notes': _notes.text.trim(),
+        'source': 'veterinaire', 'vet_id': widget.vetUid,
+      });
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Widget _tf(String label, TextEditingController ctrl, {int maxLines = 1}) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: TextFormField(controller: ctrl, maxLines: maxLines,
+      style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+      decoration: InputDecoration(labelText: label,
+        labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF6E9E57))),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true)));
+
+  Widget _dp(BuildContext ctx, String label, DateTime? val, ValueChanged<DateTime> onChanged) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: GestureDetector(onTap: () async {
+      final p = await showDatePicker(context: ctx, initialDate: val ?? DateTime.now(),
+        firstDate: DateTime(2000), lastDate: DateTime(2060),
+        builder: (c, child) => Theme(data: Theme.of(c).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))), child: child!));
+      if (p != null) onChanged(p);
+    }, child: InputDecorator(
+      decoration: InputDecoration(labelText: label,
+        labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true,
+        suffixIcon: const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF6E9E57))),
+      child: Text(val != null ? DateFormat('dd/MM/yyyy').format(val) : 'Sélectionner',
+        style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: val != null ? const Color(0xFF1F2A2E) : Colors.grey)))));
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: const Text('Visite vétérinaire', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Padding(padding: const EdgeInsets.only(bottom: 10),
+          child: DropdownButtonFormField<String>(value: _motif,
+            decoration: InputDecoration(labelText: 'Motif *',
+              labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
+            items: _motifs.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
+            onChanged: (v) { if (v != null) setState(() => _motif = v); })),
+        _dp(context, 'Date *', _date, (d) => setState(() => _date = d)),
+        _tf('Diagnostic / Observations', _diag),
+        _tf('Notes', _notes, maxLines: 3),
+      ])),
+      actions: _saving
+          ? [const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator())]
+          : [
+              TextButton(onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+              TextButton(onPressed: _save,
+                  child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+            ],
     );
   }
 }
