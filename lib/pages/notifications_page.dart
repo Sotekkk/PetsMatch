@@ -11,6 +11,7 @@ import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -134,6 +135,19 @@ class _NotificationsPageState extends State<NotificationsPage> {
           animalId: animalId,
           animalNom: animalNom,
         );
+      }
+      return;
+    }
+    if (type == 'sante_vet') {
+      final animalId = data is Map ? (data['animalId'] as String?) : null;
+      if (animalId != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AnimalFichePage(
+            animalId: animalId,
+            readOnly: true,
+            initialTabIndex: 2, // Santé tab in owner mode (0=Identité, 1=Repro, 2=Santé)
+          ),
+        ));
       }
       return;
     }

@@ -146,6 +146,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   void initState() {
     super.initState();
     _tabs = TabController(length: 5, vsync: this);
+    if (widget.initialTabIndex != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (widget.initialTabIndex! < _tabs.length) _tabs.animateTo(widget.initialTabIndex!);
+      });
+    }
     _editing = widget.animalId == null; // new animal → edit mode directly
     if (widget.preselectedEspece != null) _espece = widget.preselectedEspece!;
     _fillFromData(widget.initialData); // pre-fill instantly from cached data
@@ -2606,6 +2611,7 @@ class _CarnetSanteTab extends StatelessWidget {
     (key: 'allergies',        label: 'Allergies',             icon: Icons.warning_amber_outlined,        color: Color(0xFFE25C5C)),
     (key: 'poids',            label: 'Courbe de poids',       icon: Icons.monitor_weight_outlined,       color: Color(0xFF5F9EAA)),
     (key: 'visites',          label: 'Visites vétérinaires',  icon: Icons.medical_services_outlined,     color: Color(0xFF26A69A)),
+    (key: 'radios',           label: 'Radios / Examens',       icon: Icons.image_search_outlined,          color: Color(0xFF0284C7)),
   ];
 
   @override
@@ -2707,6 +2713,7 @@ class _SanteDetailPage extends StatelessWidget {
       case 'traitements':      return _AddTraitementDialog(animalId: animalId);
       case 'allergies':        return _AddAllergieDialog(animalId: animalId);
       case 'visites':          return _AddVisiteDialog(animalId: animalId);
+      case 'radios':           return _AddRadioDialog(animalId: animalId);
       default:                 return _AddVaccinDialog(animalId: animalId);
     }
   }
@@ -2767,6 +2774,7 @@ class _SanteListState extends State<_SanteList> {
     if (widget.collection == 'vermifuges')       return data['produit'] ?? 'Vermifuge';
     if (widget.collection == 'antiparasitaires') return data['produit'] ?? data['type'] ?? 'Antiparasitaire';
     if (widget.collection == 'allergies')        return data['description'] ?? data['type'] ?? 'Allergie';
+    if (widget.collection == 'radios')           return data['titre'] ?? 'Radio / Examen';
     return data['motif'] ?? 'Visite';
   }
 
@@ -3031,7 +3039,8 @@ class _SanteCard extends StatelessWidget {
     'type': 'Type', 'nom': 'Nom', 'posologie': 'Posologie',
     'description': 'Description', 'severite': 'Sévérité',
     'motif': 'Motif', 'diagnostic': 'Diagnostic', 'notes': 'Notes',
-    'valeur': 'Poids (kg)',
+    'valeur': 'Poids (kg)', 'titre': 'Titre',
+    'image_url': 'Pièce jointe', 'doc_url': 'Document',
   };
 
   static String _fmtVal(String key, dynamic val) {
@@ -3073,9 +3082,10 @@ class _SanteCard extends StatelessWidget {
             ]),
             const Divider(),
             ...entries.map((e) {
-              final label = _labels[e.key] ?? e.key;
-              final val   = _fmtVal(e.key, e.value);
+              final label  = _labels[e.key] ?? e.key;
+              final val    = _fmtVal(e.key, e.value);
               if (val.isEmpty) return const SizedBox.shrink();
+              final isUrl  = e.key.endsWith('_url') && val.startsWith('http');
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Row(
@@ -3091,11 +3101,22 @@ class _SanteCard extends StatelessWidget {
                               fontWeight: FontWeight.w500)),
                     ),
                     Expanded(
-                      child: Text(val,
-                          style: const TextStyle(
-                              fontFamily: 'Galey',
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600)),
+                      child: isUrl
+                          ? GestureDetector(
+                              onTap: () async {
+                                final uri = Uri.tryParse(val);
+                                if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+                              },
+                              child: Text('Ouvrir le fichier',
+                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                                      fontWeight: FontWeight.w600, color: Color(0xFF0284C7),
+                                      decoration: TextDecoration.underline)),
+                            )
+                          : Text(val,
+                              style: const TextStyle(
+                                  fontFamily: 'Galey',
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600)),
                     ),
                   ],
                 ),
@@ -7700,11 +7721,15 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
         _supa.from('visites').select()
             .eq('animal_id', widget.animalId!).eq('vet_id', vetUid)
             .order('date', ascending: false),
+        _supa.from('radios').select()
+            .eq('animal_id', widget.animalId!).eq('vet_id', vetUid)
+            .order('date', ascending: false),
       ]);
       final entries = [
         ...List<Map<String, dynamic>>.from(results[2]).map((v) => {...v, '_col': 'vaccinations', '_label': v['vaccin'] ?? 'Vaccin'}),
         ...List<Map<String, dynamic>>.from(results[3]).map((t) => {...t, '_col': 'traitements',  '_label': t['nom'] ?? 'Traitement'}),
         ...List<Map<String, dynamic>>.from(results[4]).map((v) => {...v, '_col': 'visites',      '_label': v['motif'] ?? 'Visite'}),
+        ...List<Map<String, dynamic>>.from(results[5]).map((r) => {...r, '_col': 'radios',       '_label': r['titre'] ?? 'Radio / Examen'}),
       ]..sort((a, b) => (b['date'] ?? '').compareTo(a['date'] ?? ''));
       if (mounted) setState(() {
         _crs         = List<Map<String, dynamic>>.from(results[0]);
@@ -7749,6 +7774,8 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
             (Icons.vaccines_outlined,         const Color(0xFF0C5C6C),  '💉 Vaccin',              'vaccin'),
             (Icons.medication_outlined,        const Color(0xFF8D6E63),  '💊 Traitement',           'traitement'),
             (Icons.medical_services_outlined,  const Color(0xFF26A69A),  '🩺 Visite vétérinaire',   'visite'),
+            (Icons.description_outlined,       const Color(0xFF6D28D9),  '📄 Ordonnance PDF',       'ordo'),
+            (Icons.image_search_outlined,      const Color(0xFF0284C7),  '🩻 Radio / Examen',       'radio'),
           ]) ...[
             ListTile(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -7786,6 +7813,15 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
         break;
       case 'traitement':
         dialog = _VetAddTraitementDialog(
+            animalId: widget.animalId!, vetUid: vetUid, vetName: vetName);
+        break;
+      case 'ordo':
+        dialog = _VetAddOrdoDialog(
+            animalId: widget.animalId!, vetUid: vetUid, vetName: vetName,
+            ownerUid: widget.ownerUid);
+        break;
+      case 'radio':
+        dialog = _VetAddRadioDialog(
             animalId: widget.animalId!, vetUid: vetUid, vetName: vetName);
         break;
       default:
@@ -8281,11 +8317,13 @@ class _VetSanteEntryCard extends StatelessWidget {
     'vaccinations': Icons.vaccines_outlined,
     'traitements':  Icons.medication_outlined,
     'visites':      Icons.medical_services_outlined,
+    'radios':       Icons.image_search_outlined,
   };
   static const _colColor = {
     'vaccinations': Color(0xFF0C5C6C),
     'traitements':  Color(0xFF8D6E63),
     'visites':      Color(0xFF26A69A),
+    'radios':       Color(0xFF0284C7),
   };
 
   @override
@@ -8317,7 +8355,7 @@ class _VetSanteEntryCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
           ),
           child: Text(
-            col == 'vaccinations' ? 'Vaccin' : col == 'traitements' ? 'Traitement' : 'Visite',
+            col == 'vaccinations' ? 'Vaccin' : col == 'traitements' ? 'Traitement' : col == 'radios' ? 'Radio' : 'Visite',
             style: TextStyle(fontFamily: 'Galey', fontSize: 10,
                 fontWeight: FontWeight.w600, color: color),
           ),
@@ -8622,4 +8660,318 @@ class _VetAddVisiteDialogState extends State<_VetAddVisiteDialog> {
             ],
     );
   }
+}
+
+// ─── VET06 : dialog ajout ordonnance PDF ─────────────────────────────────────
+
+class _VetAddOrdoDialog extends StatefulWidget {
+  final String animalId, vetUid, vetName;
+  final String? ownerUid;
+  const _VetAddOrdoDialog({required this.animalId, required this.vetUid,
+      required this.vetName, this.ownerUid});
+  @override State<_VetAddOrdoDialog> createState() => _VetAddOrdoDialogState();
+}
+class _VetAddOrdoDialogState extends State<_VetAddOrdoDialog> {
+  final _notes = TextEditingController();
+  DateTime _date = DateTime.now();
+  File? _pdfFile;
+  bool _saving = false;
+
+  @override
+  void dispose() { _notes.dispose(); super.dispose(); }
+
+  Future<void> _pickPdf() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom, allowedExtensions: ['pdf'],
+    );
+    if (result != null && result.files.single.path != null) {
+      setState(() => _pdfFile = File(result.files.single.path!));
+    }
+  }
+
+  Future<void> _save() async {
+    if (_pdfFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Veuillez sélectionner un fichier PDF')));
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final name  = '${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final url   = await uploadRawFile(_pdfFile!, 'ordonnances/${widget.vetUid}/$name');
+      final today = _date;
+      final id    = DateTime.now().microsecondsSinceEpoch.toString();
+      await Supabase.instance.client.from('ordonnances').insert({
+        'id':        id,
+        'pro_uid':   widget.vetUid,
+        'animal_id': widget.animalId,
+        if (widget.ownerUid != null) 'owner_uid': widget.ownerUid,
+        'doc_url':   url,
+        'date_emit': '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}',
+        if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim(),
+        'source':    'veterinaire',
+      });
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: const Text('Ordonnance PDF', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Padding(padding: const EdgeInsets.only(bottom: 10),
+          child: GestureDetector(onTap: () async {
+            final p = await showDatePicker(context: context, initialDate: _date,
+              firstDate: DateTime(2000), lastDate: DateTime(2060),
+              builder: (c, child) => Theme(data: Theme.of(c).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6D28D9))), child: child!));
+            if (p != null) setState(() => _date = p);
+          }, child: InputDecorator(
+            decoration: InputDecoration(labelText: 'Date',
+              labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true,
+              suffixIcon: const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF6D28D9))),
+            child: Text(DateFormat('dd/MM/yyyy').format(_date),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)))))),
+        OutlinedButton.icon(
+          onPressed: _pickPdf,
+          icon: const Icon(Icons.upload_file, size: 18, color: Color(0xFF6D28D9)),
+          label: Text(
+            _pdfFile != null ? _pdfFile!.path.split('/').last : 'Sélectionner un PDF *',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6D28D9)),
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+          ),
+          style: OutlinedButton.styleFrom(
+            side: BorderSide(color: _pdfFile != null ? const Color(0xFF6D28D9) : Colors.grey.shade300),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            minimumSize: const Size(double.infinity, 44),
+            alignment: Alignment.centerLeft,
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextFormField(
+          controller: _notes, maxLines: 3,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+          decoration: InputDecoration(labelText: 'Notes / Posologie',
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF6D28D9))),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true),
+        ),
+      ])),
+      actions: _saving
+          ? [const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(color: Color(0xFF6D28D9)))]
+          : [
+              TextButton(onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+              TextButton(onPressed: _save,
+                  child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Color(0xFF6D28D9)))),
+            ],
+    );
+  }
+}
+
+// ─── VET06 : dialog ajout radio / examen ─────────────────────────────────────
+
+class _VetAddRadioDialog extends StatefulWidget {
+  final String animalId, vetUid, vetName;
+  const _VetAddRadioDialog({required this.animalId, required this.vetUid, required this.vetName});
+  @override State<_VetAddRadioDialog> createState() => _VetAddRadioDialogState();
+}
+class _VetAddRadioDialogState extends State<_VetAddRadioDialog> {
+  final _titre = TextEditingController();
+  final _notes = TextEditingController();
+  DateTime _date = DateTime.now();
+  File? _imgFile;
+  bool _saving = false;
+
+  @override
+  void dispose() { _titre.dispose(); _notes.dispose(); super.dispose(); }
+
+  Future<void> _pickImage() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom, allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+    );
+    if (result != null && result.files.single.path != null) {
+      setState(() => _imgFile = File(result.files.single.path!));
+    }
+  }
+
+  Future<void> _save() async {
+    if (_imgFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Veuillez sélectionner un fichier')));
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final name = '${DateTime.now().millisecondsSinceEpoch}.${_imgFile!.path.split('.').last}';
+      final url  = await uploadRawFile(_imgFile!, 'radios/${widget.vetUid}/$name');
+      final id   = DateTime.now().microsecondsSinceEpoch.toString();
+      await Supabase.instance.client.from('radios').insert({
+        'id':          id,
+        'animal_id':   widget.animalId,
+        'vet_id':      widget.vetUid,
+        'veterinaire': widget.vetName,
+        'titre':       _titre.text.trim().isNotEmpty ? _titre.text.trim() : 'Radio / Examen',
+        'notes':       _notes.text.trim(),
+        'image_url':   url,
+        'date':        '${_date.year}-${_date.month.toString().padLeft(2,'0')}-${_date.day.toString().padLeft(2,'0')}',
+        'source':      'veterinaire',
+      });
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: const Text('Radio / Examen', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Padding(padding: const EdgeInsets.only(bottom: 10),
+          child: TextFormField(controller: _titre,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+            decoration: InputDecoration(labelText: 'Titre (ex: Radio thorax)',
+              labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF0284C7))),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true))),
+        Padding(padding: const EdgeInsets.only(bottom: 10),
+          child: GestureDetector(onTap: () async {
+            final p = await showDatePicker(context: context, initialDate: _date,
+              firstDate: DateTime(2000), lastDate: DateTime(2060),
+              builder: (c, child) => Theme(data: Theme.of(c).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF0284C7))), child: child!));
+            if (p != null) setState(() => _date = p);
+          }, child: InputDecorator(
+            decoration: InputDecoration(labelText: 'Date',
+              labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true,
+              suffixIcon: const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF0284C7))),
+            child: Text(DateFormat('dd/MM/yyyy').format(_date),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)))))),
+        OutlinedButton.icon(
+          onPressed: _pickImage,
+          icon: const Icon(Icons.upload_file, size: 18, color: Color(0xFF0284C7)),
+          label: Text(
+            _imgFile != null ? _imgFile!.path.split('/').last : 'Sélectionner un fichier (image/PDF) *',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF0284C7)),
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+          ),
+          style: OutlinedButton.styleFrom(
+            side: BorderSide(color: _imgFile != null ? const Color(0xFF0284C7) : Colors.grey.shade300),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            minimumSize: const Size(double.infinity, 44),
+            alignment: Alignment.centerLeft,
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextFormField(
+          controller: _notes, maxLines: 2,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+          decoration: InputDecoration(labelText: 'Observations',
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF0284C7))),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true),
+        ),
+      ])),
+      actions: _saving
+          ? [const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(color: Color(0xFF0284C7)))]
+          : [
+              TextButton(onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+              TextButton(onPressed: _save,
+                  child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Color(0xFF0284C7)))),
+            ],
+    );
+  }
+}
+
+// ─── Owner : dialog ajout radio / examen ─────────────────────────────────────
+
+class _AddRadioDialog extends StatefulWidget {
+  final String animalId;
+  const _AddRadioDialog({required this.animalId});
+  @override State<_AddRadioDialog> createState() => _AddRadioDialogState();
+}
+class _AddRadioDialogState extends State<_AddRadioDialog> {
+  final _titre = TextEditingController();
+  final _notes = TextEditingController();
+  DateTime? _date;
+  File? _file;
+  bool _saving = false;
+
+  @override
+  void dispose() { _titre.dispose(); _notes.dispose(); super.dispose(); }
+
+  Future<void> _pickFile() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom, allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+    );
+    if (result != null && result.files.single.path != null) {
+      setState(() => _file = File(result.files.single.path!));
+    }
+  }
+
+  Future<void> _save() async {
+    if (_file == null || _date == null) return;
+    setState(() => _saving = true);
+    try {
+      final uid  = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+      final name = '${DateTime.now().millisecondsSinceEpoch}.${_file!.path.split('.').last}';
+      final url  = await uploadRawFile(_file!, 'radios/$uid/$name');
+      final id   = DateTime.now().microsecondsSinceEpoch.toString();
+      await Supabase.instance.client.from('radios').insert({
+        'id':        id, 'animal_id': widget.animalId,
+        'titre':     _titre.text.trim().isNotEmpty ? _titre.text.trim() : 'Radio / Examen',
+        'notes':     _notes.text.trim(), 'image_url': url,
+        'date':      '${_date!.year}-${_date!.month.toString().padLeft(2,'0')}-${_date!.day.toString().padLeft(2,'0')}',
+      });
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => _BaseDialog(
+    title: 'Ajouter une radio / examen',
+    fields: [
+      _DF('Titre (ex: Radio thorax)', _titre),
+      _DD('Date *', _date, (d) => setState(() => _date = d)),
+      _DF('Observations', _notes, maxLines: 2),
+    ],
+    onSave: () async {
+      if (_file == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Sélectionnez d\'abord un fichier')));
+        return false;
+      }
+      if (_date == null) return false;
+      await _save();
+      return false;
+    },
+  );
 }
