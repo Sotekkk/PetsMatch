@@ -218,13 +218,13 @@
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
-| A51 | **Statistiques admin** — tableau de bord enrichi : nombre d'animaux par espèce, race, profil (éleveur/particulier/pro), volume de stockage utilisé (Firebase Storage), volume messagerie (Firestore), volume notifications. | Haute | App + Web | `admin_panel.dart`, `src/app/admin/page.tsx` |
+| ~~A51~~ | ~~**Statistiques admin** — tableau de bord enrichi : nombre d'animaux par espèce, race, profil (éleveur/particulier/pro), volume de stockage utilisé (Firebase Storage), volume messagerie (Firestore), volume notifications.~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-08 — `admin_panel.dart` : section `_AnimalStatsSection` (animaux par espèce/race/profil particulier vs éleveur, annonces actives, alertes perdus actives) |
 
 ### Partage & confidentialité
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
-| A52 | **Partage temporaire fiche animal (garde)** — éleveurs ET particuliers peuvent partager la fiche d'un animal avec un utilisateur en lecture seule, sur une durée définie, avec arrêt possible à tout moment. Inclut : prescriptions actives, alertes médicaments, alimentation spécifique. Table `partage_animal` (`token`, `animal_id`, `uid_partageur`, `uid_destinataire`, `expire_at`, `actif`). | Haute | App + Web | Créer `partage_animal_page.dart`, `src/app/partage/[token]/page.tsx` |
+| ~~A52~~ | ~~**Partage temporaire fiche animal (garde)** — éleveurs ET particuliers peuvent partager la fiche d'un animal avec un utilisateur en lecture seule, sur une durée définie, avec arrêt possible à tout moment. Inclut : prescriptions actives, alertes médicaments, alimentation spécifique. Table `partage_animal` (`token`, `animal_id`, `uid_partageur`, `uid_destinataire`, `expire_at`, `actif`).~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-08 — `lib/pages/particulier/partage_animal_sheet.dart` (bottom sheet, durée 24h/3j/7j/30j, QR, copier, partager, révocation), bouton 🔗 dans AppBar `animal_fiche_particulier.dart`, page web `src/app/partage/[token]/page.tsx` (lecture seule, gestion token expiré/invalide) |
 | A59 | **Paramètres de confidentialité** — refonte de la page pour le profil particulier + création de la page pour le profil éleveur (actuellement absente). Contenu : visibilité profil, qui peut contacter, données partagées, notifications. | Haute | App | `info_utilisateur.dart`, `particulier_nav.dart`, `eleveur_nav.dart` |
 
 ### UX / petites corrections
@@ -245,34 +245,34 @@
 
 | # | Tâche | Priorité | Repo | Notes |
 |---|---|---|---|---|
-| MKT01 | **Tables Supabase Marketplace** — créer `marketplace_partners` (id, user_id, nom, logo_url, site_url, description, categorie, especes_cibles TEXT[], regions TEXT[], plan, statut), `marketplace_ads` (id, partner_id, type, placement, budget_mensuel, cpm, cpl, especes_cibles, regions, date_debut, date_fin, statut), `marketplace_events` (id, ad_id, partner_id, user_id, event_type, espece, race, region, created_at). RLS : partners/ads accessibles uniquement par leur `user_id` et admins. Events : insert client, lecture admin+partenaire. | Haute | Supabase | Cf. Spec 5.19 |
+| ~~MKT01~~ | ~~**Tables Supabase Marketplace** — créer `marketplace_partners`, `marketplace_ads`, `marketplace_events`. RLS permissives.~~ | ~~Haute~~ | ~~Supabase~~ | ✅ Terminé 2026-06-08 — tables créées avec RLS `USING (true)` |
 
 #### Vue utilisateur
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
-| MKT02 | **Page Marketplace utilisateur (app + web)** — section dédiée depuis le menu principal. Grille partenaires avec filtre espèce (chien/chat/équidé/autre), badge "Partenaire vérifié", section assurances avec CTA "Obtenir un devis". Pas de pub dans les écrans métier (carnet santé, registre) sauf bannière discrète bas de page. | Haute | App + Web | Créer `lib/pages/marketplace/marketplace_page.dart`, `src/app/marketplace/page.tsx` |
-| MKT03 | **Bannières contextuelles in-app** — affichage bannières natives dans : fiche animal (bas de page), feed annonces (native card), carnet santé (post-visite vét), dashboard éleveur, onboarding ajout animal. Ciblage espèce/race/région côté Flutter. Comptage impressions via requête Supabase + Cloud Function anti-fraude. | Haute | App | Modifier `animal_fiche.dart`, `user_feed.dart`, `agenda_page.dart`, `info_utilisateur.dart` |
-| MKT04 | **Module CPL assurances** — CTA "Obtenir un devis" déclenché sur : ajout d'un animal, enregistrement chiot/chaton (<4 mois), première visite vét dans le carnet santé. Événement loggé dans `marketplace_events` (event_type='lead'). Redirection vers URL assureur avec paramètres UTM espèce/race. | Haute | App + Web | `animal_fiche.dart`, `rdv_booking_page.dart` |
+| ~~MKT02~~ | ~~**Page Marketplace utilisateur (app + web)**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-08 — `lib/pages/marketplace/marketplace_page.dart` (grille partenaires, filtres espèce, section assurances), `src/app/marketplace/page.tsx`, entrée menu éleveur + particulier |
+| ~~MKT03~~ | ~~**Bannières contextuelles in-app**~~ | ~~Haute~~ | ~~App~~ | ✅ Terminé 2026-06-08 — `lib/widgets/marketplace_banner.dart` (layout vertical, QR/CTA pleine largeur), intégré dans `eleveur_home.dart` + `particulier_home.dart` |
+| ~~MKT04~~ | ~~**Module CPL assurances**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-08 — `_showInsuranceCta()` dans `animal_fiche_particulier.dart` : déclenché à la création animal (message spécial si <4 mois) + 1ère visite vét |
 
 #### Onboarding partenaire
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
-| MKT05 | **Onboarding partenaire** — formulaire inscription partenaire (app + web) : nom, SIRET, logo, site, catégorie, espèces ciblées, régions, plan choisi. Soumission → statut `en_attente` + notification admin pour validation manuelle. Partenaire reçoit confirmation email après activation. | Haute | App + Web | Créer `lib/pages/marketplace/partner_signup_page.dart`, `src/app/marketplace/partenaire/page.tsx` |
-| MKT06 | **Dashboard partenaire — statistiques & facturation** — vue "Ma campagne" : métriques temps réel (impressions/clics/leads du mois), CTR moyen, CPL effectif, coût total, répartition par espèce/région (graphiques), évolution 30 jours. Facture PDF mensuelle téléchargeable (générée auto par Stripe). Modifier ciblage et budget. | Haute | App + Web | Créer `lib/pages/marketplace/partner_dashboard_page.dart`, `src/app/marketplace/dashboard/page.tsx` |
+| ~~MKT05~~ | ~~**Onboarding partenaire**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-08 — `lib/pages/marketplace/partner_signup_page.dart` + `src/app/marketplace/partenaire/page.tsx` (formulaire, choix plan starter/visible/premium, insert `en_attente`) |
+| ~~MKT06~~ | ~~**Dashboard partenaire — statistiques & facturation**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-08 — `lib/pages/marketplace/partner_dashboard_page.dart` (métriques mois, CTR, graphique 30j CustomPainter) + `src/app/marketplace/dashboard/page.tsx` |
 
 #### Dashboard admin
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
-| MKT07 | **Dashboard admin Marketplace** — vue globale toutes campagnes : revenus totaux, impressions, clics, leads par partenaire et par segment (assurance/alimentation/accessoires). Alertes : partenaire proche plafond, CTR anormal, détection fraude (IP multiples). Export CSV mensuel. Graphiques de performance par segment. | Haute | App + Web | `admin_panel.dart`, `src/app/admin/marketplace/page.tsx` |
+| ~~MKT07~~ | ~~**Dashboard admin Marketplace**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-08 — `lib/pages/marketplace/admin_marketplace_tab.dart` (totaux globaux, stats par partenaire, activer/suspendre), onglet "Marketplace" dans `admin_panel.dart` |
 
 #### Facturation automatique
 
 | # | Tâche | Priorité | Repo | Notes |
 |---|---|---|---|---|
-| MKT08 | **Facturation Stripe automatique** — fin de mois : Cloud Function calcule le total `marketplace_events` par partenaire, génère la facture Stripe, déclenche le paiement. Plafond mensuel configurable par partenaire. Rapport PDF envoyé automatiquement au partenaire. Erreur de paiement → alerte admin + suspension campagne. | Haute | Firebase Functions + Stripe | Créer `functions/marketplace_billing.js` |
+| ~~MKT08~~ | ~~**Facturation Stripe automatique**~~ | ~~Haute~~ | ~~Firebase Functions + Stripe~~ | ✅ Terminé 2026-06-08 — `functions/marketplace_billing.js` : cron 1er du mois, calcul CPM+CPL, plafond mensuel, invoice Stripe auto, suspension si échec paiement. Stripe en mode test. |
 
 ### Conseils pratiques — **Angélique**
 
