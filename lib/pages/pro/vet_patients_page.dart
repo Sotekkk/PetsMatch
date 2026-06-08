@@ -39,7 +39,9 @@ class _VetPatientsPageState extends State<VetPatientsPage>
     super.initState();
     _tabCtrl = TabController(length: 2, vsync: this);
     _tabCtrl.addListener(() {
-      if (_tabCtrl.index == 1 && _rdvsJour.isEmpty && !_loadingAgenda) {
+      // Recharger l'agenda à chaque fois qu'on ouvre l'onglet (pas pendant l'animation)
+      if (!_tabCtrl.indexIsChanging && _tabCtrl.index == 1 && !_loadingAgenda) {
+        setState(() => _rdvsJour = []);
         _loadAgenda();
       }
     });
@@ -457,15 +459,31 @@ class _VetPatientsPageState extends State<VetPatientsPage>
       Expanded(
         child: _loadingAgenda
             ? const Center(child: CircularProgressIndicator(color: _teal))
-            : _rdvsJour.isEmpty
-                ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.event_available_outlined, size: 64, color: Colors.grey.shade200),
-                    const SizedBox(height: 12),
-                    Text('Aucun RDV ce jour', style: TextStyle(
-                        fontFamily: 'Galey', fontSize: 15,
-                        color: Colors.grey.shade400, fontWeight: FontWeight.w600)),
-                  ]))
+            : RefreshIndicator(
+                onRefresh: () async {
+                  setState(() => _rdvsJour = []);
+                  await _loadAgenda();
+                },
+                color: _teal,
+                child: _rdvsJour.isEmpty
+                ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 80),
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.event_available_outlined, size: 64, color: Colors.grey.shade200),
+                        const SizedBox(height: 12),
+                        Text('Aucun RDV ce jour', style: TextStyle(
+                            fontFamily: 'Galey', fontSize: 15,
+                            color: Colors.grey.shade400, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        Text('Tirez vers le bas pour actualiser',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                color: Colors.grey.shade300)),
+                      ]),
+                    ),
+                  ])
                 : ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                     itemCount: _rdvsJour.length,
                     itemBuilder: (_, i) => _RdvJourCard(
@@ -477,6 +495,7 @@ class _VetPatientsPageState extends State<VetPatientsPage>
                       },
                     ),
                   ),
+              ),
       ),
     ]);
   }

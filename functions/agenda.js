@@ -190,7 +190,7 @@ exports.sendRdvReminders = functions
         const to48 = new Date(now.getTime() + 49 * 3600 * 1000).toISOString();
 
         const rdvs48 = await supabaseSelect("rdv",
-            `statut=eq.confirme&reminder_48h_sent=eq.false` +
+            `statut=in.(confirme,demande)&reminder_48h_sent=eq.false` +
             `&date_heure=gte.${encodeURIComponent(from48)}` +
             `&date_heure=lte.${encodeURIComponent(to48)}`);
 
@@ -225,7 +225,7 @@ exports.sendRdvReminders = functions
         const to24 = new Date(now.getTime() + 25 * 3600 * 1000).toISOString();
 
         const rdvs24 = await supabaseSelect("rdv",
-            `statut=eq.confirme&reminder_24h_sent=eq.false` +
+            `statut=in.(confirme,demande)&reminder_24h_sent=eq.false` +
             `&date_heure=gte.${encodeURIComponent(from24)}` +
             `&date_heure=lte.${encodeURIComponent(to24)}`);
 
@@ -269,7 +269,7 @@ exports.sendRdvReminders = functions
         const to1h = new Date(now.getTime() + 75 * 60 * 1000).toISOString();
 
         const rdvs2h = await supabaseSelect("rdv",
-            `statut=eq.confirme&reminder_2h_sent=eq.false` +
+            `statut=in.(confirme,demande)&reminder_2h_sent=eq.false` +
             `&date_heure=gte.${encodeURIComponent(from1h)}` +
             `&date_heure=lte.${encodeURIComponent(to1h)}`);
 
@@ -306,7 +306,7 @@ exports.sendRdvReminders = functions
         const to30 = new Date(now.getTime() + 50 * 60 * 1000).toISOString();
 
         const rdvs30 = await supabaseSelect("rdv",
-            `statut=eq.confirme&reminder_30min_sent=eq.false` +
+            `statut=in.(confirme,demande)&reminder_30min_sent=eq.false` +
             `&date_heure=gte.${encodeURIComponent(from30)}` +
             `&date_heure=lte.${encodeURIComponent(to30)}`);
 
