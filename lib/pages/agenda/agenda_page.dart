@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/widgets/pro_day_timeline.dart';
 
 const _kTeal = Color(0xFF0C5C6C);
 
@@ -336,11 +337,23 @@ class _AgendaPageState extends State<AgendaPage> {
             onPressed: () => setState(() => _selectedDay = day.subtract(const Duration(days: 1))),
           ),
           Expanded(
-            child: Text(
-              DateFormat('EEEE d MMMM', 'fr').format(day),
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                  fontSize: 15, color: Color(0xFF1E2025)),
+            child: GestureDetector(
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: day,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2030),
+                  locale: const Locale('fr'),
+                );
+                if (picked != null && mounted) setState(() => _selectedDay = picked);
+              },
+              child: Text(
+                DateFormat('EEEE d MMMM', 'fr').format(day),
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 15, color: Color(0xFF1E2025)),
+              ),
             ),
           ),
           IconButton(
@@ -354,61 +367,43 @@ class _AgendaPageState extends State<AgendaPage> {
         child: RefreshIndicator(
           onRefresh: _load,
           color: _kTeal,
-          child: ListView.builder(
-            padding: const EdgeInsets.only(bottom: 80),
-            itemCount: 16, // 7h → 22h
-            itemBuilder: (_, i) {
-              final hour = 7 + i;
-              final hLabel = '${hour.toString().padLeft(2, "0")}:00';
-              // Événements qui démarrent dans cette heure
-              final startingHere = evts.where((e) {
-                final s = _parseDate(e['date_debut'] as String);
-                return s.hour == hour;
-              }).toList();
-
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Colonne heure
-                  SizedBox(
-                    width: 56,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 8, top: 10),
-                      child: Text(hLabel,
-                          textAlign: TextAlign.right,
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+          child: evts.isEmpty
+              ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 80, left: 32, right: 32),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.event_available_outlined, size: 64, color: Colors.grey.shade200),
+                      const SizedBox(height: 12),
+                      Text('Aucun événement ce jour',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 15,
                               color: Colors.grey.shade400, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                      Text('Appuyez sur + pour en ajouter un',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                              color: Colors.grey.shade300)),
+                    ]),
+                  ),
+                ])
+              : ProDayTimeline(
+                  rdvs: evts,
+                  date: day,
+                  heureDebut: 7,
+                  heureFin: 22,
+                  onRdvTap: (e) => showModalBottomSheet(
+                    context: context,
+                    useSafeArea: true,
+                    backgroundColor: Colors.white,
+                    shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                    builder: (_) => _DaySheet(
+                      day: day,
+                      events: [e],
+                      onAdd: () { Navigator.pop(context); _showAddSheet(initialDate: day); },
+                      onRefresh: _load,
                     ),
                   ),
-                  // Ligne verticale
-                  Container(width: 1, color: const Color(0xFFEEEEEE)),
-                  const SizedBox(width: 8),
-                  // Événements ou slot vide
-                  Expanded(
-                    child: startingHere.isEmpty
-                        ? GestureDetector(
-                            onTap: () => _showAddSheet(
-                                initialDate: DateTime(day.year, day.month, day.day, hour)),
-                            child: Container(
-                              height: 52,
-                              margin: const EdgeInsets.only(right: 12, bottom: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade50,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          )
-                        : Column(
-                            children: startingHere.map((e) => Padding(
-                              padding: const EdgeInsets.only(right: 12, top: 4, bottom: 4),
-                              child: _EventTile(event: e, onRefresh: _load),
-                            )).toList(),
-                          ),
-                  ),
-                ],
-              );
-            },
-          ),
+                  showCurrentTimeLine: true,
+                ),
         ),
       ),
     ]);

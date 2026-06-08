@@ -244,6 +244,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     final duration = _selectedDuration;
     if (_availableSlots.isEmpty) return {};
 
+    // Pour aujourd'hui, on ne propose que les créneaux futurs (+ 30 min de marge)
+    final now = DateTime.now();
+    final todayKey = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
+    final nowMinutes = now.hour * 60 + now.minute + 30; // marge 30 min
+
     // 1. Grouper les creneaux_pro par date
     final creneauxByDate = <String, List<({int startMin, int endMin})>>{};
     for (final slot in _availableSlots) {
@@ -289,6 +294,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final available = <Map<String, dynamic>>[];
       for (final window in windows) {
         for (int t = window.startMin; t + duration <= window.endMin; t += 15) {
+          // Pour aujourd'hui : ignorer les créneaux déjà passés (+ 30 min de marge)
+          if (date == todayKey && t < nowMinutes) continue;
           final overlaps = blocked.any((b) => t < b.endMin && t + duration > b.startMin);
           if (!overlaps) {
             final h = t ~/ 60;

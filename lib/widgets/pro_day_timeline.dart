@@ -158,29 +158,37 @@ class _RdvBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Supporte date_heure (rdv) ET date_debut (agenda_events)
+    final dhRaw = rdv['date_heure']?.toString() ?? rdv['date_debut']?.toString() ?? '';
     DateTime? dt;
-    try { dt = DateTime.parse(rdv['date_heure'].toString()).toLocal(); } catch (_) {}
+    try { dt = DateTime.parse(dhRaw).toLocal(); } catch (_) {}
     if (dt == null || dt.hour < heureDebut || dt.hour >= heureFin) {
       return const SizedBox.shrink();
     }
 
     final duree = (rdv['duree_minutes'] as num?)?.toDouble() ?? 30.0;
     final top = ((dt.hour - heureDebut) * 60 + dt.minute) * pixelsParMinute;
-    // Clamp la hauteur pour ne pas dépasser la zone visible
     final maxHeight = (heureFin - heureDebut) * 60 * pixelsParMinute - top;
     final height = (duree * pixelsParMinute).clamp(20.0, maxHeight);
-    final statut = rdv['statut']?.toString() ?? '';
+    final statut = rdv['statut']?.toString() ?? 'confirme';
     final isDemande = statut == 'demande';
     final isTermine = statut == 'termine' || statut == 'annule';
 
+    // Couleur : custom hex (agenda_events.couleur) > statut > défaut teal
     Color blockColor;
     Color textColor;
+    final customHex = rdv['couleur']?.toString();
     if (isTermine) {
       blockColor = Colors.grey.shade200;
       textColor = Colors.grey.shade500;
     } else if (isDemande) {
       blockColor = Colors.amber.shade50;
       textColor = Colors.amber.shade900;
+    } else if (customHex != null && customHex.isNotEmpty) {
+      try {
+        blockColor = Color(int.parse('FF${customHex.replaceAll('#', '')}', radix: 16));
+      } catch (_) { blockColor = const Color(0xFF26A69A); }
+      textColor = Colors.white;
     } else {
       blockColor = const Color(0xFF26A69A);
       textColor = Colors.white;
@@ -188,12 +196,11 @@ class _RdvBlock extends StatelessWidget {
 
     final animal = rdv['animal'] as Map<String, dynamic>?;
     final client = rdv['client'] as Map<String, dynamic>?;
-    final animalNom = animal?['nom']?.toString() ??
-        rdv['animal_nom']?.toString() ?? '';
+    final animalNom = animal?['nom']?.toString() ?? rdv['animal_nom']?.toString() ?? '';
     final photo = animal?['photo_url']?.toString() ?? '';
-    final motif = rdv['motif']?.toString() ?? '';
-    final heure =
-        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    // Supporte motif (rdv) et titre (agenda_events)
+    final motif = rdv['motif']?.toString() ?? rdv['titre']?.toString() ?? '';
+    final heure = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     final clientNom = _clientName(client);
 
     return Positioned(

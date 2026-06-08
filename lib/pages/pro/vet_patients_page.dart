@@ -415,8 +415,13 @@ class _VetPatientsPageState extends State<VetPatientsPage>
     try {
       await Supabase.instance.client
           .from('rdv').update({'statut': 'termine'}).eq('id', rdvId);
-      setState(() => _rdvsJour = []);
-      await _loadAgenda();
+      // Mise à jour en place : reste visible grisé sans recharger
+      setState(() {
+        final idx = _rdvsJour.indexWhere((r) => r['id']?.toString() == rdvId);
+        if (idx != -1) {
+          _rdvsJour[idx] = {..._rdvsJour[idx], 'statut': 'termine'};
+        }
+      });
     } catch (_) {}
   }
 
