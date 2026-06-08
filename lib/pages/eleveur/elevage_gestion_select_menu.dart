@@ -24,7 +24,7 @@ class _ElevageSelectGestionPageState extends State<ElevageSelectGestionPage> {
     super.initState();
     _checkSubscription();
     Stripe.publishableKey =
-        "pk_live_51Pagp22MpEB6OUl5VgLXP4GAW6gR3iqzNJ1Qn1tJu9KAUbIzogbnTdfvCsaVQsMwbI8cFdIlyzw35ygOY3inQhIl00EIrYZCCm"; // Remplacez par votre clé publique Stripe
+        "pk_test_51Pagp22MpEB6OUl5WhTICWegB3ibkSKDcVlmUDMFDdm7SWnfLmI8XM1aIKXWeslNjK7CSzJwe2yu64CW1bl0s3s100iwTo71nt";
   }
 
   Future<void> _checkSubscription() async {

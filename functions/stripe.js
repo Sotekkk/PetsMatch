@@ -1,7 +1,7 @@
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const stripe = require("stripe")(
-    "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",
+    "sk_test_51Pagp22MpEB6OUl5N3RDJvFx7l8dpxO1Az9RIWYEe8acl9eLtRz9xdfKd8W5GZKFuwJx1EX4sxHUP3CxLcPO0l0N00VDQZrUkb",
 );
 
 admin.initializeApp();
