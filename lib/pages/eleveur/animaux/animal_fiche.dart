@@ -8532,6 +8532,7 @@ class _VetAddTraitementDialogState extends State<_VetAddTraitementDialog> {
   String _type = 'medicament';
   DateTime? _date, _dateFin;
   bool _saving = false;
+  bool _posologieDansOrdo = false; // true = "voir ordonnance"
 
   @override
   void dispose() { _nom.dispose(); _posologie.dispose(); super.dispose(); }
@@ -8548,6 +8549,9 @@ class _VetAddTraitementDialogState extends State<_VetAddTraitementDialog> {
         'date_fin': _dateFin?.toIso8601String().substring(0, 10),
         'source': 'veterinaire', 'vet_id': widget.vetUid,
         'veterinaire': widget.vetName, 'visite_ref': widget.visiteRef,
+        'posologie': _posologieDansOrdo
+            ? 'Voir ordonnance jointe'
+            : _posologie.text.trim(),
       });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -8605,7 +8609,27 @@ class _VetAddTraitementDialogState extends State<_VetAddTraitementDialog> {
             items: _types.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
             onChanged: (v) { if (v != null) setState(() => _type = v); })),
         _tf('Nom du produit *', _nom),
-        _tf('Posologie', _posologie),
+        // Posologie : saisie libre OU renvoi vers ordonnance
+        InkWell(
+          onTap: () => setState(() => _posologieDansOrdo = !_posologieDansOrdo),
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              border: Border.all(color: _posologieDansOrdo ? const Color(0xFF8D6E63) : const Color(0xFFE4E7E2)),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(children: [
+              Icon(_posologieDansOrdo ? Icons.check_box : Icons.check_box_outline_blank,
+                  size: 18, color: const Color(0xFF8D6E63)),
+              const SizedBox(width: 8),
+              const Expanded(child: Text('Posologie dans l\'ordonnance jointe',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)))),
+            ]),
+          ),
+        ),
+        if (!_posologieDansOrdo) _tf('Posologie (ex: 1 cp matin + soir)', _posologie),
         _dp(context, 'Date début *', _date, (d) => setState(() => _date = d)),
         _dp(context, 'Date fin', _dateFin, (d) => setState(() => _dateFin = d)),
       ])),
