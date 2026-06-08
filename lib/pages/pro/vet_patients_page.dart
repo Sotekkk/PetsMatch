@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
+import 'package:PetsMatch/widgets/pro_day_timeline.dart';
 
 class VetPatientsPage extends StatefulWidget {
   const VetPatientsPage({super.key});
@@ -662,15 +663,11 @@ class _VetPatientsPageState extends State<VetPatientsPage>
                       ]),
                     ),
                   ])
-                : ListView.builder(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                    itemCount: _rdvsJour.length,
-                    itemBuilder: (_, i) => _RdvJourCard(
-                      rdv: _rdvsJour[i],
-                      teal: _teal,
-                      onTap: () => _showRdvDetail(_rdvsJour[i]),
-                    ),
+                : ProDayTimeline(
+                    rdvs: _rdvsJour,
+                    date: _agendaDate,
+                    onRdvTap: (rdv) => _showRdvDetail(rdv),
+                    showCurrentTimeLine: true,
                   ),
               ),
       ),
@@ -821,8 +818,8 @@ class _PatientCard extends StatelessWidget {
   }
 }
 
-// ─── Carte RDV du jour ────────────────────────────────────────────────────────
-
+// _RdvJourCard remplacée par ProDayTimeline — conservée temporairement
+// ignore: unused_element
 class _RdvJourCard extends StatelessWidget {
   final Map<String, dynamic> rdv;
   final Color teal;

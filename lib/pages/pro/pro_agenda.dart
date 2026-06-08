@@ -30,6 +30,15 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   int _selectedDayIdx = 0;
   final Map<String, bool> _blockedSlots = {};
 
+  // Durées par motif (pour pré-remplir le dialog de confirmation)
+  Map<String, int> _dureesMotifs = {};
+  static const _motifToDuree = <String, String>{
+    'Consultation': 'consultation', 'Vaccination': 'vaccination',
+    'Bilan annuel': 'bilan', 'Urgence': 'urgence', 'Chirurgie': 'chirurgie',
+    'Visite de la pension': 'visite', "Arrivée de l'animal": 'arrivee',
+    "Départ de l'animal": 'depart',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -39,6 +48,23 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     _selectedDayIdx = now.weekday - 1;
     _loadRdvs();
     _loadCreneaux();
+    _loadDureesMotifs();
+  }
+
+  Future<void> _loadDureesMotifs() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final row = await Supabase.instance.client
+          .from('users').select('durees_motifs').eq('uid', uid).maybeSingle();
+      if (row?['durees_motifs'] is Map && mounted) {
+        setState(() {
+          _dureesMotifs = Map<String, int>.from(
+            (row!['durees_motifs'] as Map).map((k, v) =>
+                MapEntry(k.toString(), (v as num?)?.toInt() ?? 30)));
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -163,7 +189,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   }
 
   Future<void> _showAcceptDialog(Map<String, dynamic> rdv) async {
-    int duree = 60;
+    // Pré-remplir la durée depuis la config du pro selon le motif
+    final motifLabel = rdv['motif']?.toString() ?? '';
+    final motifKey = _motifToDuree[motifLabel];
+    final rdvDuree = (rdv['duree_minutes'] as num?)?.toInt();
+    int duree = rdvDuree ??
+        (motifKey != null ? (_dureesMotifs[motifKey] ?? 30) : 30);
 
     final requestedDh = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
     int preciseHour   = requestedDh?.hour   ?? 10;

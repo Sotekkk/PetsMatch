@@ -61,6 +61,29 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   static const _especesList = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
   List<String> _especesAcceptees = [];
 
+  // Durées par type de prestation (en minutes)
+  Map<String, int> _dureesMotifs = {};
+
+  static const _defaultDureesByCatPro = <String, Map<String, int>>{
+    'veterinaire': {'consultation': 30, 'vaccination': 20, 'bilan': 45, 'urgence': 60, 'chirurgie': 120, 'autre': 30},
+    'pension':     {'visite': 30, 'arrivee': 60, 'depart': 30, 'autre': 30},
+    'garde':       {'promenade_30min': 30, 'promenade_1h': 60, 'promenade_2h': 120, 'garde_journee': 480, 'autre': 60},
+    'education':   {'cours_individuel': 60, 'cours_collectif': 90, 'evaluation': 45, 'autre': 60},
+    'toilettage':  {'bain': 45, 'toilettage_complet': 90, 'coupe': 60, 'autre': 60},
+    'sante':       {'consultation': 45, 'seance': 60, 'autre': 60},
+  };
+
+  static const _motifLabels = <String, String>{
+    'consultation': 'Consultation', 'vaccination': 'Vaccination',
+    'bilan': 'Bilan annuel', 'urgence': 'Urgence', 'chirurgie': 'Chirurgie',
+    'visite': 'Visite', 'arrivee': "Arrivée", 'depart': 'Départ',
+    'promenade_30min': 'Promenade 30 min', 'promenade_1h': 'Promenade 1h',
+    'promenade_2h': 'Promenade 2h', 'garde_journee': 'Garde journée',
+    'cours_individuel': 'Cours individuel', 'cours_collectif': 'Cours collectif',
+    'evaluation': 'Évaluation', 'bain': 'Bain', 'toilettage_complet': 'Toilettage complet',
+    'coupe': 'Coupe', 'seance': 'Séance', 'autre': 'Autre',
+  };
+
   static const _jours = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
   late Map<String, _HoraireJour> _horaires;
 
@@ -124,6 +147,15 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
         if (row['especes_acceptees'] is List) {
           _especesAcceptees = List<String>.from(row['especes_acceptees']);
+        }
+        if (row['durees_motifs'] is Map) {
+          _dureesMotifs = Map<String, int>.from(
+            (row['durees_motifs'] as Map).map((k, v) =>
+                MapEntry(k.toString(), (v as num?)?.toInt() ?? 30)));
+        } else {
+          final cat = (row['cat_pro'] ?? '').toString();
+          _dureesMotifs = Map<String, int>.from(
+              _defaultDureesByCatPro[cat] ?? {'consultation': 30, 'autre': 30});
         }
         if (row['horaires'] is Map) {
           for (final j in _jours) {
@@ -295,6 +327,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         'accept_new_clients':   _acceptNewClients,
         'cat_pro':              _catPro,
         'is_pro':               true,
+        'durees_motifs':        _dureesMotifs,
         // Adresse + géolocalisation
         'rue_elevage':          _rueCtrl.text.trim(),
         'ville_elevage':        _villeCtrl.text.trim(),
@@ -465,6 +498,56 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   _sectionTitle(_especesLabel),
                   const SizedBox(height: 12),
                   _especesSelector(),
+
+                  // ── Durées par prestation ─────────────────────────────────
+                  if (_catPro.isNotEmpty && _catPro != 'referencement') ...[
+                    const SizedBox(height: 24),
+                    _sectionTitle('Durées par prestation (minutes)'),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Ces durées servent à calculer les créneaux disponibles pour vos clients.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                    const SizedBox(height: 12),
+                    ..._dureesMotifs.entries.map((e) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(children: [
+                        Expanded(child: Text(
+                          _motifLabels[e.key] ?? e.key,
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                              fontWeight: FontWeight.w600, color: Color(0xFF1E2025)),
+                        )),
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 80,
+                          child: TextFormField(
+                            initialValue: e.value.toString(),
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                            decoration: InputDecoration(
+                              suffixText: 'min',
+                              suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                              filled: true, fillColor: Colors.white,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+                            ),
+                            onChanged: (val) {
+                              final v = int.tryParse(val);
+                              if (v != null && v > 0) {
+                                setState(() => _dureesMotifs = {..._dureesMotifs, e.key: v});
+                              }
+                            },
+                          ),
+                        ),
+                      ]),
+                    )),
+                  ],
 
                   // ── Horaires ──────────────────────────────────────────────
                   const SizedBox(height: 24),

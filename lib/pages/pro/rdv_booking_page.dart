@@ -64,6 +64,74 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   String? _selectedVetMotif;
   int _selectedVetDuration = 30;
 
+  // Durées et motifs dynamiques (chargés depuis le profil du pro)
+  Map<String, int> _dureesMotifs = {};
+  String _catPro = '';
+  String? _selectedMotifKey; // pour les pros autres que vet/pension
+
+  static const _motifLabels = <String, String>{
+    'consultation': 'Consultation', 'vaccination': 'Vaccination',
+    'bilan': 'Bilan annuel', 'urgence': 'Urgence', 'chirurgie': 'Chirurgie',
+    'visite': 'Visite', 'arrivee': 'Arrivée', 'depart': 'Départ',
+    'promenade_30min': 'Promenade 30 min', 'promenade_1h': 'Promenade 1h',
+    'promenade_2h': 'Promenade 2h', 'garde_journee': 'Garde journée',
+    'cours_individuel': 'Cours individuel', 'cours_collectif': 'Cours collectif',
+    'evaluation': 'Évaluation', 'bain': 'Bain',
+    'toilettage_complet': 'Toilettage complet', 'coupe': 'Coupe',
+    'seance': 'Séance', 'autre': 'Autre',
+  };
+  static const _motifIcons = <String, IconData>{
+    'consultation': Icons.medical_services_outlined,
+    'vaccination': Icons.medication_outlined,
+    'bilan': Icons.assignment_outlined,
+    'urgence': Icons.warning_amber_outlined,
+    'chirurgie': Icons.healing_outlined,
+    'visite': Icons.tour_outlined,
+    'arrivee': Icons.login_outlined,
+    'depart': Icons.logout_outlined,
+    'promenade_30min': Icons.directions_walk_outlined,
+    'promenade_1h': Icons.directions_walk_outlined,
+    'promenade_2h': Icons.directions_walk,
+    'garde_journee': Icons.home_outlined,
+    'cours_individuel': Icons.school_outlined,
+    'cours_collectif': Icons.groups_outlined,
+    'evaluation': Icons.quiz_outlined,
+    'bain': Icons.bathtub_outlined,
+    'toilettage_complet': Icons.content_cut_outlined,
+    'coupe': Icons.content_cut_outlined,
+    'seance': Icons.self_improvement_outlined,
+    'autre': Icons.more_horiz_outlined,
+  };
+  static const _defaultDureesByCatPro = <String, Map<String, int>>{
+    'veterinaire': {'consultation': 30, 'vaccination': 20, 'bilan': 45, 'urgence': 60, 'chirurgie': 120, 'autre': 30},
+    'pension':     {'visite': 30, 'arrivee': 60, 'depart': 30, 'autre': 30},
+    'garde':       {'promenade_30min': 30, 'promenade_1h': 60, 'promenade_2h': 120, 'garde_journee': 480, 'autre': 60},
+    'education':   {'cours_individuel': 60, 'cours_collectif': 90, 'evaluation': 45, 'autre': 60},
+    'toilettage':  {'bain': 45, 'toilettage_complet': 90, 'coupe': 60, 'autre': 60},
+    'sante':       {'consultation': 45, 'seance': 60, 'autre': 60},
+  };
+
+  // Durée sélectionnée selon le motif choisi
+  int get _selectedDuration {
+    if (widget.isVet && _selectedVetMotif != null && _selectedVetMotif != 'autre') {
+      return _dureesMotifs[_selectedVetMotif] ?? _selectedVetDuration;
+    }
+    if (widget.isPension && _selectedMotif != null && _selectedMotif != 'autre') {
+      return _dureesMotifs[_selectedMotif] ?? 30;
+    }
+    if (_selectedMotifKey != null && _selectedMotifKey != 'autre') {
+      return _dureesMotifs[_selectedMotifKey] ?? 30;
+    }
+    return _dureesMotifs['autre'] ?? 30;
+  }
+
+  String _durationLabel(int minutes) {
+    if (minutes < 60) return '$minutes min';
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    return m > 0 ? '${h}h$m' : '${h}h';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -80,9 +148,35 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   Future<void> _loadAll() async {
     await Future.wait([
       _loadAnimaux(),
+      _loadProProfile(),
       _loadAvailableSlots(),
     ]);
     if (mounted) setState(() => _loadingData = false);
+  }
+
+  Future<void> _loadProProfile() async {
+    try {
+      final row = await Supabase.instance.client
+          .from('users')
+          .select('durees_motifs, cat_pro')
+          .eq('uid', widget.proUid)
+          .maybeSingle();
+      if (row != null && mounted) {
+        _catPro = row['cat_pro']?.toString() ?? '';
+        if (row['durees_motifs'] is Map) {
+          _dureesMotifs = Map<String, int>.from(
+            (row['durees_motifs'] as Map).map((k, v) =>
+                MapEntry(k.toString(), (v as num?)?.toInt() ?? 30)));
+        }
+        if (_dureesMotifs.isEmpty) {
+          final cat = _catPro.isNotEmpty ? _catPro
+              : widget.isVet ? 'veterinaire'
+              : widget.isPension ? 'pension' : '';
+          _dureesMotifs = Map<String, int>.from(
+              _defaultDureesByCatPro[cat] ?? {'consultation': 30, 'autre': 30});
+        }
+      }
+    } catch (_) {}
   }
 
   // ── Animal loading ────────────────────────────────────────────────────────────
@@ -145,34 +239,76 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     } catch (_) {}
   }
 
-  bool _isSlotTaken(String date, String heureDebut) {
-    for (final r in _existingRdvs) {
-      final dh = DateTime.tryParse(r['date_heure'] as String? ?? '')?.toLocal();
-      if (dh == null) continue;
-      final rdvDate = '${dh.year}-${dh.month.toString().padLeft(2, '0')}-${dh.day.toString().padLeft(2, '0')}';
-      final rdvHeure = '${dh.hour.toString().padLeft(2, '0')}:${dh.minute.toString().padLeft(2, '0')}';
-      if (rdvDate == date && rdvHeure == heureDebut.substring(0, 5)) return true;
-    }
-    return false;
-  }
+  // Créneaux intelligents : 15 min d'intervalle, en tenant compte des RDVs existants
+  Map<String, List<Map<String, dynamic>>> get _smartSlotsByDate {
+    final duration = _selectedDuration;
+    if (_availableSlots.isEmpty) return {};
 
-  Map<String, List<Map<String, dynamic>>> get _slotsByDate {
-    final map = <String, List<Map<String, dynamic>>>{};
-    for (final s in _availableSlots) {
-      final date = s['date'] as String;
-      if (!_isSlotTaken(date, s['heure_debut'] as String)) {
-        map.putIfAbsent(date, () => []).add(s);
+    // 1. Grouper les creneaux_pro par date
+    final creneauxByDate = <String, List<({int startMin, int endMin})>>{};
+    for (final slot in _availableSlots) {
+      final date = slot['date'] as String;
+      final sp = (slot['heure_debut'] as String).split(':');
+      final ep = (slot['heure_fin']   as String).split(':');
+      final s = int.parse(sp[0]) * 60 + int.parse(sp[1]);
+      final e = int.parse(ep[0]) * 60 + int.parse(ep[1]);
+      creneauxByDate.putIfAbsent(date, () => []).add((startMin: s, endMin: e));
+    }
+
+    final result = <String, List<Map<String, dynamic>>>{};
+    for (final entry in creneauxByDate.entries) {
+      final date = entry.key;
+      final slots = entry.value..sort((a, b) => a.startMin.compareTo(b.startMin));
+
+      // 2. Fusionner les créneaux consécutifs en fenêtres continues
+      final windows = <({int startMin, int endMin})>[];
+      for (final s in slots) {
+        if (windows.isNotEmpty && s.startMin <= windows.last.endMin) {
+          windows[windows.length - 1] = (
+            startMin: windows.last.startMin,
+            endMin: s.endMin > windows.last.endMin ? s.endMin : windows.last.endMin,
+          );
+        } else {
+          windows.add(s);
+        }
       }
+
+      // 3. Intervals bloqués par les RDVs existants pour ce jour
+      final blocked = <({int startMin, int endMin})>[];
+      for (final rdv in _existingRdvs) {
+        final dh = DateTime.tryParse(rdv['date_heure'] as String? ?? '')?.toLocal();
+        if (dh == null) continue;
+        final rdvDate = '${dh.year}-${dh.month.toString().padLeft(2,'0')}-${dh.day.toString().padLeft(2,'0')}';
+        if (rdvDate != date) continue;
+        final rdvDuree = (rdv['duree_minutes'] as num?)?.toInt() ?? 30;
+        final rdvStart = dh.hour * 60 + dh.minute;
+        blocked.add((startMin: rdvStart, endMin: rdvStart + rdvDuree));
+      }
+
+      // 4. Générer les créneaux disponibles (pas de 15 min)
+      final available = <Map<String, dynamic>>[];
+      for (final window in windows) {
+        for (int t = window.startMin; t + duration <= window.endMin; t += 15) {
+          final overlaps = blocked.any((b) => t < b.endMin && t + duration > b.startMin);
+          if (!overlaps) {
+            final h = t ~/ 60;
+            final m = t % 60;
+            final eh = (t + duration) ~/ 60;
+            final em = (t + duration) % 60;
+            available.add({
+              'date': date,
+              'heure_debut': '${h.toString().padLeft(2,'0')}:${m.toString().padLeft(2,'0')}:00',
+              'heure_fin':   '${eh.toString().padLeft(2,'0')}:${em.toString().padLeft(2,'0')}:00',
+            });
+          }
+        }
+      }
+      if (available.isNotEmpty) result[date] = available;
     }
-    // Tri croissant par heure_debut dans chaque jour
-    for (final list in map.values) {
-      list.sort((a, b) =>
-          (a['heure_debut'] as String).compareTo(b['heure_debut'] as String));
-    }
-    return map;
+    return result;
   }
 
-  List<String> get _availableDates => _slotsByDate.keys.toList()..sort();
+  List<String> get _availableDates => _smartSlotsByDate.keys.toList()..sort();
 
 
   // ── Submit ────────────────────────────────────────────────────────────────────
@@ -201,6 +337,14 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       if (_selectedVetMotif == 'autre' && _motifCtrl.text.trim().isEmpty) {
         _snack('Précisez le motif dans le champ "Autre"', color: Colors.orange); return;
       }
+    } else if (_dureesMotifs.isNotEmpty) {
+      // Pros avec motifs dynamiques
+      if (_selectedMotifKey == null) {
+        _snack('Veuillez choisir le type de prestation', color: Colors.orange); return;
+      }
+      if (_selectedMotifKey == 'autre' && _motifCtrl.text.trim().isEmpty) {
+        _snack('Précisez le motif dans le champ "Autre"', color: Colors.orange); return;
+      }
     } else {
       if (_motifCtrl.text.trim().isEmpty) {
         _snack('Veuillez indiquer le motif du rendez-vous', color: Colors.orange); return;
@@ -224,11 +368,14 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         motif = _selectedVetMotif == 'autre'
             ? _motifCtrl.text.trim()
             : _vetMotifs.firstWhere((m) => m.$1 == _selectedVetMotif).$2;
+      } else if (_selectedMotifKey != null && _selectedMotifKey != 'autre') {
+        motif = _motifLabels[_selectedMotifKey] ?? _selectedMotifKey!;
       } else {
         motif = _motifCtrl.text.trim();
       }
 
       final animalId = _selectedAnimal?['id']?.toString();
+      final dureeToSend = _selectedDuration;
 
       await Supabase.instance.client.from('rdv').insert({
         'pro_uid':    widget.proUid,
@@ -239,7 +386,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         if (widget.isPension && _premiereVisite != null) 'premiere_visite': _premiereVisite,
         if (_notesCtrl.text.trim().isNotEmpty && (widget.isPension ? _selectedMotif != 'autre' : true))
           'notes_client': _notesCtrl.text.trim(),
-        if (widget.isVet) 'duree_minutes': _selectedVetDuration,
+        'duree_minutes': dureeToSend, // envoyé pour tous les pros
         'statut': 'demande',
       });
 
@@ -363,7 +510,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   List<Widget> _buildMotifSection() {
     if (widget.isPension) return _buildPensionMotif();
     if (widget.isVet) return _buildVetMotif();
-    return _buildStandardMotif();
+    // Pour les autres pros : motifs dynamiques si configurés, sinon champ libre
+    return _buildDynamicMotif();
   }
 
   // ── Slot picker (commun à tous les pros) ─────────────────────────────────────
@@ -387,6 +535,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           onTap: () => setState(() {
             _selectedMotif = m.$1;
             if (m.$1 != 'autre') _notesCtrl.clear();
+            _selectedSlot = null; // recalcul des créneaux selon durée du motif
           }),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
@@ -485,7 +634,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
               final date = DateTime.tryParse(dateStr);
               if (date == null) return const SizedBox.shrink();
               final sel = _selectedDateKey == dateStr;
-              final slotsCount = _slotsByDate[dateStr]?.length ?? 0;
+              final slotsCount = _smartSlotsByDate[dateStr]?.length ?? 0;
               return GestureDetector(
                 onTap: () => setState(() {
                   _selectedDateKey = dateStr;
@@ -523,23 +672,34 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         // Slots for selected date
         if (_selectedDateKey != null) ...[
           const SizedBox(height: 14),
-          Text(_formatDateLong(DateTime.parse(_selectedDateKey!)),
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                  fontSize: 13, color: Color(0xFF1E2025))),
+          Row(children: [
+            Expanded(child: Text(_formatDateLong(DateTime.parse(_selectedDateKey!)),
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 13, color: Color(0xFF1E2025)))),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: widget.categoryColor.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text('⏱ ${_durationLabel(_selectedDuration)}',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      fontWeight: FontWeight.w600, color: widget.categoryColor)),
+            ),
+          ]),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8, runSpacing: 8,
-            children: (_slotsByDate[_selectedDateKey!] ?? []).map((slot) {
+            children: (_smartSlotsByDate[_selectedDateKey!] ?? []).map((slot) {
               final sel = _selectedSlot != null &&
                   _selectedSlot!['date'] == slot['date'] &&
                   _selectedSlot!['heure_debut'] == slot['heure_debut'];
               final debut = (slot['heure_debut'] as String).substring(0, 5);
-              final fin   = (slot['heure_fin']   as String).substring(0, 5);
               return GestureDetector(
                 onTap: () => setState(() => _selectedSlot = slot),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: sel ? widget.categoryColor : Colors.white,
                     border: Border.all(color: sel ? widget.categoryColor : const Color(0xFFE4E7E2)),
@@ -547,14 +707,22 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                     boxShadow: sel ? [BoxShadow(color: widget.categoryColor.withValues(alpha: 0.2),
                         blurRadius: 6, offset: const Offset(0, 2))] : [],
                   ),
-                  child: Text('$debut — $fin',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                  child: Text(debut,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 15,
+                          fontWeight: FontWeight.w700,
                           color: sel ? Colors.white : const Color(0xFF1E2025))),
                 ),
               );
             }).toList(),
           ),
+          if ((_smartSlotsByDate[_selectedDateKey!] ?? []).isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Aucun créneau disponible pour cette durée (${_durationLabel(_selectedDuration)}) ce jour.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.orange.shade700),
+              ),
+            ),
         ] else ...[
           const SizedBox(height: 10),
           Text('Sélectionnez une date pour voir les créneaux disponibles',
@@ -576,7 +744,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         return GestureDetector(
           onTap: () => setState(() {
             _selectedVetMotif = m.$1;
+            // Auto-remplir la durée depuis la config du pro
+            if (_dureesMotifs.containsKey(m.$1)) {
+              _selectedVetDuration = _dureesMotifs[m.$1]!;
+            }
             if (m.$1 != 'autre') _motifCtrl.clear();
+            _selectedSlot = null; // recalcul des créneaux
           }),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
@@ -634,7 +807,63 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     ]),
   ];
 
-  // ── Standard motif ────────────────────────────────────────────────────────────
+  // ── Motifs dynamiques (tous pros hors vet/pension) ───────────────────────────
+
+  List<Widget> _buildDynamicMotif() {
+    if (_dureesMotifs.isEmpty) return _buildStandardMotif();
+    return [
+      _sectionTitle('Type de prestation *'),
+      const SizedBox(height: 10),
+      Wrap(
+        spacing: 8, runSpacing: 8,
+        children: _dureesMotifs.entries.map((e) {
+          final sel = _selectedMotifKey == e.key;
+          final label = _motifLabels[e.key] ?? e.key;
+          final icon  = _motifIcons[e.key] ?? Icons.more_horiz_outlined;
+          return GestureDetector(
+            onTap: () => setState(() {
+              _selectedMotifKey = e.key;
+              if (e.key != 'autre') _motifCtrl.clear();
+              _selectedSlot = null;
+            }),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: sel ? widget.categoryColor : Colors.white,
+                border: Border.all(color: sel ? widget.categoryColor : const Color(0xFFE4E7E2)),
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: sel ? [BoxShadow(color: widget.categoryColor.withValues(alpha: 0.2),
+                    blurRadius: 6, offset: const Offset(0, 2))] : [],
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(icon, size: 16, color: sel ? Colors.white : Colors.grey.shade500),
+                const SizedBox(width: 6),
+                Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: sel ? Colors.white : const Color(0xFF1E2025))),
+                const SizedBox(width: 6),
+                Text(_durationLabel(e.value),
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                        color: sel ? Colors.white.withValues(alpha: 0.75) : Colors.grey.shade400)),
+              ]),
+            ),
+          );
+        }).toList(),
+      ),
+      if (_selectedMotifKey == 'autre') ...[
+        const SizedBox(height: 10),
+        TextField(
+          controller: _motifCtrl,
+          maxLines: 2,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          decoration: _inputDecoration('Précisez le motif…'),
+        ),
+      ],
+    ];
+  }
+
+  // ── Standard motif (fallback) ─────────────────────────────────────────────────
 
   List<Widget> _buildStandardMotif() => [
     _sectionTitle('Motif du rendez-vous *'),
