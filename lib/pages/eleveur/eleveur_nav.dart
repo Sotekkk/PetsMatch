@@ -72,7 +72,7 @@ class _EleveurNavState extends State<EleveurNav> {
   Widget _tabContent(int index) => switch (index) {
     1 => MessagePage(),
     2 => const NotificationsPage(),
-    3 => const AgendaPage(),
+    3 => AgendaPage(onBack: () => setState(() => _selectedIndex = 0)),
     _ => const EleveurHomePage(),
   };
 

@@ -83,7 +83,8 @@ Color _colorFor(Map<String, dynamic> e) {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 class AgendaPage extends StatefulWidget {
-  const AgendaPage({super.key});
+  final VoidCallback? onBack;
+  const AgendaPage({super.key, this.onBack});
   @override
   State<AgendaPage> createState() => _AgendaPageState();
 }
@@ -186,6 +187,13 @@ class _AgendaPageState extends State<AgendaPage> {
         backgroundColor: _kTeal,
         foregroundColor: Colors.white,
         automaticallyImplyLeading: false,
+        leading: widget.onBack != null
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                tooltip: 'Retour',
+                onPressed: widget.onBack,
+              )
+            : null,
         title: const Text('Mon Agenda',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
