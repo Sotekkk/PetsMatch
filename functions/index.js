@@ -2,6 +2,7 @@
 const stripeFunctions = require("./stripe");
 const alertesFunctions = require("./alertes");
 const agendaFunctions = require("./agenda");
+const rdvRemindersFunctions = require("./rdv_reminders");
 const chaleursFunctions = require("./chaleurs");
 const retraiteFunctions = require("./retraite");
 const tachesFunctions = require("./taches");
@@ -25,7 +26,7 @@ exports.notifyNearFoundAnimal = alertesFunctions.notifyNearFoundAnimal;
 exports.notifyAnimalOwner = alertesFunctions.notifyAnimalOwner;
 
 // Agenda — rappels RDV + notifications RDV + mise-bas
-exports.sendRdvReminders = agendaFunctions.sendRdvReminders;
+exports.sendRdvReminders = rdvRemindersFunctions.sendRdvReminders;
 exports.notifyProNewRdv = agendaFunctions.notifyProNewRdv;
 exports.sendMiseBasReminders = agendaFunctions.sendMiseBasReminders;
 
