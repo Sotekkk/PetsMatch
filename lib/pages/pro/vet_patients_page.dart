@@ -173,30 +173,33 @@ class _VetPatientsPageState extends State<VetPatientsPage>
 
       Map<String, Map<String, dynamic>> animauxMap = {};
       if (animalIds.isNotEmpty) {
-        final animals = await Supabase.instance.client
-            .from('animaux')
-            .select('id, nom, espece, race, photo_url, identification, uid_eleveur, uid_proprietaire')
-            .inFilter('id', animalIds);
-        for (final a in animals as List) {
-          animauxMap[a['id']?.toString() ?? ''] = Map<String, dynamic>.from(a as Map);
-        }
+        try {
+          final animals = await Supabase.instance.client
+              .from('animaux')
+              .select('id, nom, espece, race, photo_url, identification, uid_eleveur, uid_proprietaire')
+              .inFilter('id', animalIds);
+          for (final a in animals as List) {
+            animauxMap[a['id']?.toString() ?? ''] = Map<String, dynamic>.from(a as Map);
+          }
+        } catch (_) {}
       }
 
-      // Charger les infos clients
+      // Charger les infos clients — select(*) évite les erreurs de casse colonnes
       final clientUids = (rdvs as List)
           .map((r) => r['client_uid']?.toString())
           .whereType<String>().toSet().toList();
 
       Map<String, Map<String, dynamic>> clientsMap = {};
       if (clientUids.isNotEmpty) {
-        final clients = await Supabase.instance.client
-            .from('users')
-            .select('uid, firstname, lastname, name_elevage, isElevage, isPro, '
-                    'phone_number, numeroElevage, email')
-            .inFilter('uid', clientUids);
-        for (final c in clients as List) {
-          clientsMap[c['uid']?.toString() ?? ''] = Map<String, dynamic>.from(c as Map);
-        }
+        try {
+          final clients = await Supabase.instance.client
+              .from('users')
+              .select('*')
+              .inFilter('uid', clientUids);
+          for (final c in clients as List) {
+            clientsMap[c['uid']?.toString() ?? ''] = Map<String, dynamic>.from(c as Map);
+          }
+        } catch (_) {} // ne pas faire échouer le chargement des RDV si clients manquent
       }
 
       final list = (rdvs as List).map((r) {
