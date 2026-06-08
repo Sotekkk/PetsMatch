@@ -568,9 +568,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     try {
       final supa = Supabase.instance.client;
       await supa.from('rdv').update({
-        'statut':         'confirme',
-        'duree_minutes':  dureeMinutes,
-        'date_heure':     preciseDh.toIso8601String(),
+        'statut':               'confirme',
+        'duree_minutes':        dureeMinutes,
+        'date_heure':           preciseDh.toIso8601String(),
+        'reminder_1h_sent':    false,  // reset si heure modifiée
+        'reminder_15min_sent': false,
       }).eq('id', rdvId);
 
       final rdv = _rdvs.firstWhere((r) => r['id'].toString() == rdvId, orElse: () => {});

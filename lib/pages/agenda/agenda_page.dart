@@ -557,43 +557,49 @@ class _EventTile extends StatelessWidget {
     final supa = Supabase.instance.client;
     final rdvId = _rdvId!;
 
-    // Charger le pro_uid depuis le rdv
-    final rdvRows = await supa.from('rdv').select('pro_uid').eq('id', rdvId);
-    if (rdvRows.isEmpty || !context.mounted) return;
-    final proUid = rdvRows[0]['pro_uid'] as String;
+    // Charger les infos du RDV (pro_uid, durée)
+    final rdvRow = await supa.from('rdv')
+        .select('pro_uid, duree_minutes, motif')
+        .eq('id', rdvId).maybeSingle();
+    if (rdvRow == null || !context.mounted) return;
+    final proUid     = rdvRow['pro_uid'] as String;
+    final duration   = (rdvRow['duree_minutes'] as num?)?.toInt() ?? 30;
 
-    // Charger les créneaux disponibles de la pension
-    final today  = DateTime.now().toIso8601String().substring(0, 10);
-    final future = DateTime.now().add(const Duration(days: 90)).toIso8601String().substring(0, 10);
-    final slotsData = await supa
-        .from('creneaux_pro')
-        .select('date, heure_debut')
-        .eq('pro_uid', proUid)
-        .eq('statut', 'disponible')
-        .gte('date', today)
-        .lte('date', future)
-        .order('date', ascending: true)
-        .order('heure_debut', ascending: true);
+    final now        = DateTime.now();
+    final todayStr   = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
+    final maxDate    = DateTime(now.year, now.month + 3, now.day);
+    final maxDateStr = '${maxDate.year}-${maxDate.month.toString().padLeft(2,'0')}-${maxDate.day.toString().padLeft(2,'0')}';
+
+    // Charger créneaux + RDVs existants (hors le RDV modifié)
+    final results = await Future.wait([
+      supa.from('creneaux_pro')
+          .select('date, heure_debut, heure_fin')
+          .eq('pro_uid', proUid).eq('statut', 'disponible')
+          .gte('date', todayStr).lte('date', maxDateStr)
+          .order('date', ascending: true).order('heure_debut', ascending: true),
+      supa.from('rdv')
+          .select('date_heure, duree_minutes')
+          .eq('pro_uid', proUid)
+          .inFilter('statut', ['confirme', 'demande', 'contre_proposition'])
+          .neq('id', rdvId)
+          .gte('date_heure', now.toUtc().toIso8601String()),
+    ]);
 
     if (!context.mounted) return;
 
-    // Grouper par date
-    final Map<String, List<int>> slotsByDate = {};
-    for (final s in slotsData) {
-      final date = s['date'] as String;
-      final hour = int.tryParse((s['heure_debut'] as String).split(':').first) ?? 0;
-      slotsByDate.putIfAbsent(date, () => []).add(hour);
-    }
+    final creneaux   = List<Map<String, dynamic>>.from(results[0]);
+    final rdvsExist  = List<Map<String, dynamic>>.from(results[1]);
+    final smartSlots = _SmartSlotCalc.compute(
+        creneaux: creneaux, existingRdvs: rdvsExist,
+        duration: duration, now: now);
 
-    DateTime? chosen;
-
-    if (slotsByDate.isEmpty) {
-      // Fallback: free date+time picker when pension has no creneaux configured
+    if (smartSlots.isEmpty) {
+      // Fallback: sélecteur libre si aucun créneau configuré
       final pickedDate = await showDatePicker(
         context: context,
-        initialDate: DateTime.now().add(const Duration(days: 1)),
-        firstDate: DateTime.now(),
-        lastDate: DateTime.now().add(const Duration(days: 365)),
+        initialDate: now.add(const Duration(days: 1)),
+        firstDate: now,
+        lastDate: now.add(const Duration(days: 365)),
         locale: const Locale('fr'),
       );
       if (pickedDate == null || !context.mounted) return;
@@ -602,97 +608,117 @@ class _EventTile extends StatelessWidget {
         initialTime: const TimeOfDay(hour: 10, minute: 0),
       );
       if (pickedTime == null || !context.mounted) return;
-      chosen = DateTime(pickedDate.year, pickedDate.month, pickedDate.day,
+      final chosen = DateTime(pickedDate.year, pickedDate.month, pickedDate.day,
           pickedTime.hour, pickedTime.minute);
-    } else {
-    final dates = slotsByDate.keys.toList()..sort((a, b) => a.compareTo(b));
-    String selDate = dates.first;
-    int? selHour;
+      await _applyModification(context, supa, rdvId, proUid, chosen, duration);
+      return;
+    }
 
-    chosen = await showModalBottomSheet<DateTime>(
+    final dates = smartSlots.keys.toList()..sort();
+    String selDate = dates.first;
+    String? selTime;
+
+    final chosen = await showModalBottomSheet<DateTime>(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModal) => Padding(
-          padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+          padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 32),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+            Center(child: Container(width: 36, height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
             const Text('Modifier le rendez-vous',
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
             const SizedBox(height: 4),
-            const Text('Choisissez parmi les créneaux disponibles.',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+            Text('Durée estimée : ${_fmtDuration(duration)}',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
             const SizedBox(height: 16),
-            const Text('Date', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
-            const SizedBox(height: 8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: dates.map((d) {
+            // Date chips
+            SizedBox(
+              height: 68,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: dates.length,
+                itemBuilder: (_, i) {
+                  final d = dates[i];
                   final dt = DateTime.parse(d);
-                  final label = DateFormat('EEE d MMM', 'fr').format(dt);
                   final sel = d == selDate;
+                  final count = smartSlots[d]?.length ?? 0;
                   return GestureDetector(
-                    onTap: () => setModal(() { selDate = d; selHour = null; }),
+                    onTap: () => setModal(() { selDate = d; selTime = null; }),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 120),
                       margin: const EdgeInsets.only(right: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
                         color: sel ? _kTeal : Colors.white,
                         border: Border.all(color: sel ? _kTeal : Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Text(label, style: TextStyle(
-                          fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
-                          color: sel ? Colors.white : const Color(0xFF1E2025))),
+                      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Text(DateFormat('EEE', 'fr').format(dt),
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                                color: sel ? Colors.white70 : Colors.grey.shade500)),
+                        Text('${dt.day}/${dt.month}',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: sel ? Colors.white : const Color(0xFF1E2025))),
+                        Text('$count crén.',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                                color: sel ? Colors.white60 : Colors.grey.shade400)),
+                      ]),
                     ),
                   );
-                }).toList(),
+                },
               ),
             ),
             const SizedBox(height: 16),
-            const Text('Heure', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+            Text(DateFormat('EEEE d MMMM', 'fr').format(DateTime.parse(selDate)),
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8, runSpacing: 8,
-              children: (slotsByDate[selDate] ?? []).map((h) {
-                final sel = h == selHour;
+              children: (smartSlots[selDate] ?? []).map((time) {
+                final sel = time == selTime;
                 return GestureDetector(
-                  onTap: () => setModal(() => selHour = h),
+                  onTap: () => setModal(() => selTime = time),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 120),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
                     decoration: BoxDecoration(
                       color: sel ? _kTeal : Colors.white,
                       border: Border.all(color: sel ? _kTeal : Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Text('${h.toString().padLeft(2, "0")}h00',
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                    child: Text(time,
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 15,
+                            fontWeight: FontWeight.w700,
                             color: sel ? Colors.white : const Color(0xFF1E2025))),
                   ),
                 );
               }).toList(),
             ),
-            if (selHour != null) ...[
+            if (selTime != null) ...[
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    final dt = DateTime.parse(selDate);
-                    Navigator.pop(ctx, DateTime(dt.year, dt.month, dt.day, selHour!));
+                    final dt  = DateTime.parse(selDate);
+                    final tParts = selTime!.split(':');
+                    Navigator.pop(ctx, DateTime(dt.year, dt.month, dt.day,
+                        int.parse(tParts[0]), int.parse(tParts[1])));
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _kTeal, foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     elevation: 0,
                   ),
-                  child: const Text('Proposer ce créneau',
+                  child: const Text('Confirmer la modification',
                       style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
                 ),
               ),
@@ -701,14 +727,19 @@ class _EventTile extends StatelessWidget {
         ),
       ),
     );
-    } // end else (slots available)
 
     if (chosen == null || !context.mounted) return;
+    await _applyModification(context, supa, rdvId, proUid, chosen, duration);
+  }
 
+  Future<void> _applyModification(BuildContext context, dynamic supa,
+      String rdvId, String proUid, DateTime chosen, int duration) async {
     try {
       await supa.from('rdv').update({
-        'statut': 'contre_proposition',
-        'date_heure': chosen.toUtc().toIso8601String(),
+        'statut':              'contre_proposition',
+        'date_heure':          chosen.toUtc().toIso8601String(),
+        'reminder_1h_sent':    false,  // reset reminders pour le nouveau créneau
+        'reminder_15min_sent': false,
       }).eq('id', rdvId);
 
       final clientName = FirebaseAuth.instance.currentUser?.displayName ?? 'Le client';
@@ -904,6 +935,85 @@ class _EventTile extends StatelessWidget {
 
 extension _Let<T> on T {
   R let<R>(R Function(T) block) => block(this);
+}
+
+// ── Algorithme créneaux intelligents (partagé avec rdv_booking_page) ──────────
+
+String _fmtDuration(int min) {
+  if (min < 60) return '$min min';
+  final h = min ~/ 60; final m = min % 60;
+  return m > 0 ? '${h}h$m' : '${h}h';
+}
+
+class _SmartSlotCalc {
+  /// Calcule les créneaux disponibles (pas 15 min) en tenant compte
+  /// des RDVs existants et de la durée de la prestation.
+  static Map<String, List<String>> compute({
+    required List<Map<String, dynamic>> creneaux,
+    required List<Map<String, dynamic>> existingRdvs,
+    required int duration,
+    required DateTime now,
+  }) {
+    final todayKey   = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
+    final nowMinutes = now.hour * 60 + now.minute + 30; // marge 30 min
+
+    // 1. Regrouper les créneaux par date
+    final creneauxByDate = <String, List<({int startMin, int endMin})>>{};
+    for (final slot in creneaux) {
+      final date = slot['date'] as String;
+      final sp = (slot['heure_debut'] as String).split(':');
+      final ep = (slot['heure_fin']   as String).split(':');
+      final s  = int.parse(sp[0]) * 60 + int.parse(sp[1]);
+      final e  = int.parse(ep[0]) * 60 + int.parse(ep[1]);
+      creneauxByDate.putIfAbsent(date, () => []).add((startMin: s, endMin: e));
+    }
+
+    final result = <String, List<String>>{};
+    for (final entry in creneauxByDate.entries) {
+      final date  = entry.key;
+      final slots = entry.value..sort((a, b) => a.startMin.compareTo(b.startMin));
+
+      // 2. Fusionner les créneaux consécutifs
+      final windows = <({int startMin, int endMin})>[];
+      for (final s in slots) {
+        if (windows.isNotEmpty && s.startMin <= windows.last.endMin) {
+          windows[windows.length - 1] = (
+            startMin: windows.last.startMin,
+            endMin: s.endMin > windows.last.endMin ? s.endMin : windows.last.endMin,
+          );
+        } else {
+          windows.add(s);
+        }
+      }
+
+      // 3. Intervalles bloqués
+      final blocked = <({int startMin, int endMin})>[];
+      for (final rdv in existingRdvs) {
+        final dh = DateTime.tryParse(rdv['date_heure'] as String? ?? '')?.toLocal();
+        if (dh == null) continue;
+        final rdvDate = '${dh.year}-${dh.month.toString().padLeft(2,'0')}-${dh.day.toString().padLeft(2,'0')}';
+        if (rdvDate != date) continue;
+        final d     = (rdv['duree_minutes'] as num?)?.toInt() ?? duration;
+        final start = dh.hour * 60 + dh.minute;
+        blocked.add((startMin: start, endMin: start + d));
+      }
+
+      // 4. Générer les créneaux (pas 15 min)
+      final available = <String>[];
+      for (final window in windows) {
+        for (int t = window.startMin; t + duration <= window.endMin; t += 15) {
+          if (date == todayKey && t < nowMinutes) continue;
+          final overlaps = blocked.any((b) => t < b.endMin && t + duration > b.startMin);
+          if (!overlaps) {
+            final h = t ~/ 60; final m = t % 60;
+            available.add('${h.toString().padLeft(2,'0')}:${m.toString().padLeft(2,'0')}');
+          }
+        }
+      }
+      if (available.isNotEmpty) result[date] = available;
+    }
+    return result;
+  }
 }
 
 // ── Vue détail RDV (client) ───────────────────────────────────────────────────
