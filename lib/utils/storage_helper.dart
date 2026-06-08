@@ -41,23 +41,32 @@ Future<String> _upload(Uint8List bytes, String storagePath) async {
   return supa.storage.from(_bucket).getPublicUrl(storagePath);
 }
 
-/// Upload any file (PDF, image, etc.) without compression.
+/// Upload any file (PDF, image, etc.) without compression — uses the `media` bucket.
 Future<String> uploadRawFile(File file, String storagePath) async {
+  return _uploadDoc(file, storagePath, _bucket);
+}
+
+/// Upload document/medical file to the `documents` bucket (allows PDF).
+Future<String> uploadDocument(File file, String storagePath) async {
+  return _uploadDoc(file, storagePath, 'documents');
+}
+
+Future<String> _uploadDoc(File file, String storagePath, String bucket) async {
   final bytes = await file.readAsBytes();
   final ext = file.path.split('.').last.toLowerCase();
   final contentType = switch (ext) {
-    'pdf'          => 'application/pdf',
-    'png'          => 'image/png',
+    'pdf'           => 'application/pdf',
+    'png'           => 'image/png',
     'jpg' || 'jpeg' => 'image/jpeg',
-    _              => 'application/octet-stream',
+    _               => 'application/octet-stream',
   };
   final supa = Supabase.instance.client;
-  await supa.storage.from(_bucket).uploadBinary(
+  await supa.storage.from(bucket).uploadBinary(
     storagePath,
     bytes,
     fileOptions: FileOptions(contentType: contentType, upsert: true),
   );
-  return supa.storage.from(_bucket).getPublicUrl(storagePath);
+  return supa.storage.from(bucket).getPublicUrl(storagePath);
 }
 
 /// Transform a Supabase Storage URL for thumbnail display.

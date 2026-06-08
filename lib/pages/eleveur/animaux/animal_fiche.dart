@@ -7697,9 +7697,15 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
   List<Map<String, dynamic>> _crs        = [];
   List<Map<String, dynamic>> _ordos      = [];
   List<Map<String, dynamic>> _santeEntries = [];
+  // ID de session — lie toutes les entrées ajoutées pendant cette visite
+  late final String _sessionVisiteRef;
 
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() {
+    super.initState();
+    _sessionVisiteRef = DateTime.now().microsecondsSinceEpoch.toString();
+    _load();
+  }
 
   Future<void> _load() async {
     if (widget.animalId == null) { setState(() => _loading = false); return; }
@@ -7713,16 +7719,16 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
             .eq('animal_id', widget.animalId!).eq('pro_uid', vetUid)
             .order('created_at', ascending: false),
         _supa.from('vaccinations').select()
-            .eq('animal_id', widget.animalId!).eq('vet_id', vetUid)
+            .eq('animal_id', widget.animalId!)
             .order('date', ascending: false),
         _supa.from('traitements').select()
-            .eq('animal_id', widget.animalId!).eq('vet_id', vetUid)
+            .eq('animal_id', widget.animalId!)
             .order('date', ascending: false),
         _supa.from('visites').select()
-            .eq('animal_id', widget.animalId!).eq('vet_id', vetUid)
+            .eq('animal_id', widget.animalId!)
             .order('date', ascending: false),
         _supa.from('radios').select()
-            .eq('animal_id', widget.animalId!).eq('vet_id', vetUid)
+            .eq('animal_id', widget.animalId!)
             .order('date', ascending: false),
       ]);
       final entries = [
@@ -7809,11 +7815,13 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
     switch (type) {
       case 'vaccin':
         dialog = _VetAddVaccinDialog(
-            animalId: widget.animalId!, vetUid: vetUid, vetName: vetName);
+            animalId: widget.animalId!, vetUid: vetUid, vetName: vetName,
+            visiteRef: _sessionVisiteRef);
         break;
       case 'traitement':
         dialog = _VetAddTraitementDialog(
-            animalId: widget.animalId!, vetUid: vetUid, vetName: vetName);
+            animalId: widget.animalId!, vetUid: vetUid, vetName: vetName,
+            visiteRef: _sessionVisiteRef);
         break;
       case 'ordo':
         dialog = _VetAddOrdoDialog(
@@ -7822,11 +7830,13 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
         break;
       case 'radio':
         dialog = _VetAddRadioDialog(
-            animalId: widget.animalId!, vetUid: vetUid, vetName: vetName);
+            animalId: widget.animalId!, vetUid: vetUid, vetName: vetName,
+            visiteRef: _sessionVisiteRef);
         break;
       default:
         dialog = _VetAddVisiteDialog(
-            animalId: widget.animalId!, vetUid: vetUid, vetName: vetName);
+            animalId: widget.animalId!, vetUid: vetUid, vetName: vetName,
+            visiteRef: _sessionVisiteRef);
     }
     final saved = await showDialog<bool>(context: context, builder: (_) => dialog);
     if (saved == true) {
@@ -7849,6 +7859,35 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
       'data':  {'animalId': widget.animalId},
       'read':  false,
     }).catchError((_) {});
+  }
+
+  Future<void> _deleteEntry(Map<String, dynamic> entry) async {
+    final col = entry['_col'] as String? ?? '';
+    final id  = entry['id']?.toString() ?? '';
+    if (col.isEmpty || id.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Supprimer cette entrée ?',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          TextButton(onPressed: () => Navigator.pop(context, true),
+              child: const Text('Supprimer',
+                  style: TextStyle(fontFamily: 'Galey', color: Colors.red, fontWeight: FontWeight.w700))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _supa.from(col).delete().eq('id', id);
+      _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e')));
+    }
   }
 
   String _fmtDate(String? iso) {
@@ -7876,7 +7915,9 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
             if (_santeEntries.isEmpty)
               _VetConsultEmptyCard(message: 'Aucune entrée de santé enregistrée.')
             else
-              ..._santeEntries.map((e) => _VetSanteEntryCard(entry: e, fmtDate: _fmtDate)),
+              ..._santeEntries.map((e) => _VetSanteEntryCard(
+                  entry: e, fmtDate: _fmtDate,
+                  onDelete: () => _deleteEntry(e))),
             const SizedBox(height: 20),
             // ── Comptes rendus ────────────────────────────────────────────
             _VetConsultSectionHeader(label: 'Comptes rendus', count: _crs.length,
@@ -8311,7 +8352,8 @@ class _OwnerConsultOrdoCard extends StatelessWidget {
 class _VetSanteEntryCard extends StatelessWidget {
   final Map<String, dynamic> entry;
   final String Function(String?) fmtDate;
-  const _VetSanteEntryCard({required this.entry, required this.fmtDate});
+  final VoidCallback? onDelete;
+  const _VetSanteEntryCard({required this.entry, required this.fmtDate, this.onDelete});
 
   static const _colIcon = {
     'vaccinations': Icons.vaccines_outlined,
@@ -8360,6 +8402,18 @@ class _VetSanteEntryCard extends StatelessWidget {
                 fontWeight: FontWeight.w600, color: color),
           ),
         ),
+        if (onDelete != null) ...[
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: onDelete,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                  color: Colors.red.shade50, borderRadius: BorderRadius.circular(8)),
+              child: Icon(Icons.delete_outline, size: 16, color: Colors.red.shade400),
+            ),
+          ),
+        ],
       ]),
     );
   }
@@ -8368,8 +8422,9 @@ class _VetSanteEntryCard extends StatelessWidget {
 // ─── VET06 : dialog ajout vaccin vétérinaire ─────────────────────────────────
 
 class _VetAddVaccinDialog extends StatefulWidget {
-  final String animalId, vetUid, vetName;
-  const _VetAddVaccinDialog({required this.animalId, required this.vetUid, required this.vetName});
+  final String animalId, vetUid, vetName, visiteRef;
+  const _VetAddVaccinDialog({required this.animalId, required this.vetUid,
+      required this.vetName, required this.visiteRef});
   @override State<_VetAddVaccinDialog> createState() => _VetAddVaccinDialogState();
 }
 class _VetAddVaccinDialogState extends State<_VetAddVaccinDialog> {
@@ -8394,14 +8449,16 @@ class _VetAddVaccinDialogState extends State<_VetAddVaccinDialog> {
         'date': _date!.toIso8601String().substring(0, 10),
         'date_rappel': _rappel?.toIso8601String().substring(0, 10),
         'source': 'veterinaire', 'vet_id': widget.vetUid,
+        'visite_ref': widget.visiteRef,
       });
+      if (mounted) Navigator.pop(context, true);
+      // fire-and-forget – ne bloque pas si l'agenda échoue
       if (_rappel != null) {
-        await _scheduleRappelAgenda(
+        _scheduleRappelAgenda(
           animalId: widget.animalId, dateRappel: _rappel!,
           titre: 'Rappel vaccin — ${_vaccin.text.trim()}',
-        );
+        ).catchError((_) {});
       }
-      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erreur : $e')));
@@ -8464,8 +8521,9 @@ class _VetAddVaccinDialogState extends State<_VetAddVaccinDialog> {
 // ─── VET06 : dialog ajout traitement vétérinaire ─────────────────────────────
 
 class _VetAddTraitementDialog extends StatefulWidget {
-  final String animalId, vetUid, vetName;
-  const _VetAddTraitementDialog({required this.animalId, required this.vetUid, required this.vetName});
+  final String animalId, vetUid, vetName, visiteRef;
+  const _VetAddTraitementDialog({required this.animalId, required this.vetUid,
+      required this.vetName, required this.visiteRef});
   @override State<_VetAddTraitementDialog> createState() => _VetAddTraitementDialogState();
 }
 class _VetAddTraitementDialogState extends State<_VetAddTraitementDialog> {
@@ -8489,7 +8547,7 @@ class _VetAddTraitementDialogState extends State<_VetAddTraitementDialog> {
         'date': _date!.toIso8601String().substring(0, 10),
         'date_fin': _dateFin?.toIso8601String().substring(0, 10),
         'source': 'veterinaire', 'vet_id': widget.vetUid,
-        'veterinaire': widget.vetName,
+        'veterinaire': widget.vetName, 'visite_ref': widget.visiteRef,
       });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -8566,8 +8624,9 @@ class _VetAddTraitementDialogState extends State<_VetAddTraitementDialog> {
 // ─── VET06 : dialog ajout visite vétérinaire ─────────────────────────────────
 
 class _VetAddVisiteDialog extends StatefulWidget {
-  final String animalId, vetUid, vetName;
-  const _VetAddVisiteDialog({required this.animalId, required this.vetUid, required this.vetName});
+  final String animalId, vetUid, vetName, visiteRef;
+  const _VetAddVisiteDialog({required this.animalId, required this.vetUid,
+      required this.vetName, required this.visiteRef});
   @override State<_VetAddVisiteDialog> createState() => _VetAddVisiteDialogState();
 }
 class _VetAddVisiteDialogState extends State<_VetAddVisiteDialog> {
@@ -8592,6 +8651,7 @@ class _VetAddVisiteDialogState extends State<_VetAddVisiteDialog> {
         'date': _date!.toIso8601String().substring(0, 10),
         'diagnostic': _diag.text.trim(), 'notes': _notes.text.trim(),
         'source': 'veterinaire', 'vet_id': widget.vetUid,
+        'visite_ref': widget.visiteRef,
       });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -8698,7 +8758,7 @@ class _VetAddOrdoDialogState extends State<_VetAddOrdoDialog> {
     setState(() => _saving = true);
     try {
       final name  = '${DateTime.now().millisecondsSinceEpoch}.pdf';
-      final url   = await uploadRawFile(_pdfFile!, 'ordonnances/${widget.vetUid}/$name');
+      final url   = await uploadDocument(_pdfFile!, 'ordonnances/${widget.vetUid}/$name');
       final today = _date;
       final id    = DateTime.now().microsecondsSinceEpoch.toString();
       await Supabase.instance.client.from('ordonnances').insert({
@@ -8783,8 +8843,9 @@ class _VetAddOrdoDialogState extends State<_VetAddOrdoDialog> {
 // ─── VET06 : dialog ajout radio / examen ─────────────────────────────────────
 
 class _VetAddRadioDialog extends StatefulWidget {
-  final String animalId, vetUid, vetName;
-  const _VetAddRadioDialog({required this.animalId, required this.vetUid, required this.vetName});
+  final String animalId, vetUid, vetName, visiteRef;
+  const _VetAddRadioDialog({required this.animalId, required this.vetUid,
+      required this.vetName, required this.visiteRef});
   @override State<_VetAddRadioDialog> createState() => _VetAddRadioDialogState();
 }
 class _VetAddRadioDialogState extends State<_VetAddRadioDialog> {
@@ -8815,7 +8876,7 @@ class _VetAddRadioDialogState extends State<_VetAddRadioDialog> {
     setState(() => _saving = true);
     try {
       final name = '${DateTime.now().millisecondsSinceEpoch}.${_imgFile!.path.split('.').last}';
-      final url  = await uploadRawFile(_imgFile!, 'radios/${widget.vetUid}/$name');
+      final url  = await uploadDocument(_imgFile!, 'radios/${widget.vetUid}/$name');
       final id   = DateTime.now().microsecondsSinceEpoch.toString();
       await Supabase.instance.client.from('radios').insert({
         'id':          id,
@@ -8826,7 +8887,7 @@ class _VetAddRadioDialogState extends State<_VetAddRadioDialog> {
         'notes':       _notes.text.trim(),
         'image_url':   url,
         'date':        '${_date.year}-${_date.month.toString().padLeft(2,'0')}-${_date.day.toString().padLeft(2,'0')}',
-        'source':      'veterinaire',
+        'source':      'veterinaire', 'visite_ref': widget.visiteRef,
       });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -8938,7 +8999,7 @@ class _AddRadioDialogState extends State<_AddRadioDialog> {
     try {
       final uid  = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
       final name = '${DateTime.now().millisecondsSinceEpoch}.${_file!.path.split('.').last}';
-      final url  = await uploadRawFile(_file!, 'radios/$uid/$name');
+      final url  = await uploadDocument(_file!, 'radios/$uid/$name');
       final id   = DateTime.now().microsecondsSinceEpoch.toString();
       await Supabase.instance.client.from('radios').insert({
         'id':        id, 'animal_id': widget.animalId,
