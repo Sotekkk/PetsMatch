@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
@@ -8,9 +11,12 @@ import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/settings/parametre_config.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 class SettingsMainPage extends StatefulWidget {
   const SettingsMainPage({super.key});
@@ -37,6 +43,71 @@ class _SettingsMainPageState extends State<SettingsMainPage>
   void dispose() {
     _animationController?.dispose();
     super.dispose();
+  }
+
+  Future<void> _exportUserData(BuildContext context) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    BuildContext? dialogCtx;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        dialogCtx = ctx;
+        return const AlertDialog(
+          content: Row(children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('Export en cours…'),
+          ]),
+        );
+      },
+    );
+
+    try {
+      final supa = Supabase.instance.client;
+      final userProfile = await supa.from('users').select().eq('uid', uid).maybeSingle();
+      final animaux = await supa.from('animaux').select().eq('uid_eleveur', uid);
+      final annonces = await supa.from('annonces').select().eq('uid_eleveur', uid);
+      final fsUser = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+
+      final exportData = {
+        'exported_at': DateTime.now().toIso8601String(),
+        'uid': uid,
+        'profil': userProfile,
+        'animaux': animaux,
+        'annonces': annonces,
+        'donnees_supplementaires': fsUser.data(),
+      };
+
+      if (dialogCtx != null && mounted) Navigator.of(dialogCtx!).pop();
+
+      final jsonBytes = utf8.encode(const JsonEncoder.withIndent('  ').convert(exportData));
+      final xFile = XFile.fromData(
+        Uint8List.fromList(jsonBytes),
+        mimeType: 'application/json',
+        name: 'mes_donnees_petsmatch_${DateTime.now().millisecondsSinceEpoch}.json',
+      );
+      await Share.shareXFiles([xFile], subject: 'Mes données PetsMatch');
+    } catch (e) {
+      if (dialogCtx != null && mounted) Navigator.of(dialogCtx!).pop();
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Erreur export'),
+            content: Text('$e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
   }
 
   void _triggerVaccinationReminder() async {
@@ -225,6 +296,12 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                   );
                 },
               ),
+              buildSettingsOption(
+                context,
+                icon: Icons.download_rounded,
+                text: 'Exporter mes données',
+                onTap: () => _exportUserData(context),
+              ),
               SizedBox(
                 height: UTILS.calculHeight(30, UTILS.heightReference(context)),
               ),
@@ -347,6 +424,33 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                       await doc.reference.delete().catchError((e) {
                         print('Erreur suppression post: $e');
                       });
+                    }
+
+                    // Cascade-delete toutes les données Supabase (ON DELETE CASCADE)
+                    try {
+                      await Supabase.instance.client
+                          .from('users')
+                          .delete()
+                          .eq('uid', uid);
+                    } catch (e) {
+                      print('Supabase cascade delete: $e');
+                    }
+
+                    // Supprimer les fichiers Firebase Storage
+                    try {
+                      final folder = FirebaseStorage.instance.ref('files/$uid');
+                      final listing = await folder.listAll();
+                      for (final item in listing.items) {
+                        await item.delete().catchError((_) {});
+                      }
+                      for (final sub in listing.prefixes) {
+                        final subList = await sub.listAll();
+                        for (final item in subList.items) {
+                          await item.delete().catchError((_) {});
+                        }
+                      }
+                    } catch (e) {
+                      print('Storage delete: $e');
                     }
 
                     // Supprimer compte Firebase Auth

@@ -1562,10 +1562,10 @@ CREATE TABLE signalements (
 | RGPD01 | CGU + Politique de confidentialité — pages statiques web + lien depuis app | Haute | ✅ Implémenté 2026-06-09 |
 | RGPD02 | Bannière cookies web — opt-in/opt-out RGPD (Google Analytics, Firebase), consentement localStorage | Haute | ✅ Implémenté 2026-06-09 |
 | RGPD03 | Mentions légales — éditeur, hébergeur, responsable de traitement | Haute | ✅ Implémenté 2026-06-09 |
-| RGPD04 | Registre des traitements RGPD — document interne (données collectées, base légale, durée, sous-traitants) | Haute | ⏳ Brouillon `docs/rgpd04_registre_traitements.md` — à finaliser après refonte statuts SAS (4 actionnaires) |
+| RGPD04 | Registre des traitements RGPD — document interne (données collectées, base légale, durée, sous-traitants) | Haute | ⚠️ À FINIR — brouillon `docs/rgpd04_registre_traitements.md` ; infos légales manquantes (SIRET, représentant légal, siège) → compléter après signature des statuts SAS (4 actionnaires) |
 | RGPD05 | Consentement explicite à l'inscription — case à cocher CGU (non pré-cochée), `cgu_accepted_at` Supabase | Haute | ✅ Implémenté 2026-06-09 |
-| RGPD06 | Export données utilisateur (RGPD art. 20) — bouton "Télécharger mes données" → JSON complet | Haute | ❌ |
-| RGPD07 | Suppression compte + données (RGPD art. 17) — cascade Firebase Auth + Supabase + Storage | Haute | ❌ |
+| RGPD06 | Export données utilisateur (RGPD art. 20) — bouton "Télécharger mes données" → JSON complet | Haute | ✅ Implémenté 2026-06-09 — web (profil) + app (paramètres) |
+| RGPD07 | Suppression compte + données (RGPD art. 17) — cascade Firebase Auth + Supabase + Storage | Haute | ✅ Implémenté 2026-06-09 — web (profil) + app (paramètres, mise à jour cascade Supabase + Storage) |
 
 ### V2 — Sécurité avancée
 

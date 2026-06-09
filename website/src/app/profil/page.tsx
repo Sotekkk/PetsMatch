@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { updateProfile } from 'firebase/auth';
+import { updateProfile, EmailAuthProvider, reauthenticateWithCredential, deleteUser } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
@@ -277,6 +277,13 @@ export default function ProfilPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // RGPD — export + suppression
+  const [exporting, setExporting] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
   const isEleveur = userData?.isElevage === true;
 
   useEffect(() => {
@@ -542,6 +549,62 @@ export default function ProfilPage() {
       setTimeout(() => setSaved(false), 3000);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleExportData() {
+    if (!user) return;
+    setExporting(true);
+    try {
+      const uid = user.uid;
+      const [profileRes, animauxRes, annoncesRes] = await Promise.all([
+        supabase.from('users').select('*').eq('uid', uid).maybeSingle(),
+        supabase.from('animaux').select('*').eq('uid_eleveur', uid),
+        supabase.from('annonces').select('*').eq('uid_eleveur', uid),
+      ]);
+      const exportData = {
+        exported_at: new Date().toISOString(),
+        uid,
+        profil: profileRes.data,
+        animaux: animauxRes.data ?? [],
+        annonces: annoncesRes.data ?? [],
+      };
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `mes_donnees_petsmatch_${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleDeleteAccount() {
+    if (!user || !deletePassword) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const credential = EmailAuthProvider.credential(user.email!, deletePassword);
+      await reauthenticateWithCredential(user, credential);
+      const uid = user.uid;
+      // Cascade-delete toutes les données Supabase (ON DELETE CASCADE)
+      await supabase.from('users').delete().eq('uid', uid);
+      // Supprimer le compte Firebase Auth
+      await deleteUser(user);
+      router.push('/');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Erreur inconnue';
+      setDeleteError(
+        msg.includes('wrong-password') || msg.includes('invalid-credential')
+          ? 'Mot de passe incorrect'
+          : msg,
+      );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -901,6 +964,82 @@ export default function ProfilPage() {
           {saved && <span className="text-[#6E9E57] text-sm font-medium">✓ Profil mis à jour</span>}
         </div>
       </form>
+
+      {/* ── Données personnelles (RGPD) ── */}
+      <div className="mt-8 bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <h2 className="text-base font-bold text-[#1F2A2E] mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Mes données personnelles
+        </h2>
+
+        <div className="flex items-start justify-between py-3">
+          <div>
+            <p className="text-sm font-semibold text-[#1F2A2E]">Télécharger mes données</p>
+            <p className="text-xs text-gray-400 mt-0.5">Export JSON de vos données (RGPD art. 20)</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleExportData}
+            disabled={exporting}
+            className="text-sm font-semibold text-[#0C5C6C] border border-[#0C5C6C] hover:bg-[#0C5C6C] hover:text-white px-4 py-2 rounded-xl transition-colors disabled:opacity-60 whitespace-nowrap"
+          >
+            {exporting ? 'Export…' : 'Télécharger'}
+          </button>
+        </div>
+
+        <div className="flex items-start justify-between pt-3 border-t border-gray-100">
+          <div>
+            <p className="text-sm font-semibold text-red-600">Supprimer mon compte</p>
+            <p className="text-xs text-gray-400 mt-0.5">Suppression définitive et irréversible (RGPD art. 17)</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { setShowDeleteModal(true); setDeletePassword(''); setDeleteError(''); }}
+            className="text-sm font-semibold text-red-600 border border-red-200 hover:bg-red-50 px-4 py-2 rounded-xl transition-colors whitespace-nowrap"
+          >
+            Supprimer
+          </button>
+        </div>
+      </div>
+
+      {/* Modal suppression compte */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+            <h3 className="font-bold text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+              Supprimer mon compte
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Cette action est irréversible. Toutes vos données (profil, animaux, annonces) seront supprimées.
+              Entrez votre mot de passe pour confirmer.
+            </p>
+            <input
+              type="password"
+              value={deletePassword}
+              onChange={e => setDeletePassword(e.target.value)}
+              placeholder="Mot de passe"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm mb-3 focus:outline-none focus:border-red-300"
+            />
+            {deleteError && <p className="text-xs text-red-500 mb-3">{deleteError}</p>}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                className="flex-1 border border-gray-200 text-gray-600 text-sm font-medium py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleting || !deletePassword}
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+              >
+                {deleting ? 'Suppression…' : 'Confirmer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Banner crop modal */}
       {cropSrc && (
