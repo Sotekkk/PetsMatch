@@ -38,6 +38,84 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   bool _eleveurLoaded = false;
   Map<String, dynamic>? _annonceData;
 
+  static const _sigRaisons = [
+    ('contenu_inapproprie', 'Contenu inapproprié'),
+    ('spam',               'Spam ou arnaque'),
+    ('faux_profil',        'Faux profil'),
+    ('maltraitance',       'Maltraitance animale'),
+    ('autre',              'Autre'),
+  ];
+
+  Future<void> _showSignalementDialog() async {
+    final myUid = FirebaseAuth.instance.currentUser?.uid;
+    if (myUid == null || !mounted) return;
+
+    String motif = _sigRaisons.first.$1;
+    final detailCtrl = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          title: const Text('Signaler cette annonce'),
+          content: SingleChildScrollView(
+            child: Column(children: [
+              for (final (key, label) in _sigRaisons)
+                RadioListTile<String>(
+                  title: Text(label),
+                  value: key,
+                  groupValue: motif,
+                  onChanged: (v) => setS(() => motif = v!),
+                ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: detailCtrl,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Détails (facultatif)',
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6E9E57)),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Envoyer', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await Supabase.instance.client.from('signalements').insert({
+        'reporter_uid': myUid,
+        'target_type': 'annonce',
+        'target_id': widget.annonceId,
+        'raison': motif,
+        if (detailCtrl.text.trim().isNotEmpty) 'description': detailCtrl.text.trim(),
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Signalement envoyé. Merci.')),
+        );
+      }
+    } on PostgrestException catch (e) {
+      if (e.code == '23505' && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Vous avez déjà signalé cette annonce.')),
+        );
+      }
+    }
+  }
+
   static Timestamp? _isoToTs(dynamic v) {
     if (v == null) return null;
     if (v is Timestamp) return v;
@@ -194,6 +272,23 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                       onPressed: () => Navigator.push(context, MaterialPageRoute(
                           builder: (_) => CreateAnnoncePage(
                               annonceId: widget.annonceId, initialData: data))),
+                    ),
+                  if (!isOwner && FirebaseAuth.instance.currentUser != null)
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert),
+                      onSelected: (v) {
+                        if (v == 'signaler') _showSignalementDialog();
+                      },
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
+                          value: 'signaler',
+                          child: Row(children: [
+                            Icon(Icons.flag_outlined, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('Signaler'),
+                          ]),
+                        ),
+                      ],
                     ),
                 ],
               ),

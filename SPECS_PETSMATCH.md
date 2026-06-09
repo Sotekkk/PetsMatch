@@ -1522,10 +1522,10 @@ Règle éditoriale : tous les partenaires sont vérifiés manuellement avant act
 
 | ID | Fonctionnalité | Priorité | Support | Statut |
 |---|---|---|---|---|
-| SIG01 | Bouton "Signaler" sur profil utilisateur, annonce, profil pro | Haute | App + Web | ❌ |
-| SIG02 | Formulaire de signalement : type (contenu_inapproprie / spam / faux_profil / maltraitance / autre) + description libre | Haute | App + Web | ❌ |
-| SIG03 | Queue admin — liste des signalements avec statut (en_attente / traité / rejeté) + lien vers la ressource signalée | Haute | App + Web | ❌ |
-| SIG04 | Actions admin : envoyer avertissement / suspendre compte / bannir + log dans `audit_logs` | Haute | App + Web | ❌ |
+| SIG01 | Bouton "Signaler" sur profil utilisateur, annonce, profil pro | Haute | App + Web | ✅ Implémenté 2026-06-09 — profil éleveur + annonce (app + web) |
+| SIG02 | Formulaire de signalement : type (contenu_inapproprie / spam / faux_profil / maltraitance / autre) + description libre | Haute | App + Web | ✅ Implémenté 2026-06-09 — table `signalements` Supabase, contrainte UNIQUE reporter×cible |
+| SIG03 | Queue admin — liste des signalements avec statut (en_attente / traité / rejeté) + lien vers la ressource signalée | Haute | App + Web | ✅ Implémenté 2026-06-09 — vue `signalements_alertes` (seuil ≥ 3), queryable pour panel admin (SIG04) |
+| SIG04 | Actions admin : envoyer avertissement / suspendre compte / bannir + log dans `audit_logs` | Haute | App + Web | ❌ À faire avec panel admin (A16) |
 
 ### Table Supabase
 

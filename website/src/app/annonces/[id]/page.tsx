@@ -106,6 +106,13 @@ export default function AnnonceDetailPage() {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
 
+  // Signalement
+  const [showSigModal, setShowSigModal] = useState(false);
+  const [sigRaison, setSigRaison] = useState('contenu_inapproprie');
+  const [sigDesc, setSigDesc] = useState('');
+  const [sigLoading, setSigLoading] = useState(false);
+  const [sigSent, setSigSent] = useState(false);
+
   useEffect(() => {
     if (!id) return;
     supabase.from('annonces').select('*').eq('id', id).maybeSingle()
@@ -145,6 +152,36 @@ export default function AnnonceDetailPage() {
       setSent(true);
       router.push('/messages');
     } catch { setSending(false); }
+  };
+
+  const SIG_RAISONS = [
+    { key: 'contenu_inapproprie', label: 'Contenu inapproprié' },
+    { key: 'spam',               label: 'Spam ou arnaque' },
+    { key: 'faux_profil',        label: 'Faux profil' },
+    { key: 'maltraitance',       label: 'Maltraitance animale' },
+    { key: 'autre',              label: 'Autre' },
+  ];
+
+  const handleSignalement = async () => {
+    if (!user || !annonce) return;
+    setSigLoading(true);
+    try {
+      const { error } = await supabase.from('signalements').insert({
+        reporter_uid: user.uid,
+        target_type: 'annonce',
+        target_id: annonce.id,
+        raison: sigRaison,
+        description: sigDesc.trim() || null,
+      });
+      if (error?.code === '23505') {
+        alert('Vous avez déjà signalé cette annonce.');
+      } else {
+        setSigSent(true);
+        setTimeout(() => { setShowSigModal(false); setSigSent(false); setSigDesc(''); }, 1500);
+      }
+    } finally {
+      setSigLoading(false);
+    }
   };
 
   if (loading) return (
@@ -364,7 +401,66 @@ export default function AnnonceDetailPage() {
           </Link>
         )}
 
+        {user && annonce && user.uid !== annonce.uid_eleveur && (
+          <button
+            type="button"
+            onClick={() => { setShowSigModal(true); setSigDesc(''); setSigRaison('contenu_inapproprie'); }}
+            className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-1 transition-colors"
+          >
+            ⚑ Signaler cette annonce
+          </button>
+        )}
+
       </div>
     </div>
+
+    {/* Modal signalement */}
+    {showSigModal && (
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+          <h3 className="font-['Galey'] font-bold text-[#1F2A2E] mb-3">Signaler cette annonce</h3>
+          <div className="space-y-2 mb-4">
+            {SIG_RAISONS.map(r => (
+              <label key={r.key} className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="sig_raison"
+                  value={r.key}
+                  checked={sigRaison === r.key}
+                  onChange={() => setSigRaison(r.key)}
+                  className="accent-[#0C5C6C]"
+                />
+                <span className="text-sm text-[#1F2A2E]">{r.label}</span>
+              </label>
+            ))}
+          </div>
+          <textarea
+            value={sigDesc}
+            onChange={e => setSigDesc(e.target.value)}
+            placeholder="Détails (facultatif)"
+            rows={3}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm mb-4 focus:outline-none focus:border-[#6E9E57] resize-none"
+          />
+          {sigSent && <p className="text-[#6E9E57] text-sm text-center mb-3">✓ Signalement envoyé. Merci.</p>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowSigModal(false)}
+              className="flex-1 border border-gray-200 text-gray-600 text-sm font-medium py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              onClick={handleSignalement}
+              disabled={sigLoading || sigSent}
+              className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+            >
+              {sigLoading ? 'Envoi…' : 'Envoyer'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   );
 }

@@ -7,8 +7,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:mailer/mailer.dart';
-import 'package:mailer/smtp_server.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -103,17 +101,24 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
     if (await canLaunch(url)) await launch(url);
   }
 
-  Future<void> _sendSignalement(String motif, String details) async {
-    final smtp = gmail('petsmatch.contact@gmail.com', 'dppu ctgp buve bxjd');
-    final msg = Message()
-      ..from = Address('petsmatch.contact@gmail.com', 'PetsMatch - Signalement')
-      ..recipients.add('petsmatch.contact@gmail.com')
-      ..subject = '🚨 Signalement : ${widget.user.uid}'
-      ..text =
-          'Signalé : ${widget.user.uid}\nSignalant : ${User_Info.uid}\nMotif : $motif\nDétails : $details';
+  Future<void> _sendSignalement(String raison, String details) async {
+    final myUid = User_Info.uid;
+    if (myUid.isEmpty) return;
     try {
-      await send(msg, smtp);
-    } on MailerException catch (_) {}
+      await Supabase.instance.client.from('signalements').insert({
+        'reporter_uid': myUid,
+        'target_type': 'user',
+        'target_id': widget.user.uid,
+        'raison': raison,
+        if (details.isNotEmpty) 'description': details,
+      });
+    } on PostgrestException catch (e) {
+      if (e.code == '23505' && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Vous avez déjà signalé ce profil.')),
+        );
+      }
+    }
   }
 
   String get _location {
@@ -127,26 +132,29 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
     return widget.user.adressElevage;
   }
 
+  static const _sigRaisons = [
+    ('contenu_inapproprie', 'Contenu inapproprié'),
+    ('spam',               'Spam ou arnaque'),
+    ('faux_profil',        'Faux profil'),
+    ('maltraitance',       'Maltraitance animale'),
+    ('autre',              'Autre'),
+  ];
+
   void _showSignalementDialog() {
     showDialog(
       context: context,
       builder: (ctx) {
-        String motif = 'Comportement abusif';
+        String motif = _sigRaisons.first.$1;
         final detailCtrl = TextEditingController();
         return StatefulBuilder(
           builder: (ctx, setS) => AlertDialog(
             title: const Text('Signaler un utilisateur'),
             content: SingleChildScrollView(
               child: Column(children: [
-                for (final m in [
-                  'Comportement abusif',
-                  'Contenu inapproprié',
-                  'Spam ou arnaque',
-                  'Autre'
-                ])
-                  RadioListTile(
-                    title: Text(m),
-                    value: m,
+                for (final (key, label) in _sigRaisons)
+                  RadioListTile<String>(
+                    title: Text(label),
+                    value: key,
                     groupValue: motif,
                     onChanged: (v) => setS(() => motif = v!),
                   ),
@@ -176,7 +184,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                   await _sendSignalement(motif, detailCtrl.text.trim());
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Signalement envoyé.')),
+                      const SnackBar(content: Text('Signalement envoyé. Merci.')),
                     );
                   }
                 },
