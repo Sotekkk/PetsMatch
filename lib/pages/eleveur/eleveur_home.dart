@@ -103,42 +103,49 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
     final monthEnd   = '${DateFormat('yyyy-MM-dd').format(DateTime(now.year, now.month + 1, 0))}T23:59:59';
     // RDV actifs = demandes en attente + confirmés (pas terminés/annulés)
     const activeStatuts = ['demande', 'confirme', 'contre_proposition'];
+    final pid = User_Info.activeProfileId;
+
+    // Helper : ajoute le filtre profil sur une requête déjà construite
+    dynamic pf(dynamic q) => pid.isEmpty
+        ? q.or('pro_profile_id.is.null')
+        : q.eq('pro_profile_id', pid);
+
     try {
       if (User_Info.catPro == 'veterinaire') {
-        final patients = await supa.from('vet_access_grants')
-            .select('id').eq('vet_id', uid).eq('status', 'active');
-        final rdvToday = await supa.from('rdv').select('id')
+        final patients = await pf(supa.from('vet_access_grants')
+            .select('id').eq('vet_id', uid).eq('status', 'active'));
+        final rdvToday = await pf(supa.from('rdv').select('id')
             .eq('pro_uid', uid)
             .gte('date_heure', todayStart)
             .lte('date_heure', todayEnd)
-            .inFilter('statut', activeStatuts);
+            .inFilter('statut', activeStatuts));
         if (mounted) setState(() {
           _patientCount  = (patients as List).length;
           _rdvTodayCount = (rdvToday as List).length;
         });
       } else if (User_Info.catPro == 'pension') {
-        final pensionnaires = await supa.from('pension_acces')
-            .select('id').eq('pro_uid', uid).eq('statut', 'approved');
-        final rdvToday = await supa.from('rdv').select('id')
+        final pensionnaires = await pf(supa.from('pension_acces')
+            .select('id').eq('pro_uid', uid).eq('statut', 'approved'));
+        final rdvToday = await pf(supa.from('rdv').select('id')
             .eq('pro_uid', uid)
             .gte('date_heure', todayStart)
             .lte('date_heure', todayEnd)
-            .inFilter('statut', activeStatuts);
+            .inFilter('statut', activeStatuts));
         if (mounted) setState(() {
           _pensionnairesCount = (pensionnaires as List).length;
           _rdvTodayCount      = (rdvToday as List).length;
         });
       } else {
-        final rdvToday = await supa.from('rdv').select('id')
+        final rdvToday = await pf(supa.from('rdv').select('id')
             .eq('pro_uid', uid)
             .gte('date_heure', todayStart)
             .lte('date_heure', todayEnd)
-            .inFilter('statut', activeStatuts);
-        final rdvMonth = await supa.from('rdv').select('id')
+            .inFilter('statut', activeStatuts));
+        final rdvMonth = await pf(supa.from('rdv').select('id')
             .eq('pro_uid', uid)
             .gte('date_heure', monthStart)
             .lte('date_heure', monthEnd)
-            .inFilter('statut', activeStatuts);
+            .inFilter('statut', activeStatuts));
         if (mounted) setState(() {
           _rdvTodayCount = (rdvToday as List).length;
           _rdvMonthCount = (rdvMonth as List).length;

@@ -10,6 +10,7 @@ class RdvBookingPage extends StatefulWidget {
   final bool isPension;
   final bool isVet;
   final String? preselectedAnimalId;
+  final String? proProfileId; // user_profiles.id si profil secondaire
 
   const RdvBookingPage({
     super.key,
@@ -19,6 +20,7 @@ class RdvBookingPage extends StatefulWidget {
     this.isPension = false,
     this.isVet = false,
     this.preselectedAnimalId,
+    this.proProfileId,
   });
 
   @override
@@ -385,7 +387,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final dureeToSend = _selectedDuration;
 
       await Supabase.instance.client.from('rdv').insert({
-        'pro_uid':    widget.proUid,
+        'pro_uid':        widget.proUid,
+        if (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
+          'pro_profile_id': widget.proProfileId,
         'client_uid': uid,
         if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
         'date_heure': dateHeure.toIso8601String(),
@@ -393,7 +397,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         if (widget.isPension && _premiereVisite != null) 'premiere_visite': _premiereVisite,
         if (_notesCtrl.text.trim().isNotEmpty && (widget.isPension ? _selectedMotif != 'autre' : true))
           'notes_client': _notesCtrl.text.trim(),
-        'duree_minutes': dureeToSend, // envoyé pour tous les pros
+        'duree_minutes': dureeToSend,
         'statut': 'demande',
       });
 

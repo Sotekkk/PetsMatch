@@ -555,6 +555,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                       categoryColor: widget.categoryColor,
                       isPension: _proData?['cat_pro'] == 'pension',
                       isVet: _proData?['cat_pro'] == 'sante' || _proData?['cat_pro'] == 'veterinaire',
+                      proProfileId: widget.profileTableId,
                     )))
                 : null,
             icon: const Icon(Icons.calendar_month_outlined, size: 18),

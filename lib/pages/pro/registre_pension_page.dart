@@ -48,15 +48,14 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
+      final pid = User_Info.activeProfileId;
+      var qEntrees = _supa.from('pension_entrees').select().eq('pro_uid', _uid);
+      qEntrees = pid.isEmpty ? qEntrees.or('pro_profile_id.is.null') : qEntrees.eq('pro_profile_id', pid);
+      var qAcces = _supa.from('pension_acces').select('animal_id').eq('pro_uid', _uid).eq('statut', 'approved');
+      qAcces = pid.isEmpty ? qAcces.or('pro_profile_id.is.null') : qAcces.eq('pro_profile_id', pid);
       final results = await Future.wait([
-        _supa.from('pension_entrees')
-            .select()
-            .eq('pro_uid', _uid)
-            .order('date_entree', ascending: false),
-        _supa.from('pension_acces')
-            .select('animal_id')
-            .eq('pro_uid', _uid)
-            .eq('statut', 'approved'),
+        qEntrees.order('date_entree', ascending: false),
+        qAcces,
       ]);
 
       final entrees  = List<Map<String, dynamic>>.from(results[0] as List);

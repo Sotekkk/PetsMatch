@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ function fmtDate(iso: string) {
 export default function DemandesAccesPage() {
   const { user, userData } = useAuth();
   const router = useRouter();
+  const activeProfileId = useActiveProfile();
 
   const [demandes, setDemandes] = useState<PensionAcces[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -53,14 +55,18 @@ export default function DemandesAccesPage() {
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const { data } = await supabase
+    let q = supabase
       .from('pension_acces')
       .select('*')
       .eq('pro_uid', user.uid)
       .order('created_at', { ascending: false });
+    q = activeProfileId
+      ? (q as any).eq('pro_profile_id', activeProfileId)
+      : (q as any).is('pro_profile_id', null);
+    const { data } = await q;
     setDemandes((data ?? []) as PensionAcces[]);
     setLoading(false);
-  }, [user]);
+  }, [user, activeProfileId]);
 
   useEffect(() => { load(); }, [load]);
 

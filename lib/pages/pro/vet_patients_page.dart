@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
@@ -60,12 +61,14 @@ class _VetPatientsPageState extends State<VetPatientsPage>
     final vetUid = FirebaseAuth.instance.currentUser?.uid;
     if (vetUid == null) { setState(() => _loading = false); return; }
     try {
-      final grants = await Supabase.instance.client
+      final pid = User_Info.activeProfileId;
+      var gq = Supabase.instance.client
           .from('vet_access_grants')
           .select('id, animal_id, granted_at, status')
           .eq('vet_id', vetUid)
-          .neq('status', 'revoked')
-          .order('granted_at', ascending: false);
+          .neq('status', 'revoked');
+      gq = pid.isEmpty ? gq.or('pro_profile_id.is.null') : gq.eq('pro_profile_id', pid);
+      final grants = await gq.order('granted_at', ascending: false);
 
       final animalIds = (grants as List)
           .map((g) => g['animal_id']?.toString())
@@ -159,14 +162,16 @@ class _VetPatientsPageState extends State<VetPatientsPage>
       final dayStart = DateTime(_agendaDate.year, _agendaDate.month, _agendaDate.day).toUtc().toIso8601String();
       final dayEnd   = DateTime(_agendaDate.year, _agendaDate.month, _agendaDate.day, 23, 59, 59).toUtc().toIso8601String();
 
-      final rdvs = await Supabase.instance.client
+      final pid = User_Info.activeProfileId;
+      var rq = Supabase.instance.client
           .from('rdv')
           .select('id, date_heure, motif, statut, animal_id, client_uid, duree_minutes')
           .eq('pro_uid', vetUid)
           .gte('date_heure', dayStart)
           .lte('date_heure', dayEnd)
-          .inFilter('statut', ['confirme', 'demande'])
-          .order('date_heure', ascending: true);
+          .inFilter('statut', ['confirme', 'demande']);
+      rq = pid.isEmpty ? rq.or('pro_profile_id.is.null') : rq.eq('pro_profile_id', pid);
+      final rdvs = await rq.order('date_heure', ascending: true);
 
       // Charger les infos animaux
       final animalIds = (rdvs as List)

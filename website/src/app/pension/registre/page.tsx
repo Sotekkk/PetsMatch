@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@ function espLabel(e?: string) { return ESP_LABEL[e ?? ''] ?? (e ?? ''); }
 export default function RegistrePensionPage() {
   const { user, userData } = useAuth();
   const router = useRouter();
+  const activeProfileId = useActiveProfile();
 
   const [tab, setTab]                   = useState<'en_pension' | 'sorti' | 'tous'>('en_pension');
   const [entrees, setEntrees]           = useState<PensionEntree[]>([]);
@@ -77,10 +79,11 @@ export default function RegistrePensionPage() {
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const [{ data: ent }, { data: acc }] = await Promise.all([
-      supabase.from('pension_entrees').select('*').eq('pro_uid', user.uid).order('date_entree', { ascending: false }),
-      supabase.from('pension_acces').select('animal_id').eq('pro_uid', user.uid).eq('statut', 'approved'),
-    ]);
+    let qEnt = supabase.from('pension_entrees').select('*').eq('pro_uid', user.uid).order('date_entree', { ascending: false });
+    qEnt = activeProfileId ? (qEnt as any).eq('pro_profile_id', activeProfileId) : (qEnt as any).is('pro_profile_id', null);
+    let qAcc = supabase.from('pension_acces').select('animal_id').eq('pro_uid', user.uid).eq('statut', 'approved');
+    qAcc = activeProfileId ? (qAcc as any).eq('pro_profile_id', activeProfileId) : (qAcc as any).is('pro_profile_id', null);
+    const [{ data: ent }, { data: acc }] = await Promise.all([qEnt, qAcc]);
     setEntrees((ent ?? []) as PensionEntree[]);
 
     const ids = (acc ?? []).map((a: { animal_id: string }) => a.animal_id);
@@ -96,7 +99,7 @@ export default function RegistrePensionPage() {
       setPuceToAnimalId(map);
     }
     setLoading(false);
-  }, [user]);
+  }, [user, activeProfileId]);
 
   useEffect(() => { load(); }, [load]);
 

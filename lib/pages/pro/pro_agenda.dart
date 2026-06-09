@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
-import 'package:PetsMatch/pages/pro/animal_acces_page.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/message.dart';
@@ -30,6 +30,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   late DateTime _weekStart;
   int _selectedDayIdx = 0;
   final Map<String, bool> _blockedSlots = {};
+
+  // VET07 — retard
+  bool _retardDeclare = false;
 
   // Durées par motif (pour pré-remplir le dialog de confirmation)
   Map<String, int> _dureesMotifs = {};
@@ -77,12 +80,16 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<void> _loadRdvs() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) { setState(() => _loading = false); return; }
+    final pid = User_Info.activeProfileId;
     try {
-      final rows = await Supabase.instance.client
+      var q = Supabase.instance.client
           .from('rdv')
           .select()
-          .eq('pro_uid', uid)
-          .order('date_heure', ascending: true);
+          .eq('pro_uid', uid);
+      q = pid.isEmpty
+          ? q.or('pro_profile_id.is.null')
+          : q.eq('pro_profile_id', pid);
+      final rows = await q.order('date_heure', ascending: true);
 
       // Load client names in batch
       final clientUids = rows
@@ -620,6 +627,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           });
         } catch (_) {}
       }
+      // A60 — accès carnet santé automatique
+      await _autoGrantAccess(rdv);
       await _loadRdvs();
     } catch (e) {
       if (mounted) {
@@ -684,6 +693,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             });
           } catch (_) {}
         }
+        // A60 — accès carnet santé automatique
+        await _autoGrantAccess(rdv);
       } else if ((statut == 'annule' || statut == 'refuse') && rdv.isNotEmpty) {
         await supa.from('agenda_events').delete().eq('rdv_id', rdv['id']); // client
         final proUidDel = FirebaseAuth.instance.currentUser?.uid;
@@ -874,6 +885,162 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }
   }
 
+  // ── VET07 — Retard ───────────────────────────────────────────────────────────
+
+  Future<void> _showRetardDialog() async {
+    int delai = 15;
+    final msgCtrl = TextEditingController();
+    bool sending = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => Padding(
+          padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            Row(children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 22),
+              const SizedBox(width: 8),
+              const Text('Signaler un retard',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+            ]),
+            const SizedBox(height: 4),
+            const Text('Vos clients avec un RDV dans les 3 prochaines heures seront notifiés.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 20),
+            const Text('Délai estimé',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8, runSpacing: 8,
+              children: [15, 30, 45, 60, 90].map((d) {
+                final sel = delai == d;
+                return GestureDetector(
+                  onTap: () => setModal(() => delai = d),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: sel ? Colors.orange : Colors.white,
+                      border: Border.all(color: sel ? Colors.orange : const Color(0xFFE4E7E2)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      d < 60 ? '$d min' : '${d ~/ 60} h',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                          fontWeight: sel ? FontWeight.w700 : FontWeight.normal,
+                          color: sel ? Colors.white : const Color(0xFF1E2025)),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: msgCtrl,
+              maxLength: 140,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Message optionnel pour vos clients…',
+                hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.all(12),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: sending ? null : () async {
+                  setModal(() => sending = true);
+                  Navigator.pop(ctx);
+                  await _sendRetard(delai, msgCtrl.text.trim());
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+                child: sending
+                    ? const SizedBox(height: 20, width: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('Envoyer la notification',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sendRetard(int delaiMinutes, String message) async {
+    try {
+      final fn = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('sendRetardNotification');
+      final result = await fn.call({'delaiMinutes': delaiMinutes, 'message': message});
+      final notified = (result.data as Map?)?['notified'] as int? ?? 0;
+      if (mounted) {
+        setState(() => _retardDeclare = true);
+        final delaiText = delaiMinutes < 60 ? '$delaiMinutes min' : '${delaiMinutes ~/ 60} h';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            notified > 0
+                ? 'Retard de $delaiText signalé — $notified client(s) notifié(s).'
+                : 'Retard signalé. Aucun client avec RDV dans les 3h.',
+            style: const TextStyle(fontFamily: 'Galey'),
+          ),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  // ── A60 — Auto-accès carnet santé à la confirmation du RDV ───────────────────
+
+  Future<void> _autoGrantAccess(Map<String, dynamic> rdv) async {
+    final animalId = rdv['animal_id']?.toString();
+    final clientUid = rdv['client_uid']?.toString();
+    final proUid = FirebaseAuth.instance.currentUser?.uid;
+    if (animalId == null || animalId.isEmpty || clientUid == null || proUid == null) return;
+    try {
+      final supa = Supabase.instance.client;
+      if (User_Info.catPro == 'veterinaire') {
+        await supa.from('vet_access_grants').upsert({
+          'vet_id':      proUid,
+          'animal_id':   animalId,
+          'owner_uid':   clientUid,
+          'status':      'active',
+          'granted_at':  DateTime.now().toIso8601String(),
+        }, onConflict: 'vet_id,animal_id');
+      } else {
+        await supa.from('animal_acces_pro').upsert({
+          'pro_uid':    proUid,
+          'animal_id':  animalId,
+          'owner_uid':  clientUid,
+          'granted_at': DateTime.now().toIso8601String(),
+        }, onConflict: 'animal_id,pro_uid');
+      }
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -884,6 +1051,25 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         elevation: 0,
         title: const Text('Mon agenda',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        actions: [
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.warning_amber_rounded),
+                tooltip: 'Signaler un retard',
+                onPressed: _showRetardDialog,
+              ),
+              if (_retardDeclare)
+                Positioned(
+                  top: 8, right: 8,
+                  child: Container(
+                    width: 8, height: 8,
+                    decoration: const BoxDecoration(color: Colors.orange, shape: BoxShape.circle),
+                  ),
+                ),
+            ],
+          ),
+        ],
         bottom: TabBar(
           controller: _tabCtrl,
           indicatorColor: Colors.white,
@@ -921,15 +1107,18 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<void> _loadCreneaux() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    final pid = User_Info.activeProfileId;
     final weekEnd = _weekStart.add(const Duration(days: 6));
     try {
-      final rows = await Supabase.instance.client
+      var q = Supabase.instance.client
           .from('creneaux_pro')
           .select()
           .eq('pro_uid', uid)
           .eq('statut', 'disponible')
           .gte('date', _weekStart.toIso8601String().substring(0, 10))
           .lte('date', weekEnd.toIso8601String().substring(0, 10));
+      q = pid.isEmpty ? q.or('pro_profile_id.is.null') : q.eq('pro_profile_id', pid);
+      final rows = await q;
 
       if (!mounted) return;
       setState(() {
@@ -953,22 +1142,27 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     });
     try {
       final heureDebut = '${hour.toString().padLeft(2, '0')}:00:00';
+      final pid3 = User_Info.activeProfileId;
       if (isActive) {
-        await Supabase.instance.client
+        var dq = Supabase.instance.client
             .from('creneaux_pro')
             .delete()
             .eq('pro_uid', uid)
             .eq('date', date)
             .eq('heure_debut', heureDebut);
+        dq = pid3.isEmpty ? dq.or('pro_profile_id.is.null') : dq.eq('pro_profile_id', pid3);
+        await dq;
       } else {
         final heureFin = '${(hour + 1).toString().padLeft(2, '0')}:00:00';
+        final pid2 = User_Info.activeProfileId;
         await Supabase.instance.client.from('creneaux_pro').upsert({
-          'pro_uid':     uid,
-          'date':        date,
-          'heure_debut': heureDebut,
-          'heure_fin':   heureFin,
-          'statut':      'disponible',
-        }, onConflict: 'pro_uid,date,heure_debut');
+          'pro_uid':        uid,
+          'pro_profile_id': pid2.isEmpty ? null : pid2,
+          'date':           date,
+          'heure_debut':    heureDebut,
+          'heure_fin':      heureFin,
+          'statut':         'disponible',
+        }, onConflict: 'pro_uid,pro_profile_id,date,heure_debut');
       }
     } catch (e) {
       setState(() {
