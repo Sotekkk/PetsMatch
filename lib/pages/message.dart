@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/utils.dart';
+import 'package:PetsMatch/main.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -276,6 +277,13 @@ class _MessagePageState extends State<MessagePage> {
                     }
                     final deletedFor = data['deletedFor'] as Map<String, dynamic>?;
                     if (deletedFor?[currentUserId] == true) return false;
+                    // Per-profile filter: pros only see their profile's conversations
+                    if (User_Info.isPro) {
+                      final pid = User_Info.activeProfileId;
+                      final convoProfileId = data['pro_profile_id'] as String? ?? '';
+                      if (pid.isEmpty && convoProfileId.isNotEmpty) return false;
+                      if (pid.isNotEmpty && convoProfileId != pid) return false;
+                    }
                     return true;
                   }).toList();
 

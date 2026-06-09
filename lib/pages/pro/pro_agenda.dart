@@ -87,7 +87,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           .select()
           .eq('pro_uid', uid);
       q = pid.isEmpty
-          ? q.or('pro_profile_id.is.null')
+          ? q.filter('pro_profile_id', 'is', 'null')
           : q.eq('pro_profile_id', pid);
       final rows = await q.order('date_heure', ascending: true);
 
@@ -1117,7 +1117,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           .eq('statut', 'disponible')
           .gte('date', _weekStart.toIso8601String().substring(0, 10))
           .lte('date', weekEnd.toIso8601String().substring(0, 10));
-      q = pid.isEmpty ? q.or('pro_profile_id.is.null') : q.eq('pro_profile_id', pid);
+      q = pid.isEmpty ? q.filter('pro_profile_id', 'is', 'null') : q.eq('pro_profile_id', pid);
       final rows = await q;
 
       if (!mounted) return;
@@ -1150,7 +1150,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             .eq('pro_uid', uid)
             .eq('date', date)
             .eq('heure_debut', heureDebut);
-        dq = pid3.isEmpty ? dq.or('pro_profile_id.is.null') : dq.eq('pro_profile_id', pid3);
+        dq = pid3.isEmpty ? dq.filter('pro_profile_id', 'is', 'null') : dq.eq('pro_profile_id', pid3);
         await dq;
       } else {
         final heureFin = '${(hour + 1).toString().padLeft(2, '0')}:00:00';

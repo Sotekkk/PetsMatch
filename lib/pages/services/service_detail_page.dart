@@ -159,7 +159,9 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       final currentUserId = FirebaseAuth.instance.currentUser!.uid;
       final proId = widget.proUid;
       final sortedIds = [currentUserId, proId]..sort();
-      final participantIds = sortedIds.join('_');
+      // Unique key per secondary profile to keep conversations separate
+      final profileSuffix = widget.profileTableId != null ? ':${widget.profileTableId}' : '';
+      final participantIds = '${sortedIds.join("_")}$profileSuffix';
       final snap = await FirebaseFirestore.instance
           .collection('conversations')
           .where('participantIds', isEqualTo: participantIds)
@@ -172,6 +174,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
               'lastMessage': '',
               'timestamp': FieldValue.serverTimestamp(),
               'categorie': 'services',
+              if (widget.profileTableId != null) 'pro_profile_id': widget.profileTableId,
             })
           : snap.docs.first.reference;
       if (mounted) {

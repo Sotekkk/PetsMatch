@@ -67,7 +67,7 @@ class _VetPatientsPageState extends State<VetPatientsPage>
           .select('id, animal_id, granted_at, status')
           .eq('vet_id', vetUid)
           .neq('status', 'revoked');
-      gq = pid.isEmpty ? gq.or('pro_profile_id.is.null') : gq.eq('pro_profile_id', pid);
+      gq = pid.isEmpty ? gq.filter('pro_profile_id', 'is', 'null') : gq.eq('pro_profile_id', pid);
       final grants = await gq.order('granted_at', ascending: false);
 
       final animalIds = (grants as List)
@@ -170,7 +170,7 @@ class _VetPatientsPageState extends State<VetPatientsPage>
           .gte('date_heure', dayStart)
           .lte('date_heure', dayEnd)
           .inFilter('statut', ['confirme', 'demande']);
-      rq = pid.isEmpty ? rq.or('pro_profile_id.is.null') : rq.eq('pro_profile_id', pid);
+      rq = pid.isEmpty ? rq.filter('pro_profile_id', 'is', 'null') : rq.eq('pro_profile_id', pid);
       final rdvs = await rq.order('date_heure', ascending: true);
 
       // Charger les infos animaux

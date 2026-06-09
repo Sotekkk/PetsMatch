@@ -50,9 +50,9 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
     try {
       final pid = User_Info.activeProfileId;
       var qEntrees = _supa.from('pension_entrees').select().eq('pro_uid', _uid);
-      qEntrees = pid.isEmpty ? qEntrees.or('pro_profile_id.is.null') : qEntrees.eq('pro_profile_id', pid);
+      qEntrees = pid.isEmpty ? qEntrees.filter('pro_profile_id', 'is', 'null') : qEntrees.eq('pro_profile_id', pid);
       var qAcces = _supa.from('pension_acces').select('animal_id').eq('pro_uid', _uid).eq('statut', 'approved');
-      qAcces = pid.isEmpty ? qAcces.or('pro_profile_id.is.null') : qAcces.eq('pro_profile_id', pid);
+      qAcces = pid.isEmpty ? qAcces.filter('pro_profile_id', 'is', 'null') : qAcces.eq('pro_profile_id', pid);
       final results = await Future.wait([
         qEntrees.order('date_entree', ascending: false),
         qAcces,

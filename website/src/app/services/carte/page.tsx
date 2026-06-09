@@ -85,7 +85,8 @@ export default function ServicesCartePage() {
       const { data: secondaryData } = await supabase
         .from('user_profiles')
         .select('id, uid, profile_type, name_elevage, avatar_url, profession_pro, ville, especes_acceptees, accept_new_clients, latitude, longitude, lat, lng, rayon_intervention')
-        .not('profile_type', 'is', null);
+        .not('profile_type', 'is', null)
+        .eq('statut_pro', 'actif');
 
       const items: ProMapItem[] = [];
 

@@ -107,7 +107,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
 
     // Helper : ajoute le filtre profil sur une requête déjà construite
     dynamic pf(dynamic q) => pid.isEmpty
-        ? q.or('pro_profile_id.is.null')
+        ? q.filter('pro_profile_id', 'is', 'null')
         : q.eq('pro_profile_id', pid);
 
     try {

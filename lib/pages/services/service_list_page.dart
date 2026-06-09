@@ -72,11 +72,12 @@ class _ServiceListPageState extends State<ServiceListPage> {
           .inFilter('cat_pro', widget.catProValues)
           .order('name_elevage');
 
-      // Secondary profiles from user_profiles table
+      // Secondary profiles from user_profiles table (only validated ones)
       final secondaryRows = await _supa
           .from('user_profiles')
           .select()
-          .inFilter('profile_type', widget.catProValues);
+          .inFilter('profile_type', widget.catProValues)
+          .eq('statut_pro', 'actif');
 
       final seenUids = <String>{};
       final merged = <Map<String, dynamic>>[];
