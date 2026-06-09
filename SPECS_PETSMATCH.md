@@ -400,8 +400,8 @@ Doses calculées depuis formule DER (adulte × 1.6 chien / × 1.4 chat ; junior 
 |---|---|---|---|
 | A12 | Validation automatique profils éleveur/pro : algorithme (SIRET, cohérence, doublons) + envoi à l'admin si suspect | Haute | App + Web |
 | A13 | Validation automatique annonces : algorithme (cohérence espèce/race/prix, contenu signalé) | Haute | App + Web |
-| A16 | Panel admin web complet (reflet admin app) | Haute | Web |
-| A16b | Tableau de bord stats admin : annonces en ligne, animaux par espèce, utilisateurs | Haute | App + Web |
+| A16 | Panel admin web complet (reflet admin app) | Haute | Web | ✅ Implémenté 2026-06-09 — layout 3 onglets Dashboard/Signalements/Utilisateurs, stats Supabase, SIG04 intégré |
+| A16b | Tableau de bord stats admin : annonces en ligne, animaux par espèce, utilisateurs | Haute | App + Web | ✅ Implémenté 2026-06-09 — cards stats web (5 compteurs Supabase) + Flutter dashboard _AnimalStatsSection existant |
 
 ### 5.9 Contenu / Guides
 
@@ -1525,7 +1525,7 @@ Règle éditoriale : tous les partenaires sont vérifiés manuellement avant act
 | SIG01 | Bouton "Signaler" sur profil utilisateur, annonce, profil pro | Haute | App + Web | ✅ Implémenté 2026-06-09 — profil éleveur + annonce (app + web) |
 | SIG02 | Formulaire de signalement : type (contenu_inapproprie / spam / faux_profil / maltraitance / autre) + description libre | Haute | App + Web | ✅ Implémenté 2026-06-09 — table `signalements` Supabase, contrainte UNIQUE reporter×cible |
 | SIG03 | Queue admin — liste des signalements avec statut (en_attente / traité / rejeté) + lien vers la ressource signalée | Haute | App + Web | ✅ Implémenté 2026-06-09 — vue `signalements_alertes` (seuil ≥ 3), queryable pour panel admin (SIG04) |
-| SIG04 | Actions admin : envoyer avertissement / suspendre compte / bannir + log dans `audit_logs` | Haute | App + Web | ❌ À faire avec panel admin (A16) |
+| SIG04 | Actions admin : envoyer avertissement / suspendre compte / bannir + log dans `audit_logs` | Haute | App + Web | ✅ Implémenté 2026-06-09 — panel admin web (onglet Signalements) + app (onglet Signalements avec badge) ; actions traiter/rejeter + note admin |
 
 ### Table Supabase
 

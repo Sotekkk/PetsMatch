@@ -43,9 +43,9 @@ class _AdminPanelState extends State<AdminPanel> {
     try {
       final res = await Supabase.instance.client
           .from('signalements')
-          .select('id', const FetchOptions(count: CountOption.exact, head: true))
+          .select('id')
           .eq('statut', 'en_attente');
-      if (mounted) setState(() => _pendingSig = res.count ?? 0);
+      if (mounted) setState(() => _pendingSig = (res as List).length);
     } catch (_) {}
   }
 
@@ -540,45 +540,32 @@ class _AnimalStatsSectionState extends State<_AnimalStatsSection> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final animaux = await _supa.from('animaux').select('espece, race, uid_proprietaire, uid_eleveur');
-      final List<Map<String, dynamic>> rows = List<Map<String, dynamic>>.from(animaux);
+      // RPC SECURITY DEFINER — contourne les RLS pour avoir les vrais totaux
+      final res = await _supa.rpc('get_admin_stats') as Map<String, dynamic>;
 
-      final especeCount = <String, int>{};
-      final raceCount = <String, int>{};
-      int particuliers = 0, eleveurs = 0;
-      for (final r in rows) {
-        final e = r['espece'] as String? ?? 'autre';
-        especeCount[e] = (especeCount[e] ?? 0) + 1;
-        final race = r['race'] as String?;
-        if (race != null && race.isNotEmpty) {
-          raceCount[race] = (raceCount[race] ?? 0) + 1;
-        }
-        if (r['uid_eleveur'] != null) {
-          eleveurs++;
-        } else {
-          particuliers++;
-        }
-      }
+      final parEspeceRaw = (res['par_espece'] as Map<String, dynamic>? ?? {});
+      final parEspece = parEspeceRaw.map((k, v) => MapEntry(k, (v as num).toInt()));
 
-      final topRaces = raceCount.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
+      final topRacesRaw = (res['top_races'] as List? ?? []);
+      final topRaces = topRacesRaw
+          .map((r) => MapEntry((r as Map)['race'] as String, (r['cnt'] as num).toInt()))
+          .toList();
 
-      final annoncesRes = await _supa.from('annonces').select('id').eq('statut', 'active');
       final alertesRes = await _supa.from('alertes').select('id').eq('actif', true);
 
       if (mounted) {
         setState(() {
-          _totalAnimaux = rows.length;
-          _parEspece = especeCount;
-          _particuliers = particuliers;
-          _eleveurs = eleveurs;
-          _topRaces = topRaces.take(5).toList();
-          _annoncesActives = (annoncesRes as List).length;
-          _alertesPerdus = (alertesRes as List).length;
-          _loading = false;
+          _totalAnimaux    = (res['total_animaux'] as num?)?.toInt() ?? 0;
+          _parEspece       = parEspece;
+          _particuliers    = (res['particuliers'] as num?)?.toInt() ?? 0;
+          _eleveurs        = (res['eleveurs'] as num?)?.toInt() ?? 0;
+          _topRaces        = topRaces.take(5).toList();
+          _annoncesActives = (res['annonces_actives'] as num?)?.toInt() ?? 0;
+          _alertesPerdus   = (alertesRes as List).length;
+          _loading         = false;
         });
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) setState(() => _loading = false);
     }
   }

@@ -25,7 +25,9 @@ interface ProfileEntry {
 
 interface Stats {
   utilisateurs: number; animaux: number; annonces: number;
-  signalementsEnAttente: number; profilsEnAttente: number;
+  annoncesActives: number; signalementsEnAttente: number; profilsEnAttente: number;
+  particuliers: number; eleveurs: number;
+  parEspece: Record<string, number>;
 }
 
 interface Signalement {
@@ -107,21 +109,20 @@ export default function AdminPage() {
     });
   }, [user]);
 
-  // ── Stats ────────────────────────────────────────────────────────────────────
+  // ── Stats (RPC SECURITY DEFINER — bypasse les RLS) ───────────────────────────
   const loadStats = useCallback(async () => {
-    const [usersRes, animauxRes, annoncesRes, sigRes, profilsRes] = await Promise.all([
-      supabase.from('users').select('uid', { count: 'exact', head: true }),
-      supabase.from('animaux').select('id', { count: 'exact', head: true }),
-      supabase.from('annonces').select('id', { count: 'exact', head: true }),
-      supabase.from('signalements').select('id', { count: 'exact', head: true }).eq('statut', 'en_attente'),
-      supabase.from('users').select('uid', { count: 'exact', head: true }).eq('statut_pro', 'en_attente'),
-    ]);
+    const { data: rpc } = await supabase.rpc('get_admin_stats');
+    const r = (rpc ?? {}) as Record<string, unknown>;
     setStats({
-      utilisateurs:          usersRes.count ?? 0,
-      animaux:               animauxRes.count ?? 0,
-      annonces:              annoncesRes.count ?? 0,
-      signalementsEnAttente: sigRes.count ?? 0,
-      profilsEnAttente:      profilsRes.count ?? 0,
+      utilisateurs:          Number(r['total_profils']               ?? 0),
+      animaux:               Number(r['total_animaux']               ?? 0),
+      annonces:              Number(r['total_annonces']              ?? 0),
+      annoncesActives:       Number(r['annonces_actives']            ?? 0),
+      signalementsEnAttente: Number(r['total_signalements_en_attente'] ?? 0),
+      profilsEnAttente:      Number(r['profils_en_attente']          ?? 0),
+      particuliers:          Number(r['particuliers']                ?? 0),
+      eleveurs:              Number(r['eleveurs']                    ?? 0),
+      parEspece:             (r['par_espece'] as Record<string, number>) ?? {},
     });
 
     const { data: alertesData } = await supabase.from('signalements_alertes').select('*');
@@ -238,9 +239,10 @@ export default function AdminPage() {
     }));
     if (selected?.uid === entry.uid && selected?.profileTableId === entry.profileTableId)
       setSelected(prev => prev ? { ...prev, statutPro: statut } : null);
-    // Refresh stats
-    const { count } = await supabase.from('users').select('uid', { count: 'exact', head: true }).eq('statut_pro', 'en_attente');
-    setStats(prev => prev ? { ...prev, profilsEnAttente: count ?? 0 } : prev);
+    // Refresh stats via RPC
+    const { data: rpc } = await supabase.rpc('get_admin_stats');
+    const r = (rpc ?? {}) as Record<string, unknown>;
+    setStats(prev => prev ? { ...prev, profilsEnAttente: Number(r['profils_en_attente'] ?? prev.profilsEnAttente) } : prev);
   }
 
   async function deleteEntry(entry: ProfileEntry) {
@@ -350,14 +352,13 @@ export default function AdminPage() {
             {/* Stats cards */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               {[
-                { label: 'Utilisateurs', value: stats?.utilisateurs, icon: '👥', color: '#0C5C6C' },
-                { label: 'Animaux',      value: stats?.animaux,      icon: '🐾', color: '#6E9E57' },
-                { label: 'Annonces',     value: stats?.annonces,     icon: '📋', color: '#A7C79A' },
-                { label: 'Signalements', value: stats?.signalementsEnAttente, icon: '🚨', color: stats?.signalementsEnAttente ? '#dc2626' : '#6E9E57', alert: !!(stats?.signalementsEnAttente) },
-                { label: 'Profils en attente', value: stats?.profilsEnAttente, icon: '⏳', color: stats?.profilsEnAttente ? '#ea580c' : '#6E9E57', alert: !!(stats?.profilsEnAttente) },
+                { label: 'Utilisateurs',       value: stats?.utilisateurs,          icon: '👥', color: '#0C5C6C' },
+                { label: 'Annonces actives',    value: stats?.annoncesActives,       icon: '📋', color: '#A7C79A' },
+                { label: 'Signalements',        value: stats?.signalementsEnAttente, icon: '🚨', color: stats?.signalementsEnAttente ? '#dc2626' : '#6E9E57', alert: !!(stats?.signalementsEnAttente) },
+                { label: 'Profils en attente',  value: stats?.profilsEnAttente,      icon: '⏳', color: stats?.profilsEnAttente ? '#ea580c' : '#6E9E57', alert: !!(stats?.profilsEnAttente) },
               ].map(s => (
                 <div key={s.label}
-                  className={`bg-white rounded-2xl p-4 shadow-sm border ${s.alert ? 'border-red-200' : 'border-gray-100'}`}>
+                  className={`bg-white rounded-2xl p-4 shadow-sm border ${(s as {alert?:boolean}).alert ? 'border-red-200' : 'border-gray-100'}`}>
                   <div className="text-2xl mb-1">{s.icon}</div>
                   <div className="text-2xl font-bold" style={{ color: s.color, fontFamily: 'Galey, sans-serif' }}>
                     {stats === null ? '…' : (s.value ?? 0)}
@@ -365,6 +366,47 @@ export default function AdminPage() {
                   <div className="text-xs text-gray-500 mt-0.5">{s.label}</div>
                 </div>
               ))}
+            </div>
+
+            {/* Bloc animaux — total + particuliers/éleveurs + par espèce */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-lg">🐾</span>
+                <h2 className="font-bold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                  Animaux enregistrés
+                </h2>
+                <button onClick={loadStats} className="ml-auto text-xs text-gray-400 hover:text-[#0C5C6C]">↺ Rafraîchir</button>
+              </div>
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                {[
+                  { label: 'Total',        value: stats?.animaux,      color: '#0C5C6C' },
+                  { label: 'Particuliers', value: stats?.particuliers,  color: '#2563eb' },
+                  { label: 'Éleveurs',     value: stats?.eleveurs,      color: '#ea580c' },
+                ].map(s => (
+                  <div key={s.label} className="text-center p-3 bg-gray-50 rounded-xl">
+                    <div className="text-xl font-bold" style={{ color: s.color, fontFamily: 'Galey, sans-serif' }}>
+                      {stats === null ? '…' : (s.value ?? 0)}
+                    </div>
+                    <div className="text-xs text-gray-500">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+              {stats && Object.keys(stats.parEspece).length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { key: 'chien',  label: '🐕 Chiens',  color: '#1E88E5' },
+                    { key: 'chat',   label: '🐈 Chats',   color: '#8E24AA' },
+                    { key: 'equide', label: '🐴 Équidés', color: '#795548' },
+                    { key: 'autre',  label: '🐾 Autres',  color: '#6B7280' },
+                  ].map(e => (
+                    <div key={e.key}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
+                      style={{ background: `${e.color}18`, color: e.color }}>
+                      {e.label} : {stats.parEspece[e.key] ?? 0}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Alertes signalements */}

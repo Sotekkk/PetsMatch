@@ -896,6 +896,10 @@ export default function AnimalFichePage() {
   const [savingDoc, setSavingDoc] = useState(false);
   const [vetNames, setVetNames] = useState<Record<string,string>>({});
 
+  // ── Accès vétérinaires (vet_access_grants)
+  const [vetAcces, setVetAcces] = useState<{id:string;vet_id:string;vet_nom:string;status:string;granted_at?:string}[]>([]);
+  const [vetAccesSaving, setVetAccesSaving] = useState<string|null>(null);
+
   // ── État repro
   const [chaleurs, setChaleurs] = useState<HealthRecord[]>([]);
   const [saillies, setSaillies] = useState<HealthRecord[]>([]);
@@ -957,26 +961,30 @@ export default function AnimalFichePage() {
 
   const loadDocs = useCallback(async () => {
     if (!id || isNew) return;
-    const [ord, rad, cr] = await Promise.all([
+    const [ord, rad, cr, grants] = await Promise.all([
       supabase.from('ordonnances').select('*').eq('animal_id', id).order('date', { ascending: false }),
       supabase.from('radios').select('*').eq('animal_id', id).order('date', { ascending: false }),
       supabase.from('comptes_rendus').select('*').eq('animal_id', id).order('date', { ascending: false }),
+      supabase.from('vet_access_grants').select('id, vet_id, status, granted_at').eq('animal_id', id).neq('status', 'revoked'),
     ]);
     const allDocs = [...(ord.data ?? []), ...(rad.data ?? []), ...(cr.data ?? [])] as HealthRecord[];
     setOrdonnances((ord.data ?? []) as HealthRecord[]);
     setRadios((rad.data ?? []) as HealthRecord[]);
     setCrs((cr.data ?? []) as HealthRecord[]);
-    // Résoudre les noms des vétérinaires
-    const proUids = [...new Set(allDocs.map(d => d.pro_uid as string).filter(Boolean))];
+    // Résoudre les noms des vétérinaires (docs + accès)
+    const grantRows = (grants.data ?? []) as {id:string;vet_id:string;status:string;granted_at?:string}[];
+    const vetIds = grantRows.map(g => g.vet_id).filter(Boolean);
+    const proUids = [...new Set([...allDocs.map(d => d.pro_uid as string).filter(Boolean), ...vetIds])];
+    const names: Record<string,string> = {};
     if (proUids.length > 0) {
       const { data: users } = await supabase.from('users').select('uid, firstname, lastname').in('uid', proUids);
-      const names: Record<string,string> = {};
       (users ?? []).forEach((u: Record<string,unknown>) => {
         const nom = `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
         names[u.uid as string] = nom ? `Dr. ${nom}` : 'Vétérinaire';
       });
       setVetNames(names);
     }
+    setVetAcces(grantRows.map(g => ({ ...g, vet_nom: names[g.vet_id] ?? 'Vétérinaire' })));
   }, [id, isNew]);
 
   useEffect(() => { loadBreeds(animal.espece ?? 'chien').then(setBreeds); }, [animal.espece]);
@@ -1004,6 +1012,23 @@ export default function AnimalFichePage() {
   }, [user, isEleveur]);
 
   // ── Sauvegarde identité
+  async function approveVetAcces(grantId: string) {
+    setVetAccesSaving(grantId);
+    try {
+      await supabase.from('vet_access_grants').update({ status: 'active', granted_at: new Date().toISOString() }).eq('id', grantId);
+      setVetAcces(prev => prev.map(g => g.id === grantId ? { ...g, status: 'active', granted_at: new Date().toISOString() } : g));
+    } finally { setVetAccesSaving(null); }
+  }
+
+  async function revokeVetAcces(grantId: string) {
+    if (!confirm('Révoquer l\'accès de ce vétérinaire au carnet de santé ?')) return;
+    setVetAccesSaving(grantId);
+    try {
+      await supabase.from('vet_access_grants').update({ status: 'revoked' }).eq('id', grantId);
+      setVetAcces(prev => prev.filter(g => g.id !== grantId));
+    } finally { setVetAccesSaving(null); }
+  }
+
   async function saveAnimal() {
     if (!user) return;
     if (!animal.nom?.trim()) { setSaveError('Le nom est requis.'); return; }
@@ -1805,6 +1830,55 @@ export default function AnimalFichePage() {
               </div>
             </div>
           )}
+        {/* ── Accès vétérinaires ───────────────────────────────────────────── */}
+        {!isNew && vetAcces.length > 0 && (
+          <div className="rounded-2xl border border-[#26A69A]/20 bg-[#26A69A]/5 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">🩺</span>
+              <p className="font-bold text-sm text-[#26A69A]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                Accès vétérinaires
+              </p>
+            </div>
+            <div className="space-y-2">
+              {vetAcces.map(g => (
+                <div key={g.id} className="flex items-center justify-between bg-white rounded-xl px-3 py-2 shadow-sm">
+                  <div>
+                    <p className="text-sm font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      Dr. {g.vet_nom}
+                    </p>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      g.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {g.status === 'active' ? 'Accès accordé' : 'En attente de validation'}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    {g.status === 'demande' && (
+                      <button
+                        onClick={() => approveVetAcces(g.id)}
+                        disabled={vetAccesSaving === g.id}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-[#26A69A] text-white hover:bg-[#1e9087] disabled:opacity-50"
+                        style={{ fontFamily: 'Galey, sans-serif' }}
+                      >
+                        {vetAccesSaving === g.id ? '…' : '✓ Approuver'}
+                      </button>
+                    )}
+                    {g.status === 'active' && (
+                      <button
+                        onClick={() => revokeVetAcces(g.id)}
+                        disabled={vetAccesSaving === g.id}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-50"
+                        style={{ fontFamily: 'Galey, sans-serif' }}
+                      >
+                        {vetAccesSaving === g.id ? '…' : 'Révoquer'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         </div>
       )}
 

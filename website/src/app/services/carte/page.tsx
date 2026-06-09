@@ -64,6 +64,7 @@ export default function ServicesCartePage() {
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
   const [filterRegion, setFilterRegion] = useState('');
   const [filterDept, setFilterDept] = useState('');
+  const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
 
   useEffect(() => {
     loadPros();
@@ -72,14 +73,12 @@ export default function ServicesCartePage() {
   async function loadPros() {
     setLoading(true);
     try {
-      // Profils primaires (users)
+      // Profils primaires (users) — sans filtre lat/lng pour inclure tous les pros dans la liste
       const { data: primaryData } = await supabase
         .from('users')
         .select('uid, name_elevage, firstname, profile_picture_url, profession_pro, ville_elevage, ville, departement_elevage, region_elevage, cat_pro, especes_acceptees, accept_new_clients, lat, lng, rayon_intervention')
         .not('cat_pro', 'is', null)
-        .neq('cat_pro', '')
-        .not('lat', 'is', null)
-        .not('lng', 'is', null);
+        .neq('cat_pro', '');
 
       // Profils secondaires (user_profiles) — latitude/longitude OU lat/lng
       const { data: secondaryData } = await supabase
@@ -107,12 +106,11 @@ export default function ServicesCartePage() {
         });
       }
 
-      // Secondaires (on évite les doublons uid+cat_pro)
+      // Secondaires (on évite les doublons uid+cat_pro) — on les inclut même sans lat/lng
       const primaryKeys = new Set(items.map(i => `${i.uid}::${i.cat_pro}`));
       for (const row of (secondaryData ?? [])) {
         const lat = row.latitude ?? row.lat;
         const lng = row.longitude ?? row.lng;
-        if (!lat || !lng) continue;
         const cat = row.profile_type ?? '';
         if (!cat) continue;
         const key = `${row.uid}::${cat}`;
@@ -219,7 +217,7 @@ export default function ServicesCartePage() {
           <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>
             Carte des professionnels
           </h1>
-          <p className="text-white/70 text-sm">{filtered.length} professionnel(s) avec localisation</p>
+          <p className="text-white/70 text-sm">{filtered.length} professionnel(s) trouvé(s)</p>
         </div>
       </div>
 
@@ -341,6 +339,29 @@ export default function ServicesCartePage() {
                 Réinitialiser
               </button>
             )}
+            {/* Toggle Map / Liste */}
+            <div className="ml-auto flex bg-gray-100 rounded-full p-0.5">
+              <button
+                onClick={() => setViewMode('map')}
+                className="px-3 py-1.5 rounded-full text-xs font-semibold transition-colors flex items-center gap-1"
+                style={{
+                  fontFamily: 'Galey, sans-serif',
+                  background: viewMode === 'map' ? 'white' : 'transparent',
+                  color: viewMode === 'map' ? '#0C5C6C' : '#6B7280',
+                  boxShadow: viewMode === 'map' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                }}
+              >🗺️ Carte</button>
+              <button
+                onClick={() => setViewMode('list')}
+                className="px-3 py-1.5 rounded-full text-xs font-semibold transition-colors flex items-center gap-1"
+                style={{
+                  fontFamily: 'Galey, sans-serif',
+                  background: viewMode === 'list' ? 'white' : 'transparent',
+                  color: viewMode === 'list' ? '#0C5C6C' : '#6B7280',
+                  boxShadow: viewMode === 'list' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                }}
+              >📋 Liste</button>
+            </div>
           </div>
         </div>
       </div>
@@ -363,16 +384,16 @@ export default function ServicesCartePage() {
         </div>
       </div>
 
-      {/* Carte */}
+      {/* Carte ou Liste */}
       <div className="flex-1 p-4">
-        <div className="max-w-4xl mx-auto h-[60vh] min-h-[400px]">
+        <div className="max-w-4xl mx-auto">
           {loading ? (
-            <div className="h-full flex items-center justify-center bg-gray-100 rounded-2xl">
+            <div className="h-[60vh] flex items-center justify-center bg-gray-100 rounded-2xl">
               <div className="w-8 h-8 border-4 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
             </div>
           ) : filtered.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center bg-gray-50 rounded-2xl gap-3">
-              <span className="text-4xl">🗺️</span>
+            <div className="h-[40vh] flex flex-col items-center justify-center bg-gray-50 rounded-2xl gap-3">
+              <span className="text-4xl">🔍</span>
               <p className="text-sm text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
                 Aucun professionnel trouvé avec ces filtres
               </p>
@@ -383,8 +404,82 @@ export default function ServicesCartePage() {
                 Réinitialiser les filtres
               </button>
             </div>
+          ) : viewMode === 'map' ? (
+            <>
+              {filtered.some(p => !p.lat || !p.lng) && (
+                <div className="mb-2 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
+                  <span className="text-sm">⚠️</span>
+                  <p className="text-xs text-amber-700" style={{ fontFamily: 'Galey, sans-serif' }}>
+                    {filtered.filter(p => !p.lat || !p.lng).length} professionnel(s) sans coordonnées ne s&apos;affiche(nt) pas sur la carte.
+                    Passez en <button onClick={() => setViewMode('list')} className="underline font-semibold">vue liste</button> pour tous les voir.
+                  </p>
+                </div>
+              )}
+              <div className="h-[60vh] min-h-[400px]">
+                <ServicesMap pros={filtered.filter(p => p.lat && p.lng)} />
+              </div>
+            </>
           ) : (
-            <ServicesMap pros={filtered} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-8">
+              {filtered.map((p, i) => <ProCard key={`${p.uid}-${p.cat_pro}-${i}`} pro={p} />)}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ProCard (vue liste) ──────────────────────────────────────────────────────
+
+interface ProCardPro {
+  uid: string; name: string; photo?: string; profession?: string;
+  ville?: string; cat_pro?: string; especes: string[]; accept_new_clients?: boolean;
+  lat?: number; lng?: number; profileTableId?: string;
+}
+
+const CAT_LIST_LABELS: Record<string, string> = {
+  veterinaire: 'Vétérinaire', sante: 'Santé', education: 'Éducateur',
+  garde: 'Pension / Pet sitter', toilettage: 'Toilettage', photographe: 'Photographe',
+  marechal_ferrant: 'Maréchal-ferrant', referencement: 'Commerce', pension: 'Pension',
+};
+
+function ProCard({ pro }: { pro: ProCardPro }) {
+  const catLabel = CAT_LIST_LABELS[pro.cat_pro ?? ''] ?? pro.cat_pro ?? '';
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-start gap-4 hover:shadow-md transition-shadow">
+      <div className="w-14 h-14 rounded-full bg-[#0C5C6C22] flex-shrink-0 overflow-hidden flex items-center justify-center">
+        {pro.photo
+          ? <img src={pro.photo} alt={pro.name} className="w-full h-full object-cover" />
+          : <span className="text-2xl">💼</span>
+        }
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-bold text-[#1F2A2E] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{pro.name}</p>
+        {pro.profession && <p className="text-xs text-gray-500 truncate">{pro.profession}</p>}
+        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+          {catLabel && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-[#0C5C6C15] text-[#0C5C6C]">
+              {catLabel}
+            </span>
+          )}
+          {pro.ville && (
+            <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
+              📍 {pro.ville}
+            </span>
+          )}
+          {pro.especes.slice(0, 3).map(e => (
+            <span key={e} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">{e}</span>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 mt-2">
+          {pro.accept_new_clients !== false && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-700 font-semibold border border-green-100">
+              Accepte de nouveaux clients
+            </span>
+          )}
+          {!pro.lat && (
+            <span className="text-[10px] text-amber-500" title="Pas de coordonnées — n'apparaît pas sur la carte">📍 Sans carte</span>
           )}
         </div>
       </div>
