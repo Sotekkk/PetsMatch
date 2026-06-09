@@ -156,9 +156,11 @@ function ModifierModal({ event, onClose, onDone }: { event: AgendaEvent; onClose
     if (!event.rdv_id) return;
     async function loadSlots() {
       const { data: rdvData } = await supabase
-        .from('rdv').select('pro_uid').eq('id', event.rdv_id!).single();
+        .from('rdv').select('pro_uid, pro_profile_id').eq('id', event.rdv_id!).single();
       if (!rdvData) { setSlotsLoading(false); return; }
-      const pUid = (rdvData as { pro_uid: string }).pro_uid;
+      const rd = rdvData as { pro_uid: string; pro_profile_id: string | null };
+      const pUid = rd.pro_uid;
+      const pProfileId = rd.pro_profile_id ?? '';
       setProUid(pUid);
 
       const today  = new Date().toISOString().slice(0, 10);
@@ -167,6 +169,7 @@ function ModifierModal({ event, onClose, onDone }: { event: AgendaEvent; onClose
         .from('creneaux_pro')
         .select('date, heure_debut')
         .eq('pro_uid', pUid)
+        .eq('pro_profile_id', pProfileId)
         .eq('statut', 'disponible')
         .gte('date', today)
         .lte('date', future)

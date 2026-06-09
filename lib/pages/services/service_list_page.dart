@@ -73,11 +73,16 @@ class _ServiceListPageState extends State<ServiceListPage> {
           .order('name_elevage');
 
       // Secondary profiles from user_profiles table (only validated ones)
-      final secondaryRows = await _supa
-          .from('user_profiles')
-          .select()
-          .inFilter('profile_type', widget.catProValues)
-          .eq('statut_pro', 'actif');
+      // Wrapped in its own try/catch: if statut_pro column doesn't exist yet,
+      // primary pros still load correctly.
+      List<dynamic> secondaryRows = [];
+      try {
+        secondaryRows = await _supa
+            .from('user_profiles')
+            .select()
+            .inFilter('profile_type', widget.catProValues)
+            .eq('statut_pro', 'actif');
+      } catch (_) {}
 
       final seenUids = <String>{};
       final merged = <Map<String, dynamic>>[];

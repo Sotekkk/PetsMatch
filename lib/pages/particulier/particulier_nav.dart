@@ -18,6 +18,7 @@ import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
+import 'package:PetsMatch/widgets/profile_switcher_header.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
@@ -125,7 +126,15 @@ class _ParticulierNavState extends State<ParticulierNav> {
       backgroundColor: Colors.white,
       child: Column(
         children: [
-          _DrawerHeader(),
+          ProfileSwitcherHeader(
+            onClose: () => _scaffoldKey.currentState?.closeDrawer(),
+            onEditTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => const UserParticulierFeed(initialTab: 0),
+              ));
+            },
+          ),
           Expanded(
             child: ListView(
               padding: EdgeInsets.zero,
@@ -315,101 +324,6 @@ class _ParticulierNavState extends State<ParticulierNav> {
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
           ),
           const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Drawer header ─────────────────────────────────────────────────────────────
-
-class _DrawerHeader extends StatefulWidget {
-  @override
-  State<_DrawerHeader> createState() => _DrawerHeaderState();
-}
-
-class _DrawerHeaderState extends State<_DrawerHeader> {
-  String? _name;
-  String? _photoUrl;
-  String? _ville;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-    if (!mounted) return;
-    final d = doc.data() ?? {};
-    setState(() {
-      _name = '${d['firstname'] ?? ''} ${d['lastname'] ?? ''}'.trim();
-      _photoUrl = d['profilePictureUrl'];
-      _ville = d['ville'];
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF0C5C6C),
-      padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 20, 20, 20),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => const UserParticulierFeed(initialTab: 0)));
-            },
-            child: CircleAvatar(
-              radius: 28,
-              backgroundColor: const Color(0xFF5B9EAA),
-              backgroundImage: _photoUrl != null && _photoUrl!.isNotEmpty
-                  ? CachedNetworkImageProvider(_photoUrl!)
-                  : null,
-              child: (_photoUrl == null || _photoUrl!.isEmpty)
-                  ? const Icon(Icons.person, color: Colors.white, size: 28)
-                  : null,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _name?.isNotEmpty == true ? _name! : User_Info.firstname,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (_ville != null && _ville!.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      const Icon(Icons.location_on, color: Color(0xFFB2D8DE), size: 13),
-                      const SizedBox(width: 3),
-                      Text(_ville!,
-                          style: const TextStyle(
-                              color: Color(0xFFCCE8EE), fontSize: 12, fontFamily: 'Galey')),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, color: Colors.white, size: 20),
-            onPressed: () => Navigator.pop(context),
-          ),
         ],
       ),
     );

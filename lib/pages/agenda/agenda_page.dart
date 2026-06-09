@@ -109,24 +109,36 @@ class _AgendaPageState extends State<AgendaPage> {
 
   Future<void> _load() async {
     if (_events.isEmpty) setState(() => _loading = true);
+    final from = DateTime(_focusedMonth.year, _focusedMonth.month - 1, 1).toUtc();
+    final to   = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0, 23, 59, 59).toUtc();
+    final pid  = User_Info.activeProfileId;
+    // Try with pro_profile_id filter first; fall back if column not yet migrated.
+    List<dynamic>? data;
     try {
-      final from = DateTime(_focusedMonth.year, _focusedMonth.month - 1, 1).toUtc();
-      final to   = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0, 23, 59, 59).toUtc();
-      final data = await _supa
+      data = await _supa
           .from('agenda_events')
           .select()
           .eq('uid', _uid)
+          .eq('pro_profile_id', pid)
           .gte('date_debut', from.toIso8601String())
           .lte('date_debut', to.toIso8601String())
           .order('date_debut');
-      if (mounted) {
-        setState(() {
-          _events = List<Map<String, dynamic>>.from(data);
-          _loading = false;
-        });
-      }
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      try {
+        data = await _supa
+            .from('agenda_events')
+            .select()
+            .eq('uid', _uid)
+            .gte('date_debut', from.toIso8601String())
+            .lte('date_debut', to.toIso8601String())
+            .order('date_debut');
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() {
+        if (data != null) _events = List<Map<String, dynamic>>.from(data);
+        _loading = false;
+      });
     }
   }
 
@@ -1404,11 +1416,12 @@ class _AddEventSheetState extends State<_AddEventSheet> {
     setState(() => _saving = true);
     try {
       await _supa.from('agenda_events').insert({
-        'uid':        widget.uid,
-        'titre':      _titreCtrl.text.trim(),
-        'type':       _type,
-        'date_debut': _dateDebut.toUtc().toIso8601String(),
-        'notes':      _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+        'uid':            widget.uid,
+        'titre':          _titreCtrl.text.trim(),
+        'type':           _type,
+        'date_debut':     _dateDebut.toUtc().toIso8601String(),
+        'notes':          _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+        'pro_profile_id': User_Info.activeProfileId,
       });
       if (mounted) { Navigator.pop(context); widget.onSaved(); }
     } catch (e) {

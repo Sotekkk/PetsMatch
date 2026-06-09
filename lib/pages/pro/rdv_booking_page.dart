@@ -211,12 +211,14 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final today = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
       final maxDt = DateTime(now.year, now.month + 3, now.day);
       final maxDate = '${maxDt.year}-${maxDt.month.toString().padLeft(2,'0')}-${maxDt.day.toString().padLeft(2,'0')}';
+      final profileId = widget.proProfileId ?? '';
       final results = await Future.wait([
         Supabase.instance.client
             .from('creneaux_pro')
             .select('date, heure_debut, heure_fin')
             .eq('pro_uid', widget.proUid)
             .eq('statut', 'disponible')
+            .eq('pro_profile_id', profileId)
             .gte('date', today)
             .lte('date', maxDate)
             .order('date')
@@ -226,6 +228,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             .from('rdv')
             .select('date_heure, duree_minutes, statut')
             .eq('pro_uid', widget.proUid)
+            .eq('pro_profile_id', profileId)
             .inFilter('statut', ['confirme', 'demande'])
             .gte('date_heure', now.toUtc().toIso8601String()),
       ]);
@@ -388,8 +391,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
       await Supabase.instance.client.from('rdv').insert({
         'pro_uid':        widget.proUid,
-        if (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
-          'pro_profile_id': widget.proProfileId,
+        'pro_profile_id': widget.proProfileId ?? '',
         'client_uid': uid,
         if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
         'date_heure': dateHeure.toIso8601String(),

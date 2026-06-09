@@ -10,7 +10,8 @@ CREATE INDEX IF NOT EXISTS idx_rdv_pro_profile_id ON rdv(pro_uid, pro_profile_id
 ALTER TABLE creneaux_pro ADD COLUMN IF NOT EXISTS pro_profile_id TEXT;
 -- Mettre à jour la contrainte unique pour inclure le profil
 ALTER TABLE creneaux_pro DROP CONSTRAINT IF EXISTS creneaux_pro_pro_uid_date_heure_debut_key;
-ALTER TABLE creneaux_pro ADD CONSTRAINT IF NOT EXISTS creneaux_pro_uid_profile_date_heure_key
+ALTER TABLE creneaux_pro DROP CONSTRAINT IF EXISTS creneaux_pro_uid_profile_date_heure_key;
+ALTER TABLE creneaux_pro ADD CONSTRAINT creneaux_pro_uid_profile_date_heure_key
   UNIQUE (pro_uid, pro_profile_id, date, heure_debut);
 CREATE INDEX IF NOT EXISTS idx_creneaux_pro_profile_id ON creneaux_pro(pro_uid, pro_profile_id);
 

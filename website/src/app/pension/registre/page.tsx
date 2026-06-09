@@ -80,9 +80,9 @@ export default function RegistrePensionPage() {
     if (!user) return;
     setLoading(true);
     let qEnt = supabase.from('pension_entrees').select('*').eq('pro_uid', user.uid).order('date_entree', { ascending: false });
-    qEnt = activeProfileId ? (qEnt as any).eq('pro_profile_id', activeProfileId) : (qEnt as any).is('pro_profile_id', null);
+    qEnt = (qEnt as any).eq('pro_profile_id', activeProfileId);
     let qAcc = supabase.from('pension_acces').select('animal_id').eq('pro_uid', user.uid).eq('statut', 'approved');
-    qAcc = activeProfileId ? (qAcc as any).eq('pro_profile_id', activeProfileId) : (qAcc as any).is('pro_profile_id', null);
+    qAcc = (qAcc as any).eq('pro_profile_id', activeProfileId);
     const [{ data: ent }, { data: acc }] = await Promise.all([qEnt, qAcc]);
     setEntrees((ent ?? []) as PensionEntree[]);
 

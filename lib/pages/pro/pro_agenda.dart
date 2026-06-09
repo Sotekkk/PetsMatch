@@ -29,7 +29,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // AG08 — créneaux
   late DateTime _weekStart;
   int _selectedDayIdx = 0;
-  final Map<String, bool> _blockedSlots = {};
+  final Map<String, String> _blockedSlots = {};
 
   // VET07 — retard
   bool _retardDeclare = false;
@@ -53,6 +53,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     _loadRdvs();
     _loadCreneaux();
     _loadDureesMotifs();
+    User_Info.profileNotifier.addListener(_onProfileChange);
+  }
+
+  void _onProfileChange() {
+    _loadRdvs();
+    _loadCreneaux();
   }
 
   Future<void> _loadDureesMotifs() async {
@@ -73,6 +79,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   @override
   void dispose() {
+    User_Info.profileNotifier.removeListener(_onProfileChange);
     _tabCtrl.dispose();
     super.dispose();
   }
@@ -86,9 +93,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           .from('rdv')
           .select()
           .eq('pro_uid', uid);
-      q = pid.isEmpty
-          ? q.filter('pro_profile_id', 'is', 'null')
-          : q.eq('pro_profile_id', pid);
+      q = q.eq('pro_profile_id', pid);
       final rows = await q.order('date_heure', ascending: true);
 
       // Load client names in batch
@@ -616,14 +621,15 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           await supa.from('agenda_events').delete()
               .eq('uid', proUid).eq('couleur', 'rdv:${rdv['id']}');
           await supa.from('agenda_events').insert({
-            'uid':           proUid,
-            'titre':         'RDV avec $clientName',
-            'type':          'rdv',
-            'date_debut':    preciseDh.toIso8601String(),
-            'animal_id':     rdv['animal_id'],
-            'notes':         rdv['motif'],
-            'duree_minutes': dureeMinutes,
-            'couleur':       'rdv:${rdv['id']}',
+            'uid':            proUid,
+            'titre':          'RDV avec $clientName',
+            'type':           'rdv',
+            'date_debut':     preciseDh.toIso8601String(),
+            'animal_id':      rdv['animal_id'],
+            'notes':          rdv['motif'],
+            'duree_minutes':  dureeMinutes,
+            'couleur':        'rdv:${rdv['id']}',
+            'pro_profile_id': User_Info.activeProfileId,
           });
         } catch (_) {}
       }
@@ -682,14 +688,15 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             await supa.from('agenda_events').delete()
                 .eq('uid', proUid2).eq('couleur', 'rdv:${rdv['id']}');
             await supa.from('agenda_events').insert({
-              'uid':           proUid2,
-              'titre':         'RDV avec $clientName2',
-              'type':          'rdv',
-              'date_debut':    dhUtc?.toIso8601String() ?? rdv['date_heure'],
-              'animal_id':     rdv['animal_id'],
-              'notes':         rdv['motif'],
+              'uid':            proUid2,
+              'titre':          'RDV avec $clientName2',
+              'type':           'rdv',
+              'date_debut':     dhUtc?.toIso8601String() ?? rdv['date_heure'],
+              'animal_id':      rdv['animal_id'],
+              'notes':          rdv['motif'],
               if (dureeMinutes != null) 'duree_minutes': dureeMinutes,
-              'couleur':       'rdv:${rdv['id']}',
+              'couleur':        'rdv:${rdv['id']}',
+              'pro_profile_id': User_Info.activeProfileId,
             });
           } catch (_) {}
         }
@@ -1110,79 +1117,281 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     final pid = User_Info.activeProfileId;
     final weekEnd = _weekStart.add(const Duration(days: 6));
     try {
-      var q = Supabase.instance.client
+      final rows = await Supabase.instance.client
           .from('creneaux_pro')
           .select()
           .eq('pro_uid', uid)
-          .eq('statut', 'disponible')
+          .inFilter('statut', ['disponible', 'bloque'])
           .gte('date', _weekStart.toIso8601String().substring(0, 10))
-          .lte('date', weekEnd.toIso8601String().substring(0, 10));
-      q = pid.isEmpty ? q.filter('pro_profile_id', 'is', 'null') : q.eq('pro_profile_id', pid);
-      final rows = await q;
+          .lte('date', weekEnd.toIso8601String().substring(0, 10))
+          .eq('pro_profile_id', pid);
 
       if (!mounted) return;
       setState(() {
         _blockedSlots.clear();
         for (final row in rows) {
           final date = row['date'] as String;
-          final heureDebut = (row['heure_debut'] as String).split(':')[0];
-          _blockedSlots['${date}_$heureDebut'] = true;
+          final heureDebut = row['heure_debut'] as String; // 'HH:MM:SS'
+          final hh = heureDebut.substring(0, 2);
+          final mm = heureDebut.substring(3, 5);
+          _blockedSlots['${date}_$hh:$mm'] = row['statut'] as String? ?? 'disponible';
         }
       });
     } catch (_) {}
   }
 
-  Future<void> _toggleSlot(String date, int hour) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final key = '${date}_$hour';
-    final isActive = _blockedSlots[key] == true;
-    setState(() {
-      if (isActive) { _blockedSlots.remove(key); } else { _blockedSlots[key] = true; }
-    });
-    try {
-      final heureDebut = '${hour.toString().padLeft(2, '0')}:00:00';
-      final pid3 = User_Info.activeProfileId;
-      if (isActive) {
-        var dq = Supabase.instance.client
-            .from('creneaux_pro')
-            .delete()
-            .eq('pro_uid', uid)
-            .eq('date', date)
-            .eq('heure_debut', heureDebut);
-        dq = pid3.isEmpty ? dq.filter('pro_profile_id', 'is', 'null') : dq.eq('pro_profile_id', pid3);
-        await dq;
+  // ── Helpers créneaux ─────────────────────────────────────────────────────────
+
+  TimeOfDay _snapTo15(TimeOfDay t) {
+    final mins = ((t.hour * 60 + t.minute) ~/ 15) * 15;
+    return TimeOfDay(hour: mins ~/ 60, minute: mins % 60);
+  }
+
+  String _fmtTime(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  List<({TimeOfDay start, TimeOfDay end, String statut})> _groupedRanges(String date) {
+    final entries = _blockedSlots.entries
+        .where((e) => e.key.startsWith('${date}_'))
+        .map((e) {
+          final tp = e.key.substring(date.length + 1).split(':');
+          return (time: TimeOfDay(hour: int.parse(tp[0]), minute: int.parse(tp[1])), statut: e.value);
+        })
+        .toList()
+      ..sort((a, b) => (a.time.hour * 60 + a.time.minute).compareTo(b.time.hour * 60 + b.time.minute));
+
+    if (entries.isEmpty) return [];
+    final ranges = <({TimeOfDay start, TimeOfDay end, String statut})>[];
+    var rStart = entries.first.time;
+    var prevMins = rStart.hour * 60 + rStart.minute;
+    var curStatut = entries.first.statut;
+
+    for (var i = 1; i < entries.length; i++) {
+      final curMins = entries[i].time.hour * 60 + entries[i].time.minute;
+      if (entries[i].statut == curStatut && curMins == prevMins + 15) {
+        prevMins = curMins;
       } else {
-        final heureFin = '${(hour + 1).toString().padLeft(2, '0')}:00:00';
-        final pid2 = User_Info.activeProfileId;
-        await Supabase.instance.client.from('creneaux_pro').upsert({
-          'pro_uid':        uid,
-          'pro_profile_id': pid2.isEmpty ? null : pid2,
-          'date':           date,
-          'heure_debut':    heureDebut,
-          'heure_fin':      heureFin,
-          'statut':         'disponible',
-        }, onConflict: 'pro_uid,pro_profile_id,date,heure_debut');
-      }
-    } catch (e) {
-      setState(() {
-        if (isActive) { _blockedSlots[key] = true; } else { _blockedSlots.remove(key); }
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ));
+        final endM = prevMins + 15;
+        ranges.add((start: rStart, end: TimeOfDay(hour: endM ~/ 60, minute: endM % 60), statut: curStatut));
+        rStart = entries[i].time; prevMins = curMins; curStatut = entries[i].statut;
       }
     }
+    final endM = prevMins + 15;
+    ranges.add((start: rStart, end: TimeOfDay(hour: endM ~/ 60, minute: endM % 60), statut: curStatut));
+    return ranges;
+  }
+
+  Future<void> _applyRange(String date, TimeOfDay start, TimeOfDay end, String statut) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final pid = User_Info.activeProfileId;
+    int curMins = start.hour * 60 + start.minute;
+    final endMins = end.hour * 60 + end.minute;
+    if (curMins >= endMins) return;
+
+    final slots = <Map<String, dynamic>>[];
+    while (curMins < endMins) {
+      final finMins = curMins + 15;
+      final hd = '${(curMins ~/ 60).toString().padLeft(2, '0')}:${(curMins % 60).toString().padLeft(2, '0')}:00';
+      final hf = '${(finMins ~/ 60).toString().padLeft(2, '0')}:${(finMins % 60).toString().padLeft(2, '0')}:00';
+      final key = '${date}_${(curMins ~/ 60).toString().padLeft(2, '0')}:${(curMins % 60).toString().padLeft(2, '0')}';
+      if (mounted) setState(() => _blockedSlots[key] = statut);
+      slots.add({'pro_uid': uid, 'pro_profile_id': pid, 'date': date,
+          'heure_debut': hd, 'heure_fin': hf, 'statut': statut});
+      curMins = finMins;
+    }
+    try {
+      await Supabase.instance.client.from('creneaux_pro')
+          .upsert(slots, onConflict: 'pro_uid,pro_profile_id,date,heure_debut');
+    } catch (e) {
+      final keys = slots.map((s) {
+        final hd = s['heure_debut'] as String;
+        return '${date}_${hd.substring(0, 5)}';
+      });
+      if (mounted) setState(() { for (final k in keys) _blockedSlots.remove(k); });
+      if (mounted) _showErr(e);
+    }
+  }
+
+  Future<void> _deleteRange(String date, TimeOfDay start, TimeOfDay end) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final pid = User_Info.activeProfileId;
+    int curMins = start.hour * 60 + start.minute;
+    final endMins = end.hour * 60 + end.minute;
+    final hdList = <String>[];
+    final keyList = <String>[];
+    while (curMins < endMins) {
+      hdList.add('${(curMins ~/ 60).toString().padLeft(2, '0')}:${(curMins % 60).toString().padLeft(2, '0')}:00');
+      keyList.add('${date}_${(curMins ~/ 60).toString().padLeft(2, '0')}:${(curMins % 60).toString().padLeft(2, '0')}');
+      curMins += 15;
+    }
+    if (mounted) setState(() { for (final k in keyList) _blockedSlots.remove(k); });
+    try {
+      await Supabase.instance.client.from('creneaux_pro').delete()
+          .eq('pro_uid', uid).eq('pro_profile_id', pid).eq('date', date)
+          .inFilter('heure_debut', hdList);
+    } catch (e) { if (mounted) _showErr(e); }
+  }
+
+  void _showErr(dynamic e) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+    backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
+  ));
+
+  Future<void> _showRangeDialog(String dateStr) async {
+    TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
+    TimeOfDay endTime   = const TimeOfDay(hour: 10, minute: 0);
+    String statut = 'disponible';
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) {
+          Future<void> pickTime(bool isStart) async {
+            final picked = await showTimePicker(
+              context: context, // use outer context for safe navigation
+              initialTime: isStart ? startTime : endTime,
+              builder: (c, child) => Theme(
+                data: ThemeData.light().copyWith(
+                    colorScheme: const ColorScheme.light(primary: _teal)),
+                child: child!,
+              ),
+            );
+            if (picked == null) return;
+            final snapped = _snapTo15(picked);
+            setS(() {
+              if (isStart) {
+                startTime = snapped;
+                final sm = snapped.hour * 60 + snapped.minute;
+                final em = endTime.hour * 60 + endTime.minute;
+                if (em <= sm) {
+                  final nm = sm + 60;
+                  endTime = TimeOfDay(hour: (nm ~/ 60).clamp(0, 23), minute: nm % 60);
+                }
+              } else {
+                endTime = snapped;
+              }
+            });
+          }
+
+          Widget timeCard(String label, TimeOfDay t, bool isStart) => GestureDetector(
+            onTap: () => pickTime(isStart),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE0E0E0)),
+              ),
+              child: Column(children: [
+                Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+                const SizedBox(height: 4),
+                Text(_fmtTime(t),
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 24)),
+              ]),
+            ),
+          );
+
+          final isDisp = statut == 'disponible';
+          return Padding(
+            padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Center(child: Container(width: 40, height: 4,
+                  decoration: BoxDecoration(color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 16),
+              const Text('Nouvelle plage', style: TextStyle(
+                  fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+              const SizedBox(height: 16),
+              // Mode
+              Row(children: [
+                for (final m in [('disponible', 'Disponible', const Color(0xFF6E9E57)),
+                                 ('bloque', 'Bloqué', const Color(0xFFFF9800))])
+                  Expanded(child: Padding(
+                    padding: EdgeInsets.only(right: m.$1 == 'disponible' ? 6 : 0),
+                    child: GestureDetector(
+                      onTap: () => setS(() => statut = m.$1),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        decoration: BoxDecoration(
+                          color: statut == m.$1 ? m.$3.withValues(alpha: 0.12) : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: statut == m.$1 ? m.$3 : Colors.grey.shade300,
+                              width: statut == m.$1 ? 2 : 1),
+                        ),
+                        child: Center(child: Text(m.$2, style: TextStyle(
+                            fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                            color: statut == m.$1 ? m.$3 : Colors.grey.shade500))),
+                      ),
+                    ),
+                  )),
+              ]),
+              const SizedBox(height: 16),
+              // Time pickers
+              Row(children: [
+                Expanded(child: timeCard('De', startTime, true)),
+                const Padding(padding: EdgeInsets.symmetric(horizontal: 14),
+                    child: Text('→', style: TextStyle(fontSize: 22, color: Colors.grey))),
+                Expanded(child: timeCard('À', endTime, false)),
+              ]),
+              const SizedBox(height: 20),
+              SizedBox(width: double.infinity, child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isDisp ? const Color(0xFF6E9E57) : const Color(0xFFFF9800),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Appliquer', style: TextStyle(
+                    fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                    fontSize: 15, color: Colors.white)),
+              )),
+            ]),
+          );
+        },
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await _applyRange(dateStr, startTime, endTime, statut);
+    }
+  }
+
+  Future<void> _confirmDeleteRange(String date,
+      ({TimeOfDay start, TimeOfDay end, String statut}) r) async {
+    final label = '${_fmtTime(r.start)} — ${_fmtTime(r.end)}';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Supprimer la plage ?',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+        content: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 16)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade400),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer', style: TextStyle(color: Colors.white, fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await _deleteRange(date, r.start, r.end);
   }
 
   Future<void> _replicateWeek() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
-    final weekSlots = _blockedSlots.entries.where((e) => e.value == true).toList();
+    final pid = User_Info.activeProfileId;
+    final weekSlots = _blockedSlots.entries.where((e) => e.value == 'disponible').toList();
     if (weekSlots.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -1274,21 +1483,24 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           if (dateParts.length < 3) continue;
           final origUtc = DateTime.utc(
             int.parse(dateParts[0]), int.parse(dateParts[1]), int.parse(dateParts[2]));
-          final hour = int.tryParse(parts[1]);
-          if (hour == null) continue;
+          final timeParts = parts[1].split(':');
+          if (timeParts.length < 2) continue;
+          final startMins = (int.tryParse(timeParts[0]) ?? 0) * 60 + (int.tryParse(timeParts[1]) ?? 0);
+          final finMins = startMins + 15;
 
           final diff = origUtc.difference(weekStartUtc).inDays;
           final targetDate = target.add(Duration(days: diff));
           final dateStr = '${targetDate.year}-${targetDate.month.toString().padLeft(2,'0')}-${targetDate.day.toString().padLeft(2,'0')}';
-          final heureDebut = '${hour.toString().padLeft(2, '0')}:00:00';
-          final heureFin = '${(hour + 1).toString().padLeft(2, '0')}:00:00';
+          final heureDebut = '${(startMins ~/ 60).toString().padLeft(2, '0')}:${(startMins % 60).toString().padLeft(2, '0')}:00';
+          final heureFin = '${(finMins ~/ 60).toString().padLeft(2, '0')}:${(finMins % 60).toString().padLeft(2, '0')}:00';
 
           rows.add({
-            'pro_uid':     uid,
-            'date':        dateStr,
-            'heure_debut': heureDebut,
-            'heure_fin':   heureFin,
-            'statut':      'disponible',
+            'pro_uid':        uid,
+            'pro_profile_id': pid,
+            'date':           dateStr,
+            'heure_debut':    heureDebut,
+            'heure_fin':      heureFin,
+            'statut':         'disponible',
           });
         }
       }
@@ -1307,7 +1519,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           seen.add('${r["date"]}_${r["heure_debut"]}')
       ).toList();
 
-      await supa.from('creneaux_pro').upsert(deduped, onConflict: 'pro_uid,date,heure_debut');
+      await supa.from('creneaux_pro').upsert(deduped, onConflict: 'pro_uid,pro_profile_id,date,heure_debut');
 
       if (mounted) {
         final nbSemaines = deduped.length ~/ weekSlots.length;
@@ -1413,119 +1625,147 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           },
         ),
       ),
-      // Légende
       Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
         child: Row(children: [
-          _LegendDot(color: const Color(0xFF6E9E57).withValues(alpha: 0.15), border: const Color(0xFF6E9E57), label: 'Proposé'),
-          const SizedBox(width: 16),
-          _LegendDot(color: Colors.white, border: const Color(0xFFCCCCCC), label: 'Non proposé'),
-          const SizedBox(width: 16),
-          _LegendDot(color: const Color(0x1A0C5C6C), border: _teal, label: 'RDV'),
-        ]),
-      ),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-        child: SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
+          Expanded(child: OutlinedButton.icon(
             onPressed: _replicateWeek,
             icon: const Icon(Icons.repeat, size: 16),
-            label: const Text('Répliquer cette semaine…',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            label: const Text('Répliquer…', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
             style: OutlinedButton.styleFrom(
-              foregroundColor: _teal,
-              side: const BorderSide(color: _teal),
+              foregroundColor: _teal, side: const BorderSide(color: _teal),
               padding: const EdgeInsets.symmetric(vertical: 10),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-          ),
-        ),
+          )),
+          const SizedBox(width: 8),
+          Expanded(child: ElevatedButton.icon(
+            onPressed: () => _showRangeDialog(dateStr),
+            icon: const Icon(Icons.add, size: 16),
+            label: const Text('Ajouter une plage', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _teal, foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          )),
+        ]),
       ),
       const Divider(height: 1),
-      // Grille horaire
-      Expanded(
-        child: ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-          itemCount: 12, // 8h → 19h
-          itemBuilder: (_, i) {
-            final hour = 8 + i;
-            final key = '${dateStr}_$hour';
-            final isBlocked = _blockedSlots[key] == true;
-            final hasRdv = _rdvs.any((r) {
-              final s = r['statut'] as String? ?? '';
-              if (s != 'confirme' && s != 'demande') return false;
-              final dh = DateTime.tryParse(r['date_heure'] ?? '')?.toLocal();
-              if (dh == null || !_sameDay(dh, selectedDay)) return false;
-              final dur = (r['duree_minutes'] as num?)?.toInt() ?? 60;
-              final rdvStart = dh.hour;
-              final rdvEnd = rdvStart + (dur / 60).ceil();
-              return hour >= rdvStart && hour < rdvEnd;
-            });
+      Expanded(child: Builder(builder: (ctx) {
+        final rdvsJour = _rdvs.where((r) {
+          final s = r['statut'] as String? ?? '';
+          if (s != 'confirme' && s != 'demande') return false;
+          final dh = DateTime.tryParse(r['date_heure'] ?? '')?.toLocal();
+          return dh != null && _sameDay(dh, selectedDay);
+        }).toList();
+        final ranges = _groupedRanges(dateStr);
 
-            Color bgColor;
-            Color borderColor;
-            Color textColor;
-            IconData? trailingIcon;
-            String? trailingLabel;
-
-            if (hasRdv) {
-              bgColor = const Color(0x1A0C5C6C);
-              borderColor = _teal;
-              textColor = _teal;
-              trailingLabel = 'RDV';
-            } else if (isBlocked) {
-              bgColor = const Color(0xFF6E9E57).withValues(alpha: 0.12);
-              borderColor = const Color(0xFF6E9E57);
-              textColor = const Color(0xFF4A7A32);
-              trailingIcon = Icons.check_circle_outline;
-            } else {
-              bgColor = Colors.white;
-              borderColor = const Color(0xFFCCCCCC);
-              textColor = Colors.grey.shade500;
-              trailingIcon = Icons.add_circle_outline;
-            }
-
-            return GestureDetector(
-              onTap: hasRdv ? null : () => _toggleSlot(dateStr, hour),
-              child: Container(
+        if (rdvsJour.isEmpty && ranges.isEmpty) {
+          return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.schedule_outlined, size: 52, color: Colors.grey.shade300),
+            const SizedBox(height: 10),
+            Text('Aucun créneau ce jour',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade400)),
+            const SizedBox(height: 6),
+            Text('Appuyez sur « Ajouter une plage »',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400)),
+          ]));
+        }
+        return ListView(padding: const EdgeInsets.fromLTRB(16, 10, 16, 16), children: [
+          if (rdvsJour.isNotEmpty) ...[
+            Text('Rendez-vous', style: TextStyle(fontFamily: 'Galey',
+                fontWeight: FontWeight.w600, fontSize: 12,
+                color: Colors.grey.shade500, letterSpacing: 0.5)),
+            const SizedBox(height: 6),
+            for (final rdv in rdvsJour) Builder(builder: (_) {
+              final dh = DateTime.tryParse(rdv['date_heure'] ?? '')?.toLocal();
+              final dur = (rdv['duree_minutes'] as num?)?.toInt() ?? 60;
+              final endDh = dh?.add(Duration(minutes: dur));
+              final label = dh != null
+                  ? '${dh.hour.toString().padLeft(2,'0')}:${dh.minute.toString().padLeft(2,'0')}'
+                    ' — ${endDh!.hour.toString().padLeft(2,'0')}:${endDh.minute.toString().padLeft(2,'0')}'
+                  : '—';
+              return Container(
                 margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  color: bgColor,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: borderColor),
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(color: const Color(0x1A0C5C6C),
+                    borderRadius: BorderRadius.circular(12), border: Border.all(color: _teal)),
                 child: Row(children: [
-                  Text(
-                    '${hour.toString().padLeft(2, '0')}:00 — ${(hour + 1).toString().padLeft(2, '0')}:00',
-                    style: TextStyle(
-                        fontFamily: 'Galey', fontWeight: FontWeight.w600,
-                        fontSize: 14, color: textColor),
+                  const Icon(Icons.event, size: 16, color: _teal),
+                  const SizedBox(width: 8),
+                  Text(label, style: const TextStyle(fontFamily: 'Galey',
+                      fontWeight: FontWeight.w600, fontSize: 14, color: _teal)),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(rdv['motif']?.toString() ?? '',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600),
+                      overflow: TextOverflow.ellipsis)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(color: const Color(0x260C5C6C),
+                        borderRadius: BorderRadius.circular(8)),
+                    child: const Text('RDV', style: TextStyle(fontFamily: 'Galey',
+                        fontSize: 11, fontWeight: FontWeight.w600, color: _teal)),
                   ),
-                  const Spacer(),
-                  if (trailingLabel != null)
+                ]),
+              );
+            }),
+            const SizedBox(height: 12),
+          ],
+          if (ranges.isNotEmpty) ...[
+            Text('Créneaux', style: TextStyle(fontFamily: 'Galey',
+                fontWeight: FontWeight.w600, fontSize: 12,
+                color: Colors.grey.shade500, letterSpacing: 0.5)),
+            const SizedBox(height: 6),
+            for (final r in ranges)
+              GestureDetector(
+                onTap: () => _confirmDeleteRange(dateStr, r),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: r.statut == 'disponible'
+                        ? const Color(0xFF6E9E57).withValues(alpha: 0.10)
+                        : const Color(0xFFFFF3E0),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: r.statut == 'disponible'
+                        ? const Color(0xFF6E9E57) : const Color(0xFFFF9800)),
+                  ),
+                  child: Row(children: [
+                    Icon(r.statut == 'disponible'
+                        ? Icons.check_circle_outline : Icons.block_outlined,
+                        size: 16,
+                        color: r.statut == 'disponible'
+                            ? const Color(0xFF4A7A32) : const Color(0xFFE65100)),
+                    const SizedBox(width: 8),
+                    Text('${_fmtTime(r.start)} — ${_fmtTime(r.end)}',
+                        style: TextStyle(fontFamily: 'Galey',
+                            fontWeight: FontWeight.w600, fontSize: 14,
+                            color: r.statut == 'disponible'
+                                ? const Color(0xFF4A7A32) : const Color(0xFFE65100))),
+                    const Spacer(),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: const Color(0x260C5C6C),
+                        color: r.statut == 'disponible'
+                            ? const Color(0xFF6E9E57).withValues(alpha: 0.15)
+                            : const Color(0x33FF9800),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Text(trailingLabel,
-                          style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
-                              fontWeight: FontWeight.w600, color: _teal)),
-                    )
-                  else if (trailingIcon != null)
-                    Icon(trailingIcon, size: 18,
-                        color: isBlocked
-                            ? const Color(0xFF6E9E57)
-                            : Colors.grey.shade400),
-                ]),
+                      child: Text(r.statut == 'disponible' ? 'Disponible' : 'Bloqué',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: r.statut == 'disponible'
+                                  ? const Color(0xFF4A7A32) : const Color(0xFFE65100))),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(Icons.delete_outline, size: 16, color: Colors.grey.shade400),
+                  ]),
+                ),
               ),
-            );
-          },
-        ),
-      ),
+          ],
+        ]);
+      })),
     ]);
   }
 

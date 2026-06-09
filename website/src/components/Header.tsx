@@ -98,6 +98,35 @@ const MENU_ELEVEUR = [
   },
 ];
 
+const MENU_PRO = [
+  {
+    section: 'Mon Activité',
+    icon: '📅',
+    items: [
+      { href: '/pro/creneaux',  label: 'Mes créneaux',   icon: '⏰' },
+      { href: '/pension/rdv',   label: 'Gestion des RDV', icon: '🗓️' },
+      { href: '/agenda',        label: 'Mon agenda',      icon: '📅' },
+    ],
+  },
+  {
+    section: 'Mon Élevage',
+    icon: '🐾',
+    items: [
+      { href: '/mes-animaux',                    label: 'Mes Animaux',        icon: '🐾' },
+      { href: '/mes-annonces',                   label: 'Mes Annonces',       icon: '📋' },
+      { href: '/elevage/registre-sanitaire',     label: 'Suivi sanitaire',    icon: '🏥' },
+      { href: '/elevage/registre-entree-sortie', label: 'Entrées / Sorties',  icon: '📂' },
+    ],
+  },
+  {
+    section: 'Services',
+    icon: '🏥',
+    items: [
+      { href: '/services', label: 'Annuaire des services', icon: '🔎' },
+    ],
+  },
+];
+
 const MENU_PENSION = [
   {
     section: 'Ma Pension',
@@ -106,6 +135,7 @@ const MENU_PENSION = [
       { href: '/pension/registre',  label: 'Registre pension',     icon: '📋' },
       { href: '/pension/demandes',  label: 'Demandes d\'accès',    icon: '🔑' },
       { href: '/pension/rdv',       label: 'Gestion des RDV',      icon: '🗓️' },
+      { href: '/pro/creneaux',      label: 'Mes créneaux',         icon: '⏰' },
       { href: '/agenda',            label: 'Mon agenda',           icon: '📅' },
     ],
   },
@@ -229,9 +259,13 @@ export default function Header() {
     : primaryDisplayName;
   const effectiveAvatar = activeProfile?.avatar_url ?? primaryAvatar;
 
+  const effectiveIsPro = activeProfile
+    ? PRO_TYPES.has(activeProfile.profile_type)
+    : userData?.isPro === true;
+
   const navLinks = loading || !user ? NAV_GUEST : effectiveIsEleveur ? NAV_ELEVEUR : NAV_PARTICULIER;
   const menuSections = effectiveIsEleveur
-    ? (effectiveIsPension ? MENU_PENSION : MENU_ELEVEUR)
+    ? (effectiveIsPension ? MENU_PENSION : effectiveIsPro ? MENU_PRO : MENU_ELEVEUR)
     : MENU_PARTICULIER;
 
   // ── Chargement des profils secondaires ────────────────────────────────────

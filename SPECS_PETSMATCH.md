@@ -1,5 +1,5 @@
 # PetsMatch — Spécifications fonctionnelles complètes
-**Dernière mise à jour : 2026-06-01**
+**Dernière mise à jour : 2026-06-09**
 **Branche active : `feature/v2-updates`**
 
 ---
@@ -386,7 +386,7 @@ Doses calculées depuis formule DER (adulte × 1.6 chien / × 1.4 chat ; junior 
 
 | # | Fonctionnalité | Priorité | Support |
 |---|---|---|---|
-| AG08 | Pro — créneaux disponibles/indisponibles : définir horaires (table `creneaux_pro`), vue semaine, exclusion à la réservation | Haute | App + Web |
+| AG08 | Pro — créneaux disponibles/indisponibles : définir horaires (table `creneaux_pro`), vue semaine, exclusion à la réservation | Haute | App + Web | ✅ Implémenté 2026-06-09 |
 
 ### 5.7 Services / Communauté
 
@@ -1664,7 +1664,24 @@ Un animal appartient à un **utilisateur**, pas à un profil spécifique. Tous l
 
 ### Règle : services, RDV, fiches
 Les RDV, services et fiches pro sont liés au `uid` Firebase (`uid_pro`).
-À terme, `profile_id` sera ajouté aux tables `rdv`, `vet_access_grants`, `pension_acces` pour distinguer quel profil d'un même utilisateur gère la relation.
+La colonne `pro_profile_id TEXT DEFAULT ''` est ajoutée aux tables `rdv`, `creneaux_pro`, `agenda_events`, `vet_access_grants`, `pension_acces`, `pension_entrees` pour distinguer quel profil gère chaque relation.
+
+### Convention `pro_profile_id`
+- **Profil principal** → `pro_profile_id = ''` (chaîne vide, jamais NULL)
+- **Profil secondaire** → `pro_profile_id = user_profiles.id` (UUID)
+- Les NULL existants sont migrés vers `''` via `supabase/migration_empty_string_profile.sql`
+- Cette convention évite les collisions sur les contraintes UNIQUE PostgreSQL (NULL ≠ NULL)
+
+### Validation profils secondaires
+- Table `user_profiles` : colonne `statut_pro TEXT DEFAULT 'en_attente'`
+- Valeurs : `'en_attente'` | `'actif'` | `'refuse'` | `'suspendu'`
+- L'admin valide depuis le panel pro (badge violet "Secondaire")
+- Un profil secondaire n'apparaît dans l'annuaire services qu'une fois `statut_pro = 'actif'`
+
+### Rechargement automatique sur changement de profil
+- `User_Info.profileNotifier` (`ValueNotifier<String>`) est notifié dans `applyProfile()` et `updateUserInfo()`
+- `ProAgendaPage` écoute ce notifier → recharge RDVs + créneaux au changement de profil
+- `AgendaPage` filtre les `agenda_events` par `pro_profile_id` (avec fallback si colonne absente)
 
 ### Table `user_profiles` — colonnes complètes
 Chaque profil secondaire a les mêmes données qu'un profil principal :

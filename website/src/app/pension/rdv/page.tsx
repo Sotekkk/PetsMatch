@@ -364,7 +364,7 @@ export default function PensionRdvPage() {
     setFetching(true);
     try {
       let q = supabase.from('rdv').select('*').eq('pro_uid', user.uid).order('date_heure', { ascending: true });
-      q = activeProfileId ? (q as any).eq('pro_profile_id', activeProfileId) : (q as any).is('pro_profile_id', null);
+      q = (q as any).eq('pro_profile_id', activeProfileId);
       const { data } = await q;
 
       const list = (data ?? []) as Rdv[];

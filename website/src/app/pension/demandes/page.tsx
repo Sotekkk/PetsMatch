@@ -60,9 +60,7 @@ export default function DemandesAccesPage() {
       .select('*')
       .eq('pro_uid', user.uid)
       .order('created_at', { ascending: false });
-    q = activeProfileId
-      ? (q as any).eq('pro_profile_id', activeProfileId)
-      : (q as any).is('pro_profile_id', null);
+    q = (q as any).eq('pro_profile_id', activeProfileId);
     const { data } = await q;
     setDemandes((data ?? []) as PensionAcces[]);
     setLoading(false);

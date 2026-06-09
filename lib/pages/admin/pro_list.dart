@@ -77,19 +77,26 @@ class _ProListState extends State<ProList> {
 
   Future<void> _loadAll() async {
     setState(() => _loading = true);
+    // 1. Load all primary pros — use safe columns only (statut_pro etc. may not exist yet)
+    List<dynamic> primaryRows = [];
     try {
-      // 1. Load all primary pros from Supabase users
-      final primaryRows = await _supa
+      primaryRows = await _supa
           .from('users')
-          .select('uid, cat_pro, statut_pro, rayon_intervention, especes_acceptees, certifications, profession_pro, name_elevage')
+          .select('uid, cat_pro, profession_pro, name_elevage')
           .not('cat_pro', 'is', null)
           .inFilter('cat_pro', ['veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage', 'photographe', 'marechal_ferrant', 'referencement', 'autre']);
+    } catch (_) {}
 
-      // 2. Load all secondary profiles from user_profiles
-      final secondaryRows = await _supa
+    // 2. Load all secondary profiles — select * so missing columns don't crash the query
+    List<dynamic> secondaryRows = [];
+    try {
+      secondaryRows = await _supa
           .from('user_profiles')
-          .select('id, uid, profile_type, cat_pro, statut_pro, rayon_intervention, especes_acceptees, certifications, profession_pro, name_elevage')
+          .select()
           .not('profile_type', 'is', null);
+    } catch (_) {}
+
+    try {
 
       // 3. Collect all UIDs to fetch Firestore data
       final allUids = <String>{};

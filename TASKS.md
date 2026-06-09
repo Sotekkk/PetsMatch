@@ -207,6 +207,17 @@
 |---|---|---|---|---|
 | VET07 | **Alertes retard agenda pro** — bouton "Signaler un retard" dans l'agenda pro du jour → curseur délai (15/30/45/60/90+ min) + message optionnel (140 car.) → push FCM à tous les patients avec RDV dans les 3h suivantes. Si délai ≥ 60 min : propose 3 créneaux alternatifs. Si ≥ 90 min : alerte admin. Tables : `agenda_retards` + `agenda_retard_responses`. Cloud Function `onRetardDeclared` (Firestore/Supabase trigger). Badge orange "En retard" visible dans l'agenda pro. | Moyenne | App + Web + Firebase Functions | `pro_agenda.dart`, créer `functions/retard.js` |
 
+#### Étape 6 — Intégrations logiciels vétérinaires *(après présentation — app suffisamment fonctionnelle)*
+
+> **Modèle :** PetsMatch = extension client-facing des logiciels vétérinaires existants. Le logiciel du vet garde le dossier clinique complet. PetsMatch est l'interface propriétaire connectée (rappels, carnet santé simplifié, notifications, RDV). Pas de doublon de travail.
+
+| # | Tâche | Priorité | Repo | Notes |
+|---|---|---|---|---|
+| VET08 | **Partenariat VetoCom** — préparer présentation/démo de l'app fonctionnelle → contacter VetoCom (contact@vetocom.fr, 05 59 84 92 65) avec proposition de partenariat : PetsMatch comme extension client-facing de VetoCom. Eux : 1 500 cabinets + dossier clinique. Nous : app propriétaire + rappels + carnet simplifié + marketplace. Pas d'API publique VetoCom → partenariat commercial ou intégration via Vetstoria (intermédiaire RDV déjà intégré à VetoCom). | Basse *(post-démo)* | Partenariat | — |
+| VET09 | **Import PDF vétérinaire — parseur générique** — quel que soit le logiciel du vet, le bouton "Importer depuis mon logiciel" permet d'uploader un PDF (ordonnance, CR, fiche vaccination). OCR/regex extrait : nom animal, date, acte(s), produit(s), vétérinaire. Pré-remplit les champs carnet santé côté app. Librairie candidate : Google Document AI (Cloud Vision) ou extraction regex pour formats VetoCom/GrooVet/Vetosoft. | Basse *(post-démo)* | App + Firebase Functions | Créer `functions/parsePdfVet.js`, modifier `animal_fiche.dart` |
+| VET10 | **Intégration Vetstoria / Vetilib (RDV)** — Vetstoria est déjà intégré à VetoCom + d'autres logiciels vétérinaires. Connexion Vetstoria API → sync calendrier du cabinet dans PetsMatch → owner prend RDV depuis PetsMatch, ça remonte automatiquement dans le logiciel du vet. Couverture : tous logiciels compatibles Vetstoria (VetoCom, Vetup, Animana…). | Basse *(post-démo)* | App + Web + Backend | API Vetstoria, modifier `rdv_booking_page.dart` |
+| VET11 | **Mode vet "logiciel externe"** — pour les vets sur un logiciel sans partenariat : accès PetsMatch simplifié en 3 taps post-consultation (type d'acte + date auto + enregistrer). Pas de double saisie : la saisie PetsMatch est le minimum utile au propriétaire (vaccin à retenir, traitement en cours). Différent du mode "vet PetsMatch natif" (VET06). | Basse *(post-démo)* | App | `animal_fiche.dart`, `vet_patients_page.dart` |
+
 ### Tarification
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
