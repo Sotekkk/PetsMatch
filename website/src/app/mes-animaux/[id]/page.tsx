@@ -1368,15 +1368,18 @@ export default function AnimalFichePage() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6">
-        {tabs.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key as typeof tab)}
-            className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
-              tab === t.key ? 'bg-white text-[#0C5C6C] shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}>
-            {t.label}
-          </button>
-        ))}
+      <div className="overflow-x-auto mb-6 -mx-4 px-4">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 min-w-max">
+          {tabs.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key as typeof tab)}
+              className={`whitespace-nowrap px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                tab === t.key ? 'bg-white text-[#0C5C6C] shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+              style={{ fontFamily: 'Galey, sans-serif' }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── TAB IDENTITÉ ──────────────────────────────────────────────────── */}

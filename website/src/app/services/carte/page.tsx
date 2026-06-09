@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -53,10 +54,11 @@ const ESPECES = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Chev
 
 export default function ServicesCartePage() {
   const { user, userData } = useAuth();
+  const searchParams = useSearchParams();
 
   const [pros, setPros] = useState<ProMapItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [catFilter, setCatFilter] = useState('');
+  const [catFilter, setCatFilter] = useState(() => searchParams.get('cat') ?? '');
   const [especeFilter, setEspeceFilter] = useState('');
   const [search, setSearch] = useState('');
   const [nearMe, setNearMe] = useState(false);
@@ -64,7 +66,9 @@ export default function ServicesCartePage() {
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
   const [filterRegion, setFilterRegion] = useState('');
   const [filterDept, setFilterDept] = useState('');
-  const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
+  const [viewMode, setViewMode] = useState<'map' | 'list'>(() =>
+    (searchParams.get('view') as 'map' | 'list') ?? 'map'
+  );
 
   useEffect(() => {
     loadPros();
