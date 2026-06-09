@@ -450,8 +450,9 @@ const CAT_LIST_LABELS: Record<string, string> = {
 
 function ProCard({ pro }: { pro: ProCardPro }) {
   const catLabel = CAT_LIST_LABELS[pro.cat_pro ?? ''] ?? pro.cat_pro ?? '';
+  const href = `/services/pro/${pro.uid}${pro.profileTableId ? `?profileId=${pro.profileTableId}` : ''}`;
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-start gap-4 hover:shadow-md transition-shadow">
+    <a href={href} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-start gap-4 hover:shadow-md transition-shadow block no-underline">
       <div className="w-14 h-14 rounded-full bg-[#0C5C6C22] flex-shrink-0 overflow-hidden flex items-center justify-center">
         {pro.photo
           ? <img src={pro.photo} alt={pro.name} className="w-full h-full object-cover" />
@@ -487,6 +488,6 @@ function ProCard({ pro }: { pro: ProCardPro }) {
           )}
         </div>
       </div>
-    </div>
+    </a>
   );
 }
