@@ -28,7 +28,11 @@ async function supabaseGet(path) {
             res.on("data", (c) => data += c);
             res.on("end", () => {
                 if (res.statusCode >= 200 && res.statusCode < 300) {
-                    try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+                    try {
+                        resolve(JSON.parse(data));
+                    } catch (e) {
+                        reject(e);
+                    }
                 } else {
                     reject(new Error(`Supabase GET ${path}: ${res.statusCode} — ${data}`));
                 }
@@ -96,24 +100,24 @@ exports.notifyOwnerVetEntry = functions
         if (!ownerUid) return {ok: false, reason: "no_owner"};
 
         const labels = {
-            vaccin:     "une vaccination",
+            vaccin: "une vaccination",
             traitement: "un traitement",
-            visite:     "une visite vétérinaire",
+            visite: "une visite vétérinaire",
         };
         const label = labels[typeActe] || `une entrée (${typeActe})`;
         const animalNom = animal.nom || "votre animal";
         const title = "Carnet de santé mis à jour";
-        const body  = `${vetName} a enregistré ${label} pour ${animalNom}.`;
+        const body = `${vetName} a enregistré ${label} pour ${animalNom}.`;
 
         // Notification in-app (Supabase)
         try {
             await supabaseInsert("notifications", [{
-                uid:   ownerUid,
-                type:  `vet_${typeActe}`,
+                uid: ownerUid,
+                type: `vet_${typeActe}`,
                 title: title,
-                body:  body,
-                data:  {animal_id: animalId, type_acte: typeActe},
-                read:  false,
+                body: body,
+                data: {animal_id: animalId, type_acte: typeActe},
+                read: false,
             }]);
         } catch (e) {
             console.error("notifyOwnerVetEntry: insert notification error", e);

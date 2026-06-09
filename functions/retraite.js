@@ -11,7 +11,7 @@ const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" +
 // ─── Ages de retraite reproductive par espèce (en années) ────────────────────
 
 const AGES_RETRAITE = {
-    chien: 7,
+    chien: 6,
     chat: 8,
     lapin: 5,
     cheval: 18,

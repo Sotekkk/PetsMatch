@@ -11,6 +11,7 @@ const santeFunctions = require("./sante");
 const annonceFunctions = require("./annonces");
 const matchFunctions = require("./match");
 const marketplaceBillingFunctions = require("./marketplace_billing");
+const retardFunctions = require("./retard");
 
 // Stripe + messagerie
 exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
@@ -55,3 +56,6 @@ exports.matchLostFound = matchFunctions.matchLostFound;
 // Marketplace — facturation Stripe mensuelle + manuel
 exports.marketplaceBillingMonthly = marketplaceBillingFunctions.marketplaceBillingMonthly;
 exports.marketplaceBillingManual = marketplaceBillingFunctions.marketplaceBillingManual;
+
+// Agenda — alertes retard pro (VET07)
+exports.sendRetardNotification = retardFunctions.sendRetardNotification;

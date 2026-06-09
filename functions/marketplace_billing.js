@@ -1,5 +1,5 @@
 const functions = require("firebase-functions/v1");
-const { createClient } = require("@supabase/supabase-js");
+const {createClient} = require("@supabase/supabase-js");
 const Stripe = require("stripe");
 
 const stripe = new Stripe(
@@ -14,8 +14,8 @@ function getSupabase() {
 }
 
 // Tarifs CPM/CPL par défaut (€)
-const CPM = { banniere: 10, listing: 0 };
-const CPL = { lead: 15 };
+const CPM = {banniere: 10, listing: 0};
+const CPL = {lead: 15};
 
 /**
  * Calcule et facture automatiquement chaque partenaire actif en fin de mois.
@@ -35,7 +35,7 @@ exports.marketplaceBillingMonthly = functions
         functions.logger.info(`💰 Facturation Marketplace ${month}/${year}`);
 
         // Récupère tous les partenaires actifs
-        const { data: partners, error: pErr } = await getSupabase()
+        const {data: partners, error: pErr} = await getSupabase()
             .from("marketplace_partners")
             .select("id, nom, contact_email, budget_mensuel, plan")
             .eq("statut", "actif");
@@ -51,9 +51,9 @@ exports.marketplaceBillingMonthly = functions
             } catch (err) {
                 functions.logger.error(`Erreur facturation partenaire ${partner.nom}`, err);
                 // Suspend le partenaire si erreur de paiement
-                await supabase
+                await getSupabase()
                     .from("marketplace_partners")
-                    .update({ statut: "suspendu" })
+                    .update({statut: "suspendu"})
                     .eq("id", partner.id);
             }
         }
@@ -77,7 +77,7 @@ exports.marketplaceBillingManual = functions
         const firstDay = new Date(year, month - 1, 1).toISOString();
         const lastDay = new Date(year, month, 1).toISOString();
 
-        const { data: partners } = await getSupabase()
+        const {data: partners} = await getSupabase()
             .from("marketplace_partners")
             .select("id, nom, contact_email, budget_mensuel, plan")
             .eq("statut", "actif");
@@ -86,7 +86,7 @@ exports.marketplaceBillingManual = functions
             await _billPartner(partner, firstDay, lastDay, month, year);
         }
 
-        return { success: true, partners: (partners || []).length };
+        return {success: true, partners: (partners || []).length};
     });
 
 // ── Logique facturation par partenaire ────────────────────────────────────────
@@ -100,7 +100,8 @@ exports.marketplaceBillingManual = functions
  */
 async function _billPartner(partner, firstDay, lastDay, month, year) {
     // Compte les événements du mois
-    const { data: events } = await supabase
+    const supa = getSupabase();
+    const {data: events} = await supa
         .from("marketplace_events")
         .select("event_type, ad_id")
         .eq("partner_id", partner.id)
@@ -113,11 +114,9 @@ async function _billPartner(partner, firstDay, lastDay, month, year) {
     }
 
     let impressions = 0;
-    let clics = 0;
     let leads = 0;
     for (const e of events) {
         if (e.event_type === "impression") impressions++;
-        else if (e.event_type === "clic") clics++;
         else if (e.event_type === "lead") leads++;
     }
 
@@ -149,12 +148,12 @@ async function _billPartner(partner, firstDay, lastDay, month, year) {
         const customer = await stripe.customers.create({
             name: partner.nom,
             email: partner.contact_email || undefined,
-            metadata: { partner_id: partner.id },
+            metadata: {partner_id: partner.id},
         });
         customerId = customer.id;
         await getSupabase()
             .from("marketplace_partners")
-            .update({ stripe_customer_id: customerId })
+            .update({stripe_customer_id: customerId})
             .eq("id", partner.id);
     }
 

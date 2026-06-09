@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { collection, getDocs, doc, getDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
@@ -9,58 +10,48 @@ import { useAuth } from '@/lib/auth-context';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface FireUser {
-  uid: string;
-  firstname?: string;
-  lastname?: string;
-  email?: string;
-  isAdmin?: boolean;
-  isElevage?: boolean;
-  isPro?: boolean;
-  profilePictureUrl?: string;
-  siret?: string;
-  phone_number?: string;
+  uid: string; firstname?: string; lastname?: string; email?: string;
+  isAdmin?: boolean; isElevage?: boolean; isPro?: boolean;
+  profilePictureUrl?: string; siret?: string; phone_number?: string;
 }
 
-/** Entrée unifiée : profil primaire ou secondaire */
 interface ProfileEntry {
-  // Identifiants
-  uid: string;                  // Firebase UID (compte parent)
-  isSecondary: boolean;
-  profileTableId?: string;      // user_profiles.id pour les secondaires
-
-  // Données affichage
-  firstName: string;
-  lastName: string;
-  email: string;
-  photoUrl: string;
-
-  // Données pro
-  catPro: string;
-  statutPro: string;
-  nameElevage: string;
-  professionPro: string;
-  especesAcceptees: string[];
-  certifications: { nom?: string; organisme?: string }[];
-  rayonIntervention?: number;
-
-  // Rôles (primaires uniquement)
-  isAdmin?: boolean;
-  isElevage?: boolean;
+  uid: string; isSecondary: boolean; profileTableId?: string;
+  firstName: string; lastName: string; email: string; photoUrl: string;
+  catPro: string; statutPro: string; nameElevage: string; professionPro: string;
+  especesAcceptees: string[]; certifications: { nom?: string; organisme?: string }[];
+  rayonIntervention?: number; isAdmin?: boolean; isElevage?: boolean;
 }
 
+interface Stats {
+  utilisateurs: number; animaux: number; annonces: number;
+  signalementsEnAttente: number; profilsEnAttente: number;
+}
+
+interface Signalement {
+  id: string; reporter_uid: string;
+  target_type: 'user' | 'annonce' | 'profil_pro';
+  target_id: string; raison: string; description?: string;
+  statut: 'en_attente' | 'traite' | 'rejete';
+  admin_note?: string; created_at: string; handled_at?: string; handled_by?: string;
+}
+
+interface SignalementAlerte {
+  target_type: string; target_id: string;
+  nb_signalements: number; premier_signalement: string; dernier_signalement: string;
+}
+
+type AdminTab = 'dashboard' | 'signalements' | 'utilisateurs';
 type FilterType = 'tous' | 'eleveur' | 'particulier' | 'pro' | 'secondaire' | 'admin' | 'en_attente';
+type SigFilter = 'en_attente' | 'traite' | 'rejete';
+
+// ─── Constantes ───────────────────────────────────────────────────────────────
 
 const CAT_LABELS: Record<string, string> = {
-  sante:            'Santé',
-  veterinaire:      'Vétérinaire',
-  education:        'Éducation',
-  garde:            'Pet sitter / Promeneur',
-  pension:          'Pension pour animaux',
-  toilettage:       'Toilettage',
-  photographe:      'Photographe',
-  marechal_ferrant: 'Maréchal-ferrant',
-  referencement:    'Commerce / Animalerie',
-  autre:            'Autre',
+  sante: 'Santé', veterinaire: 'Vétérinaire', education: 'Éducation',
+  garde: 'Pet sitter / Promeneur', pension: 'Pension', toilettage: 'Toilettage',
+  photographe: 'Photographe', marechal_ferrant: 'Maréchal-ferrant',
+  referencement: 'Commerce / Animalerie', autre: 'Autre',
 };
 
 const STATUT_STYLE: Record<string, { label: string; color: string; bg: string }> = {
@@ -70,19 +61,45 @@ const STATUT_STYLE: Record<string, { label: string; color: string; bg: string }>
   en_attente: { label: 'En attente', color: '#2563eb', bg: '#dbeafe' },
 };
 
+const RAISON_LABELS: Record<string, string> = {
+  contenu_inapproprie: 'Contenu inapproprié',
+  spam:               'Spam / Arnaque',
+  faux_profil:        'Faux profil',
+  maltraitance:       'Maltraitance animale',
+  autre:              'Autre',
+};
+
+const TARGET_LABELS: Record<string, string> = {
+  user: 'Utilisateur', annonce: 'Annonce', profil_pro: 'Profil pro',
+};
+
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth();
-
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [tab, setTab] = useState<AdminTab>('dashboard');
+
+  // Dashboard
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [alertes, setAlertes] = useState<SignalementAlerte[]>([]);
+
+  // Signalements
+  const [signalements, setSignalements] = useState<Signalement[]>([]);
+  const [sigFilter, setSigFilter] = useState<SigFilter>('en_attente');
+  const [sigLoading, setSigLoading] = useState(false);
+  const [selectedSig, setSelectedSig] = useState<Signalement | null>(null);
+  const [adminNote, setAdminNote] = useState('');
+  const [sigSaving, setSigSaving] = useState(false);
+
+  // Utilisateurs
   const [entries, setEntries] = useState<ProfileEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [usersLoading, setUsersLoading] = useState(false);
   const [filter, setFilter] = useState<FilterType>('tous');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<ProfileEntry | null>(null);
 
-  // Vérification admin
+  // ── Admin check ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) { setIsAdmin(false); return; }
     getDoc(doc(db, 'users', user.uid)).then(snap => {
@@ -90,38 +107,85 @@ export default function AdminPage() {
     });
   }, [user]);
 
-  // Chargement
-  const loadAll = useCallback(async () => {
-    setLoading(true);
+  // ── Stats ────────────────────────────────────────────────────────────────────
+  const loadStats = useCallback(async () => {
+    const [usersRes, animauxRes, annoncesRes, sigRes, profilsRes] = await Promise.all([
+      supabase.from('users').select('uid', { count: 'exact', head: true }),
+      supabase.from('animaux').select('id', { count: 'exact', head: true }),
+      supabase.from('annonces').select('id', { count: 'exact', head: true }),
+      supabase.from('signalements').select('id', { count: 'exact', head: true }).eq('statut', 'en_attente'),
+      supabase.from('users').select('uid', { count: 'exact', head: true }).eq('statut_pro', 'en_attente'),
+    ]);
+    setStats({
+      utilisateurs:          usersRes.count ?? 0,
+      animaux:               animauxRes.count ?? 0,
+      annonces:              annoncesRes.count ?? 0,
+      signalementsEnAttente: sigRes.count ?? 0,
+      profilsEnAttente:      profilsRes.count ?? 0,
+    });
+
+    const { data: alertesData } = await supabase.from('signalements_alertes').select('*');
+    setAlertes((alertesData ?? []) as SignalementAlerte[]);
+  }, []);
+
+  // ── Signalements ─────────────────────────────────────────────────────────────
+  const loadSignalements = useCallback(async (statut: SigFilter) => {
+    setSigLoading(true);
     try {
-      // 1. Firestore : tous les utilisateurs (pour nom/email/rôles)
+      const { data } = await supabase
+        .from('signalements').select('*')
+        .eq('statut', statut)
+        .order('created_at', { ascending: statut !== 'en_attente' });
+      setSignalements((data ?? []) as Signalement[]);
+    } finally {
+      setSigLoading(false);
+    }
+  }, []);
+
+  async function handleSigAction(sig: Signalement, newStatut: 'traite' | 'rejete') {
+    setSigSaving(true);
+    try {
+      await supabase.from('signalements').update({
+        statut: newStatut,
+        admin_note: adminNote.trim() || null,
+        handled_at: new Date().toISOString(),
+        handled_by: user?.uid,
+      }).eq('id', sig.id);
+      setSignalements(prev => prev.filter(s => s.id !== sig.id));
+      if (stats) setStats(prev => prev ? { ...prev, signalementsEnAttente: Math.max(0, prev.signalementsEnAttente - 1) } : prev);
+      setSelectedSig(null);
+      setAdminNote('');
+      // Rafraîchir les alertes
+      const { data } = await supabase.from('signalements_alertes').select('*');
+      setAlertes((data ?? []) as SignalementAlerte[]);
+    } finally {
+      setSigSaving(false);
+    }
+  }
+
+  // ── Utilisateurs ─────────────────────────────────────────────────────────────
+  const loadUsers = useCallback(async () => {
+    setUsersLoading(true);
+    try {
       const snap = await getDocs(collection(db, 'users'));
       const fireMap: Record<string, FireUser> = {};
       snap.docs.forEach(d => { fireMap[d.id] = { uid: d.id, ...d.data() as object } as FireUser; });
 
-      // 2. Supabase users : profils primaires pros + infos email/nom de secours
-      const { data: primaryRows } = await supabase
-        .from('users')
-        .select('uid, cat_pro, statut_pro, rayon_intervention, especes_acceptees, certifications, name_elevage, profession_pro, profile_picture_url_elevage, profile_picture_url, firstname, lastname, email');
-
-      // 3. Supabase user_profiles : profils secondaires
-      const { data: secondaryRows } = await supabase
-        .from('user_profiles')
-        .select('id, uid, profile_type, cat_pro, statut_pro, rayon_intervention, especes_acceptees, certifications, name_elevage, profession_pro, avatar_url')
-        .not('profile_type', 'is', null);
+      const { data: primaryRows } = await supabase.from('users').select(
+        'uid, cat_pro, statut_pro, rayon_intervention, especes_acceptees, certifications, name_elevage, profession_pro, profile_picture_url_elevage, profile_picture_url, firstname, lastname, email'
+      );
+      const { data: secondaryRows } = await supabase.from('user_profiles').select(
+        'id, uid, profile_type, cat_pro, statut_pro, rayon_intervention, especes_acceptees, certifications, name_elevage, profession_pro, avatar_url'
+      ).not('profile_type', 'is', null);
 
       const allEntries: ProfileEntry[] = [];
 
-      // Construire les entrées primaires (depuis Firestore + Supabase users)
       snap.docs.forEach(d => {
         const fire = fireMap[d.id];
         const supaRow = (primaryRows ?? []).find(r => r.uid === d.id) ?? {};
         allEntries.push({
-          uid: d.id,
-          isSecondary: false,
-          firstName: fire.firstname ?? '',
-          lastName: fire.lastname ?? '',
-          email: fire.email ?? '',
+          uid: d.id, isSecondary: false,
+          firstName: fire.firstname ?? '', lastName: fire.lastname ?? '', email: fire.email ?? '',
           photoUrl: (supaRow as Record<string, string>)['profile_picture_url_elevage'] ?? fire.profilePictureUrl ?? '',
           catPro: (supaRow as Record<string, string>)['cat_pro'] ?? '',
           statutPro: (supaRow as Record<string, string>)['statut_pro'] ?? 'actif',
@@ -130,72 +194,36 @@ export default function AdminPage() {
           especesAcceptees: ((supaRow as Record<string, unknown>)['especes_acceptees'] as string[]) ?? [],
           certifications: ((supaRow as Record<string, unknown>)['certifications'] as { nom?: string; organisme?: string }[]) ?? [],
           rayonIntervention: (supaRow as Record<string, number>)['rayon_intervention'],
-          isAdmin: fire.isAdmin,
-          isElevage: fire.isElevage,
+          isAdmin: fire.isAdmin, isElevage: fire.isElevage,
         });
       });
 
-      // Construire les entrées secondaires (depuis user_profiles)
       for (const row of (secondaryRows ?? [])) {
         const fire = fireMap[row.uid] ?? {};
-        // Éviter les doublons : si un profil secondaire a le même uid+cat_pro qu'un primaire, skip
         const existsPrimary = allEntries.some(e => !e.isSecondary && e.uid === row.uid && e.catPro === (row.profile_type ?? row.cat_pro));
         if (existsPrimary) continue;
-
         allEntries.push({
-          uid: row.uid,
-          isSecondary: true,
-          profileTableId: row.id,
-          firstName: (fire as FireUser).firstname ?? '',
-          lastName: (fire as FireUser).lastname ?? '',
-          email: (fire as FireUser).email ?? '',
-          photoUrl: row.avatar_url ?? (fire as FireUser).profilePictureUrl ?? '',
-          catPro: row.profile_type ?? row.cat_pro ?? '',
-          statutPro: row.statut_pro ?? 'en_attente',
-          nameElevage: row.name_elevage ?? '',
-          professionPro: row.profession_pro ?? '',
+          uid: row.uid, isSecondary: true, profileTableId: row.id,
+          firstName: (fire as FireUser).firstname ?? '', lastName: (fire as FireUser).lastname ?? '',
+          email: (fire as FireUser).email ?? '', photoUrl: row.avatar_url ?? (fire as FireUser).profilePictureUrl ?? '',
+          catPro: row.profile_type ?? row.cat_pro ?? '', statutPro: row.statut_pro ?? 'en_attente',
+          nameElevage: row.name_elevage ?? '', professionPro: row.profession_pro ?? '',
           especesAcceptees: (row.especes_acceptees as string[]) ?? [],
           certifications: (row.certifications as { nom?: string; organisme?: string }[]) ?? [],
           rayonIntervention: row.rayon_intervention,
         });
       }
-
-      // Tri : en_attente en premier, puis par nom
       allEntries.sort((a, b) => {
         const aW = a.statutPro === 'en_attente' ? 0 : 1;
         const bW = b.statutPro === 'en_attente' ? 0 : 1;
         if (aW !== bW) return aW - bW;
         return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`);
       });
-
       setEntries(allEntries);
     } finally {
-      setLoading(false);
+      setUsersLoading(false);
     }
   }, []);
-
-  useEffect(() => {
-    if (isAdmin) loadAll();
-  }, [isAdmin, loadAll]);
-
-  // ── Filtres ────────────────────────────────────────────────────────────────
-
-  const filtered = entries.filter(e => {
-    if (filter === 'admin'      && !e.isAdmin) return false;
-    if (filter === 'eleveur'    && (!e.isElevage || e.isAdmin || e.isSecondary)) return false;
-    if (filter === 'pro'        && ((!e.catPro) || e.isAdmin || e.isSecondary)) return false;
-    if (filter === 'secondaire' && !e.isSecondary) return false;
-    if (filter === 'en_attente' && e.statutPro !== 'en_attente') return false;
-    if (filter === 'particulier' && (e.isElevage || e.catPro || e.isAdmin || e.isSecondary)) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      const name = `${e.firstName} ${e.lastName}`.toLowerCase();
-      if (!name.includes(q) && !e.email.toLowerCase().includes(q) && !e.nameElevage.toLowerCase().includes(q)) return false;
-    }
-    return true;
-  });
-
-  // ── Actions ────────────────────────────────────────────────────────────────
 
   async function setStatut(entry: ProfileEntry, statut: string) {
     if (entry.isSecondary && entry.profileTableId) {
@@ -204,24 +232,23 @@ export default function AdminPage() {
       await supabase.from('users').update({ statut_pro: statut }).eq('uid', entry.uid);
     }
     setEntries(prev => prev.map(e => {
-      if (entry.isSecondary ? e.profileTableId === entry.profileTableId : (!e.isSecondary && e.uid === entry.uid)) {
+      if (entry.isSecondary ? e.profileTableId === entry.profileTableId : (!e.isSecondary && e.uid === entry.uid))
         return { ...e, statutPro: statut };
-      }
       return e;
     }));
-    if (selected?.uid === entry.uid && selected?.profileTableId === entry.profileTableId) {
+    if (selected?.uid === entry.uid && selected?.profileTableId === entry.profileTableId)
       setSelected(prev => prev ? { ...prev, statutPro: statut } : null);
-    }
+    // Refresh stats
+    const { count } = await supabase.from('users').select('uid', { count: 'exact', head: true }).eq('statut_pro', 'en_attente');
+    setStats(prev => prev ? { ...prev, profilsEnAttente: count ?? 0 } : prev);
   }
 
   async function deleteEntry(entry: ProfileEntry) {
     if (entry.isSecondary && entry.profileTableId) {
-      if (!confirm('Supprimer ce profil secondaire ? Le compte principal ne sera pas affecté.')) return;
-      try {
-        await supabase.from('user_profiles').delete().eq('id', entry.profileTableId);
-        setEntries(prev => prev.filter(e => e.profileTableId !== entry.profileTableId));
-        setSelected(null);
-      } catch (e) { alert(`Erreur : ${e}`); }
+      if (!confirm('Supprimer ce profil secondaire ?')) return;
+      await supabase.from('user_profiles').delete().eq('id', entry.profileTableId);
+      setEntries(prev => prev.filter(e => e.profileTableId !== entry.profileTableId));
+      setSelected(null);
     } else {
       if (!confirm('Supprimer ce compte définitivement ?')) return;
       if (prompt('Tapez SUPPRIMER pour confirmer') !== 'SUPPRIMER') return;
@@ -234,96 +261,415 @@ export default function AdminPage() {
     }
   }
 
-  // ── Garde-fous auth ────────────────────────────────────────────────────────
+  // ── Chargement par onglet ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (tab === 'dashboard') loadStats();
+    if (tab === 'signalements') loadSignalements(sigFilter);
+    if (tab === 'utilisateurs' && entries.length === 0) loadUsers();
+  }, [isAdmin, tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (authLoading || isAdmin === null) {
+  useEffect(() => {
+    if (isAdmin && tab === 'signalements') loadSignalements(sigFilter);
+  }, [sigFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Filtres utilisateurs ─────────────────────────────────────────────────────
+  const filtered = entries.filter(e => {
+    if (filter === 'admin'       && !e.isAdmin) return false;
+    if (filter === 'eleveur'     && (!e.isElevage || e.isAdmin || e.isSecondary)) return false;
+    if (filter === 'pro'         && (!e.catPro || e.isAdmin || e.isSecondary)) return false;
+    if (filter === 'secondaire'  && !e.isSecondary) return false;
+    if (filter === 'en_attente'  && e.statutPro !== 'en_attente') return false;
+    if (filter === 'particulier' && (e.isElevage || e.catPro || e.isAdmin || e.isSecondary)) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const name = `${e.firstName} ${e.lastName}`.toLowerCase();
+      if (!name.includes(q) && !e.email.toLowerCase().includes(q) && !e.nameElevage.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  // ── Auth guard ───────────────────────────────────────────────────────────────
+  if (authLoading || isAdmin === null)
     return <div className="flex items-center justify-center h-screen text-gray-500">Chargement…</div>;
-  }
-  if (!user || isAdmin === false) {
+  if (!user || isAdmin === false)
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-4">
         <span className="text-4xl">🔒</span>
         <p className="text-gray-600 font-medium">Accès réservé aux administrateurs.</p>
       </div>
     );
-  }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
-  const FILTERS: { key: FilterType; label: string }[] = [
-    { key: 'tous',       label: 'Tous' },
-    { key: 'en_attente', label: '⏳ En attente' },
-    { key: 'secondaire', label: 'Profils secondaires' },
-    { key: 'pro',        label: 'Pros (primaire)' },
-    { key: 'eleveur',    label: 'Éleveurs' },
-    { key: 'particulier',label: 'Particuliers' },
-    { key: 'admin',      label: 'Admins' },
-  ];
-
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#F8F8F6]">
+    <div className="min-h-screen bg-[#F4F6F8] flex flex-col">
+
       {/* Header */}
-      <div className="bg-[#A7C79A] px-6 py-4 flex items-center gap-4">
-        <span className="text-xl font-bold text-gray-800" style={{ fontFamily: 'Galey, sans-serif' }}>
-          Administration PetsMatch
+      <header className="bg-[#0C5C6C] text-white px-6 py-3 flex items-center gap-4 shadow-md flex-shrink-0">
+        <span className="text-lg font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>
+          🛡️ Administration PetsMatch
         </span>
-        <span className="ml-auto text-sm text-gray-600">{user.email}</span>
+        <span className="ml-auto text-sm opacity-70">{user.email}</span>
+      </header>
+
+      {/* Tabs */}
+      <div className="bg-white border-b border-gray-200 px-6 flex gap-1 flex-shrink-0">
+        {([
+          { key: 'dashboard',     label: 'Dashboard',     icon: '📊' },
+          { key: 'signalements',  label: 'Signalements',  icon: '🚨', badge: stats?.signalementsEnAttente },
+          { key: 'utilisateurs',  label: 'Utilisateurs',  icon: '👥', badge: stats?.profilsEnAttente },
+        ] as { key: AdminTab; label: string; icon: string; badge?: number }[]).map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`relative px-5 py-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+              tab === t.key
+                ? 'border-[#0C5C6C] text-[#0C5C6C]'
+                : 'border-transparent text-gray-500 hover:text-[#0C5C6C]'
+            }`}
+            style={{ fontFamily: 'Galey, sans-serif' }}
+          >
+            <span>{t.icon}</span>
+            <span>{t.label}</span>
+            {!!t.badge && (
+              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                {t.badge}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 py-6">
-        {/* Search */}
-        <input
-          type="text"
-          placeholder="Rechercher par nom, structure ou email…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full px-4 py-2 rounded-full border border-gray-200 bg-white shadow-sm mb-4 outline-none focus:border-[#A7C79A]"
-          style={{ fontFamily: 'Galey, sans-serif' }}
-        />
+      {/* Contenu */}
+      <main className="flex-1 overflow-auto p-6">
 
-        {/* Filter chips */}
-        <div className="flex gap-2 flex-wrap mb-4">
-          {FILTERS.map(f => (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                filter === f.key
-                  ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
-                  : 'bg-white text-gray-700 border-gray-300 hover:border-[#0C5C6C]'
-              }`}
-              style={{ fontFamily: 'Galey, sans-serif' }}
-            >
-              {f.label}
-            </button>
-          ))}
-          <span className="ml-auto text-sm text-gray-500 self-center">{filtered.length} résultat(s)</span>
-        </div>
+        {/* ─── Dashboard ─────────────────────────────────────────────────── */}
+        {tab === 'dashboard' && (
+          <div className="max-w-5xl mx-auto space-y-6">
 
-        {/* Liste */}
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : filtered.length === 0 ? (
-          <p className="text-center text-gray-400 py-12" style={{ fontFamily: 'Galey, sans-serif' }}>
-            Aucun résultat.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {filtered.map((e, i) => (
-              <ProfileCard key={`${e.uid}-${e.profileTableId ?? 'primary'}-${i}`} entry={e} onClick={() => setSelected(e)} />
-            ))}
+            {/* Stats cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+              {[
+                { label: 'Utilisateurs', value: stats?.utilisateurs, icon: '👥', color: '#0C5C6C' },
+                { label: 'Animaux',      value: stats?.animaux,      icon: '🐾', color: '#6E9E57' },
+                { label: 'Annonces',     value: stats?.annonces,     icon: '📋', color: '#A7C79A' },
+                { label: 'Signalements', value: stats?.signalementsEnAttente, icon: '🚨', color: stats?.signalementsEnAttente ? '#dc2626' : '#6E9E57', alert: !!(stats?.signalementsEnAttente) },
+                { label: 'Profils en attente', value: stats?.profilsEnAttente, icon: '⏳', color: stats?.profilsEnAttente ? '#ea580c' : '#6E9E57', alert: !!(stats?.profilsEnAttente) },
+              ].map(s => (
+                <div key={s.label}
+                  className={`bg-white rounded-2xl p-4 shadow-sm border ${s.alert ? 'border-red-200' : 'border-gray-100'}`}>
+                  <div className="text-2xl mb-1">{s.icon}</div>
+                  <div className="text-2xl font-bold" style={{ color: s.color, fontFamily: 'Galey, sans-serif' }}>
+                    {stats === null ? '…' : (s.value ?? 0)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5">{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Alertes signalements */}
+            {alertes.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">🚨</span>
+                  <h2 className="font-bold text-red-600" style={{ fontFamily: 'Galey, sans-serif' }}>
+                    Ressources signalées ≥ 3 fois
+                  </h2>
+                </div>
+                <div className="space-y-2">
+                  {alertes.map(a => (
+                    <div key={`${a.target_type}-${a.target_id}`}
+                      className="flex items-center justify-between bg-red-50 rounded-xl px-4 py-3">
+                      <div>
+                        <span className="text-sm font-semibold text-red-700">
+                          {TARGET_LABELS[a.target_type] ?? a.target_type}
+                        </span>
+                        <span className="text-xs text-gray-500 ml-2 font-mono">{a.target_id.slice(0, 12)}…</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                          {a.nb_signalements} signalements
+                        </span>
+                        <button
+                          onClick={() => { setTab('signalements'); setSigFilter('en_attente'); }}
+                          className="text-xs text-[#0C5C6C] hover:underline font-semibold"
+                        >
+                          Voir →
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Profils en attente */}
+            {(stats?.profilsEnAttente ?? 0) > 0 && (
+              <div className="bg-white rounded-2xl shadow-sm border border-orange-100 p-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">⏳</span>
+                    <div>
+                      <h2 className="font-bold text-orange-600" style={{ fontFamily: 'Galey, sans-serif' }}>
+                        {stats?.profilsEnAttente} profil(s) en attente de validation
+                      </h2>
+                      <p className="text-xs text-gray-500">Éleveurs et pros attendant vérification</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => { setTab('utilisateurs'); setFilter('en_attente'); if (entries.length === 0) loadUsers(); }}
+                    className="text-sm font-semibold text-[#0C5C6C] bg-[#0C5C6C10] px-4 py-2 rounded-xl hover:bg-[#0C5C6C20] transition-colors"
+                  >
+                    Gérer →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {alertes.length === 0 && (stats?.signalementsEnAttente ?? 0) === 0 && (stats?.profilsEnAttente ?? 0) === 0 && stats !== null && (
+              <div className="bg-white rounded-2xl shadow-sm border border-green-100 p-6 text-center">
+                <div className="text-3xl mb-2">✅</div>
+                <p className="font-semibold text-[#6E9E57]" style={{ fontFamily: 'Galey, sans-serif' }}>Tout est en ordre</p>
+                <p className="text-sm text-gray-400">Aucun signalement ni profil en attente.</p>
+              </div>
+            )}
           </div>
         )}
-      </div>
 
-      {/* Modal détail */}
+        {/* ─── Signalements (SIG04) ──────────────────────────────────────── */}
+        {tab === 'signalements' && (
+          <div className="max-w-4xl mx-auto">
+
+            {/* Filtres */}
+            <div className="flex gap-2 mb-5">
+              {(['en_attente', 'traite', 'rejete'] as SigFilter[]).map(s => (
+                <button key={s}
+                  onClick={() => setSigFilter(s)}
+                  className={`px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
+                    sigFilter === s
+                      ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
+                  }`}
+                  style={{ fontFamily: 'Galey, sans-serif' }}
+                >
+                  {s === 'en_attente' ? '⏳ En attente' : s === 'traite' ? '✅ Traités' : '❌ Rejetés'}
+                  {s === 'en_attente' && stats?.signalementsEnAttente ? (
+                    <span className="ml-2 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                      {stats.signalementsEnAttente}
+                    </span>
+                  ) : null}
+                </button>
+              ))}
+              <button
+                onClick={() => loadSignalements(sigFilter)}
+                className="ml-auto px-3 py-1.5 text-sm text-gray-500 border border-gray-200 rounded-full hover:bg-gray-50 bg-white"
+                title="Rafraîchir"
+              >
+                ↺
+              </button>
+            </div>
+
+            {sigLoading ? (
+              <div className="flex justify-center py-16">
+                <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : signalements.length === 0 ? (
+              <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
+                <div className="text-3xl mb-2">
+                  {sigFilter === 'en_attente' ? '🎉' : '📭'}
+                </div>
+                <p className="text-gray-500">
+                  {sigFilter === 'en_attente' ? 'Aucun signalement en attente.' : 'Aucun signalement dans cette catégorie.'}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {signalements.map(sig => (
+                  <div key={sig.id}
+                    onClick={() => { setSelectedSig(sig); setAdminNote(sig.admin_note ?? ''); }}
+                    className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow flex items-start gap-4"
+                  >
+                    <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-lg"
+                      style={{ background: '#fee2e2' }}>
+                      {sig.target_type === 'annonce' ? '📋' : sig.target_type === 'user' ? '👤' : '💼'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-[#1F2A2E]">
+                          {TARGET_LABELS[sig.target_type] ?? sig.target_type}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                          style={{ background: '#fee2e2', color: '#dc2626' }}>
+                          {RAISON_LABELS[sig.raison] ?? sig.raison}
+                        </span>
+                        {sig.target_type === 'annonce' && (
+                          <Link href={`/annonces/${sig.target_id}`} target="_blank"
+                            onClick={e => e.stopPropagation()}
+                            className="text-xs text-[#0C5C6C] hover:underline">
+                            Voir l'annonce ↗
+                          </Link>
+                        )}
+                      </div>
+                      {sig.description && (
+                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{sig.description}</p>
+                      )}
+                      <p className="text-xs text-gray-400 mt-1">
+                        {new Date(sig.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    {sig.statut === 'en_attente' && (
+                      <div className="flex gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => { setSelectedSig(sig); setAdminNote(''); }}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-[#6E9E57] text-[#6E9E57] hover:bg-[#6E9E5710] transition-colors"
+                        >
+                          Traiter
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ─── Utilisateurs ──────────────────────────────────────────────── */}
+        {tab === 'utilisateurs' && (
+          <div className="max-w-4xl mx-auto">
+            {entries.length === 0 && !usersLoading && (
+              <div className="flex justify-center mb-4">
+                <button onClick={loadUsers}
+                  className="px-5 py-2 bg-[#0C5C6C] text-white rounded-xl text-sm font-semibold hover:bg-[#094F5D]"
+                  style={{ fontFamily: 'Galey, sans-serif' }}>
+                  Charger les utilisateurs
+                </button>
+              </div>
+            )}
+            <input
+              type="text" placeholder="Rechercher par nom, structure ou email…"
+              value={search} onChange={e => setSearch(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 bg-white shadow-sm mb-4 outline-none focus:border-[#A7C79A] text-sm"
+              style={{ fontFamily: 'Galey, sans-serif' }}
+            />
+            <div className="flex gap-2 flex-wrap mb-4">
+              {([
+                { key: 'tous',       label: 'Tous' },
+                { key: 'en_attente', label: '⏳ En attente' },
+                { key: 'secondaire', label: 'Profils secondaires' },
+                { key: 'pro',        label: 'Pros' },
+                { key: 'eleveur',    label: 'Éleveurs' },
+                { key: 'particulier',label: 'Particuliers' },
+                { key: 'admin',      label: 'Admins' },
+              ] as { key: FilterType; label: string }[]).map(f => (
+                <button key={f.key} onClick={() => setFilter(f.key)}
+                  className={`px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
+                    filter === f.key
+                      ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
+                  }`}
+                  style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {f.label}
+                </button>
+              ))}
+              <span className="ml-auto text-sm text-gray-400 self-center">
+                {filtered.length} résultat(s)
+              </span>
+            </div>
+
+            {usersLoading ? (
+              <div className="flex justify-center py-16">
+                <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : filtered.length === 0 ? (
+              <p className="text-center text-gray-400 py-12" style={{ fontFamily: 'Galey, sans-serif' }}>
+                Aucun résultat.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {filtered.map((e, i) => (
+                  <ProfileCard key={`${e.uid}-${e.profileTableId ?? 'p'}-${i}`} entry={e} onClick={() => setSelected(e)} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+      </main>
+
+      {/* ── Modal signalement ─────────────────────────────────────────────── */}
+      {selectedSig && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => setSelectedSig(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl"
+            onClick={e => e.stopPropagation()}>
+            <div className="bg-[#fee2e2] rounded-t-2xl px-6 py-4 flex items-center justify-between">
+              <div>
+                <p className="font-bold text-red-700" style={{ fontFamily: 'Galey, sans-serif' }}>
+                  Signalement — {TARGET_LABELS[selectedSig.target_type]}
+                </p>
+                <p className="text-xs text-red-500 font-mono mt-0.5">{selectedSig.target_id}</p>
+              </div>
+              <button onClick={() => setSelectedSig(null)} className="text-gray-500 hover:text-gray-800 text-xl">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <InfoRow label="Raison" value={RAISON_LABELS[selectedSig.raison] ?? selectedSig.raison} />
+              {selectedSig.description && <InfoRow label="Description" value={selectedSig.description} />}
+              <InfoRow label="Signalé par (uid)" value={selectedSig.reporter_uid} mono />
+              <InfoRow label="Date" value={new Date(selectedSig.created_at).toLocaleString('fr-FR')} />
+              {selectedSig.target_type === 'annonce' && (
+                <Link href={`/annonces/${selectedSig.target_id}`} target="_blank"
+                  className="inline-block text-sm text-[#0C5C6C] hover:underline font-semibold">
+                  Voir l'annonce ↗
+                </Link>
+              )}
+              {selectedSig.statut === 'en_attente' && (
+                <>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Note admin (optionnel)</label>
+                    <textarea
+                      value={adminNote}
+                      onChange={e => setAdminNote(e.target.value)}
+                      rows={2}
+                      placeholder="Raison de la décision…"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#6E9E57] resize-none"
+                    />
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => handleSigAction(selectedSig, 'rejete')}
+                      disabled={sigSaving}
+                      className="flex-1 border border-gray-200 text-gray-600 text-sm font-semibold py-2.5 rounded-xl hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                      style={{ fontFamily: 'Galey, sans-serif' }}>
+                      ❌ Rejeter
+                    </button>
+                    <button
+                      onClick={() => handleSigAction(selectedSig, 'traite')}
+                      disabled={sigSaving}
+                      className="flex-1 bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+                      style={{ fontFamily: 'Galey, sans-serif' }}>
+                      {sigSaving ? '…' : '✅ Marquer traité'}
+                    </button>
+                  </div>
+                </>
+              )}
+              {selectedSig.statut !== 'en_attente' && (
+                <div className="bg-gray-50 rounded-xl p-3 text-sm text-gray-600">
+                  <p>Traité le {selectedSig.handled_at ? new Date(selectedSig.handled_at).toLocaleDateString('fr-FR') : '—'}</p>
+                  {selectedSig.admin_note && <p className="mt-1 italic">"{selectedSig.admin_note}"</p>}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal utilisateur ────────────────────────────────────────────── */}
       {selected && (
         <ProfileModal
           entry={selected}
           onClose={() => setSelected(null)}
-          onSetStatut={(statut) => setStatut(selected, statut)}
+          onSetStatut={s => setStatut(selected, s)}
           onDelete={() => deleteEntry(selected)}
         />
       )}
@@ -337,22 +683,15 @@ function ProfileCard({ entry, onClick }: { entry: ProfileEntry; onClick: () => v
   const name = [entry.firstName, entry.lastName].filter(Boolean).join(' ') || 'Nom inconnu';
   const statutStyle = STATUT_STYLE[entry.statutPro] ?? STATUT_STYLE.actif;
   const isPro = !!entry.catPro;
-
   return (
-    <div
-      onClick={onClick}
-      className="bg-white rounded-2xl shadow-sm p-4 flex items-center gap-4 cursor-pointer hover:shadow-md transition-shadow"
-    >
-      {/* Avatar */}
+    <div onClick={onClick}
+      className="bg-white rounded-2xl shadow-sm p-4 flex items-center gap-4 cursor-pointer hover:shadow-md transition-shadow border border-gray-100">
       <div className="relative flex-shrink-0">
         <div className="w-12 h-12 rounded-full bg-[#0C5C6C] flex items-center justify-center overflow-hidden">
-          {entry.photoUrl ? (
-            <img src={entry.photoUrl} alt={name} className="w-full h-full object-cover" />
-          ) : (
-            <span className="text-white text-lg">
-              {entry.isAdmin ? '🛡️' : isPro ? '💼' : entry.isElevage ? '🌿' : '👤'}
-            </span>
-          )}
+          {entry.photoUrl
+            ? <img src={entry.photoUrl} alt={name} className="w-full h-full object-cover" />
+            : <span className="text-white text-lg">{entry.isAdmin ? '🛡️' : isPro ? '💼' : entry.isElevage ? '🌿' : '👤'}</span>
+          }
         </div>
         {entry.isSecondary && (
           <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-purple-500 border-2 border-white flex items-center justify-center">
@@ -360,8 +699,6 @@ function ProfileCard({ entry, onClick }: { entry: ProfileEntry; onClick: () => v
           </div>
         )}
       </div>
-
-      {/* Infos */}
       <div className="flex-1 min-w-0">
         <p className="font-semibold text-gray-800 truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{name}</p>
         {entry.nameElevage && <p className="text-xs text-[#0C5C6C] truncate">{entry.nameElevage}</p>}
@@ -372,60 +709,42 @@ function ProfileCard({ entry, onClick }: { entry: ProfileEntry; onClick: () => v
           {!entry.isSecondary && entry.isElevage && <Badge label="Éleveur" color="#0C5C6C" />}
           {entry.catPro && <Badge label={CAT_LABELS[entry.catPro] ?? entry.catPro} color="#0C5C6C" />}
           {(isPro || entry.isSecondary) && (
-            <span
-              className="text-xs px-2 py-0.5 rounded-full font-medium"
-              style={{ background: statutStyle.bg, color: statutStyle.color }}
-            >
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+              style={{ background: statutStyle.bg, color: statutStyle.color }}>
               {statutStyle.label}
             </span>
           )}
         </div>
       </div>
-
-      <span className="text-gray-300 text-lg">›</span>
+      <span className="text-gray-300 text-lg flex-shrink-0">›</span>
     </div>
   );
 }
 
 // ─── ProfileModal ─────────────────────────────────────────────────────────────
 
-function ProfileModal({
-  entry, onClose, onSetStatut, onDelete,
-}: {
-  entry: ProfileEntry;
-  onClose: () => void;
-  onSetStatut: (statut: string) => Promise<void>;
-  onDelete: () => Promise<void>;
+function ProfileModal({ entry, onClose, onSetStatut, onDelete }: {
+  entry: ProfileEntry; onClose: () => void;
+  onSetStatut: (s: string) => Promise<void>; onDelete: () => Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
   const statut = entry.statutPro ?? 'actif';
   const name = [entry.firstName, entry.lastName].filter(Boolean).join(' ') || 'Nom inconnu';
   const certifs = (entry.certifications ?? []).map(c => [c.nom, c.organisme].filter(Boolean).join(' — ')).filter(Boolean);
   const isPro = !!entry.catPro;
-
-  async function doStatut(s: string) {
-    setSaving(true);
-    try { await onSetStatut(s); } finally { setSaving(false); }
-  }
+  async function doStatut(s: string) { setSaving(true); try { await onSetStatut(s); } finally { setSaving(false); } }
 
   return (
-    <div
-      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}>
         <div className="bg-[#A7C79A] rounded-t-2xl px-6 py-4 flex items-center gap-4">
           <div className="relative">
             <div className="w-14 h-14 rounded-full bg-[#0C5C6C] flex items-center justify-center overflow-hidden">
-              {entry.photoUrl ? (
-                <img src={entry.photoUrl} alt={name} className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-white text-2xl">{isPro ? '💼' : entry.isElevage ? '🌿' : '👤'}</span>
-              )}
+              {entry.photoUrl
+                ? <img src={entry.photoUrl} alt={name} className="w-full h-full object-cover" />
+                : <span className="text-white text-2xl">{isPro ? '💼' : entry.isElevage ? '🌿' : '👤'}</span>
+              }
             </div>
             {entry.isSecondary && (
               <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-purple-500 border-2 border-white flex items-center justify-center">
@@ -437,48 +756,25 @@ function ProfileModal({
             <p className="text-lg font-bold text-gray-800" style={{ fontFamily: 'Galey, sans-serif' }}>{name}</p>
             {entry.nameElevage && <p className="text-sm text-[#0C5C6C]">{entry.nameElevage}</p>}
             <p className="text-xs text-gray-600">{entry.email}</p>
-            {entry.isSecondary && (
-              <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-semibold">
-                Profil secondaire
-              </span>
-            )}
           </div>
           <button onClick={onClose} className="text-gray-600 hover:text-gray-900 text-xl">✕</button>
         </div>
-
         <div className="p-6 space-y-5">
-
-          {/* Statut + actions */}
           {(isPro || entry.isSecondary) && (
             <Section title="Statut professionnel">
               <div className="mb-3">
-                {(() => {
-                  const s = STATUT_STYLE[statut] ?? STATUT_STYLE.actif;
-                  return (
-                    <span className="text-sm font-bold px-3 py-1 rounded-full" style={{ background: s.bg, color: s.color }}>
-                      {s.label}
-                    </span>
-                  );
-                })()}
+                {(() => { const s = STATUT_STYLE[statut] ?? STATUT_STYLE.actif; return (
+                  <span className="text-sm font-bold px-3 py-1 rounded-full" style={{ background: s.bg, color: s.color }}>{s.label}</span>
+                ); })()}
               </div>
               <div className="flex gap-2 flex-wrap">
-                {statut !== 'actif' && (
-                  <ActionBtn label="Activer" color="#16a34a" onClick={() => doStatut('actif')} disabled={saving} />
-                )}
-                {statut !== 'suspendu' && (
-                  <ActionBtn label="Suspendre" color="#ea580c" onClick={() => doStatut('suspendu')} disabled={saving} />
-                )}
-                {statut !== 'refuse' && (
-                  <ActionBtn label="Refuser" color="#dc2626" onClick={() => doStatut('refuse')} disabled={saving} />
-                )}
-                {statut !== 'en_attente' && (
-                  <ActionBtn label="En attente" color="#2563eb" onClick={() => doStatut('en_attente')} disabled={saving} />
-                )}
+                {statut !== 'actif'      && <ActionBtn label="✅ Activer"     color="#16a34a" onClick={() => doStatut('actif')}      disabled={saving} />}
+                {statut !== 'suspendu'   && <ActionBtn label="⏸ Suspendre"   color="#ea580c" onClick={() => doStatut('suspendu')}   disabled={saving} />}
+                {statut !== 'refuse'     && <ActionBtn label="❌ Refuser"     color="#dc2626" onClick={() => doStatut('refuse')}     disabled={saving} />}
+                {statut !== 'en_attente' && <ActionBtn label="⏳ En attente" color="#2563eb" onClick={() => doStatut('en_attente')} disabled={saving} />}
               </div>
             </Section>
           )}
-
-          {/* Infos pro */}
           {isPro && (
             <Section title="Profil professionnel">
               {entry.catPro && <InfoRow label="Catégorie" value={CAT_LABELS[entry.catPro] ?? entry.catPro} />}
@@ -487,9 +783,7 @@ function ProfileModal({
               {entry.especesAcceptees.length > 0 && (
                 <div>
                   <p className="text-xs text-gray-400 mb-1">Espèces</p>
-                  <div className="flex flex-wrap gap-1">
-                    {entry.especesAcceptees.map(e => <Badge key={e} label={e} color="#0C5C6C" />)}
-                  </div>
+                  <div className="flex flex-wrap gap-1">{entry.especesAcceptees.map(e => <Badge key={e} label={e} color="#0C5C6C" />)}</div>
                 </div>
               )}
               {certifs.length > 0 && (
@@ -500,17 +794,11 @@ function ProfileModal({
               )}
             </Section>
           )}
-
-          {/* Infos compte */}
           <Section title="Informations du compte">
             <InfoRow label="Email" value={entry.email} />
             <InfoRow label="UID Firebase" value={entry.uid} mono />
-            {entry.isSecondary && entry.profileTableId && (
-              <InfoRow label="ID profil secondaire" value={entry.profileTableId} mono />
-            )}
+            {entry.isSecondary && entry.profileTableId && <InfoRow label="ID profil secondaire" value={entry.profileTableId} mono />}
           </Section>
-
-          {/* Rôles — profil primaire uniquement */}
           {!entry.isSecondary && (
             <Section title="Rôles">
               <div className="flex flex-wrap gap-2">
@@ -521,13 +809,9 @@ function ProfileModal({
               </div>
             </Section>
           )}
-
-          {/* Supprimer */}
-          <button
-            onClick={onDelete}
+          <button onClick={onDelete}
             className="w-full py-2 rounded-xl border border-red-300 text-red-600 text-sm font-semibold hover:bg-red-50 transition-colors"
-            style={{ fontFamily: 'Galey, sans-serif' }}
-          >
+            style={{ fontFamily: 'Galey, sans-serif' }}>
             {entry.isSecondary ? 'Supprimer ce profil secondaire' : 'Supprimer le compte'}
           </button>
         </div>
@@ -539,16 +823,8 @@ function ProfileModal({
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function Badge({ label, color }: { label: string; color: string }) {
-  return (
-    <span
-      className="text-xs px-2 py-0.5 rounded-full font-medium"
-      style={{ background: `${color}1a`, color }}
-    >
-      {label}
-    </span>
-  );
+  return <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: `${color}1a`, color }}>{label}</span>;
 }
-
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
@@ -557,24 +833,20 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     </div>
   );
 }
-
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div>
       <p className="text-xs text-gray-400">{label}</p>
-      <p className={`text-sm text-gray-800 ${mono ? 'font-mono text-xs break-all' : 'font-medium'}`} style={{ fontFamily: mono ? undefined : 'Galey, sans-serif' }}>{value}</p>
+      <p className={`text-sm text-gray-800 ${mono ? 'font-mono text-xs break-all' : 'font-medium'}`}
+        style={{ fontFamily: mono ? undefined : 'Galey, sans-serif' }}>{value}</p>
     </div>
   );
 }
-
 function ActionBtn({ label, color, onClick, disabled }: { label: string; color: string; onClick: () => void; disabled?: boolean }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
+    <button onClick={onClick} disabled={disabled}
       className="px-4 py-1.5 rounded-xl text-sm font-semibold border transition-colors disabled:opacity-50"
-      style={{ borderColor: `${color}66`, color, background: `${color}18`, fontFamily: 'Galey, sans-serif' }}
-    >
+      style={{ borderColor: `${color}66`, color, background: `${color}18`, fontFamily: 'Galey, sans-serif' }}>
       {label}
     </button>
   );

@@ -205,6 +205,7 @@ export default function AnnonceDetailPage() {
   const dateNaissStr = isPortee ? annonce.date_naissance : annonce.date_naissance_animal;
 
   return (
+    <>
     <div className="min-h-screen bg-[#F8F8F6]">
       {/* Header */}
       <div className="bg-white border-b border-[#E8EDE6] sticky top-0 z-10">
@@ -462,5 +463,6 @@ export default function AnnonceDetailPage() {
         </div>
       </div>
     )}
+    </>
   );
 }

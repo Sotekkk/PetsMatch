@@ -32,7 +32,11 @@ async function supabaseGet(path) {
             res.on("data", (c) => data += c);
             res.on("end", () => {
                 if (res.statusCode >= 200 && res.statusCode < 300) {
-                    try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+                    try {
+                        resolve(JSON.parse(data));
+                    } catch (e) {
+                        reject(e);
+                    }
                 } else {
                     reject(new Error(`Supabase GET ${path}: ${res.statusCode} — ${data}`));
                 }
@@ -117,7 +121,7 @@ exports.sendRdvReminders = functions
             {
                 label: "1h",
                 from: fmtISO(new Date(now.getTime() + 55 * 60 * 1000)),
-                to:   fmtISO(new Date(now.getTime() + 65 * 60 * 1000)),
+                to: fmtISO(new Date(now.getTime() + 65 * 60 * 1000)),
                 sentField: "reminder_1h_sent",
                 title: "RDV dans 1 heure",
                 body: (proName, motif) =>
@@ -126,7 +130,7 @@ exports.sendRdvReminders = functions
             {
                 label: "15min",
                 from: fmtISO(new Date(now.getTime() + 10 * 60 * 1000)),
-                to:   fmtISO(new Date(now.getTime() + 20 * 60 * 1000)),
+                to: fmtISO(new Date(now.getTime() + 20 * 60 * 1000)),
                 sentField: "reminder_15min_sent",
                 title: "RDV dans 15 minutes",
                 body: (proName, motif) =>
@@ -162,16 +166,16 @@ exports.sendRdvReminders = functions
                     const fcmToken = clientDoc.exists ? clientDoc.data()?.fcmToken : null;
 
                     const title = win.title;
-                    const body  = win.body(proName, rdv.motif);
+                    const body = win.body(proName, rdv.motif);
 
                     // Notification in-app
                     await supabaseInsert("notifications", [{
-                        uid:   rdv.client_uid,
-                        type:  `rdv_rappel_${win.label.replace("min", "m")}`,
+                        uid: rdv.client_uid,
+                        type: `rdv_rappel_${win.label.replace("min", "m")}`,
                         title: title,
-                        body:  body,
-                        data:  {rdv_id: rdv.id},
-                        read:  false,
+                        body: body,
+                        data: {rdv_id: rdv.id},
+                        read: false,
                     }]);
 
                     // Push FCM

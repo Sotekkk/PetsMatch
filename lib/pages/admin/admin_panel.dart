@@ -1,4 +1,5 @@
 import 'package:PetsMatch/pages/admin/pro_list.dart';
+import 'package:PetsMatch/pages/admin/signalements_admin.dart';
 import 'package:PetsMatch/pages/admin/supabase_migration_page.dart';
 import 'package:PetsMatch/pages/admin/user_list.dart';
 import 'package:PetsMatch/pages/admin/verification_list.dart';
@@ -20,14 +21,33 @@ class AdminPanel extends StatefulWidget {
 
 class _AdminPanelState extends State<AdminPanel> {
   int _selectedIndex = 0;
+  int _pendingSig = 0;
 
-  final List<Widget> _pages = [
-    const _DashboardTab(),
-    const VerificationList(),
-    const UserList(),
-    const ProList(),
-    const AdminMarketplaceTab(),
-  ];
+  late final List<Widget> _pages;
+
+  @override
+  void initState() {
+    super.initState();
+    _pages = [
+      const _DashboardTab(),
+      const VerificationList(),
+      const UserList(),
+      const ProList(),
+      const SignalementsAdmin(),
+      const AdminMarketplaceTab(),
+    ];
+    _loadPendingSig();
+  }
+
+  Future<void> _loadPendingSig() async {
+    try {
+      final res = await Supabase.instance.client
+          .from('signalements')
+          .select('id', const FetchOptions(count: CountOption.exact, head: true))
+          .eq('statut', 'en_attente');
+      if (mounted) setState(() => _pendingSig = res.count ?? 0);
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -67,26 +87,40 @@ class _AdminPanelState extends State<AdminPanel> {
         backgroundColor: const Color(0xFFF8F8F6),
         selectedItemColor: const Color(0xFF6E9E57),
         unselectedItemColor: Colors.grey,
+        type: BottomNavigationBarType.fixed,
         currentIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
-        items: const [
-          BottomNavigationBarItem(
+        onTap: (index) {
+          setState(() => _selectedIndex = index);
+          if (index == 4) _loadPendingSig();
+        },
+        items: [
+          const BottomNavigationBarItem(
             icon: Icon(Icons.dashboard),
             label: 'Tableau de bord',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.verified_user),
             label: 'Vérifications',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.people),
             label: 'Utilisateurs',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.work_outline),
             label: 'Pros',
           ),
           BottomNavigationBarItem(
+            icon: _pendingSig > 0
+                ? Badge(
+                    label: Text('$_pendingSig',
+                        style: const TextStyle(fontSize: 10, fontFamily: 'Galey')),
+                    child: const Icon(Icons.flag_outlined),
+                  )
+                : const Icon(Icons.flag_outlined),
+            label: 'Signalements',
+          ),
+          const BottomNavigationBarItem(
             icon: Icon(Icons.local_offer_outlined),
             label: 'Marketplace',
           ),
