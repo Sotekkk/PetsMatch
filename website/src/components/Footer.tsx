@@ -45,8 +45,15 @@ export default function Footer() {
         </div>
       </div>
 
-      <div className="border-t border-white/10 py-4 px-4 text-center text-xs text-white/30">
-        © {new Date().getFullYear()} PetsMatch. Tous droits réservés.
+      <div className="border-t border-white/10 py-4 px-4">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+          <p className="text-xs text-white/30">© {new Date().getFullYear()} PetsMatch. Tous droits réservés.</p>
+          <div className="flex flex-wrap gap-4 text-xs text-white/40">
+            <Link href="/mentions-legales" className="hover:text-white/70 transition-colors">Mentions légales</Link>
+            <Link href="/cgu" className="hover:text-white/70 transition-colors">CGU</Link>
+            <Link href="/confidentialite" className="hover:text-white/70 transition-colors">Confidentialité</Link>
+          </div>
+        </div>
       </div>
     </footer>
   );

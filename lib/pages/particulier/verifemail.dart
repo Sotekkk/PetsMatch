@@ -220,6 +220,7 @@ Future<Object> registerElevage(String email, String password) async {
         if (User_Info.bannerUrl.isNotEmpty) 'banner_url': User_Info.bannerUrl,
         if (User_Info.profilePictureUrlElevage.isNotEmpty)
           'profile_picture_url_elevage': User_Info.profilePictureUrlElevage,
+        'cgu_accepted_at': DateTime.now().toIso8601String(),
       });
     } catch (e) {
       print("Supabase user sync error: $e");

@@ -1514,19 +1514,58 @@ Règle éditoriale : tous les partenaires sont vérifiés manuellement avant act
 
 ---
 
+## 5.20 Signalement membres
+
+> **Modération communautaire · Protège la plateforme contre les faux profils, arnaques et contenus inappropriés**
+
+### Spec IDs : SIG01–SIG04
+
+| ID | Fonctionnalité | Priorité | Support | Statut |
+|---|---|---|---|---|
+| SIG01 | Bouton "Signaler" sur profil utilisateur, annonce, profil pro | Haute | App + Web | ❌ |
+| SIG02 | Formulaire de signalement : type (contenu_inapproprie / spam / faux_profil / maltraitance / autre) + description libre | Haute | App + Web | ❌ |
+| SIG03 | Queue admin — liste des signalements avec statut (en_attente / traité / rejeté) + lien vers la ressource signalée | Haute | App + Web | ❌ |
+| SIG04 | Actions admin : envoyer avertissement / suspendre compte / bannir + log dans `audit_logs` | Haute | App + Web | ❌ |
+
+### Table Supabase
+
+```sql
+CREATE TABLE signalements (
+  id            TEXT PRIMARY KEY,
+  reporter_uid  TEXT NOT NULL,          -- qui signale
+  target_type   TEXT NOT NULL,          -- 'user' | 'annonce' | 'profil_pro'
+  target_id     TEXT NOT NULL,          -- uid ou id de la ressource
+  raison        TEXT NOT NULL,          -- 'contenu_inapproprie' | 'spam' | 'faux_profil' | 'maltraitance' | 'autre'
+  description   TEXT,
+  statut        TEXT DEFAULT 'en_attente', -- 'en_attente' | 'traite' | 'rejete'
+  admin_note    TEXT,
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  handled_at    TIMESTAMPTZ,
+  handled_by    TEXT                    -- uid admin
+);
+```
+
+### Règles
+- Un utilisateur ne peut pas signaler deux fois la même ressource (UNIQUE sur `reporter_uid + target_type + target_id`)
+- Le signalement est anonyme pour la cible (le signalé ne sait pas qui l'a signalé)
+- L'admin voit tous les signalements avec filtre par statut / type
+- Seuil d'alerte automatique : ≥ 3 signalements non traités sur une même ressource → badge rouge dans le panel admin
+
+---
+
 ## 6. Sécurité / Conformité RGPD
 
 ### V1 — Obligatoire avant lancement public
 
 | # | Fonctionnalité | Priorité |
 |---|---|---|
-| RGPD01 | CGU + Politique de confidentialité — pages statiques web + lien depuis app | Haute |
-| RGPD02 | Bannière cookies web — opt-in/opt-out RGPD (Google Analytics, Firebase), consentement localStorage | Haute |
-| RGPD03 | Mentions légales — éditeur, hébergeur, responsable de traitement | Haute |
-| RGPD04 | Registre des traitements RGPD — document interne (données collectées, base légale, durée, sous-traitants) | Haute |
-| RGPD05 | Consentement explicite à l'inscription — case à cocher CGU (non pré-cochée), `cgu_accepted_at` Supabase | Haute |
-| RGPD06 | Export données utilisateur (RGPD art. 20) — bouton "Télécharger mes données" → JSON complet | Haute |
-| RGPD07 | Suppression compte + données (RGPD art. 17) — cascade Firebase Auth + Supabase + Storage | Haute |
+| RGPD01 | CGU + Politique de confidentialité — pages statiques web + lien depuis app | Haute | ✅ Implémenté 2026-06-09 |
+| RGPD02 | Bannière cookies web — opt-in/opt-out RGPD (Google Analytics, Firebase), consentement localStorage | Haute | ✅ Implémenté 2026-06-09 |
+| RGPD03 | Mentions légales — éditeur, hébergeur, responsable de traitement | Haute | ✅ Implémenté 2026-06-09 |
+| RGPD04 | Registre des traitements RGPD — document interne (données collectées, base légale, durée, sous-traitants) | Haute | ⏳ Document interne à rédiger |
+| RGPD05 | Consentement explicite à l'inscription — case à cocher CGU (non pré-cochée), `cgu_accepted_at` Supabase | Haute | ✅ Implémenté 2026-06-09 |
+| RGPD06 | Export données utilisateur (RGPD art. 20) — bouton "Télécharger mes données" → JSON complet | Haute | ❌ |
+| RGPD07 | Suppression compte + données (RGPD art. 17) — cascade Firebase Auth + Supabase + Storage | Haute | ❌ |
 
 ### V2 — Sécurité avancée
 

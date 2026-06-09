@@ -126,6 +126,7 @@ export default function InscriptionPage() {
   // Step account
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [cguAccepted, setCguAccepted] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -160,6 +161,7 @@ export default function InscriptionPage() {
       email: emailAddr,
       is_elevage: role === 'eleveur',
       is_pro: role === 'pro',
+      cgu_accepted_at: new Date().toISOString(),
       ...buildProfile(),
     }, { onConflict: 'uid' });
   }
@@ -168,6 +170,7 @@ export default function InscriptionPage() {
     e.preventDefault();
     setError('');
     if (password.length < 6) { setError('Le mot de passe doit contenir au moins 6 caractères.'); return; }
+    if (!cguAccepted) { setError('Vous devez accepter les CGU pour créer un compte.'); return; }
     setLoading(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
@@ -391,9 +394,29 @@ export default function InscriptionPage() {
                     required placeholder="6 caractères minimum" className={inputCls} />
                 </div>
 
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={cguAccepted}
+                    onChange={(e) => setCguAccepted(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-[#0C5C6C] shrink-0"
+                  />
+                  <span className="text-xs text-gray-600 leading-relaxed">
+                    J&apos;ai lu et j&apos;accepte les{' '}
+                    <Link href="/cgu" target="_blank" className="text-[#0C5C6C] underline">
+                      Conditions générales d&apos;utilisation
+                    </Link>{' '}
+                    et la{' '}
+                    <Link href="/confidentialite" target="_blank" className="text-[#0C5C6C] underline">
+                      Politique de confidentialité
+                    </Link>{' '}
+                    de PetsMatch. *
+                  </span>
+                </label>
+
                 {error && <p className="text-red-500 text-sm">{error}</p>}
 
-                <button type="submit" disabled={loading}
+                <button type="submit" disabled={loading || !cguAccepted}
                   className="w-full bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors">
                   {loading ? 'Création…' : 'Créer mon compte'}
                 </button>
