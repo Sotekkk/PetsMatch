@@ -2,7 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/bottom_nav.dart';
+import 'package:PetsMatch/services/profile_service.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
@@ -95,6 +99,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   Future<void> _handleTap(Map<String, dynamic> notif) async {
+    await _markRead(notif);
+
+    // Vérifier si la notif appartient à un profil différent du profil actif
+    final notifProfileType = notif['profile_type'] as String?;
+    if (notifProfileType != null && notifProfileType.isNotEmpty &&
+        notifProfileType != _currentProfileType) {
+      final ok = await _confirmProfileSwitch(notifProfileType);
+      if (ok) await _switchToProfileType(notifProfileType);
+      return; // after switch, user starts fresh from BottomNav home
+    }
+
     final type = notif['type'] as String?;
     final data = notif['data'];
     String? alerteId;
@@ -106,8 +121,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final raw = data['bebeIndex'];
       bebeIndex = raw is int ? raw : (raw is num ? raw.toInt() : null);
     }
-
-    await _markRead(notif);
 
     if (!mounted) return;
 
@@ -219,6 +232,112 @@ class _NotificationsPageState extends State<NotificationsPage> {
         ));
       }
     }
+  }
+
+  // ── Helpers profil ────────────────────────────────────────────────────────
+
+  static String _profileTypeLabel(String type) => switch (type) {
+    'particulier'      => 'Particulier',
+    'eleveur'          => 'Éleveur',
+    'veterinaire'      => 'Vétérinaire',
+    'sante'            => 'Santé animale',
+    'education'        => 'Éducation',
+    'garde'            => 'Garde',
+    'pension'          => 'Pension',
+    'toilettage'       => 'Toilettage',
+    'photographe'      => 'Photographe',
+    'marechal_ferrant' => 'Maréchal-ferrant',
+    _                  => type,
+  };
+
+  static String _profileTypeEmoji(String type) => switch (type) {
+    'particulier'      => '👤',
+    'eleveur'          => '🐾',
+    'veterinaire'      => '🏥',
+    'sante'            => '💆',
+    'education'        => '🧠',
+    'garde'            => '🏠',
+    'pension'          => '🏨',
+    'toilettage'       => '✂️',
+    'photographe'      => '📷',
+    'marechal_ferrant' => '🔨',
+    _                  => '👤',
+  };
+
+  Widget _profileBadge(String type) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    decoration: BoxDecoration(
+      color: _teal.withAlpha(18),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: _teal.withAlpha(38)),
+    ),
+    child: Text(
+      '${_profileTypeEmoji(type)} ${_profileTypeLabel(type)}',
+      style: const TextStyle(
+        fontFamily: 'Galey', fontSize: 10, color: _teal, fontWeight: FontWeight.w600),
+    ),
+  );
+
+  String get _currentProfileType {
+    if (User_Info.activeProfileId.isEmpty) return User_Info.primaryType;
+    return User_Info.catPro.isNotEmpty ? User_Info.catPro
+        : (User_Info.isElevage ? 'eleveur' : 'particulier');
+  }
+
+  Future<void> _switchToProfileType(String profileType) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    if (profileType == User_Info.primaryType) {
+      try {
+        final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        if (doc.exists) User_Info.updateUserInfo(doc.data()!);
+      } catch (_) {}
+    } else {
+      final profiles = await ProfileService.loadProfiles(uid);
+      final match = profiles.firstWhere(
+        (p) => p['profile_type'] == profileType,
+        orElse: () => {},
+      );
+      if (match.isNotEmpty) User_Info.applyProfile(match);
+    }
+
+    if (mounted) {
+      navigatorKey.currentState?.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => BottomNav()), (_) => false);
+    }
+  }
+
+  Future<bool> _confirmProfileSwitch(String profileType) async {
+    if (!mounted) return false;
+    return await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(children: [
+              Text(_profileTypeEmoji(profileType), style: const TextStyle(fontSize: 20)),
+              const SizedBox(width: 8),
+              const Expanded(child: Text('Changer de profil ?',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+            ]),
+            content: Text(
+              'Cette notification concerne votre profil ${_profileTypeLabel(profileType)}.\n\nBasculer vers ce profil ?',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _teal,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                child: Text('Basculer — ${_profileTypeLabel(profileType)}',
+                    style: const TextStyle(fontFamily: 'Galey'))),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   String _timeAgo(String? isoDate) {
@@ -515,11 +634,21 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis),
                                       const SizedBox(height: 4),
-                                      Text(_timeAgo(n['created_at'] as String?),
-                                          style: TextStyle(
-                                              fontFamily: 'Galey',
-                                              fontSize: 11,
-                                              color: Colors.grey.shade400)),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(_timeAgo(n['created_at'] as String?),
+                                                style: TextStyle(
+                                                    fontFamily: 'Galey',
+                                                    fontSize: 11,
+                                                    color: Colors.grey.shade400)),
+                                          ),
+                                          if ((n['profile_type'] as String?)?.isNotEmpty == true) ...[
+                                            const SizedBox(width: 6),
+                                            _profileBadge(n['profile_type'] as String),
+                                          ],
+                                        ],
+                                      ),
                                     ],
                                   ),
                                 ),

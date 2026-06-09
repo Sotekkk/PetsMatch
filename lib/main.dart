@@ -284,6 +284,102 @@ class User_Info {
     photosGalerie = _safeStringList(data['photos_galerie'], photosGalerie);
     final rawAccept = data['accept_new_clients'];
     if (rawAccept is bool) acceptNewClients = rawAccept;
+
+    // Cache profil principal (toujours réinitialisé au login)
+    primaryLabel = isPro
+        ? (nameElevage.isNotEmpty ? nameElevage : '$firstname $lastname'.trim())
+        : isElevage
+            ? (nameElevage.isNotEmpty ? nameElevage : '$firstname $lastname'.trim())
+            : '$firstname $lastname'.trim();
+    primaryType = isPro ? catPro : (isElevage ? 'eleveur' : 'particulier');
+    primaryAvatar = profilePictureUrlElevage.isNotEmpty ? profilePictureUrlElevage : profilePictureUrl;
+    activeProfileId = '';
+  }
+
+  // ── Multi-profil ───────────────────────────────────────────────────────────
+
+  static String activeProfileId = '';
+  static List<Map<String, dynamic>> availableProfiles = [];
+  static String primaryLabel = '';
+  static String primaryType = '';
+  static String primaryAvatar = '';
+
+  static void applyProfile(Map<String, dynamic> p) {
+    activeProfileId = p['id']?.toString() ?? '';
+    final type = p['profile_type']?.toString() ?? '';
+
+    // Contact
+    final fn = p['firstname']?.toString() ?? '';
+    final ln = p['lastname']?.toString() ?? '';
+    if (fn.isNotEmpty) firstname = fn;
+    if (ln.isNotEmpty) lastname = ln;
+    final ph = p['phone']?.toString() ?? '';
+    if (ph.isNotEmpty) phone_number = ph;
+    final av = p['avatar_url']?.toString() ?? '';
+    if (av.isNotEmpty) {
+      profilePictureUrl = av;
+      profilePictureUrlElevage = av;
+    }
+
+    // Adresse pro (remplace les deux adresses)
+    adress        = p['adresse']?.toString() ?? '';
+    rue           = p['rue']?.toString() ?? '';
+    ville         = p['ville']?.toString() ?? '';
+    codePostal    = p['code_postal']?.toString() ?? '';
+    pays          = p['pays']?.toString() ?? 'France';
+    departement   = p['departement']?.toString() ?? '';
+    region        = p['region']?.toString() ?? '';
+    adressElevage    = adress;
+    rueElevage       = rue;
+    villeElevage     = ville;
+    codePostalElevage = codePostal;
+    paysElevage      = pays;
+    departementElevage = departement;
+    regionElevage    = region;
+
+    // Flags de rôle
+    const proTypes = {'veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage', 'photographe', 'marechal_ferrant'};
+    isPro     = proTypes.contains(type);
+    isElevage = type == 'eleveur' || isPro;
+    catPro       = p['cat_pro']?.toString() ?? (isPro ? type : '');
+    professionPro = p['profession_pro']?.toString() ?? '';
+
+    // Éleveur
+    nameElevage    = p['name_elevage']?.toString().isNotEmpty == true
+        ? p['name_elevage']!.toString()
+        : p['profile_label']?.toString() ?? '';
+    numeroElevage  = p['numero_elevage']?.toString() ?? '0000000000';
+    acacedNumero   = p['acaced_numero']?.toString() ?? '';
+    especesElevees = _safeStringList(p['especes_elevees'], []);
+
+    // Pro avancé
+    desc    = p['description']?.toString() ?? '';
+    siret   = p['siret']?.toString() ?? '';
+    siteWeb = p['site_web']?.toString() ?? '';
+    instagram = p['instagram']?.toString() ?? '';
+    facebook  = p['facebook']?.toString() ?? '';
+    bannerUrl = p['banner_url']?.toString() ?? '';
+    verificationStatus = p['verification_status']?.toString() ?? 'none';
+    kbisUrl = p['kbis_url']?.toString() ?? '';
+    tarifs  = p['tarifs']?.toString() ?? '';
+    photosGalerie = _safeStringList(p['photos_galerie'], []);
+    especesAcceptees = _safeStringList(p['especes_acceptees'], []);
+
+    final rawRayon = p['rayon_intervention'];
+    rayonIntervention = rawRayon is int
+        ? rawRayon
+        : (int.tryParse(rawRayon?.toString() ?? '') ?? 0);
+
+    if (p['horaires'] is Map) {
+      try {
+        horaires = Map<String, String>.from(
+          (p['horaires'] as Map).map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')));
+      } catch (_) {}
+    } else {
+      horaires = {};
+    }
+
+    acceptNewClients = p['accept_new_clients'] as bool? ?? true;
   }
 
   static List<String> _safeStringList(dynamic raw, List<String> fallback) {

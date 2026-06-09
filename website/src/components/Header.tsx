@@ -21,6 +21,15 @@ interface Notif {
   data?: Record<string, string>;
 }
 
+interface UserProfile {
+  id: string;
+  profile_type: string;
+  profile_label: string | null;
+  avatar_url: string | null;
+  name_elevage: string | null;
+  cat_pro: string | null;
+}
+
 // ── Navigation selon profil ───────────────────────────────────────────────────
 
 const NAV_GUEST = [
@@ -143,6 +152,42 @@ const MENU_PARTICULIER = [
   },
 ];
 
+// ── Helpers types profil ──────────────────────────────────────────────────────
+
+const PRO_TYPES = new Set(['veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage', 'photographe', 'marechal_ferrant']);
+
+function typeLabel(type: string): string {
+  return ({
+    particulier:      'Particulier',
+    eleveur:          'Éleveur',
+    veterinaire:      'Vétérinaire',
+    sante:            'Santé animale',
+    education:        'Éducation',
+    garde:            'Garde',
+    pension:          'Pension',
+    toilettage:       'Toilettage',
+    photographe:      'Photographe',
+    marechal_ferrant: 'Maréchal-ferrant',
+  } as Record<string, string>)[type] ?? 'Profil';
+}
+
+function typeEmoji(type: string): string {
+  return ({
+    particulier:      '👤',
+    eleveur:          '🐾',
+    veterinaire:      '🏥',
+    sante:            '💆',
+    education:        '🧠',
+    garde:            '🏠',
+    pension:          '🏨',
+    toilettage:       '✂️',
+    photographe:      '📷',
+    marechal_ferrant: '🔨',
+  } as Record<string, string>)[type] ?? '👤';
+}
+
+const ACTIVE_PROFILE_KEY = 'petsMatch_activeProfileId';
+
 // ── Composant Header ──────────────────────────────────────────────────────────
 
 export default function Header() {
@@ -154,22 +199,75 @@ export default function Header() {
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [pensionDialog, setPensionDialog] = useState<Notif | null>(null);
+  // Profile switching
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [activeProfileId, setActiveProfileId] = useState<string>('');
+  const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
 
-  const isEleveur = userData?.isElevage === true;
-  const isPension = userData?.isPro === true && userData?.catPro === 'pension';
-  const displayName = userData?.nameElevage ?? userData?.firstname ?? user?.email ?? '';
-  const avatar = userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
+  // ── Effective profile data (primary or secondary) ─────────────────────────
+  const activeProfile = profiles.find(p => p.id === activeProfileId) ?? null;
 
-  const navLinks = loading || !user ? NAV_GUEST : isEleveur ? NAV_ELEVEUR : NAV_PARTICULIER;
-  const menuSections = isEleveur
-    ? (isPension ? MENU_PENSION : MENU_ELEVEUR)
+  const effectiveType = activeProfile?.profile_type ?? (
+    userData?.isPro ? (userData?.catPro ?? 'sante') : (userData?.isElevage ? 'eleveur' : 'particulier')
+  );
+  const effectiveIsEleveur = activeProfile
+    ? (activeProfile.profile_type === 'eleveur' || PRO_TYPES.has(activeProfile.profile_type))
+    : userData?.isElevage === true;
+  const effectiveIsPension = activeProfile
+    ? activeProfile.profile_type === 'pension'
+    : (userData?.isPro === true && userData?.catPro === 'pension');
+
+  const primaryDisplayName = userData?.nameElevage ?? userData?.firstname ?? user?.email ?? '';
+  const primaryAvatar = userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
+
+  const effectiveDisplayName = activeProfile
+    ? (activeProfile.profile_label ?? activeProfile.name_elevage ?? primaryDisplayName)
+    : primaryDisplayName;
+  const effectiveAvatar = activeProfile?.avatar_url ?? primaryAvatar;
+
+  const navLinks = loading || !user ? NAV_GUEST : effectiveIsEleveur ? NAV_ELEVEUR : NAV_PARTICULIER;
+  const menuSections = effectiveIsEleveur
+    ? (effectiveIsPension ? MENU_PENSION : MENU_ELEVEUR)
     : MENU_PARTICULIER;
 
-  // Écoute des messages non lus (identique éleveur + particulier)
+  // ── Chargement des profils secondaires ────────────────────────────────────
+  useEffect(() => {
+    if (!user) { setProfiles([]); setActiveProfileId(''); return; }
+
+    const savedId = localStorage.getItem(ACTIVE_PROFILE_KEY) ?? '';
+
+    supabase
+      .from('user_profiles')
+      .select('id, profile_type, profile_label, avatar_url, name_elevage, cat_pro')
+      .eq('uid', user.uid)
+      .then(({ data }) => {
+        const rows = (data ?? []) as UserProfile[];
+        setProfiles(rows);
+        if (savedId && rows.some(p => p.id === savedId)) {
+          setActiveProfileId(savedId);
+        }
+      });
+  }, [user]);
+
+  function switchProfile(id: string | null) {
+    const newId = id ?? '';
+    setActiveProfileId(newId);
+    if (newId) {
+      localStorage.setItem(ACTIVE_PROFILE_KEY, newId);
+    } else {
+      localStorage.removeItem(ACTIVE_PROFILE_KEY);
+    }
+    setProfileSwitcherOpen(false);
+    setDropdownOpen(false);
+    setMenuOpen(false);
+    router.refresh();
+  }
+
+  // ── Messages non lus ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, 'conversations'), where('participants', 'array-contains', user.uid));
@@ -179,7 +277,7 @@ export default function Header() {
     }, () => {});
   }, [user]);
 
-  // Écoute des notifications non lues (Supabase)
+  // ── Notifications ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -236,6 +334,7 @@ export default function Header() {
   }, []);
 
   async function handleSignOut() {
+    localStorage.removeItem(ACTIVE_PROFILE_KEY);
     await signOut(auth);
     setDropdownOpen(false);
     setMenuOpen(false);
@@ -248,6 +347,79 @@ export default function Header() {
 
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
+
+  // ── Profile switcher panel (shared desktop + mobile) ─────────────────────
+  function ProfileSwitcherPanel({ onClose }: { onClose: () => void }) {
+    return (
+      <div className="bg-[#F8F8F8] rounded-xl mx-2 mb-2 overflow-hidden">
+        <div className="px-4 py-2.5 flex items-center justify-between border-b border-gray-200">
+          <span className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide">Mes profils</span>
+          <button onClick={() => setProfileSwitcherOpen(false)} className="text-gray-400 hover:text-gray-600 text-sm">
+            ✕
+          </button>
+        </div>
+
+        {/* Profil principal */}
+        <button
+          onClick={() => { switchProfile(null); onClose(); }}
+          className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white transition-colors text-left ${!activeProfileId ? 'bg-white' : ''}`}>
+          <div className="w-8 h-8 rounded-full overflow-hidden bg-[#6E9E57] flex items-center justify-center flex-shrink-0 relative">
+            {primaryAvatar ? (
+              <Image src={primaryAvatar} alt="" width={32} height={32} className="object-cover w-full h-full" />
+            ) : (
+              <span className="text-white text-xs font-bold">{(primaryDisplayName[0] ?? '?').toUpperCase()}</span>
+            )}
+            {!activeProfileId && (
+              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-[#6E9E57] rounded-full border-2 border-white flex items-center justify-center">
+                <span className="text-white text-[8px]">✓</span>
+              </span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className={`text-sm truncate ${!activeProfileId ? 'font-bold text-[#1F2A2E]' : 'font-medium text-gray-700'}`}>
+              {primaryDisplayName}
+            </p>
+            <p className="text-xs text-gray-400">{typeLabel(userData?.isElevage ? (userData?.catPro || (userData?.isPro ? 'sante' : 'eleveur')) : 'particulier')}</p>
+          </div>
+        </button>
+
+        {/* Profils secondaires */}
+        {profiles.map(p => (
+          <button
+            key={p.id}
+            onClick={() => { switchProfile(p.id); onClose(); }}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white transition-colors text-left ${activeProfileId === p.id ? 'bg-white' : ''}`}>
+            <div className="w-8 h-8 rounded-full overflow-hidden bg-[#DCE8D5] flex items-center justify-center flex-shrink-0 relative">
+              {p.avatar_url ? (
+                <Image src={p.avatar_url} alt="" width={32} height={32} className="object-cover w-full h-full" />
+              ) : (
+                <span className="text-[#6E9E57] text-sm">{typeEmoji(p.profile_type)}</span>
+              )}
+              {activeProfileId === p.id && (
+                <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-[#6E9E57] rounded-full border-2 border-white flex items-center justify-center">
+                  <span className="text-white text-[8px]">✓</span>
+                </span>
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className={`text-sm truncate ${activeProfileId === p.id ? 'font-bold text-[#1F2A2E]' : 'font-medium text-gray-700'}`}>
+                {p.profile_label ?? p.name_elevage ?? typeLabel(p.profile_type)}
+              </p>
+              <p className="text-xs text-gray-400">{typeLabel(p.profile_type)}</p>
+            </div>
+          </button>
+        ))}
+
+        {/* Ajouter un profil */}
+        <Link href="/profil/ajouter"
+          onClick={() => { setDropdownOpen(false); setMenuOpen(false); }}
+          className="flex items-center gap-3 px-4 py-2.5 border-t border-gray-200 text-[#6E9E57] hover:bg-[#EEF5EA] transition-colors">
+          <span className="w-8 h-8 rounded-full bg-[#EEF5EA] flex items-center justify-center text-sm flex-shrink-0">＋</span>
+          <span className="text-sm font-semibold">Ajouter un profil</span>
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <header className="bg-[#0C5C6C] shadow-md sticky top-0 z-50">
@@ -326,28 +498,49 @@ export default function Header() {
                         </div>
                       </Link>
                     )}
-                    {notifs.map(n => (
-                      <div key={n.id} className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 border-b border-gray-50">
-                        <div className="w-9 h-9 rounded-full bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">
-                          {n.type === 'alerte_perdu' ? '🔍'
-                            : n.type === 'like' ? '❤️'
-                            : n.type === 'chaleur' ? '🌸'
-                            : n.type === 'rappel_vaccin' ? '💉'
-                            : n.type === 'pension_acces' ? '🏡'
-                            : '🔔'}
+                    {notifs.map(n => {
+                      const notifProfileType = (n as Notif & { profile_type?: string }).profile_type;
+                      const isDifferentProfile = notifProfileType && notifProfileType !== effectiveType;
+                      return (
+                        <div key={n.id} className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 border-b border-gray-50 cursor-pointer"
+                          onClick={() => {
+                            if (isDifferentProfile) {
+                              setBellOpen(false);
+                              const matchedProfile = profiles.find(p => p.profile_type === notifProfileType);
+                              switchProfile(matchedProfile?.id ?? null);
+                            }
+                          }}>
+                          <div className="w-9 h-9 rounded-full bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">
+                            {n.type === 'alerte_perdu' ? '🔍'
+                              : n.type === 'like' ? '❤️'
+                              : n.type === 'chaleur' ? '🌸'
+                              : n.type === 'rappel_vaccin' ? '💉'
+                              : n.type === 'pension_acces' ? '🏡'
+                              : '🔔'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-[#1F2A2E]">{n.title}</p>
+                            <p className="text-xs text-gray-500 truncate">{n.body}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              {notifProfileType && (
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDifferentProfile ? 'bg-[#0C5C6C]/10 text-[#0C5C6C]' : 'bg-gray-100 text-gray-500'}`}>
+                                  {typeEmoji(notifProfileType)} {typeLabel(notifProfileType)}
+                                </span>
+                              )}
+                              {isDifferentProfile && (
+                                <span className="text-[10px] text-[#0C5C6C] font-medium">↗ Basculer</span>
+                              )}
+                            </div>
+                            {n.type === 'pension_acces' && !isDifferentProfile && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setBellOpen(false); setPensionDialog(n); }}
+                                className="mt-1 text-xs font-bold text-[#0C5C6C] underline cursor-pointer bg-none border-none p-0"
+                              >Répondre →</button>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-[#1F2A2E]">{n.title}</p>
-                          <p className="text-xs text-gray-500 truncate">{n.body}</p>
-                          {n.type === 'pension_acces' && (
-                            <button
-                              onClick={() => { setBellOpen(false); setPensionDialog(n); }}
-                              className="mt-2 text-xs font-bold text-[#0C5C6C] underline cursor-pointer bg-none border-none p-0"
-                            >Répondre →</button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {totalBell === 0 && (
                       <div className="text-center py-8 text-gray-400 text-sm">
                         <p className="text-3xl mb-2">🔔</p>
@@ -364,38 +557,54 @@ export default function Header() {
               <button
                 onClick={() => setDropdownOpen(!dropdownOpen)}
                 className="flex items-center gap-2 bg-white/10 hover:bg-white/20 rounded-full pl-2 pr-3 py-1.5 transition-colors">
-                <div className="w-7 h-7 rounded-full overflow-hidden bg-[#6E9E57] flex items-center justify-center flex-shrink-0">
-                  {avatar ? (
-                    <Image src={avatar} alt="" width={28} height={28} className="object-cover w-full h-full" />
+                <div className="w-7 h-7 rounded-full overflow-hidden bg-[#6E9E57] flex items-center justify-center flex-shrink-0 relative">
+                  {effectiveAvatar ? (
+                    <Image src={effectiveAvatar} alt="" width={28} height={28} className="object-cover w-full h-full" />
                   ) : (
-                    <span className="text-white text-xs font-bold">{(displayName[0] ?? '?').toUpperCase()}</span>
+                    <span className="text-white text-xs font-bold">{(effectiveDisplayName[0] ?? '?').toUpperCase()}</span>
+                  )}
+                  {/* Indicateur profil secondaire actif */}
+                  {activeProfileId && (
+                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[#6E9E57] rounded-full border border-white" />
                   )}
                 </div>
-                <span className="text-white text-sm font-medium truncate max-w-[100px]">{displayName}</span>
+                <span className="text-white text-sm font-medium truncate max-w-[100px]">{effectiveDisplayName}</span>
                 <svg className={`w-4 h-4 text-white/70 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
 
               {dropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+                <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
                   {/* Header */}
                   <div className="bg-[#0C5C6C] px-4 py-3 flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full overflow-hidden bg-[#6E9E57] flex items-center justify-center flex-shrink-0">
-                      {avatar ? (
-                        <Image src={avatar} alt="" width={40} height={40} className="object-cover w-full h-full" />
+                      {effectiveAvatar ? (
+                        <Image src={effectiveAvatar} alt="" width={40} height={40} className="object-cover w-full h-full" />
                       ) : (
-                        <span className="text-white text-sm font-bold">{(displayName[0] ?? '?').toUpperCase()}</span>
+                        <span className="text-white text-sm font-bold">{(effectiveDisplayName[0] ?? '?').toUpperCase()}</span>
                       )}
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-white font-semibold text-sm truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{displayName}</p>
-                      <p className="text-white/60 text-xs">{isEleveur ? '✅ Éleveur' : '👤 Particulier'}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-white font-semibold text-sm truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{effectiveDisplayName}</p>
+                      <p className="text-white/60 text-xs">{typeEmoji(effectiveType)} {typeLabel(effectiveType)}</p>
                     </div>
+                    {/* Bouton changer de profil */}
+                    <button
+                      onClick={() => setProfileSwitcherOpen(!profileSwitcherOpen)}
+                      title="Changer de profil"
+                      className="text-white/70 hover:text-white text-xs font-medium bg-white/10 hover:bg-white/20 rounded-full px-2 py-1 transition-colors flex-shrink-0">
+                      ⇄
+                    </button>
                   </div>
 
-                  {/* Sections */}
-                  <div className="py-1 max-h-96 overflow-y-auto">
+                  {/* Panel sélecteur de profil */}
+                  {profileSwitcherOpen && (
+                    <ProfileSwitcherPanel onClose={() => setProfileSwitcherOpen(false)} />
+                  )}
+
+                  {/* Sections menu */}
+                  <div className="py-1 max-h-80 overflow-y-auto">
                     {menuSections.map((sec) => (
                       <div key={sec.section}>
                         <button
@@ -428,7 +637,7 @@ export default function Header() {
                         className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                         <span>⚙️</span> Mon Profil
                       </Link>
-                      {!isEleveur && (
+                      {!effectiveIsEleveur && (
                         <Link href="/mes-alertes" onClick={() => setDropdownOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                           <span>🔔</span> Mes Alertes perdus
@@ -505,19 +714,31 @@ export default function Header() {
 
           {!loading && user ? (
             <div className="mt-3">
-              {/* Profile summary */}
-              <div className="flex items-center gap-3 py-3 border-b border-white/10 mb-2">
-                <div className="w-9 h-9 rounded-full overflow-hidden bg-[#6E9E57] flex items-center justify-center flex-shrink-0">
-                  {avatar ? (
-                    <Image src={avatar} alt="" width={36} height={36} className="object-cover w-full h-full" />
-                  ) : (
-                    <span className="text-white text-xs font-bold">{(displayName[0] ?? '?').toUpperCase()}</span>
-                  )}
+              {/* Profile summary + switcher */}
+              <div className="bg-white/10 rounded-xl mb-3 overflow-hidden">
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <div className="w-9 h-9 rounded-full overflow-hidden bg-[#6E9E57] flex items-center justify-center flex-shrink-0">
+                    {effectiveAvatar ? (
+                      <Image src={effectiveAvatar} alt="" width={36} height={36} className="object-cover w-full h-full" />
+                    ) : (
+                      <span className="text-white text-xs font-bold">{(effectiveDisplayName[0] ?? '?').toUpperCase()}</span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-semibold truncate">{effectiveDisplayName}</p>
+                    <p className="text-white/50 text-xs">{typeEmoji(effectiveType)} {typeLabel(effectiveType)}</p>
+                  </div>
+                  <button
+                    onClick={() => setProfileSwitcherOpen(!profileSwitcherOpen)}
+                    className="text-white/70 hover:text-white text-xs font-bold bg-white/10 hover:bg-white/20 rounded-full px-2.5 py-1 transition-colors">
+                    ⇄
+                  </button>
                 </div>
-                <div>
-                  <p className="text-white text-sm font-semibold">{displayName}</p>
-                  <p className="text-white/50 text-xs">{isEleveur ? 'Éleveur' : 'Particulier'}</p>
-                </div>
+                {profileSwitcherOpen && (
+                  <div className="border-t border-white/10">
+                    <ProfileSwitcherPanel onClose={() => setProfileSwitcherOpen(false)} />
+                  </div>
+                )}
               </div>
 
               {/* Sections */}
@@ -587,7 +808,6 @@ export default function Header() {
             const pensionUid = d.pensionUid;
             const animalId   = d.animalId;
             const animalNom  = d.animalNom ?? 'cet animal';
-            const pensionNom = d.pensionNom ?? 'La pension';
             if (!pensionUid || !animalId) { setPensionDialog(null); return; }
 
             const newStatut = approved ? 'approved' : 'refused';
