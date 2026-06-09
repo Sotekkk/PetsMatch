@@ -876,7 +876,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         children: widget.vetMode
             ? [
                 _IdentiteTab(this),
-                _CarnetSanteTab(animalId: widget.animalId),
+                _CarnetSanteTab(animalId: widget.animalId, vetMode: true),
                 _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
                 _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
@@ -2604,7 +2604,8 @@ class _ReproListState extends State<_ReproList> {
 
 class _CarnetSanteTab extends StatelessWidget {
   final String? animalId;
-  const _CarnetSanteTab({this.animalId});
+  final bool vetMode;
+  const _CarnetSanteTab({this.animalId, this.vetMode = false});
 
   static const _cats = [
     (key: 'vaccinations',     label: 'Vaccins',              icon: Icons.vaccines_outlined,             color: Color(0xFF0C5C6C)),
@@ -2637,6 +2638,7 @@ class _CarnetSanteTab extends StatelessWidget {
           label: cat.label,
           icon: cat.icon,
           color: cat.color,
+          vetMode: vetMode,
         );
       },
     );
@@ -2649,8 +2651,9 @@ class _SanteTile extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color color;
+  final bool vetMode;
   const _SanteTile({required this.animalId, required this.collection,
-      required this.label, required this.icon, required this.color});
+      required this.label, required this.icon, required this.color, this.vetMode = false});
 
   @override
   Widget build(BuildContext context) {
@@ -2663,7 +2666,7 @@ class _SanteTile extends StatelessWidget {
           onTap: () => Navigator.push(context, MaterialPageRoute(
             builder: (_) => _SanteDetailPage(
               animalId: animalId, collection: collection,
-              label: label, icon: icon, color: color,
+              label: label, icon: icon, color: color, vetMode: vetMode,
             ),
           )),
           child: Container(
@@ -2705,19 +2708,23 @@ class _SanteDetailPage extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color color;
+  final bool vetMode;
   const _SanteDetailPage({required this.animalId, required this.collection,
-      required this.label, required this.icon, required this.color});
+      required this.label, required this.icon, required this.color, this.vetMode = false});
 
   Widget _dialogFor(BuildContext ctx) {
+    final src   = vetMode ? 'veterinaire' : 'owner';
+    final vid   = vetMode ? FirebaseAuth.instance.currentUser?.uid : null;
+    final vname = vetMode ? '${User_Info.firstname} ${User_Info.lastname}'.trim() : null;
     switch (collection) {
-      case 'vaccinations':     return _AddVaccinDialog(animalId: animalId);
-      case 'vermifuges':       return _AddVermifugeDialog(animalId: animalId);
-      case 'antiparasitaires': return _AddAntiparasitaireDialog(animalId: animalId);
-      case 'traitements':      return _AddTraitementDialog(animalId: animalId);
+      case 'vaccinations':     return _AddVaccinDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
+      case 'vermifuges':       return _AddVermifugeDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
+      case 'antiparasitaires': return _AddAntiparasitaireDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
+      case 'traitements':      return _AddTraitementDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'allergies':        return _AddAllergieDialog(animalId: animalId);
-      case 'visites':          return _AddVisiteDialog(animalId: animalId);
+      case 'visites':          return _AddVisiteDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'radios':           return _AddRadioDialog(animalId: animalId);
-      default:                 return _AddVaccinDialog(animalId: animalId);
+      default:                 return _AddVaccinDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
     }
   }
 
@@ -2733,7 +2740,7 @@ class _SanteDetailPage extends StatelessWidget {
       ),
       body: collection == 'poids'
           ? _PoidsTab(animalId: animalId)
-          : _SanteList(animalId: animalId, collection: collection, icon: icon, addBuilder: _dialogFor),
+          : _SanteList(animalId: animalId, collection: collection, icon: icon, addBuilder: _dialogFor, vetMode: vetMode),
     );
   }
 }
@@ -2743,7 +2750,8 @@ class _SanteList extends StatefulWidget {
   final String collection;
   final IconData icon;
   final Widget Function(BuildContext) addBuilder;
-  const _SanteList({required this.animalId, required this.collection, required this.icon, required this.addBuilder});
+  final bool vetMode;
+  const _SanteList({required this.animalId, required this.collection, required this.icon, required this.addBuilder, this.vetMode = false});
   @override
   State<_SanteList> createState() => _SanteListState();
 }
@@ -2813,10 +2821,16 @@ class _SanteListState extends State<_SanteList> {
                   itemCount: _data.length,
                   itemBuilder: (_, i) {
                     final d = _data[i];
+                    final isVetEntry = d['source'] == 'veterinaire';
+                    final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                    final canDelete = isVetEntry
+                        ? (widget.vetMode && d['vet_id']?.toString() == myUid)
+                        : !widget.vetMode;
                     return _SanteCard(
                       title: _title(d), data: d, icon: widget.icon,
                       onDelete: () => _delete(d['id']?.toString() ?? ''),
                       collection: widget.collection,
+                      canDelete: canDelete,
                     );
                   },
                 ),
@@ -3034,8 +3048,9 @@ class _SanteCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback? onTap;
   final String? collection;
+  final bool canDelete;
   const _SanteCard({required this.title, required this.data, required this.icon,
-      required this.onDelete, this.onTap, this.collection});
+      required this.onDelete, this.onTap, this.collection, this.canDelete = true});
 
   static const _labels = {
     'vaccin': 'Vaccin', 'lot': 'N° de lot', 'veterinaire': 'Vétérinaire',
@@ -3187,7 +3202,7 @@ class _SanteCard extends StatelessWidget {
             ],
           ])),
           const Icon(Icons.chevron_right, color: Color(0xFFCCCCCC), size: 18),
-          if (!isVet)
+          if (canDelete)
             IconButton(icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
                 onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
         ]),
@@ -3769,7 +3784,10 @@ class _ChartPainter extends CustomPainter {
 
 class _AddVaccinDialog extends StatefulWidget {
   final String animalId;
-  const _AddVaccinDialog({required this.animalId});
+  final String source;
+  final String? vetId;
+  final String? vetName;
+  const _AddVaccinDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName});
   @override State<_AddVaccinDialog> createState() => _AddVaccinDialogState();
 }
 class _AddVaccinDialogState extends State<_AddVaccinDialog> {
@@ -3779,8 +3797,14 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
   DateTime? _date;
   DateTime? _rappel;
   @override
+  void initState() {
+    super.initState();
+    if (widget.vetName != null) _veto.text = widget.vetName!;
+  }
+  @override
   Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter un vaccin', fields: [
-    _DF('Vaccin *', _vaccin), _DF('N° de lot', _lot), _DF('Vétérinaire', _veto),
+    _DF('Vaccin *', _vaccin), _DF('N° de lot', _lot),
+    _DF('Vétérinaire', _veto, readOnly: widget.source == 'veterinaire'),
     _DD('Date *', _date, (d) => setState(() => _date = d)),
     _DD('Date de rappel', _rappel, (d) => setState(() => _rappel = d)),
   ], onSave: () async {
@@ -3791,6 +3815,8 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
       'vaccin': _vaccin.text.trim(), 'lot': _lot.text.trim(), 'veterinaire': _veto.text.trim(),
       'date': _date!.toIso8601String(),
       'date_rappel': _rappel?.toIso8601String(),
+      'source': widget.source,
+      if (widget.vetId != null) 'vet_id': widget.vetId,
     });
     if (_rappel != null) {
       await _scheduleRappelAgenda(
@@ -3804,13 +3830,23 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
       intervenant: _veto.text.trim(),
       description: 'Vaccin : ${_vaccin.text.trim()}${_lot.text.trim().isNotEmpty ? ' (lot ${_lot.text.trim()})' : ''}',
     );
+    if (widget.vetId != null) {
+      try {
+        await FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('notifyOwnerVetEntry')
+            .call({'animalId': widget.animalId, 'vetName': _veto.text.trim(), 'typeActe': 'vaccin'});
+      } catch (_) {}
+    }
     return true;
   });
 }
 
 class _AddTraitementDialog extends StatefulWidget {
   final String animalId;
-  const _AddTraitementDialog({required this.animalId});
+  final String source;
+  final String? vetId;
+  final String? vetName;
+  const _AddTraitementDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName});
   @override State<_AddTraitementDialog> createState() => _AddTraitementDialogState();
 }
 class _AddTraitementDialogState extends State<_AddTraitementDialog> {
@@ -3833,19 +3869,31 @@ class _AddTraitementDialogState extends State<_AddTraitementDialog> {
       'type': _type, 'nom': _nom.text.trim(), 'posologie': _posologie.text.trim(),
       'date': _date!.toIso8601String(),
       'date_fin': _dateFin?.toIso8601String(),
+      'source': widget.source,
+      if (widget.vetId != null) 'vet_id': widget.vetId,
     });
     RegistreHelper.writeActe(
       animalId: widget.animalId, typeActe: 'traitement', dateActe: _date!,
-      intervenant: '',
+      intervenant: widget.vetName ?? '',
       description: '${_nom.text.trim()}${_posologie.text.trim().isNotEmpty ? ' — ${_posologie.text.trim()}' : ''}',
     );
+    if (widget.vetId != null) {
+      try {
+        await FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('notifyOwnerVetEntry')
+            .call({'animalId': widget.animalId, 'vetName': widget.vetName ?? '', 'typeActe': 'traitement'});
+      } catch (_) {}
+    }
     return true;
   });
 }
 
 class _AddVisiteDialog extends StatefulWidget {
   final String animalId;
-  const _AddVisiteDialog({required this.animalId});
+  final String source;
+  final String? vetId;
+  final String? vetName;
+  const _AddVisiteDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName});
   @override State<_AddVisiteDialog> createState() => _AddVisiteDialogState();
 }
 class _AddVisiteDialogState extends State<_AddVisiteDialog> {
@@ -3862,9 +3910,15 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
   bool get _isVaccin => _motif == 'Rappel de vaccin';
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.vetName != null) _veto.text = widget.vetName!;
+  }
+
+  @override
   Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter une visite', fields: [
     _DDrop('Motif *', _motif, _motifs, (v) => setState(() => _motif = v!)),
-    _DF('Vétérinaire', _veto),
+    _DF('Vétérinaire', _veto, readOnly: widget.source == 'veterinaire'),
     _DD('Date *', _date, (d) => setState(() => _date = d)),
     if (_isVaccin) ...[
       _DF('Vaccin *', _vaccin),
@@ -3883,6 +3937,8 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
       'motif': _motif, 'veterinaire': _veto.text.trim(),
       'date': _date!.toIso8601String(),
       'diagnostic': _diag.text.trim(), 'notes': _notes.text.trim(),
+      'source': widget.source,
+      if (widget.vetId != null) 'vet_id': widget.vetId,
     });
     if (_isVaccin) {
       final vacId = (DateTime.now().microsecondsSinceEpoch + 1).toString();
@@ -3892,6 +3948,8 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
         'veterinaire': _veto.text.trim(),
         'date': _date!.toIso8601String(),
         'date_rappel': _dateRappel?.toIso8601String(),
+        'source': widget.source,
+        if (widget.vetId != null) 'vet_id': widget.vetId,
       });
       if (_dateRappel != null) {
         await _scheduleRappelAgenda(
@@ -3912,13 +3970,23 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
         if (_diag.text.trim().isNotEmpty) _diag.text.trim(),
       ].join(' — '),
     );
+    if (widget.vetId != null) {
+      try {
+        await FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('notifyOwnerVetEntry')
+            .call({'animalId': widget.animalId, 'vetName': _veto.text.trim(), 'typeActe': 'visite'});
+      } catch (_) {}
+    }
     return true;
   });
 }
 
 class _AddVermifugeDialog extends StatefulWidget {
   final String animalId;
-  const _AddVermifugeDialog({required this.animalId});
+  final String source;
+  final String? vetId;
+  final String? vetName;
+  const _AddVermifugeDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName});
   @override State<_AddVermifugeDialog> createState() => _AddVermifugeDialogState();
 }
 class _AddVermifugeDialogState extends State<_AddVermifugeDialog> {
@@ -3942,6 +4010,8 @@ class _AddVermifugeDialogState extends State<_AddVermifugeDialog> {
       'date': _date!.toIso8601String(),
       'date_rappel': _dateRappel?.toIso8601String(),
       'notes': _notes.text.trim(),
+      'source': widget.source,
+      if (widget.vetId != null) 'vet_id': widget.vetId,
     });
     if (_dateRappel != null) {
       await _scheduleRappelAgenda(
@@ -3952,16 +4022,26 @@ class _AddVermifugeDialogState extends State<_AddVermifugeDialog> {
     }
     RegistreHelper.writeActe(
       animalId: widget.animalId, typeActe: 'vermifuge', dateActe: _date!,
-      intervenant: '',
+      intervenant: widget.vetName ?? '',
       description: '${_produit.text.trim()}${_dosage.text.trim().isNotEmpty ? ' — ${_dosage.text.trim()}' : ''}',
     );
+    if (widget.vetId != null) {
+      try {
+        await FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('notifyOwnerVetEntry')
+            .call({'animalId': widget.animalId, 'vetName': widget.vetName ?? '', 'typeActe': 'traitement'});
+      } catch (_) {}
+    }
     return true;
   });
 }
 
 class _AddAntiparasitaireDialog extends StatefulWidget {
   final String animalId;
-  const _AddAntiparasitaireDialog({required this.animalId});
+  final String source;
+  final String? vetId;
+  final String? vetName;
+  const _AddAntiparasitaireDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName});
   @override State<_AddAntiparasitaireDialog> createState() => _AddAntiparasitaireDialogState();
 }
 class _AddAntiparasitaireDialogState extends State<_AddAntiparasitaireDialog> {
@@ -3987,6 +4067,8 @@ class _AddAntiparasitaireDialogState extends State<_AddAntiparasitaireDialog> {
       'date': _date!.toIso8601String(),
       'date_rappel': _dateRappel?.toIso8601String(),
       'frequence': _frequence.text.trim(), 'notes': _notes.text.trim(),
+      'source': widget.source,
+      if (widget.vetId != null) 'vet_id': widget.vetId,
     });
     if (_dateRappel != null) {
       await _scheduleRappelAgenda(
@@ -3997,9 +4079,16 @@ class _AddAntiparasitaireDialogState extends State<_AddAntiparasitaireDialog> {
     }
     RegistreHelper.writeActe(
       animalId: widget.animalId, typeActe: 'antiparasitaire', dateActe: _date!,
-      intervenant: '',
+      intervenant: widget.vetName ?? '',
       description: '${_produit.text.trim()} ($_type)',
     );
+    if (widget.vetId != null) {
+      try {
+        await FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('notifyOwnerVetEntry')
+            .call({'animalId': widget.animalId, 'vetName': widget.vetName ?? '', 'typeActe': 'traitement'});
+      } catch (_) {}
+    }
     return true;
   });
 }
@@ -4969,8 +5058,8 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
 
 // ─── Types data pour les dialogs ─────────────────────────────────────────────
 
-class _DF { final String label; final TextEditingController ctrl; final int maxLines; final TextInputType? inputType;
-  const _DF(this.label, this.ctrl, {this.maxLines = 1, this.inputType}); }
+class _DF { final String label; final TextEditingController ctrl; final int maxLines; final TextInputType? inputType; final bool readOnly;
+  const _DF(this.label, this.ctrl, {this.maxLines = 1, this.inputType, this.readOnly = false}); }
 class _DD { final String label; final DateTime? value; final ValueChanged<DateTime> onChanged;
   const _DD(this.label, this.value, this.onChanged); }
 class _DDrop { final String label; final String value; final List<String> options; final ValueChanged<String?> onChanged;
@@ -5004,7 +5093,8 @@ class _BaseDialog extends StatelessWidget {
               child: Column(children: fields.map((f) {
                 if (f is _DF) return Padding(padding: const EdgeInsets.only(bottom: 10),
                   child: TextFormField(controller: f.ctrl, maxLines: f.maxLines, keyboardType: f.inputType,
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                    readOnly: f.readOnly,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: f.readOnly ? Colors.grey.shade600 : null),
                     decoration: InputDecoration(labelText: f.label,
                       labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),

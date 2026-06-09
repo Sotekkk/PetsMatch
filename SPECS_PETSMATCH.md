@@ -728,11 +728,14 @@ communauté d'éleveurs actifs.
 3. Le vétérinaire voit l'animal dans sa liste "Mes patients" 
 4. L'éleveur peut révoquer l'accès à tout moment
 
-**Écriture dans le carnet (Avancé + Clinique)**
+**Écriture dans le carnet (Avancé + Clinique)** ✅ Implémenté 2026-06-09
 - Chaque entrée créée par le vétérinaire est taguée `source: 'veterinaire'` + `vet_id`
-- L'éleveur/propriétaire reçoit une notification push à chaque ajout
-- Les entrées vétérinaires sont en lecture seule pour l'éleveur (non modifiables)
-- Le vétérinaire peut corriger ses propres entrées dans les 24h
+- Le champ "Vétérinaire" est pré-rempli avec le nom du compte connecté et verrouillé
+- L'éleveur/propriétaire reçoit une notification push à chaque ajout (`notifyOwnerVetEntry` Cloud Function)
+- Les entrées vétérinaires sont en lecture seule pour l'éleveur (bouton supprimer masqué)
+- Le vétérinaire peut supprimer ses propres entrées (uniquement les siennes)
+- Chaque entrée vétérinaire est aussi inscrite dans le `registre_sanitaire` de l'éleveur (via `RegistreHelper`)
+- Migration : `supabase/migration_vet06_health_source.sql` (colonnes `source`/`vet_id` sur 5 tables santé)
 
 ---
 
