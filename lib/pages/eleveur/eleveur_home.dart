@@ -18,6 +18,7 @@ import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
+import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -34,9 +35,12 @@ class EleveurHomePage extends StatefulWidget {
 }
 
 class _EleveurHomePageState extends State<EleveurHomePage> {
-  Map<String, dynamic>? _profile;
   int _animalCount = 0;
   int _postCount = 0;
+  int _rdvTodayCount = 0;
+  int _patientCount = 0;
+  int _rdvMonthCount = 0;
+  int _pensionnairesCount = 0;
   List<Map<String, dynamic>> _mesAlertes = [];
   bool _loading = true;
   List<Map<String, dynamic>> _recentAnnonces = [];
@@ -54,39 +58,93 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
   Future<void> _loadData() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    final supa = Supabase.instance.client;
     try {
-      final profileDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      final animaux = await Supabase.instance.client
-          .from('animaux').select('id').eq('uid_eleveur', uid);
-      final annonces = await Supabase.instance.client
-          .from('annonces')
-          .select('id')
-          .eq('uid_eleveur', uid)
-          .inFilter('statut', ['disponible', 'reserve']);
-      final recent = await Supabase.instance.client
-          .from('annonces')
-          .select('id, titre, espece, race, photos, statut, vues, created_at')
-          .eq('uid_eleveur', uid)
-          .inFilter('statut', ['disponible', 'reserve', 'pause'])
-          .order('created_at', ascending: false)
-          .limit(3);
-      final alertes = await Supabase.instance.client
-          .from('alertes_perdus')
-          .select()
-          .eq('uid_proprietaire', uid)
-          .eq('statut', 'perdu');
-      if (!mounted) return;
-      setState(() {
-        _profile = profileDoc.data();
-        _animalCount = (animaux as List).length;
-        _postCount = (annonces as List).length;
-        _recentAnnonces = List<Map<String, dynamic>>.from(recent);
-        _mesAlertes = List<Map<String, dynamic>>.from(alertes as List);
-        _loading = false;
-      });
+      final alertes = await supa.from('alertes_perdus')
+          .select().eq('uid_proprietaire', uid).eq('statut', 'perdu');
+
+      if (!User_Info.isPro) {
+        // Éleveur : animaux + annonces + annonces récentes
+        final animaux = await supa.from('animaux').select('id').eq('uid_eleveur', uid);
+        final annonces = await supa.from('annonces').select('id')
+            .eq('uid_eleveur', uid).inFilter('statut', ['disponible', 'reserve']);
+        final recent = await supa.from('annonces')
+            .select('id, titre, espece, race, photos, statut, vues, created_at')
+            .eq('uid_eleveur', uid)
+            .inFilter('statut', ['disponible', 'reserve', 'pause'])
+            .order('created_at', ascending: false).limit(3);
+        if (!mounted) return;
+        setState(() {
+          _animalCount = (animaux as List).length;
+          _postCount = (annonces as List).length;
+          _recentAnnonces = List<Map<String, dynamic>>.from(recent);
+          _mesAlertes = List<Map<String, dynamic>>.from(alertes as List);
+          _loading = false;
+        });
+      } else {
+        // Pro : stats spécifiques selon catPro
+        await _loadProStats(uid, supa);
+        if (!mounted) return;
+        setState(() {
+          _mesAlertes = List<Map<String, dynamic>>.from(alertes as List);
+          _loading = false;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _loadProStats(String uid, dynamic supa) async {
+    final now = DateTime.now();
+    final todayStart = '${DateFormat('yyyy-MM-dd').format(now)}T00:00:00';
+    final todayEnd   = '${DateFormat('yyyy-MM-dd').format(now)}T23:59:59';
+    final monthStart = '${DateFormat('yyyy-MM-dd').format(DateTime(now.year, now.month, 1))}T00:00:00';
+    final monthEnd   = '${DateFormat('yyyy-MM-dd').format(DateTime(now.year, now.month + 1, 0))}T23:59:59';
+    // RDV actifs = demandes en attente + confirmés (pas terminés/annulés)
+    const activeStatuts = ['demande', 'confirme', 'contre_proposition'];
+    try {
+      if (User_Info.catPro == 'veterinaire') {
+        final patients = await supa.from('vet_access_grants')
+            .select('id').eq('vet_id', uid).eq('status', 'active');
+        final rdvToday = await supa.from('rdv').select('id')
+            .eq('pro_uid', uid)
+            .gte('date_heure', todayStart)
+            .lte('date_heure', todayEnd)
+            .inFilter('statut', activeStatuts);
+        if (mounted) setState(() {
+          _patientCount  = (patients as List).length;
+          _rdvTodayCount = (rdvToday as List).length;
+        });
+      } else if (User_Info.catPro == 'pension') {
+        final pensionnaires = await supa.from('pension_acces')
+            .select('id').eq('pro_uid', uid).eq('statut', 'approved');
+        final rdvToday = await supa.from('rdv').select('id')
+            .eq('pro_uid', uid)
+            .gte('date_heure', todayStart)
+            .lte('date_heure', todayEnd)
+            .inFilter('statut', activeStatuts);
+        if (mounted) setState(() {
+          _pensionnairesCount = (pensionnaires as List).length;
+          _rdvTodayCount      = (rdvToday as List).length;
+        });
+      } else {
+        final rdvToday = await supa.from('rdv').select('id')
+            .eq('pro_uid', uid)
+            .gte('date_heure', todayStart)
+            .lte('date_heure', todayEnd)
+            .inFilter('statut', activeStatuts);
+        final rdvMonth = await supa.from('rdv').select('id')
+            .eq('pro_uid', uid)
+            .gte('date_heure', monthStart)
+            .lte('date_heure', monthEnd)
+            .inFilter('statut', activeStatuts);
+        if (mounted) setState(() {
+          _rdvTodayCount = (rdvToday as List).length;
+          _rdvMonthCount = (rdvMonth as List).length;
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -139,9 +197,14 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
   }
 
   Widget _buildSliverHeader(BuildContext context) {
-    final name = _profile?['nameElevage'] ?? _profile?['firstname'] ?? 'Mon élevage';
-    final city = _profile?['city'] ?? '';
-    final photoUrl = _profile?['profilePictureUrlElevage'] ?? _profile?['profilePictureUrl'];
+    final name = User_Info.nameElevage.isNotEmpty
+        ? User_Info.nameElevage
+        : '${User_Info.firstname} ${User_Info.lastname}'.trim();
+    final city = User_Info.ville.isNotEmpty ? User_Info.ville : User_Info.villeElevage;
+    final rawPhoto = User_Info.profilePictureUrlElevage.isNotEmpty
+        ? User_Info.profilePictureUrlElevage
+        : (User_Info.profilePictureUrl.isNotEmpty ? User_Info.profilePictureUrl : null);
+    final photoUrl = (rawPhoto?.isNotEmpty == true) ? rawPhoto : null;
 
     return SliverAppBar(
       expandedHeight: 180,
@@ -165,7 +228,9 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
                 children: [
                   GestureDetector(
                     onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => User_Info.isPro ? const ProProfileEditPage() : const ProfilEleveurEditPage())),
+                        MaterialPageRoute(builder: (_) => User_Info.isPro
+    ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)
+    : const ProfilEleveurEditPage())),
                     child: CircleAvatar(
                       radius: 38,
                       backgroundColor: const Color(0xFFA7C79A),
@@ -202,7 +267,9 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
                         const SizedBox(height: 8),
                         OutlinedButton.icon(
                           onPressed: () => Navigator.push(context,
-                              MaterialPageRoute(builder: (_) => User_Info.isPro ? const ProProfileEditPage() : const ProfilEleveurEditPage())),
+                              MaterialPageRoute(builder: (_) => User_Info.isPro
+    ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)
+    : const ProfilEleveurEditPage())),
                           icon: const Icon(Icons.edit_outlined, size: 14, color: Colors.white),
                           label: const Text('Modifier', style: TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'Galey')),
                           style: OutlinedButton.styleFrom(
@@ -224,16 +291,55 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
     );
   }
 
+  String _proLabel() {
+    switch (User_Info.catPro) {
+      case 'veterinaire': return 'Vétérinaire';
+      case 'sante': return 'Santé';
+      case 'education': return 'Éducation';
+      case 'garde': return 'Garde';
+      case 'pension': return 'Pension';
+      case 'toilettage': return 'Toilettage';
+      case 'photographe': return 'Photographe';
+      case 'marechal_ferrant': return 'Maréchal';
+      default: return 'Pro';
+    }
+  }
+
   Widget _buildStatsRow() {
-    return Row(
-      children: [
+    if (!User_Info.isPro) {
+      return Row(children: [
         _StatCard(value: _animalCount.toString(), label: 'Animaux', icon: Icons.cruelty_free_outlined),
         const SizedBox(width: 12),
         _StatCard(value: _postCount.toString(), label: 'Annonces', icon: Icons.campaign_outlined),
         const SizedBox(width: 12),
-        _StatCard(value: User_Info.isPro ? 'Pro' : 'Éleveur', label: 'Statut', icon: Icons.verified_outlined),
-      ],
-    );
+        _StatCard(value: 'Éleveur', label: 'Statut', icon: Icons.verified_outlined),
+      ]);
+    }
+    if (User_Info.catPro == 'veterinaire') {
+      return Row(children: [
+        _StatCard(value: _patientCount.toString(), label: 'Patients', icon: Icons.favorite_outline),
+        const SizedBox(width: 12),
+        _StatCard(value: _rdvTodayCount.toString(), label: 'RDV aujourd\'hui', icon: Icons.calendar_today_outlined),
+        const SizedBox(width: 12),
+        _StatCard(value: 'Vétérinaire', label: 'Statut', icon: Icons.verified_outlined),
+      ]);
+    }
+    if (User_Info.catPro == 'pension') {
+      return Row(children: [
+        _StatCard(value: _pensionnairesCount.toString(), label: 'Pensionnaires', icon: Icons.pets),
+        const SizedBox(width: 12),
+        _StatCard(value: _rdvTodayCount.toString(), label: 'RDV aujourd\'hui', icon: Icons.calendar_today_outlined),
+        const SizedBox(width: 12),
+        _StatCard(value: 'Pension', label: 'Statut', icon: Icons.verified_outlined),
+      ]);
+    }
+    return Row(children: [
+      _StatCard(value: _rdvTodayCount.toString(), label: 'RDV aujourd\'hui', icon: Icons.calendar_today_outlined),
+      const SizedBox(width: 12),
+      _StatCard(value: _rdvMonthCount.toString(), label: 'RDV ce mois', icon: Icons.calendar_month_outlined),
+      const SizedBox(width: 12),
+      _StatCard(value: _proLabel(), label: 'Statut', icon: Icons.verified_outlined),
+    ]);
   }
 
   Widget _buildSectionTitle(String title) {
@@ -250,7 +356,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
     return GestureDetector(
       onTap: () => Navigator.push(context,
           MaterialPageRoute(builder: (_) => User_Info.isPro
-              ? const ProProfileEditPage()
+              ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)
               : const InfoUserSettings())),
       child: Container(
         padding: const EdgeInsets.all(14),
@@ -330,6 +436,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
 
   Widget _buildQuickAccess(BuildContext context) {
     final isPension = User_Info.isPro && User_Info.catPro == 'pension';
+    final isVet = User_Info.isPro && User_Info.catPro == 'veterinaire';
+    final isGenericPro = User_Info.isPro && !isPension && !isVet;
 
     final tiles = [
       if (!User_Info.isPro) ...[
@@ -337,6 +445,13 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnimauxPage()))),
         _QuickTile(icon: Icons.campaign_outlined, label: 'Mes\nAnnonces', color: _teal,
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnnoncesPage()))),
+      ] else if (isVet) ...[
+        _QuickTile(icon: Icons.favorite_outline, label: 'Mes\nPatients', color: const Color(0xFF5B8648),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VetPatientsPage()))),
+        _QuickTile(icon: Icons.calendar_month_outlined, label: 'Agenda', color: _teal,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage()))),
+        _QuickTile(icon: Icons.storefront_outlined, label: 'Services', color: const Color(0xFF5F9EAA),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ServicesPage()))),
       ] else if (isPension) ...[
         _QuickTile(icon: Icons.menu_book_outlined, label: 'Registre', color: _teal,
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RegistrePensionPage()))),
@@ -348,8 +463,13 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ServicesPage()))),
         _QuickTile(icon: Icons.folder_outlined, label: 'Documents', color: const Color(0xFF374151),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PensionDocumentsPage()))),
+      ] else if (isGenericPro) ...[
+        _QuickTile(icon: Icons.calendar_month_outlined, label: 'Agenda', color: _teal,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage()))),
+        _QuickTile(icon: Icons.storefront_outlined, label: 'Services', color: const Color(0xFF5F9EAA),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ServicesPage()))),
       ],
-      if (!isPension) ...[
+      if (!isVet && !isPension && !isGenericPro) ...[
         _QuickTile(icon: Icons.home_work_outlined, label: 'Élevages', color: const Color(0xFF5B8648),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EleveurListPage()))),
         _QuickTile(icon: Icons.storefront_outlined, label: 'Services', color: const Color(0xFF5F9EAA),

@@ -13,6 +13,8 @@ const _kCatLabels = <String, String>{
   'garde': 'Pet sitter / Promeneur',
   'pension': 'Pension pour animaux',
   'toilettage': 'Toilettage',
+  'photographe': 'Photographe',
+  'marechal_ferrant': 'Maréchal-ferrant',
   'referencement': 'Commerce / Animalerie',
   'autre': 'Autre',
 };
@@ -24,14 +26,22 @@ const _kEspeces = [
 
 class ProDetail extends StatefulWidget {
   final String uid;
-  final Map<String, dynamic> fireData;
+  final String nameDisplay;
+  final String email;
+  final String photoUrl;
   final Map<String, dynamic> supaRow;
+  final bool isSecondary;
+  final String? profileTableId; // user_profiles.id for secondary profiles
 
   const ProDetail({
     super.key,
     required this.uid,
-    required this.fireData,
+    required this.nameDisplay,
+    required this.email,
+    required this.photoUrl,
     required this.supaRow,
+    this.isSecondary = false,
+    this.profileTableId,
   });
 
   @override
@@ -39,7 +49,7 @@ class ProDetail extends StatefulWidget {
 }
 
 class _ProDetailState extends State<ProDetail> {
-  final _supaClient = Supabase.instance.client;
+  final _supa = Supabase.instance.client;
   late Map<String, dynamic> _supaRow;
   bool _saving = false;
 
@@ -47,6 +57,21 @@ class _ProDetailState extends State<ProDetail> {
   void initState() {
     super.initState();
     _supaRow = Map<String, dynamic>.from(widget.supaRow);
+  }
+
+  // Target table/condition for Supabase updates
+  Future<void> _updateSupa(Map<String, dynamic> data) async {
+    if (widget.isSecondary && widget.profileTableId != null) {
+      await _supa
+          .from('user_profiles')
+          .update(data)
+          .eq('id', widget.profileTableId!);
+    } else {
+      await _supa
+          .from('users')
+          .update(data)
+          .eq('uid', widget.uid);
+    }
   }
 
   // ── Statut ────────────────────────────────────────────────────────────────
@@ -87,10 +112,7 @@ class _ProDetailState extends State<ProDetail> {
     if (confirmed != true || !mounted) return;
     setState(() => _saving = true);
     try {
-      await _supaClient
-          .from('users')
-          .update({'statut_pro': statut})
-          .eq('uid', widget.uid);
+      await _updateSupa({'statut_pro': statut});
       setState(() => _supaRow['statut_pro'] = statut);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -101,8 +123,7 @@ class _ProDetailState extends State<ProDetail> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Erreur : $e',
-                style: const TextStyle(fontFamily: 'Galey')),
+            content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
             backgroundColor: Colors.red));
       }
     } finally {
@@ -147,10 +168,7 @@ class _ProDetailState extends State<ProDetail> {
     if (ok != true) return;
     final val = int.tryParse(ctrl.text.trim()) ?? 0;
     try {
-      await _supaClient
-          .from('users')
-          .update({'rayon_intervention': val})
-          .eq('uid', widget.uid);
+      await _updateSupa({'rayon_intervention': val});
       setState(() => _supaRow['rayon_intervention'] = val);
     } catch (e) {
       if (mounted) {
@@ -202,10 +220,7 @@ class _ProDetailState extends State<ProDetail> {
               onPressed: () async {
                 Navigator.pop(ctx);
                 try {
-                  await _supaClient
-                      .from('users')
-                      .update({'especes_acceptees': selected})
-                      .eq('uid', widget.uid);
+                  await _updateSupa({'especes_acceptees': selected});
                   setState(() => _supaRow['especes_acceptees'] = selected);
                 } catch (e) {
                   if (mounted) {
@@ -214,7 +229,8 @@ class _ProDetailState extends State<ProDetail> {
                   }
                 }
               },
-              child: const Text('Enregistrer', style: TextStyle(color: Colors.white, fontFamily: 'Galey')),
+              child: const Text('Enregistrer',
+                  style: TextStyle(color: Colors.white, fontFamily: 'Galey')),
             ),
           ],
         ),
@@ -222,14 +238,68 @@ class _ProDetailState extends State<ProDetail> {
     );
   }
 
-  // ── Suppression ───────────────────────────────────────────────────────────
+  // ── Suppression profil secondaire (supprime juste la ligne user_profiles) ──
 
-  Future<void> _deleteUser() async {
+  Future<void> _deleteSecondaryProfile() async {
     final step1 = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFFF8F8F6),
-        title: const Text('⚠️ Supprimer ce profil ?',
+        title: const Text('Supprimer ce profil secondaire ?',
+            style: TextStyle(
+                fontFamily: 'Galey',
+                fontWeight: FontWeight.w700,
+                color: Colors.red)),
+        content: Text(
+          'Ce profil secondaire sera supprimé définitivement.\n\n'
+          'Le compte principal (${widget.email}) ne sera pas affecté.',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer ce profil',
+                style: TextStyle(color: Colors.white, fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    if (step1 != true || !mounted) return;
+
+    setState(() => _saving = true);
+    try {
+      await _supa
+          .from('user_profiles')
+          .delete()
+          .eq('id', widget.profileTableId!);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Profil secondaire supprimé.'),
+            backgroundColor: Colors.green));
+        Navigator.pop(context, 'deleted');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  // ── Suppression compte complet (profil principal) ─────────────────────────
+
+  Future<void> _deleteFullAccount() async {
+    final step1 = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFFF8F8F6),
+        title: const Text('⚠️ Supprimer ce compte ?',
             style: TextStyle(
                 fontFamily: 'Galey',
                 fontWeight: FontWeight.w700,
@@ -238,8 +308,9 @@ class _ProDetailState extends State<ProDetail> {
           'Sera supprimé définitivement :\n\n'
           '• Compte Firebase Auth\n'
           '• Données personnelles\n'
-          '• Profil pro\n\n'
-          'Utilisateur : ${widget.fireData['email'] ?? widget.uid}',
+          '• Profil pro\n'
+          '• Tous les profils secondaires\n\n'
+          'Utilisateur : ${widget.email}',
           style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
         ),
         actions: [
@@ -313,15 +384,14 @@ class _ProDetailState extends State<ProDetail> {
 
     setState(() => _saving = true);
     try {
-      await _supaClient.functions
-          .invoke('delete-user', body: {'uid': widget.uid});
+      await _supa.functions.invoke('delete-user', body: {'uid': widget.uid});
       await FirebaseFirestore.instance
           .collection('users')
           .doc(widget.uid)
           .delete();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Profil supprimé.'),
+            content: Text('Compte supprimé.'),
             backgroundColor: Colors.green));
         Navigator.pop(context, 'deleted');
       }
@@ -339,10 +409,6 @@ class _ProDetailState extends State<ProDetail> {
 
   @override
   Widget build(BuildContext context) {
-    final name =
-        '${widget.fireData['firstname'] ?? ''} ${widget.fireData['lastname'] ?? ''}'
-            .trim();
-    final ppUrl = widget.fireData['profilePictureUrl'] ?? '';
     final statut = _supaRow['statut_pro']?.toString() ?? 'actif';
     final cat = _supaRow['cat_pro']?.toString() ?? '';
     final rayon = _supaRow['rayon_intervention'];
@@ -350,7 +416,10 @@ class _ProDetailState extends State<ProDetail> {
         .map((e) => e.toString())
         .toList();
     final certifs = (_supaRow['certifications'] as List? ?? [])
-        .map((e) => (e as Map?)?.values.join(' — ') ?? '')
+        .map((e) {
+          if (e is Map) return e.values.where((v) => v != null && v.toString().isNotEmpty).join(' — ');
+          return e?.toString() ?? '';
+        })
         .where((s) => s.isNotEmpty)
         .toList();
     final struct = _supaRow['name_elevage']?.toString() ?? '';
@@ -369,15 +438,24 @@ class _ProDetailState extends State<ProDetail> {
         backgroundColor: const Color(0xFFA7C79A),
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
-        title: const Text('Profil professionnel',
-            style: TextStyle(
-                fontFamily: 'Galey',
-                fontWeight: FontWeight.w500,
-                color: Colors.black)),
+        title: Text(
+          widget.isSecondary ? 'Profil secondaire' : 'Profil professionnel',
+          style: const TextStyle(
+              fontFamily: 'Galey',
+              fontWeight: FontWeight.w500,
+              color: Colors.black),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.delete_forever, color: Colors.red),
-            onPressed: _saving ? null : _deleteUser,
+            onPressed: _saving
+                ? null
+                : (widget.isSecondary
+                    ? _deleteSecondaryProfile
+                    : _deleteFullAccount),
+            tooltip: widget.isSecondary
+                ? 'Supprimer ce profil'
+                : 'Supprimer le compte',
           ),
         ],
       ),
@@ -391,18 +469,37 @@ class _ProDetailState extends State<ProDetail> {
                     // Avatar + nom
                     Center(
                       child: Column(children: [
-                        CircleAvatar(
-                          radius: 48,
-                          backgroundColor: _kTeal,
-                          backgroundImage:
-                              ppUrl.isNotEmpty ? NetworkImage(ppUrl) : null,
-                          child: ppUrl.isEmpty
-                              ? const Icon(Icons.work,
-                                  size: 48, color: Colors.white)
-                              : null,
-                        ),
+                        Stack(clipBehavior: Clip.none, children: [
+                          CircleAvatar(
+                            radius: 48,
+                            backgroundColor: _kTeal,
+                            child: ClipOval(
+                              child: widget.photoUrl.isNotEmpty
+                                  ? Image.network(
+                                      widget.photoUrl,
+                                      width: 96, height: 96, fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) =>
+                                          const Icon(Icons.work, size: 48, color: Colors.white),
+                                    )
+                                  : const Icon(Icons.work, size: 48, color: Colors.white),
+                            ),
+                          ),
+                          if (widget.isSecondary)
+                            Positioned(
+                              bottom: 0, right: 0,
+                              child: Container(
+                                width: 22, height: 22,
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.shade400,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 2),
+                                ),
+                                child: const Icon(Icons.layers, size: 12, color: Colors.white),
+                              ),
+                            ),
+                        ]),
                         const SizedBox(height: 10),
-                        Text(name.isNotEmpty ? name : 'Nom inconnu',
+                        Text(widget.nameDisplay.isNotEmpty ? widget.nameDisplay : 'Nom inconnu',
                             style: const TextStyle(
                                 fontFamily: 'Galey',
                                 fontWeight: FontWeight.w500,
@@ -410,16 +507,29 @@ class _ProDetailState extends State<ProDetail> {
                         if (struct.isNotEmpty)
                           Text(struct,
                               style: const TextStyle(
-                                  fontFamily: 'Galey',
-                                  fontSize: 14,
-                                  color: _kTeal)),
+                                  fontFamily: 'Galey', fontSize: 14, color: _kTeal)),
                         if (profession.isNotEmpty)
                           Text(profession,
-                              style: const TextStyle(
-                                  fontSize: 13, color: Colors.grey)),
-                        Text(widget.fireData['email'] ?? '',
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.grey)),
+                              style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                        Text(widget.email,
+                            style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        if (widget.isSecondary) ...[
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.purple.withValues(alpha: 0.4)),
+                            ),
+                            child: const Text('Profil secondaire',
+                                style: TextStyle(
+                                    fontFamily: 'Galey',
+                                    fontSize: 12,
+                                    color: Colors.purple,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                        ],
                       ]),
                     ),
                     const SizedBox(height: 20),
@@ -448,7 +558,7 @@ class _ProDetailState extends State<ProDetail> {
                     // Actions statut
                     _SectionTitle('Actions'),
                     Row(children: [
-                      if (statut != 'actif')
+                      if (statut != 'actif') ...[
                         Expanded(
                           child: _ActionBtn(
                             label: 'Activer',
@@ -457,8 +567,9 @@ class _ProDetailState extends State<ProDetail> {
                             onTap: () => _setStatut('actif'),
                           ),
                         ),
-                      if (statut != 'actif') const SizedBox(width: 8),
-                      if (statut != 'suspendu')
+                        const SizedBox(width: 8),
+                      ],
+                      if (statut != 'suspendu') ...[
                         Expanded(
                           child: _ActionBtn(
                             label: 'Suspendre',
@@ -467,7 +578,8 @@ class _ProDetailState extends State<ProDetail> {
                             onTap: () => _setStatut('suspendu'),
                           ),
                         ),
-                      if (statut != 'suspendu') const SizedBox(width: 8),
+                        const SizedBox(width: 8),
+                      ],
                       if (statut != 'refuse')
                         Expanded(
                           child: _ActionBtn(
@@ -487,7 +599,7 @@ class _ProDetailState extends State<ProDetail> {
                     const SizedBox(height: 20),
 
                     // Rayon
-                    _SectionTitle('Zone d\'intervention'),
+                    _SectionTitle("Zone d'intervention"),
                     _EditableRow(
                       icon: Icons.radar,
                       label: 'Rayon',
@@ -511,8 +623,7 @@ class _ProDetailState extends State<ProDetail> {
                         ),
                         child: especes.isEmpty
                             ? Row(children: [
-                                const Icon(Icons.pets,
-                                    size: 16, color: Colors.grey),
+                                const Icon(Icons.pets, size: 16, color: Colors.grey),
                                 const SizedBox(width: 8),
                                 const Text('Aucune espèce — toucher pour éditer',
                                     style: TextStyle(
@@ -520,16 +631,14 @@ class _ProDetailState extends State<ProDetail> {
                                         fontSize: 13,
                                         color: Colors.grey)),
                                 const Spacer(),
-                                const Icon(Icons.edit,
-                                    size: 16, color: Colors.grey),
+                                const Icon(Icons.edit, size: 16, color: Colors.grey),
                               ])
                             : Wrap(
                                 spacing: 6,
                                 runSpacing: 6,
                                 children: [
                                   ...especes.map((e) => _badge(e, _kTeal)),
-                                  const Icon(Icons.edit,
-                                      size: 16, color: Colors.grey),
+                                  const Icon(Icons.edit, size: 16, color: Colors.grey),
                                 ],
                               ),
                       ),
@@ -554,13 +663,13 @@ class _ProDetailState extends State<ProDetail> {
                       const SizedBox(height: 20),
                     ],
 
-                    // Infos perso Firestore
-                    _SectionTitle('Informations personnelles'),
-                    _InfoRow(Icons.phone, 'Téléphone',
-                        widget.fireData['phone_number'] ?? '—'),
-                    _InfoRow(Icons.numbers, 'SIRET',
-                        widget.fireData['siret'] ?? '—'),
-                    _InfoRow(Icons.fingerprint, 'UID', widget.uid),
+                    // Infos compte
+                    _SectionTitle('Informations du compte'),
+                    _InfoRow(Icons.email_outlined, 'Email', widget.email),
+                    _InfoRow(Icons.fingerprint, 'UID Firebase', widget.uid),
+                    if (widget.isSecondary && widget.profileTableId != null)
+                      _InfoRow(Icons.tag, 'ID profil secondaire',
+                          widget.profileTableId!),
                     const SizedBox(height: 40),
                   ]),
             ),

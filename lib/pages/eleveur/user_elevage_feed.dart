@@ -190,7 +190,7 @@ class _UserElevageFeedState extends State<UserElevageFeed>
                       IconButton(
                         icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.white),
                         onPressed: () => Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => User_Info.isPro ? const ProProfileEditPage() : ProfilEleveurEditPage())),
+                            MaterialPageRoute(builder: (_) => User_Info.isPro ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null) : ProfilEleveurEditPage())),
                       ),
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_vert, size: 18, color: Colors.white),
@@ -544,7 +544,7 @@ class _UserElevageFeedState extends State<UserElevageFeed>
               label: const Text('Modifier mon profil',
                   style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
               onPressed: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => User_Info.isPro ? const ProProfileEditPage() : ProfilEleveurEditPage())),
+                  MaterialPageRoute(builder: (_) => User_Info.isPro ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null) : ProfilEleveurEditPage())),
             ),
           ),
         ],

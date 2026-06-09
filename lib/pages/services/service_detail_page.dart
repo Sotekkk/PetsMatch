@@ -11,12 +11,15 @@ class ServiceDetailPage extends StatefulWidget {
   final String proUid;
   final String categoryLabel;
   final Color categoryColor;
+  /// UUID from user_profiles.id — set for secondary profiles, null for primary
+  final String? profileTableId;
 
   const ServiceDetailPage({
     super.key,
     required this.proUid,
     required this.categoryLabel,
     required this.categoryColor,
+    this.profileTableId,
   });
 
   @override
@@ -46,11 +49,46 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
 
   Future<void> _loadPro() async {
     try {
-      final row = await _supa
-          .from('users')
-          .select()
-          .eq('uid', widget.proUid)
-          .maybeSingle();
+      Map<String, dynamic>? row;
+      if (widget.profileTableId != null) {
+        final raw = await _supa
+            .from('user_profiles')
+            .select()
+            .eq('id', widget.profileTableId!)
+            .maybeSingle();
+        if (raw != null) {
+          row = {
+            ...raw,
+            'uid':                       raw['uid'],
+            'name_elevage':              raw['name_elevage'] ?? '',
+            'profile_picture_url_elevage': raw['avatar_url'] ?? '',
+            'profile_picture_url':       raw['avatar_url'] ?? '',
+            'banner_url':                raw['banner_url'] ?? '',
+            'ville_elevage':             raw['ville'] ?? '',
+            'ville':                     raw['ville'] ?? '',
+            'desc_entreprise':           raw['desc_entreprise'] ?? raw['description'] ?? '',
+            'especes_acceptees':         raw['especes_acceptees'] ?? [],
+            'accept_new_clients':        raw['accept_new_clients'] ?? true,
+            'horaires':                  raw['horaires'] ?? {},
+            'certifications':            raw['certifications'] ?? [],
+            'tarifs':                    raw['tarifs'] ?? '',
+            'site_web':                  raw['site_web'] ?? '',
+            'instagram':                 raw['instagram'] ?? '',
+            'facebook':                  raw['facebook'] ?? '',
+            'rayon_intervention':        raw['rayon_intervention'] ?? 0,
+            'cat_pro':                   raw['profile_type'] ?? raw['cat_pro'] ?? '',
+            'profession_pro':            raw['profession_pro'] ?? '',
+            'lat':                       raw['latitude'] ?? raw['lat'],
+            'lng':                       raw['longitude'] ?? raw['lng'],
+          };
+        }
+      } else {
+        row = await _supa
+            .from('users')
+            .select()
+            .eq('uid', widget.proUid)
+            .maybeSingle();
+      }
       if (mounted) setState(() { _proData = row; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);

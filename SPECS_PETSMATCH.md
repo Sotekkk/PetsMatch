@@ -1646,3 +1646,46 @@ Règle éditoriale : tous les partenaires sont vérifiés manuellement avant act
 - **FCM Token** : sauvegardé dans Firestore (`fcmToken`) ET Supabase (`fcm_token`) au login et sur `onTokenRefresh`.
 - **Annonces** : 100% Supabase (create, feed, map, detail, mes-annonces, likes, favoris).
 - **Photos** : Firebase Storage → URL sauvegardée dans Supabase.
+
+---
+
+## 12. Architecture multi-profils (v2, 2026-06)
+
+### Principe fondamental
+- **1 `uid` Firebase** = 1 compte utilisateur (identifié par email). C'est le "parent ID".
+- **Chaque profil** (principal ou secondaire) a son propre UUID unique :
+  - Profil principal : `users.profile_id` (UUID ajouté via migration)
+  - Profils secondaires : `user_profiles.id` (UUID, clé primaire existante)
+- **`User_Info.activeProfileId`** = UUID du profil actif. Vide = profil principal.
+
+### Règle : animaux & appartenance
+Les **animaux** (`animaux.uid_eleveur`) restent liés au `uid` Firebase (compte parent).
+Un animal appartient à un **utilisateur**, pas à un profil spécifique. Tous les profils du même compte voient les mêmes animaux.
+
+### Règle : services, RDV, fiches
+Les RDV, services et fiches pro sont liés au `uid` Firebase (`uid_pro`).
+À terme, `profile_id` sera ajouté aux tables `rdv`, `vet_access_grants`, `pension_acces` pour distinguer quel profil d'un même utilisateur gère la relation.
+
+### Table `user_profiles` — colonnes complètes
+Chaque profil secondaire a les mêmes données qu'un profil principal :
+`horaires`, `accept_new_clients`, `banner_url`, `tarifs`, `instagram`, `facebook`,
+`certifications`, `durees_motifs`, `lat`, `lng`, `is_pro`, `desc_entreprise`,
+`departement`, `region`, `ville_elevage`, `code_postal_elevage`, `rue_elevage`.
+Migration : `supabase/migration_secondary_profile_complete.sql`.
+
+### Table `users` — ajout `profile_id`
+`ALTER TABLE users ADD COLUMN profile_id UUID DEFAULT gen_random_uuid();`
+Permet d'identifier le profil principal par un UUID (comme les profils secondaires).
+
+### Routing dans l'app
+- `ServiceDetailPage(proUid, profileTableId?)` : charge depuis `user_profiles` si `profileTableId` est fourni, sinon depuis `users`.
+- `ProProfileEditPage(secondaryProfileId?)` : charge/sauvegarde depuis `user_profiles` si fourni, sinon depuis `users`.
+- Toutes les navigations vers `ProProfileEditPage` passent `User_Info.activeProfileId` (vide = édition profil principal).
+
+### Types de profils
+`particulier`, `eleveur`, `veterinaire`, `sante`, `education`, `garde`, `pension`, `toilettage`, `photographe`, `marechal_ferrant`
+
+### Notifications
+Les notifications sont partagées entre tous les profils d'un même compte.
+Chaque notification porte un `profile_type` et `profile_id` pour indiquer à quel profil elle est destinée.
+La cloche s'allume sur tous les profils. En cliquant sur une notif d'un autre profil, l'app propose de basculer.

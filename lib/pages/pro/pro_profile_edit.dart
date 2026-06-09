@@ -14,7 +14,9 @@ import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 
 class ProProfileEditPage extends StatefulWidget {
-  const ProProfileEditPage({super.key});
+  /// UUID from user_profiles.id — set when editing a secondary profile, null for primary
+  final String? secondaryProfileId;
+  const ProProfileEditPage({super.key, this.secondaryProfileId});
 
   @override
   State<ProProfileEditPage> createState() => _ProProfileEditPageState();
@@ -113,35 +115,56 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
   Future<void> _loadProProfile() async {
     try {
-      final row = await _supa
-          .from('users')
-          .select()
-          .eq('uid', User_Info.uid)
-          .maybeSingle();
+      Map<String, dynamic>? row;
+      if (widget.secondaryProfileId != null) {
+        row = await _supa
+            .from('user_profiles')
+            .select()
+            .eq('id', widget.secondaryProfileId!)
+            .maybeSingle();
+      } else {
+        row = await _supa
+            .from('users')
+            .select()
+            .eq('uid', User_Info.uid)
+            .maybeSingle();
+      }
 
       if (row != null) {
-        _photoUrl  = row['profile_picture_url_elevage'] as String?;
+        final isSecondary = widget.secondaryProfileId != null;
+        _photoUrl  = isSecondary ? row['avatar_url'] as String? : row['profile_picture_url_elevage'] as String?;
         _bannerUrl = row['banner_url'] as String?;
         _nomStructureCtrl.text = row['name_elevage']    ?? User_Info.nameElevage;
         _professionCtrl.text   = row['profession_pro']  ?? User_Info.professionPro;
-        _descCtrl.text         = row['desc_entreprise'] ?? User_Info.descEntreprise;
+        _descCtrl.text         = isSecondary
+            ? (row['desc_entreprise'] ?? row['description'] ?? User_Info.descEntreprise)
+            : (row['desc_entreprise'] ?? User_Info.descEntreprise);
         _tarifsCtrl.text       = row['tarifs']          ?? '';
         _siteWebCtrl.text      = row['site_web']        ?? '';
         _instagramCtrl.text    = row['instagram']       ?? '';
         _facebookCtrl.text     = row['facebook']        ?? '';
         _rayonKm               = (row['rayon_intervention'] as num?)?.toInt() ?? 20;
         _acceptNewClients      = row['accept_new_clients'] ?? true;
-        _lat                   = (row['lat'] as num?)?.toDouble();
-        _lng                   = (row['lng'] as num?)?.toDouble();
 
-        // Infos fixes
-        _siret          = row['siret']                 ?? User_Info.siret;
-        _catPro         = row['cat_pro']               ?? '';
-        _rueCtrl.text   = row['rue_elevage']          ?? '';
-        _villeCtrl.text = row['ville_elevage']         ?? '';
-        _cpCtrl.text    = row['code_postal_elevage']   ?? '';
-        _paysCtrl.text  = row['pays_elevage']?.isNotEmpty == true
-            ? row['pays_elevage'] : 'France';
+        if (isSecondary) {
+          _lat = (row['latitude'] as num?)?.toDouble() ?? (row['lat'] as num?)?.toDouble();
+          _lng = (row['longitude'] as num?)?.toDouble() ?? (row['lng'] as num?)?.toDouble();
+          _siret         = row['siret']        ?? '';
+          _catPro        = row['profile_type'] ?? row['cat_pro'] ?? '';
+          _rueCtrl.text  = row['rue']          ?? row['rue_elevage'] ?? '';
+          _villeCtrl.text = row['ville']       ?? '';
+          _cpCtrl.text   = row['code_postal']  ?? '';
+          _paysCtrl.text = row['pays']?.isNotEmpty == true ? row['pays'] : 'France';
+        } else {
+          _lat = (row['lat'] as num?)?.toDouble();
+          _lng = (row['lng'] as num?)?.toDouble();
+          _siret         = row['siret']               ?? User_Info.siret;
+          _catPro        = row['cat_pro']             ?? '';
+          _rueCtrl.text  = row['rue_elevage']         ?? '';
+          _villeCtrl.text = row['ville_elevage']      ?? '';
+          _cpCtrl.text   = row['code_postal_elevage'] ?? '';
+          _paysCtrl.text = row['pays_elevage']?.isNotEmpty == true ? row['pays_elevage'] : 'France';
+        }
         _addressSearchCtrl.text = [_rueCtrl.text, _cpCtrl.text, _villeCtrl.text]
             .where((s) => s.isNotEmpty).join(', ');
 
@@ -153,7 +176,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
             (row['durees_motifs'] as Map).map((k, v) =>
                 MapEntry(k.toString(), (v as num?)?.toInt() ?? 30)));
         } else {
-          final cat = (row['cat_pro'] ?? '').toString();
+          final cat = _catPro.isNotEmpty ? _catPro : (row['cat_pro'] ?? '').toString();
           _dureesMotifs = Map<String, int>.from(
               _defaultDureesByCatPro[cat] ?? {'consultation': 30, 'autre': 30});
         }
@@ -169,7 +192,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
               (e as Map).map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')),
             )),
           );
-          // Extrait le numéro d'ordre vétérinaire s'il existe
           for (final c in _certifications) {
             if ((c['nom'] ?? '').toLowerCase().contains('ordre')) {
               _ordreVeterinaire = c['numero'] ?? '';
@@ -311,65 +333,98 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
       if (_catPro.isEmpty) _catPro = _inferCatPro(_professionCtrl.text.trim());
 
-      await _supa.from('users').upsert({
-        'uid':                  User_Info.uid,
-        'name_elevage':         _nomStructureCtrl.text.trim(),
-        'profession_pro':       _professionCtrl.text.trim(),
-        'desc_entreprise':      _descCtrl.text.trim(),
-        'tarifs':               _tarifsCtrl.text.trim(),
-        'site_web':             _siteWebCtrl.text.trim(),
-        'instagram':            _instagramCtrl.text.trim(),
-        'facebook':             _facebookCtrl.text.trim(),
-        'rayon_intervention':   _rayonKm,
-        'especes_acceptees':    _especesAcceptees,
-        'horaires':             horairesMap,
-        'certifications':       _certifications,
-        'accept_new_clients':   _acceptNewClients,
-        'cat_pro':              _catPro,
-        'is_pro':               true,
-        'durees_motifs':        _dureesMotifs,
-        // Adresse + géolocalisation
-        'rue_elevage':          _rueCtrl.text.trim(),
-        'ville_elevage':        _villeCtrl.text.trim(),
-        'code_postal_elevage':  _cpCtrl.text.trim(),
-        'pays_elevage':         _paysCtrl.text.trim(),
-        'adress_elevage':       adresse,
-        'lat':                  _lat,
-        'lng':                  _lng,
-        if (photoUrl  != null) 'profile_picture_url_elevage': photoUrl,
-        if (bannerUrl != null) 'banner_url': bannerUrl,
-      }, onConflict: 'uid');
+      if (widget.secondaryProfileId != null) {
+        // ── Profil secondaire → user_profiles ─────────────────────────────────
+        await _supa.from('user_profiles').update({
+          'name_elevage':       _nomStructureCtrl.text.trim(),
+          'profession_pro':     _professionCtrl.text.trim(),
+          'desc_entreprise':    _descCtrl.text.trim(),
+          'tarifs':             _tarifsCtrl.text.trim(),
+          'site_web':           _siteWebCtrl.text.trim(),
+          'instagram':          _instagramCtrl.text.trim(),
+          'facebook':           _facebookCtrl.text.trim(),
+          'rayon_intervention': _rayonKm,
+          'especes_acceptees':  _especesAcceptees,
+          'horaires':           horairesMap,
+          'certifications':     _certifications,
+          'accept_new_clients': _acceptNewClients,
+          'cat_pro':            _catPro,
+          'is_pro':             true,
+          'durees_motifs':      _dureesMotifs,
+          'rue':                _rueCtrl.text.trim(),
+          'ville':              _villeCtrl.text.trim(),
+          'code_postal':        _cpCtrl.text.trim(),
+          'pays':               _paysCtrl.text.trim(),
+          'adresse':            adresse,
+          'latitude':           _lat,
+          'longitude':          _lng,
+          'lat':                _lat,
+          'lng':                _lng,
+          if (photoUrl  != null) 'avatar_url': photoUrl,
+          if (bannerUrl != null) 'banner_url': bannerUrl,
+        }).eq('id', widget.secondaryProfileId!);
 
-      // Mettre à jour Firestore (source de vérité au démarrage — clés camelCase)
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .update({
-            'catPro': _catPro,
-            if (photoUrl  != null) 'profilePictureUrlElevage': photoUrl,
-            if (bannerUrl != null) 'bannerUrl': bannerUrl,
-          });
+        // Reload secondary profile and re-apply in memory
+        final updated = await _supa.from('user_profiles')
+            .select().eq('id', widget.secondaryProfileId!).maybeSingle();
+        if (updated != null) User_Info.applyProfile(updated);
+      } else {
+        // ── Profil principal → users ───────────────────────────────────────────
+        await _supa.from('users').upsert({
+          'uid':                  User_Info.uid,
+          'name_elevage':         _nomStructureCtrl.text.trim(),
+          'profession_pro':       _professionCtrl.text.trim(),
+          'desc_entreprise':      _descCtrl.text.trim(),
+          'tarifs':               _tarifsCtrl.text.trim(),
+          'site_web':             _siteWebCtrl.text.trim(),
+          'instagram':            _instagramCtrl.text.trim(),
+          'facebook':             _facebookCtrl.text.trim(),
+          'rayon_intervention':   _rayonKm,
+          'especes_acceptees':    _especesAcceptees,
+          'horaires':             horairesMap,
+          'certifications':       _certifications,
+          'accept_new_clients':   _acceptNewClients,
+          'cat_pro':              _catPro,
+          'is_pro':               true,
+          'durees_motifs':        _dureesMotifs,
+          'rue_elevage':          _rueCtrl.text.trim(),
+          'ville_elevage':        _villeCtrl.text.trim(),
+          'code_postal_elevage':  _cpCtrl.text.trim(),
+          'pays_elevage':         _paysCtrl.text.trim(),
+          'adress_elevage':       adresse,
+          'lat':                  _lat,
+          'lng':                  _lng,
+          if (photoUrl  != null) 'profile_picture_url_elevage': photoUrl,
+          if (bannerUrl != null) 'banner_url': bannerUrl,
+        }, onConflict: 'uid');
 
-      // Mettre à jour User_Info en mémoire
-      if (photoUrl  != null) User_Info.profilePictureUrlElevage = photoUrl;
+        await FirebaseFirestore.instance.collection('users').doc(uid).update({
+          'catPro': _catPro,
+          if (photoUrl  != null) 'profilePictureUrlElevage': photoUrl,
+          if (bannerUrl != null) 'bannerUrl': bannerUrl,
+        });
+
+        // Mettre à jour User_Info en mémoire
+        if (photoUrl  != null) User_Info.profilePictureUrlElevage = photoUrl;
+        User_Info.catPro            = _catPro;
+        User_Info.nameElevage       = _nomStructureCtrl.text.trim();
+        User_Info.professionPro     = _professionCtrl.text.trim();
+        User_Info.descEntreprise    = _descCtrl.text.trim();
+        User_Info.tarifs            = _tarifsCtrl.text.trim();
+        User_Info.siteWeb           = _siteWebCtrl.text.trim();
+        User_Info.instagram         = _instagramCtrl.text.trim();
+        User_Info.facebook          = _facebookCtrl.text.trim();
+        User_Info.rayonIntervention = _rayonKm;
+        User_Info.especesAcceptees  = List.from(_especesAcceptees);
+        User_Info.certifications    = List.from(_certifications);
+        User_Info.acceptNewClients  = _acceptNewClients;
+        User_Info.rueElevage        = _rueCtrl.text.trim();
+        User_Info.villeElevage      = _villeCtrl.text.trim();
+        User_Info.codePostalElevage = _cpCtrl.text.trim();
+        User_Info.paysElevage       = _paysCtrl.text.trim();
+      }
       if (bannerUrl != null) setState(() { _bannerUrl = bannerUrl; _bannerFile = null; });
       if (photoUrl  != null) setState(() { _photoUrl  = photoUrl;  _photoFile  = null; });
-      User_Info.catPro            = _catPro;
-      User_Info.nameElevage       = _nomStructureCtrl.text.trim();
-      User_Info.professionPro     = _professionCtrl.text.trim();
-      User_Info.descEntreprise    = _descCtrl.text.trim();
-      User_Info.tarifs            = _tarifsCtrl.text.trim();
-      User_Info.siteWeb           = _siteWebCtrl.text.trim();
-      User_Info.instagram         = _instagramCtrl.text.trim();
-      User_Info.facebook          = _facebookCtrl.text.trim();
-      User_Info.rayonIntervention = _rayonKm;
-      User_Info.especesAcceptees  = List.from(_especesAcceptees);
-      User_Info.certifications    = List.from(_certifications);
-      User_Info.acceptNewClients  = _acceptNewClients;
-      User_Info.rueElevage        = _rueCtrl.text.trim();
-      User_Info.villeElevage      = _villeCtrl.text.trim();
-      User_Info.codePostalElevage = _cpCtrl.text.trim();
-      User_Info.paysElevage       = _paysCtrl.text.trim();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

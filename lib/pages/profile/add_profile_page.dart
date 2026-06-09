@@ -413,7 +413,9 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
           if (!_isParticulierType) ...[
             const SizedBox(height: 12),
             _section(_isEleveurType ? 'Nom de l\'élevage' : 'Nom du cabinet / établissement'),
-            _field(_nomCtrl, _isEleveurType ? 'Ex : Élevage du Moulin' : 'Ex : Cabinet Dupont'),
+            _field(_nomCtrl,
+                _isEleveurType ? 'Ex : Élevage du Moulin' : 'Ex : Cabinet Dupont',
+                required: _isEleveurType || _isProType),
           ],
 
           if (_hasSubProfession) ...[
@@ -427,13 +429,14 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
           _addressBlock(),
 
           const SizedBox(height: 16),
-          _section('Téléphone professionnel'),
-          _field(_phoneCtrl, 'Ex : 06 12 34 56 78'),
+          _section(_isParticulierType ? 'Téléphone' : 'Téléphone professionnel'),
+          _field(_phoneCtrl, 'Ex : 06 12 34 56 78',
+              required: _isParticulierType),
 
           if (_isEleveurType) ...[
             const SizedBox(height: 16),
             _section('Numéro d\'élevage'),
-            _field(_numElevageCtrl, 'Numéro SIREN/DDPP'),
+            _field(_numElevageCtrl, 'Numéro SIREN/DDPP', required: true),
             const SizedBox(height: 8),
             _section('Numéro ACACED (facultatif)'),
             _field(_acacedCtrl, 'Ex : ACE-2023-XXXX'),
@@ -567,7 +570,8 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
         Row(children: [
           Expanded(flex: 2, child: _field(_villeCtrl, 'Ville', required: true)),
           const SizedBox(width: 8),
-          Expanded(child: _field(_cpCtrl, 'Code postal')),
+          Expanded(child: _field(_cpCtrl, 'Code postal',
+              required: _isProType || _isEleveurType)),
         ]),
         const SizedBox(height: 8),
         _field(_paysCtrl, 'Pays'),

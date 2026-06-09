@@ -36,12 +36,15 @@ const DEPTS_BY_REGION: Record<string, string[]> = {
 // ─── Config catégories ────────────────────────────────────────────────────────
 
 const CATS = [
-  { key: '',             label: 'Tous',            color: '#6B7280' },
-  { key: 'veterinaire',  label: 'Vétérinaires',    color: '#2196F3' },
-  { key: 'sante',        label: 'Santé',           color: '#2196F3' },
-  { key: 'education',    label: 'Éducateurs',      color: '#FF9800' },
-  { key: 'garde',        label: 'Pension / Garde', color: '#4CAF50' },
-  { key: 'referencement',label: 'Référencement',   color: '#CDDC39' },
+  { key: '',                label: 'Tous',             color: '#6B7280' },
+  { key: 'veterinaire',     label: 'Vétérinaires',     color: '#2196F3' },
+  { key: 'sante',           label: 'Santé',            color: '#2196F3' },
+  { key: 'education',       label: 'Éducateurs',       color: '#FF9800' },
+  { key: 'garde',           label: 'Pension / Garde',  color: '#4CAF50' },
+  { key: 'toilettage',      label: 'Toilettage',       color: '#00BCD4' },
+  { key: 'photographe',     label: 'Photographes',     color: '#E91E63' },
+  { key: 'marechal_ferrant',label: 'Maréchaux',        color: '#795548' },
+  { key: 'referencement',   label: 'Référencement',    color: '#CDDC39' },
 ];
 
 const ESPECES = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval'];
@@ -49,7 +52,7 @@ const ESPECES = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Chev
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ServicesCartePage() {
-  const { userData } = useAuth();
+  const { user, userData } = useAuth();
 
   const [pros, setPros] = useState<ProMapItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,7 +72,8 @@ export default function ServicesCartePage() {
   async function loadPros() {
     setLoading(true);
     try {
-      const { data } = await supabase
+      // Profils primaires (users)
+      const { data: primaryData } = await supabase
         .from('users')
         .select('uid, name_elevage, firstname, profile_picture_url, profession_pro, ville_elevage, ville, departement_elevage, region_elevage, cat_pro, especes_acceptees, accept_new_clients, lat, lng, rayon_intervention')
         .not('cat_pro', 'is', null)
@@ -77,19 +81,57 @@ export default function ServicesCartePage() {
         .not('lat', 'is', null)
         .not('lng', 'is', null);
 
-      const items: ProMapItem[] = (data ?? []).map(row => ({
-        uid:                row.uid,
-        name:               row.name_elevage || row.firstname || 'Professionnel',
-        photo:              row.profile_picture_url,
-        profession:         row.profession_pro,
-        ville:              row.ville_elevage || row.ville,
-        cat_pro:            row.cat_pro,
-        especes:            Array.isArray(row.especes_acceptees) ? row.especes_acceptees : [],
-        accept_new_clients: row.accept_new_clients,
-        lat:                row.lat,
-        lng:                row.lng,
-        rayon_intervention: row.rayon_intervention,
-      }));
+      // Profils secondaires (user_profiles) — latitude/longitude OU lat/lng
+      const { data: secondaryData } = await supabase
+        .from('user_profiles')
+        .select('id, uid, profile_type, name_elevage, avatar_url, profession_pro, ville, especes_acceptees, accept_new_clients, latitude, longitude, lat, lng, rayon_intervention')
+        .not('profile_type', 'is', null);
+
+      const items: ProMapItem[] = [];
+
+      // Primaires
+      for (const row of (primaryData ?? [])) {
+        items.push({
+          uid:                row.uid,
+          name:               row.name_elevage || row.firstname || 'Professionnel',
+          photo:              row.profile_picture_url,
+          profession:         row.profession_pro,
+          ville:              row.ville_elevage || row.ville,
+          cat_pro:            row.cat_pro,
+          especes:            Array.isArray(row.especes_acceptees) ? row.especes_acceptees : [],
+          accept_new_clients: row.accept_new_clients,
+          lat:                row.lat,
+          lng:                row.lng,
+          rayon_intervention: row.rayon_intervention,
+        });
+      }
+
+      // Secondaires (on évite les doublons uid+cat_pro)
+      const primaryKeys = new Set(items.map(i => `${i.uid}::${i.cat_pro}`));
+      for (const row of (secondaryData ?? [])) {
+        const lat = row.latitude ?? row.lat;
+        const lng = row.longitude ?? row.lng;
+        if (!lat || !lng) continue;
+        const cat = row.profile_type ?? '';
+        if (!cat) continue;
+        const key = `${row.uid}::${cat}`;
+        if (primaryKeys.has(key)) continue; // profil principal déjà présent
+        items.push({
+          uid:                row.uid,
+          profileTableId:     row.id,
+          name:               row.name_elevage || 'Professionnel',
+          photo:              row.avatar_url,
+          profession:         row.profession_pro,
+          ville:              row.ville,
+          cat_pro:            cat,
+          especes:            Array.isArray(row.especes_acceptees) ? row.especes_acceptees : [],
+          accept_new_clients: row.accept_new_clients,
+          lat,
+          lng,
+          rayon_intervention: row.rayon_intervention,
+        });
+      }
+
       setPros(items);
     } finally {
       setLoading(false);

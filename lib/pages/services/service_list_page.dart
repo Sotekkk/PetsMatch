@@ -65,15 +65,65 @@ class _ServiceListPageState extends State<ServiceListPage> {
 
   Future<void> _loadPros() async {
     try {
-      final rows = await _supa
+      // Primary profiles from users table
+      final primaryRows = await _supa
           .from('users')
           .select()
           .inFilter('cat_pro', widget.catProValues)
           .order('name_elevage');
+
+      // Secondary profiles from user_profiles table
+      final secondaryRows = await _supa
+          .from('user_profiles')
+          .select()
+          .inFilter('profile_type', widget.catProValues);
+
+      final seenUids = <String>{};
+      final merged = <Map<String, dynamic>>[];
+
+      for (final row in (primaryRows as List)) {
+        final uid = row['uid']?.toString() ?? '';
+        if (seenUids.add(uid)) merged.add(Map<String, dynamic>.from(row));
+      }
+
+      for (final row in (secondaryRows as List)) {
+        final uid = row['uid']?.toString() ?? '';
+        if (!seenUids.add(uid)) continue; // already shown as primary
+        merged.add({
+          'uid': uid,
+          '_profile_table_id': row['id']?.toString(), // UUID for secondary routing
+          'name_elevage': row['name_elevage'] ?? '',
+          'firstname': row['firstname'] ?? '',
+          'cat_pro': row['profile_type'] ?? row['cat_pro'] ?? '',
+          'profession_pro': row['profession_pro'] ?? '',
+          'ville': row['ville'] ?? '',
+          'ville_elevage': row['ville'] ?? '',
+          'profile_picture_url': row['avatar_url'] ?? '',
+          'profile_picture_url_elevage': row['avatar_url'] ?? '',
+          'lat': row['latitude'] ?? row['lat'],
+          'lng': row['longitude'] ?? row['lng'],
+          'especes_acceptees': row['especes_acceptees'] ?? [],
+          'accept_new_clients': row['accept_new_clients'] ?? true,
+          'banner_url': row['banner_url'] ?? '',
+          'desc_entreprise': row['desc_entreprise'] ?? row['description'] ?? '',
+          'site_web': row['site_web'] ?? '',
+          'instagram': row['instagram'] ?? '',
+          'facebook': row['facebook'] ?? '',
+          'rayon_intervention': row['rayon_intervention'] ?? 20,
+          'region': row['region'] ?? '',
+          'departement': row['departement'] ?? '',
+          'region_elevage': row['region'] ?? '',
+          'departement_elevage': row['departement'] ?? '',
+          'horaires': row['horaires'] ?? {},
+          'certifications': row['certifications'] ?? [],
+          'tarifs': row['tarifs'] ?? '',
+        });
+      }
+
       if (mounted) {
         setState(() {
-          _pros = List<Map<String, dynamic>>.from(rows);
-          _filtered = _pros;
+          _pros = merged;
+          _filtered = merged;
           _loading = false;
         });
       }
@@ -537,6 +587,7 @@ class _ServiceListPageState extends State<ServiceListPage> {
                       onTap: () => Navigator.push(context, MaterialPageRoute(
                         builder: (_) => ServiceDetailPage(
                           proUid: _filtered[i]['uid'] ?? '',
+                          profileTableId: _filtered[i]['_profile_table_id'] as String?,
                           categoryLabel: widget.categoryLabel,
                           categoryColor: widget.categoryColor,
                         ),
@@ -676,6 +727,7 @@ class _ProMapSheet extends StatelessWidget {
               Navigator.push(context, MaterialPageRoute(
                 builder: (_) => ServiceDetailPage(
                   proUid: pro['uid'] ?? '',
+                  profileTableId: pro['_profile_table_id'] as String?,
                   categoryLabel: categoryLabel,
                   categoryColor: categoryColor,
                 ),

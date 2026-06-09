@@ -7,6 +7,7 @@ import 'leaflet/dist/leaflet.css';
 
 export interface ProMapItem {
   uid: string;
+  profileTableId?: string; // user_profiles.id pour profils secondaires
   name: string;
   photo?: string;
   profession?: string;
@@ -16,17 +17,20 @@ export interface ProMapItem {
   accept_new_clients?: boolean;
   lat: number;
   lng: number;
+  rayon_intervention?: number;
 }
 
 // Couleur par cat_pro (miroir app Flutter)
 const CAT_COLORS: Record<string, string> = {
-  sante:          '#2196F3',  // bleu
-  veterinaire:    '#2196F3',  // bleu
-  education:      '#FF9800',  // orange
-  garde:          '#4CAF50',  // vert
-  pension:        '#8BC34A',  // vert clair
-  toilettage:     '#00BCD4',  // cyan
-  referencement:  '#CDDC39',  // jaune
+  sante:            '#2196F3',
+  veterinaire:      '#2196F3',
+  education:        '#FF9800',
+  garde:            '#4CAF50',
+  pension:          '#8BC34A',
+  toilettage:       '#00BCD4',
+  referencement:    '#CDDC39',
+  photographe:      '#E91E63',
+  marechal_ferrant: '#795548',
 };
 const DEFAULT_COLOR = '#9C27B0'; // violet
 

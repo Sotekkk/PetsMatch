@@ -101,6 +101,17 @@ class EducationPage extends StatelessWidget {
             professionValues: ['Pension', 'Pension pour animaux'],
           ))),
         ),
+        _Section(
+          icon: Icons.camera_alt_outlined,
+          title: 'Photographes animaliers',
+          description: 'Portraits, reportages et séances photo de vos animaux',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Photographes',
+            categoryColor: Color(0xFFEF6C00),
+            categoryIcon: Icons.camera_alt_outlined,
+            catProValues: ['photographe'],
+          ))),
+        ),
       ],
     );
   }
@@ -434,6 +445,18 @@ class PoleSantePage extends StatelessWidget {
           icon: Icons.health_and_safety_outlined,
           title: 'Assurances animaux',
           description: 'Comparez les offres d\'assurance pour votre animal',
+        ),
+        _Section(
+          icon: Icons.handyman_outlined,
+          title: 'Maréchaux-ferrants',
+          description: 'Parage, ferrure et soins des sabots pour chevaux',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
+            categoryLabel: 'Maréchaux-ferrants',
+            categoryColor: Color(0xFF6E9E57),
+            categoryIcon: Icons.handyman_outlined,
+            catProValues: ['marechal_ferrant', 'sante'],
+            professionValues: ['Maréchal-ferrant traditionnel', 'Parage naturel'],
+          ))),
         ),
       ],
     );

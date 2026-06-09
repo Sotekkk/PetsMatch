@@ -145,7 +145,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                   text: 'Mon profil professionnel',
                   onTap: () {
                     Navigator.of(context).push(MaterialPageRoute(
-                        builder: (context) => const ProProfileEditPage()));
+                        builder: (context) => ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)));
                   },
                 ),
                 buildSettingsOption(

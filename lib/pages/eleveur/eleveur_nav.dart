@@ -9,7 +9,7 @@ import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
+import 'package:PetsMatch/widgets/profile_switcher_header.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
@@ -23,6 +23,7 @@ import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
+import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
 import 'package:PetsMatch/pages/eleveur/user_elevage_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
@@ -148,7 +149,17 @@ class _EleveurNavState extends State<EleveurNav> {
       backgroundColor: Colors.white,
       child: Column(
         children: [
-          _DrawerHeader(),
+          ProfileSwitcherHeader(
+            onClose: () => _scaffoldKey.currentState?.closeEndDrawer(),
+            onEditTap: () {
+              _scaffoldKey.currentState?.closeEndDrawer();
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => User_Info.isPro
+                    ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)
+                    : const ProfilEleveurEditPage(),
+              ));
+            },
+          ),
           Expanded(
             child: ListView(
               padding: EdgeInsets.zero,
@@ -409,6 +420,24 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
+                  if (User_Info.catPro == 'sante' || User_Info.catPro == 'education' || User_Info.catPro == 'garde') _DrawerItem(
+                    icon: User_Info.catPro == 'education'
+                        ? Icons.psychology_outlined
+                        : User_Info.catPro == 'garde'
+                            ? Icons.directions_walk_outlined
+                            : Icons.self_improvement_outlined,
+                    label: User_Info.catPro == 'education'
+                        ? 'Mes animaux suivis'
+                        : User_Info.catPro == 'garde'
+                            ? 'Mes animaux en garde'
+                            : 'Mes patients',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const ProClientsPage(),
+                      ));
+                    },
+                  ),
                   if (User_Info.catPro == 'pension') _DrawerItem(
                     icon: Icons.folder_shared_outlined,
                     label: 'Fiches accessibles',
@@ -438,7 +467,7 @@ class _EleveurNavState extends State<EleveurNav> {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(
                       builder: (_) => User_Info.isPro
-                          ? const ProProfileEditPage()
+                          ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)
                           : const ProfilEleveurEditPage(),
                     ));
                   },
@@ -475,94 +504,6 @@ class _EleveurNavState extends State<EleveurNav> {
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
           ),
           const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-}
-
-class _DrawerHeader extends StatefulWidget {
-  @override
-  State<_DrawerHeader> createState() => _DrawerHeaderState();
-}
-
-class _DrawerHeaderState extends State<_DrawerHeader> {
-  String? _name;
-  String? _photoUrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadProfile();
-  }
-
-  Future<void> _loadProfile() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-    if (!mounted) return;
-    final data = doc.data() ?? {};
-    setState(() {
-      _name = data['nameElevage'] ?? data['firstname'] ?? 'Mon élevage';
-      _photoUrl = data['profilePictureUrlElevage'] ?? data['profilePictureUrl'];
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF0C5C6C),
-      padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 20, 20, 20),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(
-                builder: (_) => User_Info.isPro ? const ProProfileEditPage() : const ProfilEleveurEditPage(),
-              ));
-            },
-            child: CircleAvatar(
-              radius: 28,
-              backgroundColor: const Color(0xFFA7C79A),
-              backgroundImage: _photoUrl != null ? CachedNetworkImageProvider(_photoUrl!) : null,
-              child: _photoUrl == null ? const Icon(Icons.pets, color: Colors.white, size: 28) : null,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _name ?? '...',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontFamily: 'Galey',
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    const Icon(Icons.verified, color: Color(0xFFA7C79A), size: 14),
-                    const SizedBox(width: 4),
-                    Text(
-                      User_Info.isPro ? 'Professionnel' : 'Éleveur vérifié',
-                      style: const TextStyle(color: Color(0xFFEEF5EA), fontSize: 12, fontFamily: 'Galey'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, color: Colors.white, size: 20),
-            onPressed: () => Navigator.pop(context),
-          ),
         ],
       ),
     );
