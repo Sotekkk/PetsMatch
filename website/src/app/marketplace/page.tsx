@@ -266,7 +266,7 @@ function PartnerCard({ partner, onClick }: { partner: Partner; onClick: () => vo
             ✓
           </span>
         </div>
-        <span style={{ fontSize: 11, color: '#888', background: `${catColor}18`, color: catColor, padding: '2px 8px', borderRadius: 20, fontWeight: 600 }}>
+        <span style={{ fontSize: 11, background: `${catColor}18`, color: catColor, padding: '2px 8px', borderRadius: 20, fontWeight: 600 }}>
           {CAT_LABELS[partner.categorie] ?? partner.categorie}
         </span>
       </div>

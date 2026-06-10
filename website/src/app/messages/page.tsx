@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ─── Structure Firestore (identique à l'app Flutter) ─────────────────────────
 // conversations/{id} → { participants[], lastMessage, timestamp, unreadCount:{uid:n} }
@@ -37,6 +38,7 @@ interface Conversation {
   timestamp: Timestamp | null;
   unreadCount: Record<string, number>;
   categorie?: string;
+  pro_profile_id?: string;
 }
 
 interface Message {
@@ -81,6 +83,7 @@ function fmtDate(ts: Timestamp | null): string {
 
 function MessagesPageInner() {
   const { user, userData, loading } = useAuth();
+  const activeProfileId = useActiveProfile();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -216,6 +219,13 @@ function MessagesPageInner() {
   const otherInfo = otherUid ? (userInfoCacheRef.current[otherUid] ?? { name: '…' }) : null;
 
   const filteredConvs = conversations.filter(conv => {
+    // Isoler les conversations par profil actif
+    if (activeProfileId) {
+      if ((conv.pro_profile_id ?? '') !== activeProfileId) return false;
+    } else {
+      // Profil principal : exclure les conversations liées à des profils secondaires
+      if (conv.pro_profile_id) return false;
+    }
     if (activeCategory !== null) {
       if ((conv.categorie ?? null) !== activeCategory) return false;
     }

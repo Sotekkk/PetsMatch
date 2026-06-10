@@ -8,6 +8,7 @@ import { updateProfile, EmailAuthProvider, reauthenticateWithCredential, deleteU
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { useAuth } from '@/lib/auth-context';
 import { uploadPhoto } from '@/lib/upload-media';
 import ReactCrop, { type Crop, type PixelCrop, centerCrop, makeAspectCrop } from 'react-image-crop';
@@ -222,11 +223,405 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const inputCls = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#6E9E57] bg-white";
 
+// ── Secondary pro profile edit ─────────────────────────────────────────────────
+
+const ESPECES_PRO = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'NAC', 'Autre'];
+
+const JOURS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+
+const MOTIFS_LABELS: Record<string, Record<string, string>> = {
+  veterinaire: { consultation: 'Consultation', vaccination: 'Vaccination', bilan: 'Bilan annuel', urgence: 'Urgence', chirurgie: 'Chirurgie', autre: 'Autre' },
+  pension:     { visite: 'Visite', arrivee: 'Arrivée', depart: 'Départ', autre: 'Autre' },
+  garde:       { promenade_30min: 'Promenade 30 min', promenade_1h: 'Promenade 1h', garde_journee: 'Garde journée', autre: 'Autre' },
+  education:   { cours_individuel: 'Cours individuel', cours_collectif: 'Cours collectif', evaluation: 'Évaluation', autre: 'Autre' },
+  toilettage:  { bain: 'Bain', toilettage_complet: 'Toilettage complet', coupe: 'Coupe', autre: 'Autre' },
+  sante:       { consultation: 'Consultation', seance: 'Séance', autre: 'Autre' },
+};
+
+const DEFAULT_DUREES: Record<string, Record<string, number>> = {
+  veterinaire: { consultation: 30, vaccination: 20, bilan: 45, urgence: 60, chirurgie: 120, autre: 30 },
+  pension:     { visite: 30, arrivee: 60, depart: 30, autre: 30 },
+  garde:       { promenade_30min: 30, promenade_1h: 60, garde_journee: 480, autre: 60 },
+  education:   { cours_individuel: 60, cours_collectif: 90, evaluation: 45, autre: 60 },
+  toilettage:  { bain: 45, toilettage_complet: 90, coupe: 60, autre: 60 },
+  sante:       { consultation: 45, seance: 60, autre: 60 },
+};
+
+interface ProProfileData {
+  id: string;
+  profile_type: string;
+  cat_pro: string;
+  profile_label: string;
+  name_elevage: string;
+  profession_pro: string;
+  desc_entreprise: string;
+  tarifs: string;
+  site_web: string;
+  instagram: string;
+  facebook: string;
+  rayon_intervention: number;
+  accept_new_clients: boolean;
+  siret: string;
+  ordre_veterinaire: string;
+  rue: string;
+  ville: string;
+  code_postal: string;
+  pays: string;
+  latitude: number | null;
+  longitude: number | null;
+  especes_acceptees: string[];
+  horaires: Record<string, string>;
+  certifications: { nom: string; numero: string }[];
+  durees_motifs: Record<string, number>;
+  avatar_url: string;
+  phone: string;
+}
+
+function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [data, setData] = useState<ProProfileData | null>(null);
+
+  // Form state
+  const [nomStructure, setNomStructure] = useState('');
+  const [profileLabel, setProfileLabel] = useState('');
+  const [profession, setProfession] = useState('');
+  const [description, setDescription] = useState('');
+  const [tarifs, setTarifs] = useState('');
+  const [siteWeb, setSiteWeb] = useState('');
+  const [instagram, setInstagram] = useState('');
+  const [facebook, setFacebook] = useState('');
+  const [phone, setPhone] = useState('');
+  const [rayon, setRayon] = useState(20);
+  const [acceptNewClients, setAcceptNewClients] = useState(true);
+  const [siret, setSiret] = useState('');
+  const [rue, setRue] = useState('');
+  const [ville, setVille] = useState('');
+  const [cp, setCp] = useState('');
+  const [pays, setPays] = useState('France');
+  const [especes, setEspeces] = useState<Set<string>>(new Set());
+  const [horaires, setHoraires] = useState<Record<string, string>>({});
+  const [certifications, setCertifications] = useState<{ nom: string; numero: string }[]>([]);
+  const [durees, setDurees] = useState<Record<string, number>>({});
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const avatarRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    supabase.from('user_profiles').select('*').eq('id', profileId).single()
+      .then(({ data: row }) => {
+        if (!row) { setLoading(false); return; }
+        const r = row as Record<string, unknown>;
+        setData(r as unknown as ProProfileData);
+        setNomStructure((r.name_elevage as string) ?? '');
+        setProfileLabel((r.profile_label as string) ?? '');
+        setProfession((r.profession_pro as string) ?? '');
+        setDescription(((r.desc_entreprise ?? r.description) as string) ?? '');
+        setTarifs((r.tarifs as string) ?? '');
+        setSiteWeb((r.site_web as string) ?? '');
+        setInstagram((r.instagram as string) ?? '');
+        setFacebook((r.facebook as string) ?? '');
+        setPhone((r.phone as string) ?? '');
+        setRayon(((r.rayon_intervention as number) ?? 20));
+        setAcceptNewClients((r.accept_new_clients as boolean) ?? true);
+        setSiret((r.siret as string) ?? '');
+        setRue((r.rue as string) ?? '');
+        setVille((r.ville as string) ?? '');
+        setCp((r.code_postal as string) ?? '');
+        setPays(((r.pays as string) || 'France'));
+        setAvatarPreview((r.avatar_url as string) ?? null);
+        if (Array.isArray(r.especes_acceptees)) {
+          setEspeces(new Set(r.especes_acceptees as string[]));
+        }
+        if (r.horaires && typeof r.horaires === 'object') {
+          const h: Record<string, string> = {};
+          for (const j of JOURS) h[j] = ((r.horaires as Record<string, string>)[j]) ?? '';
+          setHoraires(h);
+        } else {
+          setHoraires(Object.fromEntries(JOURS.map(j => [j, ''])));
+        }
+        if (Array.isArray(r.certifications)) {
+          setCertifications((r.certifications as { nom: string; numero: string }[]));
+        }
+        const cat = ((r.profile_type ?? r.cat_pro) as string) ?? '';
+        if (r.durees_motifs && typeof r.durees_motifs === 'object') {
+          setDurees(r.durees_motifs as Record<string, number>);
+        } else {
+          setDurees(DEFAULT_DUREES[cat] ?? { autre: 30 });
+        }
+        setLoading(false);
+      });
+  }, [profileId]);
+
+  async function handleSave() {
+    setSaving(true);
+    const payload: Record<string, unknown> = {
+      name_elevage: nomStructure.trim(),
+      profile_label: profileLabel.trim(),
+      profession_pro: profession.trim(),
+      desc_entreprise: description.trim(),
+      tarifs: tarifs.trim(),
+      site_web: siteWeb.trim(),
+      instagram: instagram.trim(),
+      facebook: facebook.trim(),
+      phone: phone.trim(),
+      rayon_intervention: rayon,
+      accept_new_clients: acceptNewClients,
+      siret: siret.trim(),
+      rue: rue.trim(),
+      ville: ville.trim(),
+      code_postal: cp.trim(),
+      pays: pays.trim() || 'France',
+      especes_acceptees: Array.from(especes),
+      horaires,
+      certifications,
+      durees_motifs: durees,
+    };
+
+    if (avatarFile) {
+      const path = `profiles/${uid}/pro_${profileId}_avatar.jpg`;
+      const { data: uploaded } = await supabase.storage.from('petsmatch').upload(path, avatarFile, { upsert: true });
+      if (uploaded) {
+        const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+        payload.avatar_url = pub.publicUrl;
+      }
+    }
+
+    await supabase.from('user_profiles').update(payload).eq('id', profileId);
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  }
+
+  const catPro = data?.profile_type ?? data?.cat_pro ?? '';
+  const motifs = MOTIFS_LABELS[catPro] ?? {};
+
+  if (loading) return (
+    <div className="flex justify-center py-32">
+      <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  if (!data) return (
+    <div className="max-w-2xl mx-auto px-4 py-8 text-center text-gray-400">Profil introuvable.</div>
+  );
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-8 pb-20">
+      <div className="flex items-center gap-3 mb-6">
+        <button onClick={() => router.back()} className="text-[#0C5C6C] hover:underline text-sm font-medium">← Retour</button>
+        <h1 className="text-2xl font-bold text-[#1F2A2E] flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Mon profil pro
+        </h1>
+      </div>
+
+      {/* Avatar */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-4 flex items-center gap-4">
+        <input ref={avatarRef} type="file" accept="image/*" className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0];
+            if (f) { setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); }
+            e.target.value = '';
+          }} />
+        <div className="w-16 h-16 rounded-full overflow-hidden bg-[#E3F2FD] flex items-center justify-center flex-shrink-0 cursor-pointer relative group border-2 border-[#2196F3]/30"
+          onClick={() => avatarRef.current?.click()}>
+          {avatarPreview
+            ? <Image src={avatarPreview} alt="" width={64} height={64} className="object-cover w-full h-full" />
+            : <span className="text-xl font-bold text-[#0C5C6C]">{(nomStructure[0] ?? '?').toUpperCase()}</span>
+          }
+          <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
+            <span className="text-white text-xs">📷</span>
+          </div>
+        </div>
+        <div>
+          <p className="font-semibold text-[#1F2A2E]">{nomStructure || profileLabel || 'Mon profil pro'}</p>
+          <span className="text-xs bg-[#E3F2FD] text-[#0C5C6C] px-2 py-0.5 rounded-full font-medium">
+            {data.profile_type}
+          </span>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {/* Infos générales */}
+        <Card title="Informations générales">
+          <Field label="Libellé du profil">
+            <input value={profileLabel} onChange={e => setProfileLabel(e.target.value)} className={inputCls} placeholder="Ex : Mon cabinet vétérinaire" />
+          </Field>
+          <Field label="Nom de la structure / cabinet">
+            <input value={nomStructure} onChange={e => setNomStructure(e.target.value)} className={inputCls} placeholder="Ex : Cabinet Dupont" />
+          </Field>
+          <Field label="Profession">
+            <input value={profession} onChange={e => setProfession(e.target.value)} className={inputCls} placeholder="Ex : Vétérinaire, Éducateur canin…" />
+          </Field>
+          <Field label="Téléphone professionnel">
+            <input value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} placeholder="06 12 34 56 78" />
+          </Field>
+          <Field label="Description / présentation">
+            <textarea value={description} onChange={e => setDescription(e.target.value)}
+              rows={4} placeholder="Présentez votre activité…" className={`${inputCls} resize-none`} />
+          </Field>
+          <Field label="Tarifs">
+            <textarea value={tarifs} onChange={e => setTarifs(e.target.value)}
+              rows={3} placeholder="Ex : Consultation 60€, Vaccination 35€…" className={`${inputCls} resize-none`} />
+          </Field>
+          <div className="flex items-center justify-between py-2">
+            <div>
+              <p className="text-sm font-medium text-[#1F2A2E]">Accepte de nouveaux clients</p>
+              <p className="text-xs text-gray-400">Affiché sur votre fiche publique</p>
+            </div>
+            <button type="button" onClick={() => setAcceptNewClients(v => !v)}
+              className={`relative w-11 h-6 rounded-full transition-colors ${acceptNewClients ? 'bg-[#0C5C6C]' : 'bg-gray-200'}`}>
+              <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${acceptNewClients ? 'left-5' : 'left-0.5'}`} />
+            </button>
+          </div>
+        </Card>
+
+        {/* Adresse */}
+        <Card title="Adresse professionnelle">
+          <Field label="Rue / numéro">
+            <input value={rue} onChange={e => setRue(e.target.value)} className={inputCls} placeholder="12 rue des Fleurs" />
+          </Field>
+          <div className="grid grid-cols-5 gap-3">
+            <div className="col-span-2">
+              <Field label="Code postal">
+                <input value={cp} onChange={e => setCp(e.target.value)} className={inputCls} placeholder="75001" />
+              </Field>
+            </div>
+            <div className="col-span-3">
+              <Field label="Ville">
+                <input value={ville} onChange={e => setVille(e.target.value)} className={inputCls} placeholder="Paris" />
+              </Field>
+            </div>
+          </div>
+          <Field label="Pays">
+            <input value={pays} onChange={e => setPays(e.target.value)} className={inputCls} />
+          </Field>
+          {['garde', 'toilettage', 'education', 'photographe', 'marechal_ferrant'].includes(catPro) && (
+            <div>
+              <label className="text-xs font-medium text-gray-500 block mb-1">
+                Rayon d&apos;intervention : {rayon} km
+              </label>
+              <input type="range" min={5} max={200} step={5} value={rayon}
+                onChange={e => setRayon(Number(e.target.value))}
+                className="w-full accent-[#6E9E57]" />
+            </div>
+          )}
+        </Card>
+
+        {/* Espèces */}
+        <Card title="Espèces acceptées">
+          <div className="flex flex-wrap gap-2">
+            {ESPECES_PRO.map(e => {
+              const active = especes.has(e);
+              return (
+                <button key={e} type="button"
+                  onClick={() => setEspeces(prev => { const n = new Set(prev); active ? n.delete(e) : n.add(e); return n; })}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${active ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'}`}>
+                  {e}
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+
+        {/* Horaires */}
+        <Card title="Horaires">
+          <p className="text-xs text-gray-400 mb-3">Format : HH:MM-HH:MM (ex : 09:00-12:00 14:00-18:00). Laisser vide si fermé.</p>
+          <div className="space-y-2">
+            {JOURS.map(j => (
+              <div key={j} className="flex items-center gap-3">
+                <span className="text-xs font-semibold text-gray-500 w-16 flex-shrink-0">{j.slice(0, 3)}</span>
+                <input value={horaires[j] ?? ''} onChange={e => setHoraires(h => ({ ...h, [j]: e.target.value }))}
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]"
+                  placeholder="ex : 09:00-12:00 14:00-18:00" />
+                {horaires[j] ? (
+                  <button type="button" onClick={() => setHoraires(h => ({ ...h, [j]: '' }))}
+                    className="text-gray-300 hover:text-red-400 text-lg flex-shrink-0">×</button>
+                ) : (
+                  <span className="text-xs text-gray-300 w-5 flex-shrink-0">—</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Durées des prestations */}
+        {Object.keys(motifs).length > 0 && (
+          <Card title="Durées des prestations (minutes)">
+            <div className="grid grid-cols-2 gap-3">
+              {Object.entries(motifs).map(([key, label]) => (
+                <div key={key}>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">{label}</label>
+                  <input type="number" min={5} max={480} step={5}
+                    value={durees[key] ?? 30}
+                    onChange={e => setDurees(d => ({ ...d, [key]: Number(e.target.value) }))}
+                    className={inputCls} />
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Certifications */}
+        <Card title="Certifications & diplômes">
+          {certifications.map((c, i) => (
+            <div key={i} className="flex gap-2 mb-2 items-center">
+              <input value={c.nom} placeholder="Nom" onChange={e => setCertifications(prev => prev.map((x, j) => j === i ? { ...x, nom: e.target.value } : x))}
+                className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none" />
+              <input value={c.numero} placeholder="N°" onChange={e => setCertifications(prev => prev.map((x, j) => j === i ? { ...x, numero: e.target.value } : x))}
+                className="w-24 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none" />
+              <button type="button" onClick={() => setCertifications(prev => prev.filter((_, j) => j !== i))}
+                className="text-gray-300 hover:text-red-400 text-lg">×</button>
+            </div>
+          ))}
+          <button type="button" onClick={() => setCertifications(prev => [...prev, { nom: '', numero: '' }])}
+            className="text-xs text-[#0C5C6C] font-medium hover:underline mt-1">
+            + Ajouter une certification
+          </button>
+        </Card>
+
+        {/* Réseaux sociaux */}
+        <Card title="Présence en ligne">
+          {siret && (
+            <div className="mb-3"><ReadOnly label="SIRET" value={siret} icon="🏢" /></div>
+          )}
+          <Field label="Site web">
+            <input value={siteWeb} onChange={e => setSiteWeb(e.target.value)} className={inputCls} placeholder="https://monsite.fr" />
+          </Field>
+          <Field label="Instagram">
+            <input value={instagram} onChange={e => setInstagram(e.target.value)} className={inputCls} placeholder="@moncompte" />
+          </Field>
+          <Field label="Facebook">
+            <input value={facebook} onChange={e => setFacebook(e.target.value)} className={inputCls} placeholder="facebook.com/monpage" />
+          </Field>
+        </Card>
+
+        {/* Submit */}
+        <div className="flex items-center gap-3 pt-2">
+          <button type="button" onClick={handleSave} disabled={saving}
+            className="bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+          {saved && <span className="text-[#6E9E57] text-sm font-medium">✓ Profil mis à jour</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ProfilPage() {
   const { user, userData, loading, refreshUserData } = useAuth();
   const router = useRouter();
+  const activeProfileId = useActiveProfile();
+
+  // Si un profil pro secondaire est actif, afficher l'édition de ce profil
+  if (activeProfileId && !loading && user) {
+    return <SecondaryProEdit profileId={activeProfileId} uid={user.uid} />;
+  }
 
   // Identity
   const [firstname, setFirstname] = useState('');

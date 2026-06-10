@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -334,8 +335,10 @@ function ModifierModal({ event, onClose, onDone }: { event: AgendaEvent; onClose
 
 export default function AgendaPage() {
   const { user } = useAuth();
+  const activeProfileId = useActiveProfile();
   const [events, setEvents]   = useState<AgendaEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pendingRdvs, setPendingRdvs] = useState<{id:string;date_debut:string;motif:string|null;client_uid:string;animal_id:number|null}[]>([]);
   const [view, setView]       = useState<'calendar' | 'list'>('calendar');
   const [focusedMonth, setFocusedMonth] = useState(() => {
     const n = new Date(); return { year: n.getFullYear(), month: n.getMonth() };
@@ -352,13 +355,27 @@ export default function AgendaPage() {
     setLoading(true);
     const from = new Date(focusedMonth.year, focusedMonth.month - 1, 1).toISOString();
     const to   = new Date(focusedMonth.year, focusedMonth.month + 2, 0, 23, 59, 59).toISOString();
-    const { data } = await supabase
-      .from('agenda_events')
-      .select('*')
-      .eq('uid', uid)
-      .gte('date_debut', from)
-      .lte('date_debut', to)
-      .order('date_debut');
+
+    // Filtre pro_profile_id : profil secondaire → filtre exact ; profil principal → null ou vide
+    let q = supabase.from('agenda_events').select('*').eq('uid', uid)
+      .gte('date_debut', from).lte('date_debut', to).order('date_debut');
+    if (activeProfileId) {
+      q = q.eq('pro_profile_id', activeProfileId);
+    } else {
+      q = q.or('pro_profile_id.is.null,pro_profile_id.eq.');
+    }
+    const { data } = await q;
+
+    // Si profil pro secondaire actif : charger aussi les RDV en attente
+    if (activeProfileId && uid) {
+      const { data: rdvData } = await supabase.from('rdv')
+        .select('id, date_debut, motif, client_uid, animal_id')
+        .eq('pro_uid', uid).eq('pro_profile_id', activeProfileId)
+        .eq('statut', 'en_attente').order('date_debut');
+      setPendingRdvs((rdvData ?? []) as typeof pendingRdvs);
+    } else {
+      setPendingRdvs([]);
+    }
 
     const list = (data ?? []) as AgendaEvent[];
 
@@ -377,7 +394,7 @@ export default function AgendaPage() {
       setEvents(list);
     }
     setLoading(false);
-  }, [uid, focusedMonth]);
+  }, [uid, focusedMonth, activeProfileId]);
 
   useEffect(() => { if (uid) load(); }, [uid, load]);
 
@@ -438,6 +455,20 @@ export default function AgendaPage() {
       </div>
 
       <div className="max-w-3xl mx-auto px-4 py-6">
+        {/* RDV en attente — visible uniquement pour un profil pro secondaire */}
+        {activeProfileId && pendingRdvs.length > 0 && (
+          <div className="mb-6">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+              RDV en attente de confirmation ({pendingRdvs.length})
+            </p>
+            <div className="space-y-2">
+              {pendingRdvs.map(rdv => (
+                <PendingRdvCard key={rdv.id} rdv={rdv} proUid={uid!} proProfileId={activeProfileId} onDone={load} />
+              ))}
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex justify-center py-20">
             <div className="w-8 h-8 border-4 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
@@ -474,6 +505,97 @@ export default function AgendaPage() {
         <ModifierModal event={modalModifier} onClose={() => setModalModifier(null)}
           onDone={() => { setModalModifier(null); load(); }} />
       )}
+    </div>
+  );
+}
+
+// ── PendingRdvCard ─────────────────────────────────────────────────────────────
+
+function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
+  rdv: { id: string; date_debut: string; motif: string | null; client_uid: string; animal_id: number | null };
+  proUid: string; proProfileId: string;
+  onDone: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [clientName, setClientName] = useState('');
+
+  useEffect(() => {
+    supabase.from('users').select('nom, prenom').eq('uid', rdv.client_uid).single()
+      .then(({ data }) => {
+        if (data) {
+          const d = data as { nom: string; prenom: string };
+          setClientName([d.prenom, d.nom].filter(Boolean).join(' '));
+        }
+      });
+  }, [rdv.client_uid]);
+
+  async function accept() {
+    setSaving(true);
+    await supabase.from('rdv').update({ statut: 'confirme' }).eq('id', rdv.id);
+    await supabase.from('agenda_events').insert({
+      uid: proUid,
+      titre: `RDV ${clientName || 'Client'}${rdv.motif ? ` — ${rdv.motif}` : ''}`,
+      type: 'rdv',
+      date_debut: rdv.date_debut,
+      rdv_id: rdv.id,
+      pro_profile_id: proProfileId,
+    });
+    await supabase.from('notifications').insert({
+      uid: rdv.client_uid,
+      type: 'rdv_confirme',
+      title: 'RDV confirmé',
+      body: `Votre rendez-vous du ${fmtDate(rdv.date_debut)} à ${fmtTime(rdv.date_debut)} a été confirmé.`,
+      data: { rdv_id: rdv.id },
+      read: false,
+    });
+    setSaving(false);
+    onDone();
+  }
+
+  async function reject() {
+    setSaving(true);
+    await supabase.from('rdv').update({ statut: 'refuse' }).eq('id', rdv.id);
+    await supabase.from('notifications').insert({
+      uid: rdv.client_uid,
+      type: 'rdv_refuse',
+      title: 'RDV refusé',
+      body: `Votre demande de rendez-vous du ${fmtDate(rdv.date_debut)} a été refusée.`,
+      data: { rdv_id: rdv.id },
+      read: false,
+    });
+    setSaving(false);
+    onDone();
+  }
+
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 space-y-2">
+      <div className="flex items-center gap-3">
+        <span className="text-xl">🕐</span>
+        <div className="flex-1 min-w-0">
+          <p className="font-bold text-sm text-[#1E2025] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+            {clientName || 'Chargement…'}
+          </p>
+          <p className="text-xs text-gray-500">
+            {fmtDate(rdv.date_debut)} à {fmtTime(rdv.date_debut)}
+            {rdv.motif && <span> · {rdv.motif}</span>}
+          </p>
+        </div>
+        <span className="text-[10px] font-bold bg-amber-200 text-amber-700 px-2 py-0.5 rounded-full flex-shrink-0">
+          En attente
+        </span>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={accept} disabled={saving}
+          className="flex-1 text-xs font-semibold py-1.5 rounded-lg bg-[#0C5C6C] text-white hover:bg-[#0a4a5a] disabled:opacity-50 transition-colors"
+          style={{ fontFamily: 'Galey, sans-serif' }}>
+          ✓ Confirmer
+        </button>
+        <button onClick={reject} disabled={saving}
+          className="flex-1 text-xs font-semibold py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-50 transition-colors"
+          style={{ fontFamily: 'Galey, sans-serif' }}>
+          ✗ Refuser
+        </button>
+      </div>
     </div>
   );
 }

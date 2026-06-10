@@ -50,6 +50,14 @@ const NAV_ELEVEUR = [
   { href: '/messages',       label: 'Messages' },
 ];
 
+// NAV spécifique profils pro secondaires (pas d'élevage)
+const NAV_PRO = [
+  { href: '/',          label: 'Accueil' },
+  { href: '/agenda',    label: 'Agenda' },
+  { href: '/services',  label: 'Services' },
+  { href: '/messages',  label: 'Messages' },
+];
+
 const NAV_PARTICULIER = [
   { href: '/',               label: 'Accueil' },
   { href: '/mes-animaux',    label: 'Mes Animaux' },
@@ -100,31 +108,30 @@ const MENU_ELEVEUR = [
   },
 ];
 
+// Menu générique pour tous les pros sauf pension
 const MENU_PRO = [
   {
     section: 'Mon Activité',
     icon: '📅',
     items: [
-      { href: '/pro/creneaux',  label: 'Mes créneaux',   icon: '⏰' },
-      { href: '/pension/rdv',   label: 'Gestion des RDV', icon: '🗓️' },
-      { href: '/agenda',        label: 'Mon agenda',      icon: '📅' },
+      { href: '/agenda',       label: 'Mon agenda',      icon: '📅' },
+      { href: '/pension/rdv',  label: 'Gérer mes RDV',   icon: '🗓️' },
+      { href: '/pro/creneaux', label: 'Mes créneaux',    icon: '⏰' },
     ],
   },
   {
-    section: 'Mon Élevage',
-    icon: '🐾',
+    section: 'Mon Profil',
+    icon: '👤',
     items: [
-      { href: '/mes-animaux',                    label: 'Mes Animaux',        icon: '🐾' },
-      { href: '/mes-annonces',                   label: 'Mes Annonces',       icon: '📋' },
-      { href: '/elevage/registre-sanitaire',     label: 'Suivi sanitaire',    icon: '🏥' },
-      { href: '/elevage/registre-entree-sortie', label: 'Entrées / Sorties',  icon: '📂' },
+      { href: '/profil', label: 'Modifier mon profil', icon: '✏️' },
     ],
   },
   {
     section: 'Services',
-    icon: '🏥',
+    icon: '🔎',
     items: [
-      { href: '/services', label: 'Annuaire des services', icon: '🔎' },
+      { href: '/services',     label: 'Annuaire des pros', icon: '🔎' },
+      { href: '/marketplace',  label: 'Marketplace',       icon: '🛍️' },
     ],
   },
 ];
@@ -265,9 +272,15 @@ export default function Header() {
     ? PRO_TYPES.has(activeProfile.profile_type)
     : userData?.isPro === true;
 
-  const navLinks = loading || !user ? NAV_GUEST : effectiveIsEleveur ? NAV_ELEVEUR : NAV_PARTICULIER;
-  const menuSections = effectiveIsEleveur
-    ? (effectiveIsPension ? MENU_PENSION : effectiveIsPro ? MENU_PRO : MENU_ELEVEUR)
+  // Quand un profil secondaire pro est actif → NAV_PRO, sinon comportement habituel
+  const isSecondaryPro = !!(activeProfile && PRO_TYPES.has(activeProfile.profile_type));
+  const navLinks = loading || !user ? NAV_GUEST
+    : isSecondaryPro ? NAV_PRO
+    : effectiveIsEleveur ? NAV_ELEVEUR
+    : NAV_PARTICULIER;
+  const menuSections = isSecondaryPro
+    ? (effectiveIsPension ? MENU_PENSION : MENU_PRO)
+    : effectiveIsEleveur ? MENU_ELEVEUR
     : MENU_PARTICULIER;
 
   // ── Chargement des profils secondaires ────────────────────────────────────
