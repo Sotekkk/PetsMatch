@@ -42,7 +42,7 @@ interface Patient {
     nom: string;
     espece: string;
     race: string;
-    photo: string | null;
+    photo_url: string | null;
   } | null;
 }
 
@@ -125,13 +125,21 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
 
       // Accès animaux clients — pour TOUS les types de pros
       {
-        const { data: grantData } = await supabase
+        const { data: grantRows } = await supabase
           .from('vet_access_grants')
-          .select('id, animal_id, status, animal:animaux(id, nom, espece, race, photo)')
-          .eq('vet_uid', uid)
+          .select('id, animal_id, status')
+          .eq('vet_id', uid)
           .in('status', ['active', 'active_write'])
           .limit(6);
-        setPatients((grantData ?? []) as unknown as Patient[]);
+        if (grantRows && grantRows.length > 0) {
+          const ids = grantRows.map(g => g.animal_id).filter(Boolean);
+          const { data: animalRows } = await supabase
+            .from('animaux')
+            .select('id, nom, espece, race, photo_url')
+            .in('id', ids);
+          const animalMap = new Map((animalRows ?? []).map(a => [a.id, a]));
+          setPatients(grantRows.map(g => ({ ...g, animal: animalMap.get(g.animal_id) ?? null })) as unknown as Patient[]);
+        }
       }
 
       // Load client names
@@ -366,8 +374,8 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
                     className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md transition-shadow">
                     <div className="flex items-center gap-2">
                       <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#E3F2FD] flex-shrink-0 flex items-center justify-center">
-                        {animal.photo
-                          ? <Image src={animal.photo} alt="" width={40} height={40} className="object-cover w-full h-full" />
+                        {animal.photo_url
+                          ? <Image src={animal.photo_url} alt="" width={40} height={40} className="object-cover w-full h-full" />
                           : <span className="text-lg">{ESPECE_EMOJI[animal.espece?.toLowerCase()] ?? '🐾'}</span>
                         }
                       </div>

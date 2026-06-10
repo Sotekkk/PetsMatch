@@ -47,8 +47,8 @@ interface Vaccine {
 interface Grant {
   id: string;
   status: string;
-  vet_uid: string;
-  owner_uid: string;
+  vet_id: string;
+  owner_id: string;
 }
 
 const TABS = ['Fiche', 'Carnet santé', 'Vaccins'] as const;
@@ -128,8 +128,8 @@ export default function PatientDetailPage() {
           .order('date', { ascending: false }),
         supabase.from('vaccins').select('*').eq('animal_id', animalId)
           .order('date_injection', { ascending: false }),
-        supabase.from('vet_access_grants').select('id, status, vet_uid, owner_uid')
-          .eq('vet_uid', user!.uid).eq('animal_id', animalId).maybeSingle(),
+        supabase.from('vet_access_grants').select('id, status, vet_id, owner_id')
+          .eq('vet_id', user!.uid).eq('animal_id', animalId).maybeSingle(),
       ]);
       setAnimal(animalRes.data as Animal | null);
       setConsultations((consultRes.data ?? []) as Consultation[]);
@@ -162,7 +162,7 @@ export default function PatientDetailPage() {
   async function requestWriteAccess() {
     if (!user || !grant || !animal) return;
     setRequestingWrite(true);
-    const ownerUid = animal.uid_proprietaire ?? animal.uid_eleveur ?? grant.owner_uid;
+    const ownerUid = animal.uid_proprietaire ?? animal.uid_eleveur ?? grant.owner_id;
     await supabase.from('vet_access_grants').update({ status: 'write_requested' }).eq('id', grant.id);
     setGrant(g => g ? { ...g, status: 'write_requested' } : g);
     // Notifier le propriétaire

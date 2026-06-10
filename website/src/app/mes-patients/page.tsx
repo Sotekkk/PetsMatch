@@ -21,15 +21,14 @@ interface Animal {
   espece: string;
   race: string;
   date_naissance: string | null;
-  photo: string | null;
+  photo_url: string | null;
 }
 
 interface Grant {
   id: string;
   animal_id: number;
-  owner_uid: string;
   status: string;
-  created_at: string;
+  granted_at: string;
   animal: Animal | null;
 }
 
@@ -67,15 +66,45 @@ export default function MesPatientsPage() {
 
   useEffect(() => {
     if (!user) return;
-    supabase.from('vet_access_grants')
-      .select('id, animal_id, owner_uid, status, created_at, animal:animaux(id, nom, espece, race, date_naissance, photo)')
-      .eq('vet_uid', user.uid)
-      .in('status', ['active', 'active_write', 'write_requested'])
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setGrants((data ?? []) as unknown as Grant[]);
+    async function load() {
+      const { data: grantRows, error: grantErr } = await supabase
+        .from('vet_access_grants')
+        .select('id, animal_id, status, granted_at')
+        .eq('vet_id', user!.uid)
+        .neq('status', 'revoked')
+        .order('granted_at', { ascending: false });
+
+      if (grantErr) {
+        console.error('[mes-patients] grants error msg:', grantErr.message);
+        console.error('[mes-patients] grants error code:', grantErr.code);
+        console.error('[mes-patients] grants error details:', grantErr.details);
+        console.error('[mes-patients] grants error hint:', grantErr.hint);
         setLoading(false);
-      });
+        return;
+      }
+      if (!grantRows || grantRows.length === 0) {
+        console.log('[mes-patients] no grants for uid:', user!.uid);
+        setLoading(false);
+        return;
+      }
+
+      const animalIds = grantRows.map(g => g.animal_id).filter(Boolean);
+      const { data: animalRows, error: animalErr } = await supabase
+        .from('animaux')
+        .select('id, nom, espece, race, date_naissance, photo_url')
+        .in('id', animalIds);
+
+      if (animalErr) console.error('[mes-patients] animaux error:', animalErr);
+
+      const animalMap = new Map((animalRows ?? []).map(a => [a.id, a]));
+      const merged = grantRows.map(g => ({
+        ...g,
+        animal: animalMap.get(g.animal_id) ?? null,
+      }));
+      setGrants(merged as unknown as Grant[]);
+      setLoading(false);
+    }
+    load();
   }, [user]);
 
   if (!user) return (
@@ -141,8 +170,8 @@ export default function MesPatientsPage() {
                 <Link key={g.id} href={`/mes-patients/${a.id}`}
                   className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center gap-4 hover:shadow-md transition-shadow">
                   <div className="w-14 h-14 rounded-2xl overflow-hidden bg-[#E3F2FD] flex-shrink-0 flex items-center justify-center">
-                    {a.photo
-                      ? <Image src={a.photo} alt="" width={56} height={56} className="object-cover w-full h-full" />
+                    {a.photo_url
+                      ? <Image src={a.photo_url} alt="" width={56} height={56} className="object-cover w-full h-full" />
                       : <span className="text-2xl">{ESPECE_EMOJI[a.espece?.toLowerCase()] ?? '🐾'}</span>
                     }
                   </div>
