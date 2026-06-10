@@ -119,7 +119,8 @@ export default function PatientDetailPage() {
   const { user, userData } = useAuth();
   const router = useRouter();
   const params = useParams();
-  const animalId = params.id as string;
+  const rawId = params.id as string;
+  const animalId: string | number = /^\d+$/.test(rawId) ? Number(rawId) : rawId;
   const activeProfileId = useActiveProfile();
 
   const [catPro, setCatPro] = useState('');
@@ -143,7 +144,7 @@ export default function PatientDetailPage() {
   const [gestations, setGestations] = useState<Gestation[]>([]);
 
   // Add entry form
-  type AddType = null | 'vaccin' | 'visite' | 'traitement' | 'ordonnance' | 'radio';
+  type AddType = null | 'vaccin' | 'visite' | 'traitement' | 'ordonnance' | 'radio' | 'cr' | 'mesure';
   const [addingType, setAddingType] = useState<AddType>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [formDate, setFormDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -156,6 +157,8 @@ export default function PatientDetailPage() {
   const [formPosologie, setFormPosologie] = useState('');
   const [formDateFin, setFormDateFin] = useState('');
   const [formTitre, setFormTitre] = useState('');
+  const [formPoids, setFormPoids] = useState('');
+  const [formTaille, setFormTaille] = useState('');
   const [savingForm, setSavingForm] = useState(false);
   const [requestingWrite, setRequestingWrite] = useState(false);
   const [openingChat, setOpeningChat] = useState(false);
@@ -199,7 +202,7 @@ export default function PatientDetailPage() {
       if (!a) { setLoading(false); return; }
 
       const ownerUid = a.uid_proprietaire ?? a.uid_eleveur;
-      const isFemelle = a.sexe === 'femelle';
+      const isFemelle = a.sexe?.toLowerCase() === 'femelle';
 
       const results = await Promise.allSettled([
         ownerUid
@@ -261,17 +264,30 @@ export default function PatientDetailPage() {
         const { data } = await supabase.from('traitements').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setTraitements((data ?? []) as TraitementEntry[]);
       } else if (addingType === 'ordonnance') {
-        await supabase.from('ordonnances').insert({ animal_id: animalId, pro_uid: user.uid, date: formDate, notes: formNotes.trim() || null });
-        const { data } = await supabase.from('ordonnances').select('*').eq('animal_id', animalId).eq('pro_uid', user.uid).order('date', { ascending: false });
+        await supabase.from('ordonnances').insert({ animal_id: animalId, pro_uid: user.uid, vet_nom: vetName, date: formDate, notes: formNotes.trim() || null });
+        const { data } = await supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setOrdonnances((data ?? []) as Ordonnance[]);
       } else if (addingType === 'radio') {
         await supabase.from('radios').insert({ ...base, titre: formTitre.trim() || 'Radio / Examen', date: formDate, notes: formNotes.trim() || null });
         const { data } = await supabase.from('radios').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setRadios((data ?? []) as RadioEntry[]);
+      } else if (addingType === 'cr') {
+        await supabase.from('comptes_rendus').insert({ animal_id: animalId, pro_uid: user.uid, vet_nom: vetName, date: formDate, motif: formMotif.trim() || null, diagnostic: formDiag.trim() || null, notes: formNotes.trim() || null });
+        const { data } = await supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('date', { ascending: false });
+        setComptesRendus((data ?? []) as CompteRendu[]);
+      } else if (addingType === 'mesure') {
+        const updates: Record<string, number> = {};
+        if (formPoids.trim()) updates.poids = parseFloat(formPoids);
+        if (formTaille.trim()) updates.taille = parseFloat(formTaille);
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('animaux').update(updates).eq('id', animalId);
+          setAnimal(a => a ? { ...a, ...updates } : a);
+        }
       }
     } finally {
       setFormNom(''); setFormLot(''); setFormRappel(''); setFormMotif(''); setFormDiag('');
       setFormNotes(''); setFormPosologie(''); setFormDateFin(''); setFormTitre('');
+      setFormPoids(''); setFormTaille('');
       setFormDate(new Date().toISOString().slice(0, 10));
       setAddingType(null); setSavingForm(false);
     }
@@ -531,13 +547,39 @@ export default function PatientDetailPage() {
                 </div>
               )}
             </Card>
+            {/* Mesures */}
+            {(animal.poids || animal.taille) && (
+              <Card title="⚖️ Mesures">
+                <div className="grid grid-cols-2 gap-4">
+                  {animal.poids != null && (
+                    <div className="bg-[#E3F2FD] rounded-xl p-4 text-center">
+                      <p className="text-2xl font-bold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>{animal.poids} kg</p>
+                      <p className="text-xs text-gray-500 mt-1">Poids</p>
+                    </div>
+                  )}
+                  {animal.taille != null && (
+                    <div className="bg-[#E3F2FD] rounded-xl p-4 text-center">
+                      <p className="text-2xl font-bold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>{animal.taille} cm</p>
+                      <p className="text-xs text-gray-500 mt-1">Taille</p>
+                    </div>
+                  )}
+                </div>
+                {hasWriteAccess && (
+                  <button onClick={() => setAddingType('mesure')}
+                    className="mt-3 w-full text-sm font-semibold py-2 rounded-xl border border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#E3F2FD] transition-colors"
+                    style={{ fontFamily: 'Galey, sans-serif' }}>
+                    + Mettre à jour les mesures
+                  </button>
+                )}
+              </Card>
+            )}
           </>
         )}
 
         {/* ── Repro ── */}
         {tab === 'Repro' && (
           <>
-            {animal.sexe === 'femelle' && (
+            {animal.sexe?.toLowerCase() === 'femelle' && (
               <>
                 <Card title={`🌡️ Chaleurs (${chaleurs.length})`}>
                   {chaleurs.length === 0 ? <EmptyState text="Aucune chaleur enregistrée" /> : (
@@ -585,7 +627,7 @@ export default function PatientDetailPage() {
               )}
             </Card>
 
-            {animal.sexe !== 'femelle' && saillies.length === 0 && chaleurs.length === 0 && (
+            {animal.sexe?.toLowerCase() !== 'femelle' && saillies.length === 0 && chaleurs.length === 0 && (
               <EmptyState text="Aucune donnée de reproduction enregistrée" />
             )}
           </>
@@ -670,11 +712,13 @@ export default function PatientDetailPage() {
                 {showAddMenu && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-2xl shadow-lg border border-gray-100 z-10 overflow-hidden">
                     {[
-                      { type: 'vaccin',     label: '💉 Vaccin',             show: true },
-                      { type: 'visite',     label: '🩺 Visite vétérinaire', show: isVet },
-                      { type: 'traitement', label: '💊 Traitement',          show: true },
-                      { type: 'ordonnance', label: '📄 Ordonnance',          show: isVet },
-                      { type: 'radio',      label: '🩻 Radio / Examen',      show: isVet },
+                      { type: 'cr',         label: '📋 Rédiger un CR',       show: isVet },
+                      { type: 'vaccin',     label: '💉 Vaccin',               show: true },
+                      { type: 'visite',     label: '🩺 Visite vétérinaire',   show: isVet },
+                      { type: 'traitement', label: '💊 Traitement',            show: true },
+                      { type: 'ordonnance', label: '📄 Ordonnance',            show: isVet },
+                      { type: 'radio',      label: '🩻 Radio / Examen',        show: isVet },
+                      { type: 'mesure',     label: '⚖️ Nouvelle mesure',       show: isVet },
                     ].filter(i => i.show).map(item => (
                       <button key={item.type}
                         onClick={() => { setAddingType(item.type as AddType); setShowAddMenu(false); }}
@@ -832,21 +876,25 @@ export default function PatientDetailPage() {
           <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-base text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                {addingType === 'cr' && '📋 Rédiger un compte rendu'}
                 {addingType === 'vaccin' && '💉 Nouveau vaccin'}
                 {addingType === 'visite' && '🩺 Nouvelle visite'}
                 {addingType === 'traitement' && '💊 Nouveau traitement'}
                 {addingType === 'ordonnance' && '📄 Nouvelle ordonnance'}
                 {addingType === 'radio' && '🩻 Radio / Examen'}
+                {addingType === 'mesure' && '⚖️ Nouvelle mesure'}
               </h3>
               <button onClick={() => setAddingType(null)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
             </div>
 
-            {/* Champ date commun */}
-            <div>
-              <label className="text-xs font-medium text-gray-500 block mb-1">Date</label>
-              <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
-            </div>
+            {/* Champ date commun (pas pour mesure) */}
+            {addingType !== 'mesure' && (
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Date</label>
+                <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              </div>
+            )}
 
             {/* Vaccin */}
             {addingType === 'vaccin' && (<>
@@ -943,6 +991,51 @@ export default function PatientDetailPage() {
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
               </div>
               <p className="text-xs text-gray-400">L&apos;upload d&apos;images sera disponible prochainement.</p>
+            </>)}
+
+            {/* Compte rendu */}
+            {addingType === 'cr' && (<>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Motif de consultation</label>
+                <select value={formMotif} onChange={e => setFormMotif(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white">
+                  <option value="">— Sélectionner —</option>
+                  {['Consultation', 'Rappel de vaccin', 'Urgence', 'Suivi post-opératoire', 'Contrôle', 'Chirurgie', 'Autre'].map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Examen clinique / Diagnostic</label>
+                <textarea value={formDiag} onChange={e => setFormDiag(e.target.value)} rows={4}
+                  placeholder="Résultats de l'examen, diagnostic posé…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Notes / Recommandations</label>
+                <textarea value={formNotes} onChange={e => setFormNotes(e.target.value)} rows={3}
+                  placeholder="Suivi recommandé, prescriptions, notes libres…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
+              </div>
+            </>)}
+
+            {/* Mesure */}
+            {addingType === 'mesure' && (<>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">Poids (kg)</label>
+                  <input type="number" step="0.1" min="0" value={formPoids} onChange={e => setFormPoids(e.target.value)}
+                    placeholder={animal.poids ? String(animal.poids) : 'kg'}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">Taille (cm)</label>
+                  <input type="number" step="0.5" min="0" value={formTaille} onChange={e => setFormTaille(e.target.value)}
+                    placeholder={animal.taille ? String(animal.taille) : 'cm'}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                </div>
+              </div>
+              {animal.poids != null && <p className="text-xs text-gray-400">Poids actuel : {animal.poids} kg{animal.taille ? ` · ${animal.taille} cm` : ''}</p>}
             </>)}
 
             <div className="flex gap-3 pt-1">
