@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
@@ -11,6 +12,10 @@ interface RdvInfo {
   id: string;
   pro_uid: string;
   statut: string;
+  animal_id?: string | number | null;
+  duree_minutes?: number | null;
+  motif?: string | null;
+  client_uid?: string | null;
 }
 
 interface AgendaEvent {
@@ -22,9 +27,10 @@ interface AgendaEvent {
   type: string;
   notes?: string;
   couleur?: string;
-  animal_id?: number;
+  animal_id?: string | number | null;
   rdv_id?: string | null;
   rdv?: RdvInfo | null;
+  duree_minutes?: number | null;
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -335,15 +341,17 @@ function ModifierModal({ event, onClose, onDone }: { event: AgendaEvent; onClose
 
 export default function AgendaPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const activeProfileId = useActiveProfile();
   const [events, setEvents]   = useState<AgendaEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingRdvs, setPendingRdvs] = useState<{id:string;date_debut:string;motif:string|null;client_uid:string;animal_id:number|null}[]>([]);
-  const [view, setView]       = useState<'calendar' | 'list'>('calendar');
+  const [view, setView]       = useState<'calendar' | 'day' | 'list'>('calendar');
   const [focusedMonth, setFocusedMonth] = useState(() => {
     const n = new Date(); return { year: n.getFullYear(), month: n.getMonth() };
   });
   const [selectedDay, setSelectedDay] = useState<number | null>(new Date().getDate());
+  const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
   const [showAdd, setShowAdd]         = useState(false);
   const [modalAnnuler, setModalAnnuler] = useState<AgendaEvent | null>(null);
   const [modalModifier, setModalModifier] = useState<AgendaEvent | null>(null);
@@ -383,7 +391,7 @@ export default function AgendaPage() {
     const rdvIds = list.map(e => e.rdv_id).filter(Boolean) as string[];
     if (rdvIds.length > 0) {
       const { data: rdvsData } = await supabase
-        .from('rdv').select('id, pro_uid, statut').in('id', rdvIds);
+        .from('rdv').select('id, pro_uid, statut, animal_id, duree_minutes, motif, client_uid').in('id', rdvIds);
       const rdvMap: Record<string, RdvInfo> = {};
       for (const r of (rdvsData ?? [])) {
         const rec = r as RdvInfo;
@@ -402,6 +410,27 @@ export default function AgendaPage() {
     return events.filter(e => {
       const d = new Date(e.date_debut);
       return d.getFullYear() === focusedMonth.year && d.getMonth() === focusedMonth.month && d.getDate() === day;
+    });
+  }
+
+  function eventsForDate(date: Date) {
+    return events.filter(e => {
+      const d = new Date(e.date_debut);
+      return d.getFullYear() === date.getFullYear() && d.getMonth() === date.getMonth() && d.getDate() === date.getDate();
+    }).sort((a, b) => new Date(a.date_debut).getTime() - new Date(b.date_debut).getTime());
+  }
+
+  function navigateToAnimal(animalId: string | number | null | undefined) {
+    if (!animalId) return;
+    router.push(`/mes-patients/${animalId}`);
+  }
+
+  function navigateDay(dir: 'prev' | 'next') {
+    setSelectedDate(d => {
+      const next = new Date(d);
+      next.setDate(next.getDate() + (dir === 'next' ? 1 : -1));
+      setFocusedMonth({ year: next.getFullYear(), month: next.getMonth() });
+      return next;
     });
   }
 
@@ -440,11 +469,16 @@ export default function AgendaPage() {
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>Mon Agenda</h1>
           <div className="flex items-center gap-2">
-            <button onClick={() => setView(v => v === 'calendar' ? 'list' : 'calendar')}
-              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
-              title={view === 'calendar' ? 'Vue liste' : 'Vue calendrier'}>
-              {view === 'calendar' ? '☰' : '📅'}
-            </button>
+            <div className="flex rounded-lg bg-white/10 overflow-hidden text-xs font-semibold">
+              {(['calendar', 'day', 'list'] as const).map(v => (
+                <button key={v} onClick={() => { setView(v); if (v === 'day') setSelectedDate(new Date()); }}
+                  className="px-2.5 py-1.5 transition-colors"
+                  style={{ background: view === v ? 'rgba(255,255,255,0.25)' : 'transparent' }}
+                  title={v === 'calendar' ? 'Calendrier' : v === 'day' ? 'Jour' : 'Liste'}>
+                  {v === 'calendar' ? '📅' : v === 'day' ? '⏱' : '☰'}
+                </button>
+              ))}
+            </div>
             <button onClick={() => setShowAdd(true)}
               className="flex items-center gap-1 px-3 py-2 rounded-lg bg-white text-[#0C5C6C] text-sm font-bold hover:bg-gray-100 transition-colors"
               style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -486,10 +520,22 @@ export default function AgendaPage() {
             onDelete={deleteEvent}
             onAnnuler={setModalAnnuler}
             onModifier={setModalModifier}
+            onNavigateToAnimal={navigateToAnimal}
+          />
+        ) : view === 'day' ? (
+          <DayView
+            date={selectedDate}
+            events={eventsForDate(selectedDate)}
+            onNavigate={navigateDay}
+            onSelectDate={(d) => { setSelectedDate(d); setFocusedMonth({ year: d.getFullYear(), month: d.getMonth() }); }}
+            onDelete={deleteEvent}
+            onAnnuler={setModalAnnuler}
+            onModifier={setModalModifier}
+            onNavigateToAnimal={navigateToAnimal}
           />
         ) : (
           <ListView groups={grouped} keys={groupedKeys} onDelete={deleteEvent}
-            onAnnuler={setModalAnnuler} onModifier={setModalModifier} />
+            onAnnuler={setModalAnnuler} onModifier={setModalModifier} onNavigateToAnimal={navigateToAnimal} />
         )}
       </div>
 
@@ -602,7 +648,7 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
 
 // ── CalendarView ───────────────────────────────────────────────────────────────
 
-function CalendarView({ year, month, events, selectedDay, onPrev, onNext, onSelectDay, eventsForDay, onDelete, onAnnuler, onModifier }: {
+function CalendarView({ year, month, events, selectedDay, onPrev, onNext, onSelectDay, eventsForDay, onDelete, onAnnuler, onModifier, onNavigateToAnimal }: {
   year: number; month: number; events: AgendaEvent[];
   selectedDay: number | null;
   onPrev: () => void; onNext: () => void;
@@ -611,6 +657,7 @@ function CalendarView({ year, month, events, selectedDay, onPrev, onNext, onSele
   onDelete: (id: number) => void;
   onAnnuler: (e: AgendaEvent) => void;
   onModifier: (e: AgendaEvent) => void;
+  onNavigateToAnimal: (id: string | number | null | undefined) => void;
 }) {
   const WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
   const monthName = new Date(year, month, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
@@ -674,7 +721,7 @@ function CalendarView({ year, month, events, selectedDay, onPrev, onNext, onSele
             <p className="text-gray-400 text-sm text-center py-4" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun événement</p>
           ) : (
             <div className="space-y-2">
-              {dayEvts.map(e => <EventCard key={e.id} event={e} onDelete={onDelete} onAnnuler={onAnnuler} onModifier={onModifier} />)}
+              {dayEvts.map(e => <EventCard key={e.id} event={e} onDelete={onDelete} onAnnuler={onAnnuler} onModifier={onModifier} onNavigateToAnimal={onNavigateToAnimal} />)}
             </div>
           )}
         </div>
@@ -685,11 +732,12 @@ function CalendarView({ year, month, events, selectedDay, onPrev, onNext, onSele
 
 // ── ListView ───────────────────────────────────────────────────────────────────
 
-function ListView({ groups, keys, onDelete, onAnnuler, onModifier }: {
+function ListView({ groups, keys, onDelete, onAnnuler, onModifier, onNavigateToAnimal }: {
   groups: Record<string, AgendaEvent[]>; keys: string[];
   onDelete: (id: number) => void;
   onAnnuler: (e: AgendaEvent) => void;
   onModifier: (e: AgendaEvent) => void;
+  onNavigateToAnimal: (id: string | number | null | undefined) => void;
 }) {
   if (keys.length === 0) return (
     <div className="text-center py-20">
@@ -712,7 +760,7 @@ function ListView({ groups, keys, onDelete, onAnnuler, onModifier }: {
               {label}
             </p>
             <div className="space-y-2">
-              {evts.map(e => <EventCard key={e.id} event={e} onDelete={onDelete} onAnnuler={onAnnuler} onModifier={onModifier} />)}
+              {evts.map(e => <EventCard key={e.id} event={e} onDelete={onDelete} onAnnuler={onAnnuler} onModifier={onModifier} onNavigateToAnimal={onNavigateToAnimal} />)}
             </div>
           </div>
         );
@@ -723,15 +771,17 @@ function ListView({ groups, keys, onDelete, onAnnuler, onModifier }: {
 
 // ── EventCard ─────────────────────────────────────────────────────────────────
 
-function EventCard({ event: e, onDelete, onAnnuler, onModifier }: {
+function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnimal }: {
   event: AgendaEvent;
   onDelete: (id: number) => void;
   onAnnuler: (e: AgendaEvent) => void;
   onModifier: (e: AgendaEvent) => void;
+  onNavigateToAnimal: (id: string | number | null | undefined) => void;
 }) {
   const color  = colorFor(e);
   const isRdv  = !!e.rdv_id;
   const plus24h = isRdv && new Date(e.date_debut).getTime() - Date.now() > 24 * 3600 * 1000;
+  const animalId = e.animal_id ?? e.rdv?.animal_id;
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 px-4 py-3 space-y-2"
@@ -747,6 +797,14 @@ function EventCard({ event: e, onDelete, onAnnuler, onModifier }: {
           <button onClick={() => onDelete(e.id)} className="text-gray-300 hover:text-red-400 transition-colors text-lg flex-shrink-0">×</button>
         )}
       </div>
+
+      {animalId && (
+        <button onClick={() => onNavigateToAnimal(animalId)}
+          className="w-full text-xs font-semibold py-1.5 rounded-lg border border-[#0C5C6C]/20 hover:border-[#0C5C6C] text-[#0C5C6C] transition-colors"
+          style={{ fontFamily: 'Galey, sans-serif' }}>
+          🐾 Ouvrir la fiche animal
+        </button>
+      )}
 
       {isRdv && plus24h && (
         <div className="flex gap-2">
@@ -767,6 +825,140 @@ function EventCard({ event: e, onDelete, onAnnuler, onModifier }: {
           <span>🔒</span> Annulation impossible moins de 24h avant
         </p>
       )}
+    </div>
+  );
+}
+
+// ── DayView ───────────────────────────────────────────────────────────────────
+
+const TIMELINE_START = 7;
+const TIMELINE_END   = 20;
+const TIMELINE_PX    = 780; // height of the full grid in px
+const TOTAL_MIN      = (TIMELINE_END - TIMELINE_START) * 60;
+
+function minutesFromTop(iso: string): number {
+  const d = new Date(iso);
+  return (d.getHours() - TIMELINE_START) * 60 + d.getMinutes();
+}
+
+function DayView({ date, events, onNavigate, onSelectDate, onDelete, onAnnuler, onModifier, onNavigateToAnimal }: {
+  date: Date;
+  events: AgendaEvent[];
+  onNavigate: (dir: 'prev' | 'next') => void;
+  onSelectDate: (d: Date) => void;
+  onDelete: (id: number) => void;
+  onAnnuler: (e: AgendaEvent) => void;
+  onModifier: (e: AgendaEvent) => void;
+  onNavigateToAnimal: (id: string | number | null | undefined) => void;
+}) {
+  const HOURS = Array.from({ length: TIMELINE_END - TIMELINE_START + 1 }, (_, i) => i + TIMELINE_START);
+  const today = new Date();
+
+  // Week strip: 7 days centred on selected date
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() - 3 + i);
+    return d;
+  });
+
+  return (
+    <div className="space-y-4">
+      {/* Week strip */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <button onClick={() => onNavigate('prev')} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-[#0C5C6C]">‹</button>
+          <span className="font-bold text-sm capitalize" style={{ fontFamily: 'Galey, sans-serif', color: '#1E2025' }}>
+            {date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </span>
+          <button onClick={() => onNavigate('next')} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-[#0C5C6C]">›</button>
+        </div>
+        <div className="flex gap-1">
+          {weekDays.map((d, i) => {
+            const isSel = d.toDateString() === date.toDateString();
+            const isT   = d.toDateString() === today.toDateString();
+            return (
+              <button key={i} onClick={() => onSelectDate(d)}
+                className="flex-1 flex flex-col items-center py-2 rounded-xl transition-colors"
+                style={{ background: isSel ? '#0C5C6C' : isT ? '#E0F2FE' : 'transparent' }}>
+                <span className="text-[10px] text-gray-400 capitalize">
+                  {d.toLocaleDateString('fr-FR', { weekday: 'short' }).slice(0, 3)}
+                </span>
+                <span className="text-sm font-bold" style={{ color: isSel ? 'white' : '#1E2025' }}>
+                  {d.getDate()}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Timeline */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        {events.length === 0 && (
+          <p className="text-center text-gray-400 text-sm py-8" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Aucun événement ce jour
+          </p>
+        )}
+        <div className="relative select-none" style={{ height: TIMELINE_PX }}>
+          {/* Hour grid lines */}
+          {HOURS.map(h => (
+            <div key={h} className="absolute left-0 right-0 flex items-start pointer-events-none"
+              style={{ top: `${((h - TIMELINE_START) / (TIMELINE_END - TIMELINE_START)) * 100}%` }}>
+              <span className="text-[10px] text-gray-400 w-12 pl-2 flex-shrink-0" style={{ marginTop: -8 }}>{String(h).padStart(2, '0')}:00</span>
+              <div className="flex-1 border-t border-gray-100 mt-0" />
+            </div>
+          ))}
+
+          {/* Events */}
+          {events.map(e => {
+            const mins = minutesFromTop(e.date_debut);
+            const dur = e.duree_minutes ?? e.rdv?.duree_minutes ?? 30;
+            const topPct = Math.max(0, mins) / TOTAL_MIN * 100;
+            const heightPct = Math.max(0.5, dur / TOTAL_MIN * 100);
+            const color = colorFor(e);
+            const animalId = e.animal_id ?? e.rdv?.animal_id;
+            const isRdv = !!e.rdv_id;
+            const statut = e.rdv?.statut ?? '';
+            return (
+              <div key={e.id}
+                onClick={() => animalId ? onNavigateToAnimal(animalId) : undefined}
+                className="absolute rounded-xl px-2.5 py-1.5 overflow-hidden shadow-sm transition-shadow hover:shadow-md"
+                style={{
+                  left: 52, right: 8,
+                  top: `${topPct}%`,
+                  height: `max(44px, ${heightPct}%)`,
+                  background: `${color}18`,
+                  borderLeft: `3px solid ${color}`,
+                  cursor: animalId ? 'pointer' : 'default',
+                }}>
+                <div className="flex items-start justify-between gap-1">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold truncate leading-tight" style={{ color, fontFamily: 'Galey, sans-serif' }}>
+                      {TYPE_ICON[e.type] ?? '📅'} {e.titre}
+                    </p>
+                    <p className="text-[10px] text-gray-500 leading-tight">
+                      {fmtTime(e.date_debut)}{dur ? ` · ${dur} min` : ''}
+                    </p>
+                    {e.rdv?.motif && <p className="text-[10px] text-gray-400 truncate leading-tight">{e.rdv.motif}</p>}
+                  </div>
+                  {isRdv && statut && (
+                    <span className="text-[9px] font-bold flex-shrink-0 px-1.5 py-0.5 rounded-full"
+                      style={{
+                        background: statut === 'confirme' ? '#dcfce7' : statut === 'annule' ? '#fee2e2' : '#fef9c3',
+                        color: statut === 'confirme' ? '#16a34a' : statut === 'annule' ? '#dc2626' : '#ca8a04',
+                      }}>
+                      {statut === 'confirme' ? '✓' : statut === 'annule' ? '✗' : '⏳'}
+                    </span>
+                  )}
+                </div>
+                {animalId && (
+                  <p className="text-[9px] text-gray-400 mt-0.5">Tap → fiche animal</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
