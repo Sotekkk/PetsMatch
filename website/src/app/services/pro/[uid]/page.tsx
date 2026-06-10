@@ -179,7 +179,7 @@ export default function ProDetailPage() {
         .gte('date', toDateStr(new Date()))
         .order('date').order('heure_debut'),
       supabase.from('animaux').select('id, nom, espece')
-        .or(`uid_user.eq.${user.uid},uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`)
+        .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`)
         .order('nom'),
     ]);
     const rawSlots = (slotsRes.data ?? []) as { date: string; heure_debut: string; heure_fin: string }[];
@@ -518,11 +518,21 @@ export default function ProDetailPage() {
                     </div>
                   )}
 
-                  {/* Sélection animal */}
-                  {animaux.length > 0 && (
-                    <div>
-                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5"
-                        style={{ fontFamily: 'Galey, sans-serif' }}>Pour quel animal ? *</p>
+                  {/* Sélection animal — toujours visible */}
+                  <div>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5"
+                      style={{ fontFamily: 'Galey, sans-serif' }}>Pour quel animal ?</p>
+                    {animaux.length === 0 ? (
+                      <div className="flex items-center gap-2 bg-gray-50 rounded-xl px-4 py-3">
+                        <span className="text-gray-400 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          Aucun animal enregistré —{' '}
+                        </span>
+                        <Link href="/mes-animaux" className="text-sm font-semibold underline"
+                          style={{ color: catColor, fontFamily: 'Galey, sans-serif' }}>
+                          Ajouter un animal
+                        </Link>
+                      </div>
+                    ) : (
                       <div className="flex flex-wrap gap-2">
                         {animaux.map(a => (
                           <button key={a.id} onClick={() => setSelectedAnimalId(selectedAnimalId === a.id ? null : a.id)}
@@ -538,8 +548,8 @@ export default function ProDetailPage() {
                           </button>
                         ))}
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
                   {/* Date */}
                   {availableDates.length === 0 ? (
