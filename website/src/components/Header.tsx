@@ -295,10 +295,14 @@ export default function Header() {
   const effectiveIsPension = activeProfile
     ? activeProfile.profile_type === 'pension'
     : (userData?.isPro === true && userData?.catPro === 'pension');
+  // Détection pro primaire (userData.isPro = true, aucun profil secondaire actif)
+  const isPrimaryPro = !activeProfile && userData?.isPro === true;
+  const primaryCatPro = userData?.catPro ?? '';
+
   const effectiveIsVet = !!(activeProfile && (
     activeProfile.profile_type === 'veterinaire' || activeProfile.profile_type === 'sante' ||
     activeProfile.cat_pro === 'veterinaire' || activeProfile.cat_pro === 'sante'
-  ));
+  )) || (isPrimaryPro && (primaryCatPro === 'veterinaire' || primaryCatPro === 'sante'));
 
   const primaryDisplayName = userData?.nameElevage ?? userData?.firstname ?? user?.email ?? '';
   const primaryAvatar = userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
@@ -312,13 +316,14 @@ export default function Header() {
     ? PRO_TYPES.has(activeProfile.profile_type)
     : userData?.isPro === true;
 
-  // Quand un profil secondaire pro est actif → nav/menu adaptés au type
+  // Tout profil pro actif (secondaire ou primaire)
   const isSecondaryPro = !!(activeProfile && PRO_TYPES.has(activeProfile.profile_type));
+  const isEffectivelyPro = isSecondaryPro || isPrimaryPro;
   const navLinks = loading || !user ? NAV_GUEST
-    : isSecondaryPro ? (effectiveIsVet ? NAV_VET : NAV_PRO)
+    : isEffectivelyPro ? (effectiveIsVet ? NAV_VET : NAV_PRO)
     : effectiveIsEleveur ? NAV_ELEVEUR
     : NAV_PARTICULIER;
-  const menuSections = isSecondaryPro
+  const menuSections = isEffectivelyPro
     ? (effectiveIsPension ? MENU_PENSION : effectiveIsVet ? MENU_VET : MENU_PRO)
     : effectiveIsEleveur ? MENU_ELEVEUR
     : MENU_PARTICULIER;

@@ -8,6 +8,13 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 
+function clientsPageTitle(catPro: string): string {
+  if (catPro === 'veterinaire' || catPro === 'sante') return 'Mes patients';
+  if (catPro === 'marechal_ferrant') return 'Mes équidés suivis';
+  if (catPro === 'education') return 'Mes élèves';
+  return 'Animaux suivis';
+}
+
 interface Animal {
   id: number;
   nom: string;
@@ -41,19 +48,29 @@ function age(dateNaissance: string | null): string {
 }
 
 export default function MesPatientsPage() {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
   const router = useRouter();
   const activeProfileId = useActiveProfile();
   const [grants, setGrants] = useState<Grant[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [catPro, setCatPro] = useState('');
+
+  useEffect(() => {
+    if (activeProfileId) {
+      supabase.from('user_profiles').select('profile_type, cat_pro').eq('id', activeProfileId).single()
+        .then(({ data }) => { if (data) { const r = data as { profile_type: string; cat_pro: string }; setCatPro(r.profile_type ?? r.cat_pro ?? ''); } });
+    } else {
+      setCatPro(userData?.catPro ?? '');
+    }
+  }, [activeProfileId, userData]);
 
   useEffect(() => {
     if (!user) return;
     supabase.from('vet_access_grants')
       .select('id, animal_id, owner_uid, status, created_at, animal:animaux(id, nom, espece, race, date_naissance, photo)')
       .eq('vet_uid', user.uid)
-      .eq('status', 'active')
+      .in('status', ['active', 'active_write', 'write_requested'])
       .order('created_at', { ascending: false })
       .then(({ data }) => {
         setGrants((data ?? []) as unknown as Grant[]);
@@ -84,7 +101,7 @@ export default function MesPatientsPage() {
             ←
           </button>
           <div>
-            <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>Mes patients</h1>
+            <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>{clientsPageTitle(catPro)}</h1>
             <p className="text-white/60 text-xs">{grants.length} animal{grants.length !== 1 ? 'aux' : ''} avec accès accordé</p>
           </div>
         </div>

@@ -155,7 +155,20 @@ export default function HomeDashboard() {
 
   if (!user) return <GuestHome />;
 
+  // Profil secondaire actif → ProDashboard avec son ID
   if (activeProfile) return <ProDashboard profile={activeProfile} profileId={activeProfileId} />;
+
+  // Profil principal pro (vétérinaire, éducateur, pension, etc.) → ProDashboard sans profileId secondaire
+  if (userData?.isPro === true) {
+    const primaryProProfile = {
+      id: user.uid,
+      profile_type: userData.catPro ?? 'sante',
+      name_elevage: userData.nameElevage ?? `${userData.firstname ?? ''} ${userData.lastname ?? ''}`.trim(),
+      avatar_url: (userData.profilePictureUrlElevage ?? userData.profilePictureUrl) as string | null ?? null,
+      cat_pro: userData.catPro ?? '',
+    };
+    return <ProDashboard profile={primaryProProfile} profileId="" />;
+  }
 
   if (userData?.isElevage === true) return <EleveurDashboard />;
 

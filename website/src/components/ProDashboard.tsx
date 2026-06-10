@@ -91,35 +91,45 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
   const name   = profile.name_elevage || userData?.firstname || 'Mon cabinet';
   const avatar = profile.avatar_url ?? userData?.profilePictureUrl ?? null;
 
+  // Libellé "clients" selon la profession
+  const clientsLabel = isVet ? 'Mes patients'
+    : catPro === 'marechal_ferrant' ? 'Mes équidés suivis'
+    : catPro === 'education' ? 'Mes élèves'
+    : 'Animaux suivis';
+
   useEffect(() => {
     if (!uid) return;
     async function load() {
       const now = new Date().toISOString();
       const future = new Date(Date.now() + 90 * 86400000).toISOString();
 
-      const [pendRes, upRes, lostRes] = await Promise.all([
-        supabase.from('rdv').select('id, date_debut, motif, client_uid, animal_id')
-          .eq('pro_uid', uid).eq('pro_profile_id', profileId)
-          .eq('statut', 'en_attente').order('date_debut').limit(5),
-        supabase.from('rdv').select('id, date_debut, motif, client_uid, animal_id, statut')
-          .eq('pro_uid', uid).eq('pro_profile_id', profileId)
-          .eq('statut', 'confirme').gte('date_debut', now).lte('date_debut', future)
-          .order('date_debut').limit(5),
+      const profileFilter = profileId
+        ? `pro_profile_id.eq.${profileId}`
+        : 'pro_profile_id.is.null,pro_profile_id.eq.';
+
+      const [lostRes, pendRes, upRes] = await Promise.all([
         supabase.from('animaux_perdus').select('id, nom, espece, statut, photo_url, created_at')
           .order('created_at', { ascending: false }).limit(4),
+        supabase.from('rdv').select('id, date_debut, motif, client_uid, animal_id')
+          .eq('pro_uid', uid).eq('statut', 'en_attente')
+          .or(profileFilter).order('date_debut').limit(5),
+        supabase.from('rdv').select('id, date_debut, motif, client_uid, animal_id, statut')
+          .eq('pro_uid', uid).eq('statut', 'confirme')
+          .or(profileFilter)
+          .gte('date_debut', now).lte('date_debut', future).order('date_debut').limit(5),
       ]);
 
       setPendingRdvs((pendRes.data ?? []) as PendingRdv[]);
       setUpcomingRdvs((upRes.data ?? []) as UpcomingRdv[]);
       setLostAnimals((lostRes.data ?? []) as LostAnimal[]);
 
-      // Load patients for vet/sante
-      if (isVet) {
+      // Accès animaux clients — pour TOUS les types de pros
+      {
         const { data: grantData } = await supabase
           .from('vet_access_grants')
           .select('id, animal_id, status, animal:animaux(id, nom, espece, race, photo)')
           .eq('vet_uid', uid)
-          .eq('status', 'active')
+          .in('status', ['active', 'active_write'])
           .limit(6);
         setPatients((grantData ?? []) as unknown as Patient[]);
       }
@@ -216,17 +226,12 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
               <p className="text-2xl font-bold">{upcomingRdvs.length}</p>
               <p className="text-xs text-white/70 mt-0.5">RDV à venir</p>
             </div>
-            {isVet ? (
-              <div className="bg-white/10 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold">{patients.length}</p>
-                <p className="text-xs text-white/70 mt-0.5">Patients</p>
-              </div>
-            ) : (
-              <div className="bg-white/10 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold">{lostAnimals.length}</p>
-                <p className="text-xs text-white/70 mt-0.5">Alertes</p>
-              </div>
-            )}
+            <div className="bg-white/10 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold">{patients.length}</p>
+              <p className="text-xs text-white/70 mt-0.5">
+                {isVet ? 'Patients' : 'Animaux suivis'}
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -335,50 +340,51 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
           )}
         </div>
 
-        {/* Mes patients (vet/sante) */}
-        {isVet && (
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Mes patients</p>
-              <Link href="/mes-patients" className="text-xs text-[#0C5C6C] font-medium hover:underline">Voir tout →</Link>
-            </div>
-            {loading ? (
-              <div className="bg-white rounded-2xl border border-gray-100 p-6 flex justify-center">
-                <div className="w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : patients.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center">
-                <p className="text-3xl mb-2">🐾</p>
-                <p className="text-sm text-gray-400">Aucun patient pour l&apos;instant</p>
-                <p className="text-xs text-gray-300 mt-1">Les propriétaires peuvent vous accorder l&apos;accès depuis leur fiche animal</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {patients.map(p => {
-                  const animal = p.animal;
-                  if (!animal) return null;
-                  return (
-                    <Link key={p.id} href={`/mes-patients/${animal.id}`}
-                      className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md transition-shadow">
-                      <div className="flex items-center gap-2">
-                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#E3F2FD] flex-shrink-0 flex items-center justify-center">
-                          {animal.photo
-                            ? <Image src={animal.photo} alt="" width={40} height={40} className="object-cover w-full h-full" />
-                            : <span className="text-lg">{ESPECE_EMOJI[animal.espece?.toLowerCase()] ?? '🐾'}</span>
-                          }
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-semibold text-sm text-[#1F2A2E] truncate">{animal.nom}</p>
-                          <p className="text-xs text-gray-400 truncate">{animal.race || animal.espece}</p>
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
+        {/* Clients / patients — pour TOUS les profils pro */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">{clientsLabel}</p>
+            <Link href="/mes-patients" className="text-xs text-[#0C5C6C] font-medium hover:underline">Voir tout →</Link>
           </div>
-        )}
+          {loading ? (
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 flex justify-center">
+              <div className="w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : patients.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center">
+              <p className="text-3xl mb-2">🐾</p>
+              <p className="text-sm text-gray-400">Aucun animal suivi pour l&apos;instant</p>
+              <p className="text-xs text-gray-300 mt-1">Les propriétaires peuvent vous accorder l&apos;accès depuis la fiche de leur animal</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {patients.map(p => {
+                const animal = p.animal;
+                if (!animal) return null;
+                return (
+                  <Link key={p.id} href={`/mes-patients/${animal.id}`}
+                    className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-2">
+                      <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#E3F2FD] flex-shrink-0 flex items-center justify-center">
+                        {animal.photo
+                          ? <Image src={animal.photo} alt="" width={40} height={40} className="object-cover w-full h-full" />
+                          : <span className="text-lg">{ESPECE_EMOJI[animal.espece?.toLowerCase()] ?? '🐾'}</span>
+                        }
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm text-[#1F2A2E] truncate">{animal.nom}</p>
+                        <p className="text-xs text-gray-400 truncate">{animal.race || animal.espece}</p>
+                      </div>
+                    </div>
+                    {p.status === 'active_write' && (
+                      <span className="mt-1 text-[9px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full block text-center">✏️ Accès écriture</span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Animaux perdus */}
         <div>
