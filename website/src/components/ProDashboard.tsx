@@ -18,7 +18,7 @@ interface ProProfile {
 
 interface PendingRdv {
   id: string;
-  date_debut: string;
+  date_heure: string;
   motif: string | null;
   client_uid: string;
   animal_id: number | null;
@@ -26,7 +26,7 @@ interface PendingRdv {
 
 interface UpcomingRdv {
   id: string;
-  date_debut: string;
+  date_heure: string;
   motif: string | null;
   client_uid: string;
   animal_id: number | null;
@@ -110,13 +110,13 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       const [lostRes, pendRes, upRes] = await Promise.all([
         supabase.from('animaux_perdus').select('id, nom, espece, statut, photo_url, created_at')
           .order('created_at', { ascending: false }).limit(4),
-        supabase.from('rdv').select('id, date_debut, motif, client_uid, animal_id')
-          .eq('pro_uid', uid).eq('statut', 'en_attente')
-          .or(profileFilter).order('date_debut').limit(5),
-        supabase.from('rdv').select('id, date_debut, motif, client_uid, animal_id, statut')
+        supabase.from('rdv').select('id, date_heure, motif, client_uid, animal_id')
+          .eq('pro_uid', uid).in('statut', ['demande', 'contre_proposition'])
+          .or(profileFilter).order('date_heure').limit(5),
+        supabase.from('rdv').select('id, date_heure, motif, client_uid, animal_id, statut')
           .eq('pro_uid', uid).eq('statut', 'confirme')
           .or(profileFilter)
-          .gte('date_debut', now).lte('date_debut', future).order('date_debut').limit(5),
+          .gte('date_heure', now).lte('date_heure', future).order('date_heure').limit(5),
       ]);
 
       setPendingRdvs((pendRes.data ?? []) as PendingRdv[]);
@@ -171,7 +171,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       uid,
       titre: `RDV ${clientNames[rdv.client_uid] || 'Client'}${rdv.motif ? ` — ${rdv.motif}` : ''}`,
       type: 'rdv',
-      date_debut: rdv.date_debut,
+      date_debut: rdv.date_heure,
       rdv_id: rdv.id,
       pro_profile_id: profileId,
     });
@@ -179,12 +179,12 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       uid: rdv.client_uid,
       type: 'rdv_confirme',
       title: 'RDV confirmé',
-      body: `Votre rendez-vous du ${fmtDate(rdv.date_debut)} a été confirmé.`,
+      body: `Votre rendez-vous du ${fmtDate(rdv.date_heure)} a été confirmé.`,
       data: { rdv_id: rdv.id },
       read: false,
     });
     setPendingRdvs(p => p.filter(r => r.id !== rdv.id));
-    setUpcomingRdvs(p => [...p, { ...rdv, statut: 'confirme' }].sort((a, b) => a.date_debut.localeCompare(b.date_debut)));
+    setUpcomingRdvs(p => [...p, { ...rdv, statut: 'confirme' }].sort((a, b) => a.date_heure.localeCompare(b.date_heure)));
     setSavingRdv(null);
   }
 
@@ -195,7 +195,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       uid: rdv.client_uid,
       type: 'rdv_refuse',
       title: 'RDV refusé',
-      body: `Votre demande de rendez-vous du ${fmtDate(rdv.date_debut)} a été refusée.`,
+      body: `Votre demande de rendez-vous du ${fmtDate(rdv.date_heure)} a été refusée.`,
       data: { rdv_id: rdv.id },
       read: false,
     });
@@ -254,7 +254,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
               <div className="text-2xl mb-1">📅</div>
               <p className="text-xs font-semibold text-[#1F2A2E]">Mon agenda</p>
             </Link>
-            <Link href="/pension/rdv" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+            <Link href="/mes-rdv" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
               <div className="text-2xl mb-1">🗓️</div>
               <p className="text-xs font-semibold text-[#1F2A2E]">Gérer les RDV</p>
             </Link>
@@ -276,7 +276,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
               <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">
                 RDV en attente {!loading && `(${pendingRdvs.length})`}
               </p>
-              <Link href="/pension/rdv" className="text-xs text-[#0C5C6C] font-medium hover:underline">Voir tout →</Link>
+              <Link href="/mes-rdv" className="text-xs text-[#0C5C6C] font-medium hover:underline">Voir tout →</Link>
             </div>
             {loading ? (
               <div className="bg-white rounded-2xl border border-gray-100 p-6 flex justify-center">
@@ -290,7 +290,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
                       <div>
                         <p className="font-semibold text-sm text-[#1F2A2E]">{clientNames[rdv.client_uid] ?? '…'}</p>
                         <p className="text-xs text-gray-500">
-                          {fmtDate(rdv.date_debut)}{rdv.motif ? ` · ${rdv.motif}` : ''}
+                          {fmtDate(rdv.date_heure)}{rdv.motif ? ` · ${rdv.motif}` : ''}
                         </p>
                       </div>
                       <span className="text-[10px] font-bold bg-amber-200 text-amber-700 px-2 py-0.5 rounded-full flex-shrink-0 ml-2">
@@ -340,7 +340,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
                   <span className="text-xl flex-shrink-0">🩺</span>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-sm text-[#1F2A2E] truncate">{clientNames[rdv.client_uid] ?? '…'}</p>
-                    <p className="text-xs text-gray-400">{fmtDate(rdv.date_debut)}{rdv.motif ? ` · ${rdv.motif}` : ''}</p>
+                    <p className="text-xs text-gray-400">{fmtDate(rdv.date_heure)}{rdv.motif ? ` · ${rdv.motif}` : ''}</p>
                   </div>
                 </div>
               ))}
