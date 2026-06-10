@@ -12,7 +12,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Animal {
-  id: number; nom: string; espece: string; race: string | null;
+  id: number | string; nom: string; espece: string; race: string | null;
   sexe: string | null; couleur: string | null; date_naissance: string | null;
   identification: string | null; passeport_numero: string | null;
   photo_url: string | null; sterilise: boolean | null;
@@ -116,7 +116,7 @@ export default function PatientDetailPage() {
   const { user, userData } = useAuth();
   const router = useRouter();
   const params = useParams();
-  const animalId = Number(params.id);
+  const animalId = params.id as string;
   const activeProfileId = useActiveProfile();
 
   const [catPro, setCatPro] = useState('');
@@ -456,6 +456,34 @@ export default function PatientDetailPage() {
             {isPensionType && (
               <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 flex gap-2 items-center text-blue-700 text-xs font-medium">
                 <span>📖</span><span>Lecture seule — accordé par le propriétaire</span>
+              </div>
+            )}
+
+            {/* Bouton ajouter dans Santé pour vets/soignants */}
+            {hasWriteAccess && !isPensionType && (
+              <div className="relative">
+                <button onClick={() => setShowAddMenu(v => !v)}
+                  className="w-full text-white rounded-2xl py-3 font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+                  style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
+                  <span className="text-lg leading-none">+</span>
+                  Ajouter au carnet de santé
+                </button>
+                {showAddMenu && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-2xl shadow-lg border border-gray-100 z-10 overflow-hidden">
+                    {[
+                      { type: 'vaccin',     label: '💉 Vaccin',          show: true },
+                      { type: 'visite',     label: '🩺 Visite vétérinaire', show: isVet },
+                      { type: 'traitement', label: '💊 Traitement',        show: true },
+                    ].filter(i => i.show).map(item => (
+                      <button key={item.type}
+                        onClick={() => { setAddingType(item.type as AddType); setShowAddMenu(false); }}
+                        className="w-full text-left px-4 py-3 text-sm font-medium text-[#1F2A2E] hover:bg-gray-50 border-b border-gray-50 last:border-0 transition-colors"
+                        style={{ fontFamily: 'Galey, sans-serif' }}>
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
