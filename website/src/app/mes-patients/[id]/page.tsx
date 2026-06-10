@@ -30,7 +30,7 @@ interface Owner {
 }
 interface Grant { id: string; status: string; vet_id: string; }
 interface VaccinEntry {
-  id: string; vaccin: string; date_injection: string;
+  id: string; vaccin: string; date: string;
   date_rappel: string | null; lot: string | null; veterinaire: string | null; source: string | null;
 }
 interface VisiteEntry {
@@ -43,11 +43,10 @@ interface TraitementEntry {
   date_fin: string | null; notes: string | null; source: string | null; vet_id: string | null;
 }
 interface CompteRendu {
-  id: string; date: string; motif: string | null; diagnostic: string | null;
-  notes: string | null; vet_nom: string | null; vet_id: string | null;
+  id: string; created_at: string; contenu: string | null; pro_uid: string | null;
 }
 interface Ordonnance {
-  id: string; date: string; vet_nom: string | null; url: string | null; notes: string | null;
+  id: string; date_emit: string; doc_url: string | null; notes: string | null; pro_uid: string | null;
 }
 interface RadioEntry {
   id: string; date: string; titre: string | null; notes: string | null; veterinaire: string | null;
@@ -119,8 +118,7 @@ export default function PatientDetailPage() {
   const { user, userData } = useAuth();
   const router = useRouter();
   const params = useParams();
-  const rawId = params.id as string;
-  const animalId: string | number = /^\d+$/.test(rawId) ? Number(rawId) : rawId;
+  const animalId = params.id as string;
   const activeProfileId = useActiveProfile();
 
   const [catPro, setCatPro] = useState('');
@@ -208,11 +206,11 @@ export default function PatientDetailPage() {
         ownerUid
           ? supabase.from('users').select('uid, firstname, lastname, name_elevage, email, phone_number, numero_elevage, adress_elevage, rue_elevage, ville_elevage, code_postal_elevage, ville, code_postal, is_elevage, is_pro').eq('uid', ownerUid).maybeSingle()
           : Promise.resolve({ data: null }),
-        supabase.from('vaccins').select('*').eq('animal_id', animalId).order('date_injection', { ascending: false }),
+        supabase.from('vaccinations').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
         supabase.from('visites').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
         supabase.from('traitements').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
-        supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
-        supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
+        supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false }),
+        supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date_emit', { ascending: false }),
         supabase.from('radios').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
         isFemelle ? supabase.from('chaleurs').select('*').eq('animal_id', animalId).order('date_debut', { ascending: false }) : Promise.resolve({ data: [] }),
         supabase.from('saillies').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
@@ -252,8 +250,8 @@ export default function PatientDetailPage() {
     const base = { animal_id: animalId, vet_id: user.uid, source: 'veterinaire', veterinaire: vetName };
     try {
       if (addingType === 'vaccin') {
-        await supabase.from('vaccins').insert({ ...base, vaccin: formNom.trim(), date_injection: formDate, date_rappel: formRappel || null, lot: formLot.trim() || null });
-        const { data } = await supabase.from('vaccins').select('*').eq('animal_id', animalId).order('date_injection', { ascending: false });
+        await supabase.from('vaccinations').insert({ ...base, vaccin: formNom.trim(), date: formDate, date_rappel: formRappel || null, lot: formLot.trim() || null });
+        const { data } = await supabase.from('vaccinations').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setVaccins((data ?? []) as VaccinEntry[]);
       } else if (addingType === 'visite') {
         await supabase.from('visites').insert({ ...base, date: formDate, motif: formMotif.trim() || null, diagnostic: formDiag.trim() || null, notes: formNotes.trim() || null });
@@ -264,16 +262,23 @@ export default function PatientDetailPage() {
         const { data } = await supabase.from('traitements').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setTraitements((data ?? []) as TraitementEntry[]);
       } else if (addingType === 'ordonnance') {
-        await supabase.from('ordonnances').insert({ animal_id: animalId, pro_uid: user.uid, vet_nom: vetName, date: formDate, notes: formNotes.trim() || null });
-        const { data } = await supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date', { ascending: false });
+        const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+        await supabase.from('ordonnances').insert({ animal_id: animalId, pro_uid: user.uid, owner_uid: ownerUid, date_emit: formDate, notes: formNotes.trim() || null });
+        const { data } = await supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date_emit', { ascending: false });
         setOrdonnances((data ?? []) as Ordonnance[]);
       } else if (addingType === 'radio') {
         await supabase.from('radios').insert({ ...base, titre: formTitre.trim() || 'Radio / Examen', date: formDate, notes: formNotes.trim() || null });
         const { data } = await supabase.from('radios').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setRadios((data ?? []) as RadioEntry[]);
       } else if (addingType === 'cr') {
-        await supabase.from('comptes_rendus').insert({ animal_id: animalId, pro_uid: user.uid, vet_nom: vetName, date: formDate, motif: formMotif.trim() || null, diagnostic: formDiag.trim() || null, notes: formNotes.trim() || null });
-        const { data } = await supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('date', { ascending: false });
+        const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+        const contenu = [
+          formMotif.trim() && `Motif : ${formMotif.trim()}`,
+          formDiag.trim() && `Diagnostic : ${formDiag.trim()}`,
+          formNotes.trim() && formNotes.trim(),
+        ].filter(Boolean).join('\n\n');
+        await supabase.from('comptes_rendus').insert({ animal_id: animalId, pro_uid: user.uid, owner_uid: ownerUid, contenu: contenu || null });
+        const { data } = await supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false });
         setComptesRendus((data ?? []) as CompteRendu[]);
       } else if (addingType === 'mesure') {
         const updates: Record<string, number> = {};
@@ -494,7 +499,7 @@ export default function PatientDetailPage() {
                         <div className="w-8 h-8 rounded-lg bg-[#E3F2FD] flex items-center justify-center text-sm flex-shrink-0">💉</div>
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-sm text-[#1F2A2E]">{v.vaccin}</p>
-                          <p className="text-xs text-gray-500">Injecté le {fmtDateShort(v.date_injection)}</p>
+                          <p className="text-xs text-gray-500">Injecté le {fmtDateShort(v.date)}</p>
                           {v.date_rappel && (
                             <p className={`text-xs font-medium mt-0.5 ${due ? 'text-red-500' : 'text-[#0C5C6C]'}`}>
                               {due ? '⚠️ Rappel dû' : '📅 Rappel'} le {fmtDateShort(v.date_rappel)}
@@ -752,7 +757,7 @@ export default function PatientDetailPage() {
                       <div key={v.id} className="border border-gray-100 rounded-xl p-3">
                         <div className="flex items-center justify-between">
                           <p className="font-semibold text-sm text-[#1F2A2E]">{v.vaccin}</p>
-                          <p className="text-xs text-gray-400">{fmtDateShort(v.date_injection)}</p>
+                          <p className="text-xs text-gray-400">{fmtDateShort(v.date)}</p>
                         </div>
                         {v.date_rappel && <p className={`text-xs mt-0.5 ${due ? 'text-red-500 font-medium' : 'text-[#0C5C6C]'}`}>{due ? '⚠️ Rappel dû' : '📅 Rappel'} le {fmtDateShort(v.date_rappel)}</p>}
                         {v.lot && <p className="text-xs text-gray-400">Lot : {v.lot}</p>}
@@ -808,13 +813,11 @@ export default function PatientDetailPage() {
                 <div className="space-y-3">
                   {comptesRendus.map(c => (
                     <div key={c.id} className="border border-gray-100 rounded-xl p-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="font-semibold text-sm text-[#1F2A2E]">{fmtDateShort(c.date)}</p>
-                        {c.motif && <span className="text-[10px] bg-[#E3F2FD] text-[#0C5C6C] px-2 py-0.5 rounded-full font-medium">{c.motif}</span>}
-                      </div>
-                      {c.diagnostic && <p className="text-xs text-gray-600"><span className="font-medium">Diagnostic : </span>{c.diagnostic}</p>}
-                      {c.notes && <p className="text-xs text-gray-400 mt-1">{c.notes}</p>}
-                      {c.vet_nom && <p className="text-xs text-gray-400 mt-0.5">Dr {c.vet_nom}</p>}
+                      <p className="text-xs text-gray-400 mb-1">{fmtDateShort(c.created_at)}</p>
+                      {c.contenu
+                        ? <p className="text-sm text-[#1F2A2E] whitespace-pre-wrap">{c.contenu}</p>
+                        : <p className="text-xs text-gray-400 italic">Compte rendu vide</p>
+                      }
                     </div>
                   ))}
                 </div>
@@ -829,12 +832,11 @@ export default function PatientDetailPage() {
                     <div key={o.id} className="border border-gray-100 rounded-xl p-3 flex items-center gap-3">
                       <span className="text-xl">📄</span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-[#1F2A2E]">{fmtDateShort(o.date)}</p>
+                        <p className="text-sm font-medium text-[#1F2A2E]">{fmtDateShort(o.date_emit)}</p>
                         {o.notes && <p className="text-xs text-gray-400">{o.notes}</p>}
-                        {o.vet_nom && <p className="text-xs text-gray-400">Dr {o.vet_nom}</p>}
                       </div>
-                      {o.url && (
-                        <a href={o.url} target="_blank" rel="noopener noreferrer"
+                      {o.doc_url && (
+                        <a href={o.doc_url} target="_blank" rel="noopener noreferrer"
                           className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex-shrink-0"
                           style={{ background: TEAL }}>
                           Voir
