@@ -122,7 +122,7 @@ const MENU_VET = [
     icon: '🩺',
     items: [
       { href: '/agenda',        label: 'Mon agenda',      icon: '📅' },
-      { href: '/pension/rdv',   label: 'Gérer mes RDV',   icon: '🗓️' },
+      { href: '/mes-rdv',       label: 'Gérer mes RDV',   icon: '🗓️' },
       { href: '/pro/creneaux',  label: 'Mes créneaux',    icon: '⏰' },
       { href: '/mes-patients',  label: 'Mes patients',    icon: '🐾' },
     ],
@@ -151,7 +151,7 @@ const MENU_PRO = [
     icon: '📅',
     items: [
       { href: '/agenda',       label: 'Mon agenda',      icon: '📅' },
-      { href: '/pension/rdv',  label: 'Gérer mes RDV',   icon: '🗓️' },
+      { href: '/mes-rdv',      label: 'Gérer mes RDV',   icon: '🗓️' },
       { href: '/pro/creneaux', label: 'Mes créneaux',    icon: '⏰' },
     ],
   },
@@ -179,7 +179,7 @@ const MENU_PENSION = [
     items: [
       { href: '/pension/registre',  label: 'Registre pension',     icon: '📋' },
       { href: '/pension/demandes',  label: 'Demandes d\'accès',    icon: '🔑' },
-      { href: '/pension/rdv',       label: 'Gestion des RDV',      icon: '🗓️' },
+      { href: '/mes-rdv',           label: 'Gestion des RDV',      icon: '🗓️' },
       { href: '/pro/creneaux',      label: 'Mes créneaux',         icon: '⏰' },
       { href: '/agenda',            label: 'Mon agenda',           icon: '📅' },
     ],
