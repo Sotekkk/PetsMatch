@@ -33,6 +33,24 @@ const features = [
     bg: 'bg-amber-50',
     border: 'border-amber-200',
   },
+  {
+    icon: '🩺',
+    title: 'Services professionnels',
+    desc: 'Vétérinaires, éducateurs, pension, toilettage… trouvez le bon professionnel près de chez vous.',
+    href: '/services',
+    cta: 'Trouver un pro',
+    bg: 'bg-[#E3F2FD]',
+    border: 'border-[#2196F3]/30',
+  },
+  {
+    icon: '🛍️',
+    title: 'Marketplace',
+    desc: 'Boutiques, alimentation, artisans… des partenaires sélectionnés pour vos animaux.',
+    href: '/marketplace',
+    cta: 'Découvrir',
+    bg: 'bg-[#F3E5F5]',
+    border: 'border-[#8E24AA]/30',
+  },
 ];
 
 function GuestHome() {
@@ -66,7 +84,7 @@ function GuestHome() {
         <p className="text-center text-gray-500 mb-10">
           Des outils pensés pour les amoureux des animaux
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {features.map((f) => (
             <div key={f.href} className={`${f.bg} border ${f.border} rounded-2xl p-6 flex flex-col gap-3 hover:shadow-md transition-shadow`}>
               <span className="text-4xl">{f.icon}</span>

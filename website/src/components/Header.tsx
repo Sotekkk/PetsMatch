@@ -36,6 +36,8 @@ const NAV_GUEST = [
   { href: '/annonces',       label: 'Annonces' },
   { href: '/elevages',       label: 'Élevages' },
   { href: '/animaux-perdus', label: 'Animaux perdus' },
+  { href: '/services',       label: 'Services' },
+  { href: '/marketplace',    label: 'Marketplace' },
 ];
 
 const NAV_ELEVEUR = [
