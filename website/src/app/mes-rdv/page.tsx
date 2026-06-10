@@ -380,17 +380,53 @@ function RdvCard({ rdv, tab, isVet, onAccepter, onRefuser, onAnnuler, onTerminer
 
 // ── Onglet Créneaux ────────────────────────────────────────────────────────────
 
+// Helpers 15 min (partagés avec /pro/creneaux)
+function timeToMins(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+function minsToTime(m: number): string {
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+function snapTo15(t: string): string {
+  return minsToTime(Math.floor(timeToMins(t) / 15) * 15);
+}
+interface SlotRange { start: string; end: string; statut: SlotStatus; }
+function groupRanges(slotsForDate: { time: string; statut: SlotStatus }[]): SlotRange[] {
+  const sorted = [...slotsForDate].sort((a, b) => a.time.localeCompare(b.time));
+  if (!sorted.length) return [];
+  const ranges: SlotRange[] = [];
+  let rStart = sorted[0].time;
+  let prevMins = timeToMins(sorted[0].time);
+  let curStatut = sorted[0].statut;
+  for (let i = 1; i < sorted.length; i++) {
+    const curMins = timeToMins(sorted[i].time);
+    if (sorted[i].statut === curStatut && curMins === prevMins + 15) {
+      prevMins = curMins;
+    } else {
+      ranges.push({ start: rStart, end: minsToTime(prevMins + 15), statut: curStatut });
+      rStart = sorted[i].time; prevMins = curMins; curStatut = sorted[i].statut;
+    }
+  }
+  ranges.push({ start: rStart, end: minsToTime(prevMins + 15), statut: curStatut });
+  return ranges;
+}
+
 function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
   const [weekStart, setWeekStart]           = useState(() => getMonday(new Date()));
   const [selectedDayIdx, setSelectedDayIdx] = useState(0);
-  const [mode, setMode]                     = useState<SlotStatus>('disponible');
   const [slots, setSlots]                   = useState<Record<string, SlotStatus>>({});
   const [loadingSlots, setLoadingSlots]     = useState(false);
-  const [saving, setSaving]                 = useState<string | null>(null);
+  const [saving, setSaving]                 = useState(false);
   const [replicating, setReplicating]       = useState(false);
-  const [showModal, setShowModal]           = useState(false);
+  const [showRepModal, setShowRepModal]     = useState(false);
   const [repChoice, setRepChoice]           = useState<'4sem' | 'annee' | 'perso'>('4sem');
   const [repEndDate, setRepEndDate]         = useState('');
+  // Add-range modal
+  const [showAddModal, setShowAddModal]     = useState(false);
+  const [addMode, setAddMode]               = useState<SlotStatus>('disponible');
+  const [addStart, setAddStart]             = useState('09:00');
+  const [addEnd, setAddEnd]                 = useState('10:00');
 
   const loadSlots = useCallback(async () => {
     setLoadingSlots(true);
@@ -407,8 +443,8 @@ function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
         .lte('date', toDateStr(end));
       const map: Record<string, SlotStatus> = {};
       for (const r of (data ?? []) as { date: string; heure_debut: string; statut: SlotStatus }[]) {
-        const h = parseInt(r.heure_debut.split(':')[0], 10);
-        map[`${r.date}_${h}`] = r.statut;
+        const hhmm = r.heure_debut.substring(0, 5); // 'HH:MM'
+        map[`${r.date}_${hhmm}`] = r.statut;
       }
       setSlots(map);
     } catch { /* ignore */ }
@@ -421,31 +457,54 @@ function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
   const selectedDay = days[selectedDayIdx];
   const dateStr     = toDateStr(selectedDay);
 
-  async function toggleSlot(hour: number) {
+  // Plages regroupées pour le jour sélectionné
+  const slotsForDay = Object.entries(slots)
+    .filter(([k]) => k.startsWith(`${dateStr}_`))
+    .map(([k, statut]) => ({ time: k.slice(dateStr.length + 1), statut }));
+  const ranges = groupRanges(slotsForDay);
+
+  async function applyRange(start: string, end: string, statut: SlotStatus) {
     if (saving) return;
-    const key     = `${dateStr}_${hour}`;
-    const current = slots[key];
-    const next    = current === mode ? null : mode;
-    const prev    = current;
-    setSaving(key);
-    setSlots(s => { const n = { ...s }; if (next) n[key] = next; else delete n[key]; return n; });
-    try {
-      const hd = `${String(hour).padStart(2, '0')}:00:00`;
-      const hf = `${String(hour + 1).padStart(2, '0')}:00:00`;
-      if (!next) {
-        await supabase.from('creneaux_pro').delete()
-          .eq('pro_uid', uid).eq('pro_profile_id', profileId)
-          .eq('date', dateStr).eq('heure_debut', hd);
-      } else {
-        await supabase.from('creneaux_pro').upsert({
-          pro_uid: uid, pro_profile_id: profileId,
-          date: dateStr, heure_debut: hd, heure_fin: hf, statut: next,
-        }, { onConflict: 'pro_uid,pro_profile_id,date,heure_debut' });
-      }
-    } catch {
-      setSlots(s => { const n = { ...s }; if (prev) n[key] = prev; else delete n[key]; return n; });
+    setSaving(true);
+    let cur = timeToMins(start);
+    const endM = timeToMins(end);
+    const newSlots: Record<string, SlotStatus> = {};
+    const rows: Record<string, unknown>[] = [];
+    while (cur < endM) {
+      const hhmm = minsToTime(cur);
+      const fin  = minsToTime(cur + 15);
+      const key  = `${dateStr}_${hhmm}`;
+      newSlots[key] = statut;
+      rows.push({ pro_uid: uid, pro_profile_id: profileId, date: dateStr,
+        heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut });
+      cur += 15;
     }
-    setSaving(null);
+    setSlots(s => ({ ...s, ...newSlots }));
+    try {
+      await supabase.from('creneaux_pro').upsert(rows, { onConflict: 'pro_uid,pro_profile_id,date,heure_debut' });
+    } catch {
+      setSlots(s => { const n = { ...s }; Object.keys(newSlots).forEach(k => delete n[k]); return n; });
+    }
+    setSaving(false);
+  }
+
+  async function deleteRange(r: SlotRange) {
+    let cur = timeToMins(r.start);
+    const endM = timeToMins(r.end);
+    const hdList: string[] = [];
+    const keyList: string[] = [];
+    while (cur < endM) {
+      const hhmm = minsToTime(cur);
+      hdList.push(`${hhmm}:00`);
+      keyList.push(`${dateStr}_${hhmm}`);
+      cur += 15;
+    }
+    setSlots(s => { const n = { ...s }; keyList.forEach(k => delete n[k]); return n; });
+    try {
+      await supabase.from('creneaux_pro').delete()
+        .eq('pro_uid', uid).eq('pro_profile_id', profileId)
+        .eq('date', dateStr).in('heure_debut', hdList);
+    } catch { loadSlots(); }
   }
 
   async function handleReplicate() {
@@ -459,27 +518,31 @@ function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
     } else {
       endDate = new Date(weekStart); endDate.setDate(weekStart.getDate() + 28);
     }
-    setReplicating(true); setShowModal(false);
+    setReplicating(true); setShowRepModal(false);
     try {
       const rows: Record<string, unknown>[] = [];
       let target = new Date(weekStart);
       target.setDate(target.getDate() + 7);
       while (target <= endDate) {
         for (const [key] of weekSlots) {
-          const [datePart, hourStr] = key.split('_');
-          const hour    = parseInt(hourStr, 10);
-          const orig    = new Date(datePart);
-          const dayDiff = Math.round((orig.getTime() - weekStart.getTime()) / 86400000);
-          const tDay    = new Date(target);
+          const underIdx = key.lastIndexOf('_');
+          const datePart = key.slice(0, underIdx);
+          const hhmm     = key.slice(underIdx + 1);
+          const orig     = new Date(datePart);
+          const dayDiff  = Math.round((orig.getTime() - weekStart.getTime()) / 86400000);
+          const tDay     = new Date(target);
           tDay.setDate(target.getDate() + dayDiff);
+          const fin = minsToTime(timeToMins(hhmm) + 15);
           rows.push({ pro_uid: uid, pro_profile_id: profileId, date: toDateStr(tDay),
-            heure_debut: `${String(hour).padStart(2, '0')}:00:00`,
-            heure_fin: `${String(hour + 1).padStart(2, '0')}:00:00`, statut: 'disponible' });
+            heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut: 'disponible' });
         }
         target = new Date(target); target.setDate(target.getDate() + 7);
       }
       const seen = new Set<string>();
-      const deduped = rows.filter(r => { const k = `${r.date}_${r.heure_debut}`; return seen.has(k as string) ? false : (seen.add(k as string), true); });
+      const deduped = rows.filter(r => {
+        const k = `${r.date}_${r.heure_debut}`;
+        return seen.has(k as string) ? false : (seen.add(k as string), true);
+      });
       if (deduped.length) await supabase.from('creneaux_pro').upsert(deduped, { onConflict: 'pro_uid,pro_profile_id,date,heure_debut' });
     } catch { /* ignore */ }
     setReplicating(false);
@@ -489,7 +552,7 @@ function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
 
   return (
     <div className="space-y-4">
-      {/* Navigation semaine + répliquer */}
+      {/* Navigation semaine */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
         <div className="flex items-center justify-between mb-3">
           <button onClick={() => { setSlots({}); setWeekStart(d => { const n = new Date(d); n.setDate(d.getDate() - 7); return n; }); }}
@@ -500,8 +563,6 @@ function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
           <button onClick={() => { setSlots({}); setWeekStart(d => { const n = new Date(d); n.setDate(d.getDate() + 7); return n; }); }}
             className="p-2 rounded-lg hover:bg-gray-100 text-lg font-bold" style={{ color: TEAL }}>›</button>
         </div>
-
-        {/* Sélecteur jour */}
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {days.map((day, i) => {
             const sel     = i === selectedDayIdx;
@@ -522,64 +583,132 @@ function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
         </div>
       </div>
 
-      {/* Mode + légende */}
+      {/* Actions */}
       <div className="flex gap-2">
-        <button onClick={() => setMode('disponible')}
-          className="flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all"
-          style={{ background: mode === 'disponible' ? `${GREEN}20` : 'white', borderColor: mode === 'disponible' ? GREEN : '#e5e7eb', color: mode === 'disponible' ? '#4A7A32' : '#6B7280', fontFamily: 'Galey, sans-serif' }}>
-          ✓ Disponible
+        <button onClick={() => setShowAddModal(true)}
+          className="flex-1 py-3 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+          style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
+          + Nouvelle plage
         </button>
-        <button onClick={() => setMode('bloque')}
-          className="flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all"
-          style={{ background: mode === 'bloque' ? '#FFF3E0' : 'white', borderColor: mode === 'bloque' ? ORANGE : '#e5e7eb', color: mode === 'bloque' ? '#E65100' : '#6B7280', fontFamily: 'Galey, sans-serif' }}>
-          🚫 Bloqué
-        </button>
-        <button onClick={() => setShowModal(true)} disabled={dispCount === 0 || replicating}
-          className="px-3 py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors disabled:opacity-40"
-          style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
+        <button onClick={() => setShowRepModal(true)} disabled={dispCount === 0 || replicating}
+          className="px-4 py-3 rounded-xl text-sm font-semibold border-2 transition-colors disabled:opacity-40"
+          style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}
+          title="Répliquer la semaine">
           🔁
         </button>
       </div>
 
-      {/* Grille horaire 8h-19h */}
+      {/* Plages du jour */}
       {loadingSlots ? (
         <div className="flex justify-center py-10 text-sm text-gray-400">Chargement…</div>
+      ) : ranges.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-8 text-center">
+          <p className="text-3xl mb-2">🗓</p>
+          <p className="text-sm text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Aucune plage configurée
+          </p>
+          <p className="text-xs text-gray-300 mt-1">Appuyez sur « + Nouvelle plage » pour ajouter une disponibilité ou un blocage</p>
+        </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {Array.from({ length: 12 }, (_, i) => 8 + i).map(hour => {
-            const key    = `${dateStr}_${hour}`;
-            const status = slots[key];
-            const isSav  = saving === key;
-            let bg = 'white', border = '#e5e7eb', textC = '#9CA3AF';
-            let badge: string | null = null, badgeBg = 'transparent';
-            if (status === 'disponible') { bg = `${GREEN}1F`; border = GREEN; textC = '#4A7A32'; badge = 'Disponible'; badgeBg = `${GREEN}33`; }
-            else if (status === 'bloque') { bg = '#FFF3E0'; border = ORANGE; textC = '#E65100'; badge = 'Bloqué'; badgeBg = '#FFE0B2'; }
+          {ranges.map((r, i) => {
+            const isDisp = r.statut === 'disponible';
             return (
-              <button key={hour} onClick={() => !isSav && toggleSlot(hour)} disabled={isSav}
-                className="flex items-center px-4 py-3.5 rounded-xl border-2 transition-all text-left disabled:opacity-60 hover:opacity-90"
-                style={{ background: bg, borderColor: border, fontFamily: 'Galey, sans-serif' }}>
-                <span className="flex-1 text-sm font-semibold" style={{ color: textC }}>
-                  {String(hour).padStart(2, '0')}:00 — {String(hour + 1).padStart(2, '0')}:00
-                </span>
-                {badge ? (
-                  <span className="text-xs font-bold px-2 py-0.5 rounded-lg" style={{ background: badgeBg, color: textC }}>{badge}</span>
-                ) : (
-                  <span className="text-xs" style={{ color: mode === 'disponible' ? GREEN : ORANGE }}>
-                    {mode === 'disponible' ? '+ Disponible' : '🚫 Bloquer'}
+              <div key={i} className="bg-white rounded-2xl px-4 py-3.5 shadow-sm border-2 flex items-center gap-3"
+                style={{ borderColor: isDisp ? GREEN : ORANGE }}>
+                <div className="flex-1">
+                  <p className="text-lg font-bold" style={{ fontFamily: 'Galey, sans-serif', color: isDisp ? '#4A7A32' : '#E65100' }}>
+                    {r.start} → {r.end}
+                  </p>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                    style={{ background: isDisp ? `${GREEN}22` : '#FFF3E0', color: isDisp ? '#4A7A32' : '#E65100' }}>
+                    {isDisp ? '✓ Disponible' : '🚫 Bloqué'}
                   </span>
-                )}
-              </button>
+                </div>
+                <button onClick={() => deleteRange(r)}
+                  className="p-2 rounded-xl hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors text-sm">
+                  🗑
+                </button>
+              </div>
             );
           })}
         </div>
       )}
 
+      {/* Modal — Nouvelle plage */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4"
+          onClick={() => setShowAddModal(false)}>
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5"
+            onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-base text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>
+              Nouvelle plage
+            </h3>
+
+            {/* Mode */}
+            <div className="flex gap-2">
+              {(['disponible', 'bloque'] as const).map(m => {
+                const col = m === 'disponible' ? GREEN : ORANGE;
+                return (
+                  <button key={m} onClick={() => setAddMode(m)}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all"
+                    style={{ background: addMode === m ? `${col}18` : 'white', borderColor: addMode === m ? col : '#e5e7eb', color: addMode === m ? (m === 'disponible' ? '#4A7A32' : '#E65100') : '#6B7280', fontFamily: 'Galey, sans-serif' }}>
+                    {m === 'disponible' ? '✓ Disponible' : '🚫 Bloqué'}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Horaires */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">De</label>
+                <input type="time" step="900" value={addStart}
+                  onChange={e => setAddStart(snapTo15(e.target.value || addStart))}
+                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-3 text-xl font-bold text-center focus:outline-none focus:border-[#0C5C6C] text-[#1E2025]"
+                  style={{ fontFamily: 'Galey, sans-serif' }} />
+              </div>
+              <span className="text-2xl text-gray-400 mt-5">→</span>
+              <div className="flex-1">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">À</label>
+                <input type="time" step="900" value={addEnd}
+                  onChange={e => setAddEnd(snapTo15(e.target.value || addEnd))}
+                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-3 text-xl font-bold text-center focus:outline-none focus:border-[#0C5C6C] text-[#1E2025]"
+                  style={{ fontFamily: 'Galey, sans-serif' }} />
+              </div>
+            </div>
+
+            {timeToMins(addEnd) <= timeToMins(addStart) && (
+              <p className="text-xs text-red-500 -mt-2">L&apos;heure de fin doit être après l&apos;heure de début.</p>
+            )}
+
+            <div className="flex gap-3">
+              <button onClick={() => setShowAddModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500">
+                Annuler
+              </button>
+              <button
+                onClick={async () => {
+                  if (timeToMins(addEnd) <= timeToMins(addStart)) return;
+                  setShowAddModal(false);
+                  await applyRange(addStart, addEnd, addMode);
+                }}
+                disabled={saving || timeToMins(addEnd) <= timeToMins(addStart)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                style={{ background: addMode === 'disponible' ? GREEN : ORANGE, fontFamily: 'Galey, sans-serif' }}>
+                {saving ? '…' : 'Appliquer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal répliquer */}
-      {showModal && (
+      {showRepModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
             <h3 className="font-bold text-base mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>Répliquer les créneaux</h3>
-            <p className="text-sm text-gray-500 mb-4">{dispCount} créneau(x) disponibles.</p>
+            <p className="text-sm text-gray-500 mb-4">{dispCount} créneau(x) disponibles à répliquer.</p>
             <div className="flex flex-col gap-2.5 mb-5">
               {([['4sem', '4 semaines suivantes'], ['annee', "Jusqu'à la fin de l'année"], ['perso', 'Date personnalisée…']] as const).map(([v, l]) => (
                 <label key={v} className="flex items-center gap-2 cursor-pointer text-sm font-medium" style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -593,7 +722,7 @@ function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
               )}
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setShowModal(false)}
+              <button onClick={() => setShowRepModal(false)}
                 className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500">Annuler</button>
               <button onClick={handleReplicate}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: TEAL }}>Répliquer</button>
