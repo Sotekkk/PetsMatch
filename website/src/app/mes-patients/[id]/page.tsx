@@ -49,6 +49,9 @@ interface CompteRendu {
 interface Ordonnance {
   id: string; date: string; vet_nom: string | null; url: string | null; notes: string | null;
 }
+interface RadioEntry {
+  id: string; date: string; titre: string | null; notes: string | null; veterinaire: string | null;
+}
 interface Chaleur { id: string; date_debut: string; date_fin: string | null; notes: string | null; }
 interface Saillie { id: string; date: string; partenaire: string | null; notes: string | null; }
 interface Gestation {
@@ -133,6 +136,7 @@ export default function PatientDetailPage() {
   // Consultations (soignants)
   const [comptesRendus, setComptesRendus] = useState<CompteRendu[]>([]);
   const [ordonnances, setOrdonnances] = useState<Ordonnance[]>([]);
+  const [radios, setRadios] = useState<RadioEntry[]>([]);
   // Repro
   const [chaleurs, setChaleurs] = useState<Chaleur[]>([]);
   const [saillies, setSaillies] = useState<Saillie[]>([]);
@@ -204,8 +208,9 @@ export default function PatientDetailPage() {
         supabase.from('vaccins').select('*').eq('animal_id', animalId).order('date_injection', { ascending: false }),
         supabase.from('visites').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
         supabase.from('traitements').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
-        supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).eq('pro_uid', user!.uid).order('date', { ascending: false }),
-        supabase.from('ordonnances').select('*').eq('animal_id', animalId).eq('pro_uid', user!.uid).order('date', { ascending: false }),
+        supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
+        supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
+        supabase.from('radios').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
         isFemelle ? supabase.from('chaleurs').select('*').eq('animal_id', animalId).order('date_debut', { ascending: false }) : Promise.resolve({ data: [] }),
         supabase.from('saillies').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
         isFemelle ? supabase.from('gestations').select('*').eq('animal_id', animalId).order('date_saillie', { ascending: false }) : Promise.resolve({ data: [] }),
@@ -228,9 +233,10 @@ export default function PatientDetailPage() {
       setTraitements(get<TraitementEntry>(3));
       setComptesRendus(get<CompteRendu>(4));
       setOrdonnances(get<Ordonnance>(5));
-      setChaleurs(get<Chaleur>(6));
-      setSaillies(get<Saillie>(7));
-      setGestations(get<Gestation>(8));
+      setRadios(get<RadioEntry>(6));
+      setChaleurs(get<Chaleur>(7));
+      setSaillies(get<Saillie>(8));
+      setGestations(get<Gestation>(9));
       setLoading(false);
     }
     load();
@@ -260,6 +266,8 @@ export default function PatientDetailPage() {
         setOrdonnances((data ?? []) as Ordonnance[]);
       } else if (addingType === 'radio') {
         await supabase.from('radios').insert({ ...base, titre: formTitre.trim() || 'Radio / Examen', date: formDate, notes: formNotes.trim() || null });
+        const { data } = await supabase.from('radios').select('*').eq('animal_id', animalId).order('date', { ascending: false });
+        setRadios((data ?? []) as RadioEntry[]);
       }
     } finally {
       setFormNom(''); setFormLot(''); setFormRappel(''); setFormMotif(''); setFormDiag('');
@@ -459,34 +467,6 @@ export default function PatientDetailPage() {
               </div>
             )}
 
-            {/* Bouton ajouter dans Santé pour vets/soignants */}
-            {hasWriteAccess && !isPensionType && (
-              <div className="relative">
-                <button onClick={() => setShowAddMenu(v => !v)}
-                  className="w-full text-white rounded-2xl py-3 font-semibold text-sm transition-colors flex items-center justify-center gap-2"
-                  style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
-                  <span className="text-lg leading-none">+</span>
-                  Ajouter au carnet de santé
-                </button>
-                {showAddMenu && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-2xl shadow-lg border border-gray-100 z-10 overflow-hidden">
-                    {[
-                      { type: 'vaccin',     label: '💉 Vaccin',          show: true },
-                      { type: 'visite',     label: '🩺 Visite vétérinaire', show: isVet },
-                      { type: 'traitement', label: '💊 Traitement',        show: true },
-                    ].filter(i => i.show).map(item => (
-                      <button key={item.type}
-                        onClick={() => { setAddingType(item.type as AddType); setShowAddMenu(false); }}
-                        className="w-full text-left px-4 py-3 text-sm font-medium text-[#1F2A2E] hover:bg-gray-50 border-b border-gray-50 last:border-0 transition-colors"
-                        style={{ fontFamily: 'Galey, sans-serif' }}>
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* Vaccins */}
             <Card title={`💉 Vaccinations (${vaccins.length})`}>
               {vaccins.length === 0 ? <EmptyState text="Aucun vaccin enregistré" /> : (
@@ -675,7 +655,7 @@ export default function PatientDetailPage() {
           </Card>
         )}
 
-        {/* ── Consultations (soignants) ── */}
+        {/* ── Consultations (carnet de santé complet) ── */}
         {tab === 'Consultations' && (
           <>
             {/* Bouton + avec submenu */}
@@ -690,11 +670,11 @@ export default function PatientDetailPage() {
                 {showAddMenu && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-2xl shadow-lg border border-gray-100 z-10 overflow-hidden">
                     {[
-                      { type: 'vaccin',      label: '💉 Vaccin',              show: true },
-                      { type: 'visite',      label: '🩺 Visite vétérinaire',  show: isVet },
-                      { type: 'traitement',  label: '💊 Traitement',           show: true },
-                      { type: 'ordonnance',  label: '📄 Ordonnance',           show: isVet },
-                      { type: 'radio',       label: '🩻 Radio / Examen',       show: isVet },
+                      { type: 'vaccin',     label: '💉 Vaccin',             show: true },
+                      { type: 'visite',     label: '🩺 Visite vétérinaire', show: isVet },
+                      { type: 'traitement', label: '💊 Traitement',          show: true },
+                      { type: 'ordonnance', label: '📄 Ordonnance',          show: isVet },
+                      { type: 'radio',      label: '🩻 Radio / Examen',      show: isVet },
                     ].filter(i => i.show).map(item => (
                       <button key={item.type}
                         onClick={() => { setAddingType(item.type as AddType); setShowAddMenu(false); }}
@@ -718,11 +698,33 @@ export default function PatientDetailPage() {
               </div>
             )}
 
-            {/* Visites de ce vét */}
-            {visites.filter(v => v.vet_id === user?.uid).length > 0 && (
-              <Card title="🩺 Visites vétérinaires">
+            {/* Vaccins */}
+            <Card title={`💉 Vaccinations (${vaccins.length})`}>
+              {vaccins.length === 0 ? <EmptyState text="Aucun vaccin enregistré" /> : (
+                <div className="space-y-2">
+                  {vaccins.map(v => {
+                    const due = v.date_rappel && new Date(v.date_rappel) <= new Date();
+                    return (
+                      <div key={v.id} className="border border-gray-100 rounded-xl p-3">
+                        <div className="flex items-center justify-between">
+                          <p className="font-semibold text-sm text-[#1F2A2E]">{v.vaccin}</p>
+                          <p className="text-xs text-gray-400">{fmtDateShort(v.date_injection)}</p>
+                        </div>
+                        {v.date_rappel && <p className={`text-xs mt-0.5 ${due ? 'text-red-500 font-medium' : 'text-[#0C5C6C]'}`}>{due ? '⚠️ Rappel dû' : '📅 Rappel'} le {fmtDateShort(v.date_rappel)}</p>}
+                        {v.lot && <p className="text-xs text-gray-400">Lot : {v.lot}</p>}
+                        {v.veterinaire && <p className="text-xs text-gray-400">Dr {v.veterinaire}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+
+            {/* Visites */}
+            <Card title={`🩺 Visites vétérinaires (${visites.length})`}>
+              {visites.length === 0 ? <EmptyState text="Aucune visite enregistrée" /> : (
                 <div className="space-y-3">
-                  {visites.filter(v => v.vet_id === user?.uid).map(v => (
+                  {visites.map(v => (
                     <div key={v.id} className="border border-gray-100 rounded-xl p-3">
                       <div className="flex items-center justify-between mb-1">
                         <p className="font-semibold text-sm text-[#1F2A2E]">{fmtDateShort(v.date)}</p>
@@ -730,15 +732,35 @@ export default function PatientDetailPage() {
                       </div>
                       {v.diagnostic && <p className="text-xs text-gray-600"><span className="font-medium">Diagnostic : </span>{v.diagnostic}</p>}
                       {v.notes && <p className="text-xs text-gray-400 mt-1">{v.notes}</p>}
+                      {v.veterinaire && <p className="text-xs text-gray-400 mt-0.5">Dr {v.veterinaire}</p>}
                     </div>
                   ))}
                 </div>
-              </Card>
-            )}
+              )}
+            </Card>
+
+            {/* Traitements */}
+            <Card title={`💊 Traitements (${traitements.length})`}>
+              {traitements.length === 0 ? <EmptyState text="Aucun traitement enregistré" /> : (
+                <div className="space-y-2">
+                  {traitements.map(t => (
+                    <div key={t.id} className="border border-gray-100 rounded-xl p-3">
+                      <div className="flex items-center justify-between">
+                        <p className="font-semibold text-sm text-[#1F2A2E]">{t.nom}</p>
+                        <p className="text-xs text-gray-400">{fmtDateShort(t.date)}</p>
+                      </div>
+                      {t.posologie && <p className="text-xs text-gray-600">{t.posologie}</p>}
+                      {t.date_fin && <p className="text-xs text-gray-400">Fin : {fmtDateShort(t.date_fin)}</p>}
+                      {t.notes && <p className="text-xs text-gray-400 mt-1">{t.notes}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
 
             {/* Comptes rendus */}
-            {comptesRendus.length > 0 && (
-              <Card title="📋 Comptes rendus">
+            <Card title={`📋 Comptes rendus (${comptesRendus.length})`}>
+              {comptesRendus.length === 0 ? <EmptyState text="Aucun compte rendu enregistré" /> : (
                 <div className="space-y-3">
                   {comptesRendus.map(c => (
                     <div key={c.id} className="border border-gray-100 rounded-xl p-3">
@@ -748,15 +770,16 @@ export default function PatientDetailPage() {
                       </div>
                       {c.diagnostic && <p className="text-xs text-gray-600"><span className="font-medium">Diagnostic : </span>{c.diagnostic}</p>}
                       {c.notes && <p className="text-xs text-gray-400 mt-1">{c.notes}</p>}
+                      {c.vet_nom && <p className="text-xs text-gray-400 mt-0.5">Dr {c.vet_nom}</p>}
                     </div>
                   ))}
                 </div>
-              </Card>
-            )}
+              )}
+            </Card>
 
             {/* Ordonnances */}
-            {ordonnances.length > 0 && (
-              <Card title="📄 Ordonnances">
+            <Card title={`📄 Ordonnances (${ordonnances.length})`}>
+              {ordonnances.length === 0 ? <EmptyState text="Aucune ordonnance enregistrée" /> : (
                 <div className="space-y-2">
                   {ordonnances.map(o => (
                     <div key={o.id} className="border border-gray-100 rounded-xl p-3 flex items-center gap-3">
@@ -764,6 +787,7 @@ export default function PatientDetailPage() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-[#1F2A2E]">{fmtDateShort(o.date)}</p>
                         {o.notes && <p className="text-xs text-gray-400">{o.notes}</p>}
+                        {o.vet_nom && <p className="text-xs text-gray-400">Dr {o.vet_nom}</p>}
                       </div>
                       {o.url && (
                         <a href={o.url} target="_blank" rel="noopener noreferrer"
@@ -775,53 +799,27 @@ export default function PatientDetailPage() {
                     </div>
                   ))}
                 </div>
-              </Card>
-            )}
+              )}
+            </Card>
 
-            {/* Vaccins de ce vét */}
-            {vaccins.filter(v => v.source === 'veterinaire').length > 0 && (
-              <Card title="💉 Vaccins administrés">
-                <div className="space-y-2">
-                  {vaccins.filter(v => v.source === 'veterinaire').map(v => {
-                    const due = v.date_rappel && new Date(v.date_rappel) <= new Date();
-                    return (
-                      <div key={v.id} className="border border-gray-100 rounded-xl p-3">
+            {/* Radios / Examens */}
+            {isVet && (
+              <Card title={`🩻 Radios / Examens (${radios.length})`}>
+                {radios.length === 0 ? <EmptyState text="Aucun examen enregistré" /> : (
+                  <div className="space-y-2">
+                    {radios.map(r => (
+                      <div key={r.id} className="border border-gray-100 rounded-xl p-3">
                         <div className="flex items-center justify-between">
-                          <p className="font-semibold text-sm text-[#1F2A2E]">{v.vaccin}</p>
-                          <p className="text-xs text-gray-400">{fmtDateShort(v.date_injection)}</p>
+                          <p className="font-semibold text-sm text-[#1F2A2E]">{r.titre || 'Radio / Examen'}</p>
+                          <p className="text-xs text-gray-400">{fmtDateShort(r.date)}</p>
                         </div>
-                        {v.date_rappel && <p className={`text-xs mt-0.5 ${due ? 'text-red-500 font-medium' : 'text-[#0C5C6C]'}`}>{due ? '⚠️ Rappel dû' : '📅 Rappel'} le {fmtDateShort(v.date_rappel)}</p>}
-                        {v.lot && <p className="text-xs text-gray-400">Lot : {v.lot}</p>}
+                        {r.notes && <p className="text-xs text-gray-400 mt-1">{r.notes}</p>}
+                        {r.veterinaire && <p className="text-xs text-gray-400">Dr {r.veterinaire}</p>}
                       </div>
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
+                )}
               </Card>
-            )}
-
-            {/* Traitements de ce vét */}
-            {traitements.filter(t => t.vet_id === user?.uid).length > 0 && (
-              <Card title="💊 Traitements prescrits">
-                <div className="space-y-2">
-                  {traitements.filter(t => t.vet_id === user?.uid).map(t => (
-                    <div key={t.id} className="border border-gray-100 rounded-xl p-3">
-                      <div className="flex items-center justify-between">
-                        <p className="font-semibold text-sm text-[#1F2A2E]">{t.nom}</p>
-                        <p className="text-xs text-gray-400">{fmtDateShort(t.date)}</p>
-                      </div>
-                      {t.posologie && <p className="text-xs text-gray-600">{t.posologie}</p>}
-                      {t.date_fin && <p className="text-xs text-gray-400">Fin : {fmtDateShort(t.date_fin)}</p>}
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )}
-
-            {comptesRendus.length === 0 && ordonnances.length === 0
-              && visites.filter(v => v.vet_id === user?.uid).length === 0
-              && vaccins.filter(v => v.source === 'veterinaire').length === 0
-              && traitements.filter(t => t.vet_id === user?.uid).length === 0 && (
-              <EmptyState text={isVet ? 'Aucune consultation enregistrée pour ce patient' : 'Aucune observation enregistrée'} />
             )}
           </>
         )}
