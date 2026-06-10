@@ -1,9 +1,13 @@
 'use client';
 
 import Link from 'next/link';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { supabase } from '@/lib/supabase';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 import EleveurDashboard from './EleveurDashboard';
 import ParticulierDashboard from './ParticulierDashboard';
+import ProDashboard from './ProDashboard';
 
 const features = [
   {
@@ -120,8 +124,28 @@ function GuestHome() {
 
 export default function HomeDashboard() {
   const { user, userData, loading } = useAuth();
+  const activeProfileId = useActiveProfile();
+  const [activeProfile, setActiveProfile] = useState<{
+    id: string; profile_type: string; name_elevage: string; avatar_url: string | null; cat_pro: string;
+  } | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
 
-  if (loading) {
+  useEffect(() => {
+    if (!activeProfileId) {
+      setActiveProfile(null);
+      setProfileLoading(false);
+      return;
+    }
+    supabase.from('user_profiles')
+      .select('id, profile_type, name_elevage, avatar_url, cat_pro')
+      .eq('id', activeProfileId).single()
+      .then(({ data }) => {
+        setActiveProfile(data as typeof activeProfile);
+        setProfileLoading(false);
+      });
+  }, [activeProfileId]);
+
+  if (loading || profileLoading) {
     return (
       <div className="flex items-center justify-center py-32">
         <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
@@ -130,6 +154,8 @@ export default function HomeDashboard() {
   }
 
   if (!user) return <GuestHome />;
+
+  if (activeProfile) return <ProDashboard profile={activeProfile} profileId={activeProfileId} />;
 
   if (userData?.isElevage === true) return <EleveurDashboard />;
 

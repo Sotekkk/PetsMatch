@@ -58,6 +58,13 @@ const NAV_PRO = [
   { href: '/messages',  label: 'Messages' },
 ];
 
+const NAV_VET = [
+  { href: '/',              label: 'Accueil' },
+  { href: '/agenda',        label: 'Agenda' },
+  { href: '/mes-patients',  label: 'Patients' },
+  { href: '/messages',      label: 'Messages' },
+];
+
 const NAV_PARTICULIER = [
   { href: '/',               label: 'Accueil' },
   { href: '/mes-animaux',    label: 'Mes Animaux' },
@@ -108,7 +115,36 @@ const MENU_ELEVEUR = [
   },
 ];
 
-// Menu générique pour tous les pros sauf pension
+// Menu vétérinaire / santé animale
+const MENU_VET = [
+  {
+    section: 'Mon Activité',
+    icon: '🩺',
+    items: [
+      { href: '/agenda',        label: 'Mon agenda',      icon: '📅' },
+      { href: '/pension/rdv',   label: 'Gérer mes RDV',   icon: '🗓️' },
+      { href: '/pro/creneaux',  label: 'Mes créneaux',    icon: '⏰' },
+      { href: '/mes-patients',  label: 'Mes patients',    icon: '🐾' },
+    ],
+  },
+  {
+    section: 'Mon Profil',
+    icon: '👤',
+    items: [
+      { href: '/profil', label: 'Modifier mon profil', icon: '✏️' },
+    ],
+  },
+  {
+    section: 'Services',
+    icon: '🔎',
+    items: [
+      { href: '/services',    label: 'Annuaire des pros', icon: '🔎' },
+      { href: '/marketplace', label: 'Marketplace',       icon: '🛍️' },
+    ],
+  },
+];
+
+// Menu générique pour tous les pros sauf pension/vet
 const MENU_PRO = [
   {
     section: 'Mon Activité',
@@ -259,6 +295,10 @@ export default function Header() {
   const effectiveIsPension = activeProfile
     ? activeProfile.profile_type === 'pension'
     : (userData?.isPro === true && userData?.catPro === 'pension');
+  const effectiveIsVet = !!(activeProfile && (
+    activeProfile.profile_type === 'veterinaire' || activeProfile.profile_type === 'sante' ||
+    activeProfile.cat_pro === 'veterinaire' || activeProfile.cat_pro === 'sante'
+  ));
 
   const primaryDisplayName = userData?.nameElevage ?? userData?.firstname ?? user?.email ?? '';
   const primaryAvatar = userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
@@ -272,14 +312,14 @@ export default function Header() {
     ? PRO_TYPES.has(activeProfile.profile_type)
     : userData?.isPro === true;
 
-  // Quand un profil secondaire pro est actif → NAV_PRO, sinon comportement habituel
+  // Quand un profil secondaire pro est actif → nav/menu adaptés au type
   const isSecondaryPro = !!(activeProfile && PRO_TYPES.has(activeProfile.profile_type));
   const navLinks = loading || !user ? NAV_GUEST
-    : isSecondaryPro ? NAV_PRO
+    : isSecondaryPro ? (effectiveIsVet ? NAV_VET : NAV_PRO)
     : effectiveIsEleveur ? NAV_ELEVEUR
     : NAV_PARTICULIER;
   const menuSections = isSecondaryPro
-    ? (effectiveIsPension ? MENU_PENSION : MENU_PRO)
+    ? (effectiveIsPension ? MENU_PENSION : effectiveIsVet ? MENU_VET : MENU_PRO)
     : effectiveIsEleveur ? MENU_ELEVEUR
     : MENU_PARTICULIER;
 
