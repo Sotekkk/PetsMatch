@@ -374,18 +374,34 @@ export default function AnnonceDetailPage() {
           <div className="bg-white rounded-2xl p-5 shadow-sm">
             <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide mb-3">L'éleveur</h2>
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-[#EEF5EA] overflow-hidden flex-shrink-0 relative">
-                {pro?.profile_picture_url_elevage ? (
-                  <Image src={pro.profile_picture_url_elevage} alt="éleveur" fill className="object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-xl">🏡</div>
-                )}
-              </div>
+              {annonce.uid_eleveur ? (
+                <Link href={`/elevages/${annonce.uid_eleveur}`} className="w-12 h-12 rounded-full bg-[#EEF5EA] overflow-hidden flex-shrink-0 relative block hover:opacity-90 transition-opacity">
+                  {pro?.profile_picture_url_elevage ? (
+                    <Image src={pro.profile_picture_url_elevage} alt="éleveur" fill className="object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-xl">🏡</div>
+                  )}
+                </Link>
+              ) : (
+                <div className="w-12 h-12 rounded-full bg-[#EEF5EA] overflow-hidden flex-shrink-0 relative">
+                  {pro?.profile_picture_url_elevage ? (
+                    <Image src={pro.profile_picture_url_elevage} alt="éleveur" fill className="object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-xl">🏡</div>
+                  )}
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-['Galey'] font-bold text-[#1E2025]">
-                    {pro?.name_elevage || annonce.nom_eleveur || 'Éleveur'}
-                  </p>
+                  {annonce.uid_eleveur ? (
+                    <Link href={`/elevages/${annonce.uid_eleveur}`} className="font-['Galey'] font-bold text-[#1E2025] hover:text-[#0C5C6C] transition-colors">
+                      {pro?.name_elevage || annonce.nom_eleveur || 'Éleveur'}
+                    </Link>
+                  ) : (
+                    <p className="font-['Galey'] font-bold text-[#1E2025]">
+                      {pro?.name_elevage || annonce.nom_eleveur || 'Éleveur'}
+                    </p>
+                  )}
                   {pro && <VerificationBadge level={getBadgeLevel({ statutPro: pro.statut_pro, siret: pro.siret, isPremium: pro.is_premium })} size="sm" />}
                 </div>
                 {(pro?.ville_elevage || annonce.ville_eleveur) && (
@@ -395,6 +411,12 @@ export default function AnnonceDetailPage() {
                   </p>
                 )}
               </div>
+              {annonce.uid_eleveur && (
+                <Link href={`/elevages/${annonce.uid_eleveur}`}
+                  className="flex-shrink-0 text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C] px-3 py-1.5 rounded-xl hover:bg-[#0C5C6C] hover:text-white transition-colors">
+                  Voir le profil
+                </Link>
+              )}
             </div>
           </div>
         )}
