@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
+import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
@@ -14,6 +16,7 @@ import 'package:flutter/services.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class CreateAnnoncePage extends StatefulWidget {
   final String? annonceId;
@@ -83,6 +86,11 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   final _numRegistreCtrl  = TextEditingController();
   final _clubPedigreeCtrl = TextEditingController();
   final _studbookCtrl     = TextEditingController();
+
+  // ── Identification légale (champs obligatoires Code rural) ────────────────────
+  final _numIdentCtrl    = TextEditingController(); // animal compagnon chien/chat
+  final _numSIRECtrl     = TextEditingController(); // équidé — SIRE
+  final _numPasseportCtrl = TextEditingController(); // équidé — passeport
 
   // ── Santé ─────────────────────────────────────────────────────────────────────
   bool _vaccines       = false;
@@ -212,6 +220,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     if (dnaRaw is Timestamp) _dateNaissanceAnimal = dnaRaw.toDate();
     else if (dnaRaw is String && dnaRaw.isNotEmpty) _dateNaissanceAnimal = DateTime.tryParse(dnaRaw);
     _sterilise = d['sterilise'] ?? false;
+    _numIdentCtrl.text    = d['num_identification'] ?? '';
+    _numSIRECtrl.text     = d['num_sire'] ?? '';
+    _numPasseportCtrl.text = d['num_passeport_equin'] ?? '';
   }
 
   @override
@@ -223,6 +234,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       _pereNomCtrl, _perePuceCtrl, _pereRaceCtrl, _pereCouleurCtrl, _pereDescCtrl,
       _numRegistreCtrl, _clubPedigreeCtrl, _studbookCtrl, _couleurCtrl,
       _sailliePrixCtrl, _saillieCondCtrl, _prixMinPorteeCtrl, _prixMaxPorteeCtrl,
+      _numIdentCtrl, _numSIRECtrl, _numPasseportCtrl,
     ]) c.dispose();
     super.dispose();
   }
@@ -448,6 +460,26 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
 
   // ── Save ──────────────────────────────────────────────────────────────────────
 
+  void _showQuotaGate() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _QuotaGateSheet(
+        onBuyExtra: () async {
+          Navigator.pop(context);
+          final uri = Uri.parse('${PlanService.kWebsiteUrl}/abonnement?buy=annonce_sup');
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        },
+        onUpgradePro: () {
+          Navigator.pop(context);
+          Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const AbonnementPage()));
+        },
+      ),
+    );
+  }
+
   Future<void> _save() async {
     if (_raceCtrl.text.trim().isEmpty && _titreCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -455,7 +487,67 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
               style: TextStyle(fontFamily: 'Galey'))));
       return;
     }
+
+    // ── Champs légaux obligatoires (Code rural français) ──────────────────
+    if (_photosFiles.isEmpty && _photosUrls.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('⚠ Au moins une photo est obligatoire',
+            style: TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
+    if ((_espece == 'chien' || _espece == 'chat') && _type == 'portee') {
+      if (_merePuceCtrl.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('⚠ Obligatoire : identification (puce ICAD ou tatouage) de la mère',
+              style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red.shade700));
+        return;
+      }
+      if (_dateNaissance == null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('⚠ Obligatoire : date de naissance de la portée',
+              style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red.shade700));
+        return;
+      }
+    }
+    if (_espece == 'cheval' && _numSIRECtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('⚠ Obligatoire : numéro SIRE pour tout équidé (Décret n°2013-879)',
+            style: TextStyle(fontFamily: 'Galey')),
+        backgroundColor: Colors.red.shade700));
+      return;
+    }
+    if ((_espece == 'chien' || _espece == 'chat') && _type != 'portee' &&
+        _typeVente != 'saillie' && _numIdentCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('⚠ Obligatoire : numéro d\'identification de l\'animal (puce/tatouage) — art. L212-10',
+            style: TextStyle(fontFamily: 'Galey')),
+        backgroundColor: Colors.red.shade700));
+      return;
+    }
+
     setState(() => _saving = true);
+
+    // ── Quota check (nouvelle annonce uniquement) ────────────────────────────
+    if (widget.annonceId == null) {
+      try {
+        final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final planCode = await PlanService.getPlanCode(uid);
+        final config = PlanService.getConfig(planCode);
+        if (config.maxAnnonces != -1) {
+          final count = await PlanService.countActiveAnnonces(uid);
+          if (count >= config.maxAnnonces) {
+            if (mounted) {
+              setState(() => _saving = false);
+              _showQuotaGate();
+            }
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+
     try {
       // Photos annonce
       final newUrls = <String>[];
@@ -564,6 +656,11 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         'saillie_prix': _typeVente == 'saillie' ? double.tryParse(_sailliePrixCtrl.text) : null,
         'saillie_conditions':
             _typeVente == 'saillie' ? _saillieCondCtrl.text.trim() : null,
+        // Champs légaux obligatoires
+        'num_identification': (_espece == 'chien' || _espece == 'chat') && _type != 'portee'
+            ? _numIdentCtrl.text.trim() : null,
+        'num_sire': _espece == 'cheval' ? _numSIRECtrl.text.trim() : null,
+        'num_passeport_equin': _espece == 'cheval' ? _numPasseportCtrl.text.trim() : null,
         'updated_at': now,
       };
 
@@ -630,6 +727,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             if (!isSaillie && !isRetraite) ...[_sectionPere(), const SizedBox(height: 12)],
             _sectionPedigree(),     const SizedBox(height: 12),
             _sectionSante(),
+            if (_espece == 'cheval') ...[const SizedBox(height: 12), _sectionIdentificationEquin()],
+            if ((_espece == 'chien' || _espece == 'chat') && _type != 'portee' && _typeVente != 'saillie')
+              ...[const SizedBox(height: 12), _sectionIdentificationAnimal()],
             if (_type == 'portee') ...[const SizedBox(height: 12), _sectionAnimauxPortee()],
             const SizedBox(height: 24),
             SizedBox(
@@ -1116,7 +1216,15 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   ]);
 
   Widget _sectionPortee() => _card('Portée', Icons.group_outlined, [
-    _label('Date de naissance'),
+    Row(children: [
+      Text(
+        (_espece == 'chien' || _espece == 'chat') ? 'Date de naissance ' : 'Date de naissance (optionnel) ',
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF6F767B)),
+      ),
+      if (_espece == 'chien' || _espece == 'chat')
+        const Text('*', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 13)),
+    ]),
+    const SizedBox(height: 6),
     _datePicker('Sélectionner une date', _dateNaissance,
         (d) => setState(() => _dateNaissance = d)),
     const SizedBox(height: 12),
@@ -1262,8 +1370,21 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _label('Nom de la mère'),
     _textField(_mereNomCtrl, 'Nom'),
     const SizedBox(height: 10),
-    _label('Identification (puce / tatouage)'),
-    _textField(_merePuceCtrl, 'Numéro de puce ou tatouage'),
+    Row(children: [
+      Text(
+        'Identification (puce / tatouage)',
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF6F767B)),
+      ),
+      if (_espece == 'chien' || _espece == 'chat')
+        const Text(' *', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 13)),
+    ]),
+    const SizedBox(height: 6),
+    _textField(_merePuceCtrl, 'Numéro de puce ICAD ou tatouage'),
+    if ((_espece == 'chien' || _espece == 'chat') && _type == 'portee') ...[
+      const SizedBox(height: 4),
+      const Text('Obligatoire (art. L214-8 Code rural)',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xFF9B6800))),
+    ],
     const SizedBox(height: 10),
     _label('Race'),
     _textField(_mereRaceCtrl, 'Race de la mère'),
@@ -1379,6 +1500,60 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       ]),
     ],
   ]);
+
+  Widget _sectionIdentificationEquin() => _card(
+    'Identification équidé', Icons.badge_outlined,
+    [
+      Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF8E1),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFFFCC80)),
+        ),
+        child: const Text(
+          '⚠ Obligatoire pour tout équidé mis en vente (Décret n°2013-879)',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF7B5800)),
+        ),
+      ),
+      const SizedBox(height: 12),
+      Row(children: [
+        _label('Numéro SIRE'),
+        const Text(' *', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+      ]),
+      _textField(_numSIRECtrl, 'Ex: 008FR12345678901 (15 chiffres)'),
+      const SizedBox(height: 10),
+      _label('Numéro de passeport équin (optionnel)'),
+      _textField(_numPasseportCtrl, 'Ex: FR123456789'),
+    ],
+  );
+
+  Widget _sectionIdentificationAnimal() => Container(
+    decoration: BoxDecoration(
+      color: const Color(0xFFFFF8E1),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFFFCC80)),
+      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
+          blurRadius: 6, offset: const Offset(0, 2))],
+    ),
+    padding: const EdgeInsets.all(16),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        const Icon(Icons.qr_code_2_outlined, color: Color(0xFF7B5800), size: 18),
+        const SizedBox(width: 8),
+        const Expanded(child: Text('Identification de l\'animal',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                fontSize: 14, color: Color(0xFF7B5800)))),
+        const Text(' *', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+      ]),
+      const SizedBox(height: 6),
+      const Text('Obligatoire pour chien/chat (art. L212-10 Code rural)',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF9B6800))),
+      const SizedBox(height: 12),
+      _label('Numéro de puce électronique ou tatouage'),
+      _textField(_numIdentCtrl, 'Ex: 250269811234567 ou tatouage AA123'),
+    ]),
+  );
 
   Widget _sectionAnimauxPortee() => _card('Animaux de la portée', Icons.pets_outlined, [
     if (_animauxPortee.isEmpty)
@@ -1971,6 +2146,83 @@ class _AnnonceBreedPickerSheetState extends State<_AnnonceBreedPickerSheet> {
             ),
           ),
         ]),
+      ),
+    );
+  }
+}
+
+// ── Bottom sheet quota gate ──────────────────────────────────────────────────
+
+class _QuotaGateSheet extends StatelessWidget {
+  final Future<void> Function() onBuyExtra;
+  final VoidCallback onUpgradePro;
+
+  const _QuotaGateSheet({required this.onBuyExtra, required this.onUpgradePro});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 24, 20, MediaQuery.of(context).viewInsets.bottom + 32),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 36, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 20),
+          const Text('🚫', style: TextStyle(fontSize: 40)),
+          const SizedBox(height: 12),
+          const Text('Quota atteint',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                  fontSize: 20, color: Color(0xFF1F2A2E))),
+          const SizedBox(height: 8),
+          const Text(
+            'Vous avez atteint la limite d\'annonces de votre plan actuel.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF6F767B)),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: onBuyExtra,
+              icon: const Icon(Icons.add_circle_outline, size: 18),
+              label: const Text('Annonce supplémentaire — 2,99 €',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6E9E57),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: onUpgradePro,
+              icon: const Text('⚡', style: TextStyle(fontSize: 16)),
+              label: const Text('Passer au plan Pro',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0C5C6C),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler',
+                style: TextStyle(fontFamily: 'Galey', color: Color(0xFF9CA3AF))),
+          ),
+        ],
       ),
     );
   }

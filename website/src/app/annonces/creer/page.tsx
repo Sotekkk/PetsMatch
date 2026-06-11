@@ -8,6 +8,19 @@ import { supabase } from '@/lib/supabase';
 import { uploadBlob } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
 
+const PLAN_CONFIG: Record<string, { maxAnnonces: number; dureeDays: number; autoPublish: boolean }> = {
+  free:    { maxAnnonces: 3,  dureeDays: 30, autoPublish: false },
+  pro:     { maxAnnonces: 10, dureeDays: 45, autoPublish: true  },
+  premium: { maxAnnonces: -1, dureeDays: 60, autoPublish: true  },
+};
+
+async function getUserPlanClient(uid: string): Promise<keyof typeof PLAN_CONFIG> {
+  try {
+    const { data } = await supabase.from('abonnements').select('plan_code').eq('uid', uid).eq('statut', 'actif').order('created_at', { ascending: false }).limit(1).maybeSingle();
+    return (data?.plan_code ?? 'free') as keyof typeof PLAN_CONFIG;
+  } catch { return 'free'; }
+}
+
 const ESPECES = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Cheval', 'Reptile', 'Autre'];
 
 function genId(): string {
@@ -82,6 +95,8 @@ export default function CreerAnnoncePage() {
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [showQuotaModal, setShowQuotaModal] = useState(false);
+  const [quotaBuying, setQuotaBuying] = useState(false);
 
   // ── Compagnon
   const [sexeAnimal, setSexeAnimal] = useState<'male' | 'femelle'>('male');
@@ -118,6 +133,11 @@ export default function CreerAnnoncePage() {
   // ── Saillie
   const [sailliePrix, setSailliePrix] = useState('');
   const [saillieConditions, setSaillieConditions] = useState('');
+
+  // ── Identification légale (champs obligatoires selon Code rural)
+  const [numSIRE, setNumSIRE] = useState('');
+  const [numPasseportEquin, setNumPasseportEquin] = useState('');
+  const [numIdentification, setNumIdentification] = useState('');
 
   // ── Retraité d'élevage
   const [retraiteAnimalId, setRetraiteAnimalId] = useState<string | null>(null);
@@ -174,6 +194,19 @@ export default function CreerAnnoncePage() {
 
   if (loading) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
   if (!user) { router.push('/connexion'); return null; }
+  if (!userData?.isElevage) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <span className="text-4xl">🔒</span>
+        <p className="font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Réservé aux éleveurs certifiés
+        </p>
+        <p className="text-sm text-gray-500">
+          La publication d&apos;annonces est réservée aux éleveurs disposant d&apos;un numéro SIRET valide et d&apos;un dossier validé.
+        </p>
+      </div>
+    );
+  }
 
   const iCls = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white';
   const iSmCls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white';
@@ -420,9 +453,92 @@ export default function CreerAnnoncePage() {
   }
 
   // ── Submit
+  async function handleBuyExtra() {
+    setQuotaBuying(true);
+    try {
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user!.uid, email: user!.email ?? '', produit_code: 'annonce_sup' }),
+      });
+      const json = await res.json() as { url?: string; error?: string };
+      if (json.url) window.location.href = json.url;
+      else setError(json.error ?? 'Erreur lors du paiement');
+    } catch {
+      setError('Erreur réseau');
+    } finally {
+      setQuotaBuying(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setError(''); setSaving(true);
     try {
+      // Seuls les éleveurs validés peuvent publier
+      if (!userData?.isElevage || !userData.isValidate) {
+        setError('Seuls les éleveurs certifiés et validés peuvent publier des annonces.');
+        setSaving(false);
+        return;
+      }
+
+      // ── Vérification quota plan ────────────────────────────────────────────
+      const planCode = await getUserPlanClient(user!.uid);
+      const planCfg  = PLAN_CONFIG[planCode] ?? PLAN_CONFIG.free;
+
+      if (planCfg.maxAnnonces !== -1) {
+        const { count: activeCount } = await supabase
+          .from('annonces')
+          .select('id', { count: 'exact', head: true })
+          .eq('uid_eleveur', user!.uid)
+          .in('statut', ['disponible', 'en_attente']);
+        if ((activeCount ?? 0) >= planCfg.maxAnnonces) {
+          setShowQuotaModal(true);
+          setSaving(false);
+          return;
+        }
+      }
+
+      // ANTI02 : max 2 portées actives par éleveur
+      if (type === 'portee') {
+        const { count } = await supabase
+          .from('annonces')
+          .select('id', { count: 'exact', head: true })
+          .eq('uid_eleveur', user!.uid)
+          .eq('type', 'portee')
+          .neq('statut', 'archivée');
+        if ((count ?? 0) >= 2) {
+          setError('Limite atteinte : 2 portées actives maximum. Archivez une portée existante avant d\'en créer une nouvelle.');
+          setSaving(false);
+          return;
+        }
+      }
+
+      // ── Champs légaux obligatoires (Code rural français) ──────────────────
+      if (croppedBlobs.length === 0) {
+        setError('Au moins une photo est obligatoire pour publier une annonce.');
+        setSaving(false); return;
+      }
+      if ((espece === 'Chien' || espece === 'Chat') && type === 'portee') {
+        if (!merePuce.trim()) {
+          setError('⚠ Obligatoire : numéro d\'identification (puce ICAD ou tatouage) de la mère — art. L214-8 Code rural.');
+          setSaving(false); return;
+        }
+        if (!dateNaissance) {
+          setError('⚠ Obligatoire : date de naissance de la portée.');
+          setSaving(false); return;
+        }
+      }
+      if (espece === 'Cheval' && !numSIRE.trim()) {
+        setError('⚠ Obligatoire : numéro SIRE pour tout équidé mis en vente — Décret n°2013-879.');
+        setSaving(false); return;
+      }
+      if ((espece === 'Chien' || espece === 'Chat') && type !== 'portee' && type !== 'saillie' && !numIdentification.trim()) {
+        setError('⚠ Obligatoire : numéro d\'identification de l\'animal (puce électronique ou tatouage) — art. L212-10 Code rural.');
+        setSaving(false); return;
+      }
+
+      const annonceStatut = planCfg.autoPublish ? 'disponible' : 'en_attente';
+      const expireAt = new Date(Date.now() + planCfg.dureeDays * 86_400_000).toISOString();
       const photoUrls: string[] = [];
       for (const blob of croppedBlobs)
         photoUrls.push(await uploadBlob(blob, `annonces/${user!.uid}/${Date.now()}.jpg`));
@@ -458,7 +574,7 @@ export default function CreerAnnoncePage() {
         espece: ESPECE_DB[espece] ?? espece.toLowerCase(), race,
         type: type === 'portee' ? 'portee' : 'animal',
         type_vente: type === 'saillie' ? 'saillie' : type === 'retraite' ? 'retraite' : cession,
-        photos: photoUrls, statut: 'disponible', description,
+        photos: photoUrls, statut: annonceStatut, expire_at: expireAt, description,
         ...(type === 'compagnon' && { prix: prix ? Number(prix) : null, sexe: sexeAnimal, couleur: couleurAnimal || null, sterilise }),
         ...(type === 'retraite' && { prix: prix ? Number(prix) : null, sexe: sexeAnimal, couleur: couleurAnimal || null, etalon_animal_id: retraiteAnimalId }),
         ...(type === 'portee' && {
@@ -482,9 +598,13 @@ export default function CreerAnnoncePage() {
         pere_nom: pereNom || null, pere_puce: perePuce || null, pere_identification: perePuce || null,
         pere_race: pereRace || null, pere_couleur: pereCouleur || null,
         pere_description: pereDescription || null, pere_registre: pereRegistre || null,
+        // Champs légaux
+        num_identification: (espece === 'Chien' || espece === 'Chat') && type !== 'portee' ? numIdentification || null : null,
+        num_sire: espece === 'Cheval' ? numSIRE || null : null,
+        num_passeport_equin: espece === 'Cheval' ? numPasseportEquin || null : null,
       });
       if (insertError) throw new Error(insertError.message);
-      router.push('/mes-annonces');
+      router.push(annonceStatut === 'en_attente' ? '/mes-annonces?pending=1' : '/mes-annonces');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(`Erreur : ${msg}`);
@@ -668,6 +788,25 @@ export default function CreerAnnoncePage() {
             </div>
           </div>
 
+          {/* ── Identification légale équidé ── */}
+          {espece === 'Cheval' && (
+            <div className="border border-amber-200 bg-amber-50 rounded-xl p-4 space-y-3">
+              <p className="text-sm font-semibold text-amber-800">🐴 Identification équidé <span className="text-red-500">*</span></p>
+              <p className="text-xs text-amber-700">Obligatoire pour tout équidé (Décret n°2013-879)</p>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Numéro SIRE <span className="text-red-500">*</span></label>
+                <input value={numSIRE} onChange={e => setNumSIRE(e.target.value)}
+                  placeholder="Ex: 008FR12345678901 (15 chiffres)"
+                  className={`${iCls} ${!numSIRE.trim() ? 'border-amber-300 focus:border-amber-500' : 'border-[#6E9E57]'}`} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Numéro de passeport équin <span className="text-gray-400 font-normal">(optionnel)</span></label>
+                <input value={numPasseportEquin} onChange={e => setNumPasseportEquin(e.target.value)}
+                  placeholder="Ex: FR123456789" className={iCls} />
+              </div>
+            </div>
+          )}
+
           {/* ── Compagnon / Retraité ── */}
           {(type === 'compagnon' || type === 'retraite') && (
             <>
@@ -695,6 +834,17 @@ export default function CreerAnnoncePage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Prix (€)</label>
                 <input type="number" min="0" value={prix} onChange={e => setPrix(e.target.value)} placeholder="800" className={iCls} />
               </div>
+              {(espece === 'Chien' || espece === 'Chat') && (
+                <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-2">
+                  <p className="text-xs font-semibold text-amber-800">
+                    🔖 Identification de l&apos;animal <span className="text-red-500">*</span>
+                    <span className="font-normal ml-1">— obligatoire (art. L212-10 Code rural)</span>
+                  </p>
+                  <input value={numIdentification} onChange={e => setNumIdentification(e.target.value)}
+                    placeholder="Numéro de puce électronique ou tatouage"
+                    className={`${iCls} text-sm ${!numIdentification.trim() ? 'border-amber-300 focus:border-amber-500' : 'border-[#6E9E57]'}`} />
+                </div>
+              )}
             </>
           )}
 
@@ -703,7 +853,10 @@ export default function CreerAnnoncePage() {
             <>
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date de naissance <span className="text-gray-400 font-normal">(optionnel)</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Date de naissance
+                    {(espece === 'Chien' || espece === 'Chat') ? <span className="text-red-500 ml-1">*</span> : <span className="text-gray-400 font-normal ml-1">(optionnel)</span>}
+                  </label>
                   <input type="date" value={dateNaissance} onChange={e => setDateNaissance(e.target.value)} className={iCls} />
                 </div>
                 <div className="flex-1">
@@ -820,7 +973,12 @@ export default function CreerAnnoncePage() {
           {type !== 'saillie' && type !== 'retraite' && (
             <div className={sCls}>
               <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-700">♀ Mère <span className="text-gray-400 font-normal">(optionnel)</span></p>
+                <p className="text-sm font-semibold text-gray-700">
+                ♀ Mère
+                {(espece === 'Chien' || espece === 'Chat') && type === 'portee'
+                  ? <span className="text-red-500 ml-1">*</span>
+                  : <span className="text-gray-400 font-normal ml-1">(optionnel)</span>}
+              </p>
                 {mereAnimalId && <button type="button" onClick={clearMere} className="text-xs text-red-400 hover:text-red-600 font-medium">Effacer</button>}
               </div>
               <div className="flex items-start gap-3">
@@ -843,8 +1001,17 @@ export default function CreerAnnoncePage() {
                   <datalist id="mere-breed-list">{breeds.map(b => <option key={b} value={b} />)}</datalist></div>
               </div>
               <div className="flex gap-3">
-                <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Identification (puce / tatouage)</label>
-                  <input value={merePuce} onChange={e => setMerePuce(e.target.value)} placeholder="Numéro de puce" className={iSmCls} /></div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Identification (puce / tatouage)
+                    {(espece === 'Chien' || espece === 'Chat') && type === 'portee' && <span className="text-red-500 ml-1">*</span>}
+                  </label>
+                  <input value={merePuce} onChange={e => setMerePuce(e.target.value)} placeholder="Numéro de puce ICAD ou tatouage"
+                    className={`${iSmCls} ${(espece === 'Chien' || espece === 'Chat') && type === 'portee' && !merePuce.trim() ? 'border-amber-300' : ''}`} />
+                  {(espece === 'Chien' || espece === 'Chat') && type === 'portee' && (
+                    <p className="text-xs text-amber-700 mt-1">Obligatoire (art. L214-8 Code rural)</p>
+                  )}
+                </div>
                 <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Couleur / Robe</label>
                   <input value={mereCouleur} onChange={e => setMereCouleur(e.target.value)} placeholder="Ex: Fauve…" className={iSmCls} /></div>
               </div>
@@ -1082,6 +1249,42 @@ export default function CreerAnnoncePage() {
         <ImageCropModal src={babyCropSrc} aspect={1} title="Photo du bébé"
           onConfirm={handleBabyCropConfirm}
           onCancel={() => { if (babyCropSrc) URL.revokeObjectURL(babyCropSrc); setBabyCropSrc(null); setBabyCropQueue([]); }} />
+      )}
+
+      {/* ── Quota modal ── */}
+      {showQuotaModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4"
+          onClick={e => { if (e.target === e.currentTarget) setShowQuotaModal(false); }}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <div className="text-center mb-5">
+              <span className="text-4xl">🚫</span>
+              <h2 className="mt-3 font-bold text-[#1F2A2E] text-lg" style={{ fontFamily: 'Galey, sans-serif' }}>
+                Quota atteint
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Vous avez atteint la limite d'annonces de votre plan actuel. Choisissez comment continuer :
+              </p>
+            </div>
+            <div className="space-y-3">
+              <button
+                onClick={handleBuyExtra}
+                disabled={quotaBuying}
+                className="w-full bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors text-sm flex items-center justify-center gap-2">
+                {quotaBuying ? '…' : '➕ Annonce supplémentaire — 2,99 €'}
+              </button>
+              <button
+                onClick={() => { setShowQuotaModal(false); router.push('/abonnement'); }}
+                className="w-full bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold py-3 rounded-xl transition-colors text-sm">
+                ⚡ Passer au plan Pro
+              </button>
+              <button
+                onClick={() => setShowQuotaModal(false)}
+                className="w-full text-gray-400 text-sm py-2 hover:text-gray-600 transition-colors">
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
