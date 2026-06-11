@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -124,10 +124,12 @@ export default function EleveurProfilePage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
 
+  const router = useRouter();
   const [eleveur, setEleveur] = useState<EleveurData | null>(null);
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [contacting, setContacting] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -172,6 +174,33 @@ export default function EleveurProfilePage() {
         });
     });
   }, [id]);
+
+  const handleContact = async () => {
+    if (!user) { router.push('/connexion'); return; }
+    if (!id) return;
+    setContacting(true);
+    try {
+      const participantIds = [user.uid, id].sort().join('_');
+      const snap = await getDocs(query(
+        collection(db, 'conversations'),
+        where('participantIds', '==', participantIds)
+      ));
+      let convId: string;
+      if (!snap.empty) {
+        convId = snap.docs[0].id;
+      } else {
+        const ref = await addDoc(collection(db, 'conversations'), {
+          participants: [user.uid, id].sort(),
+          participantIds,
+          lastMessage: '',
+          timestamp: serverTimestamp(),
+          categorie: 'communaute',
+        });
+        convId = ref.id;
+      }
+      router.push(`/messages?conv=${convId}`);
+    } catch { setContacting(false); }
+  };
 
   if (loading) return (
     <div className="flex justify-center items-center min-h-screen">
@@ -239,11 +268,36 @@ export default function EleveurProfilePage() {
                 </p>
               )}
             </div>
-            {isOwnProfile && (
+            {isOwnProfile ? (
               <Link href="/profil/modifier"
                 className="text-sm border border-gray-200 text-gray-600 px-4 py-1.5 rounded-xl hover:bg-gray-50 transition-colors">
-                Modifier le profil
+                Modifier
               </Link>
+            ) : (
+              <div className="flex gap-2 flex-wrap">
+                {eleveur.telephone && (
+                  <a href={`tel:${eleveur.telephone}`}
+                    className="flex items-center gap-1.5 border border-[#6E9E57] text-[#6E9E57] px-3 py-1.5 rounded-xl text-sm font-semibold hover:bg-[#EEF5EA] transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                    </svg>
+                    Appeler
+                  </a>
+                )}
+                <button
+                  onClick={handleContact}
+                  disabled={contacting}
+                  className="flex items-center gap-1.5 bg-[#0C5C6C] hover:bg-[#094F5D] text-white px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60">
+                  {contacting ? (
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                  )}
+                  Contacter
+                </button>
+              </div>
             )}
           </div>
 
