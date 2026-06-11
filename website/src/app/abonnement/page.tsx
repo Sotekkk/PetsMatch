@@ -52,8 +52,15 @@ export default function AbonnementPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'info'; text: string } | null>(null);
 
   useEffect(() => {
-    if (searchParams.get('success')) setMessage({ type: 'success', text: '🎉 Abonnement activé ! Votre plan a été mis à jour.' });
-    if (searchParams.get('cancelled')) setMessage({ type: 'info', text: 'Paiement annulé. Votre plan n\'a pas changé.' });
+    if (searchParams.get('cancelled')) {
+      setMessage({ type: 'info', text: 'Paiement annulé. Votre plan n\'a pas changé.' });
+    }
+    // Récupère le message de succès conservé après router.replace()
+    const pending = sessionStorage.getItem('abonnement_success');
+    if (pending) {
+      setMessage({ type: 'success', text: pending });
+      sessionStorage.removeItem('abonnement_success');
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -63,12 +70,66 @@ export default function AbonnementPage() {
       .then(({ data }) => setBoosts((data ?? []) as ProduitPonctuel[]));
   }, []);
 
+  // Charge le plan courant, et active directement via session Stripe si retour de paiement
   useEffect(() => {
     if (!user) return;
-    supabase.from('abonnements').select('plan_code').eq('uid', user.uid).eq('statut', 'actif')
-      .order('created_at', { ascending: false }).limit(1).maybeSingle()
-      .then(({ data }) => setCurrentPlan(data?.plan_code ?? 'free'));
-  }, [user]);
+    const sessionId = searchParams.get('session_id');
+    const isSuccess = !!searchParams.get('success');
+
+    const fetchPlan = async () => {
+      const { data } = await supabase
+        .from('abonnements').select('plan_code').eq('uid', user.uid).eq('statut', 'actif')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      return data?.plan_code ?? 'free';
+    };
+
+    if (!isSuccess) {
+      fetchPlan().then(setCurrentPlan);
+      return;
+    }
+
+    // Activation directe via session Stripe (ne dépend pas du webhook)
+    const activate = async () => {
+      if (sessionId) {
+        try {
+          const res = await fetch('/api/stripe/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, uid: user.uid }),
+          });
+          const json = await res.json();
+          if (json.ok && json.plan) {
+            const label = json.plan.charAt(0).toUpperCase() + json.plan.slice(1);
+            sessionStorage.setItem('abonnement_success', `🎉 Abonnement ${label} activé !`);
+            // Nettoie l'URL et force un refresh complet pour que usePlan + Header se mettent à jour
+            router.replace('/abonnement');
+            router.refresh();
+            return;
+          }
+        } catch {
+          // fallback : polling Supabase
+        }
+      }
+      // Fallback polling au cas où le webhook a déjà mis à jour
+      let attempts = 0;
+      const poll = async () => {
+        const plan = await fetchPlan();
+        setCurrentPlan(plan);
+        if (plan !== 'free' || attempts >= 4) {
+          const label = plan.charAt(0).toUpperCase() + plan.slice(1);
+          sessionStorage.setItem('abonnement_success', plan !== 'free' ? `🎉 Abonnement ${label} activé !` : '✅ Paiement reçu, activation en cours…');
+          router.replace('/abonnement');
+          router.refresh();
+          return;
+        }
+        attempts++;
+        setTimeout(poll, 2000);
+      };
+      poll();
+    };
+
+    activate();
+  }, [user, searchParams]);
 
   const handleSubscribe = async (planCode: string) => {
     if (!user) { router.push('/connexion'); return; }

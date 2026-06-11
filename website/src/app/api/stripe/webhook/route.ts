@@ -39,17 +39,28 @@ export async function POST(req: NextRequest) {
           const periodicite = session.metadata?.periodicite ?? 'mensuel';
           const subId = typeof session.subscription === 'string' ? session.subscription : session.subscription.id;
 
-          const sub = await stripe.subscriptions.retrieve(subId);
-          const periodEnd = (sub as unknown as { current_period: { end: number } }).current_period?.end;
+          const sub = await stripe.subscriptions.retrieve(subId, { expand: ['items'] });
+          const periodEnd = sub.items.data[0]?.current_period_end ?? null;
           const dateFin = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
 
-          await supabase.from('abonnements').upsert({
-            uid, plan_code: plan, periodicite, statut: 'actif',
+          // Désactiver l'ancien abonnement actif avant d'insérer le nouveau
+          await supabase.from('abonnements')
+            .update({ statut: 'annule', updated_at: new Date().toISOString() })
+            .eq('uid', uid).eq('statut', 'actif');
+
+          await supabase.from('abonnements').insert({
+            uid,
+            profil_type: 'eleveur',
+            plan_code: plan,
+            periodicite,
+            statut: 'actif',
             stripe_subscription_id: subId,
             stripe_customer_id: typeof session.customer === 'string' ? session.customer : session.customer?.id,
+            date_debut: new Date().toISOString(),
             date_fin: dateFin,
+            created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-          }, { onConflict: 'stripe_subscription_id' });
+          });
 
           await supabase.from('users').update({
             plan_code: plan,
@@ -82,7 +93,7 @@ export async function POST(req: NextRequest) {
       // ── Abonnement renouvelé ───────────────────────────────────────────────
       case 'customer.subscription.updated': {
         const sub = event.data.object as Stripe.Subscription;
-        const periodEnd = (sub as unknown as { current_period: { end: number } }).current_period?.end;
+        const periodEnd = sub.items.data[0]?.current_period_end ?? null;
         const dateFin = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
         const statut = sub.status === 'active' ? 'actif' : sub.status === 'past_due' ? 'grace' : 'annule';
         await supabase.from('abonnements')

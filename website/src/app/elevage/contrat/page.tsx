@@ -64,19 +64,19 @@ export default function ContratsPage() {
     return unsub;
   }, [user]);
 
-  if (!planLoading && !planConfig.hasRegistres) {
+  if (!planLoading && !planConfig.hasPremiumFeatures) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 px-4 text-center">
         <span className="text-5xl">🔒</span>
         <h2 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-          Contrats — Plan Pro requis
+          Contrats — Plan Premium requis
         </h2>
         <p className="text-gray-500 text-sm max-w-sm">
-          La gestion des contrats est disponible à partir du plan Pro. Sécurisez vos ventes, réservations et saillies avec des contrats professionnels.
+          La gestion des contrats est disponible avec le plan Premium. Sécurisez vos ventes, réservations et saillies avec des contrats professionnels.
         </p>
         <a href="/abonnement"
-          className="bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
-          ⚡ Voir les plans
+          className="bg-[#D97706] hover:bg-[#B45309] text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
+          👑 Voir les plans
         </a>
         <a href="/" className="text-sm text-gray-400 hover:text-[#0C5C6C]">← Retour à l&apos;accueil</a>
       </div>

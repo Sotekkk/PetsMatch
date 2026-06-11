@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { collection, query, orderBy, getDocs, doc, updateDoc, addDoc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
+import { usePlan } from '@/lib/use-plan';
 
 interface Ligne {
   description: string;
@@ -47,6 +48,7 @@ function addDays(n: number) {
 export default function FacturationPage() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
+  const { config: planConfig, loading: planLoading } = usePlan();
   const [factures, setFactures] = useState<Facture[]>([]);
   const [fetching, setFetching] = useState(true);
   const [filtreStatut, setFiltreStatut] = useState('tous');
@@ -73,7 +75,25 @@ export default function FacturationPage() {
     setSelected((prev) => prev?.id === id ? { ...prev, statut } : prev);
   }
 
-  if (loading || !user) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
+  if (loading || planLoading || !user) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
+
+  if (!planConfig.hasPremiumFeatures) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <span className="text-5xl">🔒</span>
+        <h2 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Facturation — Plan Premium requis
+        </h2>
+        <p className="text-gray-500 text-sm max-w-sm">
+          La facturation est disponible avec le plan Premium. Gérez vos factures directement depuis votre espace éleveur.
+        </p>
+        <a href="/abonnement"
+          className="bg-[#D97706] hover:bg-[#B45309] text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
+          👑 Voir les plans
+        </a>
+      </div>
+    );
+  }
 
   const filtered = filtreStatut === 'tous' ? factures : factures.filter((f) => (f.statut ?? 'emise') === filtreStatut);
   const totalEmises = factures.filter((f) => f.statut === 'emise').reduce((s, f) => s + (f.totalTTC ?? 0), 0);
