@@ -9,11 +9,13 @@ UPDATE public.produits_ponctuels SET stripe_price_id = 'price_1ThCAy2MpEB6OUl5Ig
 
 -- Mise à jour des price IDs dans plans_tarifaires
 UPDATE public.plans_tarifaires SET
-  stripe_price_id_mensuel = 'price_1ThCA62MpEB6OUl5o9kp56Qz',
+  prix_mensuel            = 15,
+  stripe_price_id_mensuel = 'price_1ThCPX2MpEB6OUl5ig720ZOO',
   stripe_price_id_annuel  = 'price_1ThCA72MpEB6OUl55NHMLVAP'
 WHERE profil_type = 'eleveur' AND plan_code = 'pro';
 
 UPDATE public.plans_tarifaires SET
-  stripe_price_id_mensuel = 'price_1ThCAK2MpEB6OUl5u3B07u6b',
+  prix_mensuel            = 30,
+  stripe_price_id_mensuel = 'price_1ThCPX2MpEB6OUl57RX8nIVQ',
   stripe_price_id_annuel  = 'price_1ThCAK2MpEB6OUl5tJVNsjzB'
 WHERE profil_type = 'eleveur' AND plan_code = 'premium';

@@ -1,5 +1,7 @@
+import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
+import 'package:PetsMatch/services/plan_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -29,8 +31,26 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
   String? _filterEspece;
   String? _filterStatut; // null = tous
 
+  bool _planLoading  = true;
+  bool _hasRegistres = false;
+
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   final _supa = Supabase.instance.client;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPlan();
+  }
+
+  Future<void> _checkPlan() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) { setState(() => _planLoading = false); return; }
+    final code   = await PlanService.getPlanCode(uid);
+    final config = PlanService.getConfig(code);
+    if (!mounted) return;
+    setState(() { _hasRegistres = config.hasRegistres; _planLoading = false; });
+  }
 
   int get _activeFilters =>
       (_filterEspece != null ? 1 : 0) + (_filterStatut != null ? 1 : 0);
@@ -252,6 +272,56 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_planLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: Color(0xFF0C5C6C))),
+      );
+    }
+    if (!_hasRegistres) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8F8F6),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF0C5C6C),
+          foregroundColor: Colors.white,
+          title: const Text('Entrées / Sorties',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Text('🔒', style: TextStyle(fontSize: 56)),
+              const SizedBox(height: 16),
+              const Text('Fonctionnalité Pro',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 22, color: Color(0xFF1F2A2E))),
+              const SizedBox(height: 8),
+              const Text(
+                'Le registre entrées / sorties est réservé aux éleveurs avec un plan payant.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF6F767B)),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => Navigator.pushReplacement(context,
+                      MaterialPageRoute(builder: (_) => const AbonnementPage())),
+                  icon: const Text('⚡', style: TextStyle(fontSize: 18)),
+                  label: const Text('Voir les plans',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0C5C6C), foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+        ),
+      );
+    }
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: _supa
           .from('animaux')

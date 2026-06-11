@@ -627,7 +627,6 @@ class _MentionsLegalesState extends State<MentionsLegales> {
       }
       if (user != null && !user.emailVerified) {
         await user.sendEmailVerification();
-
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => VerifyEmailPage(email: User_Info.email),
@@ -637,20 +636,46 @@ class _MentionsLegalesState extends State<MentionsLegales> {
     } on FirebaseAuthException catch (e) {
       String errorMessage;
       if (e.code == 'email-already-in-use') {
-        errorMessage = "Cet e-mail est déjà enregistré.";
+        // Récupération : l'inscription a peut-être été interrompue avant la vérification email
+        try {
+          final existing = await FirebaseAuth.instance.signInWithEmailAndPassword(
+            email: User_Info.email,
+            password: User_Info.password,
+          );
+          final existingUser = existing.user;
+          if (existingUser != null && !existingUser.emailVerified) {
+            // Compte créé mais jamais vérifié → on reprend le flow
+            User_Info.uid = existingUser.uid;
+            // Re-sync Supabase au cas où l'écriture précédente aurait échoué
+            await registerElevage(User_Info.email, User_Info.password);
+            await existingUser.sendEmailVerification();
+            if (!mounted) return;
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => VerifyEmailPage(email: User_Info.email),
+              ),
+            );
+            return;
+          } else {
+            errorMessage = "Un compte actif existe déjà avec cet e-mail. Connectez-vous depuis la page de connexion.";
+          }
+        } on FirebaseAuthException {
+          errorMessage = "Cet e-mail est déjà utilisé avec un mot de passe différent. Connectez-vous ou réinitialisez votre mot de passe.";
+        }
       } else if (e.code == 'invalid-email') {
         errorMessage = "Cet e-mail n'est pas valide.";
       } else if (e.code == 'weak-password') {
-        errorMessage = "Le mot de passe est trop faible.";
+        errorMessage = "Le mot de passe est trop faible (minimum 6 caractères).";
       } else {
         errorMessage = "Une erreur est survenue. Veuillez réessayer.";
       }
 
-      // Affichage du message d'erreur avec un Snackbar
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(errorMessage),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
         ),
       );
     }

@@ -246,6 +246,17 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         data.especes_acceptees = Array.from(especesSet);
       }
 
+      // Vérifie si le profil existe déjà (pour ne pas remettre en_attente lors d'une mise à jour)
+      const { data: existing } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('uid', uid)
+        .eq('profile_type', typeInfo.type)
+        .maybeSingle();
+      if (!existing && (isProType || isEleveur)) {
+        data.statut_pro = 'en_attente';
+      }
+
       const { data: rows, error: err } = await supabase
         .from('user_profiles')
         .upsert(data, { onConflict: 'uid,profile_type' })

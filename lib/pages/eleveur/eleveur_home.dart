@@ -1,4 +1,8 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
+import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
+import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
+import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/widgets/marketplace_banner.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
@@ -44,6 +48,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
   List<Map<String, dynamic>> _mesAlertes = [];
   bool _loading = true;
   List<Map<String, dynamic>> _recentAnnonces = [];
+  String _planCode    = 'free';
+  int    _activeCount = 0;
 
   static const _green = Color(0xFF6E9E57);
   static const _teal = Color(0xFF0C5C6C);
@@ -64,7 +70,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
           .select().eq('uid_proprietaire', uid).eq('statut', 'perdu');
 
       if (!User_Info.isPro) {
-        // Éleveur : animaux + annonces + annonces récentes
+        // Éleveur : animaux + annonces + annonces récentes + plan
         final animaux = await supa.from('animaux').select('id').eq('uid_eleveur', uid);
         final annonces = await supa.from('annonces').select('id')
             .eq('uid_eleveur', uid).inFilter('statut', ['disponible', 'reserve']);
@@ -73,12 +79,16 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
             .eq('uid_eleveur', uid)
             .inFilter('statut', ['disponible', 'reserve', 'pause'])
             .order('created_at', ascending: false).limit(3);
+        final planCode    = await PlanService.getPlanCode(uid);
+        final activeCount = await PlanService.countActiveAnnonces(uid);
         if (!mounted) return;
         setState(() {
           _animalCount = (animaux as List).length;
           _postCount = (annonces as List).length;
           _recentAnnonces = List<Map<String, dynamic>>.from(recent);
           _mesAlertes = List<Map<String, dynamic>>.from(alertes as List);
+          _planCode    = planCode;
+          _activeCount = activeCount;
           _loading = false;
         });
       } else {
@@ -169,6 +179,10 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
                         _buildStatsRow(),
+                        if (!User_Info.isPro) ...[
+                          const SizedBox(height: 12),
+                          _buildQuotaCard(context),
+                        ],
                         if (!User_Info.isProfileComplete()) ...[
                           const SizedBox(height: 16),
                           _buildProfileIncompleteBanner(context),
@@ -357,6 +371,78 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
         ));
   }
 
+  Widget _buildQuotaCard(BuildContext context) {
+    final config   = PlanService.getConfig(_planCode);
+    final atLimit  = config.maxAnnonces != -1 && _activeCount >= config.maxAnnonces;
+    final progress = config.maxAnnonces == -1
+        ? 0.0 : (_activeCount / config.maxAnnonces).clamp(0.0, 1.0);
+
+    return GestureDetector(
+      onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const AbonnementPage())),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: atLimit ? const Color(0xFFFFF0F0) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: atLimit ? Colors.red.shade200 : Colors.grey.shade100),
+          boxShadow: [BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 4, offset: const Offset(0, 2))],
+        ),
+        child: Row(children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Text('${config.badge} Plan ${config.label}',
+                  style: const TextStyle(fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1F2A2E))),
+              const SizedBox(width: 8),
+              Text(
+                config.maxAnnonces == -1 ? 'Illimité'
+                    : '$_activeCount / ${config.maxAnnonces} annonces',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    color: atLimit ? Colors.red : Colors.grey.shade500),
+              ),
+              if (atLimit) ...[
+                const SizedBox(width: 4),
+                const Text('· Limite',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        color: Colors.red, fontWeight: FontWeight.w600)),
+              ],
+            ]),
+            if (config.maxAnnonces != -1) ...[
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  backgroundColor: Colors.grey.shade100,
+                  color: atLimit ? Colors.red.shade400 : _green,
+                  minHeight: 5,
+                ),
+              ),
+            ],
+          ])),
+          if (_planCode == 'free') ...[
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                  color: _teal.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(20)),
+              child: const Text('⚡ Pro',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 12, color: Color(0xFF0C5C6C))),
+            ),
+          ],
+          const SizedBox(width: 4),
+          const Icon(Icons.chevron_right, color: Color(0xFF5F9EAA), size: 16),
+        ]),
+      ),
+    );
+  }
+
   Widget _buildProfileIncompleteBanner(BuildContext context) {
     return GestureDetector(
       onTap: () => Navigator.push(context,
@@ -450,6 +536,24 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnimauxPage()))),
         _QuickTile(icon: Icons.campaign_outlined, label: 'Mes\nAnnonces', color: _teal,
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnnoncesPage()))),
+        _QuickTile(
+            icon: Icons.health_and_safety_outlined,
+            label: 'Suivi\nSanitaire',
+            color: _planCode == 'free' ? Colors.grey : const Color(0xFF5B8648),
+            isLocked: _planCode == 'free',
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => _planCode == 'free'
+                    ? const AbonnementPage()
+                    : const RegistreSanitairePage()))),
+        _QuickTile(
+            icon: Icons.folder_copy_outlined,
+            label: 'Entrées\nSorties',
+            color: _planCode == 'free' ? Colors.grey : const Color(0xFF374151),
+            isLocked: _planCode == 'free',
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => _planCode == 'free'
+                    ? const AbonnementPage()
+                    : const RegistreEntreeSortiePage()))),
       ] else if (isVet) ...[
         _QuickTile(icon: Icons.favorite_outline, label: 'Mes\nPatients', color: const Color(0xFF5B8648),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VetPatientsPage()))),
@@ -717,35 +821,56 @@ class _QuickTile extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
+  final bool isLocked;
 
-  const _QuickTile({required this.icon, required this.label, required this.color, required this.onTap});
+  const _QuickTile({
+    required this.icon, required this.label, required this.color, required this.onTap,
+    this.isLocked = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.3)),
+      child: Stack(children: [
+        Container(
+          decoration: BoxDecoration(
+            color: color.withOpacity(isLocked ? 0.06 : 0.12),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+                color: color.withOpacity(isLocked ? 0.15 : 0.3),
+                style: isLocked ? BorderStyle.solid : BorderStyle.solid),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: color.withOpacity(isLocked ? 0.4 : 1.0), size: 28),
+              const SizedBox(width: 10),
+              Text(label,
+                  style: TextStyle(
+                    color: color.withOpacity(isLocked ? 0.4 : 1.0),
+                    fontFamily: 'Galey',
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    height: 1.3,
+                  )),
+            ],
+          ),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(width: 10),
-            Text(label,
-                style: TextStyle(
-                  color: color,
-                  fontFamily: 'Galey',
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  height: 1.3,
-                )),
-          ],
-        ),
-      ),
+        if (isLocked)
+          Positioned(
+            top: 6, right: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                  color: const Color(0xFFD97706),
+                  borderRadius: BorderRadius.circular(10)),
+              child: const Text('Pro',
+                  style: TextStyle(color: Colors.white,
+                      fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 9)),
+            ),
+          ),
+      ]),
     );
   }
 }

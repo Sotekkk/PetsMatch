@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { usePlan } from '@/lib/use-plan';
 
 interface Annonce {
   id: string;
@@ -43,6 +44,7 @@ type FilterKey = 'toutes' | 'disponible' | 'archivee' | 'pause';
 
 export default function MesAnnoncesPage() {
   const { user, loading } = useAuth();
+  const { plan, config: planConfig, activeAnnonces: activeCount } = usePlan();
   const router = useRouter();
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
   const [fetching, setFetching] = useState(true);
@@ -118,7 +120,7 @@ export default function MesAnnoncesPage() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       {/* En-tête */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
             Mes annonces
@@ -129,6 +131,40 @@ export default function MesAnnoncesPage() {
           className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2">
           <span>+</span> Nouvelle annonce
         </Link>
+      </div>
+
+      {/* Quota plan */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-5 flex items-center gap-4">
+        <div className="flex-1">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-semibold text-gray-600">
+              {planConfig.badge} Plan {planConfig.label} — {planConfig.maxAnnonces === -1 ? 'Annonces illimitées' : `${activeCount} / ${planConfig.maxAnnonces} annonces actives`}
+            </span>
+            {planConfig.maxAnnonces !== -1 && activeCount >= planConfig.maxAnnonces && (
+              <span className="text-xs font-bold text-red-500">Limite atteinte</span>
+            )}
+          </div>
+          {planConfig.maxAnnonces !== -1 && (
+            <div className="w-full bg-gray-100 rounded-full h-1.5">
+              <div
+                className={`h-1.5 rounded-full ${activeCount >= planConfig.maxAnnonces ? 'bg-red-400' : 'bg-[#6E9E57]'}`}
+                style={{ width: `${Math.min(100, (activeCount / planConfig.maxAnnonces) * 100)}%` }}
+              />
+            </div>
+          )}
+        </div>
+        {plan === 'free' && (
+          <Link href="/abonnement"
+            className="flex-shrink-0 text-xs font-semibold border border-[#0C5C6C] text-[#0C5C6C] px-3 py-1.5 rounded-xl hover:bg-[#E8F4F6] transition-colors">
+            ⚡ Upgrader
+          </Link>
+        )}
+        {plan !== 'free' && (
+          <Link href="/abonnement"
+            className="flex-shrink-0 text-xs text-gray-400 hover:text-[#0C5C6C]">
+            Gérer →
+          </Link>
+        )}
       </div>
 
       {/* Filtres */}

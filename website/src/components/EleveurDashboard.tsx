@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { usePlan, PLAN_CONFIG } from '@/lib/use-plan';
 
 interface Annonce {
   id: string;
@@ -23,18 +24,19 @@ const SPECIES_EMOJI: Record<string, string> = {
 };
 
 const QUICK_LINKS = [
-  { href: '/mes-animaux',                  label: 'Mes Animaux',            icon: '🐾', bg: 'bg-[#EEF5EA]',   border: 'border-[#6E9E57]/30',   text: 'text-[#5A8A45]' },
-  { href: '/mes-annonces',                 label: 'Mes Annonces',           icon: '📋', bg: 'bg-[#E8F4F6]',   border: 'border-[#0C5C6C]/30',   text: 'text-[#0C5C6C]' },
-  { href: '/annonces/creer',               label: 'Nouvelle annonce',       icon: '➕', bg: 'bg-[#EEF5EA]',   border: 'border-[#6E9E57]/30',   text: 'text-[#5A8A45]' },
-  { href: '/animaux-perdus',               label: 'Animaux perdus',         icon: '🔍', bg: 'bg-amber-50',     border: 'border-amber-200',       text: 'text-amber-700' },
-  { href: '/elevage/registre-sanitaire',   label: 'Registre sanitaire',     icon: '🏥', bg: 'bg-[#E8F4F6]',   border: 'border-[#0C5C6C]/30',   text: 'text-[#0C5C6C]' },
-  { href: '/elevage/registre-entree-sortie', label: 'Entrées / Sorties',   icon: '📂', bg: 'bg-[#E8F4F6]',   border: 'border-[#0C5C6C]/30',   text: 'text-[#0C5C6C]' },
-  { href: '/elevage/facturation',          label: 'Facturation',            icon: '🧾', bg: 'bg-[#EEF5EA]',   border: 'border-[#6E9E57]/30',   text: 'text-[#5A8A45]' },
-  { href: '/elevages',                     label: 'Élevages',               icon: '🏡', bg: 'bg-[#E8F4F6]',   border: 'border-[#0C5C6C]/30',   text: 'text-[#0C5C6C]' },
+  { href: '/mes-animaux',                    label: 'Mes Animaux',        icon: '🐾', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: false },
+  { href: '/mes-annonces',                   label: 'Mes Annonces',       icon: '📋', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: false },
+  { href: '/annonces/creer',                 label: 'Nouvelle annonce',   icon: '➕', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: false },
+  { href: '/animaux-perdus',                 label: 'Animaux perdus',     icon: '🔍', bg: 'bg-amber-50',  border: 'border-amber-200',    text: 'text-amber-700', pro: false },
+  { href: '/elevage/registre-sanitaire',     label: 'Registre sanitaire', icon: '🏥', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: true  },
+  { href: '/elevage/registre-entree-sortie', label: 'Entrées / Sorties',  icon: '📂', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: true  },
+  { href: '/elevage/facturation',            label: 'Facturation',        icon: '🧾', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: true  },
+  { href: '/elevages',                       label: 'Élevages',           icon: '🏡', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: false },
 ];
 
 export default function EleveurDashboard() {
   const { user, userData } = useAuth();
+  const { plan, config: planConfig, activeAnnonces, loading: planLoading } = usePlan();
   const [animalCount, setAnimalCount] = useState(0);
   const [mesAlertes, setMesAlertes] = useState<{ id: string }[]>([]);
   const [postCount, setPostCount] = useState(0);
@@ -44,7 +46,6 @@ export default function EleveurDashboard() {
   const displayName = userData?.nameElevage ?? userData?.firstname ?? 'Mon élevage';
   const city = userData?.villeElevage ?? userData?.ville ?? '';
   const avatar = userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
-  const isPro = userData?.isPro === true;
 
   useEffect(() => {
     if (!user) return;
@@ -96,14 +97,31 @@ export default function EleveurDashboard() {
             </div>
           </Link>
           <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-bold truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
-              {displayName}
-            </h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl font-bold truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+                {displayName}
+              </h1>
+              {!planLoading && (
+                <Link href="/abonnement"
+                  className="flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full transition-opacity hover:opacity-80"
+                  style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}>
+                  {planConfig.badge} {planConfig.label}
+                </Link>
+              )}
+            </div>
             {city && <p className="text-white/70 text-sm mt-0.5">📍 {city}</p>}
-            <Link href="/profil"
-              className="mt-2 inline-flex items-center gap-1.5 text-xs border border-white/40 rounded-full px-3 py-1 hover:bg-white/10 transition-colors">
-              ✏️ Modifier le profil
-            </Link>
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <Link href="/profil"
+                className="inline-flex items-center gap-1.5 text-xs border border-white/40 rounded-full px-3 py-1 hover:bg-white/10 transition-colors">
+                ✏️ Modifier le profil
+              </Link>
+              {plan === 'free' && (
+                <Link href="/abonnement"
+                  className="inline-flex items-center gap-1.5 text-xs bg-white/20 rounded-full px-3 py-1 hover:bg-white/30 transition-colors font-semibold">
+                  ⚡ Passer Pro
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -112,11 +130,11 @@ export default function EleveurDashboard() {
         <div className="grid grid-cols-3 gap-3">
           {[
             { value: animalCount, label: 'Animaux', icon: '🐾' },
-            { value: postCount,   label: 'Annonces',  icon: '📋' },
-            { value: isPro ? 'Pro' : 'Éleveur', label: 'Statut', icon: '✅' },
+            { value: postCount,   label: 'Annonces', icon: '📋' },
+            { value: planConfig.badge + ' ' + planConfig.label, label: 'Plan', icon: null },
           ].map((s) => (
             <div key={s.label} className="bg-white rounded-2xl p-4 flex flex-col items-center shadow-sm">
-              <span className="text-xl mb-1">{s.icon}</span>
+              {s.icon && <span className="text-xl mb-1">{s.icon}</span>}
               <span className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
                 {s.value}
               </span>
@@ -124,6 +142,44 @@ export default function EleveurDashboard() {
             </div>
           ))}
         </div>
+
+        {/* Quota annonces */}
+        {!planLoading && (
+          <div className="bg-white rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                Quota annonces
+              </p>
+              <Link href="/abonnement" className="text-xs text-[#0C5C6C] hover:underline">
+                {plan === 'free' ? 'Augmenter ↗' : 'Gérer'}
+              </Link>
+            </div>
+            {planConfig.maxAnnonces === -1 ? (
+              <p className="text-sm text-[#6E9E57] font-semibold">✓ Illimité</p>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs text-gray-500">{activeAnnonces} / {planConfig.maxAnnonces} annonces actives</span>
+                  {activeAnnonces >= planConfig.maxAnnonces && (
+                    <span className="text-xs font-semibold text-red-500">Limite atteinte</span>
+                  )}
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all ${activeAnnonces >= planConfig.maxAnnonces ? 'bg-red-400' : 'bg-[#6E9E57]'}`}
+                    style={{ width: `${Math.min(100, (activeAnnonces / planConfig.maxAnnonces) * 100)}%` }}
+                  />
+                </div>
+                {plan === 'free' && activeAnnonces >= planConfig.maxAnnonces && (
+                  <Link href="/abonnement"
+                    className="mt-2 block text-center text-xs font-semibold bg-[#0C5C6C] text-white py-2 rounded-xl hover:bg-[#094F5D] transition-colors">
+                    ⚡ Passer Pro pour plus d&apos;annonces
+                  </Link>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         {mesAlertes.length > 0 && (
           <Link href="/mes-alertes"
@@ -148,15 +204,30 @@ export default function EleveurDashboard() {
             Accès rapide
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {QUICK_LINKS.map((l) => (
-              <Link key={l.href} href={l.href}
-                className={`${l.bg} border ${l.border} rounded-2xl p-4 flex flex-col gap-2 hover:shadow-md transition-shadow`}>
-                <span className="text-2xl">{l.icon}</span>
-                <span className={`text-sm font-semibold ${l.text}`} style={{ fontFamily: 'Galey, sans-serif' }}>
-                  {l.label}
-                </span>
-              </Link>
-            ))}
+            {QUICK_LINKS.map((l) => {
+              const locked = l.pro && !planConfig.hasRegistres;
+              if (locked) {
+                return (
+                  <Link key={l.href} href="/abonnement"
+                    className="relative bg-gray-50 border border-dashed border-gray-200 rounded-2xl p-4 flex flex-col gap-2 hover:border-[#0C5C6C]/30 transition-colors opacity-70">
+                    <span className="text-2xl grayscale">{l.icon}</span>
+                    <span className="text-sm font-semibold text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      {l.label}
+                    </span>
+                    <span className="absolute top-2 right-2 text-xs bg-[#0C5C6C] text-white px-1.5 py-0.5 rounded-full font-bold">Pro</span>
+                  </Link>
+                );
+              }
+              return (
+                <Link key={l.href} href={l.href}
+                  className={`${l.bg} border ${l.border} rounded-2xl p-4 flex flex-col gap-2 hover:shadow-md transition-shadow`}>
+                  <span className="text-2xl">{l.icon}</span>
+                  <span className={`text-sm font-semibold ${l.text}`} style={{ fontFamily: 'Galey, sans-serif' }}>
+                    {l.label}
+                  </span>
+                </Link>
+              );
+            })}
           </div>
         </div>
 

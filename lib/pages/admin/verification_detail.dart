@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class VerificationDetail extends StatefulWidget {
   final String uid;
@@ -95,6 +96,15 @@ petsmatch.contact@gmail.com
         'reminder21Sent': false,
         'reminder15Sent': false,
       });
+      // Sync Supabase so the web reflects the validation
+      try {
+        await Supabase.instance.client.from('users').update({
+          'is_validate': true,
+          'statut_pro': 'actif',
+          'rejection_reason': null,
+        }).eq('uid', widget.uid);
+      } catch (_) {}
+
       final email = widget.data['email'] ?? '';
       final firstname = widget.data['firstname'] ?? 'utilisateur';
       if (email.isNotEmpty) {
@@ -141,6 +151,16 @@ petsmatch.contact@gmail.com
         'isValidate': false,
         'rejectionReason': reason,
       });
+
+      // Sync Supabase so the web reflects the rejection
+      try {
+        await Supabase.instance.client.from('users').update({
+          'is_validate': false,
+          'statut_pro': 'refuse',
+          'rejection_reason': reason,
+        }).eq('uid', widget.uid);
+      } catch (_) {}
+
       final email = widget.data['email'] ?? '';
       final firstname = widget.data['firstname'] ?? 'utilisateur';
       if (email.isNotEmpty) {

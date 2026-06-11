@@ -15,8 +15,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/foundation.dart';
 import 'firebase_options.dart';
 
 const AndroidNotificationChannel channel = AndroidNotificationChannel(
@@ -457,6 +459,16 @@ Future<void> main() async {
     }
   }
 
+  // Firebase App Check (anti-bot / anti-abus)
+  await FirebaseAppCheck.instance.activate(
+    androidProvider: kDebugMode
+        ? AndroidProvider.debug
+        : AndroidProvider.playIntegrity,
+    appleProvider: kDebugMode
+        ? AppleProvider.debug
+        : AppleProvider.appAttest,
+  );
+
   // Supabase
   await Supabase.initialize(
     url: 'https://zyvpngcvzrkdytypjlyq.supabase.co',
@@ -658,7 +670,8 @@ class AuthWrapper extends StatelessWidget {
                   if (snapshot.data!.exists) {
                     User_Info.updateUserInfo(
                         snapshot.data!.data() as Map<String, dynamic>);
-                    if (User_Info.isAdmin || User_Info.isValidate) {
+                    final needsValidation = User_Info.isElevage || User_Info.isPro;
+                    if (User_Info.isAdmin || User_Info.isValidate || !needsValidation) {
                       return BottomNav();
                     } else {
                       return VerificationRegistrationPage();

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { usePlan } from '@/lib/use-plan';
 import { thumbUrl } from '@/lib/upload-media';
 
 interface Animal {
@@ -210,6 +211,7 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, cha
 
 export default function MesAnimauxPage() {
   const { user, userData, loading } = useAuth();
+  const { plan } = usePlan();
   const router = useRouter();
 
   const isEleveur = userData?.isElevage === true;
@@ -709,22 +711,53 @@ export default function MesAnimauxPage() {
       {/* Liens admin éleveur */}
       {isEleveur && (
         <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Link href="/elevage/registre-sanitaire"
-            className="flex items-center gap-3 bg-[#E8F4F6] border border-[#0C5C6C]/20 rounded-2xl p-4 hover:shadow-md transition-shadow">
-            <span className="text-2xl">🏥</span>
-            <div>
-              <p className="font-semibold text-[#0C5C6C] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Registre sanitaire</p>
-              <p className="text-[#0C5C6C]/60 text-xs">Actes vétérinaires</p>
-            </div>
-          </Link>
-          <Link href="/elevage/registre-entree-sortie"
-            className="flex items-center gap-3 bg-[#EEF5EA] border border-[#6E9E57]/20 rounded-2xl p-4 hover:shadow-md transition-shadow">
-            <span className="text-2xl">📂</span>
-            <div>
-              <p className="font-semibold text-[#5A8A45] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Entrées / Sorties</p>
-              <p className="text-[#5A8A45]/60 text-xs">Registre légal</p>
-            </div>
-          </Link>
+          {plan === 'free' ? (
+            <>
+              <Link href="/abonnement"
+                className="flex items-center gap-3 bg-gray-100 border border-gray-200 rounded-2xl p-4 opacity-60 hover:opacity-80 transition-opacity">
+                <span className="text-2xl">🏥</span>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-gray-500 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Registre sanitaire</p>
+                    <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full">Pro</span>
+                  </div>
+                  <p className="text-gray-400 text-xs">Actes vétérinaires</p>
+                </div>
+                <span className="text-gray-400 text-lg">🔒</span>
+              </Link>
+              <Link href="/abonnement"
+                className="flex items-center gap-3 bg-gray-100 border border-gray-200 rounded-2xl p-4 opacity-60 hover:opacity-80 transition-opacity">
+                <span className="text-2xl">📂</span>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-gray-500 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Entrées / Sorties</p>
+                    <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full">Pro</span>
+                  </div>
+                  <p className="text-gray-400 text-xs">Registre légal</p>
+                </div>
+                <span className="text-gray-400 text-lg">🔒</span>
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/elevage/registre-sanitaire"
+                className="flex items-center gap-3 bg-[#E8F4F6] border border-[#0C5C6C]/20 rounded-2xl p-4 hover:shadow-md transition-shadow">
+                <span className="text-2xl">🏥</span>
+                <div>
+                  <p className="font-semibold text-[#0C5C6C] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Registre sanitaire</p>
+                  <p className="text-[#0C5C6C]/60 text-xs">Actes vétérinaires</p>
+                </div>
+              </Link>
+              <Link href="/elevage/registre-entree-sortie"
+                className="flex items-center gap-3 bg-[#EEF5EA] border border-[#6E9E57]/20 rounded-2xl p-4 hover:shadow-md transition-shadow">
+                <span className="text-2xl">📂</span>
+                <div>
+                  <p className="font-semibold text-[#5A8A45] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Entrées / Sorties</p>
+                  <p className="text-[#5A8A45]/60 text-xs">Registre légal</p>
+                </div>
+              </Link>
+            </>
+          )}
         </div>
       )}
     </div>

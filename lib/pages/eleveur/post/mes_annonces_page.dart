@@ -1,12 +1,15 @@
+import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
+import 'package:PetsMatch/services/plan_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class MesAnnoncesPage extends StatefulWidget {
   const MesAnnoncesPage({super.key});
@@ -20,6 +23,10 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   int _refreshKey = 0;
 
+  String _planCode    = 'free';
+  int    _activeCount = 0;
+  bool   _planLoading = true;
+
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
 
@@ -27,6 +34,56 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _loadPlan();
+  }
+
+  Future<void> _loadPlan() async {
+    if (_uid == null) { setState(() => _planLoading = false); return; }
+    final results = await Future.wait([
+      PlanService.getPlanCode(_uid!),
+      PlanService.countActiveAnnonces(_uid!),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _planCode    = results[0] as String;
+      _activeCount = results[1] as int;
+      _planLoading = false;
+    });
+  }
+
+  void _onFabTap() {
+    final config = PlanService.getConfig(_planCode);
+    final atLimit = config.maxAnnonces != -1 && _activeCount >= config.maxAnnonces;
+    if (atLimit) {
+      _showQuotaSheet();
+    } else {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateAnnoncePage()))
+          .then((_) {
+        if (mounted) {
+          setState(() => _refreshKey++);
+          _loadPlan();
+        }
+      });
+    }
+  }
+
+  void _showQuotaSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _QuotaSheet(
+        onBuyExtra: () async {
+          Navigator.pop(context);
+          final uri = Uri.parse('${PlanService.kWebsiteUrl}/abonnement?buy=annonce_sup');
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        },
+        onUpgradePro: () {
+          Navigator.pop(context);
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const AbonnementPage()));
+        },
+      ),
+    );
   }
 
   @override
@@ -37,6 +94,11 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
 
   @override
   Widget build(BuildContext context) {
+    final config    = PlanService.getConfig(_planCode);
+    final atLimit   = config.maxAnnonces != -1 && _activeCount >= config.maxAnnonces;
+    final progress  = config.maxAnnonces == -1
+        ? 0.0 : (_activeCount / config.maxAnnonces).clamp(0.0, 1.0);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F0),
       appBar: AppBar(
@@ -61,24 +123,168 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _AnnoncesList(uid: _uid, filter: 'all',      refreshKey: _refreshKey),
-          _AnnoncesList(uid: _uid, filter: 'actives',  refreshKey: _refreshKey),
-          _AnnoncesList(uid: _uid, filter: 'pause',    refreshKey: _refreshKey),
-          _AnnoncesList(uid: _uid, filter: 'terminees',refreshKey: _refreshKey),
-        ],
-      ),
+      body: Column(children: [
+        // ── Quota banner ──────────────────────────────────────────────────
+        if (!_planLoading)
+          GestureDetector(
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const AbonnementPage())),
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: atLimit ? const Color(0xFFFFF0F0) : Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                    color: atLimit ? Colors.red.shade200 : Colors.grey.shade100),
+                boxShadow: [BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 4, offset: const Offset(0, 2))],
+              ),
+              child: Row(children: [
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Text('${config.badge} Plan ${config.label}',
+                        style: const TextStyle(fontFamily: 'Galey',
+                            fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1F2A2E))),
+                    const SizedBox(width: 8),
+                    Text(
+                      config.maxAnnonces == -1
+                          ? 'Illimité'
+                          : '$_activeCount / ${config.maxAnnonces}',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                          color: atLimit ? Colors.red : Colors.grey.shade500),
+                    ),
+                    if (atLimit) ...[
+                      const SizedBox(width: 4),
+                      const Text('· Limite atteinte',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                              color: Colors.red, fontWeight: FontWeight.w600)),
+                    ],
+                  ]),
+                  if (config.maxAnnonces != -1) ...[
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        backgroundColor: Colors.grey.shade100,
+                        color: atLimit ? Colors.red.shade300 : _green,
+                        minHeight: 4,
+                      ),
+                    ),
+                  ],
+                ])),
+                const SizedBox(width: 10),
+                if (_planCode == 'free')
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                        color: _teal.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(20)),
+                    child: const Text('⚡ Pro',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                            fontSize: 12, color: Color(0xFF0C5C6C))),
+                  ),
+              ]),
+            ),
+          ),
+
+        // ── Tab body ──────────────────────────────────────────────────────
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _AnnoncesList(uid: _uid, filter: 'all',      refreshKey: _refreshKey),
+              _AnnoncesList(uid: _uid, filter: 'actives',  refreshKey: _refreshKey),
+              _AnnoncesList(uid: _uid, filter: 'pause',    refreshKey: _refreshKey),
+              _AnnoncesList(uid: _uid, filter: 'terminees',refreshKey: _refreshKey),
+            ],
+          ),
+        ),
+      ]),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const CreateAnnoncePage()))
-            .then((_) { if (mounted) setState(() => _refreshKey++); }),
-        backgroundColor: _teal,
+        onPressed: _onFabTap,
+        backgroundColor: atLimit ? Colors.grey.shade400 : _teal,
         foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('Nouvelle annonce',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+        icon: Icon(atLimit ? Icons.lock_outline : Icons.add),
+        label: Text(atLimit ? 'Quota atteint' : 'Nouvelle annonce',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+      ),
+    );
+  }
+}
+
+// ── Quota bottom sheet ───────────────────────────────────────────────────────
+
+class _QuotaSheet extends StatelessWidget {
+  final Future<void> Function() onBuyExtra;
+  final VoidCallback onUpgradePro;
+
+  const _QuotaSheet({required this.onBuyExtra, required this.onUpgradePro});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 24, 20, MediaQuery.of(context).viewInsets.bottom + 32),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 36, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 20),
+          const Text('🚫', style: TextStyle(fontSize: 40)),
+          const SizedBox(height: 12),
+          const Text('Quota atteint',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                  fontSize: 20, color: Color(0xFF1F2A2E))),
+          const SizedBox(height: 8),
+          const Text('Vous avez atteint la limite d\'annonces de votre plan actuel.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF6F767B))),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: onBuyExtra,
+              icon: const Icon(Icons.add_circle_outline, size: 18),
+              label: const Text('Annonce supplémentaire — 2,99 €',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6E9E57),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: onUpgradePro,
+              icon: const Text('⚡', style: TextStyle(fontSize: 16)),
+              label: const Text('Passer au plan Pro',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0C5C6C),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler',
+                style: TextStyle(fontFamily: 'Galey', color: Color(0xFF9CA3AF))),
+          ),
+        ],
       ),
     );
   }

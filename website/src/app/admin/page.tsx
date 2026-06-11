@@ -58,7 +58,7 @@ interface DossierEntry {
   isSecondary?: boolean; profileTableId?: string;
 }
 
-type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs';
+type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'annonces' | 'tarification';
 type FilterType = 'tous' | 'eleveur' | 'particulier' | 'pro' | 'secondaire' | 'admin' | 'en_attente';
 type SigFilter = 'en_attente' | 'traite' | 'rejete';
 
@@ -125,6 +125,23 @@ export default function AdminPage() {
   const [filter, setFilter] = useState<FilterType>('tous');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<ProfileEntry | null>(null);
+
+  // Annonces en attente
+  interface AnnonceAdmin { id: string; titre?: string; espece?: string; race?: string; nom_eleveur?: string; uid_eleveur?: string; created_at?: string; photos?: string[]; type_vente?: string; }
+  const [annoncesEnAttente, setAnnoncesEnAttente] = useState<AnnonceAdmin[]>([]);
+  const [annoncesLoading, setAnnoncesLoading] = useState(false);
+
+  // Tarification
+  interface PlanAdmin { id: string; plan_code: string; label: string; prix_mensuel: number; prix_annuel: number; max_annonces: number; duree_annonce_jours: number; auto_publish: boolean; stripe_price_id_mensuel?: string; stripe_price_id_annuel?: string; actif: boolean; }
+  interface ProduitAdmin { id: string; code: string; label: string; prix: number; duree_heures?: number; description?: string; stripe_price_id?: string; actif: boolean; }
+  const [plans, setPlans] = useState<PlanAdmin[]>([]);
+  const [produits, setProduits] = useState<ProduitAdmin[]>([]);
+  const [tarifLoading, setTarifLoading] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<PlanAdmin | null>(null);
+  const [editingProduit, setEditingProduit] = useState<ProduitAdmin | null>(null);
+  const [tarifSaving, setTarifSaving] = useState(false);
+  const [selectedAnnonceAdmin, setSelectedAnnonceAdmin] = useState<AnnonceAdmin | null>(null);
+  const [annonceSaving, setAnnonceSaving] = useState<string | null>(null);
 
   // ── Admin check ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -447,6 +464,144 @@ export default function AdminPage() {
     }
   }
 
+  // ── Annonces en attente ──────────────────────────────────────────────────────
+  const loadAnnoncesEnAttente = useCallback(async () => {
+    setAnnoncesLoading(true);
+    try {
+      const { data } = await supabase
+        .from('annonces')
+        .select('id, titre, espece, race, uid_eleveur, created_at, photos, type_vente')
+        .eq('statut', 'en_attente')
+        .order('created_at', { ascending: true });
+      const rows = (data ?? []) as Record<string, unknown>[];
+      const uids = [...new Set(rows.map(a => a['uid_eleveur']).filter(Boolean))] as string[];
+      const nameMap: Record<string, string> = {};
+      if (uids.length > 0) {
+        const snap = await getDocs(collection(db, 'users'));
+        snap.docs.forEach(d => {
+          const fd = d.data() as Record<string, unknown>;
+          const rawName = (fd['nameElevage'] as string | undefined) ?? `${fd['firstname'] ?? ''} ${fd['lastname'] ?? ''}`.trim();
+          nameMap[d.id] = rawName || d.id;
+        });
+      }
+      setAnnoncesEnAttente(rows.map(a => ({
+        id: a['id'] as string,
+        titre: a['titre'] as string | undefined,
+        espece: a['espece'] as string | undefined,
+        race: a['race'] as string | undefined,
+        uid_eleveur: a['uid_eleveur'] as string | undefined,
+        nom_eleveur: a['uid_eleveur'] ? (nameMap[a['uid_eleveur'] as string] ?? a['uid_eleveur'] as string) : undefined,
+        created_at: a['created_at'] as string | undefined,
+        photos: a['photos'] as string[] | undefined,
+        type_vente: a['type_vente'] as string | undefined,
+      })));
+    } finally {
+      setAnnoncesLoading(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function approveAnnonce(id: string) {
+    setAnnonceSaving(id);
+    try {
+      const res = await fetch('/api/admin/annonces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user!.uid, annonce_id: id, action: 'approve' }),
+      });
+      if (res.ok) {
+        setAnnoncesEnAttente(prev => prev.filter(a => a.id !== id));
+        setSelectedAnnonceAdmin(null);
+      }
+    } finally { setAnnonceSaving(null); }
+  }
+
+  async function rejectAnnonce(id: string) {
+    setAnnonceSaving(id);
+    try {
+      const res = await fetch('/api/admin/annonces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user!.uid, annonce_id: id, action: 'reject' }),
+      });
+      if (res.ok) {
+        setAnnoncesEnAttente(prev => prev.filter(a => a.id !== id));
+        setSelectedAnnonceAdmin(null);
+      }
+    } finally { setAnnonceSaving(null); }
+  }
+
+  // ── Tarification ─────────────────────────────────────────────────────────────
+  const loadTarification = useCallback(async () => {
+    setTarifLoading(true);
+    try {
+      const [{ data: plansData }, { data: produitsData }] = await Promise.all([
+        supabase.from('plans_tarifaires').select('*').order('prix_mensuel'),
+        supabase.from('produits_ponctuels').select('*').order('prix'),
+      ]);
+      setPlans((plansData ?? []) as PlanAdmin[]);
+      setProduits((produitsData ?? []) as ProduitAdmin[]);
+    } finally {
+      setTarifLoading(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function savePlan(plan: PlanAdmin) {
+    setTarifSaving(true);
+    try {
+      const res = await fetch('/api/admin/tarification', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: user!.uid,
+          type: 'plan',
+          id: plan.id,
+          data: {
+            label: plan.label,
+            prix_mensuel: plan.prix_mensuel,
+            prix_annuel: plan.prix_annuel,
+            max_annonces: plan.max_annonces,
+            duree_annonce_jours: plan.duree_annonce_jours,
+            auto_publish: plan.auto_publish,
+            stripe_price_id_mensuel: plan.stripe_price_id_mensuel || null,
+            stripe_price_id_annuel: plan.stripe_price_id_annuel || null,
+            actif: plan.actif,
+          },
+        }),
+      });
+      if (res.ok) {
+        setPlans(prev => prev.map(p => p.id === plan.id ? plan : p));
+        setEditingPlan(null);
+      }
+    } finally { setTarifSaving(false); }
+  }
+
+  async function saveProduit(produit: ProduitAdmin) {
+    setTarifSaving(true);
+    try {
+      const res = await fetch('/api/admin/tarification', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: user!.uid,
+          type: 'produit',
+          id: produit.id,
+          data: {
+            label: produit.label,
+            prix: produit.prix,
+            duree_heures: produit.duree_heures ?? null,
+            description: produit.description ?? null,
+            stripe_price_id: produit.stripe_price_id || null,
+            actif: produit.actif,
+          },
+        }),
+      });
+      if (res.ok) {
+        setProduits(prev => prev.map(p => p.id === produit.id ? produit : p));
+        setEditingProduit(null);
+      }
+    } finally { setTarifSaving(false); }
+  }
+
   // ── Chargement par onglet ────────────────────────────────────────────────────
   useEffect(() => {
     if (!isAdmin) return;
@@ -454,6 +609,8 @@ export default function AdminPage() {
     if (tab === 'signalements') loadSignalements(sigFilter);
     if (tab === 'dossiers' && dossiers.length === 0 && refusedDossiers.length === 0) loadDossiers();
     if (tab === 'utilisateurs' && entries.length === 0) loadUsers();
+    if (tab === 'annonces') loadAnnoncesEnAttente();
+    if (tab === 'tarification') loadTarification();
   }, [isAdmin, tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -506,6 +663,8 @@ export default function AdminPage() {
           { key: 'signalements',  label: 'Signalements',  icon: '🚨', badge: stats?.signalementsEnAttente },
           { key: 'dossiers',      label: 'Dossiers',      icon: '📂', badge: stats?.profilsEnAttente },
           { key: 'utilisateurs',  label: 'Utilisateurs',  icon: '👥' },
+          { key: 'annonces',      label: 'Annonces',      icon: '📋', badge: annoncesEnAttente.length || undefined },
+          { key: 'tarification',  label: 'Tarification',  icon: '💰' },
         ] as { key: AdminTab; label: string; icon: string; badge?: number }[]).map(t => (
           <button
             key={t.key}
@@ -983,7 +1142,337 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* ─── Annonces en attente ───────────────────────────────────────── */}
+        {tab === 'annonces' && (
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="font-bold text-[#1F2A2E] text-lg" style={{ fontFamily: 'Galey, sans-serif' }}>
+                  Annonces en attente de validation
+                </h2>
+                <p className="text-sm text-gray-400">{annoncesEnAttente.length} annonce(s) FREE à modérer</p>
+              </div>
+              <button onClick={loadAnnoncesEnAttente} className="text-xs text-gray-400 hover:text-[#0C5C6C]">↺ Rafraîchir</button>
+            </div>
+            {annoncesLoading ? (
+              <div className="flex justify-center py-16">
+                <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : annoncesEnAttente.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                <p className="text-4xl mb-2">✅</p>
+                <p className="text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Aucune annonce en attente de validation.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {annoncesEnAttente.map(a => {
+                  const photo = a.photos?.[0];
+                  const date = a.created_at ? new Date(a.created_at).toLocaleDateString('fr-FR') : '—';
+                  return (
+                    <div key={a.id}
+                      onClick={() => setSelectedAnnonceAdmin(a)}
+                      className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-4 cursor-pointer hover:border-[#A7C79A] transition-colors shadow-sm">
+                      <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
+                        {photo ? (
+                          <img src={photo} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-2xl">🐾</div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-[#1F2A2E] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          {a.titre ?? 'Sans titre'}
+                        </p>
+                        <p className="text-sm text-gray-500">{[a.espece, a.race].filter(Boolean).join(' · ') || '—'}</p>
+                        <p className="text-xs text-gray-400">Par {a.nom_eleveur ?? a.uid_eleveur ?? '—'} · {date}</p>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => approveAnnonce(a.id)}
+                          disabled={annonceSaving === a.id}
+                          className="px-3 py-1.5 bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-colors"
+                          style={{ fontFamily: 'Galey, sans-serif' }}>
+                          {annonceSaving === a.id ? '…' : '✅ Valider'}
+                        </button>
+                        <button
+                          onClick={() => rejectAnnonce(a.id)}
+                          disabled={annonceSaving === a.id}
+                          className="px-3 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 text-xs font-semibold rounded-xl transition-colors"
+                          style={{ fontFamily: 'Galey, sans-serif' }}>
+                          ❌ Refuser
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ─── Tarification ──────────────────────────────────────────────────── */}
+        {tab === 'tarification' && (
+          <div className="max-w-4xl mx-auto space-y-8">
+            {tarifLoading ? (
+              <div className="flex justify-center py-16">
+                <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <>
+                {/* Plans */}
+                <section>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="font-bold text-[#1F2A2E] text-lg" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      Plans d&apos;abonnement éleveur
+                    </h2>
+                    <button onClick={loadTarification} className="text-xs text-gray-400 hover:text-[#0C5C6C]">↺ Rafraîchir</button>
+                  </div>
+                  <div className="flex flex-col gap-4">
+                    {plans.map(plan => editingPlan?.id === plan.id ? (
+                      <div key={plan.id} className="bg-white rounded-2xl border-2 border-[#0C5C6C] p-5 space-y-3">
+                        <p className="font-bold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>Éditer — {plan.plan_code}</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="block">
+                            <span className="text-xs text-gray-400">Label</span>
+                            <input className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5"
+                              value={editingPlan.label}
+                              onChange={e => setEditingPlan({ ...editingPlan, label: e.target.value })} />
+                          </label>
+                          <label className="block">
+                            <span className="text-xs text-gray-400">Prix mensuel (€)</span>
+                            <input type="number" min="0" step="0.01" className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5"
+                              value={editingPlan.prix_mensuel}
+                              onChange={e => setEditingPlan({ ...editingPlan, prix_mensuel: parseFloat(e.target.value) || 0 })} />
+                          </label>
+                          <label className="block">
+                            <span className="text-xs text-gray-400">Prix annuel (€/an)</span>
+                            <input type="number" min="0" step="0.01" className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5"
+                              value={editingPlan.prix_annuel}
+                              onChange={e => setEditingPlan({ ...editingPlan, prix_annuel: parseFloat(e.target.value) || 0 })} />
+                          </label>
+                          <label className="block">
+                            <span className="text-xs text-gray-400">Max annonces (-1 = illimité)</span>
+                            <input type="number" className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5"
+                              value={editingPlan.max_annonces}
+                              onChange={e => setEditingPlan({ ...editingPlan, max_annonces: parseInt(e.target.value) || -1 })} />
+                          </label>
+                          <label className="block">
+                            <span className="text-xs text-gray-400">Durée annonce (jours)</span>
+                            <input type="number" min="1" className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5"
+                              value={editingPlan.duree_annonce_jours}
+                              onChange={e => setEditingPlan({ ...editingPlan, duree_annonce_jours: parseInt(e.target.value) || 30 })} />
+                          </label>
+                          <label className="flex items-center gap-2 mt-4">
+                            <input type="checkbox" checked={editingPlan.auto_publish}
+                              onChange={e => setEditingPlan({ ...editingPlan, auto_publish: e.target.checked })}
+                              className="w-4 h-4 accent-[#0C5C6C]" />
+                            <span className="text-sm text-gray-700">Publication automatique</span>
+                          </label>
+                        </div>
+                        <label className="block">
+                          <span className="text-xs text-gray-400">Stripe Price ID mensuel</span>
+                          <input className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5 font-mono"
+                            value={editingPlan.stripe_price_id_mensuel ?? ''}
+                            onChange={e => setEditingPlan({ ...editingPlan, stripe_price_id_mensuel: e.target.value })} />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs text-gray-400">Stripe Price ID annuel</span>
+                          <input className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5 font-mono"
+                            value={editingPlan.stripe_price_id_annuel ?? ''}
+                            onChange={e => setEditingPlan({ ...editingPlan, stripe_price_id_annuel: e.target.value })} />
+                        </label>
+                        <div className="flex gap-3 pt-1">
+                          <button onClick={() => setEditingPlan(null)}
+                            className="flex-1 border border-gray-200 text-gray-600 text-sm font-semibold py-2 rounded-xl hover:bg-gray-50"
+                            style={{ fontFamily: 'Galey, sans-serif' }}>
+                            Annuler
+                          </button>
+                          <button onClick={() => savePlan(editingPlan)} disabled={tarifSaving}
+                            className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white text-sm font-semibold py-2 rounded-xl transition-colors"
+                            style={{ fontFamily: 'Galey, sans-serif' }}>
+                            {tarifSaving ? '…' : '💾 Enregistrer'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div key={plan.id} className={`bg-white rounded-2xl border p-5 flex items-start gap-4 ${plan.actif ? 'border-gray-100' : 'border-dashed border-gray-300 opacity-60'}`}>
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{plan.label}</p>
+                            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-mono">{plan.plan_code}</span>
+                            {!plan.actif && <span className="text-xs bg-red-100 text-red-500 px-2 py-0.5 rounded-full">Inactif</span>}
+                          </div>
+                          <p className="text-sm text-gray-600">
+                            {plan.prix_mensuel === 0 ? 'Gratuit' : `${plan.prix_mensuel} €/mois`}
+                            {plan.prix_annuel > 0 && ` · ${plan.prix_annuel} €/an`}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {plan.max_annonces === -1 ? 'Illimité' : `${plan.max_annonces} annonces`} · {plan.duree_annonce_jours}j · {plan.auto_publish ? 'Auto-publish' : 'Validation admin'}
+                          </p>
+                          {plan.stripe_price_id_mensuel && (
+                            <p className="text-xs font-mono text-gray-300 truncate">Stripe: {plan.stripe_price_id_mensuel}</p>
+                          )}
+                        </div>
+                        <button onClick={() => setEditingPlan(plan)}
+                          className="px-4 py-1.5 border border-gray-200 text-gray-600 text-xs font-semibold rounded-xl hover:border-[#0C5C6C] hover:text-[#0C5C6C] transition-colors"
+                          style={{ fontFamily: 'Galey, sans-serif' }}>
+                          ✏️ Modifier
+                        </button>
+                      </div>
+                    ))}
+                    {plans.length === 0 && <p className="text-center text-gray-400 py-6">Aucun plan trouvé — vérifiez que la table plans_tarifaires existe et contient des données.</p>}
+                  </div>
+                </section>
+
+                {/* Produits ponctuels */}
+                <section>
+                  <h2 className="font-bold text-[#1F2A2E] text-lg mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
+                    Produits ponctuels (boosts)
+                  </h2>
+                  <div className="flex flex-col gap-4">
+                    {produits.map(produit => editingProduit?.id === produit.id ? (
+                      <div key={produit.id} className="bg-white rounded-2xl border-2 border-[#D97706] p-5 space-y-3">
+                        <p className="font-bold text-[#D97706]" style={{ fontFamily: 'Galey, sans-serif' }}>Éditer — {produit.code}</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="block">
+                            <span className="text-xs text-gray-400">Label</span>
+                            <input className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5"
+                              value={editingProduit.label}
+                              onChange={e => setEditingProduit({ ...editingProduit, label: e.target.value })} />
+                          </label>
+                          <label className="block">
+                            <span className="text-xs text-gray-400">Prix (€)</span>
+                            <input type="number" min="0" step="0.01" className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5"
+                              value={editingProduit.prix}
+                              onChange={e => setEditingProduit({ ...editingProduit, prix: parseFloat(e.target.value) || 0 })} />
+                          </label>
+                          <label className="block">
+                            <span className="text-xs text-gray-400">Durée (heures, vide = permanent)</span>
+                            <input type="number" min="1" className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5"
+                              value={editingProduit.duree_heures ?? ''}
+                              onChange={e => setEditingProduit({ ...editingProduit, duree_heures: e.target.value ? parseInt(e.target.value) : undefined })} />
+                          </label>
+                          <label className="flex items-center gap-2 mt-4">
+                            <input type="checkbox" checked={editingProduit.actif}
+                              onChange={e => setEditingProduit({ ...editingProduit, actif: e.target.checked })}
+                              className="w-4 h-4 accent-[#D97706]" />
+                            <span className="text-sm text-gray-700">Actif</span>
+                          </label>
+                        </div>
+                        <label className="block">
+                          <span className="text-xs text-gray-400">Description</span>
+                          <input className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5"
+                            value={editingProduit.description ?? ''}
+                            onChange={e => setEditingProduit({ ...editingProduit, description: e.target.value })} />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs text-gray-400">Stripe Price ID</span>
+                          <input className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5 font-mono"
+                            value={editingProduit.stripe_price_id ?? ''}
+                            onChange={e => setEditingProduit({ ...editingProduit, stripe_price_id: e.target.value })} />
+                        </label>
+                        <div className="flex gap-3 pt-1">
+                          <button onClick={() => setEditingProduit(null)}
+                            className="flex-1 border border-gray-200 text-gray-600 text-sm font-semibold py-2 rounded-xl hover:bg-gray-50"
+                            style={{ fontFamily: 'Galey, sans-serif' }}>
+                            Annuler
+                          </button>
+                          <button onClick={() => saveProduit(editingProduit)} disabled={tarifSaving}
+                            className="flex-1 bg-[#D97706] hover:bg-[#B45309] disabled:opacity-50 text-white text-sm font-semibold py-2 rounded-xl transition-colors"
+                            style={{ fontFamily: 'Galey, sans-serif' }}>
+                            {tarifSaving ? '…' : '💾 Enregistrer'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div key={produit.id} className={`bg-white rounded-2xl border p-5 flex items-start gap-4 ${produit.actif ? 'border-gray-100' : 'border-dashed border-gray-300 opacity-60'}`}>
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{produit.label}</p>
+                            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-mono">{produit.code}</span>
+                            {!produit.actif && <span className="text-xs bg-red-100 text-red-500 px-2 py-0.5 rounded-full">Inactif</span>}
+                          </div>
+                          <p className="text-sm text-gray-600">{produit.prix} € · {produit.duree_heures ? `${produit.duree_heures}h` : 'Permanent'}</p>
+                          {produit.description && <p className="text-xs text-gray-400">{produit.description}</p>}
+                          {produit.stripe_price_id && (
+                            <p className="text-xs font-mono text-gray-300 truncate">Stripe: {produit.stripe_price_id}</p>
+                          )}
+                        </div>
+                        <button onClick={() => setEditingProduit(produit)}
+                          className="px-4 py-1.5 border border-gray-200 text-gray-600 text-xs font-semibold rounded-xl hover:border-[#D97706] hover:text-[#D97706] transition-colors"
+                          style={{ fontFamily: 'Galey, sans-serif' }}>
+                          ✏️ Modifier
+                        </button>
+                      </div>
+                    ))}
+                    {produits.length === 0 && <p className="text-center text-gray-400 py-6">Aucun produit trouvé — vérifiez la table produits_ponctuels.</p>}
+                  </div>
+                </section>
+              </>
+            )}
+          </div>
+        )}
+
       </main>
+
+      {/* ── Modal annonce détail ──────────────────────────────────────────── */}
+      {selectedAnnonceAdmin && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => setSelectedAnnonceAdmin(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            {selectedAnnonceAdmin.photos?.[0] && (
+              <img src={selectedAnnonceAdmin.photos[0]} alt="" className="w-full h-48 object-cover" />
+            )}
+            <div className="px-6 py-4">
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <div>
+                  <p className="font-bold text-[#1F2A2E] text-lg" style={{ fontFamily: 'Galey, sans-serif' }}>
+                    {selectedAnnonceAdmin.titre ?? 'Sans titre'}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {[selectedAnnonceAdmin.espece, selectedAnnonceAdmin.race].filter(Boolean).join(' · ') || '—'}
+                  </p>
+                </div>
+                <button onClick={() => setSelectedAnnonceAdmin(null)} className="text-gray-400 hover:text-gray-700 text-xl flex-shrink-0">✕</button>
+              </div>
+              <div className="space-y-1 mb-5">
+                <p className="text-xs text-gray-400">
+                  <strong>Type :</strong> {selectedAnnonceAdmin.type_vente ?? '—'}
+                </p>
+                <p className="text-xs text-gray-400">
+                  <strong>Éleveur :</strong> {selectedAnnonceAdmin.nom_eleveur ?? selectedAnnonceAdmin.uid_eleveur ?? '—'}
+                </p>
+                <p className="text-xs text-gray-400">
+                  <strong>Déposée le :</strong> {selectedAnnonceAdmin.created_at ? new Date(selectedAnnonceAdmin.created_at).toLocaleString('fr-FR') : '—'}
+                </p>
+                {selectedAnnonceAdmin.uid_eleveur && (
+                  <Link href={`/elevages/${selectedAnnonceAdmin.uid_eleveur}`} target="_blank"
+                    className="inline-block text-xs text-[#0C5C6C] hover:underline font-semibold mt-1">
+                    Voir le profil éleveur ↗
+                  </Link>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => rejectAnnonce(selectedAnnonceAdmin.id)}
+                  disabled={annonceSaving === selectedAnnonceAdmin.id}
+                  className="flex-1 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 text-sm font-semibold py-2.5 rounded-xl transition-colors"
+                  style={{ fontFamily: 'Galey, sans-serif' }}>
+                  ❌ Refuser
+                </button>
+                <button
+                  onClick={() => approveAnnonce(selectedAnnonceAdmin.id)}
+                  disabled={annonceSaving === selectedAnnonceAdmin.id}
+                  className="flex-1 bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+                  style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {annonceSaving === selectedAnnonceAdmin.id ? '…' : '✅ Valider'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal signalement ─────────────────────────────────────────────── */}
       {selectedSig && (

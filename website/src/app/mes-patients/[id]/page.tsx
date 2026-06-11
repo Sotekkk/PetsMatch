@@ -51,11 +51,11 @@ interface Ordonnance {
 interface RadioEntry {
   id: string; date: string; titre: string | null; notes: string | null; veterinaire: string | null;
 }
-interface Chaleur { id: string; date_debut: string; date_fin: string | null; notes: string | null; }
-interface Saillie { id: string; date: string; partenaire: string | null; notes: string | null; }
+interface Chaleur { id: string; date: string; date_fin: string | null; duree: number | null; notes: string | null; }
+interface Saillie { id: string; date: string; nom_partenaire: string | null; methode: string | null; notes: string | null; }
 interface Gestation {
-  id: string; date_saillie: string | null; date_naissance_prevue: string | null;
-  nb_petits_prevus: number | null; notes: string | null;
+  id: string; date: string | null; date_prevue: string | null; date_naissance: string | null;
+  nb_attendu: number | null; nb_nes: number | null; notes: string | null; gestation_confirmee: boolean | null;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -212,9 +212,9 @@ export default function PatientDetailPage() {
         supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false }),
         supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date_emit', { ascending: false }),
         supabase.from('radios').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
-        isFemelle ? supabase.from('chaleurs').select('*').eq('animal_id', animalId).order('date_debut', { ascending: false }) : Promise.resolve({ data: [] }),
+        isFemelle ? supabase.from('chaleurs').select('*').eq('animal_id', animalId).order('date', { ascending: false }) : Promise.resolve({ data: [] }),
         supabase.from('saillies').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
-        isFemelle ? supabase.from('gestations').select('*').eq('animal_id', animalId).order('date_saillie', { ascending: false }) : Promise.resolve({ data: [] }),
+        isFemelle ? supabase.from('gestations').select('*').eq('animal_id', animalId).order('date', { ascending: false }) : Promise.resolve({ data: [] }),
       ]);
 
       const get = <T,>(i: number): T[] => {
@@ -592,8 +592,9 @@ export default function PatientDetailPage() {
                       {chaleurs.map(c => (
                         <div key={c.id} className="border border-gray-100 rounded-xl p-3">
                           <p className="text-sm font-medium text-[#1F2A2E]">
-                            {fmtDateShort(c.date_debut)}{c.date_fin ? ` → ${fmtDateShort(c.date_fin)}` : ''}
+                            {fmtDateShort(c.date)}{c.date_fin ? ` → ${fmtDateShort(c.date_fin)}` : ''}
                           </p>
+                          {c.duree != null && <p className="text-xs text-gray-500">{c.duree} jour{c.duree > 1 ? 's' : ''}</p>}
                           {c.notes && <p className="text-xs text-gray-400 mt-1">{c.notes}</p>}
                         </div>
                       ))}
@@ -606,9 +607,11 @@ export default function PatientDetailPage() {
                     <div className="space-y-2">
                       {gestations.map(g => (
                         <div key={g.id} className="border border-gray-100 rounded-xl p-3">
-                          {g.date_saillie && <p className="text-xs text-gray-500">Saillie : {fmtDateShort(g.date_saillie)}</p>}
-                          {g.date_naissance_prevue && <p className="text-sm font-medium text-[#1F2A2E]">Naissance prévue : {fmtDateShort(g.date_naissance_prevue)}</p>}
-                          {g.nb_petits_prevus && <p className="text-xs text-gray-500">{g.nb_petits_prevus} petit(s) prévu(s)</p>}
+                          {g.date && <p className="text-xs text-gray-500">Saillie : {fmtDateShort(g.date)}</p>}
+                          {g.date_prevue && <p className="text-sm font-medium text-[#1F2A2E]">Naissance prévue : {fmtDateShort(g.date_prevue)}</p>}
+                          {g.date_naissance && <p className="text-sm font-medium text-green-600">Naissance : {fmtDateShort(g.date_naissance)}</p>}
+                          {g.gestation_confirmee && <span className="text-[10px] bg-green-50 text-green-600 font-bold px-1.5 py-0.5 rounded-full">Confirmée</span>}
+                          {g.nb_attendu != null && <p className="text-xs text-gray-500">{g.nb_attendu} petit(s) attendu(s){g.nb_nes != null ? ` · ${g.nb_nes} né(s)` : ''}</p>}
                           {g.notes && <p className="text-xs text-gray-400 mt-1">{g.notes}</p>}
                         </div>
                       ))}
@@ -624,7 +627,8 @@ export default function PatientDetailPage() {
                   {saillies.map(s => (
                     <div key={s.id} className="border border-gray-100 rounded-xl p-3">
                       <p className="text-sm font-medium text-[#1F2A2E]">{fmtDateShort(s.date)}</p>
-                      {s.partenaire && <p className="text-xs text-gray-500">Partenaire : {s.partenaire}</p>}
+                      {s.nom_partenaire && <p className="text-xs text-gray-500">Partenaire : {s.nom_partenaire}</p>}
+                      {s.methode && <p className="text-xs text-gray-400">Méthode : {s.methode}</p>}
                       {s.notes && <p className="text-xs text-gray-400 mt-1">{s.notes}</p>}
                     </div>
                   ))}

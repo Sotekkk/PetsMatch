@@ -5,6 +5,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import CookieBanner from "@/components/CookieBanner";
 import { AuthProvider } from "@/lib/auth-context";
+import ValidationGuard from "@/components/ValidationGuard";
 
 export const metadata: Metadata = {
   title: "PetsMatch — Connecter · Prendre soin · Partager",
@@ -32,7 +33,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             className="w-full h-auto block"
             priority
           />
-          <main className="flex-1">{children}</main>
+          <ValidationGuard>
+            <main className="flex-1">{children}</main>
+          </ValidationGuard>
           <Footer />
           <CookieBanner />
         </AuthProvider>

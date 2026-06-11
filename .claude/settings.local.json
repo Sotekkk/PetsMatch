@@ -9,7 +9,11 @@
       "WebSearch",
       "WebFetch(domain:www.babin-nutrition.com)",
       "WebFetch(domain:www.zoomalia.com)",
-      "WebFetch(domain:www.wouafmiaou.com)"
+      "WebFetch(domain:www.wouafmiaou.com)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "WebFetch(domain:www.vetocom.fr)",
+      "PowerShell(New-Item *)"
     ]
   }
 }

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { usePlan } from '@/lib/use-plan';
 
 interface Acte {
   id: string;
@@ -35,6 +36,7 @@ const TYPE_COLORS: Record<string, string> = {
 
 export default function RegistreSanitairePage() {
   const { user, loading } = useAuth();
+  const { config: planConfig, loading: planLoading } = usePlan();
   const router = useRouter();
   const [actes, setActes] = useState<Acte[]>([]);
   const [fetching, setFetching] = useState(true);
@@ -48,6 +50,25 @@ export default function RegistreSanitairePage() {
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
   }, [loading, user, router]);
+
+  if (!planLoading && !planConfig.hasRegistres) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <span className="text-5xl">🔒</span>
+        <h2 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Registre sanitaire — Plan Pro requis
+        </h2>
+        <p className="text-gray-500 text-sm max-w-sm">
+          Le registre sanitaire est disponible à partir du plan Pro. Passez à un plan supérieur pour gérer les actes vétérinaires de vos animaux.
+        </p>
+        <a href="/abonnement"
+          className="bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
+          ⚡ Voir les plans
+        </a>
+        <a href="/" className="text-sm text-gray-400 hover:text-[#0C5C6C]">← Retour à l&apos;accueil</a>
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (!user) return;

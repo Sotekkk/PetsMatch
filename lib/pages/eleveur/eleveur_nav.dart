@@ -1,5 +1,7 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
+import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/eleveur_home.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
@@ -48,7 +50,8 @@ class EleveurNav extends StatefulWidget {
 class _EleveurNavState extends State<EleveurNav> {
   int _selectedIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  bool _isEmploye = false;
+  bool _isEmploye    = false;
+  String _planCode   = 'free';
 
   static const _green = Color(0xFF6E9E57);
   static const _teal = Color(0xFF0C5C6C);
@@ -58,6 +61,7 @@ class _EleveurNavState extends State<EleveurNav> {
   void initState() {
     super.initState();
     _checkIsEmploye();
+    _loadPlan();
   }
 
   Future<void> _checkIsEmploye() async {
@@ -70,6 +74,13 @@ class _EleveurNavState extends State<EleveurNav> {
         .eq('actif', true)
         .limit(1);
     if (mounted) setState(() => _isEmploye = (rows as List).isNotEmpty);
+  }
+
+  Future<void> _loadPlan() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final code = await PlanService.getPlanCode(uid);
+    if (mounted) setState(() => _planCode = code);
   }
 
   Widget _tabContent(int index) => switch (index) {
@@ -210,20 +221,26 @@ class _EleveurNavState extends State<EleveurNav> {
                       _DrawerSubItem(
                         label: 'Suivi sanitaire',
                         icon: Icons.health_and_safety_outlined,
+                        locked: _planCode == 'free',
                         onTap: () {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const RegistreSanitairePage(),
+                            builder: (_) => _planCode == 'free'
+                                ? const AbonnementPage()
+                                : const RegistreSanitairePage(),
                           ));
                         },
                       ),
                       _DrawerSubItem(
                         label: 'Entrées / Sorties',
                         icon: Icons.swap_horiz_outlined,
+                        locked: _planCode == 'free',
                         onTap: () {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const RegistreEntreeSortiePage(),
+                            builder: (_) => _planCode == 'free'
+                                ? const AbonnementPage()
+                                : const RegistreEntreeSortiePage(),
                           ));
                         },
                       ),
@@ -234,6 +251,16 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => const MesAnnoncesPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mon abonnement',
+                        icon: Icons.star_outline,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const AbonnementPage(),
                           ));
                         },
                       ),
@@ -580,8 +607,11 @@ class _DrawerSubItem extends StatelessWidget {
   final String label;
   final IconData icon;
   final VoidCallback onTap;
+  final bool locked;
 
-  const _DrawerSubItem({required this.label, required this.icon, required this.onTap});
+  const _DrawerSubItem({
+    required this.label, required this.icon, required this.onTap, this.locked = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -589,9 +619,22 @@ class _DrawerSubItem extends StatelessWidget {
       leading: const SizedBox(width: 22),
       title: Row(
         children: [
-          Icon(icon, color: const Color(0xFF6E9E57), size: 18),
+          Icon(icon, color: locked ? Colors.grey.shade400 : const Color(0xFF6E9E57), size: 18),
           const SizedBox(width: 10),
-          Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E))),
+          Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+              color: locked ? Colors.grey.shade400 : const Color(0xFF1F2A2E))),
+          if (locked) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                  color: const Color(0xFFD97706).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8)),
+              child: const Text('Pro',
+                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700,
+                      fontFamily: 'Galey', color: Color(0xFFD97706))),
+            ),
+          ],
         ],
       ),
       onTap: onTap,

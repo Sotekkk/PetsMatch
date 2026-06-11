@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
+import { usePlan } from '@/lib/use-plan';
 import { useRouter } from 'next/navigation';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
@@ -44,6 +45,7 @@ const NAV_ELEVEUR = [
   { href: '/',               label: 'Accueil' },
   { href: '/mes-animaux',    label: 'Mes Animaux' },
   { href: '/mes-annonces',   label: 'Mes Annonces' },
+  { href: '/abonnement',     label: 'Abonnement' },
   { href: '/animaux-perdus', label: 'Animaux perdus' },
   { href: '/services',       label: 'Services' },
   { href: '/marketplace',    label: 'Marketplace' },
@@ -85,9 +87,11 @@ const MENU_ELEVEUR = [
       { href: '/mes-animaux',                    label: 'Mes Animaux',        icon: '🐾' },
       { href: '/mes-annonces',                   label: 'Mes Annonces',       icon: '📋' },
       { href: '/annonces/creer',                 label: 'Nouvelle annonce',   icon: '➕' },
-      { href: '/elevage/registre-sanitaire',     label: 'Suivi sanitaire',    icon: '🏥' },
-      { href: '/elevage/registre-entree-sortie', label: 'Entrées / Sorties',  icon: '📂' },
-      { href: '/elevage/facturation',            label: 'Facturation',        icon: '🧾' },
+      { href: '/abonnement',                     label: 'Mon abonnement',     icon: '⭐' },
+      { href: '/elevage/registre-sanitaire',     label: 'Suivi sanitaire',    icon: '🏥', pro: true },
+      { href: '/elevage/registre-entree-sortie', label: 'Entrées / Sorties',  icon: '📂', pro: true },
+      { href: '/elevage/contrat',               label: 'Contrats',           icon: '📄', pro: true },
+      { href: '/elevage/facturation',            label: 'Facturation',        icon: '🧾', pro: true },
     ],
   },
   {
@@ -282,6 +286,7 @@ export default function Header() {
   const bellRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
+  const { plan: eleveurPlan } = usePlan();
 
   // ── Effective profile data (primary or secondary) ─────────────────────────
   const activeProfile = profiles.find(p => p.id === activeProfileId) ?? null;
@@ -713,14 +718,25 @@ export default function Header() {
                         </button>
                         {expandedSections[sec.section] && (
                           <div className="bg-gray-50">
-                            {sec.items.map((item) => (
-                              <Link key={item.href} href={item.href}
-                                onClick={() => setDropdownOpen(false)}
-                                className="flex items-center gap-3 pl-10 pr-4 py-2 text-sm text-gray-600 hover:bg-gray-100 transition-colors">
-                                <span className="text-base">{item.icon}</span>
-                                {item.label}
-                              </Link>
-                            ))}
+                            {sec.items.map((item) => {
+                              const isLocked = effectiveIsEleveur && (item as { pro?: boolean }).pro && eleveurPlan === 'free';
+                              return isLocked ? (
+                                <Link key={item.href} href="/abonnement"
+                                  onClick={() => setDropdownOpen(false)}
+                                  className="flex items-center gap-3 pl-10 pr-4 py-2 text-sm text-gray-400 hover:bg-gray-50 transition-colors">
+                                  <span className="text-base opacity-50">{item.icon}</span>
+                                  <span className="flex-1 opacity-60">{item.label}</span>
+                                  <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full mr-1">Pro</span>
+                                </Link>
+                              ) : (
+                                <Link key={item.href} href={item.href}
+                                  onClick={() => setDropdownOpen(false)}
+                                  className="flex items-center gap-3 pl-10 pr-4 py-2 text-sm text-gray-600 hover:bg-gray-100 transition-colors">
+                                  <span className="text-base">{item.icon}</span>
+                                  {item.label}
+                                </Link>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -850,12 +866,22 @@ export default function Header() {
                   </button>
                   {expandedSections[sec.section] && (
                     <div className="pl-6 space-y-0.5 mb-1">
-                      {sec.items.map((item) => (
-                        <Link key={item.href} href={item.href} onClick={() => setMenuOpen(false)}
-                          className="flex items-center gap-2 py-2 text-white/70 hover:text-white text-sm">
-                          <span>{item.icon}</span> {item.label}
-                        </Link>
-                      ))}
+                      {sec.items.map((item) => {
+                        const isLocked = effectiveIsEleveur && (item as { pro?: boolean }).pro && eleveurPlan === 'free';
+                        return isLocked ? (
+                          <Link key={item.href} href="/abonnement" onClick={() => setMenuOpen(false)}
+                            className="flex items-center gap-2 py-2 text-white/40 text-sm">
+                            <span className="opacity-50">{item.icon}</span>
+                            <span className="flex-1 opacity-60">{item.label}</span>
+                            <span className="text-[10px] font-bold bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded-full">Pro</span>
+                          </Link>
+                        ) : (
+                          <Link key={item.href} href={item.href} onClick={() => setMenuOpen(false)}
+                            className="flex items-center gap-2 py-2 text-white/70 hover:text-white text-sm">
+                            <span>{item.icon}</span> {item.label}
+                          </Link>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
