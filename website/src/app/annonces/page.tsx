@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { PAYS_LIST, REGIONS_BY_PAYS, departmentsInRegion } from '@/lib/french-geo';
+import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
 
 interface Annonce {
   id: string;
@@ -25,6 +26,13 @@ interface Annonce {
   nombre_bebes?: number;
   created_at?: string;
   statut?: string;
+  uid_eleveur?: string;
+}
+
+interface EleveurVerif {
+  statut_pro?: string;
+  siret?: string;
+  is_premium?: boolean;
 }
 
 const ESPECES = ['tous', 'chien', 'chat', 'lapin', 'oiseau', 'reptile', 'autre'];
@@ -46,6 +54,7 @@ const BREED_FILES: Record<string, string> = {
 
 export default function AnnoncesPage() {
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
+  const [eleveurVerifs, setEleveurVerifs] = useState<Record<string, EleveurVerif>>({});
   const [loading, setLoading] = useState(true);
   const [filtreEspece, setFiltreEspece] = useState('tous');
   const [filtreType, setFiltreType] = useState('tous');
@@ -68,12 +77,20 @@ export default function AnnoncesPage() {
   useEffect(() => {
     supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at')
+      .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at, uid_eleveur')
       .eq('statut', 'disponible')
       .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setAnnonces((data ?? []) as Annonce[]);
+      .then(async ({ data }) => {
+        const rows = (data ?? []) as Annonce[];
+        setAnnonces(rows);
         setLoading(false);
+        const uids = [...new Set(rows.map(a => a.uid_eleveur).filter(Boolean))] as string[];
+        if (uids.length > 0) {
+          const { data: users } = await supabase.from('users').select('uid, statut_pro, siret, is_premium').in('uid', uids);
+          const map: Record<string, EleveurVerif> = {};
+          for (const u of (users ?? [])) map[u.uid] = { statut_pro: u.statut_pro, siret: u.siret, is_premium: u.is_premium };
+          setEleveurVerifs(map);
+        }
       });
   }, []);
 
@@ -321,7 +338,7 @@ export default function AnnoncesPage() {
         <div className="text-center py-20 text-gray-400">Aucune annonce trouvée</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {filtered.map((a) => <AnnonceCard key={a.id} annonce={a} />)}
+          {filtered.map((a) => <AnnonceCard key={a.id} annonce={a} verif={a.uid_eleveur ? eleveurVerifs[a.uid_eleveur] : undefined} />)}
         </div>
       )}
     </div>
@@ -337,7 +354,7 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
   );
 }
 
-function AnnonceCard({ annonce: a }: { annonce: Annonce }) {
+function AnnonceCard({ annonce: a, verif }: { annonce: Annonce; verif?: EleveurVerif }) {
   const photos = (a.photos as unknown as string[]) ?? [];
   const photo = photos[0];
   const isSaillie = a.type_vente === 'saillie';
@@ -367,9 +384,12 @@ function AnnonceCard({ annonce: a }: { annonce: Annonce }) {
         </span>
       </div>
       <div className="p-4">
-        <h3 className="font-bold text-[#1F2A2E] text-sm truncate capitalize">
-          {a.titre ?? `${a.espece ?? ''} ${a.race ?? ''}`}
-        </h3>
+        <div className="flex items-start gap-1.5 mb-0.5">
+          <h3 className="font-bold text-[#1F2A2E] text-sm truncate capitalize flex-1">
+            {a.titre ?? `${a.espece ?? ''} ${a.race ?? ''}`}
+          </h3>
+          {verif && <VerificationBadge level={getBadgeLevel({ statutPro: verif.statut_pro, siret: verif.siret, isPremium: verif.is_premium })} size="sm" />}
+        </div>
         <p className="text-gray-500 text-xs capitalize">{a.espece}{a.race ? ` · ${a.race}` : ''}</p>
         {a.ville_eleveur && <p className="text-gray-400 text-xs mt-0.5">📍 {a.ville_eleveur}</p>}
         {prix && <p className="text-[#0C5C6C] font-bold text-sm mt-1">{prix}</p>}

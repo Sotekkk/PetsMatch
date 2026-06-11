@@ -7,6 +7,7 @@ import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/user_detail_page_feed.dart';
 import 'package:PetsMatch/pages/main_feed.dart' show UserSelected;
+import 'package:PetsMatch/widgets/verification_badge.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -38,6 +39,8 @@ class _FeedItem {
   final bool pedigree;
   final DateTime? dateNaissance;
   final String? typeVente;
+  final bool eleveurVerifie;
+  final bool eleveurPremium;
 
   const _FeedItem({
     required this.annonceId, required this.bebeIndex,
@@ -47,6 +50,7 @@ class _FeedItem {
     this.uidEleveur, this.nomEleveur, this.photoEleveur,
     this.pedigree = false, this.dateNaissance,
     this.typeVente,
+    this.eleveurVerifie = false, this.eleveurPremium = false,
   });
 
   _FeedItem withPhoto(String? p) => _FeedItem(
@@ -55,6 +59,16 @@ class _FeedItem {
     description: description, ville: ville, uidEleveur: uidEleveur,
     nomEleveur: nomEleveur, photoEleveur: p, pedigree: pedigree,
     dateNaissance: dateNaissance, typeVente: typeVente,
+    eleveurVerifie: eleveurVerifie, eleveurPremium: eleveurPremium,
+  );
+
+  _FeedItem withVerification({required bool verifie, required bool premium}) => _FeedItem(
+    annonceId: annonceId, bebeIndex: bebeIndex, photos: photos, nom: nom,
+    race: race, espece: espece, sexe: sexe, prix: prix, statut: statut,
+    description: description, ville: ville, uidEleveur: uidEleveur,
+    nomEleveur: nomEleveur, photoEleveur: photoEleveur, pedigree: pedigree,
+    dateNaissance: dateNaissance, typeVente: typeVente,
+    eleveurVerifie: verifie, eleveurPremium: premium,
   );
 }
 
@@ -265,18 +279,31 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
         try {
           final users = await Supabase.instance.client
               .from('users')
-              .select('uid, profile_picture_url_elevage, profile_picture_url')
+              .select('uid, profile_picture_url_elevage, profile_picture_url, statut_pro, siret, is_premium')
               .inFilter('uid', uids);
-          final map = <String, String>{};
+          final photoMap    = <String, String>{};
+          final verifiedMap = <String, bool>{};
+          final premiumMap  = <String, bool>{};
           for (final u in List<Map<String, dynamic>>.from(users)) {
-            final id  = u['uid'] as String?;
+            final id = u['uid'] as String?;
             if (id == null) continue;
             final ph = (u['profile_picture_url_elevage'] as String?)?.isNotEmpty == true
                 ? u['profile_picture_url_elevage'] as String
                 : (u['profile_picture_url'] as String?) ?? '';
-            if (ph.isNotEmpty) map[id] = ph;
+            if (ph.isNotEmpty) photoMap[id] = ph;
+            final siret = u['siret']?.toString() ?? '';
+            verifiedMap[id] = u['statut_pro'] == 'actif' && siret.isNotEmpty;
+            premiumMap[id]  = u['is_premium'] == true;
           }
-          items = items.map((i) => i.withPhoto(i.uidEleveur != null ? map[i.uidEleveur!] : null)).toList();
+          items = items.map((i) {
+            final uid = i.uidEleveur;
+            return i
+              .withPhoto(uid != null ? photoMap[uid] : null)
+              .withVerification(
+                verifie: uid != null && (verifiedMap[uid] ?? false),
+                premium: uid != null && (premiumMap[uid] ?? false),
+              );
+          }).toList();
         } catch (_) {}
       }
 
@@ -1089,6 +1116,14 @@ class _FeedCardState extends State<_FeedCard> with SingleTickerProviderStateMixi
                   const SizedBox(height: 10),
                   // Ligne 2 : Badges
                   Wrap(spacing: 6, runSpacing: 6, children: [
+                    VerificationBadge(
+                      level: item.eleveurPremium
+                          ? VerificationLevel.premium
+                          : item.eleveurVerifie
+                              ? VerificationLevel.verifie
+                              : VerificationLevel.none,
+                      fontSize: 10,
+                    ),
                     if (item.typeVente == 'saillie')
                       _FeedBadge(
                         label: '💜 Saillie',

@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/services/service_detail_page.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
+import 'package:PetsMatch/widgets/verification_badge.dart';
 
 /// Page annuaire — liste des professionnels d'une catégorie.
 class ServiceListPage extends StatefulWidget {
@@ -805,8 +806,17 @@ class _ProCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 28, 12, 12),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(nom.toString(),
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1E2025))),
+                Row(children: [
+                  Expanded(child: Text(nom.toString(),
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1E2025)))),
+                  VerificationBadge(
+                    level: getVerificationLevel(
+                      statutPro: pro['statut_pro']?.toString(),
+                      siret: pro['siret']?.toString(),
+                      isPremium: pro['is_premium'] == true,
+                    ),
+                  ),
+                ]),
                 if (profession.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Text(profession.toString(),

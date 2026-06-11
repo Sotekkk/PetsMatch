@@ -5,6 +5,7 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,7 @@ interface ProData {
   certifications: { nom: string; numero?: string }[];
   tarifs: string; site_web: string; instagram: string; facebook: string;
   rayon: number; cat_pro: string; profileTableId?: string;
+  statut_pro?: string; siret?: string; is_premium?: boolean;
 }
 interface Slot { date: string; heureDebut: string; heureFin: string; }
 interface Animal { id: number; nom: string; espece: string; }
@@ -151,6 +153,7 @@ export default function ProDetailPage() {
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
           rayon: data.rayon_intervention || 0, cat_pro: data.cat_pro || '',
+          statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
         };
       }
       if (row) setPro({ ...(row as unknown as ProData), profileTableId });
@@ -290,9 +293,12 @@ export default function ProDetailPage() {
 
       {/* ── Info + CTA ── */}
       <div className="bg-white pt-14 pb-5 px-4 border-b border-gray-100">
-        <h1 className="text-xl font-bold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>
-          {pro.name || 'Professionnel'}
-        </h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>
+            {pro.name || 'Professionnel'}
+          </h1>
+          <VerificationBadge level={getBadgeLevel({ statutPro: pro.statut_pro, siret: pro.siret, isPremium: pro.is_premium })} size="md" />
+        </div>
         {pro.profession && (
           <p className="text-sm font-semibold mt-0.5" style={{ color: catColor, fontFamily: 'Galey, sans-serif' }}>
             {pro.profession}

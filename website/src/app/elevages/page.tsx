@@ -6,6 +6,7 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 import type { EleveurMapItem } from '@/components/ElevagesMap';
+import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
 
 const ElevagesMap = dynamic(() => import('@/components/ElevagesMap'), {
   ssr: false,
@@ -34,6 +35,9 @@ interface Eleveur {
   desc_entreprise?: string;
   lat?: number;
   lng?: number;
+  statut_pro?: string;
+  siret?: string;
+  is_premium?: boolean;
 }
 
 const ESPECES = ['tous', 'chien', 'chat', 'cheval', 'lapin', 'oiseau', 'nac', 'ovin', 'autre'];
@@ -61,8 +65,9 @@ export default function ElevagesPage() {
   useEffect(() => {
     supabase
       .from('users')
-      .select('uid, firstname, lastname, name_elevage, profile_picture_url, profile_picture_url_elevage, banner_url, ville_elevage, ville, especes_elevees, is_dog, is_cat, dog_breeds, cat_breeds, desc_entreprise, lat, lng')
+      .select('uid, firstname, lastname, name_elevage, profile_picture_url, profile_picture_url_elevage, banner_url, ville_elevage, ville, especes_elevees, is_dog, is_cat, dog_breeds, cat_breeds, desc_entreprise, lat, lng, statut_pro, siret, is_premium')
       .eq('is_elevage', true)
+      .eq('is_validate', true)
       .then(({ data }) => {
         setEleveurs((data ?? []) as Eleveur[]);
         setLoading(false);
@@ -213,7 +218,10 @@ function EleveurCard({ eleveur: e }: { eleveur: Eleveur }) {
         )}
       </div>
       <div className="p-4">
-        <h3 className="font-bold text-[#1F2A2E] text-base truncate">{name}</h3>
+        <div className="flex items-start gap-2 mb-0.5">
+          <h3 className="font-bold text-[#1F2A2E] text-base truncate flex-1">{name}</h3>
+          <VerificationBadge level={getBadgeLevel({ statutPro: e.statut_pro, siret: e.siret, isPremium: e.is_premium })} size="sm" />
+        </div>
         {ville && <p className="text-gray-400 text-sm">📍 {ville}</p>}
         {esps.length > 0 && (
           <div className="flex gap-1 flex-wrap mt-2">

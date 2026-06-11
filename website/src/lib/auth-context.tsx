@@ -43,6 +43,11 @@ export interface UserData {
   acacedDateObtention?: string;
   acacedDateRenewal?: string;
   acaced?: string;
+  statutPro?: string;
+  rejectionReason?: string;
+  cguAcceptedAt?: string;
+  isPremium?: boolean;
+  kbisUrl?: string;
 }
 
 // Supabase snake_case → web camelCase
@@ -98,6 +103,11 @@ function mapUser(d: Record<string, unknown>): UserData {
     acacedDateObtention:   d.acaced_date_obtention as string | undefined,
     acacedDateRenewal:     d.acaced_date_renewal as string | undefined,
     acaced:                d.acaced as string | undefined,
+    statutPro:             d.statut_pro as string | undefined,
+    rejectionReason:       d.rejection_reason as string | undefined,
+    cguAcceptedAt:         d.cgu_accepted_at as string | undefined,
+    isPremium:             d.is_premium as boolean | undefined,
+    kbisUrl:               d.kbis_url as string | undefined,
     especes,
     races,
   };

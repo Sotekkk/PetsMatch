@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { collection, getDocs, doc, getDoc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -21,6 +21,7 @@ interface ProfileEntry {
   catPro: string; statutPro: string; nameElevage: string; professionPro: string;
   especesAcceptees: string[]; certifications: { nom?: string; organisme?: string }[];
   rayonIntervention?: number; isAdmin?: boolean; isElevage?: boolean;
+  isPremium?: boolean; siret?: string;
 }
 
 interface Stats {
@@ -43,7 +44,21 @@ interface SignalementAlerte {
   nb_signalements: number; premier_signalement: string; dernier_signalement: string;
 }
 
-type AdminTab = 'dashboard' | 'signalements' | 'utilisateurs';
+interface DossierEntry {
+  uid: string;
+  firstname: string; lastname: string; email: string;
+  siret: string | null;
+  kbisUrl: string | null; acacedDocUrl: string | null; acaced: string | null;
+  catPro: string | null; professionPro: string | null;
+  certifications: { nom?: string; organisme?: string; numero?: string }[] | null;
+  isElevage: boolean; isPro: boolean;
+  nameElevage: string | null;
+  createdAt: string | null;
+  rejectionReason: string | null;
+  isSecondary?: boolean; profileTableId?: string;
+}
+
+type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs';
 type FilterType = 'tous' | 'eleveur' | 'particulier' | 'pro' | 'secondaire' | 'admin' | 'en_attente';
 type SigFilter = 'en_attente' | 'traite' | 'rejete';
 
@@ -93,6 +108,16 @@ export default function AdminPage() {
   const [selectedSig, setSelectedSig] = useState<Signalement | null>(null);
   const [adminNote, setAdminNote] = useState('');
   const [sigSaving, setSigSaving] = useState(false);
+
+  // Dossiers
+  const [dossiers, setDossiers] = useState<DossierEntry[]>([]);
+  const [refusedDossiers, setRefusedDossiers] = useState<DossierEntry[]>([]);
+  const [dossierTab, setDossierTab] = useState<'en_attente' | 'refuse'>('en_attente');
+  const [dossiersLoading, setDossiersLoading] = useState(false);
+  const [dossierSaving, setDossierSaving] = useState<string | null>(null);
+  const [selectedDossier, setSelectedDossier] = useState<DossierEntry | null>(null);
+  const [showRefusModal, setShowRefusModal] = useState(false);
+  const [refusMotif, setRefusMotif] = useState('');
 
   // Utilisateurs
   const [entries, setEntries] = useState<ProfileEntry[]>([]);
@@ -173,7 +198,7 @@ export default function AdminPage() {
       snap.docs.forEach(d => { fireMap[d.id] = { uid: d.id, ...d.data() as object } as FireUser; });
 
       const { data: primaryRows } = await supabase.from('users').select(
-        'uid, cat_pro, statut_pro, rayon_intervention, especes_acceptees, certifications, name_elevage, profession_pro, profile_picture_url_elevage, profile_picture_url, firstname, lastname, email'
+        'uid, cat_pro, statut_pro, rayon_intervention, especes_acceptees, certifications, name_elevage, profession_pro, profile_picture_url_elevage, profile_picture_url, firstname, lastname, email, is_premium, siret'
       );
       const { data: secondaryRows } = await supabase.from('user_profiles').select(
         'id, uid, profile_type, cat_pro, statut_pro, rayon_intervention, especes_acceptees, certifications, name_elevage, profession_pro, avatar_url'
@@ -196,6 +221,8 @@ export default function AdminPage() {
           certifications: ((supaRow as Record<string, unknown>)['certifications'] as { nom?: string; organisme?: string }[]) ?? [],
           rayonIntervention: (supaRow as Record<string, number>)['rayon_intervention'],
           isAdmin: fire.isAdmin, isElevage: fire.isElevage,
+          isPremium: (supaRow as Record<string, boolean>)['is_premium'] ?? false,
+          siret: (supaRow as Record<string, string>)['siret'] ?? '',
         });
       });
 
@@ -245,6 +272,13 @@ export default function AdminPage() {
     setStats(prev => prev ? { ...prev, profilsEnAttente: Number(r['profils_en_attente'] ?? prev.profilsEnAttente) } : prev);
   }
 
+  async function togglePremium(entry: ProfileEntry) {
+    const newVal = !entry.isPremium;
+    await supabase.from('users').update({ is_premium: newVal }).eq('uid', entry.uid);
+    setEntries(prev => prev.map(e => (!e.isSecondary && e.uid === entry.uid) ? { ...e, isPremium: newVal } : e));
+    if (selected?.uid === entry.uid) setSelected(prev => prev ? { ...prev, isPremium: newVal } : null);
+  }
+
   async function deleteEntry(entry: ProfileEntry) {
     if (entry.isSecondary && entry.profileTableId) {
       if (!confirm('Supprimer ce profil secondaire ?')) return;
@@ -263,11 +297,162 @@ export default function AdminPage() {
     }
   }
 
+  // ── Dossiers ─────────────────────────────────────────────────────────────────
+  function mapPrimaryRows(rows: Record<string, unknown>[]): DossierEntry[] {
+    return rows.map((r) => ({
+      uid:            r['uid'] as string,
+      firstname:      (r['firstname'] as string) ?? '',
+      lastname:       (r['lastname'] as string) ?? '',
+      email:          (r['email'] as string) ?? '',
+      siret:          (r['siret'] as string) ?? null,
+      kbisUrl:        (r['kbis_url'] as string) ?? null,
+      acacedDocUrl:   (r['acaced_doc_url'] as string) ?? null,
+      acaced:         (r['acaced'] as string) ?? null,
+      catPro:         (r['cat_pro'] as string) ?? null,
+      professionPro:  (r['profession_pro'] as string) ?? null,
+      certifications: (r['certifications'] as DossierEntry['certifications']) ?? null,
+      isElevage:      (r['is_elevage'] as boolean) ?? false,
+      isPro:          (r['is_pro'] as boolean) ?? false,
+      nameElevage:    (r['name_elevage'] as string) ?? null,
+      createdAt:      (r['created_at'] as string) ?? null,
+      rejectionReason:(r['rejection_reason'] as string) ?? null,
+      isSecondary:    false,
+    }));
+  }
+
+  function mapSecondaryRows(rows: Record<string, unknown>[], fireMap: Record<string, FireUser>): DossierEntry[] {
+    return rows.map((r) => {
+      const fire = fireMap[r['uid'] as string] ?? {};
+      return {
+        uid:            r['uid'] as string,
+        profileTableId: r['id'] as string,
+        firstname:      (fire as FireUser).firstname ?? '',
+        lastname:       (fire as FireUser).lastname ?? '',
+        email:          (fire as FireUser).email ?? '',
+        siret:          null,
+        kbisUrl:        null,
+        acacedDocUrl:   null,
+        acaced:         null,
+        catPro:         (r['cat_pro'] as string) ?? (r['profile_type'] as string) ?? null,
+        professionPro:  (r['profession_pro'] as string) ?? null,
+        certifications: (r['certifications'] as DossierEntry['certifications']) ?? null,
+        isElevage:      r['profile_type'] === 'eleveur',
+        isPro:          true,
+        nameElevage:    (r['name_elevage'] as string) ?? null,
+        createdAt:      (r['created_at'] as string) ?? null,
+        rejectionReason:null,
+        isSecondary:    true,
+      };
+    });
+  }
+
+  const loadDossiers = useCallback(async () => {
+    setDossiersLoading(true);
+    try {
+      const [
+        { data: pendingPrimary },
+        { data: pendingSecondary },
+        { data: refusedPrimary },
+      ] = await Promise.all([
+        supabase
+          .from('users')
+          .select('uid, firstname, lastname, email, siret, kbis_url, acaced_doc_url, acaced, cat_pro, profession_pro, certifications, is_elevage, is_pro, name_elevage, created_at, rejection_reason')
+          .eq('statut_pro', 'en_attente')
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('user_profiles')
+          .select('id, uid, profile_type, cat_pro, profession_pro, certifications, name_elevage, created_at')
+          .eq('statut_pro', 'en_attente')
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('users')
+          .select('uid, firstname, lastname, email, siret, kbis_url, acaced_doc_url, acaced, cat_pro, profession_pro, certifications, is_elevage, is_pro, name_elevage, created_at, rejection_reason')
+          .eq('statut_pro', 'refuse')
+          .order('created_at', { ascending: false }),
+      ]);
+
+      const snap = await getDocs(collection(db, 'users'));
+      const fireMap: Record<string, FireUser> = {};
+      snap.docs.forEach(d => { fireMap[d.id] = { uid: d.id, ...d.data() as object } as FireUser; });
+
+      setDossiers([
+        ...mapPrimaryRows((pendingPrimary ?? []) as Record<string, unknown>[]),
+        ...mapSecondaryRows((pendingSecondary ?? []) as Record<string, unknown>[], fireMap),
+      ]);
+      setRefusedDossiers(mapPrimaryRows((refusedPrimary ?? []) as Record<string, unknown>[]));
+    } finally {
+      setDossiersLoading(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function approveDossier(d: DossierEntry) {
+    const saveKey = d.isSecondary ? (d.profileTableId ?? d.uid) : d.uid;
+    setDossierSaving(saveKey);
+    try {
+      if (d.isSecondary && d.profileTableId) {
+        await supabase.from('user_profiles').update({ statut_pro: 'actif' }).eq('id', d.profileTableId);
+      } else {
+        await supabase.from('users').update({
+          is_validate: true, statut_pro: 'actif', rejection_reason: null,
+        }).eq('uid', d.uid);
+        await updateDoc(doc(db, 'users', d.uid), { isValidate: true, verificationStatus: 'approved' });
+      }
+      setDossiers(prev => prev.filter(x =>
+        d.isSecondary ? x.profileTableId !== d.profileTableId : (x.isSecondary || x.uid !== d.uid)
+      ));
+      setStats(prev => prev ? { ...prev, profilsEnAttente: Math.max(0, prev.profilsEnAttente - 1) } : prev);
+      setSelectedDossier(null);
+    } finally {
+      setDossierSaving(null);
+    }
+  }
+
+  async function refuseDossier(d: DossierEntry, motif: string) {
+    const saveKey = d.isSecondary ? (d.profileTableId ?? d.uid) : d.uid;
+    setDossierSaving(saveKey);
+    try {
+      if (d.isSecondary && d.profileTableId) {
+        await supabase.from('user_profiles').update({ statut_pro: 'refuse' }).eq('id', d.profileTableId);
+      } else {
+        await supabase.from('users').update({
+          is_validate: false, statut_pro: 'refuse', rejection_reason: motif.trim() || null,
+        }).eq('uid', d.uid);
+        await updateDoc(doc(db, 'users', d.uid), { isValidate: false, verificationStatus: 'rejected' });
+      }
+      setDossiers(prev => prev.filter(x =>
+        d.isSecondary ? x.profileTableId !== d.profileTableId : (x.isSecondary || x.uid !== d.uid)
+      ));
+      setStats(prev => prev ? { ...prev, profilsEnAttente: Math.max(0, prev.profilsEnAttente - 1) } : prev);
+      setSelectedDossier(null);
+      setShowRefusModal(false);
+      setRefusMotif('');
+    } finally {
+      setDossierSaving(null);
+    }
+  }
+
+  async function reconsiderDossier(d: DossierEntry) {
+    const saveKey = d.isSecondary ? (d.profileTableId ?? d.uid) : d.uid;
+    setDossierSaving(saveKey);
+    try {
+      await supabase.from('users').update({
+        statut_pro: 'en_attente', rejection_reason: null,
+      }).eq('uid', d.uid);
+      await updateDoc(doc(db, 'users', d.uid), { verificationStatus: 'pending' });
+      setRefusedDossiers(prev => prev.filter(x => x.uid !== d.uid));
+      setStats(prev => prev ? { ...prev, profilsEnAttente: prev.profilsEnAttente + 1 } : prev);
+      setSelectedDossier(null);
+    } finally {
+      setDossierSaving(null);
+    }
+  }
+
   // ── Chargement par onglet ────────────────────────────────────────────────────
   useEffect(() => {
     if (!isAdmin) return;
     if (tab === 'dashboard') loadStats();
     if (tab === 'signalements') loadSignalements(sigFilter);
+    if (tab === 'dossiers' && dossiers.length === 0 && refusedDossiers.length === 0) loadDossiers();
     if (tab === 'utilisateurs' && entries.length === 0) loadUsers();
   }, [isAdmin, tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -319,7 +504,8 @@ export default function AdminPage() {
         {([
           { key: 'dashboard',     label: 'Dashboard',     icon: '📊' },
           { key: 'signalements',  label: 'Signalements',  icon: '🚨', badge: stats?.signalementsEnAttente },
-          { key: 'utilisateurs',  label: 'Utilisateurs',  icon: '👥', badge: stats?.profilsEnAttente },
+          { key: 'dossiers',      label: 'Dossiers',      icon: '📂', badge: stats?.profilsEnAttente },
+          { key: 'utilisateurs',  label: 'Utilisateurs',  icon: '👥' },
         ] as { key: AdminTab; label: string; icon: string; badge?: number }[]).map(t => (
           <button
             key={t.key}
@@ -459,7 +645,7 @@ export default function AdminPage() {
                     </div>
                   </div>
                   <button
-                    onClick={() => { setTab('utilisateurs'); setFilter('en_attente'); if (entries.length === 0) loadUsers(); }}
+                    onClick={() => { setTab('dossiers'); if (dossiers.length === 0) loadDossiers(); }}
                     className="text-sm font-semibold text-[#0C5C6C] bg-[#0C5C6C10] px-4 py-2 rounded-xl hover:bg-[#0C5C6C20] transition-colors"
                   >
                     Gérer →
@@ -572,6 +758,166 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* ─── Dossiers (VALID04) ────────────────────────────────────────── */}
+        {tab === 'dossiers' && (
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-[#1F2A2E] text-lg" style={{ fontFamily: 'Galey, sans-serif' }}>
+                Dossiers professionnels
+              </h2>
+              <button onClick={loadDossiers}
+                className="text-sm text-gray-400 hover:text-[#0C5C6C] border border-gray-200 bg-white rounded-xl px-3 py-1.5">
+                ↺ Rafraîchir
+              </button>
+            </div>
+
+            {/* Sous-onglets */}
+            <div className="flex gap-2 mb-5">
+              <button
+                onClick={() => setDossierTab('en_attente')}
+                className={`px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
+                  dossierTab === 'en_attente'
+                    ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
+                }`}
+                style={{ fontFamily: 'Galey, sans-serif' }}
+              >
+                ⏳ En attente
+                {dossiers.length > 0 && (
+                  <span className="ml-2 bg-orange-400 text-white text-[10px] px-1.5 py-0.5 rounded-full">{dossiers.length}</span>
+                )}
+              </button>
+              <button
+                onClick={() => setDossierTab('refuse')}
+                className={`px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
+                  dossierTab === 'refuse'
+                    ? 'bg-red-600 text-white border-red-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-red-400'
+                }`}
+                style={{ fontFamily: 'Galey, sans-serif' }}
+              >
+                ❌ Rejetés
+                {refusedDossiers.length > 0 && (
+                  <span className="ml-2 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{refusedDossiers.length}</span>
+                )}
+              </button>
+            </div>
+
+            {dossiersLoading ? (
+              <div className="flex justify-center py-16">
+                <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : dossierTab === 'en_attente' ? (
+              dossiers.length === 0 ? (
+                <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
+                  <div className="text-3xl mb-2">🎉</div>
+                  <p className="font-semibold text-[#6E9E57]" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun dossier en attente</p>
+                  <p className="text-sm text-gray-400 mt-1">Tous les dossiers ont été traités.</p>
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {dossiers.map(d => (
+                    <div key={d.isSecondary ? d.profileTableId : d.uid}
+                      onClick={() => setSelectedDossier(d)}
+                      className="bg-white rounded-2xl shadow-sm border border-orange-100 p-5 cursor-pointer hover:shadow-md transition-shadow">
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-full bg-[#0C5C6C] flex items-center justify-center flex-shrink-0">
+                          <span className="text-white text-base">{d.isElevage ? '🌿' : '💼'}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-[#1F2A2E] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+                            {[d.firstname, d.lastname].filter(Boolean).join(' ') || 'Nom inconnu'}
+                          </p>
+                          {d.nameElevage && <p className="text-xs text-[#0C5C6C] truncate">{d.nameElevage}</p>}
+                          <p className="text-xs text-gray-400 truncate">{d.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5 flex-wrap mb-3">
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#dbeafe', color: '#2563eb' }}>
+                          {d.isElevage ? 'Éleveur' : 'Pro'}
+                        </span>
+                        {d.catPro && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">
+                            {CAT_LABELS[d.catPro] ?? d.catPro}
+                          </span>
+                        )}
+                        {d.isSecondary && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-100 text-purple-600">Secondaire</span>
+                        )}
+                      </div>
+                      {d.siret && <p className="text-xs text-gray-500 font-mono mb-2">SIRET : {d.siret}</p>}
+                      {d.acaced && <p className="text-xs text-gray-500 font-mono mb-2">ACACED : {d.acaced}</p>}
+                      {d.createdAt && (
+                        <p className="text-xs text-gray-400 mb-3">Déposé le {new Date(d.createdAt).toLocaleDateString('fr-FR')}</p>
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={e => { e.stopPropagation(); approveDossier(d); }}
+                          disabled={dossierSaving === (d.isSecondary ? d.profileTableId : d.uid)}
+                          className="flex-1 bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-50 text-white text-xs font-semibold py-2 rounded-xl transition-colors"
+                          style={{ fontFamily: 'Galey, sans-serif' }}>
+                          {dossierSaving === (d.isSecondary ? d.profileTableId : d.uid) ? '…' : '✅ Valider'}
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); setSelectedDossier(d); setShowRefusModal(true); }}
+                          disabled={dossierSaving === (d.isSecondary ? d.profileTableId : d.uid)}
+                          className="flex-1 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 text-xs font-semibold py-2 rounded-xl transition-colors"
+                          style={{ fontFamily: 'Galey, sans-serif' }}>
+                          ❌ Refuser
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : (
+              refusedDossiers.length === 0 ? (
+                <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
+                  <div className="text-3xl mb-2">📭</div>
+                  <p className="font-semibold text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun dossier rejeté</p>
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {refusedDossiers.map(d => (
+                    <div key={d.uid}
+                      onClick={() => setSelectedDossier(d)}
+                      className="bg-white rounded-2xl shadow-sm border border-red-100 p-5 cursor-pointer hover:shadow-md transition-shadow">
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-full bg-red-400 flex items-center justify-center flex-shrink-0">
+                          <span className="text-white text-base">{d.isElevage ? '🌿' : '💼'}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-[#1F2A2E] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+                            {[d.firstname, d.lastname].filter(Boolean).join(' ') || 'Nom inconnu'}
+                          </p>
+                          {d.nameElevage && <p className="text-xs text-red-400 truncate">{d.nameElevage}</p>}
+                          <p className="text-xs text-gray-400 truncate">{d.email}</p>
+                        </div>
+                      </div>
+                      {d.rejectionReason && (
+                        <div className="bg-red-50 rounded-xl px-3 py-2 mb-3">
+                          <p className="text-xs text-red-500 font-medium mb-0.5">Motif de refus :</p>
+                          <p className="text-xs text-red-600 line-clamp-2">{d.rejectionReason}</p>
+                        </div>
+                      )}
+                      {d.createdAt && (
+                        <p className="text-xs text-gray-400 mb-3">Déposé le {new Date(d.createdAt).toLocaleDateString('fr-FR')}</p>
+                      )}
+                      <button
+                        onClick={e => { e.stopPropagation(); reconsiderDossier(d); }}
+                        disabled={dossierSaving === d.uid}
+                        className="w-full border border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#0C5C6C10] disabled:opacity-50 text-xs font-semibold py-2 rounded-xl transition-colors"
+                        style={{ fontFamily: 'Galey, sans-serif' }}>
+                        {dossierSaving === d.uid ? '…' : '↩ Reconsidérer'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )
             )}
           </div>
         )}
@@ -706,6 +1052,148 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* ── Modal dossier détail ─────────────────────────────────────────── */}
+      {selectedDossier && !showRefusModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => setSelectedDossier(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}>
+            <div className="bg-[#A7C79A] rounded-t-2xl px-6 py-4 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-[#0C5C6C] flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-xl">{selectedDossier.isElevage ? '🌿' : '💼'}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {[selectedDossier.firstname, selectedDossier.lastname].filter(Boolean).join(' ') || 'Nom inconnu'}
+                </p>
+                {selectedDossier.nameElevage && <p className="text-sm text-[#0C5C6C]">{selectedDossier.nameElevage}</p>}
+                <p className="text-xs text-gray-600">{selectedDossier.email}</p>
+              </div>
+              <button onClick={() => setSelectedDossier(null)} className="text-gray-600 hover:text-gray-900 text-xl">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <Section title="Informations">
+                <InfoRow label="Rôle" value={selectedDossier.isElevage ? 'Éleveur' : 'Professionnel'} />
+                {selectedDossier.siret && <InfoRow label="SIRET/SIREN" value={selectedDossier.siret} mono />}
+                {selectedDossier.acaced && <InfoRow label="ACACED" value={selectedDossier.acaced} mono />}
+                {selectedDossier.catPro && <InfoRow label="Catégorie" value={CAT_LABELS[selectedDossier.catPro] ?? selectedDossier.catPro} />}
+                {selectedDossier.professionPro && <InfoRow label="Profession" value={selectedDossier.professionPro} />}
+                {selectedDossier.createdAt && (
+                  <InfoRow label="Dossier déposé" value={new Date(selectedDossier.createdAt).toLocaleString('fr-FR')} />
+                )}
+                {selectedDossier.rejectionReason && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                    <p className="text-xs text-red-500 font-medium mb-1">Motif de refus</p>
+                    <p className="text-sm text-red-700">{selectedDossier.rejectionReason}</p>
+                  </div>
+                )}
+              </Section>
+
+              <Section title="Documents">
+                {selectedDossier.kbisUrl ? (
+                  <a href={selectedDossier.kbisUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-[#0C5C6C] hover:underline font-semibold">
+                    📄 Kbis / Justificatif SIRET ↗
+                  </a>
+                ) : (
+                  <p className="text-sm text-gray-400 italic">Aucun Kbis fourni</p>
+                )}
+                {selectedDossier.acacedDocUrl && (
+                  <a href={selectedDossier.acacedDocUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-[#0C5C6C] hover:underline font-semibold mt-2">
+                    📄 Document ACACED ↗
+                  </a>
+                )}
+                {selectedDossier.certifications && selectedDossier.certifications.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs text-gray-400 mb-1">Certifications déclarées</p>
+                    {selectedDossier.certifications.map((c, i) => (
+                      <p key={i} className="text-sm text-gray-700">
+                        • {[c.nom, c.organisme, c.numero].filter(Boolean).join(' — ')}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </Section>
+
+              {selectedDossier.rejectionReason ? (
+                <button
+                  onClick={() => reconsiderDossier(selectedDossier)}
+                  disabled={dossierSaving === selectedDossier.uid}
+                  className="w-full border border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#0C5C6C10] disabled:opacity-50 text-sm font-semibold py-2.5 rounded-xl transition-colors"
+                  style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {dossierSaving === selectedDossier.uid ? '…' : '↩ Reconsidérer le dossier'}
+                </button>
+              ) : (
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => approveDossier(selectedDossier)}
+                    disabled={dossierSaving === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid)}
+                    className="flex-1 bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+                    style={{ fontFamily: 'Galey, sans-serif' }}>
+                    {dossierSaving === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid) ? '…' : '✅ Valider le dossier'}
+                  </button>
+                  <button
+                    onClick={() => setShowRefusModal(true)}
+                    disabled={dossierSaving === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid)}
+                    className="flex-1 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 text-sm font-semibold py-2.5 rounded-xl transition-colors"
+                    style={{ fontFamily: 'Galey, sans-serif' }}>
+                    ❌ Refuser
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal refus dossier ───────────────────────────────────────────── */}
+      {selectedDossier && showRefusModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => { setShowRefusModal(false); setRefusMotif(''); }}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl"
+            onClick={e => e.stopPropagation()}>
+            <div className="bg-red-50 rounded-t-2xl px-6 py-4 flex items-center justify-between">
+              <p className="font-bold text-red-700" style={{ fontFamily: 'Galey, sans-serif' }}>
+                Refuser le dossier
+              </p>
+              <button onClick={() => { setShowRefusModal(false); setRefusMotif(''); }}
+                className="text-gray-500 hover:text-gray-800 text-xl">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">
+                Dossier de <strong>{[selectedDossier.firstname, selectedDossier.lastname].filter(Boolean).join(' ')}</strong>
+              </p>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Motif de refus *</label>
+                <textarea
+                  value={refusMotif}
+                  onChange={e => setRefusMotif(e.target.value)}
+                  rows={3}
+                  placeholder="Ex : Documents manquants, SIRET invalide, activité non conforme…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-red-300 resize-none"
+                />
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={() => { setShowRefusModal(false); setRefusMotif(''); }}
+                  className="flex-1 border border-gray-200 text-gray-600 text-sm font-semibold py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
+                  style={{ fontFamily: 'Galey, sans-serif' }}>
+                  Annuler
+                </button>
+                <button
+                  onClick={() => refuseDossier(selectedDossier, refusMotif)}
+                  disabled={!refusMotif.trim() || dossierSaving === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid)}
+                  className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+                  style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {dossierSaving === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid) ? '…' : 'Confirmer le refus'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Modal utilisateur ────────────────────────────────────────────── */}
       {selected && (
         <ProfileModal
@@ -713,6 +1201,7 @@ export default function AdminPage() {
           onClose={() => setSelected(null)}
           onSetStatut={s => setStatut(selected, s)}
           onDelete={() => deleteEntry(selected)}
+          onTogglePremium={() => togglePremium(selected)}
         />
       )}
     </div>
@@ -765,16 +1254,19 @@ function ProfileCard({ entry, onClick }: { entry: ProfileEntry; onClick: () => v
 
 // ─── ProfileModal ─────────────────────────────────────────────────────────────
 
-function ProfileModal({ entry, onClose, onSetStatut, onDelete }: {
+function ProfileModal({ entry, onClose, onSetStatut, onDelete, onTogglePremium }: {
   entry: ProfileEntry; onClose: () => void;
   onSetStatut: (s: string) => Promise<void>; onDelete: () => Promise<void>;
+  onTogglePremium: () => Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
+  const [premiumSaving, setPremiumSaving] = useState(false);
   const statut = entry.statutPro ?? 'actif';
   const name = [entry.firstName, entry.lastName].filter(Boolean).join(' ') || 'Nom inconnu';
   const certifs = (entry.certifications ?? []).map(c => [c.nom, c.organisme].filter(Boolean).join(' — ')).filter(Boolean);
   const isPro = !!entry.catPro;
   async function doStatut(s: string) { setSaving(true); try { await onSetStatut(s); } finally { setSaving(false); } }
+  async function doPremium() { setPremiumSaving(true); try { await onTogglePremium(); } finally { setPremiumSaving(false); } }
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -802,18 +1294,32 @@ function ProfileModal({ entry, onClose, onSetStatut, onDelete }: {
           <button onClick={onClose} className="text-gray-600 hover:text-gray-900 text-xl">✕</button>
         </div>
         <div className="p-6 space-y-5">
-          {(isPro || entry.isSecondary) && (
+          {(isPro || entry.isSecondary || entry.isElevage) && (
             <Section title="Statut professionnel">
-              <div className="mb-3">
+              <div className="mb-3 flex items-center gap-2 flex-wrap">
                 {(() => { const s = STATUT_STYLE[statut] ?? STATUT_STYLE.actif; return (
                   <span className="text-sm font-bold px-3 py-1 rounded-full" style={{ background: s.bg, color: s.color }}>{s.label}</span>
                 ); })()}
+                {entry.isPremium && (
+                  <span className="text-sm font-bold px-3 py-1 rounded-full" style={{ background: '#fef3c7', color: '#d97706' }}>★ Premium</span>
+                )}
+                {!entry.isPremium && statut === 'actif' && entry.siret && (
+                  <span className="text-sm font-bold px-3 py-1 rounded-full" style={{ background: '#dbeafe', color: '#2563eb' }}>✓ Vérifié</span>
+                )}
               </div>
               <div className="flex gap-2 flex-wrap">
                 {statut !== 'actif'      && <ActionBtn label="✅ Activer"     color="#16a34a" onClick={() => doStatut('actif')}      disabled={saving} />}
                 {statut !== 'suspendu'   && <ActionBtn label="⏸ Suspendre"   color="#ea580c" onClick={() => doStatut('suspendu')}   disabled={saving} />}
                 {statut !== 'refuse'     && <ActionBtn label="❌ Refuser"     color="#dc2626" onClick={() => doStatut('refuse')}     disabled={saving} />}
                 {statut !== 'en_attente' && <ActionBtn label="⏳ En attente" color="#2563eb" onClick={() => doStatut('en_attente')} disabled={saving} />}
+                {!entry.isSecondary && (
+                  <ActionBtn
+                    label={entry.isPremium ? '★ Retirer Premium' : '★ Passer Premium'}
+                    color="#d97706"
+                    onClick={doPremium}
+                    disabled={premiumSaving}
+                  />
+                )}
               </div>
             </Section>
           )}

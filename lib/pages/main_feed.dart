@@ -41,6 +41,7 @@ class UserSelected {
   final String paysElevage;
   final String siret;
   final String bannerUrl;
+  final bool isPremium;
 
   UserSelected({
     required this.uid,
@@ -65,6 +66,7 @@ class UserSelected {
     this.paysElevage = '',
     this.siret = '',
     this.bannerUrl = '',
+    this.isPremium = false,
   });
 
   factory UserSelected.fromMap(Map<String, dynamic> data, String documentId) {
@@ -91,6 +93,7 @@ class UserSelected {
       paysElevage: data['paysElevage'] ?? '',
       siret: data['siret'] ?? '',
       bannerUrl: data['bannerUrl'] ?? '',
+      isPremium: data['isPremium'] ?? false,
     );
   }
 }

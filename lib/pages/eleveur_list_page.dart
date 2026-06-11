@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:PetsMatch/main.dart' show getApiKey;
+import 'package:PetsMatch/widgets/verification_badge.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur_map_view.dart';
 import 'package:PetsMatch/pages/user_detail_page_feed.dart';
@@ -858,19 +859,12 @@ class _EleveurCard extends StatelessWidget {
                       style: const TextStyle(fontFamily: 'Galey',
                           fontWeight: FontWeight.w600, fontSize: 16)),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2E7D32).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
+                VerificationBadge(
+                  level: getVerificationLevel(
+                    isValidate: data['isValidate'] == true,
+                    siret: data['siret']?.toString(),
+                    isPremium: data['isPremium'] == true,
                   ),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.verified, color: Color(0xFF2E7D32), size: 13),
-                    SizedBox(width: 4),
-                    Text('PRO Vérifié', style: TextStyle(
-                        color: Color(0xFF2E7D32), fontFamily: 'Galey',
-                        fontWeight: FontWeight.w500, fontSize: 11)),
-                  ]),
                 ),
               ]),
 

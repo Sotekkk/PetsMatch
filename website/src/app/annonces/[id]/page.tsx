@@ -8,6 +8,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -53,6 +54,9 @@ interface ProData {
   name_elevage?: string;
   ville_elevage?: string;
   pays_elevage?: string;
+  statut_pro?: string;
+  siret?: string;
+  is_premium?: boolean;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -121,7 +125,7 @@ export default function AnnonceDetailPage() {
         setAnnonce(data as Annonce);
         if (data.uid_eleveur) {
           supabase.from('users')
-            .select('profile_picture_url_elevage, name_elevage, ville_elevage, pays_elevage')
+            .select('profile_picture_url_elevage, name_elevage, ville_elevage, pays_elevage, statut_pro, siret, is_premium')
             .eq('uid', data.uid_eleveur).maybeSingle()
             .then(({ data: u }) => { if (u) setPro(u as ProData); });
         }
@@ -177,6 +181,15 @@ export default function AnnonceDetailPage() {
         alert('Vous avez déjà signalé cette annonce.');
       } else {
         setSigSent(true);
+        // ANTI03 : suspension automatique à 3 signalements
+        const { count: nbSig } = await supabase
+          .from('signalements')
+          .select('id', { count: 'exact', head: true })
+          .eq('target_type', 'annonce')
+          .eq('target_id', annonce.id);
+        if ((nbSig ?? 0) >= 3) {
+          await supabase.from('annonces').update({ statut: 'suspendu' }).eq('id', annonce.id);
+        }
         setTimeout(() => { setShowSigModal(false); setSigSent(false); setSigDesc(''); }, 1500);
       }
     } finally {
@@ -368,10 +381,13 @@ export default function AnnonceDetailPage() {
                   <div className="w-full h-full flex items-center justify-center text-xl">🏡</div>
                 )}
               </div>
-              <div>
-                <p className="font-['Galey'] font-bold text-[#1E2025]">
-                  {pro?.name_elevage || annonce.nom_eleveur || 'Éleveur'}
-                </p>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-['Galey'] font-bold text-[#1E2025]">
+                    {pro?.name_elevage || annonce.nom_eleveur || 'Éleveur'}
+                  </p>
+                  {pro && <VerificationBadge level={getBadgeLevel({ statutPro: pro.statut_pro, siret: pro.siret, isPremium: pro.is_premium })} size="sm" />}
+                </div>
                 {(pro?.ville_elevage || annonce.ville_eleveur) && (
                   <p className="text-xs text-gray-500">
                     📍 {pro?.ville_elevage || annonce.ville_eleveur}

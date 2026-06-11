@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-06-10  
+> Dernière mise à jour : 2026-06-11  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -14,6 +14,8 @@
 5. [Gestion des Employés](#5-gestion-des-employés)
 6. [Schéma BDD — nouvelles tables Supabase](#6-schéma-bdd--nouvelles-tables-supabase)
 7. [Priorités et dépendances](#7-priorités-et-dépendances)
+8. [Modèle économique — Abonnements, Boosts & Marketplace](#8-modèle-économique--abonnements-boosts--marketplace)
+9. [Validation automatique & Badges de confiance](#9-validation-automatique--badges-de-confiance)
 
 ---
 
@@ -308,127 +310,246 @@ CREATE TABLE candidatures_adoption (
 
 ---
 
-## 4. Planning Chenil / Hôtel
+## 4. Planning des Hébergements — Suivi opérationnel des lieux
 
 ### 4.1 Cible
 
-- **Pension** (gardiennage + hébergement)
-- **Association** (si elles disposent d'un chenil ou d'une chatterie)
+- **Pension animaux de compagnie** (chenils, chatteries, cages NAC)
+- **Pension équestre / Écuries** (boxes chevaux, paddocks, prés, carrières)
+- **Association** (boxes chenil / chatterie / enclos)
+
+La logique est la même dans tous les cas : tableau de bord temps réel pour les soigneurs. L'interface s'adapte au **mode** configuré par le pro (canin / équin / mixte).
 
 ### 4.2 Concept
 
-Vue type **hôtel** : les lignes sont les chambres/boxes, les colonnes sont les jours. Chaque cellule représente l'état d'une chambre à une date donnée.
+Outil de **suivi en temps réel** pour le personnel. L'objectif est de savoir d'un coup d'œil :
+- Quel animal est dans quel lieu en ce moment
+- Quels lieux sont sales / à curer
+- Quels lieux sont libres
 
+Ce n'est **pas** un système de réservation hôtelière. C'est un tableau de bord opérationnel pour les soigneurs.
+
+**Mode canin/NAC — vue tableau :**
 ```
-           Lun 9  Mar 10  Mer 11  Jeu 12  Ven 13
-Box 1      [REF]  [OCCU]  [OCCU]  [NET]   [LIBRE]
-Box 2      [LIBRE][LIBRE] [REF]   [REF]   [OCCU]
-Suite A    [OCCU] [OCCU]  [LIBRE] [LIBRE] [LIBRE]
-Collectif  [OCCU] [OCCU]  [OCCU]  [NET]   [LIBRE]
-```
-
-**États (code couleur) :**
-| État | Couleur | Description |
-|---|---|---|
-| `libre` | Vert | Chambre disponible |
-| `reserve` | Bleu | Réservé pour un animal (RDV confirme) |
-| `occupe` | Orange | Animal présent |
-| `nettoyage` | Gris | En cours de nettoyage/désinfection |
-| `maintenance` | Rouge | Hors service |
-
-### 4.3 Gestion des chambres/boxes
-
-Chaque chambre a :
-```
-Nom / numéro          (ex: "Box 1", "Suite A", "Chatière 3")
-Type                  (individuel / collectif / suite / enclos extérieur)
-Espèces acceptées     (chien / chat / lapin / NAC…)
-Capacité              (1 par défaut, plusieurs pour collectif)
-Taille                (S/M/L/XL pour chiens)
-Équipements           (caméra, climatisation, accès jardin…)
-Photo                 (optionnel)
-Notes                 (règles particulières)
-Actif / Inactif       (hors service temporaire)
+Box 1    [🐕 Rex — M. Dupont]     [OCCUPÉ]     [🧹 À nettoyer]
+Box 2    [— vide —]               [À NETTOYER] [✓ Marquer propre]
+Box 3    [🐕 Luna — Mme Martin]  [OCCUPÉ]     [🧹 À nettoyer]
+Box 4    [— vide —]               [LIBRE]      [+ Affecter un animal]
+Box 5    [— vide —]               [HORS SERVICE]
+Chatterie A  [🐈 Mimi]           [OCCUPÉ]
+Enclos ext.  [🐕 Max + 🐕 Buddy] [OCCUPÉ — 2 animaux]
 ```
 
-### 4.4 Réservations et liaison avec RDV
+**Mode équin — vue tableau :**
+```
+               LIEU              ÉTAT LIEU       POSITION CHEVAL
+Box 1     [🐴 Éclair — Mme Roy] [À CURER]       📍 Paddock A
+Box 2     [🐴 Sultan — M. Petit][PROPRE]         📍 Box (présent)
+Box 3     [🐴 Mistral]          [EN CURAGE]      📍 Paddock B
+Box 4     [— vide —]            [LIBRE]          [+ Affecter]
+Paddock A [🐴 Éclair]          [OCCUPÉ]
+Paddock B [🐴 Mistral]         [OCCUPÉ]
+Pré Nord  [🐴 Tornado + 🐴 Jazz][OCCUPÉ — 2]
+Carrière  [— libre —]           [LIBRE]
+```
 
-- Quand un RDV pension est **confirmé** avec dates d'arrivée + départ :
-  - Proposition automatique d'affecter une chambre libre
-  - Ou affectation manuelle depuis le planning
-- Le planning se met à jour automatiquement
+### 4.3 États d'un lieu
 
-### 4.5 Vue Planning (interface)
+| État | Couleur | Description | Mode |
+|---|---|---|---|
+| `libre` | 🟢 Vert | Vide et propre/curé, disponible | Tous |
+| `occupe` | 🟠 Orange | Animal(aux) présent(s) | Tous |
+| `a_nettoyer` | 🔴 Rouge | À nettoyer / désinfecter | Canin/NAC |
+| `a_curer` | 🔴 Rouge | Fumier + litière à curer | Équin |
+| `en_nettoyage` | 🟡 Jaune | Nettoyage/curage en cours | Tous |
+| `hors_service` | ⚫ Gris | Indisponible (maintenance) | Tous |
 
-**Vue Semaine (défaut) :**
-- Navigation semaine par semaine (← →)
-- Scroll horizontal si nombreuses chambres
-- Clic sur une cellule :
-  - Si `libre` → créer une réservation
-  - Si `réservé/occupé` → voir fiche animal + propriétaire
-  - Si `nettoyage` → marquer comme prêt
+### 4.4 Gestion des lieux
 
-**Vue Mois :**
-- Vue d'ensemble : taux de remplissage par jour (barre % colorée)
-- Clic sur un jour → zoom vue journée
+**Champs communs à tous les lieux :**
+```
+Nom / numéro          (ex: "Box 1", "Paddock A", "Pré Nord", "Carrière")
+Type                  (selon mode, voir ci-dessous)
+Espèces acceptées     (cheval / chien / chat / lapin / NAC…)
+Capacité max          (nombre d'animaux simultanés)
+Notes                 (précautions, incompatibilités, allergies litière…)
+Actif / Hors service
+```
 
-**Vue Liste des arrivées/départs du jour :**
-- Animals qui arrivent aujourd'hui
-- Animals qui partent aujourd'hui
-- Chambres à préparer/nettoyer
+**Types de lieux — Mode canin / NAC :**
+| Type | Exemples |
+|---|---|
+| `box_individuel` | Box chien isolé |
+| `enclos_collectif` | Enclos chiens compatibles |
+| `chatterie` | Espace chats |
+| `cage_nac` | Cage lapin, rongeur |
+| `parc_exterieur` | Enclos extérieur |
 
-### 4.6 Nettoyage et maintenance
+**Types de lieux — Mode équin :**
+| Type | Exemples |
+|---|---|
+| `box_cheval` | Box en écurie (≈ 9–16 m²) |
+| `paddock` | Enclos extérieur individuel ou duo |
+| `pre` | Prairie / pâture (plusieurs chevaux) |
+| `carriere` | Carrière / manège (usage temporaire) |
+| `couloir_lavage` | Wash-stall / couloir de soins |
+| `box_veterinaire` | Box infirmerie / isolement |
 
-- Quand un animal part (check-out) → la chambre passe automatiquement en `nettoyage`
-- Le soigneur marque "Nettoyage terminé" → passe en `libre`
-- Possible d'assigner le nettoyage à un employé (voir §5)
-- Rappel si chambre en nettoyage > 2h (configurable)
+**Champs supplémentaires — Mode équin uniquement :**
+```
+Type de litière       (paille / copeaux / caoutchouc / sans litière)
+Surface (m²)          (info pour le soigneur)
+Paddock associé       (lien vers le paddock habituel du cheval de ce box)
+Abreuvoir automatique (oui / non)
+```
 
-### 4.7 Rapport d'occupation
+### 4.5 Spécificités équines — Position du cheval dans la journée
 
-- Taux de remplissage moyen (semaine / mois / trimestre)
-- Chambres les plus/moins demandées
-- Espèces les plus accueillies
-- Revenus estimés (si tarifs renseignés par chambre)
-- Export CSV (web uniquement)
+Un cheval change de lieu plusieurs fois par jour (box la nuit → paddock / pré le matin pendant le curage → rentre le soir). L'interface gère deux niveaux distincts :
 
-### 4.8 Schéma BDD
+**Niveau 1 — État du lieu (box, paddock, pré…)**
+- Indépendant de la position actuelle du cheval
+- Suit le cycle de curage/nettoyage du box
+
+**Niveau 2 — Position actuelle du cheval**
+- "Où est ce cheval en ce moment" : box / paddock / pré / carrière / soins / sorti chez propriétaire
+- Mis à jour par le soigneur lors de chaque déplacement
+- Visible depuis la fiche animal + le tableau de bord
+
+```
+Tableau de bord vue cheval (alternative à la vue lieu) :
+
+🐴 Éclair     → 📍 Paddock A     Box 1 [À CURER]
+🐴 Sultan     → 📍 Box 2          Box 2 [PROPRE]
+🐴 Mistral    → 📍 Paddock B     Box 3 [EN CURAGE]
+🐴 Tornado    → 📍 Pré Nord
+🐴 Jazz       → 📍 Pré Nord
+```
+
+### 4.6 Interface — Vue tableau de bord
+
+**Onglets du planning :**
+- **Vue lieux** (défaut) : une ligne par box/paddock/pré, état du lieu + animal présent
+- **Vue chevaux** (mode équin) : une ligne par cheval, position actuelle + état du box attitré
+- **Vue curage du jour** (mode équin) : liste des boxes à curer classés par priorité + soigneur assigné
+
+**Actions rapides par état (vue lieux) :**
+- `occupé` → "Animal parti" (devient `à_nettoyer` ou `à_curer`)
+- `à_nettoyer / à_curer` → "Commencer" → `en_nettoyage` — puis "Terminé" → `libre`
+- `libre` → "+ Affecter un animal"
+- `hors_service` → "Remettre en service"
+- `en_nettoyage` → "Terminé" → `libre`
+
+**Actions rapides — spécifique équin :**
+- "Sortir au paddock" → met à jour la position du cheval + libère le box pour curage
+- "Rentrer au box" → remet le cheval dans son box (si propre)
+- "Marquer curé" → box passe `libre`
+
+**Filtres rapides :**
+- Tous / Occupés / À nettoyer-curer / Libres / Hors service
+- Par espèce / par type de lieu (boxes / paddocks / prés)
+
+### 4.7 Workflow — Mode canin/NAC
+
+```
+Animal récupéré → soigneur tape "Animal parti"
+→ Box passe en [À NETTOYER]
+
+Soigneur commence → "En cours"
+→ Box passe en [EN NETTOYAGE]
+
+Nettoyage terminé → "Terminé"
+→ Box passe en [LIBRE]
+→ Notification manager si configuré
+```
+
+### 4.8 Workflow — Mode équin (curage)
+
+```
+Matin — soigneur sort le cheval :
+→ "Sortir au paddock [Paddock A]"
+→ Position cheval = Paddock A
+→ Box passe en [À CURER] (cheval absent, box accessible)
+
+Soigneur cure le box :
+→ "Commencer curage" → Box passe en [EN CURAGE]
+→ Fumier + litière retirés, nouvelle litière étendue
+
+Curage terminé :
+→ "Box prêt" → Box passe en [LIBRE / PROPRE]
+
+Soir — soigneur rentre le cheval :
+→ "Rentrer au box"
+→ Position cheval = Box 1
+→ Box passe en [OCCUPÉ]
+```
+
+### 4.9 Alertes et notifications
+
+- Box en `à_nettoyer` / `à_curer` depuis + de 2h → rappel soigneur
+- Box `hors_service` → visible en rouge partout
+- Animal attendu aujourd'hui non encore affecté → alerte dashboard
+- **Équin** : cheval au paddock depuis + de X heures (configurable) → rappel de rentrée
+- **Équin** : box non curé avant 10h → alerte au manager
+
+### 4.10 Schéma BDD
 
 ```sql
--- Chambres / boxes
-CREATE TABLE chambres_pension (
+-- Définition des lieux (commun à tous les modes)
+CREATE TABLE lieux_hebergement (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  pro_uid TEXT NOT NULL,           -- UID du pro (pension ou association)
+  pro_uid TEXT NOT NULL,
   pro_profile_id UUID,
-  nom TEXT NOT NULL,               -- "Box 1", "Suite A"
-  type TEXT DEFAULT 'individuel',  -- individuel/collectif/suite/enclos
-  especes_acceptees TEXT[],        -- ['chien','chat']
+  nom TEXT NOT NULL,                      -- "Box 1", "Paddock A", "Pré Nord"
+  type TEXT NOT NULL,                     -- box_individuel/enclos_collectif/chatterie/cage_nac/
+                                          -- parc_exterieur/box_cheval/paddock/pre/carriere/
+                                          -- couloir_lavage/box_veterinaire
+  mode TEXT NOT NULL DEFAULT 'canin',     -- canin / equin / mixte
+  especes_acceptees TEXT[],
   capacite INTEGER DEFAULT 1,
-  taille TEXT,                     -- S/M/L/XL
-  equipements TEXT[],
-  photo_url TEXT,
+  surface_m2 NUMERIC,                    -- équin principalement
+  type_litiere TEXT,                     -- paille/copeaux/caoutchouc (équin)
+  paddock_associe_id UUID REFERENCES lieux_hebergement(id), -- box → paddock attitré (équin)
+  abreuvoir_auto BOOLEAN DEFAULT false,  -- équin
   notes TEXT,
-  tarif_nuit NUMERIC,              -- optionnel
   actif BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Réservations / occupation
-CREATE TABLE reservations_chenil (
+-- État courant de chaque lieu (1 ligne par lieu, temps réel)
+CREATE TABLE etat_lieux_hebergement (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  chambre_id UUID NOT NULL REFERENCES chambres_pension(id) ON DELETE CASCADE,
-  rdv_id UUID REFERENCES rdv(id),           -- si lié à un RDV
-  animal_id TEXT,
-  proprietaire_uid TEXT,
-  date_debut DATE NOT NULL,
-  date_fin DATE NOT NULL,
-  statut TEXT DEFAULT 'reserve',  -- reserve/occupe/nettoyage/maintenance
+  lieu_id UUID NOT NULL REFERENCES lieux_hebergement(id) ON DELETE CASCADE,
+  statut TEXT NOT NULL DEFAULT 'libre',  -- libre/occupe/a_nettoyer/a_curer/en_nettoyage/hors_service
+  animal_ids TEXT[],                     -- animaux présents dans ce lieu
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  updated_by TEXT,
   notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  CONSTRAINT no_overlap EXCLUDE USING gist (
-    chambre_id WITH =,
-    daterange(date_debut, date_fin, '[)') WITH &&
-  )
+  UNIQUE(lieu_id)
+);
+
+-- Position actuelle de chaque animal (équin — où est le cheval maintenant)
+CREATE TABLE position_animaux (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  animal_id TEXT NOT NULL,
+  pro_uid TEXT NOT NULL,
+  lieu_actuel_id UUID REFERENCES lieux_hebergement(id),
+  lieu_label TEXT,                       -- libellé libre si lieu hors écurie ("Soins véto", "Sorti")
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  updated_by TEXT,
+  UNIQUE(animal_id)
+);
+
+-- Historique des changements d'état (traçabilité)
+CREATE TABLE historique_lieux_hebergement (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lieu_id UUID NOT NULL REFERENCES lieux_hebergement(id),
+  statut_avant TEXT,
+  statut_apres TEXT NOT NULL,
+  animal_ids TEXT[],
+  changed_by TEXT,
+  changed_at TIMESTAMPTZ DEFAULT now(),
+  notes TEXT
 );
 ```
 
@@ -684,6 +805,460 @@ Phase 4 — Améliorations
 | EMP01 | ✅ invitation + accès | ✅ `/equipe` | ✅ |
 | EMP02 | ✅ planning soigneurs | ✅ | ❌ |
 | EMP03 | ✅ affectation | ✅ | ❌ |
+
+---
+
+## 8. Modèle économique — Abonnements, Boosts & Marketplace
+
+### 8.1 Grilles tarifaires par profil
+
+> Les prix et features de chaque plan doivent être modifiables via le panel admin sans déploiement. Stocker dans une table Supabase `plans_tarifaires` (voir §8.4).
+
+**Éleveurs**
+
+| Plan | Mensuel | Annuel | Différenciation clé |
+|---|---|---|---|
+| FREE | 0€ | 0€ | 3 annonces, 30j, renouvellement manuel |
+| PRO | 15€/mois | 149€/an | 10 annonces, 45j, rappel J-5, 1 boost/mois inclus, 2 employés |
+| PREMIUM | 25€/mois | 249€/an | Illimité, 60j, auto-renouvellement, 3 boosts/mois, module facturation |
+
+Note : PREMIUM = `pro+` dans le code legacy — harmoniser vers `plan = 'premium'`.
+
+**Vétérinaires**
+
+| Plan | Mensuel | Annuel | Différenciation clé |
+|---|---|---|---|
+| FREE | 0€ | 0€ | Annuaire basique, lecture via token 72h |
+| Avancé | 29€/mois | 290€/an | Accès lecture permanent, écriture carnet santé, rappels push |
+| Clinique | 49€/mois | 490€/an | Multi-praticiens (5 max), export CSV logiciels vétérinaires |
+
+**Soins para-médicaux** (ostéo/kiné, maréchal-ferrant)
+
+| Plan | Mensuel | Annuel | Différenciation clé |
+|---|---|---|---|
+| FREE | 0€ | 0€ | Annuaire basique, token 72h |
+| Essentiel | 19€/mois | 190€/an | Accès lecture permanent, ajout séances carnet santé |
+| Pro | 29€/mois | 290€/an | Facturation clients, multi-intervenants (3 max), export CSV |
+
+**Pet sitter**
+
+| Plan | Mensuel | Annuel | Différenciation clé |
+|---|---|---|---|
+| FREE | 0€ | 0€ | Annuaire basique |
+| Essentiel | 12€/mois | 120€/an | Registre entrées/sorties, journal séjour, contrats PDF |
+| Pro | 19€/mois | 190€/an | Facturation clients, statistiques activité |
+
+**Promeneur**
+
+| Plan | Mensuel | Annuel | Différenciation clé |
+|---|---|---|---|
+| FREE | 0€ | 0€ | Annuaire basique |
+| Essentiel | 9€/mois | 90€/an | Rapports sortie, gestion groupes, contrats PDF |
+| Pro | 15€/mois | 150€/an | Facturation, abonnements clients (packs sorties) |
+
+**Éducateur & comportementaliste**
+
+| Plan | Mensuel | Annuel | Différenciation clé |
+|---|---|---|---|
+| FREE | 0€ | 0€ | Annuaire basique, messagerie |
+| Essentiel | 19€/mois | 190€/an | Carnet comportemental, suivi séances, rapports PDF |
+| Pro | 29€/mois | 290€/an | Programmes personnalisés, facturation, partage inter-pros |
+
+**Photographe animalier**
+
+| Plan | Mensuel | Annuel | Différenciation clé |
+|---|---|---|---|
+| FREE | 0€ | 0€ | Profil annuaire, 5 photos portfolio |
+| Essentiel | 9€/mois | 90€/an | Portfolio illimité, mis en avant, statistiques profil |
+
+**Association**
+
+| Plan | Mensuel | Différenciation clé |
+|---|---|---|
+| GRATUIT | 0€ | Accès complet permanent, aucune restriction, jamais de paiement demandé |
+
+Fonctionnalités abonnement communes : upgrade, downgrade, annulation immédiate ou en fin de période, renouvellement automatique, 14 jours d'essai offerts via parrainage.
+
+---
+
+### 8.2 Achats ponctuels (boosts & annonces)
+
+> Les prix et descriptions ci-dessous doivent être éditables par un admin depuis le panel sans déploiement (table `produits_ponctuels`, voir §8.4).
+
+| Produit | Prix | Durée | Description |
+|---|---|---|---|
+| Boost annonce | 1,99€ | 48h | Remontée temporaire en tête de feed |
+| Mise à la une | 4,99€ | 7 jours | Badge + position prioritaire |
+| Remontée annonce | 0,99€ | Instantané | Re-publication dans le feed |
+| Annonce supplémentaire | 2,99€ | Selon plan | Quota au-delà du plan |
+| Pack 3 boosts 48h | 4,99€ | 3 × 48h | Bundle (économie vs 3 × 1,99€) |
+
+---
+
+### 8.3 Marketplace & partenaires — régie publicitaire ciblée
+
+> **Modèle régie pub, pas transactionnel · Pas de panier ni de paiement in-app · Le partenaire paie pour être visible auprès d'une audience qualifiée · Le clic redirige vers son site externe**
+
+PetsMatch monétise son audience (éleveurs, propriétaires, pros) via des formats publicitaires ciblés par espèce, race, région et profil. Aucune infrastructure e-commerce requise en V1.
+
+#### Segments partenaires
+
+| Segment | Exemples | Ciblage principal |
+|---|---|---|
+| Créateurs artisanaux | Colliers sur mesure, jouets, vêtements, accessoires | Espèce, race, région |
+| Alimentation & friandises | Marques premium, cru, compléments alimentaires | Espèce, race, âge animal |
+| Boutiques généralistes | Animaleries en ligne, distributeurs | Espèce, région |
+| Assurances animaux | Santevet, Dalma, Lovys, April | Espèce, âge, statut chiot/adulte |
+
+Les assurances sont le segment à CPL le plus élevé du marché animalier français (15–40€ par lead qualifié). Priorité commerciale en V2.
+
+#### Formats & tarification
+
+**Format 1 — Listing annuaire partenaire** (abonnement mensuel)
+
+Le partenaire apparaît dans la vue Marketplace, filtrable par catégorie et espèce. Pas de ciblage comportemental, visibilité passive.
+
+| Plan | Prix | Visibilité |
+|---|---|---|
+| Starter | 29€/mois | Logo + nom + lien site, listing basique |
+| Visible | 59€/mois | Mise en avant catégorie + badge "Partenaire vérifié" + description |
+| Premium | 99€/mois | Top catégorie + bannière profil + filtres race/espèce avancés |
+
+Réduction annuelle : Starter 290€/an · Visible 590€/an · Premium 990€/an
+
+**Format 2 — Bannières contextuelles in-app** (CPM)
+
+Bannières natives affichées dans des écrans spécifiques selon le contexte de navigation. Facturées au CPM (coût pour mille affichages).
+
+| Placement | CPM | Contexte & pertinence |
+|---|---|---|
+| Fiche animal (bas de page) | 8–12€/1000 | Ultra-ciblé espèce/race — idéal accessoires |
+| Feed annonces (native card) | 6–10€/1000 | Ciblé espèce — alimentation, jouets |
+| Carnet santé (post-visite vét) | 15–25€/1000 | Moment fort — idéal assurances |
+| Dashboard éleveur | 10–15€/1000 | Audience pro, forte intention d'achat |
+| Onboarding (ajout d'un animal) | 12–18€/1000 | Nouveau propriétaire — assurance, accessoires |
+
+Minimum de facturation : 500€/mois par partenaire bannière. Ciblage disponible : espèce, race, région, type de profil (éleveur/particulier/pro).
+
+**Format 3 — Lead generation assurances** (CPL)
+
+Uniquement pour les partenaires assureurs. Un CTA "Obtenir un devis" apparaît dans des moments clés du parcours utilisateur.
+
+| Modèle | Prix | Déclencheur |
+|---|---|---|
+| CPC (coût par clic) | 0,80–1,50€ | Clic bannière assurance |
+| CPL (coût par lead) | 12–20€ | Clic "Obtenir un devis" → redirection formulaire assureur |
+
+Moments déclencheurs CPL :
+- Ajout d'un nouvel animal dans l'app
+- Enregistrement d'un chiot/chaton (date naissance < 4 mois)
+- Première visite vétérinaire enregistrée dans le carnet santé
+- Achat d'une annonce éleveur (nouveau propriétaire potentiel)
+
+#### UI partenaire — dashboard
+
+**Vue "Ma campagne"** (app + web, réservée partenaires connectés)
+- Métriques temps réel : impressions, clics, leads du mois
+- CTR moyen et CPL effectif
+- Répartition par espèce et région
+- Facture mensuelle téléchargeable (PDF)
+- Modifier ciblage et budget
+
+#### Vue Marketplace utilisateur (in-app)
+
+Section dédiée accessible depuis le menu principal.
+
+**Architecture de la vue :**
+- Header : "Nos partenaires sélectionnés" + filtre espèce (chien/chat/équidé/autre)
+- Grille partenaires : carte logo + nom + catégorie + lien
+- Section "Assurances" : cards dédiées avec CTA "Obtenir un devis"
+- Badge "Partenaire vérifié PetsMatch" sur tous les listings
+- Pas de publicité intrusive dans les écrans métier (carnet santé, registre) sauf bannière discrète bas de page
+
+Règle éditoriale : tous les partenaires sont vérifiés manuellement avant activation (SIRET valide, site légitime, produits conformes réglementation animaux).
+
+#### Tracking & facturation automatique
+
+- Impressions comptées côté serveur (Cloud Function), pas côté client (anti-fraude, ad-blockers non impactants sur le CPM)
+- Facture Stripe générée automatiquement en fin de mois selon les events réels
+- Plafond de dépenses mensuel configurable par partenaire
+- Rapport PDF mensuel envoyé automatiquement au partenaire
+
+#### Conformité RGPD
+
+- Aucune donnée personnelle utilisateur transmise aux partenaires
+- Le ciblage est contextuel (espèce, région) et non nominatif
+- Mentions légales "Publicité" affichées sur tous les formats bannière
+- Opt-out publicité disponible dans les paramètres utilisateur (impact : bannières désactivées, listing annuaire toujours visible)
+
+#### Évolutions V2+
+
+- Ciblage comportemental avancé (historique carnet santé, races possédées)
+- Self-service : onboarding partenaire autonome sans validation manuelle
+- Intégration Google Ad Manager pour partenaires > 2 000€/mois de budget
+- Affiliation créateurs artisanaux (commission sur ventes trackées par UTM)
+- Programme "Partenaire éleveur" : éleveur recommande une marque → reçoit des boosts en échange
+
+---
+
+### 8.4 Tables Supabase — modèle économique
+
+```sql
+-- Plans tarifaires (éditables depuis l'admin sans déploiement)
+CREATE TABLE plans_tarifaires (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profil_type TEXT NOT NULL,       -- eleveur/veterinaire/pension/education/petsitter/promeneur/photographe/para_medical
+  plan_code TEXT NOT NULL,         -- free/essentiel/pro/premium/avance/clinique
+  label TEXT NOT NULL,
+  prix_mensuel NUMERIC DEFAULT 0,
+  prix_annuel NUMERIC DEFAULT 0,
+  features JSONB,                  -- liste des features incluses (pour affichage)
+  actif BOOLEAN DEFAULT true,
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(profil_type, plan_code)
+);
+
+-- Produits ponctuels (boosts, éditables depuis l'admin)
+CREATE TABLE produits_ponctuels (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code TEXT NOT NULL UNIQUE,       -- boost_48h/mise_une/remontee/annonce_sup/pack_3boosts
+  label TEXT NOT NULL,
+  prix NUMERIC NOT NULL,
+  duree_heures INTEGER,            -- null = instantané
+  description TEXT,
+  actif BOOLEAN DEFAULT true,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Abonnements actifs
+CREATE TABLE abonnements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  uid TEXT NOT NULL,
+  profil_type TEXT NOT NULL,
+  plan_code TEXT NOT NULL,
+  stripe_subscription_id TEXT,
+  stripe_customer_id TEXT,
+  periodicite TEXT DEFAULT 'mensuel',  -- mensuel/annuel
+  statut TEXT DEFAULT 'actif',         -- actif/grace/lecture_seule/annule/archive
+  date_debut TIMESTAMPTZ DEFAULT now(),
+  date_fin TIMESTAMPTZ,
+  date_fin_grace TIMESTAMPTZ,
+  essai_gratuit BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Achats ponctuels (boosts)
+CREATE TABLE achats_ponctuels (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  uid TEXT NOT NULL,
+  produit_id UUID NOT NULL REFERENCES produits_ponctuels(id),
+  annonce_id TEXT,
+  stripe_payment_intent_id TEXT,
+  statut TEXT DEFAULT 'paye',      -- paye/rembourse/echoue
+  date_achat TIMESTAMPTZ DEFAULT now(),
+  date_expiration TIMESTAMPTZ
+);
+
+-- Partenaires marketplace
+CREATE TABLE marketplace_partners (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT,
+  nom TEXT NOT NULL,
+  logo_url TEXT,
+  site_url TEXT,
+  description TEXT,
+  categorie TEXT,                  -- artisan/alimentation/boutique/assurance
+  especes_cibles TEXT[],
+  regions TEXT[],
+  plan TEXT DEFAULT 'starter',     -- starter/visible/premium
+  statut TEXT DEFAULT 'en_attente', -- en_attente/actif/suspendu
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Campagnes publicitaires
+CREATE TABLE marketplace_ads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  partner_id UUID NOT NULL REFERENCES marketplace_partners(id),
+  type TEXT NOT NULL,              -- listing/banniere/cpl
+  placement TEXT,
+  budget_mensuel NUMERIC,
+  cpm NUMERIC,
+  cpl NUMERIC,
+  especes_cibles TEXT[],
+  regions TEXT[],
+  date_debut DATE,
+  date_fin DATE,
+  statut TEXT DEFAULT 'actif',     -- actif/pause/termine
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Events tracking (impressions, clics, leads)
+CREATE TABLE marketplace_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ad_id UUID REFERENCES marketplace_ads(id),
+  partner_id UUID REFERENCES marketplace_partners(id),
+  user_id TEXT,
+  event_type TEXT NOT NULL,        -- impression/clic/lead
+  espece TEXT,
+  race TEXT,
+  region TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+RLS : `marketplace_partners` et `marketplace_ads` accessibles uniquement par le partenaire propriétaire et les admins. `marketplace_events` : insertion côté client, lecture réservée admin + partenaire propriétaire.
+
+---
+
+---
+
+## 9. Validation automatique & Badges de confiance
+
+> Surfaces : **App Flutter (Android + iOS) + Site Web Next.js + Panel Admin**
+
+### 9.1 Validation automatique à l'inscription
+
+Lors du dépôt de dossier (éleveur ou professionnel), des contrôles automatiques bloquent immédiatement les données manifestement incorrectes avant d'envoyer le dossier en queue admin.
+
+#### Contrôles bloquants (rejet immédiat)
+
+| Champ | Règle | Message utilisateur |
+|---|---|---|
+| SIRET | Introuvable via API `recherche-entreprises.api.gouv.fr` | "Ce numéro SIRET/SIREN est introuvable" |
+| SIRET | Entreprise fermée (`etat_administratif = 'F'`) | "Cette entreprise est fermée ou radiée" |
+| Nom entreprise | Nom déclaré ne correspond pas au nom API (comparaison normalisée) | "Le nom ne correspond pas au SIRET (trouvé : X) — www.petsmatch.com/contact" |
+| RNA | Format non conforme (`W` + 9 chiffres) | "Format RNA invalide" |
+| SIRET/SIREN | Format non conforme (9 ou 14 chiffres, chiffres uniquement) | "Format invalide" |
+
+**Comportement si API indisponible** : le dossier passe en `en_attente` pour vérification manuelle admin. Ne jamais bloquer à cause d'une API tierce en panne.
+
+#### ACACED (éleveurs)
+
+- Le numéro ACACED n'est **pas standardisé** au niveau national → **format libre**, vérification manuelle uniquement.
+- Champ optionnel à l'inscription (peut être fourni après).
+- L'admin vérifie la conformité lors de la revue du dossier.
+- Récapitulatif visible dans la fiche admin avec le document uploadé.
+
+#### KBIS
+
+- **Optionnel** — le SIRET vérifié par API est suffisant pour la validation.
+- Si uploadé, constitue un « plus » visible dans le dossier admin et contribue au badge Premium.
+- L'upload est toujours possible après l'inscription depuis le profil.
+
+#### Code APE
+
+- L'API retourne le code APE/NAF de l'entreprise.
+- Un code non animal-related (hors `014x`, `0162Z`, `9609Z`, `7500Z`) est visible dans le dossier admin avec un indicateur visuel.
+- **Ne génère pas de rejet automatique** (trop de faux positifs) — décision admin.
+
+### 9.2 Flow de validation admin (VALID04)
+
+```
+Inscription éleveur/pro
+    ↓
+Checks automatiques
+    ├─ ❌ Erreur → affichage immédiat dans le formulaire, dossier non créé
+    └─ ✅ OK → statut_pro = 'en_attente', dossier créé dans Supabase
+          ↓
+     Panel admin → onglet Dossiers
+          ├─ Sous-onglet "En attente" — cartes avec SIRET + ACACED + documents
+          │       ├─ "✅ Valider" → statut_pro = 'actif', is_validate = true
+          │       └─ "❌ Refuser" → motif obligatoire → statut_pro = 'refuse', rejection_reason
+          └─ Sous-onglet "Rejetés" — cartes avec motif de refus
+                  └─ "↩ Reconsidérer" → retour en 'en_attente'
+```
+
+**Page utilisateur `/en-attente-validation`** :
+- Statut `en_attente` → message d'attente (48h ouvrées)
+- Statut `refuse` → motif visible + lien vers `/contact`
+- Statut `actif` → redirection vers accueil
+
+**Email de rejet** : à implémenter dès qu'un provider email est configuré (Resend, SendGrid ou Supabase Edge Function). Le motif + lien `www.petsmatch.com/contact` doit apparaître dans l'email.
+
+### 9.3 Badges de confiance
+
+Trois niveaux visibles sur les fiches pro/éleveur, les cartes annonces et la liste des élevages.
+
+| Badge | Code | Critères | Couleur | Icône |
+|---|---|---|---|---|
+| Aucun | `none` | Compte en attente ou non-validé | — | — |
+| **Vérifié** | `verifie` | `statut_pro = 'actif'` + SIRET renseigné | Bleu `#2563eb` | ✓ |
+| **Premium** | `premium` | `is_premium = true` (admin ou abonnement actif) | Or `#d97706` | ★ |
+
+**Composant** : `VerificationBadge` (`src/components/VerificationBadge.tsx`) — tailles `sm` / `md` / `lg`, tooltip informatif.
+
+**Fonction utilitaire** : `getBadgeLevel({ statutPro, siret, isPremium })` — calcul côté client, pas de requête supplémentaire.
+
+#### Surfaces d'affichage
+
+| Surface | Endroit | Badge |
+|---|---|---|
+| Web — liste élevages | Titre de la card | sm |
+| Web — fiche pro | À côté du nom | md |
+| Web — liste annonces | Card annonce (batch fetch eleveur) | sm |
+| Web — détail annonce | Section éleveur | sm |
+| App Flutter — liste élevages | Card éleveur (`_EleveurCard`) | sm |
+| App Flutter — liste services | Card professionnel (`_ProCard`) | sm |
+| App Flutter — feed annonces | Badge row sur la card | sm |
+| Admin — ProfileModal | Section "Statut professionnel" | badge + bouton toggle |
+
+**Composant Flutter** : `lib/widgets/verification_badge.dart` — `VerificationBadge` widget + `getVerificationLevel()` helper + `VerificationLevel` enum.
+
+#### Attribution Premium
+
+- **Temporaire (MVP)** : toggle manuel admin dans `ProfileModal` → `is_premium = true/false` dans `users`
+- **Définitif** : Stripe webhook → `checkout.session.completed` avec `plan = 'premium'` → `is_premium = true` automatiquement
+- Les **associations** ont un badge "Association" distinct (à définir, elles sont gratuites et validées manuellement)
+
+#### SQL requis
+
+```sql
+-- Colonne is_premium (si pas encore ajoutée)
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_premium BOOLEAN DEFAULT false;
+
+-- Table formulaire de contact
+CREATE TABLE IF NOT EXISTS public.contact_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  subject TEXT,
+  message TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.contact_messages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anyone can submit contact" ON public.contact_messages
+  FOR INSERT WITH CHECK (true);
+CREATE POLICY "Admins can read contacts" ON public.contact_messages
+  FOR SELECT USING (auth.role() = 'service_role');
+```
+
+### 9.4 Vérification d'identité (CNI)
+
+**Décision actuelle : ne pas implémenter en interne.**
+
+Raisons :
+- RGPD : stockage de CNI nécessite base légale explicite, durée limitée, chiffrement renforcé — complexité non justifiée au stade actuel
+- Coût : services tiers (Stripe Identity, Ubble, Onfido) facturent ~1,50–2,50€/vérification
+- Le SIRET (auto-entrepreneur au nom du gérant) constitue déjà une vérification indirecte d'identité
+
+**Quand l'activer** : dès que les revenus abonnements couvrent le coût (~1,50€ × nb_éleveurs_par_mois).  
+**Service recommandé** : Ubble (FR, RGPD natif) ou Stripe Identity (intégration simple si déjà sur Stripe).  
+**Impact badge** : une vérification CNI validée passerait le badge de `verifie` à `premium` automatiquement.
+
+### 9.5 Page de contact publique (`/contact`)
+
+URL : `www.petsmatch.com/contact`
+
+Champs :
+- Nom / Prénom (obligatoire)
+- Email (obligatoire)
+- Objet : liste `['Réclamation dossier refusé', 'Problème technique', 'Signalement abusif', 'Question sur mon compte', 'Autre']`
+- Message (obligatoire)
+
+Stockage : table `contact_messages` (Supabase, RLS insert public / lecture service_role).  
+Fallback : `mailto:support@petsmatch.com` affiché si Supabase indisponible.  
+Lien dans les emails/messages de rejet : `www.petsmatch.com/contact`
 
 ---
 
