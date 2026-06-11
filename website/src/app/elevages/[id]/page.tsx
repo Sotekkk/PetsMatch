@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
@@ -12,32 +14,21 @@ import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge
 
 interface EleveurData {
   uid: string;
-  firstname?: string;
-  lastname?: string;
-  name_elevage?: string;
-  desc_entreprise?: string;
-  profile_picture_url?: string;
-  profile_picture_url_elevage?: string;
-  banner_url?: string;
-  ville_elevage?: string;
-  ville?: string;
-  code_postal?: string;
-  pays_elevage?: string;
-  adresse_elevage?: string;
-  especes_elevees?: { espece: string; races?: string[] }[];
-  is_dog?: boolean;
-  is_cat?: boolean;
-  dog_breeds?: string[];
-  cat_breeds?: string[];
-  siret?: string;
-  acaced?: string;
-  statut_pro?: string;
-  is_premium?: boolean;
-  is_validate?: boolean;
-  telephone?: string;
-  site_web?: string;
-  facebook?: string;
-  instagram?: string;
+  name: string;
+  description: string;
+  photo: string;
+  banner: string;
+  ville: string;
+  pays: string;
+  especesList: { espece: string; races: string[] }[];
+  siret: string;
+  statutPro: string;
+  isPremium: boolean;
+  isValidate: boolean;
+  telephone: string;
+  siteWeb: string;
+  facebook: string;
+  instagram: string;
 }
 
 interface Annonce {
@@ -52,7 +43,6 @@ interface Annonce {
   saillie_prix?: number;
   prix_min_portee?: number;
   prix_max_portee?: number;
-  ville_eleveur?: string;
   statut?: string;
 }
 
@@ -61,6 +51,72 @@ const ESPECE_LABEL: Record<string, string> = {
   oiseau: 'Oiseau', nac: 'NAC', ovin: 'Ovin', caprin: 'Caprin',
   porcin: 'Porcin', autre: 'Autre',
 };
+
+// ─── Normalisation Firestore → interface commune ──────────────────────────────
+
+function fromFirestore(uid: string, d: Record<string, unknown>): EleveurData {
+  const especesElevees = d['especesElevees'];
+  let especesList: { espece: string; races: string[] }[] = [];
+  if (Array.isArray(especesElevees) && especesElevees.length > 0) {
+    especesList = especesElevees.map((e: { espece?: string; races?: string[] }) => ({
+      espece: e.espece ?? '',
+      races: e.races ?? [],
+    }));
+  } else {
+    if (d['isDog']) especesList.push({ espece: 'chien', races: Array.isArray(d['dogBreeds']) ? d['dogBreeds'] as string[] : [] });
+    if (d['isCat']) especesList.push({ espece: 'chat', races: Array.isArray(d['catBreeds']) ? d['catBreeds'] as string[] : [] });
+  }
+  return {
+    uid,
+    name: (d['nameElevage'] as string) || `${d['firstname'] ?? ''} ${d['lastname'] ?? ''}`.trim() || 'Éleveur',
+    description: (d['descEntreprise'] as string) || '',
+    photo: (d['profilePictureUrlElevage'] as string) || (d['profilePictureUrl'] as string) || '',
+    banner: (d['bannerUrl'] as string) || '',
+    ville: (d['villeElevage'] as string) || (d['ville'] as string) || '',
+    pays: (d['paysElevage'] as string) || '',
+    especesList,
+    siret: (d['siret'] as string) || '',
+    statutPro: (d['statutPro'] as string) || (d['statut_pro'] as string) || '',
+    isPremium: !!(d['isPremium'] ?? d['is_premium']),
+    isValidate: !!(d['isValidate'] ?? d['is_validate']),
+    telephone: (d['numeroElevage'] as string) || (d['telephone'] as string) || '',
+    siteWeb: (d['siteWeb'] as string) || (d['site_web'] as string) || '',
+    facebook: (d['facebook'] as string) || '',
+    instagram: (d['instagram'] as string) || '',
+  };
+}
+
+function fromSupabase(uid: string, d: Record<string, unknown>): EleveurData {
+  const especesElevees = d['especes_elevees'];
+  let especesList: { espece: string; races: string[] }[] = [];
+  if (Array.isArray(especesElevees) && especesElevees.length > 0) {
+    especesList = especesElevees.map((e: { espece?: string; races?: string[] }) => ({
+      espece: e.espece ?? '',
+      races: e.races ?? [],
+    }));
+  } else {
+    if (d['is_dog']) especesList.push({ espece: 'chien', races: Array.isArray(d['dog_breeds']) ? d['dog_breeds'] as string[] : [] });
+    if (d['is_cat']) especesList.push({ espece: 'chat', races: Array.isArray(d['cat_breeds']) ? d['cat_breeds'] as string[] : [] });
+  }
+  return {
+    uid,
+    name: (d['name_elevage'] as string) || `${d['firstname'] ?? ''} ${d['lastname'] ?? ''}`.trim() || 'Éleveur',
+    description: (d['desc_entreprise'] as string) || '',
+    photo: (d['profile_picture_url_elevage'] as string) || (d['profile_picture_url'] as string) || '',
+    banner: (d['banner_url'] as string) || '',
+    ville: (d['ville_elevage'] as string) || (d['ville'] as string) || '',
+    pays: (d['pays_elevage'] as string) || '',
+    especesList,
+    siret: (d['siret'] as string) || '',
+    statutPro: (d['statut_pro'] as string) || '',
+    isPremium: !!(d['is_premium']),
+    isValidate: !!(d['is_validate']),
+    telephone: (d['telephone'] as string) || '',
+    siteWeb: (d['site_web'] as string) || '',
+    facebook: (d['facebook'] as string) || '',
+    instagram: (d['instagram'] as string) || '',
+  };
+}
 
 // ─── Page ───────────────────────────────────────────────────────────────────────
 
@@ -75,24 +131,46 @@ export default function EleveurProfilePage() {
 
   useEffect(() => {
     if (!id) return;
-    supabase
-      .from('users')
-      .select('uid, firstname, lastname, name_elevage, desc_entreprise, profile_picture_url, profile_picture_url_elevage, banner_url, ville_elevage, ville, code_postal, pays_elevage, adresse_elevage, especes_elevees, is_dog, is_cat, dog_breeds, cat_breeds, siret, acaced, statut_pro, is_premium, is_validate, telephone, site_web, facebook, instagram')
-      .eq('uid', id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!data) { setNotFound(true); setLoading(false); return; }
-        setEleveur(data as EleveurData);
-        setLoading(false);
-      });
 
+    // Charge les annonces en parallèle
     supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut')
+      .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, statut')
       .eq('uid_eleveur', id)
       .eq('statut', 'disponible')
       .order('created_at', { ascending: false })
       .then(({ data }) => setAnnonces((data ?? []) as Annonce[]));
+
+    // Firestore en priorité (données complètes), Supabase en fallback
+    getDoc(doc(db, 'users', id)).then(snap => {
+      if (snap.exists()) {
+        setEleveur(fromFirestore(id, snap.data() as Record<string, unknown>));
+        setLoading(false);
+        return;
+      }
+      // Fallback Supabase
+      return supabase
+        .from('users')
+        .select('*')
+        .eq('uid', id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            setEleveur(fromSupabase(id, data as Record<string, unknown>));
+          } else {
+            setNotFound(true);
+          }
+          setLoading(false);
+        });
+    }).catch(() => {
+      // Si Firestore échoue (App Check, etc.), tente Supabase
+      supabase.from('users').select('*').eq('uid', id).maybeSingle()
+        .then(({ data }) => {
+          if (data) setEleveur(fromSupabase(id, data as Record<string, unknown>));
+          else setNotFound(true);
+          setLoading(false);
+        });
+    });
   }, [id]);
 
   if (loading) return (
@@ -108,33 +186,18 @@ export default function EleveurProfilePage() {
     </div>
   );
 
-  const rawName = (eleveur.name_elevage ?? `${eleveur.firstname ?? ''} ${eleveur.lastname ?? ''}`.trim());
-  const name = rawName || 'Éleveur';
-  const photo = eleveur.profile_picture_url_elevage ?? eleveur.profile_picture_url;
-  const banner = eleveur.banner_url;
-  const ville = eleveur.ville_elevage ?? eleveur.ville ?? '';
-  const badgeLevel = getBadgeLevel({ statutPro: eleveur.statut_pro, siret: eleveur.siret, isPremium: eleveur.is_premium });
-
-  const especesList: { espece: string; races: string[] }[] = (() => {
-    if (eleveur.especes_elevees && eleveur.especes_elevees.length > 0)
-      return eleveur.especes_elevees.map(e => ({ espece: e.espece, races: e.races ?? [] }));
-    const list: { espece: string; races: string[] }[] = [];
-    if (eleveur.is_dog) list.push({ espece: 'chien', races: eleveur.dog_breeds ?? [] });
-    if (eleveur.is_cat) list.push({ espece: 'chat', races: eleveur.cat_breeds ?? [] });
-    return list;
-  })();
-
+  const badgeLevel = getBadgeLevel({ statutPro: eleveur.statutPro, siret: eleveur.siret, isPremium: eleveur.isPremium });
   const isOwnProfile = user?.uid === eleveur.uid;
 
   return (
     <div className="bg-[#F8F8F6] min-h-screen">
       {/* Banner + photo */}
       <div className="relative">
-        <div className="h-52 sm:h-64 bg-[#EEF5EA] overflow-hidden">
-          {banner ? (
-            <Image src={banner} alt={name} fill className="object-cover" />
-          ) : photo ? (
-            <Image src={photo} alt={name} fill className="object-cover brightness-75" />
+        <div className="h-52 sm:h-64 bg-[#EEF5EA] overflow-hidden relative">
+          {eleveur.banner ? (
+            <Image src={eleveur.banner} alt={eleveur.name} fill className="object-cover" />
+          ) : eleveur.photo ? (
+            <Image src={eleveur.photo} alt={eleveur.name} fill className="object-cover brightness-75" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-8xl">🏡</div>
           )}
@@ -143,8 +206,8 @@ export default function EleveurProfilePage() {
 
         {/* Photo profil en overlay */}
         <div className="absolute -bottom-10 left-5 sm:left-8 w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-white shadow-md bg-[#EEF5EA] overflow-hidden">
-          {photo ? (
-            <Image src={photo} alt={name} fill className="object-cover" />
+          {eleveur.photo ? (
+            <Image src={eleveur.photo} alt={eleveur.name} fill className="object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-4xl">🏡</div>
           )}
@@ -167,10 +230,14 @@ export default function EleveurProfilePage() {
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="font-['Galey'] font-bold text-2xl text-[#1F2A2E]">{name}</h1>
+                <h1 className="font-['Galey'] font-bold text-2xl text-[#1F2A2E]">{eleveur.name}</h1>
                 <VerificationBadge level={badgeLevel} size="md" />
               </div>
-              {ville && <p className="text-gray-500 text-sm mt-0.5">📍 {ville}{eleveur.pays_elevage && eleveur.pays_elevage !== 'France' ? `, ${eleveur.pays_elevage}` : ''}</p>}
+              {eleveur.ville && (
+                <p className="text-gray-500 text-sm mt-0.5">
+                  📍 {eleveur.ville}{eleveur.pays && eleveur.pays !== 'France' ? `, ${eleveur.pays}` : ''}
+                </p>
+              )}
             </div>
             {isOwnProfile && (
               <Link href="/profil/modifier"
@@ -181,20 +248,20 @@ export default function EleveurProfilePage() {
           </div>
 
           {/* Espèces + races */}
-          {especesList.length > 0 && (
+          {eleveur.especesList.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5">
-              {especesList.map(({ espece, races }) => (
-                <span key={espece}>
+              {eleveur.especesList.map(({ espece, races }) => (
+                <span key={espece} className="flex items-center gap-1 flex-wrap">
                   <span className="inline-flex items-center bg-[#EEF5EA] text-[#0C5C6C] text-xs font-semibold px-2.5 py-1 rounded-full capitalize">
                     {ESPECE_LABEL[espece] ?? espece}
                   </span>
                   {races.slice(0, 3).map(r => (
-                    <span key={r} className="inline-flex items-center bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full ml-1">
+                    <span key={r} className="inline-flex items-center bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">
                       {r}
                     </span>
                   ))}
                   {races.length > 3 && (
-                    <span className="inline-flex items-center bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded-full ml-1">
+                    <span className="inline-flex items-center bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded-full">
                       +{races.length - 3}
                     </span>
                   )}
@@ -204,15 +271,15 @@ export default function EleveurProfilePage() {
           )}
 
           {/* Description */}
-          {eleveur.desc_entreprise && (
-            <p className="text-gray-600 text-sm mt-3 leading-relaxed">{eleveur.desc_entreprise}</p>
+          {eleveur.description && (
+            <p className="text-gray-600 text-sm mt-3 leading-relaxed">{eleveur.description}</p>
           )}
 
           {/* Liens sociaux */}
-          {(eleveur.site_web || eleveur.instagram || eleveur.facebook) && (
+          {(eleveur.siteWeb || eleveur.instagram || eleveur.facebook) && (
             <div className="flex gap-3 mt-3 flex-wrap">
-              {eleveur.site_web && (
-                <a href={eleveur.site_web} target="_blank" rel="noopener noreferrer"
+              {eleveur.siteWeb && (
+                <a href={eleveur.siteWeb} target="_blank" rel="noopener noreferrer"
                   className="text-xs text-[#0C5C6C] hover:underline">🌐 Site web</a>
               )}
               {eleveur.instagram && (
@@ -248,7 +315,7 @@ export default function EleveurProfilePage() {
   );
 }
 
-// ─── Card annonce mini ───────────────────────────────────────────────────────────
+// ─── Card annonce mini ──────────────────────────────────────────────────────────
 
 function AnnonceCard({ annonce: a }: { annonce: Annonce }) {
   const photos = (a.photos as unknown as string[]) ?? [];
