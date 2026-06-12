@@ -90,6 +90,7 @@ const MENU_ELEVEUR = [
       { href: '/abonnement',                     label: 'Mon abonnement',     icon: '⭐' },
       { href: '/elevage/registre-sanitaire',     label: 'Suivi sanitaire',    icon: '🏥', pro: true },
       { href: '/elevage/registre-entree-sortie', label: 'Entrées / Sorties',  icon: '📂', pro: true },
+      { href: '/elevage/certificat-engagement', label: 'Certificats',        icon: '✍️', pro: true },
       { href: '/elevage/contrat',               label: 'Contrats',           icon: '📄', premium: true },
       { href: '/elevage/facturation',            label: 'Facturation',        icon: '🧾', premium: true },
     ],

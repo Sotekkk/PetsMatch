@@ -186,38 +186,40 @@ Le certificat généré par PetsMatch doit contenir :
 
 ### 2.4 Implémentation technique
 
-**App Flutter :**
-- Nouveau bouton "Générer certificat d'engagement" dans la fiche animal (statut "disponible")
-- Formulaire pré-rempli + complétion manuelle des champs acquéreur
-- Génération PDF côté serveur (Edge Function Supabase) ou côté client (package `pdf`)
-- Signature numérique : dessin sur canvas ou case à cocher + OTP email
-- Notification push à l'acquéreur
+**Codes feature :**
+- **CERT01** ✅ En cours — Génération + envoi (web)
+- **CERT02** 🔜 V2 — Signature numérique canvas (app + web)
 
-**Site web Next.js :**
-- Même flux accessible depuis `/mes-animaux/[id]` et `/mes-annonces`
-- PDF généré et téléchargeable directement
-- Signature via lien email sécurisé (token 72h)
+**V1 — CERT01 (implémenté)**
 
-**Table Supabase :**
-```sql
-CREATE TABLE certificats_engagement (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  animal_id TEXT NOT NULL,
-  cedant_uid TEXT NOT NULL,        -- éleveur ou association
-  acquereur_uid TEXT,              -- si utilisateur PetsMatch
-  acquereur_nom TEXT,
-  acquereur_prenom TEXT,
-  acquereur_adresse TEXT,
-  acquereur_email TEXT NOT NULL,
-  acquereur_telephone TEXT,
-  date_remise TIMESTAMPTZ NOT NULL DEFAULT now(),
-  date_signature_acquereur TIMESTAMPTZ,
-  statut TEXT NOT NULL DEFAULT 'envoye',  -- envoye / lu / signe / refuse
-  token_signature TEXT UNIQUE,     -- pour lien email
-  pdf_url TEXT,                    -- URL Storage après génération
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+*Web Next.js :*
+- Page `/elevage/certificat-engagement` : liste des certificats + création
+- Formulaire pré-rempli (profil cédant + sélection animal depuis Supabase)
+- PDF généré via `window.print()` + CSS print (pas de dépendance supplémentaire)
+- Token de signature unique (UUID) stocké en DB
+- Lien de signature `/certificat/[token]` partageable manuellement (email auto après HOST02)
+- Page acquéreur `/certificat/[token]` : lecture + bouton Signer / Refuser
+- Statuts : `envoye` → `lu` → `signe` / `refuse`
+- Gating : Pro + Premium uniquement (éleveurs)
+
+*App Flutter :*
+- Bouton "Certificat d'engagement" dans fiche animal (statut disponible) — CERT01 app à faire
+
+**V2 — CERT02**
+- Signature canvas in-app (Flutter `Signature` package)
+- Signature web : canvas HTML5 + sauvegarde image base64
+- PDF final avec signature intégrée
+- Dépendance SIGN01 (YouSign) pour valeur légale eIDAS
+
+**Table Supabase :** voir migration `supabase/migration_certificats_engagement.sql`
+
+**Flux :**
+```
+Éleveur → Génère certificat → Sélectionne animal + saisit acquéreur
+→ PDF généré + token créé en DB
+→ Partage lien /certificat/[token] à l'acquéreur (email auto après HOST02)
+→ Acquéreur ouvre le lien → lit le certificat → clique Signer (après J+7 pour chien/chat)
+→ Statut = signé → PDF téléchargeable pour les deux parties
 ```
 
 ---
