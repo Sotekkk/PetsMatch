@@ -33,7 +33,6 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
       _supa.from('animaux')
           .select('id, nom, espece, race, identification, date_naissance')
           .eq('uid_eleveur', uid)
-          .neq('statut', 'decede')
           .order('nom'),
     ]);
     if (mounted) setState(() {

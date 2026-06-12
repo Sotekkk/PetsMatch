@@ -72,7 +72,7 @@ export default function CertificatEngagementPage() {
     if (!user) return;
     Promise.all([
       supabaseAdmin.from('certificats_engagement').select('*').eq('cedant_uid', user.uid).order('created_at', { ascending: false }),
-      supabaseAdmin.from('animaux').select('id,nom,espece,race,date_naissance,num_identification').eq('uid_eleveur', user.uid).neq('statut', 'decede').order('nom'),
+      supabaseAdmin.from('animaux').select('id,nom,espece,race,date_naissance,num_identification').eq('uid_eleveur', user.uid).order('nom'),
       supabaseAdmin.from('users').select('name_elevage,siret,phone,rue_elevage,ville_elevage,code_postal_elevage,first_name,last_name').eq('uid', user.uid).maybeSingle(),
     ]).then(([certs, anim, prof]) => {
       setCertificats((certs.data ?? []) as Certificat[]);
