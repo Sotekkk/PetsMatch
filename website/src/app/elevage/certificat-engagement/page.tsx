@@ -66,6 +66,11 @@ export default function CertificatEngagementPage() {
   const [error, setError] = useState('');
   const [newToken, setNewToken] = useState<string | null>(null);
 
+  // Recherche acquéreur dans la base PetsMatch
+  const [userSearch, setUserSearch] = useState('');
+  const [userResults, setUserResults] = useState<{uid:string;firstname:string;lastname:string;email:string;phone_number:string;rue:string;ville:string;code_postal:string}[]>([]);
+  const [userSearchLoading, setUserSearchLoading] = useState(false);
+
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [loading, user, router]);
 
   useEffect(() => {
@@ -81,6 +86,31 @@ export default function CertificatEngagementPage() {
       setFetching(false);
     });
   }, [user]);
+
+  async function searchUsers(q: string) {
+    setUserSearch(q);
+    if (q.trim().length < 2) { setUserResults([]); return; }
+    setUserSearchLoading(true);
+    const { data } = await supabaseAdmin
+      .from('users')
+      .select('uid,firstname,lastname,email,phone_number,rue,ville,code_postal')
+      .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,email.ilike.%${q}%`)
+      .neq('uid', user?.uid ?? '')
+      .limit(6);
+    setUserResults((data ?? []) as typeof userResults);
+    setUserSearchLoading(false);
+  }
+
+  function prefillUser(u: typeof userResults[0]) {
+    setAcqNom(u.lastname ?? '');
+    setAcqPrenom(u.firstname ?? '');
+    setAcqEmail(u.email ?? '');
+    setAcqTel(u.phone_number ?? '');
+    const adresse = [u.rue, u.code_postal, u.ville].filter(Boolean).join(', ');
+    setAcqAdresse(adresse);
+    setUserSearch(`${u.firstname ?? ''} ${u.lastname ?? ''}`.trim());
+    setUserResults([]);
+  }
 
   function selectAnimal(id: string) {
     setAnimalId(id);
@@ -138,6 +168,7 @@ export default function CertificatEngagementPage() {
     setAnimalId(''); setSelectedAnimal(null);
     setAcqNom(''); setAcqPrenom(''); setAcqEmail(''); setAcqTel(''); setAcqAdresse('');
     setModalite('vente'); setPrix(''); setNotes(''); setError('');
+    setUserSearch(''); setUserResults([]);
   }
 
   function handlePrint() { window.print(); }
@@ -223,6 +254,31 @@ export default function CertificatEngagementPage() {
                 {/* Acquéreur */}
                 <div className="border-t pt-4">
                   <p className="text-xs font-semibold text-gray-500 uppercase mb-3">Acquéreur</p>
+
+                  {/* Recherche utilisateur PetsMatch */}
+                  <div className="relative mb-4">
+                    <label className="block text-xs text-gray-600 mb-1">Rechercher un utilisateur PetsMatch (optionnel)</label>
+                    <div className="relative">
+                      <input
+                        value={userSearch}
+                        onChange={e => searchUsers(e.target.value)}
+                        placeholder="Prénom, nom ou email…"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm pr-8 focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30"
+                      />
+                      {userSearchLoading && <span className="absolute right-2 top-2.5 text-gray-400 text-xs">…</span>}
+                    </div>
+                    {userResults.length > 0 && (
+                      <div className="absolute z-20 w-full bg-white border border-gray-200 rounded-xl shadow-lg mt-1 max-h-48 overflow-y-auto">
+                        {userResults.map(u => (
+                          <button key={u.uid} onClick={() => prefillUser(u)}
+                            className="w-full text-left px-4 py-2.5 hover:bg-[#E8F4F6] text-sm flex flex-col">
+                            <span className="font-medium text-[#1F2A2E]">{u.firstname} {u.lastname}</span>
+                            <span className="text-xs text-gray-500">{u.email}{u.ville ? ` · ${u.ville}` : ''}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">Nom *</label>

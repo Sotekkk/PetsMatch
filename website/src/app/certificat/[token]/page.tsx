@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -55,7 +55,8 @@ const ENGAGEMENTS = [
   'Respecter la législation en vigueur (identification obligatoire, vaccination antirabique si voyage, stérilisation recommandée).',
 ];
 
-export default function CertificatPublicPage({ params }: { params: { token: string } }) {
+export default function CertificatPublicPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = use(params);
   const [cert, setCert] = useState<Cert | null>(null);
   const [cedant, setCedant] = useState<Cedant | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,7 +67,7 @@ export default function CertificatPublicPage({ params }: { params: { token: stri
   const [joursRestants, setJoursRestants] = useState(0);
 
   useEffect(() => {
-    supabase.from('certificats_engagement').select('*').eq('token_signature', params.token).maybeSingle()
+    supabase.from('certificats_engagement').select('*').eq('token_signature', token).maybeSingle()
       .then(async ({ data }) => {
         if (!data) { setNotFound(true); setLoading(false); return; }
         setCert(data as Cert);
@@ -76,7 +77,7 @@ export default function CertificatPublicPage({ params }: { params: { token: stri
           await fetch('/api/certificat/sign', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: params.token, action: 'lu' }),
+            body: JSON.stringify({ token: token, action: 'lu' }),
           });
         }
 
@@ -95,14 +96,14 @@ export default function CertificatPublicPage({ params }: { params: { token: stri
         setCedant(ced as Cedant | null);
         setLoading(false);
       });
-  }, [params.token]);
+  }, [token]);
 
   async function handleSign(actionType: 'signe' | 'refuse') {
     setAction(actionType === 'signe' ? 'signing' : 'refusing');
     const res = await fetch('/api/certificat/sign', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: params.token, action: actionType }),
+      body: JSON.stringify({ token: token, action: actionType }),
     });
     const json = await res.json();
     if (!res.ok) {
