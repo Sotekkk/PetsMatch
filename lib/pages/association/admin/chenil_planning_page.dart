@@ -65,7 +65,6 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage> with SingleTick
               a['statut'] == 'present' ||
               a['statut'] == 'en_soin' ||
               a['statut'] == 'disponible').toList();
-          _filteredChenil = List.from(_enChenil);
           _loading = false;
         });
       }
