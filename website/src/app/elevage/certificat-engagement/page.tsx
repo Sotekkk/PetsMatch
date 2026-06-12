@@ -27,7 +27,7 @@ interface Certificat {
   modalite_cession: string;
 }
 
-interface Animal { id: string; nom: string; espece: string; race: string; date_naissance: string; num_identification: string; }
+interface Animal { id: string; nom: string; espece: string; race: string; date_naissance: string; identification: string; }
 interface UserProfile { name_elevage: string; siret: string; phone: string; rue_elevage: string; ville_elevage: string; code_postal_elevage: string; first_name: string; last_name: string; }
 
 const STATUT_STYLE: Record<string, string> = {
@@ -72,7 +72,7 @@ export default function CertificatEngagementPage() {
     if (!user) return;
     Promise.all([
       supabaseAdmin.from('certificats_engagement').select('*').eq('cedant_uid', user.uid).order('created_at', { ascending: false }),
-      supabaseAdmin.from('animaux').select('id,nom,espece,race,date_naissance,num_identification').or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`).order('nom'),
+      supabaseAdmin.from('animaux').select('id,nom,espece,race,date_naissance,identification').eq('uid_eleveur', user.uid).order('nom'),
       supabaseAdmin.from('users').select('name_elevage,siret,phone,rue_elevage,ville_elevage,code_postal_elevage,first_name,last_name').eq('uid', user.uid).maybeSingle(),
     ]).then(([certs, anim, prof]) => {
       setCertificats((certs.data ?? []) as Certificat[]);
@@ -110,7 +110,7 @@ export default function CertificatEngagementPage() {
           race: selectedAnimal.race,
           nom_animal: selectedAnimal.nom,
           date_naissance_animal: selectedAnimal.date_naissance,
-          num_identification: selectedAnimal.num_identification,
+          num_identification: selectedAnimal.identification,
           acquereur_nom: acqNom.trim(),
           acquereur_prenom: acqPrenom.trim(),
           acquereur_email: acqEmail.trim(),
