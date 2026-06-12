@@ -11,6 +11,7 @@ import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 const PROFILE_TYPES = [
   { type: 'particulier',      emoji: '👤', label: 'Particulier',      desc: 'Propriétaire d\'animaux de compagnie' },
   { type: 'eleveur',          emoji: '🐾', label: 'Éleveur',          desc: 'Élevage professionnel, reproduction' },
+  { type: 'association',      emoji: '🤝', label: 'Association',      desc: 'Refuge, SPA, association de protection animale' },
   { type: 'veterinaire',      emoji: '🏥', label: 'Vétérinaire',      desc: 'Clinique vétérinaire, soins médicaux' },
   { type: 'sante',            emoji: '💆', label: 'Santé animale',     desc: 'Ostéo, kiné, acupuncteur, naturopathe…' },
   { type: 'education',        emoji: '🧠', label: 'Éducation',        desc: 'Éducateur, comportementaliste, dresseur' },
@@ -74,7 +75,9 @@ export default function AjouterProfilPage() {
               <button
                 key={t.type}
                 onClick={() => { setSelectedType(t.type); setStep('form'); }}
-                className="bg-white rounded-2xl p-4 text-left hover:shadow-md transition-shadow border border-gray-100 hover:border-[#6E9E57]">
+                className={`bg-white rounded-2xl p-4 text-left hover:shadow-md transition-shadow border hover:border-[#6E9E57] ${
+                  t.type === 'association' ? 'border-teal-200 bg-teal-50/30' : 'border-gray-100'
+                }`}>
                 <div className="text-3xl mb-2">{t.emoji}</div>
                 <p className="font-bold text-sm text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{t.label}</p>
                 <p className="text-xs text-gray-400 mt-1 leading-snug">{t.desc}</p>
@@ -87,6 +90,18 @@ export default function AjouterProfilPage() {
   }
 
   const typeInfo = PROFILE_TYPES.find(t => t.type === selectedType)!;
+
+  // Association : type principal (flag sur users), pas un profil secondaire
+  if (selectedType === 'association') {
+    return (
+      <AssociationForm
+        uid={user.uid}
+        onBack={() => setStep('type')}
+        onSaved={() => router.push('/association')}
+      />
+    );
+  }
+
   return (
     <ProfileForm
       typeInfo={typeInfo}
@@ -445,6 +460,191 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
           box-shadow: 0 0 0 2px rgba(110,158,87,0.15);
         }
       `}</style>
+    </div>
+  );
+}
+
+// ── Formulaire Association ────────────────────────────────────────────────────
+
+function AssociationForm({ uid, onBack, onSaved }: {
+  uid: string;
+  onBack: () => void;
+  onSaved: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const [nomAsso, setNomAsso] = useState('');
+  const [rna, setRna] = useState('');
+  const [siret, setSiret] = useState('');
+  const [agrement, setAgrement] = useState('');
+  const [capacite, setCapacite] = useState('');
+  const [phone, setPhone] = useState('');
+  const [siteWeb, setSiteWeb] = useState('');
+  const [description, setDescription] = useState('');
+  const [rue, setRue] = useState('');
+  const [ville, setVille] = useState('');
+  const [cp, setCp] = useState('');
+  const [especesSet, setEspecesSet] = useState<Set<string>>(new Set());
+
+  function toggleEspece(e: string) {
+    setEspecesSet(prev => { const n = new Set(prev); n.has(e) ? n.delete(e) : n.add(e); return n; });
+  }
+
+  async function handleSave() {
+    if (!nomAsso.trim()) { setError('Le nom de l\'association est requis.'); return; }
+    if (!ville.trim()) { setError('La ville est requise.'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      const { error: err } = await supabase
+        .from('users')
+        .update({
+          is_association:        true,
+          name_elevage:          nomAsso.trim(),
+          rna:                   rna.trim() || null,
+          siret:                 siret.trim() || null,
+          agrement_prefectoral:  agrement.trim() || null,
+          capacite_accueil:      capacite ? parseInt(capacite) : null,
+          site_web_asso:         siteWeb.trim() || null,
+          desc_entreprise:       description.trim() || null,
+          rue_elevage:           rue.trim() || null,
+          ville_elevage:         ville.trim(),
+          code_postal_elevage:   cp.trim() || null,
+          especes_accueillies:   Array.from(especesSet),
+          phone_number:          phone.trim() || undefined,
+        })
+        .eq('uid', uid);
+      if (err) throw err;
+      onSaved();
+    } catch (e: unknown) {
+      setError((e as Error).message ?? 'Erreur lors de la sauvegarde.');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-[#F8F8F8]">
+      <div className="max-w-xl mx-auto px-4 py-8">
+        <button onClick={onBack} className="flex items-center gap-2 text-[#0C5C6C] mb-6 hover:underline text-sm font-medium">
+          ← 🤝 Association
+        </button>
+
+        <h1 className="text-2xl font-bold text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Créer le profil Association
+        </h1>
+        <p className="text-gray-400 text-sm mb-6">Refuge, SPA ou association de protection animale</p>
+
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 text-sm">{error}</div>
+        )}
+
+        <div className="space-y-5">
+          <AssocField label="Nom de l'association" required>
+            <input value={nomAsso} onChange={e => setNomAsso(e.target.value)}
+              className="w-full input-field" placeholder="Ex : SPA de Lyon, Refuge du Soleil…" />
+          </AssocField>
+
+          <AssocField label="Numéro RNA (facultatif)" hint="Répertoire National des Associations — format W123456789">
+            <input value={rna} onChange={e => setRna(e.target.value)}
+              className="w-full input-field" placeholder="W123456789" />
+          </AssocField>
+
+          <AssocField label="SIREN / SIRET (facultatif)">
+            <input value={siret} onChange={e => setSiret(e.target.value)}
+              className="w-full input-field" placeholder="9 ou 14 chiffres" maxLength={14} />
+          </AssocField>
+
+          <AssocField label="Agrément préfectoral (facultatif)">
+            <input value={agrement} onChange={e => setAgrement(e.target.value)}
+              className="w-full input-field" placeholder="Ex : 69-2023-001" />
+          </AssocField>
+
+          <div>
+            <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-2">Adresse du siège</p>
+            <input value={rue} onChange={e => setRue(e.target.value)}
+              className="w-full input-field mb-2" placeholder="Rue / numéro" />
+            <div className="flex gap-2">
+              <input value={ville} onChange={e => setVille(e.target.value)}
+                className="flex-1 input-field" placeholder="Ville *" required />
+              <input value={cp} onChange={e => setCp(e.target.value)}
+                className="w-28 input-field" placeholder="Code postal" />
+            </div>
+          </div>
+
+          <AssocField label="Téléphone">
+            <input value={phone} onChange={e => setPhone(e.target.value)}
+              className="w-full input-field" placeholder="06 12 34 56 78" />
+          </AssocField>
+
+          <AssocField label="Capacité d'accueil (animaux)">
+            <input value={capacite} onChange={e => setCapacite(e.target.value)}
+              className="w-full input-field" placeholder="Ex : 50" type="number" min={1} />
+          </AssocField>
+
+          <div>
+            <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-2">Espèces accueillies</p>
+            <div className="flex flex-wrap gap-2">
+              {ESPECES.map(e => (
+                <button key={e} type="button" onClick={() => toggleEspece(e)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                    especesSet.has(e)
+                      ? 'bg-[#DCE8D5] border-[#6E9E57] text-[#1F2A2E]'
+                      : 'bg-white border-gray-200 text-gray-600 hover:border-[#6E9E57]'
+                  }`}>
+                  {e}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <AssocField label="Site web (facultatif)">
+            <input value={siteWeb} onChange={e => setSiteWeb(e.target.value)}
+              className="w-full input-field" placeholder="https://…" type="url" />
+          </AssocField>
+
+          <AssocField label="Présentation (facultatif)">
+            <textarea value={description} onChange={e => setDescription(e.target.value)}
+              rows={3} className="w-full input-field resize-none"
+              placeholder="Mission de l'association, historique, actions…" />
+          </AssocField>
+
+          <button onClick={handleSave} disabled={saving}
+            className="w-full py-4 bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-bold rounded-xl transition-colors disabled:opacity-60"
+            style={{ fontFamily: 'Galey, sans-serif' }}>
+            {saving ? 'Création…' : 'Créer le profil association'}
+          </button>
+        </div>
+      </div>
+
+      <style jsx>{`
+        .input-field {
+          background: white;
+          border: 1px solid #e5e7eb;
+          border-radius: 10px;
+          padding: 10px 14px;
+          font-size: 14px;
+          outline: none;
+          transition: border-color 0.15s;
+          font-family: 'Galey', sans-serif;
+        }
+        .input-field:focus {
+          border-color: #0C5C6C;
+          box-shadow: 0 0 0 2px rgba(12,92,108,0.12);
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function AssocField({ label, hint, required, children }: { label: string; hint?: string; required?: boolean; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">
+        {label}{required && <span className="text-red-500 ml-1">*</span>}
+      </p>
+      {hint && <p className="text-xs text-gray-400 mb-1.5">{hint}</p>}
+      {children}
     </div>
   );
 }

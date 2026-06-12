@@ -45,6 +45,7 @@ class AnimalFichePage extends StatefulWidget {
   final String? preselectedEspece;
   final bool readOnly;
   final bool vetMode;
+  final bool isAssociation;
   final int? initialTabIndex;
   final String? eleveurUidOverride;
   final String? rdvId;
@@ -56,6 +57,7 @@ class AnimalFichePage extends StatefulWidget {
     this.preselectedEspece,
     this.readOnly = false,
     this.vetMode = false,
+    this.isAssociation = false,
     this.initialTabIndex,
     this.eleveurUidOverride,
     this.rdvId,
@@ -148,7 +150,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 5, vsync: this);
+    final tabCount = widget.vetMode ? 5 : widget.isAssociation ? 4 : 5;
+    _tabs = TabController(length: tabCount, vsync: this);
     if (widget.initialTabIndex != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (widget.initialTabIndex! < _tabs.length) _tabs.animateTo(widget.initialTabIndex!);
@@ -868,7 +871,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
           tabs: widget.vetMode
               ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations')]
-              : const [Tab(text: 'Identité'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')],
+              : widget.isAssociation
+                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')]
+                  : const [Tab(text: 'Identité'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')],
         ),
       ),
       body: TabBarView(
@@ -881,13 +886,20 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
                 _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
               ]
-            : [
-                _IdentiteTab(this),
-                _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
-                _CarnetSanteTab(animalId: widget.animalId),
-                _AlimentationTab(this),
-                _ConsultationsOwnerTab(animalId: widget.animalId),
-              ],
+            : widget.isAssociation
+                ? [
+                    _IdentiteTab(this),
+                    _CarnetSanteTab(animalId: widget.animalId),
+                    _AlimentationTab(this),
+                    _ConsultationsOwnerTab(animalId: widget.animalId),
+                  ]
+                : [
+                    _IdentiteTab(this),
+                    _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
+                    _CarnetSanteTab(animalId: widget.animalId),
+                    _AlimentationTab(this),
+                    _ConsultationsOwnerTab(animalId: widget.animalId),
+                  ],
       ),
     );
   }

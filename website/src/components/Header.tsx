@@ -77,6 +77,14 @@ const NAV_PARTICULIER = [
   { href: '/messages',       label: 'Messages' },
 ];
 
+const NAV_ASSOCIATION = [
+  { href: '/association',              label: 'Mon Association' },
+  { href: '/association/animaux',      label: 'Mes Animaux' },
+  { href: '/association/annonces',     label: 'Annonces' },
+  { href: '/animaux-perdus',           label: 'Animaux perdus' },
+  { href: '/messages',                 label: 'Messages' },
+];
+
 // ── Menu drawer items (miroir des drawers de l'app) ──────────────────────────
 
 const MENU_ELEVEUR = [
@@ -198,6 +206,40 @@ const MENU_PENSION = [
   },
 ];
 
+const MENU_ASSOCIATION = [
+  {
+    section: 'Mon Association',
+    icon: '🐾',
+    items: [
+      { href: '/association',                            label: 'Tableau de bord',       icon: '🏠' },
+      { href: '/association/animaux',                    label: 'Mes Animaux',           icon: '🐾' },
+      { href: '/association/familles-accueil',           label: 'Familles d\'accueil',   icon: '🏡' },
+      { href: '/association/chenil',                     label: 'Chenil / Planning',     icon: '🗓️' },
+      { href: '/association/benevoles',                  label: 'Bénévoles',             icon: '🤝' },
+      { href: '/association/annonces',                   label: 'Mes Annonces',          icon: '📣' },
+      { href: '/association/certificat-engagement',      label: 'Certificats',           icon: '📋' },
+      { href: '/association/registre-sanitaire',         label: 'Suivi sanitaire',       icon: '🏥' },
+      { href: '/association/registre-entree-sortie',     label: 'Entrées / Sorties',     icon: '↔️' },
+    ],
+  },
+  {
+    section: 'Perdus & Trouvés',
+    icon: '🔍',
+    items: [
+      { href: '/mes-alertes',    label: 'Gérer mes alertes',       icon: '🔔' },
+      { href: '/animaux-perdus', label: 'Voir les animaux perdus', icon: '🔍' },
+    ],
+  },
+  {
+    section: 'Services',
+    icon: '🏥',
+    items: [
+      { href: '/services', label: 'Annuaire des services', icon: '🔎' },
+      { href: '/marketplace', label: 'Marketplace', icon: '🛍️' },
+    ],
+  },
+];
+
 const MENU_PARTICULIER = [
   {
     section: 'Mon Profil',
@@ -239,6 +281,7 @@ const PRO_TYPES = new Set(['veterinaire', 'sante', 'education', 'garde', 'pensio
 function typeLabel(type: string): string {
   return ({
     particulier:      'Particulier',
+    association:      'Association',
     eleveur:          'Éleveur',
     veterinaire:      'Vétérinaire',
     sante:            'Santé animale',
@@ -254,6 +297,7 @@ function typeLabel(type: string): string {
 function typeEmoji(type: string): string {
   return ({
     particulier:      '👤',
+    association:      '🐾',
     eleveur:          '🐾',
     veterinaire:      '🏥',
     sante:            '💆',
@@ -292,8 +336,12 @@ export default function Header() {
   // ── Effective profile data (primary or secondary) ─────────────────────────
   const activeProfile = profiles.find(p => p.id === activeProfileId) ?? null;
 
+  const effectiveIsAssociation = !activeProfile && userData?.isAssociation === true;
+
   const effectiveType = activeProfile?.profile_type ?? (
-    userData?.isPro ? (userData?.catPro ?? 'sante') : (userData?.isElevage ? 'eleveur' : 'particulier')
+    userData?.isPro ? (userData?.catPro ?? 'sante')
+    : userData?.isAssociation ? 'association'
+    : (userData?.isElevage ? 'eleveur' : 'particulier')
   );
   const effectiveIsEleveur = activeProfile
     ? (activeProfile.profile_type === 'eleveur' || PRO_TYPES.has(activeProfile.profile_type))
@@ -327,10 +375,12 @@ export default function Header() {
   const isEffectivelyPro = isSecondaryPro || isPrimaryPro;
   const navLinks = loading || !user ? NAV_GUEST
     : isEffectivelyPro ? (effectiveIsVet ? NAV_VET : NAV_PRO)
+    : effectiveIsAssociation ? NAV_ASSOCIATION
     : effectiveIsEleveur ? NAV_ELEVEUR
     : NAV_PARTICULIER;
   const menuSections = isEffectivelyPro
     ? (effectiveIsPension ? MENU_PENSION : effectiveIsVet ? MENU_VET : MENU_PRO)
+    : effectiveIsAssociation ? MENU_ASSOCIATION
     : effectiveIsEleveur ? MENU_ELEVEUR
     : MENU_PARTICULIER;
 

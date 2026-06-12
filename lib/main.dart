@@ -173,6 +173,10 @@ class User_Info {
   static String professionPro = "";
   static bool isPartenaire = false;
   static bool isAdmin = false;
+  static bool isAssociation = false;
+  static String rna = '';
+  static String agrementPrefectoral = '';
+  static int capaciteAccueil = 0;
   static String verificationStatus = 'none';
   static String kbisUrl = '';
   static String rejectionReason = '';
@@ -242,6 +246,9 @@ class User_Info {
     professionPro = data['professionPro'] ?? professionPro;
     isPartenaire = data['isPartenaire'] ?? isPartenaire;
     isAdmin = data['isAdmin'] ?? isAdmin;
+    isAssociation = data['isAssociation'] ?? isAssociation;
+    rna = data['rna'] ?? rna;
+    agrementPrefectoral = data['agrementPrefectoral'] ?? agrementPrefectoral;
     acacedNumero = data['acacedNumero'] ?? acacedNumero;
     acacedDateObtention = data['acacedDateObtention'] ?? acacedDateObtention;
     acacedDocUrl = data['acacedDocUrl'] ?? acacedDocUrl;
@@ -293,7 +300,7 @@ class User_Info {
         : isElevage
             ? (nameElevage.isNotEmpty ? nameElevage : '$firstname $lastname'.trim())
             : '$firstname $lastname'.trim();
-    primaryType = isPro ? catPro : (isElevage ? 'eleveur' : 'particulier');
+    primaryType = isPro ? catPro : isAssociation ? 'association' : (isElevage ? 'eleveur' : 'particulier');
     primaryAvatar = profilePictureUrlElevage.isNotEmpty ? profilePictureUrlElevage : profilePictureUrl;
     activeProfileId = '';
     profileNotifier.value = '';

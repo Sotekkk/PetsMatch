@@ -1,4 +1,5 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/association/inscription_association_page.dart';
 import 'package:PetsMatch/pages/eleveur/info_elevage.dart';
 import 'package:PetsMatch/pages/particulier/description_page.dart';
 import 'package:flutter/material.dart';
@@ -60,9 +61,11 @@ class _RegisterSecurityState extends State<RegisterSecurity> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => isEleveur
-            ? const RegisterElevageInformation()
-            : DescriptionRegistrationPage(),
+        builder: (_) => User_Info.isAssociation
+            ? const RegisterAssociationInformationPage()
+            : isEleveur
+                ? const RegisterElevageInformation()
+                : DescriptionRegistrationPage(),
       ),
     );
   }
@@ -70,6 +73,7 @@ class _RegisterSecurityState extends State<RegisterSecurity> {
   @override
   Widget build(BuildContext context) {
     final isEleveur = User_Info.isElevage || User_Info.isPro;
+    final isAsso = User_Info.isAssociation;
     final str = _strength(_passwordCtrl.text);
 
     return Scaffold(
@@ -81,7 +85,7 @@ class _RegisterSecurityState extends State<RegisterSecurity> {
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(24),
-          child: _StepBar(current: isEleveur ? 2 : 3, total: isEleveur ? 4 : 3),
+          child: _StepBar(current: isEleveur || isAsso ? 2 : 3, total: isEleveur || isAsso ? 4 : 3),
         ),
       ),
       body: SingleChildScrollView(

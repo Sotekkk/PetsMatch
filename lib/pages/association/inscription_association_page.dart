@@ -1,0 +1,615 @@
+import 'dart:io';
+import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/condition_general.dart';
+import 'package:PetsMatch/pages/particulier/securityregister.dart';
+import 'package:PetsMatch/utils/image_pick.dart';
+import 'package:PetsMatch/utils/storage_helper.dart';
+import 'package:flutter/material.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Étape 1/4 : informations personnelles du responsable
+// (identique à RegisterEleveurInformationPage mais pour le flow association)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class RegisterAssociationFirstInfoPage extends StatefulWidget {
+  const RegisterAssociationFirstInfoPage({super.key});
+  @override
+  State<RegisterAssociationFirstInfoPage> createState() =>
+      _RegisterAssociationFirstInfoPageState();
+}
+
+class _RegisterAssociationFirstInfoPageState
+    extends State<RegisterAssociationFirstInfoPage> {
+  final _nomCtrl    = TextEditingController();
+  final _prenomCtrl = TextEditingController();
+  final _dobCtrl    = TextEditingController();
+
+  File? _imageFile;
+  bool _isImagePickerActive = false;
+  bool _nomOk    = true;
+  bool _prenomOk = true;
+
+  static const _green = Color(0xFF6E9E57);
+  static const _teal  = Color(0xFF0C5C6C);
+  static const _bg    = Color(0xFFF8F8F6);
+
+  @override
+  void dispose() {
+    _nomCtrl.dispose();
+    _prenomCtrl.dispose();
+    _dobCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    if (_isImagePickerActive) return;
+    setState(() => _isImagePickerActive = true);
+    try {
+      final f = await pickAndCropSquare();
+      setState(() {
+        if (f != null) _imageFile = f;
+        _isImagePickerActive = false;
+      });
+    } catch (_) {
+      setState(() => _isImagePickerActive = false);
+    }
+  }
+
+  void _continue() {
+    setState(() {
+      _nomOk    = _nomCtrl.text.trim().isNotEmpty;
+      _prenomOk = _prenomCtrl.text.trim().isNotEmpty;
+    });
+    if (!_nomOk || !_prenomOk) return;
+
+    User_Info.firstname   = _prenomCtrl.text.trim();
+    User_Info.lastname    = _nomCtrl.text.trim();
+    User_Info.dateofbirth = _dobCtrl.text.isNotEmpty ? _dobCtrl.text : '01/01/1900';
+
+    if (_imageFile != null) {
+      final name = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      uploadPhoto(_imageFile!, 'profiles/$name')
+          .then((url) => User_Info.profilePictureUrl = url)
+          .catchError((_) => '');
+    }
+
+    Navigator.push(context,
+        MaterialPageRoute(builder: (_) => const RegisterSecurity()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _bg,
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        title: const Text('Inscription – Association',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(24),
+          child: _StepBar(current: 1, total: 4),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Vos informations',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                  fontSize: 20, color: Color(0xFF1F2A2E))),
+          const SizedBox(height: 6),
+          Text('Renseignez votre nom, prénom et date de naissance.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+          const SizedBox(height: 24),
+
+          Center(
+            child: GestureDetector(
+              onTap: _pickImage,
+              child: Stack(children: [
+                CircleAvatar(
+                  radius: 44,
+                  backgroundColor: const Color(0xFFE3F2FD),
+                  backgroundImage: _imageFile != null ? FileImage(_imageFile!) : null,
+                  child: _imageFile == null
+                      ? const Icon(Icons.person, size: 44, color: _green)
+                      : null,
+                ),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: GestureDetector(
+                    onTap: _imageFile != null
+                        ? () => setState(() => _imageFile = null)
+                        : _pickImage,
+                    child: CircleAvatar(
+                      radius: 14,
+                      backgroundColor: _green,
+                      child: Icon(
+                        _imageFile == null ? Icons.camera_alt : Icons.close,
+                        size: 15,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Center(
+            child: Text('Photo de profil (optionnel)',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+          ),
+          const SizedBox(height: 20),
+
+          _card([
+            _field(ctrl: _nomCtrl, label: 'Nom', icon: Icons.person_outline,
+                valid: _nomOk, error: 'Nom requis'),
+            const SizedBox(height: 12),
+            _field(ctrl: _prenomCtrl, label: 'Prénom', icon: Icons.badge_outlined,
+                valid: _prenomOk, error: 'Prénom requis'),
+          ]),
+          const SizedBox(height: 16),
+          _card([_dobField()]),
+          const SizedBox(height: 32),
+
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _continue,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _green,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('CONTINUER',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 16, color: Colors.white)),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _card(List<Widget> children) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+  );
+
+  Widget _field({
+    required TextEditingController ctrl,
+    required String label,
+    required IconData icon,
+    bool valid = true,
+    String error = '',
+  }) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        TextFormField(
+          controller: ctrl,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+            prefixIcon: Icon(icon, size: 18, color: const Color(0xFF6F767B)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: valid ? const Color(0xFFE4E7E2) : Colors.red)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _green, width: 1.5)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            isDense: true,
+          ),
+        ),
+        if (!valid)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 4),
+            child: Text(error,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.red)),
+          ),
+      ]);
+
+  Widget _dobField() => TextFormField(
+    controller: _dobCtrl,
+    readOnly: true,
+    style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+    decoration: InputDecoration(
+      labelText: 'Date de naissance',
+      labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+      prefixIcon: const Icon(Icons.cake_outlined, size: 18, color: Color(0xFF6F767B)),
+      suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF6F767B)),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: _green, width: 1.5)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      isDense: true,
+    ),
+    onTap: () async {
+      FocusScope.of(context).requestFocus(FocusNode());
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: DateTime(2000),
+        firstDate: DateTime(1900),
+        lastDate: DateTime.now(),
+        builder: (ctx, child) => Theme(
+          data: ThemeData.light().copyWith(
+            colorScheme: const ColorScheme.light(primary: _teal),
+          ),
+          child: child!,
+        ),
+      );
+      if (picked != null) {
+        setState(() {
+          _dobCtrl.text =
+              '${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}';
+        });
+      }
+    },
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Étape 3/4 : informations de l'association
+// ─────────────────────────────────────────────────────────────────────────────
+
+const _kEspecesAsso = [
+  (value: 'chien',  label: 'Chien'),
+  (value: 'chat',   label: 'Chat'),
+  (value: 'cheval', label: 'Cheval'),
+  (value: 'lapin',  label: 'Lapin'),
+  (value: 'ovin',   label: 'Ovin'),
+  (value: 'nac',    label: 'NAC'),
+  (value: 'oiseau', label: 'Oiseau'),
+  (value: 'autre',  label: 'Autre'),
+];
+
+class RegisterAssociationInformationPage extends StatefulWidget {
+  const RegisterAssociationInformationPage({super.key});
+  @override
+  State<RegisterAssociationInformationPage> createState() =>
+      _RegisterAssociationInformationPageState();
+}
+
+class _RegisterAssociationInformationPageState
+    extends State<RegisterAssociationInformationPage> {
+  static const _green = Color(0xFF6E9E57);
+  static const _teal  = Color(0xFF0C5C6C);
+  static const _bg    = Color(0xFFF8F8F6);
+
+  final _nomAssoCtrl    = TextEditingController();
+  final _rnaCtrl        = TextEditingController();
+  final _agrementCtrl   = TextEditingController();
+  final _phoneCtrl      = TextEditingController();
+  final _adresseCtrl    = TextEditingController();
+  final _cpCtrl         = TextEditingController();
+  final _villeCtrl      = TextEditingController();
+
+  int _capacite = 0;
+  final List<String> _especes = [];
+  bool _nomAssoOk = true;
+
+  File? _logoFile;
+  bool _isImagePickerActive = false;
+
+  @override
+  void dispose() {
+    _nomAssoCtrl.dispose();
+    _rnaCtrl.dispose();
+    _agrementCtrl.dispose();
+    _phoneCtrl.dispose();
+    _adresseCtrl.dispose();
+    _cpCtrl.dispose();
+    _villeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickLogo() async {
+    if (_isImagePickerActive) return;
+    setState(() => _isImagePickerActive = true);
+    try {
+      final f = await pickAndCropSquare();
+      setState(() {
+        if (f != null) _logoFile = f;
+        _isImagePickerActive = false;
+      });
+    } catch (_) {
+      setState(() => _isImagePickerActive = false);
+    }
+  }
+
+  void _continue() {
+    setState(() => _nomAssoOk = _nomAssoCtrl.text.trim().isNotEmpty);
+    if (!_nomAssoOk) return;
+
+    User_Info.nameElevage          = _nomAssoCtrl.text.trim();
+    User_Info.rna                  = _rnaCtrl.text.trim();
+    User_Info.agrementPrefectoral  = _agrementCtrl.text.trim();
+    User_Info.phone_number         = _phoneCtrl.text.trim();
+    User_Info.adressElevage        = _adresseCtrl.text.trim();
+    User_Info.rueElevage           = _adresseCtrl.text.trim();
+    User_Info.codePostalElevage    = _cpCtrl.text.trim();
+    User_Info.villeElevage         = _villeCtrl.text.trim();
+    User_Info.paysElevage          = 'France';
+    User_Info.capaciteAccueil      = _capacite;
+    User_Info.especesElevees       = _especes;
+
+    if (_logoFile != null) {
+      final name = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      uploadPhoto(_logoFile!, 'profiles/$name')
+          .then((url) { User_Info.profilePictureUrlElevage = url; })
+          .catchError((_) {});
+    }
+
+    Navigator.push(context,
+        MaterialPageRoute(builder: (_) => ConditionGeneral()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _bg,
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        title: const Text('Inscription – Association',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(24),
+          child: _StepBar(current: 3, total: 4),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text("Votre association",
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                  fontSize: 20, color: Color(0xFF1F2A2E))),
+          const SizedBox(height: 6),
+          Text("Renseignez les informations de votre structure.",
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+          const SizedBox(height: 24),
+
+          // Logo
+          Center(
+            child: GestureDetector(
+              onTap: _pickLogo,
+              child: Stack(children: [
+                CircleAvatar(
+                  radius: 44,
+                  backgroundColor: const Color(0xFFE3F2FD),
+                  backgroundImage: _logoFile != null ? FileImage(_logoFile!) : null,
+                  child: _logoFile == null
+                      ? const Icon(Icons.handshake_outlined, size: 40, color: _teal)
+                      : null,
+                ),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: GestureDetector(
+                    onTap: _logoFile != null
+                        ? () => setState(() => _logoFile = null)
+                        : _pickLogo,
+                    child: CircleAvatar(
+                      radius: 14,
+                      backgroundColor: _green,
+                      child: Icon(
+                        _logoFile == null ? Icons.camera_alt : Icons.close,
+                        size: 15,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Center(
+            child: Text("Logo de l'association (optionnel)",
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+          ),
+          const SizedBox(height: 20),
+
+          // Identité
+          _card([
+            _field(ctrl: _nomAssoCtrl, label: "Nom de l'association",
+                icon: Icons.handshake_outlined, valid: _nomAssoOk, error: 'Nom requis'),
+            const SizedBox(height: 12),
+            _field(ctrl: _rnaCtrl, label: 'N° RNA (ex: W123456789)',
+                icon: Icons.numbers_outlined),
+            const SizedBox(height: 12),
+            _field(ctrl: _agrementCtrl, label: 'Agrément préfectoral (optionnel)',
+                icon: Icons.verified_outlined),
+            const SizedBox(height: 12),
+            _field(ctrl: _phoneCtrl, label: 'Téléphone',
+                icon: Icons.phone_outlined,
+                keyboard: TextInputType.phone),
+          ]),
+          const SizedBox(height: 16),
+
+          // Adresse
+          _card([
+            _sectionTitle('Adresse du siège'),
+            const SizedBox(height: 12),
+            _field(ctrl: _adresseCtrl, label: 'Rue', icon: Icons.location_on_outlined),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(
+                flex: 2,
+                child: _field(ctrl: _cpCtrl, label: 'Code postal',
+                    icon: Icons.markunread_mailbox_outlined,
+                    keyboard: TextInputType.number),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 3,
+                child: _field(ctrl: _villeCtrl, label: 'Ville', icon: Icons.location_city_outlined),
+              ),
+            ]),
+          ]),
+          const SizedBox(height: 16),
+
+          // Capacité
+          _card([
+            _sectionTitle("Capacité d'accueil"),
+            const SizedBox(height: 12),
+            Row(children: [
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline, color: _teal),
+                onPressed: () => setState(() { if (_capacite > 0) _capacite--; }),
+              ),
+              Expanded(
+                child: Center(
+                  child: Text('$_capacite animaux',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w600, color: _teal)),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline, color: _teal),
+                onPressed: () => setState(() => _capacite++),
+              ),
+            ]),
+          ]),
+          const SizedBox(height: 16),
+
+          // Espèces accueillies
+          _card([
+            _sectionTitle('Espèces accueillies'),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _kEspecesAsso.map((e) {
+                final sel = _especes.contains(e.value);
+                return FilterChip(
+                  label: Text(e.label,
+                      style: TextStyle(
+                        fontFamily: 'Galey',
+                        fontSize: 13,
+                        color: sel ? Colors.white : _teal,
+                      )),
+                  selected: sel,
+                  onSelected: (v) {
+                    setState(() {
+                      if (v) {
+                        _especes.add(e.value);
+                      } else {
+                        _especes.remove(e.value);
+                      }
+                    });
+                  },
+                  selectedColor: _teal,
+                  checkmarkColor: Colors.white,
+                  backgroundColor: const Color(0xFFE3F2FD),
+                  side: BorderSide(color: sel ? _teal : const Color(0xFFB3D1DC)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                );
+              }).toList(),
+            ),
+          ]),
+          const SizedBox(height: 32),
+
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _continue,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _green,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('CONTINUER',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 16, color: Colors.white)),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _card(List<Widget> children) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+  );
+
+  Widget _sectionTitle(String text) => Text(text,
+      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+          fontSize: 14, color: Color(0xFF1F2A2E)));
+
+  Widget _field({
+    required TextEditingController ctrl,
+    required String label,
+    required IconData icon,
+    TextInputType keyboard = TextInputType.text,
+    bool valid = true,
+    String error = '',
+  }) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        TextFormField(
+          controller: ctrl,
+          keyboardType: keyboard,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+            prefixIcon: Icon(icon, size: 18, color: const Color(0xFF6F767B)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: valid ? const Color(0xFFE4E7E2) : Colors.red)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _green, width: 1.5)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            isDense: true,
+          ),
+        ),
+        if (!valid)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 4),
+            child: Text(error,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.red)),
+          ),
+      ]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Barre de progression partagée
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StepBar extends StatelessWidget {
+  final int current;
+  final int total;
+  const _StepBar({required this.current, required this.total});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+    child: Row(
+      children: List.generate(total, (i) => Expanded(
+        child: Container(
+          height: 3,
+          margin: EdgeInsets.only(right: i < total - 1 ? 4 : 0),
+          decoration: BoxDecoration(
+            color: i < current ? Colors.white : Colors.white38,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+      )),
+    ),
+  );
+}

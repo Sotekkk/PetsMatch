@@ -14,7 +14,7 @@ export default function ConfidentialitePage() {
 
       <Section title="1. Responsable du traitement">
         <p>
-          <strong>PetsMatch</strong> — Angélique Bégrand<br />
+          <strong>PetsMatch</strong> — Mevin<br />
           Contact RGPD : <a href="mailto:rgpd@petsmatch.fr" className="text-[#0C5C6C] underline">rgpd@petsmatch.fr</a>
         </p>
       </Section>

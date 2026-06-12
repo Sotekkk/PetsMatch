@@ -1,5 +1,6 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/admin/admin_panel.dart';
+import 'package:PetsMatch/pages/association/association_nav.dart';
 import 'package:PetsMatch/pages/eleveur/eleveur_nav.dart';
 import 'package:PetsMatch/pages/particulier/particulier_nav.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
@@ -23,13 +24,21 @@ class _BottomNavState extends State<BottomNav> {
   // '' = rôles réels, 'eleveur', 'pro', 'particulier'
   String _previewRole = '';
 
+  bool get _asAssociation =>
+      _previewRole == 'association' ||
+      (_previewRole.isEmpty && User_Info.isAssociation);
+
   bool get _asElevage =>
-      _previewRole == 'eleveur' ||
-      (_previewRole.isEmpty && (User_Info.isElevage || User_Info.isPro));
+      !_asAssociation && (
+        _previewRole == 'eleveur' ||
+        (_previewRole.isEmpty && (User_Info.isElevage || User_Info.isPro))
+      );
 
   bool get _asParticulier =>
-      _previewRole == 'particulier' ||
-      (_previewRole.isEmpty && !User_Info.isElevage && !User_Info.isPro);
+      !_asAssociation && (
+        _previewRole == 'particulier' ||
+        (_previewRole.isEmpty && !User_Info.isElevage && !User_Info.isPro)
+      );
 
   Widget _getPage(int index) {
     switch (index) {
@@ -96,6 +105,18 @@ class _BottomNavState extends State<BottomNav> {
                       fontFamily: 'Galey')),
             ),
 
+            _PreviewTile(
+              icon: Icons.favorite_outline,
+              label: 'Association',
+              active: _previewRole == 'association',
+              onTap: () {
+                Navigator.pop(context);
+                setState(() {
+                  _previewRole = _previewRole == 'association' ? '' : 'association';
+                  _selectedIndex = 0;
+                });
+              },
+            ),
             _PreviewTile(
               icon: Icons.pets,
               label: 'Éleveur',
@@ -181,6 +202,16 @@ class _BottomNavState extends State<BottomNav> {
 
   @override
   Widget build(BuildContext context) {
+    // Associations : navigation dédiée
+    if (_asAssociation) {
+      return Stack(
+        children: [
+          AssociationNav(onAdminTap: User_Info.isAdmin ? _showAdminMenu : null),
+          if (_previewRole == 'association') _previewBanner('Association'),
+        ],
+      );
+    }
+
     // Éleveurs : navigation dédiée 3 icônes + tiroir
     if (_asElevage) {
       return Stack(

@@ -44,6 +44,7 @@ Future<bool> registerUser(String email, String password) async {
       'profilePictureUrl': User_Info.profilePictureUrl,
       'profilePictureUrlElevage': User_Info.profilePictureUrlElevage,
       'isElevage': User_Info.isElevage,
+      'isAssociation': User_Info.isAssociation,
       'adressElevage': User_Info.adressElevage,
       'nameElevage': User_Info.nameElevage,
       'numeroElevage': User_Info.numeroElevage,
@@ -99,6 +100,7 @@ Future<Object> registerElevage(String email, String password) async {
       'profilePictureUrl': User_Info.profilePictureUrl,
       'profilePictureUrlElevage': User_Info.profilePictureUrlElevage,
       'isElevage': User_Info.isElevage,
+      'isAssociation': User_Info.isAssociation,
       'adressElevage': User_Info.adressElevage,
       'nameElevage': User_Info.nameElevage,
       'numeroElevage': User_Info.numeroElevage,
@@ -118,6 +120,8 @@ Future<Object> registerElevage(String email, String password) async {
       'catPro': User_Info.catPro,
       'professionPro': User_Info.professionPro,
       'isPartenaire': User_Info.isPartenaire,
+      'rna': User_Info.rna,
+      'agrementPrefectoral': User_Info.agrementPrefectoral,
       'acacedNumero': User_Info.acacedNumero,
       'acacedDateObtention': User_Info.acacedDateObtention,
       'acacedDocUrl': User_Info.acacedDocUrl,
@@ -218,6 +222,14 @@ Future<Object> registerElevage(String email, String password) async {
         if (User_Info.certifications.isNotEmpty) 'certifications': User_Info.certifications,
         if (User_Info.isPro || User_Info.isElevage) 'statut_pro': 'en_attente',
         if (User_Info.bannerUrl.isNotEmpty) 'banner_url': User_Info.bannerUrl,
+        'is_association': User_Info.isAssociation,
+        if (User_Info.isAssociation) ...{
+          'rna':                  User_Info.rna,
+          'agrement_prefectoral': User_Info.agrementPrefectoral,
+          'capacite_accueil':     User_Info.capaciteAccueil,
+          'especes_accueillies':  User_Info.especesElevees,
+          'statut_pro':           'en_attente',
+        },
         if (User_Info.profilePictureUrlElevage.isNotEmpty)
           'profile_picture_url_elevage': User_Info.profilePictureUrlElevage,
         'cgu_accepted_at': DateTime.now().toIso8601String(),
@@ -268,7 +280,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
         _isVerified = true;
       });
       _timer.cancel();
-      if (User_Info.isElevage || User_Info.isPro) {
+      if (User_Info.isElevage || User_Info.isPro || User_Info.isAssociation) {
 
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(

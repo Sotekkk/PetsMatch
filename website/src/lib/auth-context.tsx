@@ -9,6 +9,8 @@ export interface UserData {
   firstname?: string;
   lastname?: string;
   isElevage?: boolean;
+  isAssociation?: boolean;
+  rna?: string;
   isValidate?: boolean;
   isPro?: boolean;
   catPro?: string;
@@ -71,6 +73,8 @@ function mapUser(d: Record<string, unknown>): UserData {
     firstname:             d.firstname as string | undefined,
     lastname:              d.lastname as string | undefined,
     isElevage:             d.is_elevage as boolean | undefined,
+    isAssociation:         d.is_association as boolean | undefined,
+    rna:                   d.rna as string | undefined,
     isValidate:            d.is_validate as boolean | undefined,
     isPro:                 d.is_pro as boolean | undefined,
     catPro:                d.cat_pro as string | undefined,

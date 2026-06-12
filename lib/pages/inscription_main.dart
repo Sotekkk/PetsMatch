@@ -1,6 +1,7 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/particulier/first_page.dart';
 import 'package:PetsMatch/pages/eleveur/first_page.dart';
+import 'package:PetsMatch/pages/association/inscription_association_page.dart';
 import 'package:flutter/material.dart';
 
 class InscriptionChoicePage extends StatelessWidget {
@@ -66,8 +67,23 @@ class InscriptionChoicePage extends StatelessWidget {
             onTap: () {
               User_Info.isElevage = false;
               User_Info.isPro = true;
+              User_Info.isAssociation = false;
               Navigator.push(context,
                   MaterialPageRoute(builder: (_) => const RegisterEleveurInformationPage()));
+            },
+          ),
+          const SizedBox(height: 14),
+          _RoleCard(
+            imagePath: 'assets/page/logo_particulier.png',
+            title: 'Association',
+            subtitle: 'Refuge, SPA, association de protection animale accueillant des animaux.',
+            color: const Color(0xFFE3F2FD),
+            onTap: () {
+              User_Info.isElevage = false;
+              User_Info.isPro = false;
+              User_Info.isAssociation = true;
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const RegisterAssociationFirstInfoPage()));
             },
           ),
         ]),
