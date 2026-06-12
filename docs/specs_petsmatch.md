@@ -1262,4 +1262,137 @@ Lien dans les emails/messages de rejet : `www.petsmatch.com/contact`
 
 ---
 
+---
+
+## 10. Emails transactionnels — Abonnements & Relances
+
+> **Prérequis** : choisir l'hébergement + domaine (`petsmatch.com`) avant d'implémenter.  
+> Les emails partiront depuis `contact@petsmatch.com` ou `noreply@petsmatch.com`.  
+> **Stack retenue** : nodemailer via Firebase Cloud Functions + SMTP de l'hébergeur (à configurer dans `firebase functions:config:set email.host=... email.user=... email.pass=...`).  
+> Stripe envoie déjà automatiquement les reçus/factures — ces emails sont des communications métier complémentaires.
+
+### 10.1 PAY01 — Confirmation d'activation d'abonnement
+
+**Déclencheur** : appel à `/api/stripe/activate` (succès) — écriture dans collection Firestore `mail`  
+**Destinataire** : email du compte Firebase Auth  
+**Objet** : `🎉 Votre abonnement PetsMatch [Pro/Premium] est activé`  
+**Contenu** :
+- Nom du plan + prix
+- Liste des fonctionnalités débloquées
+- Date de prochain renouvellement
+- Lien vers le portail de gestion (`/abonnement`)
+- Lien résiliation via Stripe Portal
+
+**Implémentation** :
+```js
+// functions/email.js — Cloud Function sendTransactionalEmail (callable)
+// Lit credentials depuis functions.config().email
+// Écrit dans Firestore `mail` collection (Trigger Email Extension) OU nodemailer direct
+```
+
+### 10.2 PAY02 — Rappel J-7 avant fin d'abonnement
+
+**Déclencheur** : Cloud Function schedulée quotidiennement à 8h — vérifie `abonnements` avec `date_fin` entre aujourd'hui et +7 jours ET `statut = 'actif'`  
+**Objet** : `⏰ Votre abonnement PetsMatch expire dans 7 jours`  
+**Contenu** : rappel du plan, date d'expiration, bouton "Gérer mon abonnement"  
+**Note** : Ne pas envoyer si `cancel_at_period_end = false` (renouvellement auto = pas besoin de rappel)
+
+### 10.3 PAY03 — Rappel J-1 avant fin d'abonnement
+
+**Déclencheur** : même Cloud Function schedulée, condition `date_fin` entre demain et +1 jour  
+**Objet** : `⚠️ Dernier jour — votre abonnement PetsMatch expire demain`
+
+### 10.4 PAY04 — Email post-résiliation
+
+**Déclencheur** : webhook Stripe `customer.subscription.deleted` → écriture dans Firestore `mail`  
+**Objet** : `Votre abonnement PetsMatch a été résilié`  
+**Contenu** : confirmation résiliation, date d'accès jusqu'au, lien pour se réabonner
+
+### 10.5 Codes feature & dépendances
+
+| Code | Feature | Dépendance |
+|------|---------|------------|
+| PAY01 | Email confirmation activation | Hébergement + domaine email |
+| PAY02 | Rappel J-7 | PAY01 (même stack) |
+| PAY03 | Rappel J-1 | PAY01 |
+| PAY04 | Email post-résiliation | PAY01 |
+| HOST01 | Choix hébergement Next.js | — |
+| HOST02 | Configuration domaine petsmatch.com | HOST01 |
+| HOST03 | Mode accès privé pendant tests (middleware Next.js) | HOST01 |
+| HOST04 | Configuration email SMTP sur hébergeur | HOST02 |
+
+---
+
+## 11. Hébergement & Infrastructure
+
+> **Décision en attente** : passage de `.fr` à `.com` en cours.
+
+### 11.1 Recommandation hébergement Next.js : Vercel
+
+**Vercel** est l'hébergeur de référence pour Next.js (créé par la même équipe) :
+
+| Critère | Vercel | Alternative OVH/VPS |
+|---------|--------|---------------------|
+| Compatibilité Next.js | Native (100% features) | Partielle (config manuelle) |
+| API Routes / Stripe Webhooks | ✅ Serverless natif | ✅ mais config nginx |
+| Variables d'environnement | Interface simple | Fichier `.env` sur serveur |
+| Preview par branche git | ✅ Automatique | ❌ |
+| Déploiement | Push git → live en 1 min | CI/CD à configurer |
+| Certificat SSL | ✅ Auto Let's Encrypt | ✅ Auto Let's Encrypt |
+| Plan gratuit | Hobby (suffisant pour tests) | Non |
+| Passage en prod | Pro ~20$/mois | VPS ~10-30€/mois |
+| Logs temps réel | ✅ | Via SSH |
+
+**Recommandation** : Vercel Hobby (gratuit) pour les tests, Vercel Pro (~20$/mois) en production.
+
+### 11.1b Comparatif tarifs production
+
+> **Décision à prendre ce weekend avec les collaborateurs.**
+
+| Hébergeur | Prix prod | Par membre | Bande passante | Next.js |
+|-----------|-----------|------------|----------------|---------|
+| **Vercel Pro** | 20$/mois | +20$/membre | 1 TB | ✅ Native |
+| **Netlify Pro** | ~19$/mois | +19$/membre | 1 TB | ✅ Bonne |
+| **Cloudflare Pages** | 0-20$/mois | Inclus | **Illimitée** | ⚠️ Adapter requis |
+| **Railway Pro** | ~20$/mois | Inclus | 100 GB | ✅ Bonne |
+| **Render** | ~7$/mois | Inclus | 100 GB | ✅ Bonne |
+
+**Points clés :**
+- Vercel & Netlify : modèle **par membre** — 1 seul compte suffit pour déployer (les autres travaillent via GitHub)
+- Cloudflare : bande passante illimitée même gratuit, mais Next.js App Router nécessite un adaptateur (risque technique)
+- **Stratégie recommandée** : Vercel Hobby gratuit pour les tests → Vercel Pro 20$/mois au lancement (1 membre) → rentabilisé dès le 1er abonné Pro (15€/mois)
+- Compte à créer par **Sotekkk** (GitHub) — Angelique ajoutée comme membre si passage Pro
+
+### 11.2 Accès privé pendant la phase de test (HOST03)
+
+**Oui, c'est possible et simple.** Deux approches :
+
+**Option A — Middleware Next.js avec mot de passe** *(recommandée, zéro coût)*
+```ts
+// middleware.ts à la racine du projet website/
+// Vérifie un cookie "beta_access" → si absent, redirige vers /beta-login
+// /beta-login : formulaire avec mot de passe → set cookie → redirect
+// Le mot de passe est dans NEXT_PUBLIC_BETA_PASSWORD (env var Vercel)
+```
+- Avantage : fonctionne sur n'importe quel hébergeur, gratuit
+- On partage juste un mot de passe aux testeurs
+- Whitelister les routes publiques : `/api/stripe/webhook` (doit rester accessible à Stripe)
+
+**Option B — Vercel Password Protection** *(Pro plan uniquement, 20$/mois)*
+- Activé en 1 clic dans le dashboard Vercel
+- Pas de code à écrire
+
+**→ On part sur l'Option A** (middleware) : gratuit, fonctionne dès maintenant.
+
+### 11.3 To-do hébergement (HOST01–HOST04)
+
+- [ ] **HOST01** Créer compte Vercel + connecter repo GitHub `Sotekkk/PetsMatch`
+- [ ] **HOST02** Acheter `petsmatch.com` + configurer DNS sur Vercel
+- [ ] **HOST03** Implémenter middleware accès privé beta (mot de passe)
+- [ ] **HOST04** Configurer SMTP hébergeur pour emails transactionnels
+- [ ] Migrer variables `.env.local` → Variables d'environnement Vercel (dashboard)
+- [ ] Vérifier webhook Stripe pointe sur `https://petsmatch.com/api/stripe/webhook`
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*
