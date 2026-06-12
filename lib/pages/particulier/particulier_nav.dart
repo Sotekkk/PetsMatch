@@ -19,6 +19,7 @@ import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
@@ -301,6 +302,17 @@ class _ParticulierNavState extends State<ParticulierNav> {
                 ],
               ],
             ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.gavel_outlined, color: Color(0xFF9CA3AF), size: 20),
+            title: const Text('CGU & Confidentialité',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF9CA3AF))),
+            onTap: () async {
+              await launchUrl(Uri.parse('https://petsmatch.fr/cgu'), mode: LaunchMode.externalApplication);
+            },
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
           ),
           const Divider(height: 1),
           ListTile(

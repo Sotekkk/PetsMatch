@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { updateProfile, EmailAuthProvider, reauthenticateWithCredential, deleteUser } from 'firebase/auth';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -952,17 +952,22 @@ export default function ProfilPage() {
     setExporting(true);
     try {
       const uid = user.uid;
-      const [profileRes, animauxRes, annoncesRes] = await Promise.all([
+      const [profileRes, animauxRes, annoncesRes, abosRes, alertesRes] = await Promise.all([
         supabase.from('users').select('*').eq('uid', uid).maybeSingle(),
         supabase.from('animaux').select('*').eq('uid_eleveur', uid),
         supabase.from('annonces').select('*').eq('uid_eleveur', uid),
+        supabase.from('abonnements').select('plan_code,periodicite,statut,date_debut,date_fin').eq('uid', uid),
+        supabase.from('alertes_perdus').select('*').eq('uid_declarant', uid),
       ]);
       const exportData = {
         exported_at: new Date().toISOString(),
         uid,
+        email: user.email,
         profil: profileRes.data,
         animaux: animauxRes.data ?? [],
         annonces: annoncesRes.data ?? [],
+        abonnements: abosRes.data ?? [],
+        alertes_perdus: alertesRes.data ?? [],
       };
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -986,6 +991,17 @@ export default function ProfilPage() {
       const credential = EmailAuthProvider.credential(user.email!, deletePassword);
       await reauthenticateWithCredential(user, credential);
       const uid = user.uid;
+
+      // Supprimer les données Firestore (conversations, notifications, doc utilisateur)
+      const batch = writeBatch(db);
+      const collections = ['notifications'];
+      for (const col of collections) {
+        const snap = await getDocs(collection(db, 'users', uid, col));
+        snap.forEach(d => batch.delete(d.ref));
+      }
+      batch.delete(doc(db, 'users', uid));
+      await batch.commit();
+
       // Cascade-delete toutes les données Supabase (ON DELETE CASCADE)
       await supabase.from('users').delete().eq('uid', uid);
       // Supprimer le compte Firebase Auth

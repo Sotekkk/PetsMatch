@@ -1264,6 +1264,57 @@ Lien dans les emails/messages de rejet : `www.petsmatch.com/contact`
 
 ---
 
+## 9bis. Signature électronique — Contrats & Adoption (SIGN01–SIGN04)
+
+> Collaboration style **YouSign** (service FR, certifié eIDAS, RGPD natif).  
+> Concerne : éleveurs (contrat vente/réservation/saillie), associations (contrat adoption), pensions (contrat hébergement), vétérinaires (consentement soin).
+
+### 9bis.1 Périmètre
+
+| Profil | Types de contrats | Signature requise |
+|--------|------------------|-------------------|
+| Éleveur | Vente, réservation, saillie | Éleveur + acquéreur |
+| Association | Adoption, FA, parrainage | Association + adoptant(s) |
+| Pension | Hébergement, contrat de garde | Pension + propriétaire |
+| Vétérinaire | Consentement soins | Vétérinaire + propriétaire |
+
+### 9bis.2 Co-adoption (spécifique association)
+
+Pour les dossiers d'adoption en couple ou en famille, prévoir **plusieurs signataires** sur le même contrat :
+- Ajout de co-adoptant(s) : nom, prénom, email, lien (conjoint, parent, enfant majeur…)
+- Chaque signataire reçoit un email avec lien de signature indépendant
+- Contrat finalisé uniquement quand **tous les signataires** ont signé
+- Statuts : `en_attente_signatures` → `partiellement_signé` → `signé` → `archivé`
+- PDF final avec toutes les signatures horodatées
+
+### 9bis.3 Intégration technique
+
+**Option A — YouSign API** *(recommandée)*
+- API REST, certifiée eIDAS niveau simple et avancé
+- ~0,50–1€/signature selon volume
+- SDK JS/Dart disponible
+- Webhook sur completion → stocker PDF signé dans Firebase Storage
+
+**Option B — Signature canvas in-app** *(sans coût, valeur légale limitée)*
+- Déjà prévu dans les specs Certificat d'Engagement (CERT02)
+- Suffisant pour contrats non-litigieux (réservation, hébergement)
+- Pas de valeur légale eIDAS — risque si contesté
+
+**Recommandation** : Option B pour la V1 (gratuit, déjà dans le périmètre CERT02), Option A pour la V2 quand les revenus le permettent.
+
+### 9bis.4 Codes feature
+
+| Code | Feature |
+|------|---------|
+| SIGN01 | Intégration YouSign API (V2) |
+| SIGN02 | Multi-signataires / co-adoption |
+| SIGN03 | Webhook completion → archivage PDF |
+| SIGN04 | Portail signatures pour les pros (tableau de bord statuts) |
+
+**Dépendance** : SIGN01 nécessite CERT02 (signature canvas) comme base.
+
+---
+
 ## 10. Emails transactionnels — Abonnements & Relances
 
 > **Prérequis** : choisir l'hébergement + domaine (`petsmatch.com`) avant d'implémenter.  
