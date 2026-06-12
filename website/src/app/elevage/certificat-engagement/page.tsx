@@ -14,21 +14,26 @@ const supabaseAdmin = createClient(
 
 interface Certificat {
   id: string;
+  animal_id: string;
   nom_animal: string;
   espece: string;
   acquereur_nom: string;
   acquereur_prenom: string;
   acquereur_email: string;
+  acquereur_telephone: string;
+  acquereur_adresse: string;
   statut: string;
   date_remise: string;
   date_limite_signature: string | null;
   date_signature_acquereur: string | null;
   token_signature: string;
   modalite_cession: string;
+  prix: number | string | null;
+  notes: string;
 }
 
 interface Animal { id: string; nom: string; espece: string; race: string; date_naissance: string; identification: string; }
-interface UserProfile { name_elevage: string; siret: string; phone: string; rue_elevage: string; ville_elevage: string; code_postal_elevage: string; first_name: string; last_name: string; }
+interface UserProfile { name_elevage: string; siret: string; phone_number: string; rue_elevage: string; ville_elevage: string; code_postal_elevage: string; firstname: string; lastname: string; }
 
 const STATUT_STYLE: Record<string, string> = {
   envoye:  'bg-blue-100 text-blue-700',
@@ -70,15 +75,17 @@ export default function CertificatEngagementPage() {
   const [userSearch, setUserSearch] = useState('');
   const [userResults, setUserResults] = useState<{uid:string;firstname:string;lastname:string;email:string;phone_number:string;rue:string;ville:string;code_postal:string}[]>([]);
   const [userSearchLoading, setUserSearchLoading] = useState(false);
+  const [editingCert, setEditingCert] = useState<Certificat | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [loading, user, router]);
 
   useEffect(() => {
     if (!user) return;
     Promise.all([
-      supabaseAdmin.from('certificats_engagement').select('*').eq('cedant_uid', user.uid).order('created_at', { ascending: false }),
+      supabaseAdmin.from('certificats_engagement').select('id,animal_id,nom_animal,espece,acquereur_nom,acquereur_prenom,acquereur_email,acquereur_telephone,acquereur_adresse,statut,date_remise,date_limite_signature,date_signature_acquereur,token_signature,modalite_cession,prix,notes').eq('cedant_uid', user.uid).order('created_at', { ascending: false }),
       supabaseAdmin.from('animaux').select('id,nom,espece,race,date_naissance,identification').eq('uid_eleveur', user.uid).order('nom'),
-      supabaseAdmin.from('users').select('name_elevage,siret,phone,rue_elevage,ville_elevage,code_postal_elevage,first_name,last_name').eq('uid', user.uid).maybeSingle(),
+      supabaseAdmin.from('users').select('name_elevage,siret,phone_number,rue_elevage,ville_elevage,code_postal_elevage,firstname,lastname').eq('uid', user.uid).maybeSingle(),
     ]).then(([certs, anim, prof]) => {
       setCertificats((certs.data ?? []) as Certificat[]);
       setAnimaux((anim.data ?? []) as Animal[]);
@@ -169,6 +176,54 @@ export default function CertificatEngagementPage() {
     setAcqNom(''); setAcqPrenom(''); setAcqEmail(''); setAcqTel(''); setAcqAdresse('');
     setModalite('vente'); setPrix(''); setNotes(''); setError('');
     setUserSearch(''); setUserResults([]);
+    setEditingCert(null);
+  }
+
+  function openEdit(cert: Certificat) {
+    setAcqNom(cert.acquereur_nom);
+    setAcqPrenom(cert.acquereur_prenom);
+    setAcqEmail(cert.acquereur_email);
+    setAcqTel(cert.acquereur_telephone ?? '');
+    setAcqAdresse(cert.acquereur_adresse ?? '');
+    setModalite(cert.modalite_cession);
+    setPrix(cert.prix != null ? String(cert.prix) : '');
+    setNotes(cert.notes ?? '');
+    setEditingCert(cert);
+    setError('');
+    setShowForm(true);
+  }
+
+  async function handleUpdate() {
+    if (!editingCert || !user) return;
+    setSaving(true); setError('');
+    try {
+      const { data, error: err } = await supabaseAdmin
+        .from('certificats_engagement')
+        .update({
+          acquereur_nom: acqNom.trim(),
+          acquereur_prenom: acqPrenom.trim(),
+          acquereur_email: acqEmail.trim(),
+          acquereur_telephone: acqTel.trim(),
+          acquereur_adresse: acqAdresse.trim(),
+          modalite_cession: modalite,
+          prix: modalite === 'vente' && prix ? parseFloat(prix.replace(',', '.')) : null,
+          notes: notes.trim(),
+        })
+        .eq('id', editingCert.id)
+        .select()
+        .single();
+      if (err) { setError(err.message); return; }
+      setCertificats(prev => prev.map(c => c.id === editingCert.id ? { ...c, ...data } : c));
+      setShowForm(false); resetForm();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    await supabaseAdmin.from('certificats_engagement').delete().eq('id', id).neq('statut', 'signe');
+    setCertificats(prev => prev.filter(c => c.id !== id));
+    setDeleteConfirmId(null);
   }
 
   function handlePrint() { window.print(); }
@@ -229,7 +284,9 @@ export default function CertificatEngagementPage() {
           <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6">
               <div className="flex items-center justify-between mb-5">
-                <h2 className="text-lg font-bold text-[#1F2A2E]">Nouveau certificat d'engagement</h2>
+                <h2 className="text-lg font-bold text-[#1F2A2E]">
+                  {editingCert ? `Modifier — ${editingCert.nom_animal}` : 'Nouveau certificat d\'engagement'}
+                </h2>
                 <button onClick={() => { setShowForm(false); resetForm(); }} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
               </div>
 
@@ -239,15 +296,24 @@ export default function CertificatEngagementPage() {
                 {/* Animal */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Animal concerné *</label>
-                  <select value={animalId} onChange={e => selectAnimal(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30">
-                    <option value="">Sélectionner un animal…</option>
-                    {animaux.map(a => (
-                      <option key={a.id} value={a.id}>{a.nom} — {a.espece} {a.race ? `(${a.race})` : ''}</option>
-                    ))}
-                  </select>
-                  {selectedAnimal && ESPECES_DELAI.includes(selectedAnimal.espece) && (
-                    <p className="text-xs text-amber-600 mt-1">⚠ {selectedAnimal.espece} : délai légal de 7 jours avant signature de l'acquéreur.</p>
+                  {editingCert ? (
+                    <div className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700">
+                      {editingCert.nom_animal} <span className="text-gray-400">({editingCert.espece})</span>
+                      <p className="text-[10px] text-gray-400 mt-0.5">L'animal ne peut pas être modifié après création</p>
+                    </div>
+                  ) : (
+                    <>
+                      <select value={animalId} onChange={e => selectAnimal(e.target.value)}
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30">
+                        <option value="">Sélectionner un animal…</option>
+                        {animaux.map(a => (
+                          <option key={a.id} value={a.id}>{a.nom} — {a.espece} {a.race ? `(${a.race})` : ''}</option>
+                        ))}
+                      </select>
+                      {selectedAnimal && ESPECES_DELAI.includes(selectedAnimal.espece) && (
+                        <p className="text-xs text-amber-600 mt-1">⚠ {selectedAnimal.espece} : délai légal de 7 jours avant signature de l'acquéreur.</p>
+                      )}
+                    </>
                   )}
                 </div>
 
@@ -326,10 +392,17 @@ export default function CertificatEngagementPage() {
 
               <div className="flex gap-3 mt-6">
                 <button onClick={() => { setShowForm(false); resetForm(); }} className="flex-1 border border-gray-200 text-gray-600 font-medium py-2.5 rounded-xl text-sm hover:bg-gray-50">Annuler</button>
-                <button onClick={handleCreate} disabled={saving || !animalId || !acqNom || !acqPrenom || !acqEmail}
-                  className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-sm">
-                  {saving ? 'Création…' : 'Créer le certificat'}
-                </button>
+                {editingCert ? (
+                  <button onClick={handleUpdate} disabled={saving || !acqNom || !acqPrenom || !acqEmail}
+                    className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-sm">
+                    {saving ? 'Enregistrement…' : 'Enregistrer les modifications'}
+                  </button>
+                ) : (
+                  <button onClick={handleCreate} disabled={saving || !animalId || !acqNom || !acqPrenom || !acqEmail}
+                    className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-sm">
+                    {saving ? 'Création…' : 'Créer le certificat'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -369,15 +442,40 @@ export default function CertificatEngagementPage() {
                     )}
                   </p>
                 </div>
-                <div className="flex gap-2 shrink-0">
+                <div className="flex gap-1.5 shrink-0 flex-wrap justify-end">
                   <button onClick={() => navigator.clipboard.writeText(`${origin}/certificat/${cert.token_signature}`)}
                     className="text-xs border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50">
-                    Copier lien
+                    Lien
                   </button>
                   <Link href={`/certificat/${cert.token_signature}`} target="_blank"
                     className="text-xs bg-[#0C5C6C]/10 text-[#0C5C6C] px-3 py-1.5 rounded-lg hover:bg-[#0C5C6C]/20 font-medium">
                     Voir
                   </Link>
+                  {cert.statut !== 'signe' && (
+                    <>
+                      <button onClick={() => openEdit(cert)}
+                        className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-3 py-1.5 rounded-lg hover:bg-[#E8F4F6]">
+                        Modifier
+                      </button>
+                      {deleteConfirmId === cert.id ? (
+                        <span className="flex gap-1">
+                          <button onClick={() => handleDelete(cert.id)}
+                            className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg font-medium">
+                            Confirmer
+                          </button>
+                          <button onClick={() => setDeleteConfirmId(null)}
+                            className="text-xs border border-gray-200 text-gray-500 px-2 py-1.5 rounded-lg hover:bg-gray-50">
+                            ✕
+                          </button>
+                        </span>
+                      ) : (
+                        <button onClick={() => setDeleteConfirmId(cert.id)}
+                          className="text-xs border border-red-200 text-red-500 px-3 py-1.5 rounded-lg hover:bg-red-50">
+                          Supprimer
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             ))}

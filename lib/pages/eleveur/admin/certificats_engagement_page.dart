@@ -71,7 +71,7 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
                     itemCount: _certs.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) => _CertCard(cert: _certs[i], onCopyLink: _copyLink),
+                    itemBuilder: (_, i) => _CertCard(cert: _certs[i], onCopyLink: _copyLink, onEdit: (c) => _showCreateSheet(context, editCert: c), onDelete: _deleteCert),
                   ),
                 ),
     );
@@ -111,17 +111,39 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lien copié !')));
   }
 
-  void _showCreateSheet(BuildContext context) {
-    Map<String, dynamic>? selectedAnimal;
-    final prenomCtrl  = TextEditingController();
-    final nomCtrl     = TextEditingController();
-    final emailCtrl   = TextEditingController();
-    final telCtrl     = TextEditingController();
-    final adresseCtrl = TextEditingController();
-    final prixCtrl    = TextEditingController();
-    String modalite   = 'vente';
+  Future<void> _deleteCert(String id) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer le certificat ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('Cette action est irréversible. Le lien partagé ne fonctionnera plus.', style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6F767B)))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Color(0xFFEF4444), fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    await _supa.from('certificats_engagement').delete().eq('id', id).neq('statut', 'signe');
+    setState(() => _certs.removeWhere((c) => c['id'] == id));
+  }
+
+  void _showCreateSheet(BuildContext context, {Map<String, dynamic>? editCert}) {
+    final isEdit = editCert != null;
+    Map<String, dynamic>? selectedAnimal = isEdit
+        ? _animaux.firstWhere((a) => a['id'] == editCert!['animal_id'], orElse: () => {})
+        : null;
+    final prenomCtrl  = TextEditingController(text: editCert?['acquereur_prenom'] ?? '');
+    final nomCtrl     = TextEditingController(text: editCert?['acquereur_nom'] ?? '');
+    final emailCtrl   = TextEditingController(text: editCert?['acquereur_email'] ?? '');
+    final telCtrl     = TextEditingController(text: editCert?['acquereur_telephone'] ?? '');
+    final adresseCtrl = TextEditingController(text: editCert?['acquereur_adresse'] ?? '');
+    final prixCtrl    = TextEditingController(text: editCert?['prix']?.toString() ?? '');
+    final searchCtrl  = TextEditingController();
+    String modalite   = editCert?['modalite_cession'] ?? 'vente';
     bool saving       = false;
     String? tokenResult;
+    List<Map<String, dynamic>> userResults = [];
 
     showModalBottomSheet(
       context: context,
@@ -129,36 +151,75 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
+        Future<void> searchUsers(String q) async {
+          if (q.trim().length < 2) { setS(() => userResults = []); return; }
+          final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+          final res = await _supa.from('users')
+              .select('uid,firstname,lastname,email,phone_number,rue,ville,code_postal')
+              .or('firstname.ilike.%${q.trim()}%,lastname.ilike.%${q.trim()}%,email.ilike.%${q.trim()}%')
+              .neq('uid', currentUid)
+              .limit(5);
+          setS(() => userResults = List<Map<String, dynamic>>.from(res as List));
+        }
+
+        void prefillUser(Map<String, dynamic> u) {
+          final addr = [u['rue'], u['code_postal'], u['ville']].where((e) => e != null && (e as String).isNotEmpty).join(', ');
+          prenomCtrl.text  = u['firstname'] ?? '';
+          nomCtrl.text     = u['lastname'] ?? '';
+          emailCtrl.text   = u['email'] ?? '';
+          telCtrl.text     = u['phone_number'] ?? '';
+          adresseCtrl.text = addr;
+          searchCtrl.text  = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+          setS(() => userResults = []);
+        }
+
         Future<void> submit() async {
-          if (selectedAnimal == null || emailCtrl.text.trim().isEmpty || nomCtrl.text.trim().isEmpty) return;
+          if (!isEdit && selectedAnimal == null) return;
+          if (emailCtrl.text.trim().isEmpty || nomCtrl.text.trim().isEmpty) return;
           setS(() => saving = true);
           try {
             final uid = FirebaseAuth.instance.currentUser?.uid;
             if (uid == null) return;
-            final now = DateTime.now();
-            final esp = selectedAnimal!['espece'] as String? ?? '';
-            final estDelai = esp == 'chien' || esp == 'chat';
-            final payload = <String, dynamic>{
-              'cedant_uid':            uid,
-              'animal_id':             selectedAnimal!['id'] as String,
-              'espece':                esp,
-              'race':                  selectedAnimal!['race'] ?? '',
-              'nom_animal':            selectedAnimal!['nom'] ?? '',
-              'date_naissance_animal': selectedAnimal!['date_naissance'],
-              'num_identification':    selectedAnimal!['identification'] ?? '',
-              'acquereur_nom':         nomCtrl.text.trim(),
-              'acquereur_prenom':      prenomCtrl.text.trim(),
-              'acquereur_email':       emailCtrl.text.trim(),
-              'acquereur_telephone':   telCtrl.text.trim(),
-              'acquereur_adresse':     adresseCtrl.text.trim(),
-              'modalite_cession':      modalite,
-              'prix':                  modalite == 'vente' && prixCtrl.text.isNotEmpty ? double.tryParse(prixCtrl.text) : null,
-              'date_remise':           now.toIso8601String(),
-              'date_limite_signature': estDelai ? now.add(const Duration(days: 7)).toIso8601String() : null,
-            };
-            final res = await _supa.from('certificats_engagement').insert(payload).select('token_signature').single();
-            setS(() { saving = false; tokenResult = res['token_signature'] as String?; });
-            _load(); // refresh list
+            if (isEdit) {
+              // Mise à jour acquéreur uniquement
+              await _supa.from('certificats_engagement').update({
+                'acquereur_nom':       nomCtrl.text.trim(),
+                'acquereur_prenom':    prenomCtrl.text.trim(),
+                'acquereur_email':     emailCtrl.text.trim(),
+                'acquereur_telephone': telCtrl.text.trim(),
+                'acquereur_adresse':   adresseCtrl.text.trim(),
+                'modalite_cession':    modalite,
+                'prix':                modalite == 'vente' && prixCtrl.text.isNotEmpty ? double.tryParse(prixCtrl.text.replaceAll(',', '.')) : null,
+              }).eq('id', editCert!['id'] as String).neq('statut', 'signe');
+              setS(() => saving = false);
+              if (ctx.mounted) Navigator.pop(ctx);
+              _load();
+            } else {
+              final now = DateTime.now();
+              final esp = selectedAnimal!['espece'] as String? ?? '';
+              final estDelai = esp == 'chien' || esp == 'chat';
+              final payload = <String, dynamic>{
+                'cedant_uid':            uid,
+                'animal_id':             selectedAnimal!['id'] as String,
+                'espece':                esp,
+                'race':                  selectedAnimal!['race'] ?? '',
+                'nom_animal':            selectedAnimal!['nom'] ?? '',
+                'date_naissance_animal': selectedAnimal!['date_naissance'],
+                'num_identification':    selectedAnimal!['identification'] ?? '',
+                'acquereur_nom':         nomCtrl.text.trim(),
+                'acquereur_prenom':      prenomCtrl.text.trim(),
+                'acquereur_email':       emailCtrl.text.trim(),
+                'acquereur_telephone':   telCtrl.text.trim(),
+                'acquereur_adresse':     adresseCtrl.text.trim(),
+                'modalite_cession':      modalite,
+                'prix':                  modalite == 'vente' && prixCtrl.text.isNotEmpty ? double.tryParse(prixCtrl.text.replaceAll(',', '.')) : null,
+                'date_remise':           now.toIso8601String(),
+                'date_limite_signature': estDelai ? now.add(const Duration(days: 7)).toIso8601String() : null,
+              };
+              final res = await _supa.from('certificats_engagement').insert(payload).select('token_signature').single();
+              setS(() { saving = false; tokenResult = res['token_signature'] as String?; });
+              _load();
+            }
           } catch (e) {
             setS(() => saving = false);
             if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Erreur : $e')));
@@ -172,8 +233,8 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 14),
                   decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
-              const Text('Nouveau certificat',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700, color: _dark)),
+              Text(isEdit ? 'Modifier — ${editCert!['nom_animal']}' : 'Nouveau certificat',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700, color: _dark)),
               const SizedBox(height: 4),
               const Text('Loi 2021-1539 — Chien/Chat : délai légal 7 jours',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
@@ -218,24 +279,97 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
                 const Text('Animal concerné *',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
                 const SizedBox(height: 6),
-                DropdownButtonFormField<Map<String, dynamic>>(
-                  value: selectedAnimal,
-                  hint: const Text('Choisir un animal', style: TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                if (isEdit)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF5F5F0),
+                      border: Border.all(color: const Color(0xFFE4E7E2)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('${editCert!['nom_animal']} (${editCert['espece']})',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: _dark)),
+                      const Text('L\'animal ne peut pas être modifié après création',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF9CA3AF))),
+                    ]),
+                  )
+                else
+                  DropdownButtonFormField<Map<String, dynamic>>(
+                    value: selectedAnimal,
+                    hint: const Text('Choisir un animal', style: TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                    decoration: InputDecoration(
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _teal, width: 1.5)),
+                      filled: true, fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    items: _animaux.map((a) => DropdownMenuItem(
+                      value: a,
+                      child: Text('${a['nom'] ?? '?'} (${a['espece'] ?? '?'})',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                    )).toList(),
+                    onChanged: (v) => setS(() => selectedAnimal = v),
+                  ),
+                const SizedBox(height: 14),
+
+                // ── Recherche utilisateur PetsMatch ───────────────────────────
+                const Text('Rechercher un utilisateur PetsMatch',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: searchCtrl,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
                   decoration: InputDecoration(
+                    hintText: 'Nom, prénom ou email…',
+                    hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF9CA3AF)),
+                    prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF9CA3AF)),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
                     enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
                     focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _teal, width: 1.5)),
                     filled: true, fillColor: Colors.white,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
-                  items: _animaux.map((a) => DropdownMenuItem(
-                    value: a,
-                    child: Text('${a['nom'] ?? '?'} (${a['espece'] ?? '?'})',
-                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
-                  )).toList(),
-                  onChanged: (v) => setS(() => selectedAnimal = v),
+                  onChanged: searchUsers,
                 ),
-                const SizedBox(height: 14),
+                if (userResults.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: const Color(0xFFE4E7E2)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      children: userResults.map((u) {
+                        final name = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+                        final ville = u['ville'] as String? ?? '';
+                        return InkWell(
+                          onTap: () => prefillUser(u),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            child: Row(children: [
+                              const Icon(Icons.person_outline, size: 16, color: Color(0xFF0C5C6C)),
+                              const SizedBox(width: 8),
+                              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                Text(name, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
+                                Text('${u['email'] ?? ''}${ville.isNotEmpty ? ' · $ville' : ''}',
+                                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
+                              ])),
+                              const Icon(Icons.arrow_forward_ios, size: 12, color: Color(0xFF9CA3AF)),
+                            ]),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                const Divider(height: 1, color: Color(0xFFF0F0EC)),
+                const SizedBox(height: 12),
 
                 // ── Acquéreur ─────────────────────────────────────────────────
                 _field('Prénom *', prenomCtrl),
@@ -283,7 +417,8 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                     child: saving
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Text('Générer le certificat', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15)),
+                        : Text(isEdit ? 'Enregistrer les modifications' : 'Générer le certificat',
+                              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15)),
                   ),
                 ),
               ],
@@ -320,7 +455,9 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
 class _CertCard extends StatelessWidget {
   final Map<String, dynamic> cert;
   final void Function(String token) onCopyLink;
-  const _CertCard({required this.cert, required this.onCopyLink});
+  final void Function(Map<String, dynamic> cert) onEdit;
+  final void Function(String id) onDelete;
+  const _CertCard({required this.cert, required this.onCopyLink, required this.onEdit, required this.onDelete});
 
   static const _statusColor = {
     'envoye': Color(0xFF0C5C6C),
@@ -387,6 +524,38 @@ class _CertCard extends StatelessWidget {
               const Icon(Icons.copy, size: 14, color: Color(0xFF9CA3AF)),
             ]),
           ),
+        ],
+        if (statut != 'signe') ...[
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => onEdit(cert),
+                icon: const Icon(Icons.edit_outlined, size: 14),
+                label: const Text('Modifier', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF0C5C6C),
+                  side: const BorderSide(color: Color(0xFF0C5C6C), width: 1),
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => onDelete(cert['id'] as String),
+                icon: const Icon(Icons.delete_outline, size: 14),
+                label: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFEF4444),
+                  side: const BorderSide(color: Color(0xFFEF4444), width: 1),
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ),
+          ]),
         ],
       ]),
     );

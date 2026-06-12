@@ -1448,4 +1448,94 @@ Pour les dossiers d'adoption en couple ou en famille, prévoir **plusieurs signa
 
 ---
 
+## 12. Contrats Électroniques avec Signature Officielle
+
+### 12.1 Contexte et objectif
+
+PetsMatch doit proposer des **contrats légalement signés** via un prestataire de signature électronique reconnu eIDAS. Objectif : valeur probatoire complète, traçabilité, archivage 10 ans.
+
+**Prestataire retenu : YouSign** ✅
+- QTSP (Qualified Trust Service Provider) — niveau eIDAS le plus élevé, certifié ANSSI
+- API REST documentée, intégration estimée à ~7 jours, 40 jours d'essai gratuit
+- Signature Simple : identité par email (suffisant pour certificats et réservations)
+- Signature Avancée : SMS OTP (pour les ventes > 300 €)
+- Tarif : à partir de 9 €/mois + ~0,60–1,20 €/signature selon volume
+
+**Pourquoi pas SignesExpert ?** SignesExpert (JeSignExpert) est développé par l'OEC pour les cabinets comptables. Pas d'API publique documentée, pas adapté à une marketplace. L'expert-comptable de l'équipe peut l'utiliser pour ses documents de cabinet, mais PetsMatch utilise YouSign pour ses propres contrats.
+
+**Phase actuelle : système token maison conservé** — pas de valeur eIDAS mais suffisant pour les tests et le MVP. YouSign sera intégré en Phase 2 (CONT01+). Le système token restera pour la visualisation publique des documents.
+
+### 12.2 Types de contrats concernés
+
+| Contrat | Espèces | Délai légal | Niveau signature |
+|---|---|---|---|
+| Certificat d'Engagement et de Connaissance | Chien, chat, lapin, NAC | 7 j chien/chat | Simple |
+| Contrat de Réservation | Toutes | Non | Simple |
+| Contrat de Vente (avec ou sans LOF/LOOF) | Toutes | Non | Avancée si > 300 € |
+| Contrat de Pension / Chenil / Hôtel | Services | Non | Simple |
+| Contrat de Prestation de Service Pro | Services | Non | Avancée |
+
+### 12.3 Principe des contrats adaptatifs (pro)
+
+Le professionnel peut **personnaliser son contrat dans un cadre légal** prédéfini :
+- Clauses obligatoires non modifiables (protections légales, mentions DGCCRF)
+- Sections optionnelles activables (garanties spéciales, astreinte, assurance)
+- Champs libres pour clauses maison (texte libre avec validation anti-abus)
+- Modèles enregistrables par type d'animal/espèce
+
+Le système génère un PDF à partir du template rempli, puis l'envoie à YouSign pour signature.
+
+### 12.4 Workflow technique YouSign
+
+```
+1. Éleveur remplit le formulaire contrat (web ou app)
+2. Backend génère PDF (puppeteer / react-pdf / @react-pdf/renderer)
+3. API YouSign : POST /signature_requests → création de la demande
+4. API YouSign : upload PDF + définition des zones de signature
+5. API YouSign : ajout des signataires (cédant + acquéreur) avec emails
+6. API YouSign : activation → emails automatiques envoyés par YouSign
+7. Webhook YouSign → PetsMatch : mise à jour statut (signe/refuse)
+8. PDF signé archivé dans Supabase Storage (10 ans)
+```
+
+### 12.5 Tickets à implémenter (CONT01–CONT08)
+
+- [ ] **CONT01** Intégration YouSign API : service partagé (`lib/services/yousign_service.dart` + `website/src/lib/yousign.ts`)
+- [ ] **CONT02** Générateur PDF côté serveur (`/api/pdf/certificat`, `/api/pdf/contrat-vente`, etc.) via `@react-pdf/renderer`
+- [ ] **CONT03** Contrat de Réservation adaptatif (remplacement du contrat actuel en Firestore)
+- [ ] **CONT04** Contrat de Vente adaptatif avec clauses éleveur + garanties légales
+- [ ] **CONT05** Certificat d'Engagement → migration vers signature YouSign (remplace le token actuel)
+- [ ] **CONT06** Contrat Pension / Chenil / Hôtel (lié au module Planning Chenil §4)
+- [ ] **CONT07** Contrat de Prestation Pro (prestations de service, toilettage, dressage, etc.)
+- [ ] **CONT08** Éditeur de templates adaptatifs (interface pro pour personnaliser ses clauses)
+
+### 12.6 Schéma BDD — table `contrats`
+
+```sql
+CREATE TABLE contrats (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type              TEXT NOT NULL,      -- 'reservation'|'vente'|'certificat'|'pension'|'prestation'
+  cedant_uid        TEXT NOT NULL,
+  signataire_uid    TEXT,               -- uid PetsMatch si connu
+  signataire_email  TEXT NOT NULL,
+  signataire_nom    TEXT NOT NULL,
+  animal_id         UUID REFERENCES animaux(id),
+  pdf_url           TEXT,               -- URL Supabase Storage après signature
+  yousign_request_id TEXT,              -- ID de la demande YouSign
+  statut            TEXT DEFAULT 'brouillon',  -- brouillon/envoye/lu/signe/refuse/expire
+  contenu_json      JSONB,              -- snapshot des données au moment de la création
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  signed_at         TIMESTAMPTZ,
+  expires_at        TIMESTAMPTZ
+);
+```
+
+### 12.7 Migration progressive
+
+Phase 1 (court terme) : conserver le système token actuel pour les certificats, ajouter un bouton "Envoyer pour signature officielle" optionnel qui déclenche le flow YouSign.
+
+Phase 2 : YouSign devient le canal principal pour tous les contrats. Le token reste pour la visualisation publique, YouSign gère la signature légale.
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*
