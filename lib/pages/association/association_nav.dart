@@ -359,11 +359,11 @@ class _AssociationNavState extends State<AssociationNav> {
                     ));
                   },
                 ),
-                if (User_Info.isAdmin && widget.onAdminTap != null) ...[
+                if (widget.onAdminTap != null) ...[
                   const Divider(height: 8),
                   _DrawerItem(
-                    icon: Icons.admin_panel_settings,
-                    label: 'Administration',
+                    icon: User_Info.isAdmin ? Icons.admin_panel_settings : Icons.swap_horiz_outlined,
+                    label: User_Info.isAdmin ? 'Administration' : 'Prévisualiser un rôle',
                     onTap: () {
                       Navigator.pop(context);
                       widget.onAdminTap!();

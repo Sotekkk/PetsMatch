@@ -206,7 +206,7 @@ class _BottomNavState extends State<BottomNav> {
     if (_asAssociation) {
       return Stack(
         children: [
-          AssociationNav(onAdminTap: User_Info.isAdmin ? _showAdminMenu : null),
+          AssociationNav(onAdminTap: _showAdminMenu),
           if (_previewRole == 'association') _previewBanner('Association'),
         ],
       );
@@ -216,7 +216,7 @@ class _BottomNavState extends State<BottomNav> {
     if (_asElevage) {
       return Stack(
         children: [
-          EleveurNav(onAdminTap: User_Info.isAdmin ? _showAdminMenu : null),
+          EleveurNav(onAdminTap: _showAdminMenu),
           if (_previewRole == 'eleveur') _previewBanner('Éleveur'),
         ],
       );
@@ -226,7 +226,7 @@ class _BottomNavState extends State<BottomNav> {
     if (_asParticulier) {
       return Stack(
         children: [
-          ParticulierNav(onAdminTap: User_Info.isAdmin ? _showAdminMenu : null),
+          ParticulierNav(onAdminTap: _showAdminMenu),
           if (_previewRole == 'particulier') _previewBanner('Particulier'),
         ],
       );
