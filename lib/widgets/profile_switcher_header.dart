@@ -71,6 +71,7 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
   static String _typeLabel(String type) => switch (type) {
     'particulier'      => 'Particulier',
     'eleveur'          => 'Éleveur',
+    'association'      => 'Association',
     'veterinaire'      => 'Vétérinaire',
     'sante'            => 'Santé animale',
     'education'        => 'Éducation',
@@ -85,6 +86,7 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
   static IconData _typeIcon(String type) => switch (type) {
     'particulier'      => Icons.person_outline,
     'eleveur'          => Icons.pets,
+    'association'      => Icons.favorite_outline,
     'veterinaire'      => Icons.local_hospital_outlined,
     'sante'            => Icons.self_improvement_outlined,
     'education'        => Icons.psychology_outlined,

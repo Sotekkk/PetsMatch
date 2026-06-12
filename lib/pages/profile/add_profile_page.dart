@@ -25,6 +25,8 @@ const _profileTypes = [
       description: 'Propriétaire d\'animaux de compagnie', color: Color(0xFF5B9EAA)),
   _ProfileTypeInfo(type: 'eleveur', icon: Icons.pets, label: 'Éleveur',
       description: 'Élevage professionnel, reproduction', color: Color(0xFF6E9E57)),
+  _ProfileTypeInfo(type: 'association', icon: Icons.favorite_outline, label: 'Association',
+      description: 'Refuge, SPA, association de protection animale', color: Color(0xFF0C5C6C)),
   _ProfileTypeInfo(type: 'veterinaire', icon: Icons.local_hospital_outlined, label: 'Vétérinaire',
       description: 'Clinique vétérinaire, soins médicaux', color: Color(0xFFE57373)),
   _ProfileTypeInfo(type: 'sante', icon: Icons.self_improvement_outlined, label: 'Santé',
@@ -215,6 +217,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
     _labelCtrl.text = switch (widget.typeInfo.type) {
       'particulier'      => '${User_Info.firstname} ${User_Info.lastname}'.trim(),
       'eleveur'          => 'Mon élevage',
+      'association'      => 'Mon association',
       'veterinaire'      => 'Mon cabinet vétérinaire',
       'sante'            => 'Mon cabinet',
       'education'        => 'Mon activité éducation',
@@ -323,6 +326,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
     'photographe', 'marechal_ferrant',
   }.contains(widget.typeInfo.type);
   bool get _isEleveurType => widget.typeInfo.type == 'eleveur';
+  bool get _isAssociationType => widget.typeInfo.type == 'association';
   bool get _isParticulierType => widget.typeInfo.type == 'particulier';
   bool get _hasSiret => const {
     'veterinaire', 'sante', 'education', 'pension', 'toilettage',
@@ -360,6 +364,10 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
     if (_isParticulierType) {
       data['firstname'] = User_Info.firstname;
       data['lastname']  = User_Info.lastname;
+    }
+    if (_isAssociationType) {
+      data['name_elevage']    = _nomCtrl.text.trim();
+      data['is_association']  = true;
     }
     if (_isEleveurType) {
       data['name_elevage']    = _nomCtrl.text.trim();
@@ -412,10 +420,18 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
 
           if (!_isParticulierType) ...[
             const SizedBox(height: 12),
-            _section(_isEleveurType ? 'Nom de l\'élevage' : 'Nom du cabinet / établissement'),
+            _section(_isEleveurType
+                ? 'Nom de l\'élevage'
+                : _isAssociationType
+                    ? 'Nom de l\'association'
+                    : 'Nom du cabinet / établissement'),
             _field(_nomCtrl,
-                _isEleveurType ? 'Ex : Élevage du Moulin' : 'Ex : Cabinet Dupont',
-                required: _isEleveurType || _isProType),
+                _isEleveurType
+                    ? 'Ex : Élevage du Moulin'
+                    : _isAssociationType
+                        ? 'Ex : SPA de Lyon, Refuge du Soleil…'
+                        : 'Ex : Cabinet Dupont',
+                required: _isEleveurType || _isProType || _isAssociationType),
           ],
 
           if (_hasSubProfession) ...[

@@ -351,6 +351,7 @@ class User_Info {
 
     // Flags de rôle
     const proTypes = {'veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage', 'photographe', 'marechal_ferrant'};
+    isAssociation = type == 'association';
     isPro     = proTypes.contains(type);
     isElevage = type == 'eleveur' || isPro;
     catPro       = p['cat_pro']?.toString() ?? (isPro ? type : '');
