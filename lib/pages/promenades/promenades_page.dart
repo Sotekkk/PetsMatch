@@ -113,7 +113,7 @@ class _PromenadesPageState extends State<PromenadePage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0C5C6C),
+        backgroundColor: const Color(0xFF2E7D5E),
         foregroundColor: Colors.white,
         elevation: 0,
         title: const Text('Promenades collectives',
