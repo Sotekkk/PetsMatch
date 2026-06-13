@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
+import { notifyProfilePendingValidation } from '@/lib/notifications';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -91,13 +92,15 @@ export default function AjouterProfilPage() {
 
   const typeInfo = PROFILE_TYPES.find(t => t.type === selectedType)!;
 
-  // Association : type principal (flag sur users), pas un profil secondaire
   if (selectedType === 'association') {
     return (
       <AssociationForm
         uid={user.uid}
         onBack={() => setStep('type')}
-        onSaved={() => router.push('/association')}
+        onSaved={(id) => {
+          localStorage.setItem(ACTIVE_PROFILE_KEY, id);
+          router.push('/profil');
+        }}
       />
     );
   }
@@ -310,7 +313,8 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         .eq('uid', uid)
         .eq('profile_type', typeInfo.type)
         .maybeSingle();
-      if (!existing && (isProType || isEleveur)) {
+      const isNew = !existing;
+      if (isNew && (isProType || isEleveur)) {
         data.statut_pro = 'en_attente';
       }
 
@@ -335,6 +339,9 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
       }
 
       const id = (rows as { id: string }[])[0]?.id ?? '';
+      if (isNew && (isProType || isEleveur)) {
+        await notifyProfilePendingValidation(uid, typeInfo.type);
+      }
       onSaved(id);
     } catch (e: unknown) {
       setError((e as Error).message ?? 'Erreur lors de la sauvegarde.');
@@ -584,54 +591,97 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
 function AssociationForm({ uid, onBack, onSaved }: {
   uid: string;
   onBack: () => void;
-  onSaved: () => void;
+  onSaved: (id: string) => void;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const [nomAsso, setNomAsso] = useState('');
-  const [rna, setRna] = useState('');
-  const [siret, setSiret] = useState('');
-  const [agrement, setAgrement] = useState('');
-  const [capacite, setCapacite] = useState('');
-  const [phone, setPhone] = useState('');
-  const [siteWeb, setSiteWeb] = useState('');
-  const [description, setDescription] = useState('');
-  const [rue, setRue] = useState('');
-  const [ville, setVille] = useState('');
-  const [cp, setCp] = useState('');
-  const [especesSet, setEspecesSet] = useState<Set<string>>(new Set());
+  const [nomAsso, setNomAsso]               = useState('');
+  const [nomResponsable, setNomResponsable] = useState('');
+  const [rna, setRna]                       = useState('');
+  const [siret, setSiret]                   = useState('');
+  const [acaced, setAcaced]                 = useState('');
+  const [acacedDate, setAcacedDate]         = useState('');
+  const [phone, setPhone]                   = useState('');
+  const [siteWeb, setSiteWeb]               = useState('');
+  const [description, setDescription]       = useState('');
+  const [rue, setRue]                       = useState('');
+  const [ville, setVille]                   = useState('');
+  const [cp, setCp]                         = useState('');
 
-  function toggleEspece(e: string) {
-    setEspecesSet(prev => { const n = new Set(prev); n.has(e) ? n.delete(e) : n.add(e); return n; });
-  }
+  const [siretDocFile, setSiretDocFile]     = useState<File | null>(null);
+  const [acacedDocFile, setAcacedDocFile]   = useState<File | null>(null);
+  const siretDocRef = useRef<HTMLInputElement>(null);
+  const acacedDocRef = useRef<HTMLInputElement>(null);
 
   async function handleSave() {
-    if (!nomAsso.trim()) { setError('Le nom de l\'association est requis.'); return; }
-    if (!ville.trim()) { setError('La ville est requise.'); return; }
+    const errs: string[] = [];
+    if (!nomAsso.trim())        errs.push("Nom de l'association");
+    if (!nomResponsable.trim()) errs.push('Nom du responsable');
+    if (!siret.trim())          errs.push('SIRET / SIREN');
+    if (!siretDocFile)          errs.push('Justificatif SIRET');
+    if (!acaced.trim())         errs.push('N° ACACED');
+    if (!acacedDate)            errs.push("Date d'obtention ACACED");
+    if (!rue.trim())            errs.push('Rue');
+    if (!ville.trim())          errs.push('Ville');
+    if (!cp.trim())             errs.push('Code postal');
+    if (errs.length > 0) { setError(`Champs obligatoires : ${errs.join(', ')}`); return; }
+
     setSaving(true);
     setError('');
     try {
-      const { error: err } = await supabase
-        .from('users')
-        .update({
-          is_association:        true,
-          name_elevage:          nomAsso.trim(),
-          rna:                   rna.trim() || null,
-          siret:                 siret.trim() || null,
-          agrement_prefectoral:  agrement.trim() || null,
-          capacite_accueil:      capacite ? parseInt(capacite) : null,
-          site_web_asso:         siteWeb.trim() || null,
-          desc_entreprise:       description.trim() || null,
-          rue_elevage:           rue.trim() || null,
-          ville_elevage:         ville.trim(),
-          code_postal_elevage:   cp.trim() || null,
-          especes_accueillies:   Array.from(especesSet),
-          phone_number:          phone.trim() || undefined,
-        })
-        .eq('uid', uid);
+      const profileData: Record<string, unknown> = {
+        uid,
+        profile_type:      'association',
+        profile_label:     nomAsso.trim(),
+        name_elevage:      nomAsso.trim(),
+        profession_pro:    nomResponsable.trim(),
+        ordre_veterinaire: rna.trim() || null,
+        siret:             siret.trim(),
+        certifications:    [{ nom: 'ACACED', numero: acaced.trim(), date_obtention: acacedDate }],
+        phone:             phone.trim() || null,
+        site_web:          siteWeb.trim() || null,
+        desc_entreprise:   description.trim() || null,
+        rue:               rue.trim(),
+        ville:             ville.trim(),
+        code_postal:       cp.trim(),
+        pays:              'France',
+        statut_pro:        'en_attente',
+      };
+
+      // Upload KBIS
+      if (siretDocFile) {
+        const ext = siretDocFile.name.split('.').pop() ?? 'pdf';
+        const path = `documents/${uid}/asso_kbis.${ext}`;
+        const { data: up } = await supabase.storage.from('petsmatch').upload(path, siretDocFile, { upsert: true });
+        if (up) {
+          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          profileData.kbis_url = pub.publicUrl;
+        }
+      }
+      // Upload ACACED
+      if (acacedDocFile) {
+        const ext = acacedDocFile.name.split('.').pop() ?? 'pdf';
+        const path = `documents/${uid}/asso_acaced.${ext}`;
+        const { data: up } = await supabase.storage.from('petsmatch').upload(path, acacedDocFile, { upsert: true });
+        if (up) {
+          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          profileData.acaced_doc_url = pub.publicUrl;
+        }
+      }
+
+      const { data: rows, error: err } = await supabase
+        .from('user_profiles')
+        .upsert(profileData, { onConflict: 'uid,profile_type' })
+        .select('id');
       if (err) throw err;
-      onSaved();
+
+      // Marque le profil primaire comme association
+      await supabase.from('users').update({ is_association: true }).eq('uid', uid);
+
+      const id = (rows as { id: string }[])[0]?.id ?? '';
+      await notifyProfilePendingValidation(uid, 'association');
+      onSaved(id);
     } catch (e: unknown) {
       setError((e as Error).message ?? 'Erreur lors de la sauvegarde.');
       setSaving(false);
@@ -654,36 +704,91 @@ function AssociationForm({ uid, onBack, onSaved }: {
           <div className="mb-4 bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 text-sm">{error}</div>
         )}
 
+        {/* File inputs cachés */}
+        <input ref={siretDocRef} type="file" accept="image/*,application/pdf" className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) setSiretDocFile(f); e.target.value = ''; }} />
+        <input ref={acacedDocRef} type="file" accept="image/*,application/pdf" className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) setAcacedDocFile(f); e.target.value = ''; }} />
+
         <div className="space-y-5">
           <AssocField label="Nom de l'association" required>
             <input value={nomAsso} onChange={e => setNomAsso(e.target.value)}
               className="w-full input-field" placeholder="Ex : SPA de Lyon, Refuge du Soleil…" />
           </AssocField>
 
-          <AssocField label="Numéro RNA (facultatif)" hint="Répertoire National des Associations — format W123456789">
-            <input value={rna} onChange={e => setRna(e.target.value)}
-              className="w-full input-field" placeholder="W123456789" />
+          <AssocField label="Nom du responsable / propriétaire" required>
+            <input value={nomResponsable} onChange={e => setNomResponsable(e.target.value)}
+              className="w-full input-field" placeholder="Prénom Nom du président(e)" />
           </AssocField>
 
-          <AssocField label="SIREN / SIRET (facultatif)">
+          <AssocField label="SIRET / SIREN" required>
             <input value={siret} onChange={e => setSiret(e.target.value)}
               className="w-full input-field" placeholder="9 ou 14 chiffres" maxLength={14} />
           </AssocField>
 
-          <AssocField label="Agrément préfectoral (facultatif)">
-            <input value={agrement} onChange={e => setAgrement(e.target.value)}
-              className="w-full input-field" placeholder="Ex : 69-2023-001" />
+          <div>
+            <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">
+              Justificatif SIRET (KBIS / extrait) <span className="text-red-500">*</span>
+            </p>
+            {siretDocFile ? (
+              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                <span className="text-green-600 text-sm">✓</span>
+                <span className="text-xs text-green-700 flex-1 truncate">{siretDocFile.name}</span>
+                <button type="button" onClick={() => siretDocRef.current?.click()}
+                  className="text-xs text-[#0C5C6C] font-medium hover:underline">Changer</button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => siretDocRef.current?.click()}
+                className="w-full border-2 border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-xl py-3 text-sm text-gray-400 hover:text-[#0C5C6C] transition-colors">
+                📎 Joindre le KBIS ou extrait SIRET (image ou PDF)
+              </button>
+            )}
+          </div>
+
+          <AssocField label="Numéro RNA" hint="Répertoire National des Associations — format W123456789">
+            <input value={rna} onChange={e => setRna(e.target.value)}
+              className="w-full input-field" placeholder="W123456789" />
           </AssocField>
+
+          <AssocField label="N° ACACED" required>
+            <input value={acaced} onChange={e => setAcaced(e.target.value)}
+              className="w-full input-field" placeholder="Ex : ACE-2023-XXXX" />
+          </AssocField>
+
+          <div>
+            <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">
+              Date d&apos;obtention ACACED <span className="text-red-500">*</span>
+            </p>
+            <input type="date" value={acacedDate} onChange={e => setAcacedDate(e.target.value)}
+              className="w-full input-field" max={new Date().toISOString().slice(0, 10)} />
+          </div>
+
+          <div>
+            <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">Certificat ACACED</p>
+            {acacedDocFile ? (
+              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                <span className="text-green-600 text-sm">✓</span>
+                <span className="text-xs text-green-700 flex-1 truncate">{acacedDocFile.name}</span>
+                <button type="button" onClick={() => acacedDocRef.current?.click()}
+                  className="text-xs text-[#0C5C6C] font-medium hover:underline">Changer</button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => acacedDocRef.current?.click()}
+                className="w-full border-2 border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-xl py-3 text-sm text-gray-400 hover:text-[#0C5C6C] transition-colors">
+                📎 Joindre le certificat ACACED (image ou PDF)
+              </button>
+            )}
+          </div>
 
           <div>
             <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-2">Adresse du siège</p>
             <input value={rue} onChange={e => setRue(e.target.value)}
-              className="w-full input-field mb-2" placeholder="Rue / numéro" />
+              className="w-full input-field mb-2" placeholder="Rue / numéro *" />
             <div className="flex gap-2">
-              <input value={ville} onChange={e => setVille(e.target.value)}
-                className="flex-1 input-field" placeholder="Ville *" required />
               <input value={cp} onChange={e => setCp(e.target.value)}
-                className="w-28 input-field" placeholder="Code postal" />
+                className="w-28 input-field" placeholder="Code postal *" />
+              <input value={ville} onChange={e => setVille(e.target.value)}
+                className="flex-1 input-field" placeholder="Ville *" />
             </div>
           </div>
 
@@ -691,27 +796,6 @@ function AssociationForm({ uid, onBack, onSaved }: {
             <input value={phone} onChange={e => setPhone(e.target.value)}
               className="w-full input-field" placeholder="06 12 34 56 78" />
           </AssocField>
-
-          <AssocField label="Capacité d'accueil (animaux)">
-            <input value={capacite} onChange={e => setCapacite(e.target.value)}
-              className="w-full input-field" placeholder="Ex : 50" type="number" min={1} />
-          </AssocField>
-
-          <div>
-            <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-2">Espèces accueillies</p>
-            <div className="flex flex-wrap gap-2">
-              {ESPECES.map(e => (
-                <button key={e} type="button" onClick={() => toggleEspece(e)}
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                    especesSet.has(e)
-                      ? 'bg-[#DCE8D5] border-[#6E9E57] text-[#1F2A2E]'
-                      : 'bg-white border-gray-200 text-gray-600 hover:border-[#6E9E57]'
-                  }`}>
-                  {e}
-                </button>
-              ))}
-            </div>
-          </div>
 
           <AssocField label="Site web (facultatif)">
             <input value={siteWeb} onChange={e => setSiteWeb(e.target.value)}
@@ -723,6 +807,10 @@ function AssociationForm({ uid, onBack, onSaved }: {
               rows={3} className="w-full input-field resize-none"
               placeholder="Mission de l'association, historique, actions…" />
           </AssocField>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+            Votre profil sera soumis à validation avant d&apos;être visible.
+          </div>
 
           <button onClick={handleSave} disabled={saving}
             className="w-full py-4 bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-bold rounded-xl transition-colors disabled:opacity-60"

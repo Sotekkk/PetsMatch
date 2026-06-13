@@ -8,7 +8,7 @@ import { updateProfile, EmailAuthProvider, reauthenticateWithCredential, deleteU
 import { doc, updateDoc, deleteDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { ACTIVE_PROFILE_KEY } from '@/hooks/useActiveProfile';
 import { useAuth } from '@/lib/auth-context';
 import { uploadPhoto } from '@/lib/upload-media';
 import ReactCrop, { type Crop, type PixelCrop, centerCrop, makeAspectCrop } from 'react-image-crop';
@@ -236,21 +236,40 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
-  const [profileLabel, setProfileLabel] = useState('');
-  const [nomAsso, setNomAsso] = useState('');
-  const [description, setDescription] = useState('');
-  const [phone, setPhone] = useState('');
-  const [rue, setRue] = useState('');
-  const [ville, setVille] = useState('');
-  const [cp, setCp] = useState('');
-  const [pays, setPays] = useState('France');
-  const [siteWeb, setSiteWeb] = useState('');
-  const [instagram, setInstagram] = useState('');
-  const [facebook, setFacebook] = useState('');
-  const [siret, setSiret] = useState('');
-  const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  // Champs principaux
+  const [profileLabel, setProfileLabel]     = useState('');
+  const [nomAsso, setNomAsso]               = useState('');
+  const [nomResponsable, setNomResponsable] = useState('');
+  const [rna, setRna]                       = useState('');
+  const [siret, setSiret]                   = useState('');
+  const [acaced, setAcaced]                 = useState('');
+  const [acacedDate, setAcacedDate]         = useState('');
+  const [description, setDescription]       = useState('');
+  const [phone, setPhone]                   = useState('');
+  const [rue, setRue]                       = useState('');
+  const [ville, setVille]                   = useState('');
+  const [cp, setCp]                         = useState('');
+  const [pays, setPays]                     = useState('France');
+  const [siteWeb, setSiteWeb]               = useState('');
+  const [instagram, setInstagram]           = useState('');
+  const [facebook, setFacebook]             = useState('');
+
+  // Photos
+  const [avatarFile, setAvatarFile]         = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview]   = useState<string | null>(null);
+  const [bannerFile, setBannerFile]         = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview]   = useState<string | null>(null);
+  const [currentBanner, setCurrentBanner]   = useState<string | null>(null);
   const avatarRef = useRef<HTMLInputElement>(null);
+  const bannerRef = useRef<HTMLInputElement>(null);
+
+  // Documents
+  const [siretDocFile, setSiretDocFile]     = useState<File | null>(null);
+  const [siretDocUrl, setSiretDocUrl]       = useState<string | null>(null);
+  const [acacedDocFile, setAcacedDocFile]   = useState<File | null>(null);
+  const [acacedDocUrl, setAcacedDocUrl]     = useState<string | null>(null);
+  const siretDocRef = useRef<HTMLInputElement>(null);
+  const acacedDocRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     supabase.from('user_profiles').select('*').eq('id', profileId).single()
@@ -259,6 +278,13 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
         const r = data as Record<string, unknown>;
         setProfileLabel((r.profile_label as string) ?? '');
         setNomAsso((r.name_elevage as string) ?? '');
+        setNomResponsable((r.profession_pro as string) ?? '');
+        setRna((r.ordre_veterinaire as string) ?? '');
+        setSiret((r.siret as string) ?? '');
+        // ACACED stocké dans certifications[0]
+        const certs = (r.certifications as {nom?: string; numero?: string; date_obtention?: string}[]) ?? [];
+        const acaCert = certs.find(c => c.nom === 'ACACED');
+        if (acaCert) { setAcaced(acaCert.numero ?? ''); setAcacedDate(acaCert.date_obtention ?? ''); }
         setDescription(((r.desc_entreprise ?? r.description) as string) ?? '');
         setPhone((r.phone as string) ?? '');
         setRue((r.rue as string) ?? '');
@@ -268,30 +294,49 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
         setSiteWeb((r.site_web as string) ?? '');
         setInstagram((r.instagram as string) ?? '');
         setFacebook((r.facebook as string) ?? '');
-        setSiret((r.siret as string) ?? '');
+        setSiretDocUrl((r.kbis_url as string) ?? null);
+        setAcacedDocUrl((r.acaced_doc_url as string) ?? null);
         setAvatarPreview((r.avatar_url as string) ?? null);
+        setCurrentBanner((r.banner_url as string) ?? null);
         setLoading(false);
       });
   }, [profileId]);
 
   async function handleSave() {
+    const errs: string[] = [];
+    if (!nomAsso.trim())        errs.push("Nom de l'association");
+    if (!nomResponsable.trim()) errs.push('Nom du responsable');
+    if (!siret.trim())          errs.push('SIRET / SIREN');
+    if (!acaced.trim())         errs.push('N° ACACED');
+    if (!acacedDate)            errs.push("Date d'obtention ACACED");
+    if (!rue.trim())            errs.push('Rue');
+    if (!ville.trim())          errs.push('Ville');
+    if (!cp.trim())             errs.push('Code postal');
+    if (errs.length > 0) { setError(`Champs obligatoires : ${errs.join(', ')}`); return; }
+
     setSaving(true);
     setError('');
     try {
+      const certs = [{ nom: 'ACACED', numero: acaced.trim(), date_obtention: acacedDate }];
+
       const payload: Record<string, unknown> = {
-        profile_label: profileLabel.trim(),
-        name_elevage: nomAsso.trim(),
-        desc_entreprise: description.trim(),
-        phone: phone.trim(),
-        rue: rue.trim(),
-        ville: ville.trim(),
-        code_postal: cp.trim(),
-        pays: pays.trim() || 'France',
-        site_web: siteWeb.trim(),
-        instagram: instagram.trim(),
-        facebook: facebook.trim(),
-        siret: siret.trim(),
+        profile_label:     profileLabel.trim() || nomAsso.trim(),
+        name_elevage:      nomAsso.trim(),
+        profession_pro:    nomResponsable.trim(),
+        ordre_veterinaire: rna.trim(),
+        siret:             siret.trim(),
+        certifications:    certs,
+        desc_entreprise:   description.trim(),
+        phone:             phone.trim(),
+        rue:               rue.trim(),
+        ville:             ville.trim(),
+        code_postal:       cp.trim(),
+        pays:              pays.trim() || 'France',
+        site_web:          siteWeb.trim(),
+        instagram:         instagram.trim(),
+        facebook:          facebook.trim(),
       };
+
       if (avatarFile) {
         const path = `profiles/${uid}/asso_${profileId}_avatar.jpg`;
         const { data: up } = await supabase.storage.from('petsmatch').upload(path, avatarFile, { upsert: true });
@@ -300,6 +345,36 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
           payload.avatar_url = pub.publicUrl;
         }
       }
+      if (bannerFile) {
+        const path = `profiles/${uid}/asso_${profileId}_banner.jpg`;
+        const { data: up } = await supabase.storage.from('petsmatch').upload(path, bannerFile, { upsert: true });
+        if (up) {
+          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          payload.banner_url = pub.publicUrl;
+          setCurrentBanner(pub.publicUrl);
+        }
+      }
+      if (siretDocFile) {
+        const ext = siretDocFile.name.split('.').pop() ?? 'pdf';
+        const path = `documents/${uid}/asso_kbis.${ext}`;
+        const { data: up } = await supabase.storage.from('petsmatch').upload(path, siretDocFile, { upsert: true });
+        if (up) {
+          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          payload.kbis_url = pub.publicUrl;
+          setSiretDocUrl(pub.publicUrl);
+        }
+      }
+      if (acacedDocFile) {
+        const ext = acacedDocFile.name.split('.').pop() ?? 'pdf';
+        const path = `documents/${uid}/asso_acaced.${ext}`;
+        const { data: up } = await supabase.storage.from('petsmatch').upload(path, acacedDocFile, { upsert: true });
+        if (up) {
+          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          payload.acaced_doc_url = pub.publicUrl;
+          setAcacedDocUrl(pub.publicUrl);
+        }
+      }
+
       const { error: err } = await supabase.from('user_profiles').update(payload).eq('id', profileId);
       if (err) throw err;
       setSaved(true);
@@ -318,105 +393,179 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
   );
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 pb-20">
-      <div className="flex items-center gap-3 mb-6">
-        <button onClick={() => router.back()} className="text-[#0C5C6C] hover:underline text-sm font-medium">← Retour</button>
-        <h1 className="text-2xl font-bold text-[#1F2A2E] flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>
-          Mon profil association
-        </h1>
-      </div>
+    <div className="max-w-2xl mx-auto pb-20">
 
-      {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">{error}</div>
-      )}
-
-      {/* Avatar */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-4 flex items-center gap-4">
-        <input ref={avatarRef} type="file" accept="image/*" className="hidden"
-          onChange={e => {
-            const f = e.target.files?.[0];
-            if (f) { setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); }
-            e.target.value = '';
-          }} />
-        <div className="w-16 h-16 rounded-full overflow-hidden bg-[#E3F2FD] flex items-center justify-center flex-shrink-0 cursor-pointer relative group border-2 border-[#0C5C6C]/30"
-          onClick={() => avatarRef.current?.click()}>
-          {avatarPreview
-            ? <Image src={avatarPreview} alt="" width={64} height={64} className="object-cover w-full h-full" />
-            : <span className="text-xl font-bold text-[#0C5C6C]">{(nomAsso[0] ?? '?').toUpperCase()}</span>
-          }
-          <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
-            <span className="text-white text-xs">📷</span>
-          </div>
-        </div>
-        <div>
-          <p className="font-semibold text-[#1F2A2E]">{nomAsso || profileLabel || 'Mon association'}</p>
-          <span className="text-xs bg-[#E3F2FD] text-[#0C5C6C] px-2 py-0.5 rounded-full font-medium">Association</span>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        <Card title="Informations générales">
-          <Field label="Libellé du profil">
-            <input value={profileLabel} onChange={e => setProfileLabel(e.target.value)} className={inputCls}
-              placeholder="Ex : Mon association" />
-          </Field>
-          <Field label="Nom de l'association">
-            <input value={nomAsso} onChange={e => setNomAsso(e.target.value)} className={inputCls}
-              placeholder="Ex : SPA de Paris" />
-          </Field>
-          <Field label="Description / présentation">
-            <textarea value={description} onChange={e => setDescription(e.target.value)}
-              rows={4} placeholder="Présentez votre association, vos missions…"
-              className={`${inputCls} resize-none`} />
-          </Field>
-          <Field label="Téléphone">
-            <input value={phone} onChange={e => setPhone(e.target.value)} className={inputCls}
-              placeholder="06 12 34 56 78" />
-          </Field>
-        </Card>
-
-        <Card title="Adresse">
-          <Field label="Rue / numéro">
-            <input value={rue} onChange={e => setRue(e.target.value)} className={inputCls} placeholder="12 rue des Fleurs" />
-          </Field>
-          <div className="grid grid-cols-5 gap-3">
-            <div className="col-span-2">
-              <Field label="Code postal">
-                <input value={cp} onChange={e => setCp(e.target.value)} className={inputCls} placeholder="75001" />
-              </Field>
-            </div>
-            <div className="col-span-3">
-              <Field label="Ville">
-                <input value={ville} onChange={e => setVille(e.target.value)} className={inputCls} placeholder="Paris" />
-              </Field>
-            </div>
-          </div>
-          <Field label="Pays">
-            <input value={pays} onChange={e => setPays(e.target.value)} className={inputCls} />
-          </Field>
-        </Card>
-
-        <Card title="Présence en ligne">
-          {siret && (
-            <div className="mb-3"><ReadOnly label="N° association / SIREN" value={siret} icon="🏢" /></div>
+      {/* ── Bannière + avatar ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
+        <button type="button" onClick={() => bannerRef.current?.click()}
+          className="w-full h-44 bg-gradient-to-br from-[#0C5C6C] to-[#6E9E57] relative overflow-hidden block group">
+          {(bannerPreview ?? currentBanner) && (
+            <Image src={bannerPreview ?? currentBanner!} alt="Bannière" fill className="object-cover" />
           )}
-          <Field label="Site web">
-            <input value={siteWeb} onChange={e => setSiteWeb(e.target.value)} className={inputCls} placeholder="https://monasso.fr" />
-          </Field>
-          <Field label="Instagram">
-            <input value={instagram} onChange={e => setInstagram(e.target.value)} className={inputCls} placeholder="@moncompte" />
-          </Field>
-          <Field label="Facebook">
-            <input value={facebook} onChange={e => setFacebook(e.target.value)} className={inputCls} placeholder="facebook.com/monasso" />
-          </Field>
-        </Card>
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/35 transition-colors">
+            <div className="flex flex-col items-center gap-1 text-white">
+              <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+              </svg>
+              <span className="text-xs font-medium">Modifier la bannière</span>
+            </div>
+          </div>
+        </button>
+        <input ref={bannerRef} type="file" accept="image/*" className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) { setBannerFile(f); setBannerPreview(URL.createObjectURL(f)); } e.target.value = ''; }} />
+        <input ref={avatarRef} type="file" accept="image/*" className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) { setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } e.target.value = ''; }} />
+        <div className="px-5 -mt-10 mb-4 flex items-end gap-3 relative z-10">
+          <div className="w-20 h-20 rounded-full overflow-hidden bg-[#E3F2FD] flex items-center justify-center flex-shrink-0 border-4 border-white shadow-md cursor-pointer relative group"
+            onClick={() => avatarRef.current?.click()}>
+            {avatarPreview
+              ? <Image src={avatarPreview} alt="" width={80} height={80} className="object-cover w-full h-full" />
+              : <span className="text-2xl font-bold text-[#0C5C6C]">{(nomAsso[0] ?? '🤝').toUpperCase()}</span>
+            }
+            <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            </div>
+          </div>
+          <div className="pb-1">
+            <p className="font-bold text-[#1F2A2E] text-sm">{nomAsso || 'Mon association'}</p>
+            <span className="text-xs bg-[#E3F2FD] text-[#0C5C6C] px-2 py-0.5 rounded-full font-medium">🤝 Association</span>
+          </div>
+        </div>
+      </div>
 
-        <div className="flex items-center gap-3 pt-2">
-          <button type="button" onClick={handleSave} disabled={saving}
-            className="bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
-            {saving ? 'Enregistrement…' : 'Enregistrer'}
-          </button>
-          {saved && <span className="text-[#6E9E57] text-sm font-medium">✓ Profil mis à jour</span>}
+      <div className="px-4">
+        <div className="flex items-center gap-3 mb-4">
+          <button onClick={() => router.back()} className="text-[#0C5C6C] hover:underline text-sm font-medium">← Retour</button>
+          <h1 className="text-xl font-bold text-[#1F2A2E] flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Mon profil association
+          </h1>
+        </div>
+
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">{error}</div>
+        )}
+
+        <div className="space-y-4">
+          <Card title="Informations générales">
+            <Field label="Nom de l'association *">
+              <input value={nomAsso} onChange={e => setNomAsso(e.target.value)} className={inputCls} placeholder="Ex : SPA de Paris, Refuge du Soleil…" />
+            </Field>
+            <Field label="Nom du responsable / propriétaire *">
+              <input value={nomResponsable} onChange={e => setNomResponsable(e.target.value)} className={inputCls} placeholder="Prénom Nom du président(e)" />
+            </Field>
+            <Field label="Libellé du profil">
+              <input value={profileLabel} onChange={e => setProfileLabel(e.target.value)} className={inputCls} placeholder="Identifiant affiché dans le sélecteur de profil" />
+            </Field>
+            <Field label="Description / présentation">
+              <textarea value={description} onChange={e => setDescription(e.target.value)}
+                rows={4} placeholder="Mission, historique, actions de l'association…"
+                className={`${inputCls} resize-none`} />
+            </Field>
+            <Field label="Téléphone">
+              <input value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} placeholder="06 12 34 56 78" />
+            </Field>
+          </Card>
+
+          <Card title="Identifiants officiels">
+            <Field label="SIRET / SIREN *">
+              <input value={siret} onChange={e => setSiret(e.target.value)} className={inputCls} placeholder="9 ou 14 chiffres" maxLength={14} />
+            </Field>
+            <div className="mb-3">
+              <p className="text-xs font-medium text-gray-500 mb-1">Justificatif SIRET (KBIS / extrait)</p>
+              {siretDocUrl && !siretDocFile && (
+                <a href={siretDocUrl} target="_blank" rel="noopener" className="text-xs text-[#0C5C6C] underline block mb-1">📄 Document actuel</a>
+              )}
+              {siretDocFile ? (
+                <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                  <span className="text-green-600 text-sm">✓</span>
+                  <span className="text-xs text-green-700 flex-1 truncate">{siretDocFile.name}</span>
+                  <button type="button" onClick={() => siretDocRef.current?.click()} className="text-xs text-[#0C5C6C] font-medium hover:underline">Changer</button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => siretDocRef.current?.click()}
+                  className="w-full border-2 border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-xl py-2.5 text-sm text-gray-400 hover:text-[#0C5C6C] transition-colors">
+                  📎 Joindre le justificatif SIRET (image ou PDF)
+                </button>
+              )}
+              <input ref={siretDocRef} type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) setSiretDocFile(f); e.target.value = ''; }} />
+            </div>
+            <Field label="Numéro RNA">
+              <input value={rna} onChange={e => setRna(e.target.value)} className={inputCls} placeholder="W123456789" />
+            </Field>
+          </Card>
+
+          <Card title="ACACED">
+            <Field label="N° ACACED *">
+              <input value={acaced} onChange={e => setAcaced(e.target.value)} className={inputCls} placeholder="Ex : ACE-2023-XXXX" />
+            </Field>
+            <Field label="Date d'obtention *">
+              <input type="date" value={acacedDate} onChange={e => setAcacedDate(e.target.value)}
+                className={inputCls} max={new Date().toISOString().slice(0, 10)} />
+            </Field>
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-1">Certificat ACACED</p>
+              {acacedDocUrl && !acacedDocFile && (
+                <a href={acacedDocUrl} target="_blank" rel="noopener" className="text-xs text-[#0C5C6C] underline block mb-1">📄 Certificat actuel</a>
+              )}
+              {acacedDocFile ? (
+                <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                  <span className="text-green-600 text-sm">✓</span>
+                  <span className="text-xs text-green-700 flex-1 truncate">{acacedDocFile.name}</span>
+                  <button type="button" onClick={() => acacedDocRef.current?.click()} className="text-xs text-[#0C5C6C] font-medium hover:underline">Changer</button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => acacedDocRef.current?.click()}
+                  className="w-full border-2 border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-xl py-2.5 text-sm text-gray-400 hover:text-[#0C5C6C] transition-colors">
+                  📎 Joindre le certificat ACACED (image ou PDF)
+                </button>
+              )}
+              <input ref={acacedDocRef} type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) setAcacedDocFile(f); e.target.value = ''; }} />
+            </div>
+          </Card>
+
+          <Card title="Adresse du siège">
+            <Field label="Rue / numéro *">
+              <input value={rue} onChange={e => setRue(e.target.value)} className={inputCls} placeholder="12 rue des Fleurs" />
+            </Field>
+            <div className="grid grid-cols-5 gap-3">
+              <div className="col-span-2">
+                <Field label="Code postal *">
+                  <input value={cp} onChange={e => setCp(e.target.value)} className={inputCls} placeholder="75001" />
+                </Field>
+              </div>
+              <div className="col-span-3">
+                <Field label="Ville *">
+                  <input value={ville} onChange={e => setVille(e.target.value)} className={inputCls} placeholder="Paris" />
+                </Field>
+              </div>
+            </div>
+            <Field label="Pays">
+              <input value={pays} onChange={e => setPays(e.target.value)} className={inputCls} />
+            </Field>
+          </Card>
+
+          <Card title="Présence en ligne">
+            <Field label="Site web">
+              <input value={siteWeb} onChange={e => setSiteWeb(e.target.value)} className={inputCls} placeholder="https://monasso.fr" />
+            </Field>
+            <Field label="Instagram">
+              <input value={instagram} onChange={e => setInstagram(e.target.value)} className={inputCls} placeholder="@moncompte" />
+            </Field>
+            <Field label="Facebook">
+              <input value={facebook} onChange={e => setFacebook(e.target.value)} className={inputCls} placeholder="facebook.com/monasso" />
+            </Field>
+          </Card>
+
+          <div className="flex items-center gap-3 pt-2">
+            <button type="button" onClick={handleSave} disabled={saving}
+              className="bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
+              {saving ? 'Enregistrement…' : 'Enregistrer'}
+            </button>
+            {saved && <span className="text-[#6E9E57] text-sm font-medium">✓ Profil mis à jour</span>}
+          </div>
         </div>
       </div>
     </div>
@@ -816,7 +965,10 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
 export default function ProfilPage() {
   const { user, userData, loading, refreshUserData } = useAuth();
   const router = useRouter();
-  const activeProfileId = useActiveProfile();
+  // Profil actif : lu depuis localStorage après le mount pour éviter les erreurs d'hydratation
+  const [profileState, setProfileState] = useState<{ mounted: boolean; id: string; type: string }>(
+    { mounted: false, id: '', type: '' }
+  );
 
   // Identity
   const [firstname, setFirstname] = useState('');
@@ -890,8 +1042,6 @@ export default function ProfilPage() {
 
   const isEleveur = userData?.isElevage === true;
 
-  // Type du profil secondaire actif (chargé depuis user_profiles)
-  const [activeProfileType, setActiveProfileType] = useState('');
 
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
@@ -942,11 +1092,23 @@ export default function ProfilPage() {
     }).catch(() => {});
   }, []);
 
+  // Lit localStorage + charge le type du profil actif en une seule opération (évite les flashes)
   useEffect(() => {
-    if (!activeProfileId) { setActiveProfileType(''); return; }
-    supabase.from('user_profiles').select('profile_type').eq('id', activeProfileId).single()
-      .then(({ data }) => setActiveProfileType((data as Record<string, unknown>)?.profile_type as string ?? 'pro'));
-  }, [activeProfileId]);
+    const id = localStorage.getItem(ACTIVE_PROFILE_KEY) ?? '';
+    if (!id) { setProfileState({ mounted: true, id: '', type: '' }); return; }
+    (async () => {
+      try {
+        const { data } = await supabase.from('user_profiles').select('profile_type').eq('id', id).single();
+        setProfileState({
+          mounted: true,
+          id,
+          type: (data as Record<string, unknown>)?.profile_type as string ?? '',
+        });
+      } catch {
+        setProfileState({ mounted: true, id: '', type: '' });
+      }
+    })();
+  }, []);
 
   function onAdresseSearchChange(val: string) {
     setAdresseSearch(val);
@@ -1042,16 +1204,16 @@ export default function ProfilPage() {
     }
   }, [allBreeds]);
 
-  // Si un profil secondaire est actif, afficher l'édition de ce profil
-  // Ce return doit être APRÈS tous les hooks pour respecter les règles de React
-  if (activeProfileId && !loading && user) {
-    if (!activeProfileType) {
-      return <div className="flex justify-center py-32"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
+  // Attendre que localStorage soit lu (évite l'affichage du profil primaire par erreur)
+  if (!profileState.mounted || loading) {
+    return <div className="flex justify-center py-32"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
+  }
+
+  if (profileState.id && user) {
+    if (profileState.type === 'association') {
+      return <AssociationEdit profileId={profileState.id} uid={user.uid} />;
     }
-    if (activeProfileType === 'association') {
-      return <AssociationEdit profileId={activeProfileId} uid={user.uid} />;
-    }
-    return <SecondaryProEdit profileId={activeProfileId} uid={user.uid} />;
+    return <SecondaryProEdit profileId={profileState.id} uid={user.uid} />;
   }
 
   function toggleEspece(espece: string) {

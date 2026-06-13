@@ -6,6 +6,7 @@ import { collection, getDocs, doc, getDoc, deleteDoc, updateDoc } from 'firebase
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { notifyProfileValidated, sendNotification } from '@/lib/notifications';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -439,6 +440,8 @@ export default function AdminPage() {
         }).eq('uid', d.uid);
         await updateDoc(doc(db, 'users', d.uid), { isValidate: true, verificationStatus: 'approved' });
       }
+      const profileType = d.isElevage ? 'eleveur' : (d.catPro ?? '');
+      await notifyProfileValidated(d.uid, profileType);
       setDossiers(prev => prev.filter(x =>
         d.isSecondary ? x.profileTableId !== d.profileTableId : (x.isSecondary || x.uid !== d.uid)
       ));
@@ -461,6 +464,22 @@ export default function AdminPage() {
         }).eq('uid', d.uid);
         await updateDoc(doc(db, 'users', d.uid), { isValidate: false, verificationStatus: 'rejected' });
       }
+      const profileType = d.isElevage ? 'eleveur' : (d.catPro ?? '');
+      const LABELS: Record<string, string> = {
+        eleveur: 'Éleveur', association: 'Association', veterinaire: 'Vétérinaire',
+        sante: 'Santé animale', education: 'Éducation', garde: 'Garde',
+        pension: 'Pension', toilettage: 'Toilettage', photographe: 'Photographe',
+        marechal_ferrant: 'Maréchal-ferrant',
+      };
+      await sendNotification({
+        uid: d.uid,
+        type: 'profil_refuse',
+        title: 'Profil non approuvé',
+        body: motif.trim()
+          ? `Votre profil ${LABELS[profileType] ?? profileType} n'a pas été approuvé. Motif : ${motif.trim()}`
+          : `Votre profil ${LABELS[profileType] ?? profileType} n'a pas été approuvé. Contactez le support pour plus d'informations.`,
+        profileType,
+      });
       setDossiers(prev => prev.filter(x =>
         d.isSecondary ? x.profileTableId !== d.profileTableId : (x.isSecondary || x.uid !== d.uid)
       ));
