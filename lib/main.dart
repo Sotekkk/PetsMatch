@@ -141,10 +141,8 @@ class User_Info {
   static String pays = "France";
   static String departement = "";
   static String region = "";
-  static String profilePictureUrl =
-      'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60';
-  static String profilePictureUrlElevage =
-      'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60';
+  static String profilePictureUrl = '';
+  static String profilePictureUrlElevage = '';
   static bool isElevage = true;
   static String adressElevage = "";
   static String rueElevage = "";
@@ -216,6 +214,7 @@ class User_Info {
     departement = data['departement'] ?? departement;
     region = data['region'] ?? region;
     profilePictureUrl = data['profilePictureUrl'] ?? profilePictureUrl;
+    profilePictureUrlElevage = data['profilePictureUrlElevage'] ?? data['profilePictureUrl'] ?? profilePictureUrlElevage;
     isElevage = data['isElevage'] ?? isElevage;
     nameElevage = data['nameElevage'] ?? nameElevage;
     adressElevage = data['adressElevage'] ?? adressElevage;

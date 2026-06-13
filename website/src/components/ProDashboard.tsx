@@ -89,7 +89,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
   const catPro = profile.profile_type ?? profile.cat_pro ?? '';
   const isVet  = catPro === 'veterinaire' || catPro === 'sante';
   const name   = profile.name_elevage || userData?.firstname || 'Mon cabinet';
-  const avatar = profile.avatar_url ?? userData?.profilePictureUrl ?? null;
+  const avatar = profile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
 
   // Libellé "clients" selon la profession
   const clientsLabel = isVet ? 'Mes patients'
