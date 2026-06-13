@@ -644,6 +644,7 @@ export default function ProfilPage() {
 
   // Elevage
   const [nameElevage, setNameElevage] = useState('');
+  const [phoneElevage, setPhoneElevage] = useState('');
   const [description, setDescription] = useState('');
   const [rue, setRue] = useState('');
   const [cp, setCp] = useState('');
@@ -695,6 +696,7 @@ export default function ProfilPage() {
     setDob(userData.dob ?? '');
     if (isEleveur) {
       setNameElevage(userData.nameElevage ?? '');
+      setPhoneElevage(userData.numeroElevage ?? '');
       setDescription(userData.descriptionElevage ?? '');
       setRue(userData.rueElevage ?? '');
       setCp(userData.codePostalElevage ?? '');
@@ -881,6 +883,7 @@ export default function ProfilPage() {
         const adresse = [rue, cp, villeElevage].filter(Boolean).join(', ');
 
         payload.name_elevage = nameElevage;
+        payload.numero_elevage = phoneElevage;
         payload.desc_entreprise = description;
         payload.rue_elevage = rue;
         payload.code_postal_elevage = cp;
@@ -1202,14 +1205,9 @@ export default function ProfilPage() {
             <Field label="Nom de l'élevage *">
               <input value={nameElevage} onChange={e => setNameElevage(e.target.value)} required className={inputCls} />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Téléphone">
-                <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="06 00 00 00 00" className={inputCls} />
-              </Field>
-              <Field label="Ville particulier">
-                <input value={ville} onChange={e => setVille(e.target.value)} placeholder="Paris" className={inputCls} />
-              </Field>
-            </div>
+            <Field label="Téléphone de l'élevage">
+              <input value={phoneElevage} onChange={e => setPhoneElevage(e.target.value)} placeholder="06 00 00 00 00" className={inputCls} />
+            </Field>
             <Field label="Description / présentation">
               <textarea value={description} onChange={e => setDescription(e.target.value)}
                 rows={4} placeholder="Présentez votre élevage…"
