@@ -5,6 +5,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
+import 'package:PetsMatch/pages/association/associations_list_page.dart';
+import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
 import 'package:PetsMatch/pages/message.dart';
@@ -232,6 +234,26 @@ class _ParticulierNavState extends State<ParticulierNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const EleveurListPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Annonces d\'adoption',
+                      icon: Icons.favorite_border,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AnnoncesAssoFeedPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Carte des associations',
+                      icon: Icons.map_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AssociationsListPage(),
                         ));
                       },
                     ),

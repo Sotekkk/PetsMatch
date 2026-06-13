@@ -246,7 +246,7 @@ class User_Info {
     professionPro = data['professionPro'] ?? professionPro;
     isPartenaire = data['isPartenaire'] ?? isPartenaire;
     isAdmin = data['isAdmin'] ?? isAdmin;
-    isAssociation = data['isAssociation'] ?? isAssociation;
+    isAssociation = data['isAssociation'] ?? false;
     rna = data['rna'] ?? rna;
     agrementPrefectoral = data['agrementPrefectoral'] ?? agrementPrefectoral;
     acacedNumero = data['acacedNumero'] ?? acacedNumero;

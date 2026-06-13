@@ -62,6 +62,7 @@ class RegistreHelper {
       await supa.from('registre_sanitaire').insert({
         'id':             id,
         'uid_eleveur':    uid,
+        'animal_id':      animalId,
         'animal_nom':     (d['nom'] ?? '') as String,
         'espece':         (d['espece'] ?? '') as String,
         'date_naissance': d['date_naissance'],
@@ -80,7 +81,8 @@ class RegistreHelper {
 // ── Page principale ────────────────────────────────────────────────────────────
 
 class RegistreSanitairePage extends StatefulWidget {
-  const RegistreSanitairePage({super.key});
+  final bool isAssociation;
+  const RegistreSanitairePage({super.key, this.isAssociation = false});
 
   @override
   State<RegistreSanitairePage> createState() => _RegistreSanitairePageState();
@@ -97,10 +99,31 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
   bool _planLoading = true;
   bool _hasRegistres = false;
 
+  // IDs des animaux association (chargés si isAssociation = true)
+  Set<String> _assoAnimalIds = {};
+  bool _assoIdsLoaded = false;
+
   @override
   void initState() {
     super.initState();
     _checkPlan();
+    if (widget.isAssociation) _loadAssoAnimalIds();
+  }
+
+  Future<void> _loadAssoAnimalIds() async {
+    final uid = _uid;
+    if (uid.isEmpty) return;
+    try {
+      final rows = await Supabase.instance.client
+          .from('animaux')
+          .select('id')
+          .eq('uid_eleveur', uid)
+          .inFilter('statut', ['en_soin', 'disponible', 'en_fa', 'adopte', 'transfere', 'decede']);
+      final ids = (rows as List).map((r) => r['id']?.toString() ?? '').where((id) => id.isNotEmpty).toSet();
+      if (mounted) setState(() { _assoAnimalIds = ids; _assoIdsLoaded = true; });
+    } catch (_) {
+      if (mounted) setState(() => _assoIdsLoaded = true);
+    }
   }
 
   Future<void> _checkPlan() async {
@@ -501,7 +524,12 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
           ),
         ],
       ),
-      body: _RegistreList(filterEspece: _filterEspece, filterType: _filterType),
+      body: _RegistreList(
+        filterEspece: _filterEspece,
+        filterType: _filterType,
+        isAssociation: widget.isAssociation,
+        assoAnimalIds: _assoAnimalIds,
+      ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: _green,
         icon: const Icon(Icons.add, color: Colors.white),
@@ -520,7 +548,9 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
 class _RegistreList extends StatelessWidget {
   final String? filterEspece;
   final String? filterType;
-  const _RegistreList({this.filterEspece, this.filterType});
+  final bool isAssociation;
+  final Set<String> assoAnimalIds;
+  const _RegistreList({this.filterEspece, this.filterType, this.isAssociation = false, this.assoAnimalIds = const {}});
 
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -535,6 +565,12 @@ class _RegistreList extends StatelessWidget {
       builder: (ctx, snap) {
         if (!snap.hasData) return const Center(child: CircularProgressIndicator());
         var docs = snap.data ?? [];
+        if (isAssociation && assoAnimalIds.isNotEmpty) {
+          docs = docs.where((d) {
+            final aid = d['animal_id']?.toString() ?? '';
+            return aid.isNotEmpty ? assoAnimalIds.contains(aid) : false;
+          }).toList();
+        }
         if (filterEspece != null) {
           docs = docs.where((d) => d['espece'] == filterEspece).toList();
         }

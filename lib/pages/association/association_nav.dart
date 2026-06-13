@@ -8,11 +8,11 @@ import 'package:PetsMatch/pages/association/familles_accueil/familles_accueil_pa
 import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
-import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
+import 'package:PetsMatch/pages/association/associations_list_page.dart';
+import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
+import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
-import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
@@ -192,7 +192,7 @@ class _AssociationNavState extends State<AssociationNav> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const RegistreSanitairePage(),
+                          builder: (_) => const RegistreSanitairePage(isAssociation: true),
                         ));
                       },
                     ),
@@ -238,7 +238,7 @@ class _AssociationNavState extends State<AssociationNav> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const CreateAnnoncePage(),
+                          builder: (_) => const CreateAnnonceAssoPage(),
                         ));
                       },
                     ),
@@ -258,7 +258,7 @@ class _AssociationNavState extends State<AssociationNav> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnnoncesPublicPage(typeFilter: 'adoption'),
+                          builder: (_) => const AnnoncesAssoFeedPage(),
                         ));
                       },
                     ),
@@ -268,7 +268,7 @@ class _AssociationNavState extends State<AssociationNav> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const EleveurListPage(),
+                          builder: (_) => const AssociationsListPage(),
                         ));
                       },
                     ),

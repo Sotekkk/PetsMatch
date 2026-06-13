@@ -1,4 +1,8 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/association/animaux/mes_animaux_asso.dart';
+import 'package:PetsMatch/pages/association/benevoles/benevoles_page.dart';
+import 'package:PetsMatch/pages/association/familles_accueil/familles_accueil_page.dart';
+import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -32,10 +36,12 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
+      const assoStatuts = ['en_soin', 'disponible', 'en_fa', 'adopte', 'transfere', 'decede'];
       final animaux = await _supa
           .from('animaux')
           .select('statut')
-          .eq('uid_eleveur', uid);
+          .eq('uid_eleveur', uid)
+          .inFilter('statut', assoStatuts);
       final list = animaux as List;
       final benevoles = await _supa
           .from('employes')
@@ -158,10 +164,14 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
                     spacing: 10,
                     runSpacing: 10,
                     children: [
-                      _QuickAction('Mes animaux', Icons.pets, _teal),
-                      _QuickAction('Familles d\'accueil', Icons.house_outlined, Colors.purple),
-                      _QuickAction('Bénévoles', Icons.volunteer_activism_outlined, _green),
-                      _QuickAction('Certificats', Icons.edit_document, Colors.orange),
+                      _QuickAction('Mes animaux', Icons.pets, _teal, onTap: () =>
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnimauxAssoPage()))),
+                      _QuickAction('Familles d\'accueil', Icons.house_outlined, Colors.purple, onTap: () =>
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const FamillesAccueilPage()))),
+                      _QuickAction('Bénévoles', Icons.volunteer_activism_outlined, _green, onTap: () =>
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const BenevolesPage()))),
+                      _QuickAction('Certificats', Icons.edit_document, Colors.orange, onTap: () =>
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const CertificatsEngagementPage()))),
                     ],
                   ),
                 ],
@@ -228,12 +238,15 @@ class _QuickAction extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color color;
+  final VoidCallback? onTap;
 
-  const _QuickAction(this.label, this.icon, this.color);
+  const _QuickAction(this.label, this.icon, this.color, {this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
@@ -248,6 +261,7 @@ class _QuickAction extends StatelessWidget {
           Text(label,
               style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: color, fontWeight: FontWeight.w600)),
         ],
+      ),
       ),
     );
   }

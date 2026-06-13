@@ -104,7 +104,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   int? _intervalleChaleursCustom;
 
   // ── Registre Entrée / Sortie
-  String    _statut           = 'present'; // 'present' | 'sorti' | 'decede'
+  String    _statut           = 'present'; // éleveur: present|sorti|decede  asso: en_soin|disponible|en_fa|adopte|transfere|decede
   DateTime? _dateEntree;
   final _provenanceNomCtrl     = TextEditingController();
   String    _provenanceQualite = ''; // 'naissance' | 'eleveur' | 'particulier' | 'refuge' | 'importation' | 'autre'
@@ -152,6 +152,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     super.initState();
     final tabCount = widget.vetMode ? 5 : widget.isAssociation ? 4 : 5;
     _tabs = TabController(length: tabCount, vsync: this);
+    if (widget.isAssociation && widget.animalId == null) _statut = 'en_soin';
     if (widget.initialTabIndex != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (widget.initialTabIndex! < _tabs.length) _tabs.animateTo(widget.initialTabIndex!);
@@ -982,8 +983,10 @@ class _IdentiteTab extends StatelessWidget {
                   if (_hasPoids) _field('Poids (kg)', s._poidsCtrl, inputType: const TextInputType.numberWithOptions(decimal: true)),
                 ]),
                 const SizedBox(height: 12),
-                _card([_genealogieSection(context)]),
-                const SizedBox(height: 12),
+                if (!s.widget.isAssociation) ...[
+                  _card([_genealogieSection(context)]),
+                  const SizedBox(height: 12),
+                ],
                 _contactsUrgenceSection(context),
                 const SizedBox(height: 12),
                 _card([_field('Notes', s._notesCtrl, maxLines: 3)]),
@@ -991,8 +994,10 @@ class _IdentiteTab extends StatelessWidget {
             ),
           ),
           if (!s.widget.vetMode) ...[
-            const SizedBox(height: 12),
-            _card([_pedigreeSection(context)]),
+            if (!s.widget.isAssociation) ...[
+              const SizedBox(height: 12),
+              _card([_pedigreeSection(context)]),
+            ],
             const SizedBox(height: 12),
             _registreSection(context),
             const SizedBox(height: 12),
@@ -1941,8 +1946,21 @@ class _IdentiteTab extends StatelessWidget {
                 fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
                 color: Color(0xFF6F767B))),
             const SizedBox(height: 8),
-            Wrap(spacing: 8, children: [
-              for (final e in [('present', 'Présent', Color(0xFF6E9E57)), ('sorti', 'Sorti', Color(0xFF0C5C6C)), ('decede', 'Décédé', Colors.redAccent)])
+            Wrap(spacing: 8, runSpacing: 6, children: [
+              for (final e in s.widget.isAssociation
+                  ? [
+                      ('en_soin',    'En soin',   Colors.orange),
+                      ('disponible', 'Disponible',Color(0xFF6E9E57)),
+                      ('en_fa',      'En FA',     Colors.purple),
+                      ('adopte',     'Adopté',    Color(0xFF0C5C6C)),
+                      ('transfere',  'Transféré', Colors.blue),
+                      ('decede',     'Décédé',    Colors.redAccent),
+                    ]
+                  : [
+                      ('present', 'Présent', Color(0xFF6E9E57)),
+                      ('sorti',   'Sorti',   Color(0xFF0C5C6C)),
+                      ('decede',  'Décédé',  Colors.redAccent),
+                    ])
                 GestureDetector(
                   onTap: () => s.setState(() => s._statut = e.$1),
                   child: AnimatedContainer(
@@ -1973,12 +1991,16 @@ class _IdentiteTab extends StatelessWidget {
             DropdownButtonFormField<String>(
               value: s._provenanceQualite.isEmpty ? null : s._provenanceQualite,
               isExpanded: true,
-              hint: const Text('Qualité du fournisseur', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+              hint: Text(
+                s.widget.isAssociation ? 'Origine de l\'animal' : 'Qualité du fournisseur',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
               style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
               decoration: _dropDeco(),
-              items: ['naissance', 'eleveur', 'particulier', 'refuge', 'importation', 'autre'].map((v) =>
-                  DropdownMenuItem(value: v, child: Text(_qualiteLabel(v),
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13)))).toList(),
+              items: (s.widget.isAssociation
+                  ? ['abandon', 'confiscation', 'saisie', 'refuge', 'particulier', 'autre']
+                  : ['naissance', 'eleveur', 'particulier', 'refuge', 'importation', 'autre'])
+                .map((v) => DropdownMenuItem(value: v, child: Text(_qualiteLabel(v),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13)))).toList(),
               onChanged: (v) {
                 s.setState(() => s._provenanceQualite = v ?? '');
                 if (v == 'naissance') {
@@ -1995,51 +2017,62 @@ class _IdentiteTab extends StatelessWidget {
               },
             ),
             const SizedBox(height: 8),
-            _inlineField('Nom du fournisseur / Origine', s._provenanceNomCtrl),
+            _inlineField(s.widget.isAssociation ? 'Nom / Origine' : 'Nom du fournisseur / Origine', s._provenanceNomCtrl),
             const SizedBox(height: 8),
-            _inlineField('Adresse du fournisseur', s._provenanceAdresseCtrl),
-            if (s._provenanceQualite == 'importation') ...[
+            _inlineField(s.widget.isAssociation ? 'Adresse / Localité' : 'Adresse du fournisseur', s._provenanceAdresseCtrl),
+            if (!s.widget.isAssociation) ...[
+              if (s._provenanceQualite == 'importation') ...[
+                const SizedBox(height: 8),
+                _inlineField('Référence justificatifs import', s._importationRefCtrl),
+              ],
               const SizedBox(height: 8),
-              _inlineField('Référence justificatifs import', s._importationRefCtrl),
-            ],
-            const SizedBox(height: 8),
-            _hasBreeds ? _raceMereAutocomplete(context) : _inlineField('Race de la mère', s._raceMereCtrl),
-            const SizedBox(height: 8),
-            _dateRegistreField(context, 'Date de naissance de la mère', s._dateNaissanceMere,
-                (d) => s.setState(() => s._dateNaissanceMere = d)),
-            if (s._nomMereCtrl.text.isNotEmpty || s._puceMereCtrl.text.isNotEmpty) ...[
+              _hasBreeds ? _raceMereAutocomplete(context) : _inlineField('Race de la mère', s._raceMereCtrl),
               const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0F8EE),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFA7C79A)),
+              _dateRegistreField(context, 'Date de naissance de la mère', s._dateNaissanceMere,
+                  (d) => s.setState(() => s._dateNaissanceMere = d)),
+              if (s._nomMereCtrl.text.isNotEmpty || s._puceMereCtrl.text.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0F8EE),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFA7C79A)),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.female, size: 16, color: Color(0xFF6E9E57)),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(
+                      'Mère : ${s._nomMereCtrl.text.isNotEmpty ? s._nomMereCtrl.text : '—'}'
+                      '${s._puceMereCtrl.text.isNotEmpty ? ' · Puce : ${s._puceMereCtrl.text}' : ''}',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF4A7A3A)),
+                    )),
+                  ]),
                 ),
-                child: Row(children: [
-                  const Icon(Icons.female, size: 16, color: Color(0xFF6E9E57)),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(
-                    'Mère : ${s._nomMereCtrl.text.isNotEmpty ? s._nomMereCtrl.text : '—'}'
-                    '${s._puceMereCtrl.text.isNotEmpty ? ' · Puce : ${s._puceMereCtrl.text}' : ''}',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF4A7A3A)),
-                  )),
-                ]),
-              ),
+              ],
             ],
 
             const SizedBox(height: 14),
 
             // ── Sortie / Mort ─────────────────────────────────────────────
-            if (s._statut == 'sorti' || s._statut == 'decede') ...[
-              Text(s._statut == 'decede' ? 'Décès' : 'Sortie',
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
-                      fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
+            if (s.widget.isAssociation
+                ? (s._statut == 'adopte' || s._statut == 'transfere' || s._statut == 'decede')
+                : (s._statut == 'sorti' || s._statut == 'decede')) ...[
+              Text(
+                s._statut == 'decede' ? 'Décès'
+                    : s._statut == 'adopte' ? 'Adoption'
+                    : s._statut == 'transfere' ? 'Transfert'
+                    : 'Sortie',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
               const SizedBox(height: 8),
               _dateRegistreField(context,
-                  s._statut == 'decede' ? 'Date de mort' : 'Date de sortie',
+                  s._statut == 'decede' ? 'Date de mort'
+                  : s._statut == 'adopte' ? 'Date d\'adoption'
+                  : s._statut == 'transfere' ? 'Date de transfert'
+                  : 'Date de sortie',
                   s._dateSortie, (d) => s.setState(() => s._dateSortie = d)),
-              if (s._statut == 'sorti') ...[
+              if (s._statut == 'sorti' || s._statut == 'adopte' || s._statut == 'transfere') ...[
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: s._destinataireQualite.isEmpty ? null : s._destinataireQualite,
@@ -2047,13 +2080,15 @@ class _IdentiteTab extends StatelessWidget {
                   hint: const Text('Qualité du destinataire', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
                   decoration: _dropDeco(),
-                  items: ['eleveur', 'particulier', 'refuge', 'autre'].map((v) =>
-                      DropdownMenuItem(value: v, child: Text(_qualiteLabel(v),
-                          style: const TextStyle(fontFamily: 'Galey', fontSize: 13)))).toList(),
+                  items: (s.widget.isAssociation
+                      ? ['particulier', 'famille_accueil', 'association', 'autre']
+                      : ['eleveur', 'particulier', 'refuge', 'autre'])
+                    .map((v) => DropdownMenuItem(value: v, child: Text(_qualiteLabel(v),
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 13)))).toList(),
                   onChanged: (v) => s.setState(() => s._destinataireQualite = v ?? ''),
                 ),
                 const SizedBox(height: 8),
-                _inlineField('Nom du destinataire', s._destinataireNomCtrl),
+                _inlineField(s._statut == 'adopte' ? 'Nom de l\'adoptant' : 'Nom du destinataire', s._destinataireNomCtrl),
                 const SizedBox(height: 8),
                 _inlineField('Adresse du destinataire', s._destinataireAdresseCtrl),
               ],
@@ -2141,6 +2176,9 @@ class _IdentiteTab extends StatelessWidget {
     'naissance': 'Naissance dans l\'élevage', 'eleveur': 'Éleveur', 'particulier': 'Particulier',
     'refuge': 'Refuge / Association', 'importation': 'Importation', 'autre': 'Autre',
     'eleveur_dest': 'Éleveur', 'refuge_dest': 'Refuge',
+    // Association
+    'abandon': 'Abandon', 'confiscation': 'Confiscation judiciaire', 'saisie': 'Saisie par autorité',
+    'famille_accueil': 'Famille d\'accueil', 'association': 'Association / Transfert',
   }[v] ?? v;
 
   static String _causeMortLabel(String v) => const {

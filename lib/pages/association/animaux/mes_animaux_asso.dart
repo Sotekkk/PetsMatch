@@ -1,6 +1,6 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
-import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
+import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -56,6 +56,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
           .from('animaux')
           .select('id,nom,espece,race,sexe,statut,date_naissance,photo_url,date_entree')
           .eq('uid_eleveur', uid)
+          .inFilter('statut', ['en_soin', 'disponible', 'en_fa', 'adopte', 'transfere', 'decede'])
           .order('nom');
       if (mounted) {
         setState(() {
@@ -204,7 +205,10 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
                             _load();
                           },
                           onAddAnnonce: () => Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const CreateAnnoncePage(),
+                            builder: (_) => CreateAnnonceAssoPage(
+                              animalId: _filtered[i]['id']?.toString(),
+                              initialAnimal: _filtered[i],
+                            ),
                           )),
                         ),
                       ),
