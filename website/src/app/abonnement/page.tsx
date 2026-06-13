@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -39,7 +39,7 @@ const PLAN_BTN: Record<string, string> = {
   premium: 'bg-[#D97706] text-white hover:bg-[#B45309]',
 };
 
-export default function AbonnementPage() {
+function AbonnementContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -287,5 +287,13 @@ export default function AbonnementPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function AbonnementPage() {
+  return (
+    <Suspense>
+      <AbonnementContent />
+    </Suspense>
   );
 }

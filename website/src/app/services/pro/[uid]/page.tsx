@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -87,7 +87,7 @@ function toDateStr(d: Date) {
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
-export default function ProDetailPage() {
+function ProDetailContent() {
   const { uid } = useParams<{ uid: string }>();
   const searchParams = useSearchParams();
   const profileTableId = searchParams.get('profileId') ?? undefined;
@@ -664,5 +664,13 @@ export default function ProDetailPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ProDetailPage() {
+  return (
+    <Suspense>
+      <ProDetailContent />
+    </Suspense>
   );
 }
