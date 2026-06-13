@@ -6,7 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/pro/vet_token_view.dart';
 
-const _kVetBaseUrl = 'https://petsmatch.fr/sante/';
+const _kVetBaseUrl = 'https://www.petsmatchapp.com/sante/';
 
 Future<void> showVetShareSheet(BuildContext context, String animalId) async {
   final uid = FirebaseAuth.instance.currentUser?.uid;

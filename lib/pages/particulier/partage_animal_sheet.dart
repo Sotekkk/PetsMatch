@@ -5,7 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-const _kBaseUrl = 'https://petsmatch.fr/partage/';
+const _kBaseUrl = 'https://www.petsmatchapp.com/partage/';
 
 Future<void> showPartageAnimalSheet(BuildContext context, String animalId, String animalNom) async {
   await showModalBottomSheet(

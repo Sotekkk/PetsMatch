@@ -449,7 +449,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
   // ── Partage ──────────────────────────────────────────────────────────────────
 
   void _shareItem(_FeedItem item) {
-    final url = 'https://petsmatch.fr/annonces/${item.annonceId}';
+    final url = 'https://www.petsmatchapp.com/annonces/${item.annonceId}';
     final parts = <String>[
       item.nom,
       if (item.race?.isNotEmpty == true) item.race!,

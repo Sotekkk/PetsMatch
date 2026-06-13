@@ -497,7 +497,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
 
         pw.Spacer(),
         pw.Divider(thickness: 0.3, color: PdfColors.grey300),
-        pw.Center(child: pw.Text('Document généré via PetsMatch · petsmatch.fr',
+        pw.Center(child: pw.Text('Document généré via PetsMatch · petsmatchapp.com',
             style: pw.TextStyle(font: font, fontSize: 7, color: PdfColors.grey400))),
       ]),
     ));
@@ -559,7 +559,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       ]),
       footer: (_) => pw.Column(children: [
         pw.Divider(thickness: 0.3, color: PdfColors.grey300),
-        pw.Center(child: pw.Text('Document généré via PetsMatch · petsmatch.fr',
+        pw.Center(child: pw.Text('Document généré via PetsMatch · petsmatchapp.com',
             style: pw.TextStyle(font: font, fontSize: 7, color: PdfColors.grey400))),
       ]),
       build: (_) => [

@@ -241,7 +241,7 @@ export default function CertificatEngagementPage() {
     );
   }
 
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://petsmatch.fr';
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://www.petsmatchapp.com';
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-10 print:p-0">

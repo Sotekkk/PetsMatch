@@ -620,7 +620,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
     final contact = (a['contact'] as String?) ?? '';
     final numero  = (a['numero_alerte'] as String?) ?? '';
 
-    const url = 'https://petsmatch.fr/animaux-perdus';
+    const url = 'https://www.petsmatchapp.com/animaux-perdus';
     final text = [
       '🚨 ANIMAL PERDU — $nom ($espece)${numero.isNotEmpty ? ' [N° $numero]' : ''}',
       if (lieu.isNotEmpty) '📍 Dernière localisation : $lieu',
@@ -649,7 +649,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
         : '';
     final desc    = (a['description'] as String?) ?? '';
 
-    const url = 'https://petsmatch.fr/animaux-perdus';
+    const url = 'https://www.petsmatchapp.com/animaux-perdus';
     final nom = '${espece[0].toUpperCase()}${espece.substring(1)}'
         '${race.isNotEmpty ? ' ($race)' : ''}';
     final text = [

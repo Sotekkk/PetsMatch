@@ -1128,7 +1128,7 @@ Lors du dépôt de dossier (éleveur ou professionnel), des contrôles automatiq
 |---|---|---|
 | SIRET | Introuvable via API `recherche-entreprises.api.gouv.fr` | "Ce numéro SIRET/SIREN est introuvable" |
 | SIRET | Entreprise fermée (`etat_administratif = 'F'`) | "Cette entreprise est fermée ou radiée" |
-| Nom entreprise | Nom déclaré ne correspond pas au nom API (comparaison normalisée) | "Le nom ne correspond pas au SIRET (trouvé : X) — www.petsmatch.com/contact" |
+| Nom entreprise | Nom déclaré ne correspond pas au nom API (comparaison normalisée) | "Le nom ne correspond pas au SIRET (trouvé : X) — www.petsmatchapp.com/contact" |
 | RNA | Format non conforme (`W` + 9 chiffres) | "Format RNA invalide" |
 | SIRET/SIREN | Format non conforme (9 ou 14 chiffres, chiffres uniquement) | "Format invalide" |
 
@@ -1175,7 +1175,7 @@ Checks automatiques
 - Statut `refuse` → motif visible + lien vers `/contact`
 - Statut `actif` → redirection vers accueil
 
-**Email de rejet** : à implémenter dès qu'un provider email est configuré (Resend, SendGrid ou Supabase Edge Function). Le motif + lien `www.petsmatch.com/contact` doit apparaître dans l'email.
+**Email de rejet** : à implémenter dès qu'un provider email est configuré (Resend, SendGrid ou Supabase Edge Function). Le motif + lien `www.petsmatchapp.com/contact` doit apparaître dans l'email.
 
 ### 9.3 Badges de confiance
 
@@ -1250,7 +1250,7 @@ Raisons :
 
 ### 9.5 Page de contact publique (`/contact`)
 
-URL : `www.petsmatch.com/contact`
+URL : `www.petsmatchapp.com/contact`
 
 Champs :
 - Nom / Prénom (obligatoire)
@@ -1260,7 +1260,7 @@ Champs :
 
 Stockage : table `contact_messages` (Supabase, RLS insert public / lecture service_role).  
 Fallback : `mailto:support@petsmatch.com` affiché si Supabase indisponible.  
-Lien dans les emails/messages de rejet : `www.petsmatch.com/contact`
+Lien dans les emails/messages de rejet : `www.petsmatchapp.com/contact`
 
 ---
 
@@ -1319,8 +1319,8 @@ Pour les dossiers d'adoption en couple ou en famille, prévoir **plusieurs signa
 
 ## 10. Emails transactionnels — Abonnements & Relances
 
-> **Prérequis** : choisir l'hébergement + domaine (`petsmatch.com`) avant d'implémenter.  
-> Les emails partiront depuis `contact@petsmatch.com` ou `noreply@petsmatch.com`.  
+> **Prérequis** : choisir l'hébergement + domaine (`petsmatchapp.com`) avant d'implémenter.  
+> Les emails partiront depuis `contact@petsmatchapp.com` ou `noreply@petsmatchapp.com`.  
 > **Stack retenue** : nodemailer via Firebase Cloud Functions + SMTP de l'hébergeur (à configurer dans `firebase functions:config:set email.host=... email.user=... email.pass=...`).  
 > Stripe envoie déjà automatiquement les reçus/factures — ces emails sont des communications métier complémentaires.
 
@@ -1370,7 +1370,7 @@ Pour les dossiers d'adoption en couple ou en famille, prévoir **plusieurs signa
 | PAY03 | Rappel J-1 | PAY01 |
 | PAY04 | Email post-résiliation | PAY01 |
 | HOST01 | Choix hébergement Next.js | — |
-| HOST02 | Configuration domaine petsmatch.com | HOST01 |
+| HOST02 | Configuration domaine petsmatchapp.com | HOST01 |
 | HOST03 | Mode accès privé pendant tests (middleware Next.js) | HOST01 |
 | HOST04 | Configuration email SMTP sur hébergeur | HOST02 |
 
@@ -1378,7 +1378,7 @@ Pour les dossiers d'adoption en couple ou en famille, prévoir **plusieurs signa
 
 ## 11. Hébergement & Infrastructure
 
-> **Décision en attente** : passage de `.fr` à `.com` en cours.
+> **Domaine retenu** : `www.petsmatchapp.com`
 
 ### 11.1 Recommandation hébergement Next.js : Vercel
 
@@ -1440,11 +1440,11 @@ Pour les dossiers d'adoption en couple ou en famille, prévoir **plusieurs signa
 ### 11.3 To-do hébergement (HOST01–HOST04)
 
 - [ ] **HOST01** Créer compte Vercel + connecter repo GitHub `Sotekkk/PetsMatch`
-- [ ] **HOST02** Acheter `petsmatch.com` + configurer DNS sur Vercel
+- [ ] **HOST02** Acheter `petsmatchapp.com` + configurer DNS sur Vercel
 - [x] **HOST03** Implémenter middleware accès privé beta (mot de passe) — `website/src/middleware.ts` + `/beta-login` + `/api/beta-login`, env var `BETA_PASSWORD`
 - [ ] **HOST04** Configurer SMTP hébergeur pour emails transactionnels
 - [ ] Migrer variables `.env.local` → Variables d'environnement Vercel (dashboard)
-- [ ] Vérifier webhook Stripe pointe sur `https://petsmatch.com/api/stripe/webhook`
+- [ ] Vérifier webhook Stripe pointe sur `https://petsmatchapp.com/api/stripe/webhook`
 
 ---
 

@@ -1386,7 +1386,7 @@ class _BottomBarState extends State<_BottomBar> {
     final prix      = (data['prix'] as num?)?.toInt();
     final ville     = (data['villeEleveur'] as String?) ?? '';
     final displayTitle = titre.isNotEmpty ? titre : race.isNotEmpty ? race : espece;
-    final annonceUrl = 'https://petsmatch.fr/annonces/${widget.annonceId}';
+    final annonceUrl = 'https://www.petsmatchapp.com/annonces/${widget.annonceId}';
 
     final lines = <String>['🐾 $displayTitle'];
     if (espece.isNotEmpty || race.isNotEmpty)

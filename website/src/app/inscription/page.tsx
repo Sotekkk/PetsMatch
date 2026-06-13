@@ -279,7 +279,7 @@ export default function InscriptionPage() {
         const nomApi = normalizeForComparison(found.nom_complet ?? '');
         const nomDeclare = normalizeForComparison(nameElevage || `${firstname} ${lastname}`);
         if (nomApi && nomDeclare.length >= 4 && !nomApi.includes(nomDeclare.slice(0, 5)) && !nomDeclare.includes(nomApi.slice(0, 5))) {
-          setError(`Le nom de votre entreprise ne correspond pas au SIRET renseigné (trouvé : ${found.nom_complet}). Vérifiez votre saisie ou contactez le support : www.petsmatch.com/contact`);
+          setError(`Le nom de votre entreprise ne correspond pas au SIRET renseigné (trouvé : ${found.nom_complet}). Vérifiez votre saisie ou contactez le support : www.petsmatchapp.com/contact`);
           return;
         }
       }

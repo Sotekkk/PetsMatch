@@ -379,7 +379,7 @@ class _AssociationNavState extends State<AssociationNav> {
             title: const Text('CGU & Confidentialité',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF9CA3AF))),
             onTap: () async {
-              await launchUrl(Uri.parse('https://petsmatch.fr/cgu'), mode: LaunchMode.externalApplication);
+              await launchUrl(Uri.parse('https://www.petsmatchapp.com/cgu'), mode: LaunchMode.externalApplication);
             },
             dense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),

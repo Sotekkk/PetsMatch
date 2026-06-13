@@ -23,7 +23,7 @@ class PlanConfig {
 }
 
 class PlanService {
-  static const String kWebsiteUrl = 'https://petsmatch.fr';
+  static const String kWebsiteUrl = 'https://www.petsmatchapp.com';
 
   static const Map<String, PlanConfig> configs = {
     'free': PlanConfig(

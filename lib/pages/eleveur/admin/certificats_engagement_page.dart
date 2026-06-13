@@ -107,7 +107,7 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
   }
 
   void _copyLink(String token) {
-    Clipboard.setData(ClipboardData(text: 'https://petsmatch.fr/certificat/$token'));
+    Clipboard.setData(ClipboardData(text: 'https://www.petsmatchapp.com/certificat/$token'));
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lien copié !')));
   }
 
@@ -254,7 +254,7 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
                     const Text('Partagez ce lien à l\'acquéreur :',
                         style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF3D6B33))),
                     const SizedBox(height: 6),
-                    Text('petsmatch.fr/certificat/$tokenResult',
+                    Text('petsmatchapp.com/certificat/$tokenResult',
                         style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal)),
                     const SizedBox(height: 12),
                     SizedBox(width: double.infinity,
@@ -264,7 +264,7 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
                         style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white, elevation: 0,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                         onPressed: () {
-                          Clipboard.setData(ClipboardData(text: 'https://petsmatch.fr/certificat/$tokenResult'));
+                          Clipboard.setData(ClipboardData(text: 'https://www.petsmatchapp.com/certificat/$tokenResult'));
                           ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Lien copié !')));
                         },
                       ),
@@ -518,7 +518,7 @@ class _CertCard extends StatelessWidget {
             child: Row(children: [
               const Icon(Icons.link, size: 14, color: Color(0xFF0C5C6C)),
               const SizedBox(width: 4),
-              Expanded(child: Text('petsmatch.fr/certificat/$token',
+              Expanded(child: Text('petsmatchapp.com/certificat/$token',
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF0C5C6C)))),
               const Icon(Icons.copy, size: 14, color: Color(0xFF9CA3AF)),
