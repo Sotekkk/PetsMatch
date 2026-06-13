@@ -36,12 +36,11 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      const assoStatuts = ['en_soin', 'disponible', 'en_fa', 'adopte', 'transfere', 'decede'];
       final animaux = await _supa
           .from('animaux')
           .select('statut')
           .eq('uid_eleveur', uid)
-          .inFilter('statut', assoStatuts);
+          .eq('is_association', true);
       final list = animaux as List;
       final benevoles = await _supa
           .from('employes')

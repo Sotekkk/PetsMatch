@@ -60,7 +60,7 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
           .from('animaux')
           .select('id,nom,espece,photo_url,statut,date_entree,date_sortie,box_id')
           .eq('uid_eleveur', uid)
-          .inFilter('statut', _assoStatuts)
+          .eq('is_association', true)
           .order('nom');
       final list = List<Map<String, dynamic>>.from(allAnimaux as List);
 

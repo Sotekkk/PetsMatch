@@ -115,7 +115,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     try {
       final supa = Supabase.instance.client;
       final rows = await supa.from('animaux').select().eq('uid_eleveur', _uid!)
-          .not('statut', 'in', '(en_soin,disponible,en_fa,adopte,transfere)');
+          .or('is_association.eq.false,is_association.is.null');
       final animaux = List<Map<String, dynamic>>.from(rows as List);
 
       // IDs des femelles présentes

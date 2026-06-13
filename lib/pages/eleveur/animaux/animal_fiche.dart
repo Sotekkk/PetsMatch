@@ -515,6 +515,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'destinataire_adresse': _destinataireAdresseCtrl.text.trim(),
         'cause_mort':          _causeMort,
         'updated_at':          DateTime.now().toIso8601String(),
+        'is_association':      widget.isAssociation,
       };
 
       await _supa.from('animaux').upsert(data);

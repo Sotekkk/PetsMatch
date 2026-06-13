@@ -56,7 +56,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
           .from('animaux')
           .select('id,nom,espece,race,sexe,statut,date_naissance,photo_url,date_entree')
           .eq('uid_eleveur', uid)
-          .inFilter('statut', ['en_soin', 'disponible', 'en_fa', 'adopte', 'transfere', 'decede'])
+          .eq('is_association', true)
           .order('nom');
       if (mounted) {
         setState(() {
