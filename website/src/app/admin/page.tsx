@@ -243,6 +243,31 @@ export default function AdminPage() {
         });
       });
 
+      // Users who registered via website (Supabase only, no Firestore doc)
+      for (const row of (primaryRows ?? [])) {
+        const uid = (row as Record<string, unknown>)['uid'] as string;
+        if (fireMap[uid]) continue; // already added above
+        const r = row as Record<string, unknown>;
+        allEntries.push({
+          uid, isSecondary: false,
+          firstName: (r['firstname'] as string) ?? '',
+          lastName:  (r['lastname']  as string) ?? '',
+          email:     (r['email']     as string) ?? '',
+          photoUrl:  (r['profile_picture_url'] as string) ?? '',
+          catPro:    (r['cat_pro']   as string) ?? '',
+          statutPro: (r['statut_pro'] as string) ?? 'actif',
+          nameElevage:    (r['name_elevage']    as string) ?? '',
+          professionPro:  (r['profession_pro']  as string) ?? '',
+          especesAcceptees: (r['especes_acceptees'] as string[]) ?? [],
+          certifications:   (r['certifications'] as { nom?: string; organisme?: string }[]) ?? [],
+          rayonIntervention: r['rayon_intervention'] as number | undefined,
+          isAdmin:   false,
+          isElevage: (r['is_elevage'] as boolean) ?? false,
+          isPremium: (r['is_premium'] as boolean) ?? false,
+          siret:     (r['siret'] as string) ?? '',
+        });
+      }
+
       for (const row of (secondaryRows ?? [])) {
         const fire = fireMap[row.uid] ?? {};
         const existsPrimary = allEntries.some(e => !e.isSecondary && e.uid === row.uid && e.catPro === (row.profile_type ?? row.cat_pro));

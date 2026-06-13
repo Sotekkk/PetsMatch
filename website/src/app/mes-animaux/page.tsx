@@ -465,43 +465,50 @@ export default function MesAnimauxPage() {
             {presents.length} présent{presents.length !== 1 ? 's' : ''} · {animaux.length} au total
           </p>
         </div>
-        {isEleveur && (
-          <div className="relative" ref={addMenuRef}>
-            <button
-              onClick={() => setAddMenuOpen(v => !v)}
-              className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white text-sm font-semibold px-4 py-2 rounded-full transition-colors flex items-center gap-1">
-              + Ajouter
-              <svg className={`w-3 h-3 transition-transform ${addMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {addMenuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-60 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden z-20">
-                <Link href="/mes-animaux/ajouter"
-                  onClick={() => setAddMenuOpen(false)}
-                  className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl"
-                    style={{ background: '#6E9E5720' }}>🐾</div>
-                  <div>
-                    <p className="text-sm font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Ajouter un animal</p>
-                    <p className="text-xs text-gray-400">Fiche individuelle</p>
-                  </div>
-                </Link>
-                <div className="h-px bg-gray-100 mx-3" />
-                <Link href="/mes-animaux/portee"
-                  onClick={() => setAddMenuOpen(false)}
-                  className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl"
-                    style={{ background: '#0C5C6C20' }}>🐣</div>
-                  <div>
-                    <p className="text-sm font-semibold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>Charger une portée</p>
-                    <p className="text-xs text-gray-400">Plusieurs animaux d&apos;un coup</p>
-                  </div>
-                </Link>
-              </div>
-            )}
-          </div>
-        )}
+        <div className="relative" ref={addMenuRef}>
+          {isEleveur ? (
+            <>
+              <button
+                onClick={() => setAddMenuOpen(v => !v)}
+                className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white text-sm font-semibold px-4 py-2 rounded-full transition-colors flex items-center gap-1">
+                + Ajouter
+                <svg className={`w-3 h-3 transition-transform ${addMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {addMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 w-60 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden z-20">
+                  <Link href="/mes-animaux/ajouter"
+                    onClick={() => setAddMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl"
+                      style={{ background: '#6E9E5720' }}>🐾</div>
+                    <div>
+                      <p className="text-sm font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Ajouter un animal</p>
+                      <p className="text-xs text-gray-400">Fiche individuelle</p>
+                    </div>
+                  </Link>
+                  <div className="h-px bg-gray-100 mx-3" />
+                  <Link href="/mes-animaux/portee"
+                    onClick={() => setAddMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl"
+                      style={{ background: '#0C5C6C20' }}>🐣</div>
+                    <div>
+                      <p className="text-sm font-semibold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>Charger une portée</p>
+                      <p className="text-xs text-gray-400">Plusieurs animaux d&apos;un coup</p>
+                    </div>
+                  </Link>
+                </div>
+              )}
+            </>
+          ) : (
+            <Link href="/mes-animaux/ajouter"
+              className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white text-sm font-semibold px-4 py-2 rounded-full transition-colors">
+              + Ajouter un animal
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Tabs (éleveur uniquement) */}
