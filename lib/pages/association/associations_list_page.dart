@@ -1,7 +1,5 @@
-import 'package:PetsMatch/pages/user_detail_page_feed.dart';
-import 'package:PetsMatch/pages/main_feed.dart' show UserSelected;
+import 'package:PetsMatch/pages/association/association_detail_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -13,8 +11,7 @@ class AssociationsListPage extends StatefulWidget {
 }
 
 class _AssociationsListPageState extends State<AssociationsListPage> {
-  static const _teal  = Color(0xFF0C5C6C);
-  static const _green = Color(0xFF6E9E57);
+  static const _teal = Color(0xFF0C5C6C);
 
   List<Map<String, dynamic>> _all      = [];
   List<Map<String, dynamic>> _filtered = [];
@@ -115,20 +112,17 @@ class _AssociationsListPageState extends State<AssociationsListPage> {
     }
   }
 
-  Future<void> _openDetail(BuildContext ctx, Map<String, dynamic> asso) async {
+  void _openDetail(BuildContext ctx, Map<String, dynamic> asso) {
     final uid = asso['uid']?.toString() ?? '';
     if (uid.isEmpty) return;
-    try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      if (!ctx.mounted) return;
-      final data = doc.exists ? (doc.data() ?? {}) : <String, dynamic>{
-        'nameElevage': asso['name'] ?? '',
-        'profilePictureUrlElevage': asso['avatar'] ?? '',
-        'villeElevage': asso['ville'] ?? '',
-      };
-      final user = UserSelected.fromMap(data, uid);
-      Navigator.push(ctx, MaterialPageRoute(builder: (_) => UserDetailPageFeed(user: user)));
-    } catch (_) {}
+    Navigator.push(ctx, MaterialPageRoute(
+      builder: (_) => AssociationDetailPage(
+        uid:    uid,
+        name:   asso['name']?.toString()   ?? 'Association',
+        avatar: asso['avatar']?.toString() ?? '',
+        ville:  asso['ville']?.toString()  ?? '',
+      ),
+    ));
   }
 
   void _applyFilter() {

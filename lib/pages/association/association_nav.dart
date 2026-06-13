@@ -21,7 +21,7 @@ import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
-import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
+import 'package:PetsMatch/pages/association/profil_association_edit.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -39,8 +39,6 @@ class _AssociationNavState extends State<AssociationNav> {
   int _selectedIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  static const _green = Color(0xFF6E9E57);
-  static const _teal = Color(0xFF0C5C6C);
   static const _dark = Color(0xFF1F2A2E);
 
   Widget _tabContent(int index) => switch (index) {
@@ -126,7 +124,7 @@ class _AssociationNavState extends State<AssociationNav> {
             onEditTap: () {
               _scaffoldKey.currentState?.closeEndDrawer();
               Navigator.push(context, MaterialPageRoute(
-                builder: (_) => const ProfilEleveurEditPage(),
+                builder: (_) => const ProfilAssociationEditPage(),
               ));
             },
           ),
@@ -355,7 +353,7 @@ class _AssociationNavState extends State<AssociationNav> {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const ProfilEleveurEditPage(),
+                      builder: (_) => const ProfilAssociationEditPage(),
                     ));
                   },
                 ),
