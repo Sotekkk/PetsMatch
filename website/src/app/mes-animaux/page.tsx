@@ -688,6 +688,12 @@ export default function MesAnimauxPage() {
                   <span className="text-xs font-bold text-[#0C5C6C] bg-[#0C5C6C20] px-2 py-0.5 rounded-full">
                     {members.length}
                   </span>
+                  <Link
+                    href={`/annonces/creer?portee_id=${pid}`}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-[#6E9E57] border border-[#6E9E57] px-3 py-1.5 rounded-lg hover:bg-[#6E9E57] hover:text-white transition-colors"
+                    style={{ fontFamily: 'Galey, sans-serif' }}>
+                    📢 Créer annonce
+                  </Link>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   {members.map(a => <AnimalCard key={a.id} a={a} tab={tab} showPorteeBadge

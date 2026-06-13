@@ -1,5 +1,6 @@
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_form_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_poids_page.dart';
 import 'package:PetsMatch/services/chaleurs_notif_service.dart';
@@ -212,6 +213,87 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         if (idx >= 0) _animauxData[idx] = {..._animauxData[idx], 'is_retraite': !current};
       });
     } catch (_) {}
+  }
+
+  void _openAnnonceFromPortee(List<Map<String, dynamic>> members) {
+    if (members.isEmpty) return;
+    final first = members.first;
+    final espece = (first['espece'] as String?) ?? 'chien';
+    final race   = (first['race']   as String?) ?? '';
+    final dn     = first['date_naissance'] as String?;
+
+    // Chercher le père et la mère dans les animaux existants
+    Map<String, dynamic>? _findAnimal(String nom, String puce) {
+      if (nom.isEmpty && puce.isEmpty) return null;
+      try {
+        return _animauxData.firstWhere((a) =>
+          (nom.isNotEmpty  && (a['nom']            as String? ?? '') == nom)  ||
+          (puce.isNotEmpty && (a['identification'] as String? ?? '') == puce));
+      } catch (_) { return null; }
+    }
+
+    final nomPere  = (first['nom_pere']  as String?) ?? '';
+    final pucePere = (first['puce_pere'] as String?) ?? '';
+    final nomMere  = (first['nom_mere']  as String?) ?? '';
+    final puceMere = (first['puce_mere'] as String?) ?? '';
+
+    final pereData = _findAnimal(nomPere, pucePere);
+    final mereData = _findAnimal(nomMere, puceMere);
+
+    // Construire animaux_portee avec isLinked
+    final animauxPortee = members.map((m) {
+      final photo = (m['photo_url'] as String?) ?? '';
+      return <String, dynamic>{
+        'animalId':  m['id'],
+        'nom':       (m['nom']     as String?) ?? '',
+        'sexe':      (m['sexe']    as String?) ?? 'male',
+        'couleur':   (m['couleur'] as String?) ?? '',
+        'photos':    photo.isNotEmpty ? [photo] : <String>[],
+        'statut':    'disponible',
+        'isLinked':  true,
+      };
+    }).toList();
+
+    final initialData = <String, dynamic>{
+      'type':           'portee',
+      'type_vente':     'vente',
+      'espece':         espece,
+      'race':           race,
+      'date_naissance': dn,
+      'nombre_bebes':   members.length,
+      'animaux_portee': animauxPortee,
+      // Père
+      if (pereData != null) ...{
+        'pere_animal_id':  pereData['id'],
+        'pere_nom':        (pereData['nom']            as String?) ?? nomPere,
+        'pere_puce':       (pereData['identification'] as String?) ?? pucePere,
+        'pere_race':       (pereData['race']           as String?) ?? '',
+        'pere_photo_url':  (pereData['photo_url']      as String?) ?? '',
+        'pere_couleur':    (pereData['couleur']        as String?) ?? '',
+        'pere_registre':   (pereData['pedigree_lof']   as String?) ?? '',
+      } else if (nomPere.isNotEmpty) ...{
+        'pere_nom':  nomPere,
+        'pere_puce': pucePere,
+      },
+      // Mère
+      if (mereData != null) ...{
+        'mere_animal_id':  mereData['id'],
+        'mere_nom':        (mereData['nom']            as String?) ?? nomMere,
+        'mere_puce':       (mereData['identification'] as String?) ?? puceMere,
+        'mere_race':       (mereData['race']           as String?) ?? (first['race_mere'] as String? ?? ''),
+        'mere_photo_url':  (mereData['photo_url']      as String?) ?? '',
+        'mere_couleur':    (mereData['couleur']        as String?) ?? '',
+        'mere_registre':   (mereData['pedigree_lof']   as String?) ?? '',
+      } else if (nomMere.isNotEmpty) ...{
+        'mere_nom':  nomMere,
+        'mere_puce': puceMere,
+        'mere_race': (first['race_mere'] as String?) ?? '',
+      },
+    };
+
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => CreateAnnoncePage(initialData: initialData),
+    ));
   }
 
   Future<void> _regrouperEnPortee() async {
@@ -1067,6 +1149,18 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(Icons.bar_chart, size: 18, color: _teal),
+                ),
+              ),
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: () => _openAnnonceFromPortee(members),
+                child: Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: _green.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.campaign_outlined, size: 18, color: _green),
                 ),
               ),
             ]),

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -46,12 +46,15 @@ const BREED_FILE: Record<string, string> = {
 
 interface AnimalPortee {
   id: string;
+  animalId?: string;
   nom: string;
   sexe: 'male' | 'femelle';
   couleur: string;
   prix: string;
   statut: 'disponible' | 'reserve' | 'vendu';
   description: string;
+  photos?: string[];
+  isLinked?: boolean;
 }
 
 interface MyAnimal {
@@ -76,6 +79,7 @@ const DB_TO_ESPECE: Record<string, string> = {
 export default function CreerAnnoncePage() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // ── Type
   const [type, setType] = useState<'compagnon' | 'portee' | 'saillie' | 'retraite'>('compagnon');
@@ -191,6 +195,95 @@ export default function CreerAnnoncePage() {
       .then(data => setBreeds(data as string[]))
       .catch(() => setBreeds([]));
   }, [espece]);
+
+  // ── Pré-remplissage depuis une portée existante (param ?portee_id=...)
+  useEffect(() => {
+    const porteeId = searchParams.get('portee_id');
+    if (!porteeId || !user) return;
+    (async () => {
+      const { data: members } = await supabase
+        .from('animaux')
+        .select('id, nom, sexe, espece, race, couleur, identification, date_naissance, photo_url, nom_pere, puce_pere, nom_mere, puce_mere, race_mere, pedigree_lof')
+        .eq('portee_id', porteeId)
+        .eq('uid_eleveur', user.uid);
+      if (!members || members.length === 0) return;
+      const first = members[0];
+
+      // Espèce / Race / Date
+      const especeDb: string = first.espece ?? 'chien';
+      setEspece(DB_TO_ESPECE[especeDb] ?? 'Chien');
+      setRace(first.race ?? '');
+      setDateNaissance(first.date_naissance ? first.date_naissance.substring(0, 10) : '');
+      setNombreBebes(members.length);
+      setType('portee');
+
+      // Chiots
+      setAnimauxPortee(members.map((m: Record<string, unknown>) => ({
+        id: crypto.randomUUID(),
+        animalId: m.id as string,
+        nom: (m.nom as string) ?? '',
+        sexe: ((m.sexe as string) ?? 'male') as 'male' | 'femelle',
+        couleur: (m.couleur as string) ?? '',
+        prix: '',
+        statut: 'disponible' as const,
+        description: '',
+        photos: m.photo_url ? [m.photo_url as string] : [],
+        isLinked: true,
+      })));
+
+      // Chercher père et mère dans les animaux de l'éleveur
+      const nomPere = (first.nom_pere as string) ?? '';
+      const pucePere = (first.puce_pere as string) ?? '';
+      const nomMere = (first.nom_mere as string) ?? '';
+      const puceMere = (first.puce_mere as string) ?? '';
+
+      if (nomPere || pucePere) {
+        const { data: pereRows } = await supabase.from('animaux')
+          .select('id, nom, sexe, race, couleur, identification, photo_url, pedigree_lof')
+          .eq('uid_eleveur', user.uid)
+          .eq('espece', especeDb)
+          .limit(100);
+        const pere = (pereRows ?? []).find((a: Record<string, unknown>) =>
+          (nomPere && a.nom === nomPere) || (pucePere && a.identification === pucePere));
+        if (pere) {
+          setPereAnimalId(pere.id as string);
+          setPereNom((pere.nom as string) ?? nomPere);
+          setPerePuce((pere.identification as string) ?? pucePere);
+          setPereRace((pere.race as string) ?? '');
+          setPereCouleur((pere.couleur as string) ?? '');
+          setPereRegistre((pere.pedigree_lof as string) ?? '');
+          if (pere.photo_url) setPerePhotoPreview(pere.photo_url as string);
+        } else {
+          setPereNom(nomPere);
+          setPerePuce(pucePere);
+        }
+      }
+
+      if (nomMere || puceMere) {
+        const { data: mereRows } = await supabase.from('animaux')
+          .select('id, nom, sexe, race, couleur, identification, photo_url, pedigree_lof')
+          .eq('uid_eleveur', user.uid)
+          .eq('espece', especeDb)
+          .limit(100);
+        const mere = (mereRows ?? []).find((a: Record<string, unknown>) =>
+          (nomMere && a.nom === nomMere) || (puceMere && a.identification === puceMere));
+        if (mere) {
+          setMereAnimalId(mere.id as string);
+          setMereNom((mere.nom as string) ?? nomMere);
+          setMerePuce((mere.identification as string) ?? puceMere);
+          setMereRace((mere.race as string) ?? (first.race_mere as string ?? ''));
+          setMereCouleur((mere.couleur as string) ?? '');
+          setMereRegistre((mere.pedigree_lof as string) ?? '');
+          if (mere.photo_url) setMerePhotoPreview(mere.photo_url as string);
+        } else {
+          setMereNom(nomMere);
+          setMerePuce(puceMere);
+          setMereRace((first.race_mere as string) ?? '');
+        }
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, user]);
 
   if (loading) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
   if (!user) { router.push('/connexion'); return null; }
@@ -557,7 +650,8 @@ export default function CreerAnnoncePage() {
       const animauxSaved: object[] = [];
       for (const baby of animauxPortee) {
         const photos = babyPhotos[baby.id];
-        const uploadedUrls: string[] = [];
+        // Pour les animaux liés (isLinked), conserver leurs photos existantes
+        const uploadedUrls: string[] = baby.isLinked ? [...(baby.photos ?? [])] : [];
         if (photos) {
           for (const blob of photos.blobs)
             uploadedUrls.push(await uploadBlob(blob, `annonces/animaux/${user!.uid}/${Date.now()}.jpg`));
