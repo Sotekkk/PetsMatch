@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
@@ -52,7 +52,7 @@ const ESPECES = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Chev
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function ServicesCartePage() {
+function ServicesCarteContent() {
   const { user, userData } = useAuth();
   const searchParams = useSearchParams();
 
@@ -431,6 +431,14 @@ export default function ServicesCartePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ServicesCartePage() {
+  return (
+    <Suspense>
+      <ServicesCarteContent />
+    </Suspense>
   );
 }
 
