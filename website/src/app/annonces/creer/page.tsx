@@ -261,6 +261,7 @@ export default function CreerAnnoncePage() {
   function selectEtalon(a: MyAnimal) {
     // Remplit la section père (= étalon)
     setPereAnimalId(a.id); setPereNom(a.nom ?? ''); setPerePuce(a.identification ?? '');
+    setNumIdentification(a.identification ?? '');
     setPereRace(a.race ?? ''); setPereCouleur(a.couleur ?? ''); setPereDescription(a.description ?? '');
     setPerePhotoPreview(a.photo_url ?? null); setPerePhotoBlob(null);
     if (a.pedigree_lof) setPereRegistre(a.pedigree_lof);
@@ -315,6 +316,7 @@ export default function CreerAnnoncePage() {
     setSexeAnimal((a.sexe === 'femelle' ? 'femelle' : 'male') as 'male' | 'femelle');
     setCouleurAnimal(a.couleur ?? '');
     setRace(a.race ?? '');
+    setNumIdentification(a.identification ?? '');
     if (a.description) setDescription(a.description);
     // Auto-fill espèce (valeur DB → label affichage)
     if (a.espece) {
@@ -532,7 +534,7 @@ export default function CreerAnnoncePage() {
         setError('⚠ Obligatoire : numéro SIRE pour tout équidé mis en vente — Décret n°2013-879.');
         setSaving(false); return;
       }
-      if ((espece === 'Chien' || espece === 'Chat') && type !== 'portee' && type !== 'saillie' && !numIdentification.trim()) {
+      if ((espece === 'Chien' || espece === 'Chat') && type !== 'portee' && !numIdentification.trim()) {
         setError('⚠ Obligatoire : numéro d\'identification de l\'animal (puce électronique ou tatouage) — art. L212-10 Code rural.');
         setSaving(false); return;
       }
@@ -846,6 +848,19 @@ export default function CreerAnnoncePage() {
                 </div>
               )}
             </>
+          )}
+
+          {/* ── Identification étalon (saillie, chien/chat) ── */}
+          {type === 'saillie' && (espece === 'Chien' || espece === 'Chat') && (
+            <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-2">
+              <p className="text-xs font-semibold text-amber-800">
+                🔖 Identification de l&apos;étalon <span className="text-red-500">*</span>
+                <span className="font-normal ml-1">— obligatoire (art. L212-10 Code rural)</span>
+              </p>
+              <input value={numIdentification} onChange={e => setNumIdentification(e.target.value)}
+                placeholder="Numéro de puce électronique ou tatouage"
+                className={`${iCls} text-sm ${!numIdentification.trim() ? 'border-amber-300 focus:border-amber-500' : 'border-[#6E9E57]'}`} />
+            </div>
           )}
 
           {/* ── Portée ── */}

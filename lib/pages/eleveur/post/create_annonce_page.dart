@@ -397,6 +397,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       _etalonAnimalId = r['id'];
       _sexe = 'male';
       _couleurCtrl.text = r['couleur'] ?? '';
+      _numIdentCtrl.text = r['identification'] ?? '';
       if (r['photoUrl'] != null) { _photosUrls = [r['photoUrl']]; _photosFiles = []; }
       final dn = r['dateNaissance'] as Timestamp?;
       if (dn != null) _dateNaissanceAnimal = dn.toDate();
@@ -430,6 +431,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       _retraiteAnimalNom    = r['nom'] as String?;
       _sexe                 = (r['sexe'] as String?)?.isNotEmpty == true ? r['sexe'] : 'male';
       _couleurCtrl.text     = r['couleur']  ?? '';
+      _numIdentCtrl.text    = r['identification'] ?? '';
       // Auto-remplir espèce et race depuis l'animal
       if ((r['espece'] as String?)?.isNotEmpty == true) _espece = r['espece'];
       _raceCtrl.text = r['race'] ?? '';
@@ -519,7 +521,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       return;
     }
     if ((_espece == 'chien' || _espece == 'chat') && _type != 'portee' &&
-        _typeVente != 'saillie' && _numIdentCtrl.text.trim().isEmpty) {
+        _numIdentCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text('⚠ Obligatoire : numéro d\'identification de l\'animal (puce/tatouage) — art. L212-10',
             style: TextStyle(fontFamily: 'Galey')),
@@ -728,7 +730,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             _sectionPedigree(),     const SizedBox(height: 12),
             _sectionSante(),
             if (_espece == 'cheval') ...[const SizedBox(height: 12), _sectionIdentificationEquin()],
-            if ((_espece == 'chien' || _espece == 'chat') && _type != 'portee' && _typeVente != 'saillie')
+            if ((_espece == 'chien' || _espece == 'chat') && _type != 'portee')
               ...[const SizedBox(height: 12), _sectionIdentificationAnimal()],
             if (_type == 'portee') ...[const SizedBox(height: 12), _sectionAnimauxPortee()],
             const SizedBox(height: 24),
