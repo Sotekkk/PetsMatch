@@ -1064,12 +1064,22 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
   Widget _buildPorteeGroupedView(List<Map<String, dynamic>> docs) {
     final fmt = DateFormat('dd/MM/yyyy');
-    // Grouper par portee_id
+    // Grouper par portee_id (depuis docs, sans reproducteurs)
     final Map<String, List<Map<String, dynamic>>> groups = {};
     for (final d in docs) {
       final pid = (d['portee_id'] as String?) ?? '';
       if (pid.isEmpty) continue;
       groups.putIfAbsent(pid, () => []).add(d);
+    }
+    // Ajouter les frères/sœurs reproducteurs qui ont le même portee_id
+    for (final pid in groups.keys.toList()) {
+      final existingIds = groups[pid]!.map((a) => a['id']).toSet();
+      final siblings = _animauxData.where((a) {
+        final aPid = (a['portee_id'] as String?) ?? '';
+        final statut = (a['statut'] as String?) ?? '';
+        return aPid == pid && !existingIds.contains(a['id']) && statut != 'sorti' && statut != 'decede';
+      });
+      groups[pid]!.addAll(siblings);
     }
     // Trier les groupes par date de naissance décroissante
     final sortedKeys = groups.keys.toList()

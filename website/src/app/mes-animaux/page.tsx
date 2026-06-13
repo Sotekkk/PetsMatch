@@ -412,11 +412,16 @@ export default function MesAnimauxPage() {
 
   const currentList = tab === 'presents' ? presentsForSubTab : filteredAnciens;
 
-  // Groupement par portée (bébés uniquement)
+  // Groupement par portée (bébés uniquement) — inclut les frères/sœurs reproducteurs
   const porteeGroups: Map<string, Animal[]> = new Map();
   if (tab === 'presents' && presentsSubTab === 'bebes') {
-    for (const a of presentsForSubTab) {
-      if (!a.portee_id) continue;
+    // 1) Collecter les portee_id des vrais bébés (non-reproducteurs)
+    const porteeIdsEnVue = new Set(
+      filteredPresents.filter(a => !!a.portee_id && !a.reproducteur).map(a => a.portee_id!)
+    );
+    // 2) Inclure TOUS les membres de ces portées (y compris reproducteurs)
+    for (const a of filteredPresents) {
+      if (!a.portee_id || !porteeIdsEnVue.has(a.portee_id)) continue;
       const group = porteeGroups.get(a.portee_id) ?? [];
       group.push(a);
       porteeGroups.set(a.portee_id, group);
