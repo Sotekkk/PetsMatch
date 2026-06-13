@@ -1694,6 +1694,27 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
 
   Future<void> _marquerFait(Map<String, dynamic> t) async {
     await _supa.from('taches_elevage').update({'statut': 'fait'}).eq('id', t['id']);
+
+    // Notifier l'employeur
+    try {
+      final moi = await _supa.from('users')
+          .select('firstname, lastname, name_elevage, is_elevage')
+          .eq('uid', _uid).maybeSingle();
+      final nomEmploye = moi != null
+          ? (moi['is_elevage'] == true
+              ? (moi['name_elevage'] ?? 'Votre employé')
+              : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim())
+          : 'Votre employé';
+      await _supa.from('notifications').insert({
+        'uid':   widget.eleveurUid,
+        'type':  'tache_validee',
+        'title': 'Tâche validée ✓',
+        'body':  '$nomEmploye a terminé : ${t['titre']}',
+        'data':  {'tacheId': t['id'].toString(), 'eleveurUid': widget.eleveurUid},
+        'read':  false,
+      });
+    } catch (_) {}
+
     _loadTaches();
   }
 

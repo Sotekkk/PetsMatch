@@ -96,7 +96,8 @@ const MENU_ELEVEUR = [
       { href: '/mes-annonces',                   label: 'Mes Annonces',       icon: '📋' },
       { href: '/annonces/creer',                 label: 'Nouvelle annonce',   icon: '➕' },
       { href: '/abonnement',                     label: 'Mon abonnement',     icon: '⭐' },
-      { href: '/employes',                         label: 'Mes employés',       icon: '👥' },
+      { href: '/employes',                        label: 'Mes employés',       icon: '👥' },
+      { href: '/mes-taches',                      label: 'Mes tâches',         icon: '✅' },
       { href: '/elevage/registre-sanitaire',     label: 'Suivi sanitaire',    icon: '🏥', pro: true },
       { href: '/elevage/registre-entree-sortie', label: 'Entrées / Sorties',  icon: '📂', pro: true },
       { href: '/elevage/certificat-engagement', label: 'Certificats',        icon: '✍️', pro: true },
@@ -145,7 +146,8 @@ const MENU_VET = [
     section: 'Mon Profil',
     icon: '👤',
     items: [
-      { href: '/profil', label: 'Modifier mon profil', icon: '✏️' },
+      { href: '/profil',     label: 'Modifier mon profil', icon: '✏️' },
+      { href: '/mes-taches', label: 'Mes tâches',          icon: '✅' },
     ],
   },
   {
@@ -173,8 +175,9 @@ const MENU_PRO = [
     section: 'Mon Profil',
     icon: '👤',
     items: [
-      { href: '/profil',    label: 'Modifier mon profil', icon: '✏️' },
-      { href: '/employes',  label: 'Mes employés',        icon: '👥' },
+      { href: '/profil',     label: 'Modifier mon profil', icon: '✏️' },
+      { href: '/employes',   label: 'Mes employés',        icon: '👥' },
+      { href: '/mes-taches', label: 'Mes tâches',          icon: '✅' },
     ],
   },
   {
@@ -219,6 +222,7 @@ const MENU_ASSOCIATION = [
       { href: '/association/chenil',                     label: 'Chenil / Planning',     icon: '🗓️' },
       { href: '/association/benevoles',                  label: 'Bénévoles',             icon: '🤝' },
       { href: '/employes',                               label: 'Mes employés',          icon: '👥' },
+      { href: '/mes-taches',                             label: 'Mes tâches',            icon: '✅' },
       { href: '/association/annonces',                   label: 'Mes Annonces',          icon: '📣' },
       { href: '/association/certificat-engagement',      label: 'Certificats',           icon: '📋' },
       { href: '/association/registre-sanitaire',         label: 'Suivi sanitaire',       icon: '🏥' },
@@ -250,6 +254,7 @@ const MENU_PARTICULIER = [
     items: [
       { href: '/profil',      label: 'Mon Profil',  icon: '👤' },
       { href: '/mes-animaux', label: 'Mes Animaux', icon: '🐾' },
+      { href: '/mes-taches',  label: 'Mes tâches',  icon: '✅' },
     ],
   },
   {
