@@ -113,12 +113,13 @@ class _PromenadesPageState extends State<PromenadePage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       appBar: AppBar(
-        backgroundColor: _orange,
+        backgroundColor: const Color(0xFF0C5C6C),
+        foregroundColor: Colors.white,
+        elevation: 0,
         title: const Text('Promenades collectives',
-            style: TextStyle(
-                fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
       ),
