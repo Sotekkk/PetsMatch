@@ -1441,7 +1441,7 @@ Pour les dossiers d'adoption en couple ou en famille, prévoir **plusieurs signa
 
 - [ ] **HOST01** Créer compte Vercel + connecter repo GitHub `Sotekkk/PetsMatch`
 - [ ] **HOST02** Acheter `petsmatch.com` + configurer DNS sur Vercel
-- [ ] **HOST03** Implémenter middleware accès privé beta (mot de passe)
+- [x] **HOST03** Implémenter middleware accès privé beta (mot de passe) — `website/src/middleware.ts` + `/beta-login` + `/api/beta-login`, env var `BETA_PASSWORD`
 - [ ] **HOST04** Configurer SMTP hébergeur pour emails transactionnels
 - [ ] Migrer variables `.env.local` → Variables d'environnement Vercel (dashboard)
 - [ ] Vérifier webhook Stripe pointe sur `https://petsmatch.com/api/stripe/webhook`

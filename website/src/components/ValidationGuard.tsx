@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 // Pages accessibles même sans validation (éleveur/pro en attente)
 const PUBLIC_PATHS = [
   '/',
+  '/beta-login',
   '/connexion',
   '/inscription',
   '/en-attente-validation',
