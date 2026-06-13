@@ -217,6 +217,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => const MesAnimauxPage(),
       ));
+    } else if (type == 'employee_invite') {
+      final eleveurUid = data is Map ? data['eleveurUid'] as String? : null;
+      final eleveurNom = data is Map ? (data['eleveurNom'] as String? ?? 'Mon employeur') : 'Mon employeur';
+      if (eleveurUid != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => EmployeurDetailPage(
+            eleveurUid: eleveurUid,
+            eleveurNom: eleveurNom,
+          ),
+        ));
+      }
     } else if (type == 'tache') {
       final eleveurUid = data is Map ? data['eleveurUid'] as String? : null;
       if (eleveurUid != null) {
@@ -359,6 +370,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'like':          return Icons.favorite;
       case 'chaleur':       return Icons.spa;
       case 'tache':         return Icons.task_alt;
+      case 'employee_invite': return Icons.handshake_outlined;
       case 'vet_access_demande':       return Icons.medical_services_outlined;
       case 'vet_access_reponse':       return Icons.check_circle_outline;
       case 'pension_acces':          return Icons.home_work_outlined;
@@ -380,6 +392,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'like':          return Colors.redAccent;
       case 'chaleur':       return const Color(0xFFE91E8C);
       case 'tache':         return const Color(0xFF6E9E57);
+      case 'employee_invite': return const Color(0xFF0C5C6C);
       case 'vet_access_demande':       return const Color(0xFF26A69A);
       case 'vet_access_reponse':       return const Color(0xFF6E9E57);
       case 'pension_acces':          return const Color(0xFF7B5EA7);

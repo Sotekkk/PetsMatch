@@ -123,6 +123,7 @@ class _EmployesTabState extends State<_EmployesTab> {
   final _uid  = FirebaseAuth.instance.currentUser!.uid;
   bool _loading = true;
   List<Map<String, dynamic>> _employes = [];
+  String _nomElevage = '';
 
   @override
   void initState() {
@@ -134,6 +135,15 @@ class _EmployesTabState extends State<_EmployesTab> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
+      final profile = await _supa
+          .from('users')
+          .select('name_elevage, firstname, lastname')
+          .eq('uid', _uid)
+          .maybeSingle();
+      _nomElevage = (profile?['name_elevage'] as String?)?.trim().isNotEmpty == true
+          ? profile!['name_elevage'] as String
+          : '${profile?['firstname'] ?? ''} ${profile?['lastname'] ?? ''}'.trim();
+
       final rows = await _supa
           .from('employes')
           .select()
@@ -192,7 +202,7 @@ class _EmployesTabState extends State<_EmployesTab> {
             context: context,
             isScrollControlled: true,
             backgroundColor: Colors.transparent,
-            builder: (_) => _AddEmployeSheet(uid: _uid, teal: widget.teal, dark: widget.dark),
+            builder: (_) => _AddEmployeSheet(uid: _uid, nomElevage: _nomElevage, teal: widget.teal, dark: widget.dark),
           );
           _load();
         },
@@ -407,8 +417,9 @@ class _PermSwitch extends StatelessWidget {
 
 class _AddEmployeSheet extends StatefulWidget {
   final String uid;
+  final String nomElevage;
   final Color teal, dark;
-  const _AddEmployeSheet({required this.uid, required this.teal, required this.dark});
+  const _AddEmployeSheet({required this.uid, required this.nomElevage, required this.teal, required this.dark});
   @override
   State<_AddEmployeSheet> createState() => _AddEmployeSheetState();
 }
@@ -495,6 +506,23 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
     } else {
       await _supa.from('employes').insert({'uid_employe': uid, 'uid_eleveur': widget.uid, 'actif': true});
     }
+
+    // Notification in-app (cloche)
+    final nomElevage = widget.nomElevage;
+    await _supa.from('notifications').insert({
+      'uid':   uid,
+      'type':  'employee_invite',
+      'title': 'Invitation à rejoindre un élevage',
+      'body':  'Vous avez été ajouté à l\'équipe de $nomElevage',
+      'data':  {'eleveurUid': widget.uid, 'eleveurNom': nomElevage},
+      'read':  false,
+    });
+    // Push FCM (best-effort)
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('notifyEmployeeAdded')
+          .call({'employeUid': uid, 'nomElevage': nomElevage});
+    } catch (_) {}
 
     if (mounted) {
       Navigator.pop(context);

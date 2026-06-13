@@ -7,6 +7,7 @@ const vetNotifFunctions = require("./vet_notifications");
 const chaleursFunctions = require("./chaleurs");
 const retraiteFunctions = require("./retraite");
 const tachesFunctions = require("./taches");
+const employesFunctions = require("./employes");
 const santeFunctions = require("./sante");
 const annonceFunctions = require("./annonces");
 const matchFunctions = require("./match");
@@ -43,6 +44,9 @@ exports.sendRetraiteReminders = retraiteFunctions.sendRetraiteReminders;
 
 // Tâches employés — push FCM à l'assignation
 exports.notifyTacheAssignee = tachesFunctions.notifyTacheAssignee;
+
+// Employés — push FCM à l'ajout dans un élevage
+exports.notifyEmployeeAdded = employesFunctions.notifyEmployeeAdded;
 
 // Santé — rappels vaccins, vermifuges, antiparasitaires (J-7, J-1, J-0)
 exports.sendSanteReminders = santeFunctions.sendSanteReminders;
