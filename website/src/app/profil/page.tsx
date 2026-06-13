@@ -657,8 +657,21 @@ export default function ProfilPage() {
   const [breedPickerEspece, setBreedPickerEspece] = useState<string | null>(null);
 
   // Admin
+  const [siret, setSiret] = useState('');
+  const [acacedNum, setAcacedNum] = useState('');
   const [acacedDateObtention, setAcacedDateObtention] = useState('');
   const [acacedDateRenewal, setAcacedDateRenewal] = useState('');
+
+  // Documents justificatifs
+  const [siretDocFile, setSiretDocFile] = useState<File | null>(null);
+  const [siretDocUrl, setSiretDocUrl] = useState<string | null>(null);
+  const [acacedDocFile, setAcacedDocFile] = useState<File | null>(null);
+  const [acacedDocUrl, setAcacedDocUrl] = useState<string | null>(null);
+  const siretDocRef = useRef<HTMLInputElement>(null);
+  const acacedDocRef = useRef<HTMLInputElement>(null);
+
+  // Errors
+  const [formErrors, setFormErrors] = useState<string[]>([]);
 
   // Photos
   const [bannerFile, setBannerFile] = useState<File | null>(null);
@@ -702,6 +715,10 @@ export default function ProfilPage() {
       setCp(userData.codePostalElevage ?? '');
       setVilleElevage(userData.villeElevage ?? '');
       setPays(userData.paysElevage ?? 'France');
+      setSiret(userData.siret ?? '');
+      setAcacedNum(userData.acaced ?? '');
+      setSiretDocUrl(userData.kbisUrl ?? null);
+      setAcacedDocUrl(userData.acacedDocUrl ?? null);
       const rawEsp = userData.especesElevees ?? [];
       if (rawEsp.length > 0) {
         setEspecesElevees(rawEsp.map(e => ({ espece: e.espece, races: e.races ?? [] })));
@@ -859,8 +876,29 @@ export default function ProfilPage() {
     setAvatarPreview(URL.createObjectURL(file));
   }
 
+  function validateForm(): string[] {
+    const errs: string[] = [];
+    if (!firstname.trim()) errs.push('Prénom requis');
+    if (!lastname.trim()) errs.push('Nom requis');
+    if (!dob) errs.push('Date de naissance requise');
+    if (isEleveur) {
+      if (!nameElevage.trim()) errs.push("Nom de l'élevage requis");
+      if (!phoneElevage.trim()) errs.push("Téléphone de l'élevage requis");
+      if (!villeElevage.trim()) errs.push("Ville de l'élevage requise");
+      if (!siret.trim()) errs.push('SIRET requis');
+      if (!siretDocUrl && !siretDocFile) errs.push('Justificatif SIRET (KBIS) requis');
+      if (!acacedNum.trim()) errs.push('Numéro ACACED requis');
+      if (!acacedDateObtention) errs.push("Date d'obtention ACACED requise");
+      if (!acacedDocUrl && !acacedDocFile) errs.push('Certificat ACACED requis');
+    }
+    return errs;
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    const errs = validateForm();
+    if (errs.length > 0) { setFormErrors(errs); return; }
+    setFormErrors([]);
     setSaving(true);
     setSaved(false);
     try {
@@ -884,7 +922,32 @@ export default function ProfilPage() {
 
         payload.name_elevage = nameElevage;
         payload.numero_elevage = phoneElevage;
+        payload.siret = siret.trim();
+        payload.acaced = acacedNum.trim();
         payload.desc_entreprise = description;
+
+        // Upload document SIRET (KBIS)
+        if (siretDocFile) {
+          const ext = siretDocFile.name.split('.').pop() ?? 'jpg';
+          const path = `documents/${user!.uid}/kbis.${ext}`;
+          const { data: up } = await supabase.storage.from('petsmatch').upload(path, siretDocFile, { upsert: true });
+          if (up) {
+            const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+            payload.kbis_url = pub.publicUrl;
+            setSiretDocUrl(pub.publicUrl);
+          }
+        }
+        // Upload document ACACED
+        if (acacedDocFile) {
+          const ext = acacedDocFile.name.split('.').pop() ?? 'jpg';
+          const path = `documents/${user!.uid}/acaced.${ext}`;
+          const { data: up } = await supabase.storage.from('petsmatch').upload(path, acacedDocFile, { upsert: true });
+          if (up) {
+            const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+            payload.acaced_doc_url = pub.publicUrl;
+            setAcacedDocUrl(pub.publicUrl);
+          }
+        }
         payload.rue_elevage = rue;
         payload.code_postal_elevage = cp;
         payload.ville_elevage = villeElevage;
@@ -1142,14 +1205,14 @@ export default function ProfilPage() {
         )}
 
         {/* ── Identité ── */}
-        <Card title="Identité">
+        <Card title="Identité *">
           <ReadOnly label="Email" value={user.email ?? ''} icon="✉️" />
           <div className="grid grid-cols-2 gap-3 mt-3">
-            <Field label="Prénom">
-              <input value={firstname} onChange={e => setFirstname(e.target.value)} className={inputCls} />
+            <Field label="Prénom *">
+              <input value={firstname} onChange={e => setFirstname(e.target.value)} required className={inputCls} />
             </Field>
-            <Field label="Nom">
-              <input value={lastname} onChange={e => setLastname(e.target.value)} className={inputCls} />
+            <Field label="Nom *">
+              <input value={lastname} onChange={e => setLastname(e.target.value)} required className={inputCls} />
             </Field>
           </div>
           {!isEleveur && (
@@ -1193,9 +1256,9 @@ export default function ProfilPage() {
               </div>
             </>
           )}
-          <Field label="Date de naissance">
+          <Field label="Date de naissance *">
             <input type="date" value={dob} onChange={e => setDob(e.target.value)}
-              className={inputCls} />
+              required className={inputCls} />
           </Field>
         </Card>
 
@@ -1205,8 +1268,8 @@ export default function ProfilPage() {
             <Field label="Nom de l'élevage *">
               <input value={nameElevage} onChange={e => setNameElevage(e.target.value)} required className={inputCls} />
             </Field>
-            <Field label="Téléphone de l'élevage">
-              <input value={phoneElevage} onChange={e => setPhoneElevage(e.target.value)} placeholder="06 00 00 00 00" className={inputCls} />
+            <Field label="Téléphone de l'élevage *">
+              <input value={phoneElevage} onChange={e => setPhoneElevage(e.target.value)} placeholder="06 00 00 00 00" required className={inputCls} />
             </Field>
             <Field label="Description / présentation">
               <textarea value={description} onChange={e => setDescription(e.target.value)}
@@ -1251,8 +1314,8 @@ export default function ProfilPage() {
                 </Field>
               </div>
               <div className="col-span-3">
-                <Field label="Ville">
-                  <input value={villeElevage} onChange={e => setVilleElevage(e.target.value)} placeholder="Paris" className={inputCls} />
+                <Field label="Ville *">
+                  <input value={villeElevage} onChange={e => setVilleElevage(e.target.value)} placeholder="Paris" required className={inputCls} />
                 </Field>
               </div>
             </div>
@@ -1325,43 +1388,99 @@ export default function ProfilPage() {
 
         {/* ── Informations administratives ── */}
         {isEleveur && (
-          <Card title="Informations administratives">
-            {userData?.siret && <div className="mb-3"><ReadOnly label="SIRET" value={userData.siret} icon="🏢" /></div>}
-            {userData?.acaced && <div className="mb-3"><ReadOnly label="N° ACACED" value={userData.acaced} icon="📋" /></div>}
+          <Card title="Informations administratives *">
+            {/* Hidden file inputs */}
+            <input ref={siretDocRef} type="file" accept="image/*,application/pdf" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) setSiretDocFile(f); e.target.value = ''; }} />
+            <input ref={acacedDocRef} type="file" accept="image/*,application/pdf" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) setAcacedDocFile(f); e.target.value = ''; }} />
 
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 mb-4 flex gap-2 text-xs text-blue-700">
-              <span>ℹ️</span>
-              <p>L&apos;ACACED est obligatoire pour les éleveurs de chiens et chats. Il est valable 10 ans. Le numéro est renseigné à l&apos;inscription et non modifiable.</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Date d'obtention ACACED">
-                <input type="date" value={acacedDateObtention} onChange={e => setAcacedDateObtention(e.target.value)}
-                  className={inputCls} />
-              </Field>
-              <Field label="Date de renouvellement">
-                <div className="flex gap-1">
-                  <input type="date" value={acacedDateRenewal} onChange={e => setAcacedDateRenewal(e.target.value)}
-                    className={`${inputCls} flex-1`} />
-                  {acacedDateRenewal && (
-                    <button type="button" onClick={() => setAcacedDateRenewal('')}
-                      className="text-gray-400 hover:text-gray-600 px-1 text-sm">×</button>
-                  )}
+            {/* SIRET */}
+            <Field label="SIRET *">
+              <input value={siret} onChange={e => setSiret(e.target.value)} className={inputCls}
+                placeholder="14 chiffres" maxLength={14} />
+            </Field>
+            <div className="mb-4">
+              <p className="text-xs font-medium text-gray-500 mb-1">Justificatif SIRET / KBIS *</p>
+              {(siretDocUrl || siretDocFile) ? (
+                <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                  <span className="text-green-600 text-sm">✓</span>
+                  <span className="text-xs text-green-700 flex-1 truncate">
+                    {siretDocFile ? siretDocFile.name : 'Document enregistré'}
+                  </span>
+                  <button type="button" onClick={() => siretDocRef.current?.click()}
+                    className="text-xs text-[#0C5C6C] font-medium hover:underline">Changer</button>
                 </div>
-              </Field>
+              ) : (
+                <button type="button" onClick={() => siretDocRef.current?.click()}
+                  className="w-full border-2 border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-xl py-3 text-sm text-gray-400 hover:text-[#0C5C6C] transition-colors">
+                  📎 Joindre le KBIS ou extrait SIRET (image ou PDF)
+                </button>
+              )}
             </div>
 
-            {acacedStatus && (
-              <div className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-medium mt-1 ${
-                acacedStatus.color === 'red' ? 'bg-red-50 border border-red-200 text-red-700' :
-                acacedStatus.color === 'orange' ? 'bg-orange-50 border border-orange-200 text-orange-700' :
-                'bg-green-50 border border-green-200 text-green-700'
-              }`}>
-                <span>{acacedStatus.color === 'red' ? '⚠️' : acacedStatus.color === 'orange' ? '⏳' : '✓'}</span>
-                {acacedStatus.label}
+            <div className="border-t border-gray-100 pt-4 mt-2">
+              {/* ACACED */}
+              <Field label="N° ACACED *">
+                <input value={acacedNum} onChange={e => setAcacedNum(e.target.value)} className={inputCls}
+                  placeholder="Ex : ACE-2023-XXXX" />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Date d'obtention *">
+                  <input type="date" value={acacedDateObtention} onChange={e => setAcacedDateObtention(e.target.value)}
+                    className={inputCls} />
+                </Field>
+                <Field label="Date de renouvellement">
+                  <div className="flex gap-1">
+                    <input type="date" value={acacedDateRenewal} onChange={e => setAcacedDateRenewal(e.target.value)}
+                      className={`${inputCls} flex-1`} />
+                    {acacedDateRenewal && (
+                      <button type="button" onClick={() => setAcacedDateRenewal('')}
+                        className="text-gray-400 hover:text-gray-600 px-1 text-sm">×</button>
+                    )}
+                  </div>
+                </Field>
               </div>
-            )}
+              <div className="mb-3">
+                <p className="text-xs font-medium text-gray-500 mb-1">Certificat ACACED *</p>
+                {(acacedDocUrl || acacedDocFile) ? (
+                  <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                    <span className="text-green-600 text-sm">✓</span>
+                    <span className="text-xs text-green-700 flex-1 truncate">
+                      {acacedDocFile ? acacedDocFile.name : 'Document enregistré'}
+                    </span>
+                    <button type="button" onClick={() => acacedDocRef.current?.click()}
+                      className="text-xs text-[#0C5C6C] font-medium hover:underline">Changer</button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => acacedDocRef.current?.click()}
+                    className="w-full border-2 border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-xl py-3 text-sm text-gray-400 hover:text-[#0C5C6C] transition-colors">
+                    📎 Joindre le certificat ACACED (image ou PDF)
+                  </button>
+                )}
+              </div>
+              {acacedStatus && (
+                <div className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-medium ${
+                  acacedStatus.color === 'red' ? 'bg-red-50 border border-red-200 text-red-700' :
+                  acacedStatus.color === 'orange' ? 'bg-orange-50 border border-orange-200 text-orange-700' :
+                  'bg-green-50 border border-green-200 text-green-700'
+                }`}>
+                  <span>{acacedStatus.color === 'red' ? '⚠️' : acacedStatus.color === 'orange' ? '⏳' : '✓'}</span>
+                  {acacedStatus.label}
+                </div>
+              )}
+            </div>
           </Card>
+        )}
+
+        {/* ── Erreurs de validation ── */}
+        {formErrors.length > 0 && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+            <p className="text-sm font-semibold text-red-700 mb-2">Champs obligatoires manquants :</p>
+            <ul className="list-disc list-inside space-y-1">
+              {formErrors.map((e, i) => <li key={i} className="text-xs text-red-600">{e}</li>)}
+            </ul>
+          </div>
         )}
 
         {/* ── Submit ── */}

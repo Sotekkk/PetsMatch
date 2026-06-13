@@ -15,6 +15,7 @@ import 'package:geocoding/geocoding.dart' as geo;
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_webservice/places.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 class ProfilEleveurEditPage extends StatefulWidget {
@@ -47,10 +48,16 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
   String? _photoUrl;
   File?   _bannerFile;
   String? _bannerUrl;
-  String? _siret;
-  String? _acaced;
   DateTime? _acacedDateObtention;
   DateTime? _acacedDateRenewal;
+
+  // Docs admin (éditables)
+  final _siretCtrl  = TextEditingController();
+  final _acacedCtrl = TextEditingController();
+  File?   _siretDocFile;
+  String? _siretDocUrl;
+  File?   _acacedDocFile;
+  String? _acacedDocUrl;
 
   // ── Places autocomplete ───────────────────────────────────────────────────────
   late final GoogleMapsPlaces _places;
@@ -79,7 +86,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
   @override
   void dispose() {
     for (final c in [_prenomCtrl, _nomCtrl, _dobCtrl, _nomElevageCtrl,
-      _telCtrl, _descCtrl, _addressSearchCtrl, _rueCtrl, _cpCtrl, _villeCtrl, _paysCtrl]) {
+      _telCtrl, _descCtrl, _addressSearchCtrl, _rueCtrl, _cpCtrl, _villeCtrl, _paysCtrl,
+      _siretCtrl, _acacedCtrl]) {
       c.dispose();
     }
     _places.dispose();
@@ -121,8 +129,10 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           ? (d['paysElevage'] ?? User_Info.paysElevage) : 'France';
       _photoUrl   = d['profilePictureUrlElevage'] ?? User_Info.profilePictureUrlElevage;
       _bannerUrl  = bannerFromFirestore;
-      _siret    = d['siret'];
-      _acaced   = d['acaced'];
+      _siretCtrl.text  = d['siret']  ?? User_Info.siret;
+      _acacedCtrl.text = d['acaced'] ?? User_Info.acacedNumero;
+      _siretDocUrl  = d['kbisUrl']     ?? User_Info.kbisUrl;
+      _acacedDocUrl = d['acacedDocUrl'] ?? User_Info.acacedDocUrl;
 
       if (d['acacedDateObtention'] != null) {
         try { _acacedDateObtention = DateFormat('dd/MM/yyyy').parse(d['acacedDateObtention']); } catch (_) {}
@@ -347,8 +357,27 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
 
   // ── Save ──────────────────────────────────────────────────────────────────────
   Future<void> _save() async {
-    if (_nomElevageCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Le nom de l\'élevage est requis')));
+    final missing = <String>[];
+    if (_prenomCtrl.text.trim().isEmpty)   missing.add('Prénom');
+    if (_nomCtrl.text.trim().isEmpty)      missing.add('Nom');
+    if (_dobCtrl.text.trim().isEmpty)      missing.add('Date de naissance');
+    if (_nomElevageCtrl.text.trim().isEmpty) missing.add("Nom de l'élevage");
+    if (_telCtrl.text.trim().isEmpty)      missing.add('Téléphone');
+    if (_villeCtrl.text.trim().isEmpty)    missing.add("Ville de l'élevage");
+    if (_siretCtrl.text.trim().isEmpty)    missing.add('SIRET');
+    if (_siretDocFile == null && (_siretDocUrl == null || _siretDocUrl!.isEmpty))
+      missing.add('Justificatif SIRET');
+    if (_acacedCtrl.text.trim().isEmpty)   missing.add('N° ACACED');
+    if (_acacedDateObtention == null)      missing.add("Date d'obtention ACACED");
+    if (_acacedDocFile == null && (_acacedDocUrl == null || _acacedDocUrl!.isEmpty))
+      missing.add('Certificat ACACED');
+
+    if (missing.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Champs obligatoires : ${missing.join(', ')}'),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 4),
+      ));
       return;
     }
     setState(() => _saving = true);
@@ -364,6 +393,19 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       String? bannerUrl = _bannerUrl;
       if (_bannerFile != null) {
         bannerUrl = await uploadPhoto(_bannerFile!, 'profiles/$uid/banner.jpg');
+      }
+
+      // Upload document SIRET
+      String? siretDocUrl = _siretDocUrl;
+      if (_siretDocFile != null) {
+        siretDocUrl = await uploadPhoto(_siretDocFile!, 'profiles/$uid/kbis.jpg');
+        setState(() => _siretDocUrl = siretDocUrl);
+      }
+      // Upload document ACACED
+      String? acacedDocUrl = _acacedDocUrl;
+      if (_acacedDocFile != null) {
+        acacedDocUrl = await uploadPhoto(_acacedDocFile!, 'profiles/$uid/acaced.jpg');
+        setState(() => _acacedDocUrl = acacedDocUrl);
       }
 
       final isDog = _hasEspece('chien');
@@ -401,6 +443,10 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
         'catBreeds':          isCat ? _racesFor('chat')  : [],
         if (photoUrl != null) 'profilePictureUrlElevage': photoUrl,
         if (bannerUrl != null) 'bannerUrl': bannerUrl,
+        'siret': _siretCtrl.text.trim(),
+        'acaced': _acacedCtrl.text.trim(),
+        if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbisUrl': siretDocUrl,
+        if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acacedDocUrl': acacedDocUrl,
         if (_acacedDateObtention != null)
           'acacedDateObtention': DateFormat('dd/MM/yyyy').format(_acacedDateObtention!),
         if (_acacedDateRenewal != null)
@@ -444,6 +490,10 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           if (_profileLng != null) 'lng': _profileLng,
           if (photoUrl != null) 'profile_picture_url_elevage': photoUrl,
           if (bannerUrl != null) 'banner_url': bannerUrl,
+          'siret': _siretCtrl.text.trim(),
+          'acaced': _acacedCtrl.text.trim(),
+          if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
+          if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acaced_doc_url': acacedDocUrl,
         }, onConflict: 'uid');
       } catch (_) {}
 
@@ -866,9 +916,66 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     }
   }
 
+  Future<void> _pickDoc(bool isSiret) async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 90);
+    if (picked != null) {
+      final f = File(picked.path);
+      setState(() { if (isSiret) _siretDocFile = f; else _acacedDocFile = f; });
+    }
+  }
+
   // ── Administratif ─────────────────────────────────────────────────────────────
   Widget _administratifCard() {
     final statusColor = _acacedStatusColor;
+
+    Widget docRow({
+      required String label,
+      required File? docFile,
+      required String? docUrl,
+      required VoidCallback onPick,
+    }) {
+      final hasDoc = docFile != null || (docUrl != null && docUrl.isNotEmpty);
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('$label *',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF555555))),
+        const SizedBox(height: 4),
+        GestureDetector(
+          onTap: onPick,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: hasDoc ? const Color(0xFFEEF5EA) : const Color(0xFFFAFAFA),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: hasDoc ? const Color(0xFF6E9E57) : Colors.grey.shade300,
+                style: hasDoc ? BorderStyle.solid : BorderStyle.none,
+              ),
+            ),
+            child: Row(children: [
+              Icon(
+                hasDoc ? Icons.check_circle_outline : Icons.attach_file_outlined,
+                size: 16,
+                color: hasDoc ? const Color(0xFF6E9E57) : Colors.grey,
+              ),
+              const SizedBox(width: 8),
+              Expanded(child: Text(
+                docFile != null
+                    ? docFile.path.split('/').last
+                    : (hasDoc ? 'Document enregistré' : 'Joindre un document (photo ou PDF)'),
+                style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 12,
+                    color: hasDoc ? const Color(0xFF1F2A2E) : Colors.grey),
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+              )),
+              if (hasDoc)
+                Text('Changer', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF0C5C6C))),
+            ]),
+          ),
+        ),
+      ]);
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -878,50 +985,32 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       ),
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Informations administratives',
+        const Text('Informations administratives *',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFF1F2A2E))),
         const SizedBox(height: 14),
 
-        // SIRET (read-only)
-        if (_siret != null && _siret!.isNotEmpty) ...[
-          _readOnly('SIRET', _siret!, Icons.business_outlined),
-          const SizedBox(height: 10),
-        ],
-
-        // ACACED — numéro read-only
-        if (_acaced != null && _acaced!.isNotEmpty) ...[
-          _readOnly('N° ACACED', _acaced!, Icons.badge_outlined),
-          const SizedBox(height: 10),
-        ],
-
-        // Note info
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF0F7FF),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(Icons.info_outline, size: 16, color: Color(0xFF0C5C6C)),
-            SizedBox(width: 8),
-            Expanded(child: Text(
-              'L\'ACACED est obligatoire pour les éleveurs de chiens et chats. '
-              'Il est valable 10 ans. Le numéro est renseigné à l\'inscription et non modifiable.',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF0C5C6C)),
-            )),
-          ]),
+        // SIRET
+        _field('SIRET *', _siretCtrl, inputType: TextInputType.number),
+        const SizedBox(height: 10),
+        docRow(
+          label: 'Justificatif SIRET (KBIS)',
+          docFile: _siretDocFile,
+          docUrl: _siretDocUrl,
+          onPick: () => _pickDoc(true),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
+        const Divider(height: 1),
+        const SizedBox(height: 16),
 
-        // Date d'obtention
+        // ACACED
+        _field('N° ACACED *', _acacedCtrl),
+        const SizedBox(height: 10),
         _datePicker(
-          label: 'Date d\'obtention ACACED',
+          label: 'Date d\'obtention ACACED *',
           value: _acacedDateObtention,
           onPicked: (d) => setState(() { _acacedDateObtention = d; _acacedDateRenewal = null; }),
         ),
         const SizedBox(height: 10),
-
-        // Date de renouvellement
         _datePicker(
           label: 'Date de renouvellement (si applicable)',
           value: _acacedDateRenewal,
@@ -929,8 +1018,15 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           clearable: true,
           onClear: () => setState(() => _acacedDateRenewal = null),
         ),
+        const SizedBox(height: 10),
+        docRow(
+          label: 'Certificat ACACED',
+          docFile: _acacedDocFile,
+          docUrl: _acacedDocUrl,
+          onPick: () => _pickDoc(false),
+        ),
 
-        // Status badge
+        // Status ACACED
         if (_acacedExpiration != null) ...[
           const SizedBox(height: 10),
           Container(

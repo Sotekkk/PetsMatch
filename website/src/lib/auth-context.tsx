@@ -50,6 +50,7 @@ export interface UserData {
   cguAcceptedAt?: string;
   isPremium?: boolean;
   kbisUrl?: string;
+  acacedDocUrl?: string;
 }
 
 // Supabase snake_case → web camelCase
@@ -112,6 +113,7 @@ function mapUser(d: Record<string, unknown>): UserData {
     cguAcceptedAt:         d.cgu_accepted_at as string | undefined,
     isPremium:             d.is_premium as boolean | undefined,
     kbisUrl:               d.kbis_url as string | undefined,
+    acacedDocUrl:          d.acaced_doc_url as string | undefined,
     especes,
     races,
   };
