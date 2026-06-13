@@ -1117,7 +1117,7 @@ export default function ProfilPage() {
       <h1 className="text-2xl font-bold text-[#1F2A2E] mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>Mon profil</h1>
 
       {/* Accès rapide */}
-      <div className="flex gap-3 mb-5">
+      <div className="flex gap-3 mb-5 flex-wrap">
         <Link href="/favoris"
           className="flex items-center gap-2 bg-white border border-gray-100 shadow-sm rounded-2xl px-4 py-3 hover:shadow-md transition-shadow">
           <span className="text-xl">❤️</span>
@@ -1146,6 +1146,26 @@ export default function ProfilPage() {
           </Link>
         )}
       </div>
+
+      {/* Employés — visible pour éleveurs, pros et associations */}
+      {(isEleveur || userData?.isPro || userData?.isAssociation) && (
+        <Link href="/employes"
+          className="flex items-center gap-4 bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-4 hover:shadow-md transition-shadow mb-5">
+          <div className="w-10 h-10 rounded-xl bg-[#E8F4F6] flex items-center justify-center flex-shrink-0">
+            <svg className="w-5 h-5 text-[#0C5C6C]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-[#1F2A2E] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Gestion des employés</p>
+            <p className="text-xs text-gray-400">Ajouter, révoquer et gérer les accès de votre équipe</p>
+          </div>
+          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </Link>
+      )}
 
       <form onSubmit={handleSave} className="space-y-4">
 

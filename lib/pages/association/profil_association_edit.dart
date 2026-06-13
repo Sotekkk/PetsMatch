@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/services/profile_service.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
@@ -229,6 +230,42 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
                     hint: 'Décrivez votre association, vos missions…',
                     maxLines: 5,
                   ),
+                  // ── Équipe / Employés ─────────────────────────────────────
+                  const SizedBox(height: 24),
+                  GestureDetector(
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const EmployesPage())),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 6, offset: const Offset(0, 2))],
+                      ),
+                      child: Row(children: [
+                        Container(
+                          width: 38, height: 38,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE8F4F6),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.group_outlined, color: _teal, size: 20),
+                        ),
+                        const SizedBox(width: 14),
+                        const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('Gestion des bénévoles / employés',
+                              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                                  fontSize: 14, color: Color(0xFF1F2A2E))),
+                          SizedBox(height: 2),
+                          Text('Ajouter, révoquer, gérer les accès',
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+                        ])),
+                        const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF9CA3AF)),
+                      ]),
+                    ),
+                  ),
+
                   const SizedBox(height: 32),
 
                   // Save button
