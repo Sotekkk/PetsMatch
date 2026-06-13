@@ -213,9 +213,13 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const hasRequired = label.endsWith(' *');
+  const baseLabel = hasRequired ? label.slice(0, -2) : label;
   return (
     <div className="mb-3">
-      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+      <label className="block text-xs font-medium text-gray-500 mb-1">
+        {baseLabel}{hasRequired && <span className="text-red-500 ml-0.5">*</span>}
+      </label>
       {children}
     </div>
   );
@@ -618,11 +622,6 @@ export default function ProfilPage() {
   const router = useRouter();
   const activeProfileId = useActiveProfile();
 
-  // Si un profil pro secondaire est actif, afficher l'édition de ce profil
-  if (activeProfileId && !loading && user) {
-    return <SecondaryProEdit profileId={activeProfileId} uid={user.uid} />;
-  }
-
   // Identity
   const [firstname, setFirstname] = useState('');
   const [lastname, setLastname] = useState('');
@@ -837,6 +836,12 @@ export default function ProfilPage() {
       setAllBreeds(prev => ({ ...prev, [espece]: [] }));
     }
   }, [allBreeds]);
+
+  // Si un profil pro secondaire est actif, afficher l'édition de ce profil
+  // Ce return doit être APRÈS tous les hooks pour respecter les règles de React
+  if (activeProfileId && !loading && user) {
+    return <SecondaryProEdit profileId={activeProfileId} uid={user.uid} />;
+  }
 
   function toggleEspece(espece: string) {
     setEspecesElevees(prev => {
