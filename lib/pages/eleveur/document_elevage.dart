@@ -168,9 +168,8 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
         return;
       }
       if (User_Info.isElevage) {
-        final acacedRequired = User_Info.isDog || User_Info.isCat;
-        if (acacedRequired && (_acacedCtrl.text.trim().isEmpty || _acacedDate == null || !_acacedUploaded)) {
-          _showError('L\'ACACED est obligatoire pour les éleveurs de chiens et de chats.');
+        if (_acacedCtrl.text.trim().isEmpty || _acacedDate == null || !_acacedUploaded) {
+          _showError('Le numéro ACACED, la date d\'obtention et le certificat sont obligatoires.');
           return;
         }
         User_Info.acacedNumero = _acacedCtrl.text.trim();
@@ -231,7 +230,7 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
 
             // ── ACACED (éleveur seulement) ───────────────────────────────────────
             if (User_Info.isElevage) ...[
-              _sectionTitle(User_Info.isDog || User_Info.isCat ? 'ACACED ou équivalent *' : 'ACACED ou équivalent (optionnel)'),
+              _sectionTitle('ACACED ou équivalent *'),
               const SizedBox(height: 4),
               const Text(
                 'Certificat de capacité animaux domestiques — valable 10 ans',

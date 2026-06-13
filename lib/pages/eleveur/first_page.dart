@@ -65,10 +65,17 @@ class _RegisterEleveurInformationPageState
       _prenomOk = _prenomCtrl.text.trim().isNotEmpty;
     });
     if (!_nomOk || !_prenomOk) return;
+    if (_dobCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('La date de naissance est obligatoire.'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
 
     User_Info.firstname = _prenomCtrl.text.trim();
     User_Info.lastname = _nomCtrl.text.trim();
-    User_Info.dateofbirth = _dobCtrl.text.isNotEmpty ? _dobCtrl.text : '01/01/1900';
+    User_Info.dateofbirth = _dobCtrl.text.trim();
     _uploadImage().catchError((_) {});
 
     Navigator.push(context,

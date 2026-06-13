@@ -233,8 +233,11 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
     final rue   = _rueCtrl.text.trim();
     final ville = _villeCtrl.text.trim();
 
-    if (nom.isEmpty || phone.isEmpty || rue.isEmpty || ville.isEmpty) {
-      _snack('Veuillez remplir tous les champs obligatoires.');
+    final cp   = _cpCtrl.text.trim();
+    final pays = _paysCtrl.text.trim();
+
+    if (nom.isEmpty || phone.isEmpty || rue.isEmpty || cp.isEmpty || ville.isEmpty || pays.isEmpty) {
+      _snack('Veuillez remplir tous les champs obligatoires (nom, téléphone, rue, code postal, ville, pays).');
       return;
     }
     if (_selectedEspeces.isEmpty) {
@@ -484,13 +487,13 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
                 ),
               ],
               const SizedBox(height: 10),
-              _textField('Rue', _rueCtrl),
+              _textField('Rue *', _rueCtrl),
               Row(children: [
-                Expanded(flex: 2, child: _textField('Code postal', _cpCtrl, inputType: TextInputType.number)),
+                Expanded(flex: 2, child: _textField('Code postal *', _cpCtrl, inputType: TextInputType.number)),
                 const SizedBox(width: 8),
-                Expanded(flex: 3, child: _textField('Ville', _villeCtrl)),
+                Expanded(flex: 3, child: _textField('Ville *', _villeCtrl)),
               ]),
-              _textField('Pays', _paysCtrl),
+              _textField('Pays *', _paysCtrl),
             ]),
             const SizedBox(height: 20),
 

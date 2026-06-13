@@ -153,6 +153,11 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
   // Éleveur
   const [numElevage, setNumElevage] = useState('');
   const [acaced, setAcaced] = useState('');
+  const [acacedDateObtention, setAcacedDateObtention] = useState('');
+  const [siretDocFile, setSiretDocFile] = useState<File | null>(null);
+  const [acacedDocFile, setAcacedDocFile] = useState<File | null>(null);
+  const siretDocRef = useRef<HTMLInputElement>(null);
+  const acacedDocRef = useRef<HTMLInputElement>(null);
 
   // Maps autocomplete
   const addressInputRef = useRef<HTMLInputElement>(null);
@@ -220,8 +225,22 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
   }
 
   async function handleSave() {
-    if (!profileLabel.trim()) { setError('Le libellé du profil est requis.'); return; }
-    if (!ville.trim()) { setError('La ville est requise.'); return; }
+    const errs: string[] = [];
+    if (!profileLabel.trim()) errs.push('Libellé du profil');
+    if (!ville.trim()) errs.push('Ville');
+    if (isEleveur) {
+      if (!nomCabinet.trim()) errs.push("Nom de l'élevage");
+      if (!phone.trim()) errs.push('Téléphone');
+      if (!rue.trim()) errs.push('Rue');
+      if (!cp.trim()) errs.push('Code postal');
+      if (!pays.trim()) errs.push('Pays');
+      if (!siret.trim()) errs.push('SIRET');
+      if (!siretDocFile) errs.push('Justificatif SIRET (KBIS)');
+      if (!acaced.trim()) errs.push('N° ACACED');
+      if (!acacedDateObtention) errs.push("Date d'obtention ACACED");
+      if (!acacedDocFile) errs.push('Certificat ACACED');
+    }
+    if (errs.length > 0) { setError(`Champs obligatoires manquants : ${errs.join(', ')}`); return; }
     setSaving(true);
     setError('');
     try {
@@ -249,8 +268,31 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         data.name_elevage     = nomCabinet.trim();
         data.numero_elevage   = numElevage.trim();
         data.is_elevage       = true;
+        data.siret            = siret.trim();
         data.acaced_numero    = acaced.trim();
+        data.acaced_date_obtention = acacedDateObtention;
         data.especes_elevees  = Array.from(especesEleveesSet);
+
+        // Upload KBIS
+        if (siretDocFile) {
+          const ext = siretDocFile.name.split('.').pop() ?? 'jpg';
+          const path = `documents/${uid}/kbis.${ext}`;
+          const { data: up } = await supabase.storage.from('petsmatch').upload(path, siretDocFile, { upsert: true });
+          if (up) {
+            const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+            data.kbis_url = pub.publicUrl;
+          }
+        }
+        // Upload ACACED
+        if (acacedDocFile) {
+          const ext = acacedDocFile.name.split('.').pop() ?? 'jpg';
+          const path = `documents/${uid}/acaced.${ext}`;
+          const { data: up } = await supabase.storage.from('petsmatch').upload(path, acacedDocFile, { upsert: true });
+          if (up) {
+            const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+            data.acaced_doc_url = pub.publicUrl;
+          }
+        }
       }
       if (isProType) {
         data.cat_pro           = typeInfo.type;
@@ -278,6 +320,20 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         .select('id');
 
       if (err) throw err;
+
+      // Sync champs éleveur dans la table users (SIRET, ACACED, docs)
+      if (isEleveur) {
+        const usersPayload: Record<string, unknown> = {
+          uid,
+          siret: siret.trim(),
+          acaced: acaced.trim(),
+          acaced_date_obtention: acacedDateObtention,
+        };
+        if (data.kbis_url) usersPayload.kbis_url = data.kbis_url;
+        if (data.acaced_doc_url) usersPayload.acaced_doc_url = data.acaced_doc_url;
+        await supabase.from('users').upsert(usersPayload, { onConflict: 'uid' });
+      }
+
       const id = (rows as { id: string }[])[0]?.id ?? '';
       onSaved(id);
     } catch (e: unknown) {
@@ -381,14 +437,73 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
           {/* Éleveur spécifique */}
           {isEleveur && (
             <>
-              <Field label="Numéro d'élevage">
-                <input value={numElevage} onChange={e => setNumElevage(e.target.value)}
-                  className="w-full input-field" placeholder="Numéro SIREN/DDPP" />
+              {/* Hidden file inputs */}
+              <input ref={siretDocRef} type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) setSiretDocFile(f); e.target.value = ''; }} />
+              <input ref={acacedDocRef} type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) setAcacedDocFile(f); e.target.value = ''; }} />
+
+              <Field label="SIRET" required>
+                <input value={siret} onChange={e => setSiret(e.target.value)}
+                  className="w-full input-field" placeholder="14 chiffres" maxLength={14} />
               </Field>
-              <Field label="Numéro ACACED (facultatif)">
+
+              <div>
+                <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">
+                  Justificatif SIRET (KBIS) <span className="text-red-500">*</span>
+                </p>
+                {siretDocFile ? (
+                  <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                    <span className="text-green-600 text-sm">✓</span>
+                    <span className="text-xs text-green-700 flex-1 truncate">{siretDocFile.name}</span>
+                    <button type="button" onClick={() => siretDocRef.current?.click()}
+                      className="text-xs text-[#0C5C6C] font-medium hover:underline">Changer</button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => siretDocRef.current?.click()}
+                    className="w-full border-2 border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-xl py-3 text-sm text-gray-400 hover:text-[#0C5C6C] transition-colors">
+                    📎 Joindre le KBIS ou extrait SIRET (image ou PDF)
+                  </button>
+                )}
+              </div>
+
+              <Field label="N° ACACED" required>
                 <input value={acaced} onChange={e => setAcaced(e.target.value)}
                   className="w-full input-field" placeholder="Ex : ACE-2023-XXXX" />
               </Field>
+
+              <div>
+                <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">
+                  Date d&apos;obtention ACACED <span className="text-red-500">*</span>
+                </p>
+                <input type="date" value={acacedDateObtention} onChange={e => setAcacedDateObtention(e.target.value)}
+                  className="w-full input-field" />
+              </div>
+
+              <div>
+                <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">
+                  Certificat ACACED <span className="text-red-500">*</span>
+                </p>
+                {acacedDocFile ? (
+                  <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                    <span className="text-green-600 text-sm">✓</span>
+                    <span className="text-xs text-green-700 flex-1 truncate">{acacedDocFile.name}</span>
+                    <button type="button" onClick={() => acacedDocRef.current?.click()}
+                      className="text-xs text-[#0C5C6C] font-medium hover:underline">Changer</button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => acacedDocRef.current?.click()}
+                    className="w-full border-2 border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-xl py-3 text-sm text-gray-400 hover:text-[#0C5C6C] transition-colors">
+                    📎 Joindre le certificat ACACED (image ou PDF)
+                  </button>
+                )}
+              </div>
+
+              <Field label="Numéro d'élevage (optionnel)">
+                <input value={numElevage} onChange={e => setNumElevage(e.target.value)}
+                  className="w-full input-field" placeholder="Numéro SIREN/DDPP" />
+              </Field>
+
               <div>
                 <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-2">Espèces élevées</p>
                 <EspecesChips selected={especesEleveesSet} onToggle={e => toggleEspece(e, especesEleveesSet, setEspecesEleveesSet)} />
