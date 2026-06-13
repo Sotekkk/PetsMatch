@@ -48,12 +48,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
           .select()
           .eq('uid', _uid)
           .order('created_at', ascending: false)
-          .limit(100);
+          .limit(200);
+      final currentType = _currentProfileType;
+      final filtered = (data as List).where((n) {
+        final pt = (n['profile_type'] as String?) ?? '';
+        return pt.isEmpty || pt == currentType;
+      }).toList();
       if (mounted) setState(() {
-        _notifs = List<Map<String, dynamic>>.from(data);
+        _notifs = List<Map<String, dynamic>>.from(filtered);
         _loading = false;
       });
-      // Badge mis à jour via realtime — pas de marquage automatique ici
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -82,7 +86,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
     );
     if (confirm != true) return;
     try {
-      await _supa.from('notifications').delete().eq('uid', _uid);
+      final ids = _notifs.map((n) => n['id']).toList();
+      if (ids.isNotEmpty) {
+        await _supa.from('notifications').delete().inFilter('id', ids);
+      }
       if (mounted) setState(() => _notifs.clear());
     } catch (_) {}
   }
@@ -719,21 +726,31 @@ class _NotifBadgeState extends State<NotifBadge> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _fetchUnread();
     _subscribe();
-    // Polling de secours si Realtime n'est pas activé sur la table
+    User_Info.profileNotifier.addListener(_onProfileChange);
     _pollTimer = Timer.periodic(const Duration(seconds: 20), (_) => _fetchUnread());
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    User_Info.profileNotifier.removeListener(_onProfileChange);
     _pollTimer?.cancel();
     _channel?.unsubscribe();
     super.dispose();
   }
 
+  void _onProfileChange() => _fetchUnread();
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) _fetchUnread();
+  }
+
+  String get _currentBadgeProfileType {
+    if (User_Info.catPro.isNotEmpty) return User_Info.catPro;
+    if (User_Info.isAssociation) return 'association';
+    if (User_Info.isElevage) return 'eleveur';
+    return 'particulier';
   }
 
   Future<void> _fetchUnread() async {
@@ -741,10 +758,15 @@ class _NotifBadgeState extends State<NotifBadge> with WidgetsBindingObserver {
     try {
       final data = await _supa
           .from('notifications')
-          .select('id')
+          .select('id, profile_type')
           .eq('uid', _uid)
           .eq('read', false);
-      if (mounted) setState(() => _unread = (data as List).length);
+      final currentType = _currentBadgeProfileType;
+      final count = (data as List).where((n) {
+        final pt = (n['profile_type'] as String?) ?? '';
+        return pt.isEmpty || pt == currentType;
+      }).length;
+      if (mounted) setState(() => _unread = count);
     } catch (_) {}
   }
 

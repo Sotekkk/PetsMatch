@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/main_feed.dart' show UserSelected;
@@ -1422,15 +1423,28 @@ class _BottomBarState extends State<_BottomBar> {
           .collection('conversations')
           .where('participantIds', isEqualTo: participantIds)
           .limit(1).get();
-      final ref = snap.docs.isEmpty
-          ? await FirebaseFirestore.instance.collection('conversations').add({
-              'participants': [me, widget.uidEleveur],
-              'participantIds': participantIds,
-              'lastMessage': '',
-              'timestamp': FieldValue.serverTimestamp(),
-              'categorie': 'annonces',
-            })
-          : snap.docs.first.reference;
+      final profileTypes = <String, String>{
+        widget.uidEleveur: 'eleveur',
+        me: User_Info.catPro.isNotEmpty ? User_Info.catPro
+            : (User_Info.isElevage ? 'eleveur' : 'particulier'),
+      };
+      DocumentReference ref;
+      if (snap.docs.isEmpty) {
+        ref = await FirebaseFirestore.instance.collection('conversations').add({
+          'participants': [me, widget.uidEleveur],
+          'participantIds': participantIds,
+          'lastMessage': '',
+          'timestamp': FieldValue.serverTimestamp(),
+          'categorie': 'annonces',
+          'participant_profile_types': profileTypes,
+        });
+      } else {
+        ref = snap.docs.first.reference;
+        final existing = snap.docs.first.data() as Map<String, dynamic>;
+        if (existing['participant_profile_types'] == null) {
+          await ref.update({'participant_profile_types': profileTypes});
+        }
+      }
       if (mounted) Navigator.push(context, MaterialPageRoute(
           builder: (_) => ChatScreen(
               conversationId: ref.id, eleveurId: widget.uidEleveur)));

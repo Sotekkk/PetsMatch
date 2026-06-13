@@ -13,7 +13,6 @@ class VeterinairesPag extends StatelessWidget {
   Widget build(BuildContext context) {
     return _ServiceSubPage(
       title: 'Vétérinaires',
-      icon: Icons.local_hospital_outlined,
       iconColor: const Color(0xFF6E9E57),
       headerColor: const Color(0xFF6E9E57),
       sections: [
@@ -56,7 +55,6 @@ class EducationPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return _ServiceSubPage(
       title: 'Éducation & Garde',
-      icon: Icons.volunteer_activism_outlined,
       iconColor: const Color(0xFFEF6C00),
       headerColor: const Color(0xFFEF6C00),
       sections: [
@@ -124,7 +122,6 @@ class SantePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return _ServiceSubPage(
       title: 'Santé',
-      icon: Icons.favorite_outline,
       iconColor: const Color(0xFFE91E63),
       headerColor: const Color(0xFFE91E63),
       sections: [
@@ -211,7 +208,6 @@ class SortiesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return _ServiceSubPage(
       title: 'Sorties & Voyages',
-      icon: Icons.explore_outlined,
       iconColor: const Color(0xFF1E88E5),
       headerColor: const Color(0xFF1E88E5),
       sections: [
@@ -260,7 +256,6 @@ class ProduitsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return _ServiceSubPage(
       title: 'Marketplace',
-      icon: Icons.shopping_bag_outlined,
       iconColor: const Color(0xFF8E24AA),
       headerColor: const Color(0xFF8E24AA),
       sections: [
@@ -317,7 +312,6 @@ class CommunautePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return _ServiceSubPage(
       title: 'Communauté',
-      icon: Icons.groups_outlined,
       iconColor: const Color(0xFF00ACC1),
       headerColor: const Color(0xFF00ACC1),
       sections: [
@@ -368,7 +362,6 @@ class PoleSantePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return _ServiceSubPage(
       title: 'Pôle Santé',
-      icon: Icons.medical_services_outlined,
       iconColor: const Color(0xFF6E9E57),
       headerColor: const Color(0xFF6E9E57),
       sections: [
@@ -481,14 +474,12 @@ class _Section {
 
 class _ServiceSubPage extends StatelessWidget {
   final String title;
-  final IconData icon;
   final Color iconColor;
   final Color headerColor;
   final List<_Section> sections;
 
   const _ServiceSubPage({
     required this.title,
-    required this.icon,
     required this.iconColor,
     required this.headerColor,
     required this.sections,
@@ -498,70 +489,32 @@ class _ServiceSubPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 140,
-            pinned: true,
-            backgroundColor: const Color(0xFF1E2025),
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                  color: Colors.white, size: 20),
-              onPressed: () => Navigator.pop(context),
-            ),
-            flexibleSpace: FlexibleSpaceBar(
-              centerTitle: false,
-              titlePadding: const EdgeInsets.fromLTRB(56, 0, 20, 16),
-              title: Text(
-                title,
-                style: const TextStyle(
-                  fontFamily: 'Galey',
-                  fontWeight: FontWeight.w700,
-                  fontSize: 22,
-                  color: Colors.white,
-                ),
-              ),
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          headerColor.withValues(alpha: 0.85),
-                          const Color(0xFF1E2025),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    right: -20,
-                    top: -10,
-                    child: Icon(icon, size: 140,
-                        color: Colors.white.withValues(alpha: 0.07)),
-                  ),
-                ],
-              ),
-            ),
+      appBar: AppBar(
+        backgroundColor: headerColor,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontFamily: 'Galey',
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+            color: Colors.white,
           ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 100),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _SectionCard(
-                    section: sections[index],
-                    accentColor: iconColor,
-                  ),
-                ),
-                childCount: sections.length,
-              ),
-            ),
-          ),
-        ],
+        ),
+      ),
+      body: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 100),
+        itemCount: sections.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, index) => _SectionCard(
+          section: sections[index],
+          accentColor: iconColor,
+        ),
       ),
     );
   }

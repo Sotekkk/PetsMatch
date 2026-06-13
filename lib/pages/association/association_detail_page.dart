@@ -1,3 +1,4 @@
+import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -86,16 +87,27 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
           .get();
       final bool isNew = snap.docs.isEmpty;
       final String conversationId;
+      final profileTypes = <String, String>{
+        widget.uid: 'association',
+        currentUid: User_Info.catPro.isNotEmpty ? User_Info.catPro
+            : (User_Info.isAssociation ? 'association'
+              : (User_Info.isElevage ? 'eleveur' : 'particulier')),
+      };
       if (isNew) {
         final ref = await FirebaseFirestore.instance.collection('conversations').add({
           'participants': [currentUid, widget.uid],
           'participantIds': participantIds,
           'lastMessage': '',
           'timestamp': FieldValue.serverTimestamp(),
+          'participant_profile_types': profileTypes,
         });
         conversationId = ref.id;
       } else {
         conversationId = snap.docs.first.id;
+        final existing = snap.docs.first.data() as Map<String, dynamic>;
+        if (existing['participant_profile_types'] == null) {
+          await snap.docs.first.reference.update({'participant_profile_types': profileTypes});
+        }
       }
       if (!mounted) return;
       Navigator.push(context, MaterialPageRoute(

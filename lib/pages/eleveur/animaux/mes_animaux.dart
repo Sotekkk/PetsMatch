@@ -63,6 +63,10 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   String _filterSexe    = 'tous';
   String _filterRace     = '';
   String _presentsSubTab = 'tous'; // 'tous', 'repro', 'bebes'
+  bool _filterRetraite = false;
+  bool _filterRepro    = false;
+  bool _filterGestante = false;
+  bool _filterChaleur  = false;
   bool   _selectMode    = false;
   final Set<String> _selectedIds = {};
 
@@ -357,6 +361,10 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (_filterEspece != 'tous') c++;
     if (_filterSexe != 'tous')   c++;
     if (_filterRace.isNotEmpty)  c++;
+    if (_filterRetraite) c++;
+    if (_filterRepro)    c++;
+    if (_filterGestante) c++;
+    if (_filterChaleur)  c++;
     return c;
   }
 
@@ -390,9 +398,13 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     for (final k in racesByEspece.keys) racesByEspece[k]!.sort();
     if (!mounted) return;
 
-    String tmpEspece = _filterEspece;
-    String tmpSexe   = _filterSexe;
-    String tmpRace   = _filterRace;
+    String tmpEspece  = _filterEspece;
+    String tmpSexe    = _filterSexe;
+    String tmpRace    = _filterRace;
+    bool tmpRetraite  = _filterRetraite;
+    bool tmpRepro     = _filterRepro;
+    bool tmpGestante  = _filterGestante;
+    bool tmpChaleur   = _filterChaleur;
 
     await showModalBottomSheet(
       context: context,
@@ -400,7 +412,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) {
-          void apply({String? espece, String? sexe, String? race}) {
+          void apply({String? espece, String? sexe, String? race,
+                     bool toggleRetraite = false, bool toggleRepro = false,
+                     bool toggleGestante = false, bool toggleChaleur = false}) {
             setSheet(() {
               if (espece != null) {
                 tmpEspece = espece;
@@ -409,11 +423,19 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               }
               if (sexe != null) tmpSexe = sexe;
               if (race != null) tmpRace = (tmpRace == race) ? '' : race;
+              if (toggleRetraite) tmpRetraite = !tmpRetraite;
+              if (toggleRepro)    tmpRepro    = !tmpRepro;
+              if (toggleGestante) tmpGestante = !tmpGestante;
+              if (toggleChaleur)  tmpChaleur  = !tmpChaleur;
             });
             setState(() {
-              _filterEspece = tmpEspece;
-              _filterSexe   = tmpSexe;
-              _filterRace   = tmpRace;
+              _filterEspece   = tmpEspece;
+              _filterSexe     = tmpSexe;
+              _filterRace     = tmpRace;
+              _filterRetraite = tmpRetraite;
+              _filterRepro    = tmpRepro;
+              _filterGestante = tmpGestante;
+              _filterChaleur  = tmpChaleur;
             });
           }
 
@@ -437,11 +459,14 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                         fontSize: 17, color: Color(0xFF1F2A2E))),
                 const Spacer(),
-                if (tmpEspece != 'tous' || tmpSexe != 'tous' || tmpRace.isNotEmpty)
+                if (tmpEspece != 'tous' || tmpSexe != 'tous' || tmpRace.isNotEmpty ||
+                    tmpRetraite || tmpRepro || tmpGestante || tmpChaleur)
                   TextButton(
                     onPressed: () {
-                      setSheet(() { tmpEspece = 'tous'; tmpSexe = 'tous'; tmpRace = ''; });
-                      setState(() { _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = ''; });
+                      setSheet(() { tmpEspece = 'tous'; tmpSexe = 'tous'; tmpRace = '';
+                        tmpRetraite = false; tmpRepro = false; tmpGestante = false; tmpChaleur = false; });
+                      setState(() { _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = '';
+                        _filterRetraite = false; _filterRepro = false; _filterGestante = false; _filterChaleur = false; });
                     },
                     style: TextButton.styleFrom(padding: EdgeInsets.zero),
                     child: const Text('Réinitialiser',
@@ -514,6 +539,33 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                   );
                 }).toList()),
               ],
+              const SizedBox(height: 18),
+              const Text('Statut spécial', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                  fontSize: 13, color: Color(0xFF6F767B))),
+              const SizedBox(height: 10),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final item in [
+                  ('🏁 Retraité',   tmpRetraite, const Color(0xFFB45309), () => apply(toggleRetraite: true)),
+                  ('⭐ Repro',      tmpRepro,    _teal,                   () => apply(toggleRepro: true)),
+                  ('🤰 Gestante',   tmpGestante, _green,                  () => apply(toggleGestante: true)),
+                  ('🌸 En chaleur', tmpChaleur,  Colors.pink,             () => apply(toggleChaleur: true)),
+                ] as List<(String, bool, Color, VoidCallback)>)
+                  GestureDetector(
+                    onTap: item.$4,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: item.$2 ? item.$3 : Colors.transparent,
+                        border: Border.all(color: item.$2 ? item.$3 : Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(item.$1, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                          color: item.$2 ? Colors.white : Colors.black87,
+                          fontWeight: item.$2 ? FontWeight.w600 : FontWeight.normal)),
+                    ),
+                  ),
+              ]),
               const SizedBox(height: 8),
             ]),
           );
@@ -944,6 +996,26 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               onRemove: () => setState(() => _filterRace = ''),
             ),
           ],
+          if (_filterRetraite) ...[
+            const SizedBox(width: 6),
+            _ActiveChip(label: '🏁 Retraité', color: const Color(0xFFB45309),
+                onRemove: () => setState(() => _filterRetraite = false)),
+          ],
+          if (_filterRepro) ...[
+            const SizedBox(width: 6),
+            _ActiveChip(label: '⭐ Repro', color: _teal,
+                onRemove: () => setState(() => _filterRepro = false)),
+          ],
+          if (_filterGestante) ...[
+            const SizedBox(width: 6),
+            _ActiveChip(label: '🤰 Gestante', color: _green,
+                onRemove: () => setState(() => _filterGestante = false)),
+          ],
+          if (_filterChaleur) ...[
+            const SizedBox(width: 6),
+            _ActiveChip(label: '🌸 En chaleur', color: Colors.pink,
+                onRemove: () => setState(() => _filterChaleur = false)),
+          ],
         ]),
       ),
     );
@@ -961,6 +1033,11 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       if (_filterSexe != 'tous' && data['sexe'] != _filterSexe) return false;
       if (_filterRace.isNotEmpty &&
           (data['race'] ?? '').toString().toLowerCase() != _filterRace.toLowerCase()) return false;
+      if (_filterRetraite && data['is_retraite'] != true) return false;
+      if (_filterRepro    && data['reproducteur'] != true) return false;
+      final String _aid = data['id'] as String? ?? '';
+      if (_filterGestante && !(_gestanteFlags[_aid] ?? false)) return false;
+      if (_filterChaleur  && !(_chaleurFlags[_aid]  ?? false)) return false;
       if (_search.isNotEmpty) {
         final nom  = (data['nom']            ?? '').toString().toLowerCase();
         final puce = (data['identification'] ?? '').toString().toLowerCase();
@@ -1013,6 +1090,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             TextButton(
               onPressed: () => setState(() {
                 _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = '';
+                _filterRetraite = false; _filterRepro = false; _filterGestante = false; _filterChaleur = false;
               }),
               child: const Text('Réinitialiser les filtres',
                   style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6E9E57))),

@@ -3368,15 +3368,26 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
           .where('participantIds', isEqualTo: participantIds)
           .limit(1)
           .get();
-      final ref = snap.docs.isEmpty
-          ? await FirebaseFirestore.instance.collection('conversations').add({
-              'participants': [myUid, owner['uid']],
-              'participantIds': participantIds,
-              'lastMessage': '',
-              'timestamp': FieldValue.serverTimestamp(),
-              'categorie': 'services',
-            })
-          : snap.docs.first.reference;
+      final myProfileType = User_Info.catPro.isNotEmpty ? User_Info.catPro
+          : (User_Info.isAssociation ? 'association'
+            : (User_Info.isElevage ? 'eleveur' : 'particulier'));
+      DocumentReference ref;
+      if (snap.docs.isEmpty) {
+        ref = await FirebaseFirestore.instance.collection('conversations').add({
+          'participants': [myUid, owner['uid']],
+          'participantIds': participantIds,
+          'lastMessage': '',
+          'timestamp': FieldValue.serverTimestamp(),
+          'categorie': 'services',
+          'participant_profile_types': {myUid: myProfileType},
+        });
+      } else {
+        ref = snap.docs.first.reference;
+        final existing = snap.docs.first.data() as Map<String, dynamic>;
+        if (existing['participant_profile_types'] == null) {
+          await ref.update({'participant_profile_types': {myUid: myProfileType}});
+        }
+      }
       if (mounted) {
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => ChatScreen(conversationId: ref.id, eleveurId: owner['uid'] as String),

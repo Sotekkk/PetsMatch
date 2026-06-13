@@ -502,15 +502,28 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
           .collection('conversations')
           .where('participantIds', isEqualTo: participantIds)
           .limit(1).get();
-      final ref = snap.docs.isEmpty
-          ? await FirebaseFirestore.instance.collection('conversations').add({
-              'participants': [me, item.uidEleveur!],
-              'participantIds': participantIds,
-              'lastMessage': '',
-              'timestamp': FieldValue.serverTimestamp(),
-              'categorie': 'annonces',
-            })
-          : snap.docs.first.reference;
+      final profileTypes = <String, String>{
+        item.uidEleveur!: 'eleveur',
+        me: User_Info.catPro.isNotEmpty ? User_Info.catPro
+            : (User_Info.isElevage ? 'eleveur' : 'particulier'),
+      };
+      DocumentReference ref;
+      if (snap.docs.isEmpty) {
+        ref = await FirebaseFirestore.instance.collection('conversations').add({
+          'participants': [me, item.uidEleveur!],
+          'participantIds': participantIds,
+          'lastMessage': '',
+          'timestamp': FieldValue.serverTimestamp(),
+          'categorie': 'annonces',
+          'participant_profile_types': profileTypes,
+        });
+      } else {
+        ref = snap.docs.first.reference;
+        final existing = snap.docs.first.data() as Map<String, dynamic>;
+        if (existing['participant_profile_types'] == null) {
+          await ref.update({'participant_profile_types': profileTypes});
+        }
+      }
       if (mounted) {
         Navigator.push(context, MaterialPageRoute(
             builder: (_) => ChatScreen(conversationId: ref.id, eleveurId: item.uidEleveur!)));

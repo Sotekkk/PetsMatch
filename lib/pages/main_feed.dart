@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:convert';
+import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/filterpage.dart';
 import 'package:PetsMatch/pages/user_detail_page_feed.dart';
@@ -851,6 +852,11 @@ class _PostWidgetState extends State<PostWidget> {
         .limit(1)
         .get();
 
+    final profileTypes = <String, String>{
+      eleveurId: 'eleveur',
+      currentUserId: User_Info.catPro.isNotEmpty ? User_Info.catPro
+          : (User_Info.isElevage ? 'eleveur' : 'particulier'),
+    };
     DocumentReference conversationRef;
     if (conversationSnapshot.docs.isEmpty) {
       conversationRef =
@@ -860,9 +866,14 @@ class _PostWidgetState extends State<PostWidget> {
         'lastMessage': '',
         'timestamp': FieldValue.serverTimestamp(),
         'categorie': 'annonces',
+        'participant_profile_types': profileTypes,
       });
     } else {
       conversationRef = conversationSnapshot.docs.first.reference;
+      final existing = conversationSnapshot.docs.first.data() as Map<String, dynamic>;
+      if (existing['participant_profile_types'] == null) {
+        await conversationRef.update({'participant_profile_types': profileTypes});
+      }
     }
 
     Navigator.push(

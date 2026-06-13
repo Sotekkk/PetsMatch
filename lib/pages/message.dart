@@ -37,6 +37,13 @@ class _MessagePageState extends State<MessagePage> {
   String _searchText = "";
   int _catIndex = 0;
 
+  String get _currentProfileType {
+    if (User_Info.catPro.isNotEmpty) return User_Info.catPro;
+    if (User_Info.isAssociation) return 'association';
+    if (User_Info.isElevage) return 'eleveur';
+    return 'particulier';
+  }
+
   // Cache pour les utilisateurs et les conversations
   final Map<String, Map<String, String?>> _userCache = {};
   final Map<String, Map<String, dynamic>> _conversationCache = {};
@@ -277,8 +284,12 @@ class _MessagePageState extends State<MessagePage> {
                     }
                     final deletedFor = data['deletedFor'] as Map<String, dynamic>?;
                     if (deletedFor?[currentUserId] == true) return false;
-                    // Per-profile filter: pros only see their profile's conversations
-                    if (User_Info.isPro) {
+                    // Filter by participant_profile_types (new conversations)
+                    final profileTypes = data['participant_profile_types'] as Map<String, dynamic>? ?? {};
+                    final myType = profileTypes[currentUserId] as String?;
+                    if (myType != null && myType.isNotEmpty && myType != _currentProfileType) return false;
+                    // Legacy pro filter for conversations without participant_profile_types
+                    if (User_Info.isPro && profileTypes[currentUserId] == null) {
                       final pid = User_Info.activeProfileId;
                       final convoProfileId = data['pro_profile_id'] as String? ?? '';
                       if (pid.isEmpty && convoProfileId.isNotEmpty) return false;

@@ -243,6 +243,10 @@ export default function MesAnimauxPage() {
   const [filtreEspece, setFiltreEspece] = useState('tous');
   const [filtreSexe, setFiltreSexe] = useState('tous');
   const [filtreRace, setFiltreRace] = useState('');
+  const [filtreRetraite, setFiltreRetraite] = useState(false);
+  const [filtreRepro, setFiltreRepro] = useState(false);
+  const [filtreGestante, setFiltreGestante] = useState(false);
+  const [filtreChaleur, setFiltreChaleur] = useState(false);
 
   // Filtres anciens
   const [anciensEspece, setAnciensEspece] = useState('tous');
@@ -379,6 +383,10 @@ export default function MesAnimauxPage() {
       if (filtreSexe === 'femelle' && !s.startsWith('f')) return false;
     }
     if (filtreRace && a.race !== filtreRace) return false;
+    if (filtreRetraite && !a.is_retraite) return false;
+    if (filtreRepro && !a.reproducteur) return false;
+    if (filtreGestante && !gestanteFlags[a.id]) return false;
+    if (filtreChaleur && !chaleurFlags[a.id]) return false;
     if (searchLower) {
       const nom  = (a.nom            ?? '').toLowerCase();
       const puce = (a.identification ?? '').toLowerCase();
@@ -400,7 +408,8 @@ export default function MesAnimauxPage() {
   });
 
   const activeFilterCount = tab === 'presents'
-    ? (filtreEspece !== 'tous' ? 1 : 0) + (filtreSexe !== 'tous' ? 1 : 0) + (filtreRace ? 1 : 0)
+    ? (filtreEspece !== 'tous' ? 1 : 0) + (filtreSexe !== 'tous' ? 1 : 0) + (filtreRace ? 1 : 0) +
+      (filtreRetraite ? 1 : 0) + (filtreRepro ? 1 : 0) + (filtreGestante ? 1 : 0) + (filtreChaleur ? 1 : 0)
     : (anciensEspece !== 'tous' ? 1 : 0) + (anciensStatut !== 'tous' ? 1 : 0);
 
   // Sub-tab filtering (presents only)
@@ -438,6 +447,7 @@ export default function MesAnimauxPage() {
   function resetFilters() {
     if (tab === 'presents') {
       setFiltreEspece('tous'); setFiltreSexe('tous'); setFiltreRace('');
+      setFiltreRetraite(false); setFiltreRepro(false); setFiltreGestante(false); setFiltreChaleur(false);
     } else {
       setAnciensEspece('tous'); setAnciensStatut('tous');
     }
@@ -620,6 +630,16 @@ export default function MesAnimauxPage() {
                   </div>
                 </div>
               )}
+              {/* Statut spécial */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Statut spécial</p>
+                <div className="flex flex-wrap gap-2">
+                  <Chip label="🏁 Retraité"   active={filtreRetraite} color="#B45309" onClick={() => setFiltreRetraite(!filtreRetraite)} />
+                  <Chip label="⭐ Repro"       active={filtreRepro}    color="#0C5C6C" onClick={() => setFiltreRepro(!filtreRepro)} />
+                  <Chip label="🤰 Gestante"    active={filtreGestante} color="#6E9E57" onClick={() => setFiltreGestante(!filtreGestante)} />
+                  <Chip label="🌸 En chaleur"  active={filtreChaleur}  color="#F472B6" onClick={() => setFiltreChaleur(!filtreChaleur)} />
+                </div>
+              </div>
             </>
           ) : (
             <>
