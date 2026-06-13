@@ -22,6 +22,7 @@ interface Animal {
   date_sortie?: string;
   portee_id?: string;
   reproducteur?: boolean;
+  is_retraite?: boolean;
   intervalle_chaleurs_jours?: number | null;
 }
 
@@ -71,11 +72,11 @@ function Chip({
   );
 }
 
-function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, onDelete, onToggleReproducteur, onSelect }: {
+function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, isRetraite = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, onDelete, onToggleReproducteur, onToggleRetraite, onSelect }: {
   a: Animal; tab: 'presents' | 'anciens'; showPorteeBadge?: boolean;
-  reproducteur?: boolean; chaleurFlag?: boolean; gestanteFlag?: boolean;
+  reproducteur?: boolean; isRetraite?: boolean; chaleurFlag?: boolean; gestanteFlag?: boolean;
   selectMode?: boolean; selected?: boolean;
-  onDelete?: () => void; onToggleReproducteur?: () => void; onSelect?: () => void;
+  onDelete?: () => void; onToggleReproducteur?: () => void; onToggleRetraite?: () => void; onSelect?: () => void;
 }) {
   const espColor = SPECIES.find(s => s.value === a.espece)?.color ?? '#6F767B';
   const isMale   = (a.sexe ?? '').toLowerCase().startsWith('m');
@@ -105,6 +106,11 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, cha
       {tab === 'presents' && reproducteur && !selectMode && (
         <span className="absolute top-2 right-2 bg-amber-400/90 text-white text-[9px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
           ⭐
+        </span>
+      )}
+      {tab === 'presents' && isRetraite && !selectMode && (
+        <span className="absolute top-2 left-2 bg-amber-800/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg">
+          Retraite
         </span>
       )}
       {selectMode && (
@@ -173,6 +179,14 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, cha
           className={`absolute top-10 right-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full w-7 h-7 flex items-center justify-center shadow-md text-xs ${reproducteur ? 'bg-amber-400 text-white' : 'bg-white text-amber-400 border border-amber-400'}`}
           title={reproducteur ? 'Retirer reproducteur' : 'Marquer reproducteur'}>
           ⭐
+        </button>
+      )}
+      {!selectMode && onToggleRetraite && (
+        <button
+          onClick={e => { e.preventDefault(); onToggleRetraite(); }}
+          className={`absolute top-[72px] right-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full w-7 h-7 flex items-center justify-center shadow-md text-xs ${isRetraite ? 'bg-amber-800 text-white' : 'bg-white text-amber-800 border border-amber-800'}`}
+          title={isRetraite ? 'Annuler la retraite' : 'Mettre en retraite'}>
+          🏁
         </button>
       )}
       {!selectMode && onDelete && (
@@ -312,6 +326,11 @@ export default function MesAnimauxPage() {
   async function toggleReproducteur(id: string, current: boolean) {
     await supabase.from('animaux').update({ reproducteur: !current }).eq('id', id);
     setAnimaux(prev => prev.map(a => a.id === id ? { ...a, reproducteur: !current } : a));
+  }
+
+  async function toggleRetraite(id: string, current: boolean) {
+    await supabase.from('animaux').update({ is_retraite: !current }).eq('id', id);
+    setAnimaux(prev => prev.map(a => a.id === id ? { ...a, is_retraite: !current } : a));
   }
 
   function toggleSelect(id: string) {
@@ -672,11 +691,12 @@ export default function MesAnimauxPage() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   {members.map(a => <AnimalCard key={a.id} a={a} tab={tab} showPorteeBadge
-                    reproducteur={!!a.reproducteur} chaleurFlag={!!chaleurFlags[a.id]}
-                    gestanteFlag={!!gestanteFlags[a.id]}
+                    reproducteur={!!a.reproducteur} isRetraite={!!a.is_retraite}
+                    chaleurFlag={!!chaleurFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
                     selectMode={selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
                     onDelete={selectMode ? undefined : () => deleteAnimal(a.id)}
-                    onToggleReproducteur={selectMode ? undefined : () => toggleReproducteur(a.id, !!a.reproducteur)} />)}
+                    onToggleReproducteur={selectMode ? undefined : () => toggleReproducteur(a.id, !!a.reproducteur)}
+                    onToggleRetraite={selectMode ? undefined : () => toggleRetraite(a.id, !!a.is_retraite)} />)}
                 </div>
               </div>
             );
@@ -685,11 +705,12 @@ export default function MesAnimauxPage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {currentList.map(a => <AnimalCard key={a.id} a={a} tab={tab}
-            reproducteur={!!a.reproducteur} chaleurFlag={!!chaleurFlags[a.id]}
-            gestanteFlag={!!gestanteFlags[a.id]}
+            reproducteur={!!a.reproducteur} isRetraite={!!a.is_retraite}
+            chaleurFlag={!!chaleurFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
             selectMode={tab === 'presents' && selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
             onDelete={selectMode ? undefined : () => deleteAnimal(a.id)}
-            onToggleReproducteur={tab === 'presents' && !selectMode ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined} />)}
+            onToggleReproducteur={tab === 'presents' && !selectMode ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
+            onToggleRetraite={tab === 'presents' && !selectMode ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined} />)}
         </div>
       )}
 

@@ -203,6 +203,17 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     } catch (_) {}
   }
 
+  Future<void> _toggleRetraite(String id, bool current) async {
+    try {
+      await Supabase.instance.client.from('animaux')
+          .update({'is_retraite': !current}).eq('id', id);
+      if (mounted) setState(() {
+        final idx = _animauxData.indexWhere((a) => a['id']?.toString() == id);
+        if (idx >= 0) _animauxData[idx] = {..._animauxData[idx], 'is_retraite': !current};
+      });
+    } catch (_) {}
+  }
+
   Future<void> _regrouperEnPortee() async {
     if (_selectedIds.length < 2) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -949,6 +960,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             id: id,
             data: data,
             reproducteur: data['reproducteur'] == true,
+            isRetraite: data['is_retraite'] == true,
             chaleurFlag:  _chaleurFlags[id]  ?? false,
             gestanteFlag: _gestanteFlags[id] ?? false,
             selectMode: _selectMode,
@@ -961,6 +973,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                 : () => _openFiche(context, id, data: data),
             onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
             onToggleReproducteur: id.isEmpty ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
+            onToggleRetraite: id.isEmpty ? null : () => _toggleRetraite(id, data['is_retraite'] == true),
           );
         },
       ),
@@ -1077,6 +1090,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                 data: data,
                 showPorteeBadge: true,
                 reproducteur: data['reproducteur'] == true,
+                isRetraite: data['is_retraite'] == true,
                 chaleurFlag:  _chaleurFlags[id]  ?? false,
                 gestanteFlag: _gestanteFlags[id] ?? false,
                 selectMode: _selectMode,
@@ -1089,6 +1103,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                     : () => _openFiche(context, id, data: data),
                 onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
                 onToggleReproducteur: id.isEmpty ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
+                onToggleRetraite: id.isEmpty ? null : () => _toggleRetraite(id, data['is_retraite'] == true),
               );
             },
           ),
@@ -1301,9 +1316,11 @@ class _AnimalCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onDelete;
   final VoidCallback? onToggleReproducteur;
+  final VoidCallback? onToggleRetraite;
   final bool showStatut;
   final bool showPorteeBadge;
   final bool reproducteur;
+  final bool isRetraite;
   final bool chaleurFlag;
   final bool gestanteFlag;
   final bool selectMode;
@@ -1314,9 +1331,11 @@ class _AnimalCard extends StatelessWidget {
     required this.onTap,
     this.onDelete,
     this.onToggleReproducteur,
+    this.onToggleRetraite,
     this.showStatut = false,
     this.showPorteeBadge = false,
     this.reproducteur = false,
+    this.isRetraite = false,
     this.chaleurFlag = false,
     this.gestanteFlag = false,
     this.selectMode = false,
@@ -1365,6 +1384,19 @@ class _AnimalCard extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     onToggleReproducteur!();
+                  },
+                ),
+              if (onToggleRetraite != null)
+                ListTile(
+                  leading: Icon(Icons.elderly,
+                      color: isRetraite ? const Color(0xFFB45309) : Colors.grey.shade400),
+                  title: Text(
+                    isRetraite ? 'Annuler la retraite' : 'Mettre en retraite',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 15),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    onToggleRetraite!();
                   },
                 ),
               if (onDelete != null)
@@ -1458,6 +1490,20 @@ class _AnimalCard extends StatelessWidget {
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(Icons.star, size: 11, color: Colors.white),
+                        ),
+                      ),
+                    if (isRetraite)
+                      Positioned(
+                        top: 6, left: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFB45309).withOpacity(0.9),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('Retraite',
+                              style: TextStyle(color: Colors.white, fontSize: 8,
+                                  fontFamily: 'Galey', fontWeight: FontWeight.w600)),
                         ),
                       ),
                     if (showPorteeBadge && (data['portee_id'] as String? ?? '').isNotEmpty)

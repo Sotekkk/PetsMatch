@@ -120,6 +120,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   String? _nomElevage;
   String? _adresseElevage;
   bool _pedigree = false;
+  bool _isRetraite = false;
   final _clubRegistreCtrl = TextEditingController();
   DateTime? _dateNaissance;
   String? _photoUrl;
@@ -403,6 +404,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _sexe = d['sexe'] ?? 'male';
     _intervalleChaleursCustom = d['intervalle_chaleurs_jours'] as int?;
     _sterilise = d['sterilise'] ?? false;
+    _isRetraite = d['is_retraite'] ?? false;
     _typePoil = d['type_poil'] as String?;
     _pedigree = d['pedigree'] ?? false;
     _clubRegistreCtrl.text = d['club_registre'] ?? '';
@@ -502,6 +504,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'photo_url':           uploadedUrl,
         'date_naissance':      _dateNaissance?.toIso8601String(),
         'statut':              _statut,
+        'is_retraite':         _isRetraite,
         'date_entree':         _dateEntree?.toIso8601String(),
         'provenance_nom':      _provenanceNomCtrl.text.trim(),
         'provenance_qualite':  _provenanceQualite,
@@ -549,6 +552,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'destinataire_qualite': _destinataireQualite,
         'destinataire_adresse': _destinataireAdresseCtrl.text.trim(),
         'cause_mort':           _causeMort,
+        'is_retraite':          _isRetraite,
         'updated_at':           DateTime.now().toIso8601String(),
       }).eq('id', widget.animalId!);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
@@ -979,6 +983,7 @@ class _IdentiteTab extends StatelessWidget {
                   _dateField(context),
                   _sexeField(),
                   _steriliseField(),
+                  _retraiteField(),
                   if (_hasPoil) _poilField(),
                   _field(_tailleLabel, s._tailleCtrl, inputType: const TextInputType.numberWithOptions(decimal: true)),
                   if (_hasPoids) _field('Poids (kg)', s._poidsCtrl, inputType: const TextInputType.numberWithOptions(decimal: true)),
@@ -1472,6 +1477,29 @@ class _IdentiteTab extends StatelessWidget {
           ));
         }).toList()),
       ]),
+    );
+  }
+
+  Widget _retraiteField() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('En retraite reproductive',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
+            if (s._isRetraite)
+              const Text('Arrêt de la reproduction',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xFFB45309))),
+          ]),
+          Switch(
+            value: s._isRetraite,
+            activeColor: const Color(0xFFB45309),
+            onChanged: (v) => s.setState(() => s._isRetraite = v),
+          ),
+        ],
+      ),
     );
   }
 
