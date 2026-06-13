@@ -207,9 +207,13 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                     // Simple barre de navigation (pas d'expanded)
                     SliverAppBar(
                       pinned: true,
-                      backgroundColor: const Color(0xFF1E2025),
+                      backgroundColor: const Color(0xFF0C5C6C),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      title: Text(widget.categoryLabel,
+                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
                       leading: IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
                         onPressed: () => Navigator.pop(context),
                       ),
                     ),

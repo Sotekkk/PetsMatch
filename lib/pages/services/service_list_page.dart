@@ -526,43 +526,26 @@ class _ServiceListPageState extends State<ServiceListPage> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
+      appBar: AppBar(
+        title: Text(widget.categoryLabel,
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        backgroundColor: const Color(0xFF0C5C6C),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.map_outlined),
+            tooltip: 'Vue carte',
+            onPressed: () => setState(() => _showMap = true),
+          ),
+        ],
+      ),
       body: CustomScrollView(
         slivers: [
-          SliverAppBar(
-            expandedHeight: 130,
-            pinned: true,
-            backgroundColor: const Color(0xFF1E2025),
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-              onPressed: () => Navigator.pop(context),
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.map_outlined, color: Colors.white),
-                tooltip: 'Vue carte',
-                onPressed: () => setState(() => _showMap = true),
-              ),
-            ],
-            flexibleSpace: FlexibleSpaceBar(
-              centerTitle: false,
-              titlePadding: const EdgeInsets.fromLTRB(56, 0, 60, 16),
-              title: Text(widget.categoryLabel,
-                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white)),
-              background: Stack(fit: StackFit.expand, children: [
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft, end: Alignment.bottomRight,
-                      colors: [widget.categoryColor.withValues(alpha: 0.85), const Color(0xFF1E2025)],
-                    ),
-                  ),
-                ),
-                Positioned(right: -20, top: -10,
-                  child: Icon(widget.categoryIcon, size: 130, color: Colors.white.withValues(alpha: 0.07))),
-              ]),
-            ),
-          ),
-
           SliverToBoxAdapter(child: _buildFiltersBar()),
 
           if (_loading)

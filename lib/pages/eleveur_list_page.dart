@@ -218,9 +218,15 @@ class _EleveurListPageState extends State<EleveurListPage> {
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
-        title: const Text('Élevages',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
         elevation: 0,
+        title: const Text('Élevages',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        leading: Navigator.canPop(context)
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
         actions: [
           IconButton(
             icon: Icon(_mapView ? Icons.list_outlined : Icons.map_outlined),

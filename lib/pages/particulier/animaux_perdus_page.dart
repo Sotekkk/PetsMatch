@@ -799,11 +799,18 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       appBar: AppBar(
-        backgroundColor: _accentColor,
-        iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: const Color(0xFF0C5C6C),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: Navigator.canPop(context)
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
         title: Text(
           _showMap ? 'Carte — Perdus & Trouvés' : 'Perdus & Trouvés',
-          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white),
+          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700),
         ),
         actions: [
           IconButton(

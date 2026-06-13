@@ -51,64 +51,32 @@ class ServicesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 110,
-            floating: false,
-            pinned: true,
-            backgroundColor: const Color(0xFF1F2A2E),
-            leading: Navigator.canPop(context)
-                ? IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-                    onPressed: () => Navigator.pop(context),
-                  )
-                : null,
-            flexibleSpace: FlexibleSpaceBar(
-              centerTitle: false,
-              titlePadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-              title: const Text(
-                'Services',
-                style: TextStyle(
-                  fontFamily: 'Galey',
-                  fontWeight: FontWeight.w700,
-                  fontSize: 24,
-                  color: Colors.white,
-                ),
-              ),
-              background: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF1E2025),
-                      Color(0xFF2C2F3A),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
-            sliver: SliverGrid(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final cat = _categories[index];
-                  return _CategoryCard(category: cat);
-                },
-                childCount: _categories.length,
-              ),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 14,
-                crossAxisSpacing: 14,
-                childAspectRatio: 0.85,
-              ),
-            ),
-          ),
-        ],
+      appBar: AppBar(
+        title: const Text('Services',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        backgroundColor: const Color(0xFF0C5C6C),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: Navigator.canPop(context)
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
+      ),
+      body: GridView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
+        itemCount: _categories.length,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 14,
+          crossAxisSpacing: 14,
+          childAspectRatio: 0.85,
+        ),
+        itemBuilder: (context, index) {
+          final cat = _categories[index];
+          return _CategoryCard(category: cat);
+        },
       ),
     );
   }
