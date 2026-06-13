@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -26,11 +27,12 @@ type Tab = 'favoris' | 'likes';
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
-async function loadItems(userUid: string, table: Tab): Promise<SavedItem[]> {
+async function loadItems(userUid: string, table: Tab, profileType: string): Promise<SavedItem[]> {
   const { data: rows } = await supabase
     .from(table)
     .select('annonce_id, bebe_index')
     .eq('user_uid', userUid)
+    .or(`profile_type.eq.${profileType},profile_type.is.null`)
     .order('created_at', { ascending: false });
 
   if (!rows || rows.length === 0) return [];
@@ -82,8 +84,9 @@ async function loadItems(userUid: string, table: Tab): Promise<SavedItem[]> {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function FavorisPage() {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
   const router = useRouter();
+  const activeProfileId = useActiveProfile();
   const [tab, setTab] = useState<Tab>('favoris');
   const [likeItems, setLikeItems]   = useState<SavedItem[]>([]);
   const [favItems, setFavItems]     = useState<SavedItem[]>([]);
@@ -91,26 +94,48 @@ export default function FavorisPage() {
   const [loadingFavs, setLoadingFavs]   = useState(false);
   const [loadedLikes, setLoadedLikes]   = useState(false);
   const [loadedFavs, setLoadedFavs]     = useState(false);
+  const [profileType, setProfileType] = useState('');
+
+  // Résoudre le type du profil actif
+  useEffect(() => {
+    if (!activeProfileId) {
+      setProfileType(
+        userData?.isElevage ? 'eleveur'
+        : userData?.isAssociation ? 'association'
+        : 'particulier'
+      );
+    } else {
+      supabase.from('user_profiles').select('profile_type').eq('id', activeProfileId).single()
+        .then(({ data }) => setProfileType((data as Record<string, unknown>)?.profile_type as string ?? 'particulier'));
+    }
+  }, [activeProfileId, userData]);
+
+  // Recharger quand le profil change
+  useEffect(() => {
+    if (user && profileType) {
+      setLoadedFavs(false);
+      setLoadedLikes(false);
+      doLoad('favoris');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileType, user]);
 
   useEffect(() => {
-    if (user) doLoad('favoris');
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
+    if (!user || !profileType) return;
     if (tab === 'likes'   && !loadedLikes) doLoad('likes');
     if (tab === 'favoris' && !loadedFavs)  doLoad('favoris');
-  }, [tab, user]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, user, profileType]);
 
   async function doLoad(t: Tab) {
-    if (!user) return;
+    if (!user || !profileType) return;
     if (t === 'likes') {
       setLoadingLikes(true);
-      const items = await loadItems(user.uid, 'likes');
+      const items = await loadItems(user.uid, 'likes', profileType);
       setLikeItems(items); setLoadingLikes(false); setLoadedLikes(true);
     } else {
       setLoadingFavs(true);
-      const items = await loadItems(user.uid, 'favoris');
+      const items = await loadItems(user.uid, 'favoris', profileType);
       setFavItems(items); setLoadingFavs(false); setLoadedFavs(true);
     }
   }

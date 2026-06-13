@@ -9,6 +9,7 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -161,6 +162,21 @@ const ESPECE_LABEL: Record<string, string> = {
 export default function FeedPage() {
   const { user, userData } = useAuth();
   const router = useRouter();
+  const activeProfileId = useActiveProfile();
+  const [profileType, setProfileType] = useState('particulier');
+
+  useEffect(() => {
+    if (!activeProfileId) {
+      setProfileType(
+        userData?.isElevage ? 'eleveur'
+        : userData?.isAssociation ? 'association'
+        : 'particulier'
+      );
+    } else {
+      supabase.from('user_profiles').select('profile_type').eq('id', activeProfileId).single()
+        .then(({ data }) => setProfileType((data as Record<string, unknown>)?.profile_type as string ?? 'particulier'));
+    }
+  }, [activeProfileId, userData]);
 
   const [step, setStep] = useState<'filters' | 'feed'>('filters');
   const [filtreEspece, setFiltreEspece] = useState('tous');
@@ -238,9 +254,10 @@ export default function FeedPage() {
     setPhotoIndex(0);
 
     if (user) {
+      const pt = profileType || 'particulier';
       const [{ data: likes }, { data: favs }] = await Promise.all([
-        supabase.from('likes').select('annonce_id, bebe_index').eq('user_uid', user.uid),
-        supabase.from('favoris').select('annonce_id, bebe_index').eq('user_uid', user.uid),
+        supabase.from('likes').select('annonce_id, bebe_index').eq('user_uid', user.uid).or(`profile_type.eq.${pt},profile_type.is.null`),
+        supabase.from('favoris').select('annonce_id, bebe_index').eq('user_uid', user.uid).or(`profile_type.eq.${pt},profile_type.is.null`),
       ]);
       if (likes) setLikedKeys(new Set(likes.map((l) => `${l.annonce_id}_${l.bebe_index ?? 'null'}`)));
       if (favs) setFavoritedKeys(new Set(favs.map((f) => `${f.annonce_id}_${f.bebe_index ?? 'null'}`)));
@@ -376,7 +393,7 @@ export default function FeedPage() {
       const q = supabase.from('likes').delete().eq('user_uid', user!.uid).eq('annonce_id', item.annonceId);
       item.bebeIndex !== null ? await q.eq('bebe_index', item.bebeIndex) : await q.is('bebe_index', null);
     } else {
-      await supabase.from('likes').upsert({ user_uid: user!.uid, annonce_id: item.annonceId, bebe_index: item.bebeIndex });
+      await supabase.from('likes').upsert({ user_uid: user!.uid, annonce_id: item.annonceId, bebe_index: item.bebeIndex, profile_type: profileType });
       if (item.uidEleveur && item.uidEleveur !== user!.uid) {
         const likerName = userData?.firstname
           ? `${userData.firstname}${userData.lastname ? ' ' + userData.lastname : ''}`
@@ -413,7 +430,7 @@ export default function FeedPage() {
       const q = supabase.from('favoris').delete().eq('user_uid', user!.uid).eq('annonce_id', item.annonceId);
       item.bebeIndex !== null ? await q.eq('bebe_index', item.bebeIndex) : await q.is('bebe_index', null);
     } else {
-      await supabase.from('favoris').upsert({ user_uid: user!.uid, annonce_id: item.annonceId, bebe_index: item.bebeIndex });
+      await supabase.from('favoris').upsert({ user_uid: user!.uid, annonce_id: item.annonceId, bebe_index: item.bebeIndex, profile_type: profileType });
     }
   }
 

@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 
 // ── Modèle ────────────────────────────────────────────────────────────────────
 
@@ -84,10 +85,12 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return [];
 
+    final profileType = User_Info.primaryType;
     final rawRows = await _supa
         .from(table)
         .select('annonce_id, bebe_index')
-        .eq('user_uid', uid);
+        .eq('user_uid', uid)
+        .or('profile_type.eq.$profileType,profile_type.is.null');
 
     final rows = List<Map<String, dynamic>>.from(rawRows);
     if (rows.isEmpty) return [];
