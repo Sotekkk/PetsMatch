@@ -344,7 +344,9 @@ export default function Header() {
   // ── Effective profile data (primary or secondary) ─────────────────────────
   const activeProfile = profiles.find(p => p.id === activeProfileId) ?? null;
 
-  const effectiveIsAssociation = !activeProfile && userData?.isAssociation === true;
+  const effectiveIsAssociation =
+    (activeProfile?.profile_type === 'association') ||
+    (!activeProfile && userData?.isAssociation === true);
 
   const effectiveType = activeProfile?.profile_type ?? (
     userData?.isPro ? (userData?.catPro ?? 'sante')

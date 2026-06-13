@@ -227,6 +227,202 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const inputCls = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#6E9E57] bg-white";
 
+// ── Association profile edit ──────────────────────────────────────────────────
+
+function AssociationEdit({ profileId, uid }: { profileId: string; uid: string }) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+
+  const [profileLabel, setProfileLabel] = useState('');
+  const [nomAsso, setNomAsso] = useState('');
+  const [description, setDescription] = useState('');
+  const [phone, setPhone] = useState('');
+  const [rue, setRue] = useState('');
+  const [ville, setVille] = useState('');
+  const [cp, setCp] = useState('');
+  const [pays, setPays] = useState('France');
+  const [siteWeb, setSiteWeb] = useState('');
+  const [instagram, setInstagram] = useState('');
+  const [facebook, setFacebook] = useState('');
+  const [siret, setSiret] = useState('');
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const avatarRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    supabase.from('user_profiles').select('*').eq('id', profileId).single()
+      .then(({ data }) => {
+        if (!data) { setLoading(false); return; }
+        const r = data as Record<string, unknown>;
+        setProfileLabel((r.profile_label as string) ?? '');
+        setNomAsso((r.name_elevage as string) ?? '');
+        setDescription(((r.desc_entreprise ?? r.description) as string) ?? '');
+        setPhone((r.phone as string) ?? '');
+        setRue((r.rue as string) ?? '');
+        setVille((r.ville as string) ?? '');
+        setCp((r.code_postal as string) ?? '');
+        setPays(((r.pays as string) || 'France'));
+        setSiteWeb((r.site_web as string) ?? '');
+        setInstagram((r.instagram as string) ?? '');
+        setFacebook((r.facebook as string) ?? '');
+        setSiret((r.siret as string) ?? '');
+        setAvatarPreview((r.avatar_url as string) ?? null);
+        setLoading(false);
+      });
+  }, [profileId]);
+
+  async function handleSave() {
+    setSaving(true);
+    setError('');
+    try {
+      const payload: Record<string, unknown> = {
+        profile_label: profileLabel.trim(),
+        name_elevage: nomAsso.trim(),
+        desc_entreprise: description.trim(),
+        phone: phone.trim(),
+        rue: rue.trim(),
+        ville: ville.trim(),
+        code_postal: cp.trim(),
+        pays: pays.trim() || 'France',
+        site_web: siteWeb.trim(),
+        instagram: instagram.trim(),
+        facebook: facebook.trim(),
+        siret: siret.trim(),
+      };
+      if (avatarFile) {
+        const path = `profiles/${uid}/asso_${profileId}_avatar.jpg`;
+        const { data: up } = await supabase.storage.from('petsmatch').upload(path, avatarFile, { upsert: true });
+        if (up) {
+          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          payload.avatar_url = pub.publicUrl;
+        }
+      }
+      const { error: err } = await supabase.from('user_profiles').update(payload).eq('id', profileId);
+      if (err) throw err;
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erreur lors de la sauvegarde');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return (
+    <div className="flex justify-center py-32">
+      <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-8 pb-20">
+      <div className="flex items-center gap-3 mb-6">
+        <button onClick={() => router.back()} className="text-[#0C5C6C] hover:underline text-sm font-medium">← Retour</button>
+        <h1 className="text-2xl font-bold text-[#1F2A2E] flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Mon profil association
+        </h1>
+      </div>
+
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">{error}</div>
+      )}
+
+      {/* Avatar */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-4 flex items-center gap-4">
+        <input ref={avatarRef} type="file" accept="image/*" className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0];
+            if (f) { setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); }
+            e.target.value = '';
+          }} />
+        <div className="w-16 h-16 rounded-full overflow-hidden bg-[#E3F2FD] flex items-center justify-center flex-shrink-0 cursor-pointer relative group border-2 border-[#0C5C6C]/30"
+          onClick={() => avatarRef.current?.click()}>
+          {avatarPreview
+            ? <Image src={avatarPreview} alt="" width={64} height={64} className="object-cover w-full h-full" />
+            : <span className="text-xl font-bold text-[#0C5C6C]">{(nomAsso[0] ?? '?').toUpperCase()}</span>
+          }
+          <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
+            <span className="text-white text-xs">📷</span>
+          </div>
+        </div>
+        <div>
+          <p className="font-semibold text-[#1F2A2E]">{nomAsso || profileLabel || 'Mon association'}</p>
+          <span className="text-xs bg-[#E3F2FD] text-[#0C5C6C] px-2 py-0.5 rounded-full font-medium">Association</span>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <Card title="Informations générales">
+          <Field label="Libellé du profil">
+            <input value={profileLabel} onChange={e => setProfileLabel(e.target.value)} className={inputCls}
+              placeholder="Ex : Mon association" />
+          </Field>
+          <Field label="Nom de l'association">
+            <input value={nomAsso} onChange={e => setNomAsso(e.target.value)} className={inputCls}
+              placeholder="Ex : SPA de Paris" />
+          </Field>
+          <Field label="Description / présentation">
+            <textarea value={description} onChange={e => setDescription(e.target.value)}
+              rows={4} placeholder="Présentez votre association, vos missions…"
+              className={`${inputCls} resize-none`} />
+          </Field>
+          <Field label="Téléphone">
+            <input value={phone} onChange={e => setPhone(e.target.value)} className={inputCls}
+              placeholder="06 12 34 56 78" />
+          </Field>
+        </Card>
+
+        <Card title="Adresse">
+          <Field label="Rue / numéro">
+            <input value={rue} onChange={e => setRue(e.target.value)} className={inputCls} placeholder="12 rue des Fleurs" />
+          </Field>
+          <div className="grid grid-cols-5 gap-3">
+            <div className="col-span-2">
+              <Field label="Code postal">
+                <input value={cp} onChange={e => setCp(e.target.value)} className={inputCls} placeholder="75001" />
+              </Field>
+            </div>
+            <div className="col-span-3">
+              <Field label="Ville">
+                <input value={ville} onChange={e => setVille(e.target.value)} className={inputCls} placeholder="Paris" />
+              </Field>
+            </div>
+          </div>
+          <Field label="Pays">
+            <input value={pays} onChange={e => setPays(e.target.value)} className={inputCls} />
+          </Field>
+        </Card>
+
+        <Card title="Présence en ligne">
+          {siret && (
+            <div className="mb-3"><ReadOnly label="N° association / SIREN" value={siret} icon="🏢" /></div>
+          )}
+          <Field label="Site web">
+            <input value={siteWeb} onChange={e => setSiteWeb(e.target.value)} className={inputCls} placeholder="https://monasso.fr" />
+          </Field>
+          <Field label="Instagram">
+            <input value={instagram} onChange={e => setInstagram(e.target.value)} className={inputCls} placeholder="@moncompte" />
+          </Field>
+          <Field label="Facebook">
+            <input value={facebook} onChange={e => setFacebook(e.target.value)} className={inputCls} placeholder="facebook.com/monasso" />
+          </Field>
+        </Card>
+
+        <div className="flex items-center gap-3 pt-2">
+          <button type="button" onClick={handleSave} disabled={saving}
+            className="bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+          {saved && <span className="text-[#6E9E57] text-sm font-medium">✓ Profil mis à jour</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Secondary pro profile edit ─────────────────────────────────────────────────
 
 const ESPECES_PRO = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'NAC', 'Autre'];
@@ -694,6 +890,9 @@ export default function ProfilPage() {
 
   const isEleveur = userData?.isElevage === true;
 
+  // Type du profil secondaire actif (chargé depuis user_profiles)
+  const [activeProfileType, setActiveProfileType] = useState('');
+
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
   }, [loading, user, router]);
@@ -742,6 +941,12 @@ export default function ProfilPage() {
       placesService.current = new window.google.maps.places.PlacesService(dummyDiv);
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!activeProfileId) { setActiveProfileType(''); return; }
+    supabase.from('user_profiles').select('profile_type').eq('id', activeProfileId).single()
+      .then(({ data }) => setActiveProfileType((data as Record<string, unknown>)?.profile_type as string ?? 'pro'));
+  }, [activeProfileId]);
 
   function onAdresseSearchChange(val: string) {
     setAdresseSearch(val);
@@ -837,9 +1042,15 @@ export default function ProfilPage() {
     }
   }, [allBreeds]);
 
-  // Si un profil pro secondaire est actif, afficher l'édition de ce profil
+  // Si un profil secondaire est actif, afficher l'édition de ce profil
   // Ce return doit être APRÈS tous les hooks pour respecter les règles de React
   if (activeProfileId && !loading && user) {
+    if (!activeProfileType) {
+      return <div className="flex justify-center py-32"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
+    }
+    if (activeProfileType === 'association') {
+      return <AssociationEdit profileId={activeProfileId} uid={user.uid} />;
+    }
     return <SecondaryProEdit profileId={activeProfileId} uid={user.uid} />;
   }
 
