@@ -889,7 +889,10 @@ export default function ProfilPage() {
     if (isEleveur) {
       if (!nameElevage.trim()) errs.push("Nom de l'élevage requis");
       if (!phoneElevage.trim()) errs.push("Téléphone de l'élevage requis");
+      if (!rue.trim()) errs.push("Rue / voie de l'élevage requise");
+      if (!cp.trim()) errs.push("Code postal de l'élevage requis");
       if (!villeElevage.trim()) errs.push("Ville de l'élevage requise");
+      if (!pays.trim()) errs.push("Pays de l'élevage requis");
       if (!siret.trim()) errs.push('SIRET requis');
       if (!siretDocUrl && !siretDocFile) errs.push('Justificatif SIRET (KBIS) requis');
       if (!acacedNum.trim()) errs.push('Numéro ACACED requis');
@@ -1309,12 +1312,12 @@ export default function ProfilPage() {
                 )}
               </div>
             </Field>
-            <Field label="Rue / Voie">
+            <Field label="Rue / Voie *">
               <input value={rue} onChange={e => setRue(e.target.value)} placeholder="12 rue des Fleurs" className={inputCls} />
             </Field>
             <div className="grid grid-cols-5 gap-3">
               <div className="col-span-2">
-                <Field label="Code postal">
+                <Field label="Code postal *">
                   <input value={cp} onChange={e => setCp(e.target.value)} placeholder="75001" className={inputCls} />
                 </Field>
               </div>
@@ -1324,7 +1327,7 @@ export default function ProfilPage() {
                 </Field>
               </div>
             </div>
-            <Field label="Pays">
+            <Field label="Pays *">
               <input value={pays} onChange={e => setPays(e.target.value)} className={inputCls} />
             </Field>
           </Card>

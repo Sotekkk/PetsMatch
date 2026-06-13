@@ -363,7 +363,10 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     if (_dobCtrl.text.trim().isEmpty)      missing.add('Date de naissance');
     if (_nomElevageCtrl.text.trim().isEmpty) missing.add("Nom de l'élevage");
     if (_telCtrl.text.trim().isEmpty)      missing.add('Téléphone');
+    if (_rueCtrl.text.trim().isEmpty)      missing.add('Rue / Voie');
+    if (_cpCtrl.text.trim().isEmpty)       missing.add('Code postal');
     if (_villeCtrl.text.trim().isEmpty)    missing.add("Ville de l'élevage");
+    if (_paysCtrl.text.trim().isEmpty)     missing.add('Pays');
     if (_siretCtrl.text.trim().isEmpty)    missing.add('SIRET');
     if (_siretDocFile == null && (_siretDocUrl == null || _siretDocUrl!.isEmpty))
       missing.add('Justificatif SIRET');
@@ -774,15 +777,15 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           ),
 
         const SizedBox(height: 12),
-        _inlineField('Rue / Voie', _rueCtrl),
+        _inlineField('Rue / Voie *', _rueCtrl),
         const SizedBox(height: 10),
         Row(children: [
-          SizedBox(width: 110, child: _inlineField('Code postal', _cpCtrl, inputType: TextInputType.number)),
+          SizedBox(width: 110, child: _inlineField('Code postal *', _cpCtrl, inputType: TextInputType.number)),
           const SizedBox(width: 10),
-          Expanded(child: _inlineField('Ville', _villeCtrl)),
+          Expanded(child: _inlineField('Ville *', _villeCtrl)),
         ]),
         const SizedBox(height: 10),
-        _inlineField('Pays', _paysCtrl),
+        _inlineField('Pays *', _paysCtrl),
       ]),
     );
   }
