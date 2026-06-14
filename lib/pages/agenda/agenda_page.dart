@@ -170,6 +170,31 @@ class _AgendaPageState extends State<AgendaPage> {
         final m = Map<String, dynamic>.from(t);
         if (seen.add(m['id'])) all.add(m);
       }
+      // Résoudre les noms (responsable = assigne_a ?? uid_eleveur)
+      final uids = <String>{};
+      for (final t in all) {
+        if (t['assigne_a'] != null) uids.add(t['assigne_a'] as String);
+        if (t['uid_eleveur'] != null) uids.add(t['uid_eleveur'] as String);
+      }
+      if (uids.isNotEmpty) {
+        try {
+          final users = await _supa.from('users')
+              .select('uid,firstname,lastname,name_elevage,is_elevage')
+              .inFilter('uid', uids.toList());
+          final nomMap = <String, String>{};
+          for (final u in (users as List)) {
+            final uid = u['uid'] as String;
+            final nom = (u['is_elevage'] == true && u['name_elevage'] != null)
+                ? u['name_elevage'] as String
+                : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+            if (nom.isNotEmpty) nomMap[uid] = nom;
+          }
+          for (final t in all) {
+            final resp = (t['assigne_a'] as String?) ?? (t['uid_eleveur'] as String?);
+            t['responsable_nom'] = resp != null ? nomMap[resp] : null;
+          }
+        } catch (_) {}
+      }
       if (mounted) setState(() => _tasks = all);
     } catch (_) {}
   }
@@ -225,14 +250,28 @@ class _AgendaPageState extends State<AgendaPage> {
                         : null,
                   ),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(
-                    t['titre'] ?? '',
-                    style: TextStyle(
-                      fontFamily: 'Galey', fontSize: 13,
-                      color: isDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
-                      decoration: isDone ? TextDecoration.lineThrough : null,
-                    ),
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        t['titre'] ?? '',
+                        style: TextStyle(
+                          fontFamily: 'Galey', fontSize: 13,
+                          color: isDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
+                          decoration: isDone ? TextDecoration.lineThrough : null,
+                        ),
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                      ),
+                      if (t['responsable_nom'] != null)
+                        Text(
+                          isDone
+                              ? 'Fait par : ${t['responsable_nom']}'
+                              : '👤 ${t['responsable_nom']}',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 10.5,
+                              color: isDone ? Colors.grey.shade400 : Colors.grey.shade500),
+                        ),
+                    ],
                   )),
                 ]),
               ),

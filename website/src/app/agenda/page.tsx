@@ -40,6 +40,7 @@ interface Task {
   statut: 'a_faire' | 'fait';
   uid_eleveur: string;
   assigne_a: string | null;
+  responsable_nom?: string;
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -420,7 +421,33 @@ export default function AgendaPage() {
       .select('id,titre,date,statut,uid_eleveur,assigne_a')
       .or(`uid_eleveur.eq.${uid},assigne_a.eq.${uid}`)
       .gte('date', taskFrom).lte('date', taskTo);
-    setTasks((taskData ?? []) as Task[]);
+
+    // Résoudre les noms des responsables
+    const rawTasks = (taskData ?? []) as Task[];
+    const taskUids = new Set<string>();
+    for (const t of rawTasks) {
+      if (t.assigne_a) taskUids.add(t.assigne_a);
+      if (t.uid_eleveur) taskUids.add(t.uid_eleveur);
+    }
+    if (taskUids.size > 0) {
+      const { data: usersData } = await supabase
+        .from('users')
+        .select('uid,firstname,lastname,name_elevage,is_elevage')
+        .in('uid', [...taskUids]);
+      const nomMap: Record<string, string> = {};
+      for (const u of (usersData ?? []) as { uid: string; firstname?: string; lastname?: string; name_elevage?: string; is_elevage?: boolean }[]) {
+        const nom = (u.is_elevage && u.name_elevage)
+          ? u.name_elevage
+          : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
+        if (nom) nomMap[u.uid] = nom;
+      }
+      setTasks(rawTasks.map(t => ({
+        ...t,
+        responsable_nom: nomMap[t.assigne_a ?? t.uid_eleveur ?? ''] ?? undefined,
+      })));
+    } else {
+      setTasks(rawTasks);
+    }
 
     setLoading(false);
   }, [uid, focusedMonth, activeProfileId]);
@@ -702,11 +729,18 @@ function TaskRow({ task, onToggle }: { task: Task; onToggle: (t: Task) => void }
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
         </svg>}
       </span>
-      <span className={`text-sm flex-1 truncate transition-colors ${
-        done ? 'line-through text-gray-400' : 'text-[#1E2025] group-hover:text-[#0C5C6C]'
-      }`} style={{ fontFamily: 'Galey, sans-serif' }}>
-        {task.titre}
-      </span>
+      <div className="flex-1 min-w-0">
+        <span className={`block text-sm truncate transition-colors ${
+          done ? 'line-through text-gray-400' : 'text-[#1E2025] group-hover:text-[#0C5C6C]'
+        }`} style={{ fontFamily: 'Galey, sans-serif' }}>
+          {task.titre}
+        </span>
+        {task.responsable_nom && (
+          <span className="block text-[11px] text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
+            {done ? `Fait par : ${task.responsable_nom}` : `👤 ${task.responsable_nom}`}
+          </span>
+        )}
+      </div>
     </button>
   );
 }
