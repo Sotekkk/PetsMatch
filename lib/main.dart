@@ -300,6 +300,7 @@ class User_Info {
             ? (nameElevage.isNotEmpty ? nameElevage : '$firstname $lastname'.trim())
             : '$firstname $lastname'.trim();
     primaryType = isPro ? catPro : isAssociation ? 'association' : (isElevage ? 'eleveur' : 'particulier');
+    activeType  = primaryType;
     primaryAvatar = profilePictureUrlElevage.isNotEmpty ? profilePictureUrlElevage : profilePictureUrl;
     activeProfileId = '';
     profileNotifier.value = '';
@@ -308,16 +309,18 @@ class User_Info {
   // ── Multi-profil ───────────────────────────────────────────────────────────
 
   static String activeProfileId = '';
+  static String activeType      = '';  // type du profil actif (primaire ou secondaire)
   static final ValueNotifier<String> profileNotifier = ValueNotifier<String>('');
   static List<Map<String, dynamic>> availableProfiles = [];
   static String primaryLabel = '';
-  static String primaryType = '';
+  static String primaryType  = '';
   static String primaryAvatar = '';
 
   static void applyProfile(Map<String, dynamic> p) {
     activeProfileId = p['id']?.toString() ?? '';
     profileNotifier.value = activeProfileId;
     final type = p['profile_type']?.toString() ?? '';
+    activeType = type.isNotEmpty ? type : primaryType;
 
     // Contact
     final fn = p['firstname']?.toString() ?? '';

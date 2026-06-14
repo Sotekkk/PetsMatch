@@ -85,12 +85,19 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return [];
 
-    final profileType = User_Info.primaryType;
-    final rawRows = await _supa
+    final profileType = User_Info.activeType;
+    final isSecondary = User_Info.activeProfileId.isNotEmpty;
+    dynamic q = _supa
         .from(table)
         .select('annonce_id, bebe_index')
-        .eq('user_uid', uid)
-        .or('profile_type.eq.$profileType,profile_type.is.null');
+        .eq('user_uid', uid);
+    // Profil secondaire : filtre strict. Profil primaire : inclure les anciens (null).
+    if (isSecondary) {
+      q = q.eq('profile_type', profileType);
+    } else {
+      q = q.or('profile_type.eq.$profileType,profile_type.is.null');
+    }
+    final rawRows = await q;
 
     final rows = List<Map<String, dynamic>>.from(rawRows);
     if (rows.isEmpty) return [];

@@ -387,7 +387,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
       } else {
         await Supabase.instance.client.from('likes').upsert({
           'user_uid': uid, 'annonce_id': item.annonceId, 'bebe_index': item.bebeIndex,
-          'profile_type': User_Info.primaryType,
+          'profile_type': User_Info.activeType,
         });
         if (item.uidEleveur != null && item.uidEleveur != uid) {
           final name = User_Info.firstname.isNotEmpty ? User_Info.firstname : 'Quelqu\'un';
@@ -437,7 +437,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
       } else {
         await Supabase.instance.client.from('favoris').upsert({
           'user_uid': uid, 'annonce_id': item.annonceId, 'bebe_index': item.bebeIndex,
-          'profile_type': User_Info.primaryType,
+          'profile_type': User_Info.activeType,
         });
       }
     } catch (_) {
