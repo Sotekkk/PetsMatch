@@ -6,6 +6,7 @@ import Footer from "@/components/Footer";
 import CookieBanner from "@/components/CookieBanner";
 import { AuthProvider } from "@/lib/auth-context";
 import ValidationGuard from "@/components/ValidationGuard";
+import PushInit from "@/components/PushInit";
 
 export const metadata: Metadata = {
   title: "PetsMatch — Connecter · Prendre soin · Partager",
@@ -23,6 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="fr" className="h-full">
       <body className="min-h-full flex flex-col antialiased">
         <AuthProvider>
+          <PushInit />
           <Header />
           <Image
             src="/Banniere_petsmatch_site.png"

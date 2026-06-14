@@ -63,23 +63,33 @@ async function supabaseInsert(table, rows) {
 async function sendPush(uid, title, body, data = {}) {
     try {
         const doc = await admin.firestore().collection("users").doc(uid).get();
-        const token = doc.exists ? doc.data().fcmToken : null;
-        if (!token) return false;
+        if (!doc.exists) return false;
+        const userData = doc.data();
+        const tokens = [userData.fcmToken, userData.webFcmToken].filter(Boolean);
+        if (!tokens.length) return false;
 
-        await admin.messaging().send({
-            token,
-            notification: {title, body},
-            data: {type: "chaleur", ...data},
-            android: {
-                priority: "high",
-                notification: {channelId: "chaleurs_channel", sound: "default"},
-            },
-            apns: {
-                headers: {"apns-priority": "10"},
-                payload: {aps: {alert: {title, body}, sound: "default", badge: 1}},
-            },
-        });
-        return true;
+        let sent = false;
+        for (const token of tokens) {
+            try {
+                await admin.messaging().send({
+                    token,
+                    notification: {title, body},
+                    data: {type: "chaleur", ...data},
+                    android: {
+                        priority: "high",
+                        notification: {channelId: "chaleurs_channel", sound: "default"},
+                    },
+                    apns: {
+                        headers: {"apns-priority": "10"},
+                        payload: {aps: {alert: {title, body}, sound: "default", badge: 1}},
+                    },
+                });
+                sent = true;
+            } catch (e) {
+                console.warn(`sendPush token error for ${uid}:`, e.message);
+            }
+        }
+        return sent;
     } catch (e) {
         console.error(`sendPush error for ${uid}:`, e);
         return false;

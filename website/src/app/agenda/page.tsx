@@ -33,6 +33,15 @@ interface AgendaEvent {
   duree_minutes?: number | null;
 }
 
+interface Task {
+  id: string;
+  titre: string;
+  date: string;
+  statut: 'a_faire' | 'fait';
+  uid_eleveur: string;
+  assigne_a: string | null;
+}
+
 const TYPE_LABEL: Record<string, string> = {
   rdv:        'RDV',
   mise_bas:   'Mise-bas',
@@ -344,6 +353,7 @@ export default function AgendaPage() {
   const router = useRouter();
   const activeProfileId = useActiveProfile();
   const [events, setEvents]   = useState<AgendaEvent[]>([]);
+  const [tasks, setTasks]     = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingRdvs, setPendingRdvs] = useState<{id:string;date_debut:string;motif:string|null;client_uid:string;animal_id:number|null}[]>([]);
   const [view, setView]       = useState<'calendar' | 'day' | 'list'>('calendar');
@@ -401,6 +411,17 @@ export default function AgendaPage() {
     } else {
       setEvents(list);
     }
+
+    // Charger les tâches du mois (employeur + employé)
+    const taskFrom = new Date(focusedMonth.year, focusedMonth.month - 1, 1).toISOString().slice(0, 10);
+    const taskTo   = new Date(focusedMonth.year, focusedMonth.month + 2, 0).toISOString().slice(0, 10);
+    const { data: taskData } = await supabase
+      .from('taches_elevage')
+      .select('id,titre,date,statut,uid_eleveur,assigne_a')
+      .or(`uid_eleveur.eq.${uid},assigne_a.eq.${uid}`)
+      .gte('date', taskFrom).lte('date', taskTo);
+    setTasks((taskData ?? []) as Task[]);
+
     setLoading(false);
   }, [uid, focusedMonth, activeProfileId]);
 
@@ -418,6 +439,22 @@ export default function AgendaPage() {
       const d = new Date(e.date_debut);
       return d.getFullYear() === date.getFullYear() && d.getMonth() === date.getMonth() && d.getDate() === date.getDate();
     }).sort((a, b) => new Date(a.date_debut).getTime() - new Date(b.date_debut).getTime());
+  }
+
+  function tasksForDate(date: Date) {
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    return tasks.filter(t => (t.date ?? '').startsWith(key));
+  }
+
+  function tasksForDay(day: number) {
+    const key = `${focusedMonth.year}-${String(focusedMonth.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return tasks.filter(t => (t.date ?? '').startsWith(key));
+  }
+
+  async function toggleTask(t: Task) {
+    const newStatut = t.statut === 'fait' ? 'a_faire' : 'fait';
+    setTasks(prev => prev.map(x => x.id === t.id ? { ...x, statut: newStatut } : x));
+    await supabase.from('taches_elevage').update({ statut: newStatut }).eq('id', t.id);
   }
 
   function navigateToAnimal(animalId: string | number | null | undefined) {
@@ -512,26 +549,31 @@ export default function AgendaPage() {
             year={focusedMonth.year}
             month={focusedMonth.month}
             events={events}
+            tasks={tasks}
             selectedDay={selectedDay}
             onPrev={prevMonth}
             onNext={nextMonth}
             onSelectDay={setSelectedDay}
             eventsForDay={eventsForDay}
+            tasksForDay={tasksForDay}
             onDelete={deleteEvent}
             onAnnuler={setModalAnnuler}
             onModifier={setModalModifier}
             onNavigateToAnimal={navigateToAnimal}
+            onToggleTask={toggleTask}
           />
         ) : view === 'day' ? (
           <DayView
             date={selectedDate}
             events={eventsForDate(selectedDate)}
+            tasks={tasksForDate(selectedDate)}
             onNavigate={navigateDay}
             onSelectDate={(d) => { setSelectedDate(d); setFocusedMonth({ year: d.getFullYear(), month: d.getMonth() }); }}
             onDelete={deleteEvent}
             onAnnuler={setModalAnnuler}
             onModifier={setModalModifier}
             onNavigateToAnimal={navigateToAnimal}
+            onToggleTask={toggleTask}
           />
         ) : (
           <ListView groups={grouped} keys={groupedKeys} onDelete={deleteEvent}
@@ -648,16 +690,39 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
 
 // ── CalendarView ───────────────────────────────────────────────────────────────
 
-function CalendarView({ year, month, events, selectedDay, onPrev, onNext, onSelectDay, eventsForDay, onDelete, onAnnuler, onModifier, onNavigateToAnimal }: {
-  year: number; month: number; events: AgendaEvent[];
+function TaskRow({ task, onToggle }: { task: Task; onToggle: (t: Task) => void }) {
+  const done = task.statut === 'fait';
+  return (
+    <button onClick={() => onToggle(task)}
+      className="flex items-center gap-2.5 w-full text-left py-1.5 group">
+      <span className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+        done ? 'bg-[#6E9E57] border-[#6E9E57]' : 'border-gray-300 group-hover:border-[#6E9E57]'
+      }`}>
+        {done && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+        </svg>}
+      </span>
+      <span className={`text-sm flex-1 truncate transition-colors ${
+        done ? 'line-through text-gray-400' : 'text-[#1E2025] group-hover:text-[#0C5C6C]'
+      }`} style={{ fontFamily: 'Galey, sans-serif' }}>
+        {task.titre}
+      </span>
+    </button>
+  );
+}
+
+function CalendarView({ year, month, events, tasks, selectedDay, onPrev, onNext, onSelectDay, eventsForDay, tasksForDay, onDelete, onAnnuler, onModifier, onNavigateToAnimal, onToggleTask }: {
+  year: number; month: number; events: AgendaEvent[]; tasks: Task[];
   selectedDay: number | null;
   onPrev: () => void; onNext: () => void;
   onSelectDay: (d: number) => void;
   eventsForDay: (d: number) => AgendaEvent[];
+  tasksForDay: (d: number) => Task[];
   onDelete: (id: number) => void;
   onAnnuler: (e: AgendaEvent) => void;
   onModifier: (e: AgendaEvent) => void;
   onNavigateToAnimal: (id: string | number | null | undefined) => void;
+  onToggleTask: (t: Task) => void;
 }) {
   const WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
   const monthName = new Date(year, month, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
@@ -667,7 +732,8 @@ function CalendarView({ year, month, events, selectedDay, onPrev, onNext, onSele
   const cells: (number | null)[] = [...Array(offset).fill(null), ...Array.from({ length: totalDays }, (_, i) => i + 1)];
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const dayEvts = selectedDay ? eventsForDay(selectedDay) : [];
+  const dayEvts   = selectedDay ? eventsForDay(selectedDay) : [];
+  const dayTasks  = selectedDay ? tasksForDay(selectedDay) : [];
 
   return (
     <div className="space-y-4">
@@ -688,6 +754,7 @@ function CalendarView({ year, month, events, selectedDay, onPrev, onNext, onSele
           {cells.map((day, i) => {
             if (!day) return <div key={i} />;
             const evts  = eventsForDay(day);
+            const dtasks = tasksForDay(day);
             const isT   = day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
             const isSel = day === selectedDay;
             return (
@@ -698,12 +765,16 @@ function CalendarView({ year, month, events, selectedDay, onPrev, onNext, onSele
                   border: isT && !isSel ? '1.5px solid #0C5C6C' : '1.5px solid transparent',
                 }}>
                 <span className="text-sm font-bold" style={{ color: isSel ? 'white' : '#1E2025' }}>{day}</span>
-                {evts.length > 0 && (
+                {(evts.length > 0 || dtasks.length > 0) && (
                   <div className="flex gap-0.5">
-                    {evts.slice(0, 3).map((e, j) => (
+                    {evts.slice(0, 2).map((e, j) => (
                       <div key={j} className="w-1.5 h-1.5 rounded-full"
                         style={{ background: isSel ? 'rgba(255,255,255,0.7)' : colorFor(e) }} />
                     ))}
+                    {dtasks.length > 0 && (
+                      <div className="w-1.5 h-1.5 rounded-full"
+                        style={{ background: isSel ? 'rgba(255,255,255,0.7)' : '#6E9E57' }} />
+                    )}
                   </div>
                 )}
               </button>
@@ -713,13 +784,27 @@ function CalendarView({ year, month, events, selectedDay, onPrev, onNext, onSele
       </div>
 
       {selectedDay && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-          <p className="font-bold text-sm text-[#0C5C6C] mb-3 capitalize" style={{ fontFamily: 'Galey, sans-serif' }}>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+          <p className="font-bold text-sm text-[#0C5C6C] mb-1 capitalize" style={{ fontFamily: 'Galey, sans-serif' }}>
             {new Date(year, month, selectedDay).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
-          {dayEvts.length === 0 ? (
-            <p className="text-gray-400 text-sm text-center py-4" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun événement</p>
-          ) : (
+
+          {/* Tâches du jour */}
+          {dayTasks.length > 0 && (
+            <div className="bg-[#EDF6F7] rounded-xl p-3">
+              <p className="text-xs font-bold text-[#0C5C6C] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+                ✅ Tâches — {dayTasks.filter(t => t.statut === 'fait').length}/{dayTasks.length}
+              </p>
+              <div className="space-y-0.5">
+                {dayTasks.map(t => <TaskRow key={t.id} task={t} onToggle={onToggleTask} />)}
+              </div>
+            </div>
+          )}
+
+          {/* Événements du jour */}
+          {dayEvts.length === 0 && dayTasks.length === 0 ? (
+            <p className="text-gray-400 text-sm text-center py-4" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun événement ni tâche</p>
+          ) : dayEvts.length === 0 ? null : (
             <div className="space-y-2">
               {dayEvts.map(e => <EventCard key={e.id} event={e} onDelete={onDelete} onAnnuler={onAnnuler} onModifier={onModifier} onNavigateToAnimal={onNavigateToAnimal} />)}
             </div>
@@ -841,15 +926,17 @@ function minutesFromTop(iso: string): number {
   return (d.getHours() - TIMELINE_START) * 60 + d.getMinutes();
 }
 
-function DayView({ date, events, onNavigate, onSelectDate, onDelete, onAnnuler, onModifier, onNavigateToAnimal }: {
+function DayView({ date, events, tasks, onNavigate, onSelectDate, onDelete, onAnnuler, onModifier, onNavigateToAnimal, onToggleTask }: {
   date: Date;
   events: AgendaEvent[];
+  tasks: Task[];
   onNavigate: (dir: 'prev' | 'next') => void;
   onSelectDate: (d: Date) => void;
   onDelete: (id: number) => void;
   onAnnuler: (e: AgendaEvent) => void;
   onModifier: (e: AgendaEvent) => void;
   onNavigateToAnimal: (id: string | number | null | undefined) => void;
+  onToggleTask: (t: Task) => void;
 }) {
   const HOURS = Array.from({ length: TIMELINE_END - TIMELINE_START + 1 }, (_, i) => i + TIMELINE_START);
   const today = new Date();
@@ -891,6 +978,18 @@ function DayView({ date, events, onNavigate, onSelectDate, onDelete, onAnnuler, 
           })}
         </div>
       </div>
+
+      {/* Tâches du jour */}
+      {tasks.length > 0 && (
+        <div className="bg-[#EDF6F7] rounded-2xl border border-[#C8E4E8] p-4">
+          <p className="text-xs font-bold text-[#0C5C6C] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+            ✅ Tâches — {tasks.filter(t => t.statut === 'fait').length}/{tasks.length}
+          </p>
+          <div className="space-y-0.5">
+            {tasks.map(t => <TaskRow key={t.id} task={t} onToggle={onToggleTask} />)}
+          </div>
+        </div>
+      )}
 
       {/* Timeline */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">

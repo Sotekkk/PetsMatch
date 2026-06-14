@@ -94,6 +94,7 @@ class _AgendaPageState extends State<AgendaPage> {
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   List<Map<String, dynamic>> _events = [];
+  List<Map<String, dynamic>> _tasks  = [];
   bool _loading = true;
   // 0 = mois, 1 = jour, 2 = liste
   int _viewMode = 0;
@@ -105,6 +106,7 @@ class _AgendaPageState extends State<AgendaPage> {
     super.initState();
     _selectedDay = DateTime.now();
     _load();
+    _loadTasks();
   }
 
   Future<void> _load() async {
@@ -151,8 +153,98 @@ class _AgendaPageState extends State<AgendaPage> {
     return _parseDate(e['date_debut'] as String).isAfter(DateTime.now().subtract(const Duration(days: 1)));
   }).toList();
 
-  void _prevMonth() { _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1); _load(); }
-  void _nextMonth() { _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1); _load(); }
+  Future<void> _loadTasks() async {
+    final from = '${_focusedMonth.year}-${(_focusedMonth.month - 1).clamp(1, 12).toString().padLeft(2, '0')}-01';
+    final toDate = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0);
+    final to   = '${toDate.year}-${toDate.month.toString().padLeft(2, '0')}-${toDate.day.toString().padLeft(2, '0')}';
+    try {
+      final d1 = await _supa.from('taches_elevage')
+          .select('id,titre,date,statut,assigne_a,uid_eleveur')
+          .eq('uid_eleveur', _uid).gte('date', from).lte('date', to);
+      final d2 = await _supa.from('taches_elevage')
+          .select('id,titre,date,statut,assigne_a,uid_eleveur')
+          .eq('assigne_a', _uid).gte('date', from).lte('date', to);
+      final seen = <dynamic>{};
+      final all  = <Map<String, dynamic>>[];
+      for (final t in [...(d1 as List), ...(d2 as List)]) {
+        final m = Map<String, dynamic>.from(t);
+        if (seen.add(m['id'])) all.add(m);
+      }
+      if (mounted) setState(() => _tasks = all);
+    } catch (_) {}
+  }
+
+  List<Map<String, dynamic>> _tasksForDay(DateTime day) {
+    final key = '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+    return _tasks.where((t) => (t['date'] ?? '').toString().startsWith(key)).toList();
+  }
+
+  Widget _buildDayTasksSection(List<Map<String, dynamic>> tasks) {
+    final done = tasks.where((t) => t['statut'] == 'fait').length;
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFFEDF6F7),
+        border: Border(bottom: BorderSide(color: Color(0xFFD0E8EB))),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(children: [
+            const Text('✅', style: TextStyle(fontSize: 12)),
+            const SizedBox(width: 6),
+            const Text('Tâches du jour',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: _kTeal)),
+            const Spacer(),
+            Text('$done/${tasks.length}',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+          ]),
+          const SizedBox(height: 6),
+          ...tasks.map((t) {
+            final isDone = t['statut'] == 'fait';
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: GestureDetector(
+                onTap: () async {
+                  final newStatut = isDone ? 'a_faire' : 'fait';
+                  await _supa.from('taches_elevage').update({'statut': newStatut}).eq('id', t['id']);
+                  _loadTasks();
+                },
+                child: Row(children: [
+                  Container(
+                    width: 18, height: 18,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isDone ? const Color(0xFF6E9E57) : Colors.grey.shade300, width: 2),
+                      color: isDone ? const Color(0xFF6E9E57) : Colors.transparent,
+                    ),
+                    child: isDone
+                        ? const Icon(Icons.check, size: 11, color: Colors.white)
+                        : null,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    t['titre'] ?? '',
+                    style: TextStyle(
+                      fontFamily: 'Galey', fontSize: 13,
+                      color: isDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
+                      decoration: isDone ? TextDecoration.lineThrough : null,
+                    ),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                  )),
+                ]),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  void _prevMonth() { _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1); _load(); _loadTasks(); }
+  void _nextMonth() { _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1); _load(); _loadTasks(); }
 
   // ── Add event ──────────────────────────────────────────────────────────────
 
@@ -296,6 +388,7 @@ class _AgendaPageState extends State<AgendaPage> {
           if (dayNum < 1 || dayNum > last.day) return const SizedBox();
           final day = DateTime(_focusedMonth.year, _focusedMonth.month, dayNum);
           final evts = _eventsForDay(day);
+          final tasks = _tasksForDay(day);
           final isToday = day.year == today.year && day.month == today.month && day.day == today.day;
           final isSelected = _selectedDay != null &&
               day.year == _selectedDay!.year && day.month == _selectedDay!.month && day.day == _selectedDay!.day;
@@ -319,18 +412,29 @@ class _AgendaPageState extends State<AgendaPage> {
                       fontSize: 14,
                       color: isSelected ? Colors.white : const Color(0xFF1E2025),
                     )),
-                  if (evts.isNotEmpty) ...[
+                  if (evts.isNotEmpty || tasks.isNotEmpty) ...[
                     const SizedBox(height: 3),
                     Wrap(
                       alignment: WrapAlignment.center,
                       spacing: 2,
-                      children: evts.take(3).map((e) => Container(
-                        width: 6, height: 6,
-                        decoration: BoxDecoration(
-                          color: isSelected ? Colors.white.withValues(alpha: 0.8) : _colorFor(e),
-                          shape: BoxShape.circle,
+                      children: [
+                        ...evts.take(2).map((e) => Container(
+                          width: 6, height: 6,
+                          decoration: BoxDecoration(
+                            color: isSelected ? Colors.white.withValues(alpha: 0.8) : _colorFor(e),
+                            shape: BoxShape.circle,
+                          ),
+                        )),
+                        if (tasks.isNotEmpty) Container(
+                          width: 6, height: 6,
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Colors.white.withValues(alpha: 0.8)
+                                : const Color(0xFF6E9E57),
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                      )).toList(),
+                      ],
                     ),
                   ],
                 ],
@@ -347,6 +451,7 @@ class _AgendaPageState extends State<AgendaPage> {
   Widget _dayView() {
     final day = _selectedDay ?? DateTime.now();
     final evts = _eventsForDay(day);
+    final dayTasks = _tasksForDay(day);
 
     return Column(children: [
       // Navigation jour
@@ -385,9 +490,10 @@ class _AgendaPageState extends State<AgendaPage> {
         ]),
       ),
       const Divider(height: 1),
+      if (dayTasks.isNotEmpty) _buildDayTasksSection(dayTasks),
       Expanded(
         child: RefreshIndicator(
-          onRefresh: _load,
+          onRefresh: () async { await _load(); await _loadTasks(); },
           color: _kTeal,
           child: evts.isEmpty
               ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: [

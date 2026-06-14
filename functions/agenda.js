@@ -115,23 +115,33 @@ async function getUserNom(uid) {
 async function sendPush(uid, title, body, data = {}) {
     try {
         const doc = await admin.firestore().collection("users").doc(uid).get();
-        const token = doc.exists ? doc.data().fcmToken : null;
-        if (!token) return false;
+        if (!doc.exists) return false;
+        const userData = doc.data();
+        const tokens = [userData.fcmToken, userData.webFcmToken].filter(Boolean);
+        if (!tokens.length) return false;
 
-        await admin.messaging().send({
-            token,
-            notification: {title, body},
-            data: {type: "rdv_reminder", ...data},
-            android: {
-                priority: "high",
-                notification: {channelId: "high_importance_channel", sound: "default"},
-            },
-            apns: {
-                headers: {"apns-priority": "10"},
-                payload: {aps: {alert: {title, body}, sound: "default", badge: 1}},
-            },
-        });
-        return true;
+        let sent = false;
+        for (const token of tokens) {
+            try {
+                await admin.messaging().send({
+                    token,
+                    notification: {title, body},
+                    data: {type: "rdv_reminder", ...data},
+                    android: {
+                        priority: "high",
+                        notification: {channelId: "high_importance_channel", sound: "default"},
+                    },
+                    apns: {
+                        headers: {"apns-priority": "10"},
+                        payload: {aps: {alert: {title, body}, sound: "default", badge: 1}},
+                    },
+                });
+                sent = true;
+            } catch (e) {
+                console.warn(`sendPush token error for ${uid}:`, e.message);
+            }
+        }
+        return sent;
     } catch (e) {
         console.error(`sendPush error for ${uid}:`, e);
         return false;
@@ -363,9 +373,10 @@ exports.sendMiseBasReminders = functions
         let sent = 0;
 
         const paliers = [
-            {days: 7, field: "reminder_j7_sent", label: "dans 7 jours"},
-            {days: 3, field: "reminder_j3_sent", label: "dans 3 jours"},
-            {days: 1, field: "reminder_j1_sent", label: "demain"},
+            {days: 30, field: "reminder_j30_sent", label: "dans 30 jours", emoji: "🗓️"},
+            {days: 7,  field: "reminder_j7_sent",  label: "dans 7 jours",  emoji: "📅"},
+            {days: 3,  field: "reminder_j3_sent",  label: "dans 3 jours",  emoji: "⏳"},
+            {days: 1,  field: "reminder_j1_sent",  label: "demain",        emoji: "🐣"},
         ];
 
         for (const {days, field, label} of paliers) {
@@ -388,7 +399,6 @@ exports.sendMiseBasReminders = functions
                     day: "numeric", month: "long",
                 });
 
-                const emoji = days === 1 ? "🐣" : days === 3 ? "⏳" : "📅";
                 const title = `${emoji} Mise-bas prévue ${label}`;
                 const body = `${animalNom} devrait mettre bas le ${miseBas}. Préparez la maternité !`;
 
