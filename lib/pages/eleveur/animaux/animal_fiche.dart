@@ -3139,10 +3139,11 @@ class _SanteCard extends StatelessWidget {
   final IconData icon;
   final VoidCallback onDelete;
   final VoidCallback? onTap;
+  final VoidCallback? onEdit;
   final String? collection;
   final bool canDelete;
   const _SanteCard({required this.title, required this.data, required this.icon,
-      required this.onDelete, this.onTap, this.collection, this.canDelete = true});
+      required this.onDelete, this.onTap, this.onEdit, this.collection, this.canDelete = true});
 
   static const _labels = {
     'vaccin': 'Vaccin', 'lot': 'N° de lot', 'veterinaire': 'Vétérinaire',
@@ -3257,6 +3258,17 @@ class _SanteCard extends StatelessWidget {
             _OrdonnanceLinkSection(visiteRef: visiteRef!),
           if ((rdvId ?? '').isNotEmpty)
             _RdvLinkSection(rdvId: rdvId!),
+          if (onEdit != null) ...[
+            const SizedBox(height: 4),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: () { Navigator.pop(context); onEdit!(); },
+                icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF6E9E57)),
+                label: const Text('Modifier', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6E9E57), fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
           ],
         ),
       ),
