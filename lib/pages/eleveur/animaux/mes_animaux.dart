@@ -3,6 +3,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/portee_form_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_poids_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/portee_soin_sheet.dart';
 import 'package:PetsMatch/services/chaleurs_notif_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -1237,6 +1238,23 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(Icons.bar_chart, size: 18, color: _teal),
+                ),
+              ),
+              const SizedBox(width: 4),
+              // Soin portée complète
+              GestureDetector(
+                onTap: () async {
+                  final ok = await PorteeSoinSheet.show(context, members);
+                  if (ok && mounted) _loadAnimaux();
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF8E1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFFFCA28).withOpacity(0.4)),
+                  ),
+                  child: const Icon(Icons.medical_services_outlined, size: 18, color: Color(0xFFF57F17)),
                 ),
               ),
               const SizedBox(width: 4),

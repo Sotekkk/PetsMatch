@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -239,6 +239,9 @@ export default function MesAnimauxPage() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  // Modal soin portée
+  const [soinPorteeAnimals, setSoinPorteeAnimals] = useState<Animal[] | null>(null);
+
   // Filtres présents
   const [filtreEspece, setFiltreEspece] = useState('tous');
   const [filtreSexe, setFiltreSexe] = useState('tous');
@@ -454,6 +457,7 @@ export default function MesAnimauxPage() {
   }
 
   return (
+    <>
     <div className="max-w-5xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -720,6 +724,13 @@ export default function MesAnimauxPage() {
                   <span className="text-xs font-bold text-[#0C5C6C] bg-[#0C5C6C20] px-2 py-0.5 rounded-full">
                     {members.length}
                   </span>
+                  <button
+                    onClick={() => setSoinPorteeAnimals(members)}
+                    className="flex items-center gap-1 text-xs font-semibold text-[#F57F17] border border-[#FFCA28] px-2.5 py-1.5 rounded-lg hover:bg-[#FFF8E1] transition-colors"
+                    title="Soin pour toute la portée"
+                    style={{ fontFamily: 'Galey, sans-serif' }}>
+                    💊 Soin portée
+                  </button>
                   <Link
                     href={`/annonces/creer?portee_id=${pid}`}
                     className="flex items-center gap-1.5 text-xs font-semibold text-[#6E9E57] border border-[#6E9E57] px-3 py-1.5 rounded-lg hover:bg-[#6E9E57] hover:text-white transition-colors"
@@ -819,6 +830,160 @@ export default function MesAnimauxPage() {
           )}
         </div>
       )}
+    </div>
+
+    {/* Modal soin portée */}
+    {soinPorteeAnimals && (
+      <PorteeSoinModal
+        animals={soinPorteeAnimals}
+        uid={user?.uid ?? ''}
+        onClose={() => setSoinPorteeAnimals(null)}
+      />
+    )}
+    </>
+  );
+}
+
+// ── Modal soin portée ─────────────────────────────────────────────────────────
+
+const ACTE_TYPES = [
+  { value: 'vermifuge',       label: 'Vermifuge',          emoji: '🐛' },
+  { value: 'vaccination',     label: 'Vaccination',         emoji: '💉' },
+  { value: 'antiparasitaire', label: 'Antiparasitaire',     emoji: '🛡️' },
+  { value: 'traitement',      label: 'Traitement',          emoji: '💊' },
+  { value: 'visite',          label: 'Visite vétérinaire',  emoji: '🏥' },
+  { value: 'osteopathie',     label: 'Ostéopathie',         emoji: '🤲' },
+  { value: 'chirurgie',       label: 'Chirurgie',           emoji: '🔬' },
+  { value: 'autre',           label: 'Autre',               emoji: '📋' },
+];
+
+function PorteeSoinModal({ animals, uid, onClose }: {
+  animals: Animal[];
+  uid: string;
+  onClose: () => void;
+}) {
+  const [typeActe, setTypeActe]       = useState('vermifuge');
+  const [date, setDate]               = useState(new Date().toISOString().slice(0, 10));
+  const [description, setDescription] = useState('');
+  const [intervenant, setIntervenant] = useState('');
+  const [ordonnance, setOrdonnance]   = useState('');
+  const [saving, setSaving]           = useState(false);
+  const [saved, setSaved]             = useState(false);
+  const [error, setError]             = useState('');
+
+  const handleSave = useCallback(async () => {
+    if (!description.trim()) { setError('Le produit / la description est obligatoire.'); return; }
+    setSaving(true); setError('');
+    let success = 0;
+    for (const animal of animals) {
+      try {
+        await supabase.from('registre_sanitaire').insert({
+          id:          `${Date.now()}_${animal.id}`,
+          uid_eleveur: uid,
+          animal_id:   animal.id,
+          animal_nom:  animal.nom ?? '',
+          espece:      animal.espece ?? '',
+          date_naissance: animal.date_naissance ?? null,
+          identification: animal.identification ?? '',
+          sexe:           animal.sexe ?? '',
+          date_acte:      new Date(date).toISOString(),
+          type_acte:      typeActe,
+          intervenant:    intervenant.trim(),
+          description:    description.trim(),
+          ordonnance_num: ordonnance.trim(),
+        });
+        success++;
+      } catch { /* continue */ }
+    }
+    setSaving(false);
+    if (success > 0) { setSaved(true); setTimeout(onClose, 1200); }
+    else setError('Erreur lors de l\'enregistrement. Vérifiez votre connexion.');
+  }, [animals, uid, typeActe, date, description, intervenant, ordonnance, onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="p-5">
+          {/* Titre */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-[#FFF8E1] flex items-center justify-center text-xl">💊</div>
+            <div className="flex-1">
+              <p className="font-bold text-[#1F2A2E] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>Soin pour la portée</p>
+              <p className="text-xs text-[#6E9E57]">{animals.length} animal{animals.length > 1 ? 'aux' : ''} concerné{animals.length > 1 ? 's' : ''}</p>
+            </div>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+          </div>
+
+          {/* Animaux concernés */}
+          <div className="flex flex-wrap gap-1.5 mb-5">
+            {animals.map(a => (
+              <span key={a.id} className="text-xs bg-[#0C5C6C10] text-[#0C5C6C] border border-[#0C5C6C30] px-2 py-0.5 rounded-lg font-medium">
+                {a.nom ?? '?'}
+              </span>
+            ))}
+          </div>
+
+          {/* Type d'acte */}
+          <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-2">Type de soin</p>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {ACTE_TYPES.map(t => (
+              <button key={t.value} onClick={() => setTypeActe(t.value)}
+                className={`flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+                  typeActe === t.value
+                    ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
+                    : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-[#0C5C6C]'
+                }`}
+                style={{ fontFamily: 'Galey, sans-serif' }}>
+                {t.emoji} {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Date */}
+          <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">Date du soin</p>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            max={new Date().toISOString().slice(0, 10)}
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4 focus:outline-none focus:border-[#0C5C6C]"
+            style={{ fontFamily: 'Galey, sans-serif' }} />
+
+          {/* Description */}
+          <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">Produit / description *</p>
+          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2}
+            placeholder="Ex : Milbemax® 1 comprimé par chiot de 0,5 kg à 10 kg"
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4 resize-none focus:outline-none focus:border-[#0C5C6C]"
+            style={{ fontFamily: 'Galey, sans-serif' }} />
+
+          {/* Intervenant */}
+          <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">Intervenant (optionnel)</p>
+          <input value={intervenant} onChange={e => setIntervenant(e.target.value)}
+            placeholder="Dr. Dupont, éleveur, …"
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4 focus:outline-none focus:border-[#0C5C6C]"
+            style={{ fontFamily: 'Galey, sans-serif' }} />
+
+          {/* Ordonnance */}
+          <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">N° ordonnance (optionnel)</p>
+          <input value={ordonnance} onChange={e => setOrdonnance(e.target.value)}
+            placeholder="ORD-2024-XXXXX"
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-5 focus:outline-none focus:border-[#0C5C6C]"
+            style={{ fontFamily: 'Galey, sans-serif' }} />
+
+          {error && <p className="text-sm text-red-600 mb-3 bg-red-50 rounded-xl px-3 py-2">{error}</p>}
+          {saved && <p className="text-sm text-[#6E9E57] mb-3 bg-[#EEF5EA] rounded-xl px-3 py-2 font-semibold">✓ {animals.length} enregistrement{animals.length > 1 ? 's' : ''} ajouté{animals.length > 1 ? 's' : ''} au registre</p>}
+
+          <div className="flex gap-3">
+            <button onClick={onClose}
+              className="flex-1 border border-gray-200 text-gray-600 font-semibold py-3 rounded-xl text-sm hover:bg-gray-50 transition-colors"
+              style={{ fontFamily: 'Galey, sans-serif' }}>
+              Annuler
+            </button>
+            <button onClick={handleSave} disabled={saving || saved}
+              className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white font-semibold py-3 rounded-xl text-sm transition-colors"
+              style={{ fontFamily: 'Galey, sans-serif' }}>
+              {saving ? 'Enregistrement…' : `Enregistrer pour ${animals.length} animal${animals.length > 1 ? 'aux' : ''}`}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
