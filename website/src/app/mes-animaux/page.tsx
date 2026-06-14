@@ -884,11 +884,51 @@ function PorteeSoinModal({ animals, uid, onClose }: {
     if (!description.trim()) { setError('Le produit / la description est obligatoire.'); return; }
     if (selectedIds.size === 0) { setError('Sélectionnez au moins un animal.'); return; }
     setSaving(true); setError('');
+    const dateIso = new Date(date).toISOString();
+    const desc    = description.trim();
+    const interv  = intervenant.trim();
     let success = 0;
     for (const animal of animals.filter(a => selectedIds.has(a.id))) {
       try {
+        const entryId = `${Date.now()}_${animal.id}`;
+        // Table spécifique (lue par le carnet de santé de la fiche)
+        if (typeActe === 'vermifuge') {
+          await supabase.from('vermifuges').insert({
+            id: entryId, animal_id: animal.id,
+            produit: desc, date: dateIso, source: 'owner',
+            ...(interv ? { notes: interv } : {}),
+          });
+        } else if (typeActe === 'vaccination') {
+          await supabase.from('vaccinations').insert({
+            id: entryId, animal_id: animal.id,
+            vaccin: desc, veterinaire: interv, date: dateIso, source: 'owner',
+          });
+        } else if (typeActe === 'antiparasitaire') {
+          await supabase.from('antiparasitaires').insert({
+            id: entryId, animal_id: animal.id,
+            produit: desc, type: 'autre', date: dateIso, source: 'owner',
+            ...(interv ? { notes: interv } : {}),
+          });
+        } else if (typeActe === 'visite' || typeActe === 'osteopathie') {
+          await supabase.from('visites').insert({
+            id: entryId, animal_id: animal.id,
+            motif: typeActe === 'osteopathie' ? 'Autre' : 'Consultation',
+            veterinaire: interv, date: dateIso,
+            diagnostic: typeActe === 'osteopathie' ? `Ostéopathie — ${desc}` : desc,
+            source: 'owner',
+          });
+        } else {
+          // traitement, chirurgie, autre
+          await supabase.from('traitements').insert({
+            id: entryId, animal_id: animal.id,
+            nom: desc, type: typeActe === 'chirurgie' ? 'autre' : 'medicament',
+            date: dateIso, source: 'owner',
+            ...(interv ? { posologie: interv } : {}),
+          });
+        }
+        // Log consolidé dans registre_sanitaire
         await supabase.from('registre_sanitaire').insert({
-          id:          `${Date.now()}_${animal.id}`,
+          id:          `rs_${entryId}`,
           uid_eleveur: uid,
           animal_id:   animal.id,
           animal_nom:  animal.nom ?? '',
@@ -896,10 +936,10 @@ function PorteeSoinModal({ animals, uid, onClose }: {
           date_naissance: animal.date_naissance ?? null,
           identification: animal.identification ?? '',
           sexe:           animal.sexe ?? '',
-          date_acte:      new Date(date).toISOString(),
+          date_acte:      dateIso,
           type_acte:      typeActe,
-          intervenant:    intervenant.trim(),
-          description:    description.trim(),
+          intervenant:    interv,
+          description:    desc,
           ordonnance_num: ordonnance.trim(),
         });
         success++;

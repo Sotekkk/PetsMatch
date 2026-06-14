@@ -86,17 +86,60 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
       return;
     }
     setState(() { _saving = true; _error = null; });
+    final supa        = Supabase.instance.client;
+    final type        = _selectedActe.value;
+    final desc        = _descriptionCtrl.text.trim();
+    final interv      = _intervenantCtrl.text.trim();
+    final dateIso     = _date.toIso8601String();
     int success = 0;
     for (final animal in widget.animals) {
       final id = animal['id']?.toString() ?? '';
       if (id.isEmpty || !_selectedIds.contains(id)) continue;
       try {
+        final entryId = DateTime.now().microsecondsSinceEpoch.toString();
+        // Écriture dans la table spécifique (lue par le carnet de santé de la fiche)
+        switch (type) {
+          case 'vermifuge':
+            await supa.from('vermifuges').insert({
+              'id': entryId, 'animal_id': id,
+              'produit': desc, 'date': dateIso, 'source': 'owner',
+              if (interv.isNotEmpty) 'notes': interv,
+            });
+          case 'vaccination':
+            await supa.from('vaccinations').insert({
+              'id': entryId, 'animal_id': id,
+              'vaccin': desc, 'veterinaire': interv, 'date': dateIso, 'source': 'owner',
+            });
+          case 'antiparasitaire':
+            await supa.from('antiparasitaires').insert({
+              'id': entryId, 'animal_id': id,
+              'produit': desc, 'type': 'autre', 'date': dateIso, 'source': 'owner',
+              if (interv.isNotEmpty) 'notes': interv,
+            });
+          case 'visite':
+          case 'osteopathie':
+            await supa.from('visites').insert({
+              'id': entryId, 'animal_id': id,
+              'motif': type == 'osteopathie' ? 'Autre' : 'Consultation',
+              'veterinaire': interv, 'date': dateIso,
+              'diagnostic': type == 'osteopathie' ? 'Ostéopathie — $desc' : desc,
+              'source': 'owner',
+            });
+          default: // traitement, chirurgie, autre
+            await supa.from('traitements').insert({
+              'id': entryId, 'animal_id': id,
+              'nom': desc, 'type': type == 'chirurgie' ? 'autre' : 'medicament',
+              'date': dateIso, 'source': 'owner',
+              if (interv.isNotEmpty) 'posologie': interv,
+            });
+        }
+        // Log consolidé dans registre_sanitaire
         await RegistreHelper.writeActe(
           animalId:     id,
-          typeActe:     _selectedActe.value,
+          typeActe:     type,
           dateActe:     _date,
-          intervenant:  _intervenantCtrl.text.trim(),
-          description:  _descriptionCtrl.text.trim(),
+          intervenant:  interv,
+          description:  desc,
           ordonnanceNum: _ordonnanceCtrl.text.trim(),
         );
         success++;
