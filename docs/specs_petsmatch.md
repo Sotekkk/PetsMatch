@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-06-11  
+> Dernière mise à jour : 2026-06-14  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -1535,6 +1535,48 @@ CREATE TABLE contrats (
 Phase 1 (court terme) : conserver le système token actuel pour les certificats, ajouter un bouton "Envoyer pour signature officielle" optionnel qui déclenche le flow YouSign.
 
 Phase 2 : YouSign devient le canal principal pour tous les contrats. Le token reste pour la visualisation publique, YouSign gère la signature légale.
+
+---
+
+---
+
+## 13. Features livrées — session 2026-06-14
+
+### 13.1 Soin portée en masse (App + Web)
+
+**Objectif** : ajouter un acte de santé à tous les animaux d'une portée en une seule fois.
+
+**Champs du formulaire :**
+- Type de soin (vermifuge par défaut, vaccination, antiparasitaire, visite, ostéopathie, chirurgie, traitement, autre)
+- Dosage / Fréquence (conditionnel — visible uniquement pour vermifuge et antiparasitaire)
+- Date du soin
+- Produit / description (obligatoire)
+- Administré par (optionnel) — stocké dans `registre_sanitaire.intervenant`
+- Notes (optionnel) — stocké dans la colonne `notes` des tables métier
+- N° ordonnance (optionnel)
+
+**Sélection animaux :** chaque animal de la portée est affiché sous forme de chip. Tap/clic pour le désélectionner (barré + grisé). Le compteur X/N se met à jour.
+
+**Écriture BDD :** double write —
+- Table métier (`vermifuges`, `vaccinations`, `antiparasitaires`, `visites`, `traitements`) selon le type → visible dans le carnet de santé de la fiche animal
+- `registre_sanitaire` → visible dans le registre consolidé éleveur
+
+**Mapping type → table :**
+| Type | Table |
+|---|---|
+| vermifuge | vermifuges (dosage → colonne dosage) |
+| vaccination | vaccinations (desc → vaccin, interv → veterinaire) |
+| antiparasitaire | antiparasitaires (dosage → frequence) |
+| visite | visites (motif=Consultation) |
+| ostéopathie | visites (motif=Autre, diagnostic=Ostéopathie+desc) |
+| traitement / autre | traitements (type=medicament/autre) |
+| chirurgie | traitements (type=autre) |
+
+### 13.2 Carnet de santé — améliorations fiche animal (App)
+
+- **Sous-titre visible sur la carte** : dosage (vermifuge), posologie (traitement), diagnostic (visite), vétérinaire (vaccination), fréquence (antiparasitaire), notes (radios)
+- **Bouton Modifier** : visible dans le détail de chaque acte saisi par l'éleveur (source=owner). Ouvre un sheet pré-rempli avec UPDATE Supabase. Non disponible pour les actes vétérinaires.
+- Champ éditable par type : vermifuges (produit, dosage, notes), vaccinations (vaccin, lot, vétérinaire), antiparasitaires (produit, fréquence, notes), traitements (nom, posologie), visites (vétérinaire, diagnostic, notes)
 
 ---
 
