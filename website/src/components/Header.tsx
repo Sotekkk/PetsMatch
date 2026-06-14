@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { usePlan } from '@/lib/use-plan';
 import { useRouter } from 'next/navigation';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { ACTIVE_PROFILE_KEY, PROFILE_CHANGE_EVENT } from '@/hooks/useActiveProfile';
 
 interface Notif {
   id: string;
@@ -318,7 +319,7 @@ function typeEmoji(type: string): string {
   } as Record<string, string>)[type] ?? '👤';
 }
 
-const ACTIVE_PROFILE_KEY = 'petsMatch_activeProfileId';
+// ACTIVE_PROFILE_KEY et PROFILE_CHANGE_EVENT importés depuis useActiveProfile
 
 // ── Composant Header ──────────────────────────────────────────────────────────
 
@@ -421,6 +422,8 @@ export default function Header() {
     } else {
       localStorage.removeItem(ACTIVE_PROFILE_KEY);
     }
+    // Notifie les composants du même onglet (storage event ne fire pas dans le même onglet)
+    window.dispatchEvent(new Event(PROFILE_CHANGE_EVENT));
     setProfileSwitcherOpen(false);
     setDropdownOpen(false);
     setMenuOpen(false);

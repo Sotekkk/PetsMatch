@@ -2,23 +2,34 @@
 import { useState, useEffect } from 'react';
 
 export const ACTIVE_PROFILE_KEY = 'petsMatch_activeProfileId';
+export const PROFILE_CHANGE_EVENT = 'petsMatchProfileChanged';
 
-/**
- * Retourne l'ID du profil actif (secondaire) ou '' pour le profil primaire.
- * Utilise useEffect pour éviter les erreurs d'hydratation Next.js.
- */
-export function useActiveProfile(): string {
-  const [activeProfileId, setActiveProfileId] = useState('');
+interface ActiveProfileState {
+  loaded: boolean;
+  id: string;
+}
+
+export function useActiveProfileState(): ActiveProfileState {
+  const [state, setState] = useState<ActiveProfileState>({ loaded: false, id: '' });
 
   useEffect(() => {
-    setActiveProfileId(localStorage.getItem(ACTIVE_PROFILE_KEY) ?? '');
+    const read = () => setState({ loaded: true, id: localStorage.getItem(ACTIVE_PROFILE_KEY) ?? '' });
+    read();
 
-    const handler = (e: StorageEvent) => {
-      if (e.key === ACTIVE_PROFILE_KEY) setActiveProfileId(e.newValue ?? '');
+    const handleStorage = (e: StorageEvent) => { if (e.key === ACTIVE_PROFILE_KEY) read(); };
+    const handleCustom = () => read();
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener(PROFILE_CHANGE_EVENT, handleCustom);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener(PROFILE_CHANGE_EVENT, handleCustom);
     };
-    window.addEventListener('storage', handler);
-    return () => window.removeEventListener('storage', handler);
   }, []);
 
-  return activeProfileId;
+  return state;
+}
+
+export function useActiveProfile(): string {
+  return useActiveProfileState().id;
 }

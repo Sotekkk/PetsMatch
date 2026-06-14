@@ -8,7 +8,7 @@ import { updateProfile, EmailAuthProvider, reauthenticateWithCredential, deleteU
 import { doc, updateDoc, deleteDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
-import { ACTIVE_PROFILE_KEY } from '@/hooks/useActiveProfile';
+import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { useAuth } from '@/lib/auth-context';
 import { uploadPhoto } from '@/lib/upload-media';
 import ReactCrop, { type Crop, type PixelCrop, centerCrop, makeAspectCrop } from 'react-image-crop';
@@ -965,10 +965,10 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
 export default function ProfilPage() {
   const { user, userData, loading, refreshUserData } = useAuth();
   const router = useRouter();
-  // Profil actif : lu depuis localStorage après le mount pour éviter les erreurs d'hydratation
-  const [profileState, setProfileState] = useState<{ mounted: boolean; id: string; type: string }>(
-    { mounted: false, id: '', type: '' }
-  );
+  // Profil actif : loaded=false tant que localStorage n'a pas été lu
+  const { loaded: activeProfileLoaded, id: activeProfileId } = useActiveProfileState();
+  // Type du profil secondaire actif (null = en cours de résolution)
+  const [resolvedType, setResolvedType] = useState<string | null>(null);
 
   // Identity
   const [firstname, setFirstname] = useState('');
@@ -1092,23 +1092,20 @@ export default function ProfilPage() {
     }).catch(() => {});
   }, []);
 
-  // Lit localStorage + charge le type du profil actif en une seule opération (évite les flashes)
+  // Résoudre le type du profil secondaire actif dès que activeProfileId est connu
   useEffect(() => {
-    const id = localStorage.getItem(ACTIVE_PROFILE_KEY) ?? '';
-    if (!id) { setProfileState({ mounted: true, id: '', type: '' }); return; }
+    if (!activeProfileLoaded) return;
+    if (!activeProfileId) { setResolvedType(''); return; }
+    setResolvedType(null); // loading
     (async () => {
       try {
-        const { data } = await supabase.from('user_profiles').select('profile_type').eq('id', id).single();
-        setProfileState({
-          mounted: true,
-          id,
-          type: (data as Record<string, unknown>)?.profile_type as string ?? '',
-        });
+        const { data } = await supabase.from('user_profiles').select('profile_type').eq('id', activeProfileId).single();
+        setResolvedType((data as Record<string, unknown>)?.profile_type as string ?? '');
       } catch {
-        setProfileState({ mounted: true, id: '', type: '' });
+        setResolvedType('');
       }
     })();
-  }, []);
+  }, [activeProfileLoaded, activeProfileId]);
 
   function onAdresseSearchChange(val: string) {
     setAdresseSearch(val);
@@ -1204,16 +1201,16 @@ export default function ProfilPage() {
     }
   }, [allBreeds]);
 
-  // Attendre que localStorage soit lu (évite l'affichage du profil primaire par erreur)
-  if (!profileState.mounted || loading) {
+  // Attendre que localStorage soit lu + type résolu (évite l'affichage du profil primaire par erreur)
+  if (!activeProfileLoaded || resolvedType === null || loading) {
     return <div className="flex justify-center py-32"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
   }
 
-  if (profileState.id && user) {
-    if (profileState.type === 'association') {
-      return <AssociationEdit profileId={profileState.id} uid={user.uid} />;
+  if (activeProfileId && user) {
+    if (resolvedType === 'association') {
+      return <AssociationEdit profileId={activeProfileId} uid={user.uid} />;
     }
-    return <SecondaryProEdit profileId={profileState.id} uid={user.uid} />;
+    return <SecondaryProEdit profileId={activeProfileId} uid={user.uid} />;
   }
 
   function toggleEspece(espece: string) {
