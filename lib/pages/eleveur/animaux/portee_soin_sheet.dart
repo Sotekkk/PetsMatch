@@ -47,6 +47,13 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
   final _ordonnanceCtrl   = TextEditingController();
   bool _saving = false;
   String? _error;
+  late Set<String> _selectedIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIds = widget.animals.map((a) => a['id']?.toString() ?? '').toSet()..remove('');
+  }
 
   @override
   void dispose() {
@@ -82,7 +89,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
     int success = 0;
     for (final animal in widget.animals) {
       final id = animal['id']?.toString() ?? '';
-      if (id.isEmpty) continue;
+      if (id.isEmpty || !_selectedIds.contains(id)) continue;
       try {
         await RegistreHelper.writeActe(
           animalId:     id,
@@ -136,7 +143,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 const Text('Soin pour la portée', style: TextStyle(fontFamily: 'Galey',
                     fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
-                Text('${widget.animals.length} animal${widget.animals.length > 1 ? 'aux' : ''} concerné${widget.animals.length > 1 ? 's' : ''}',
+                Text('${_selectedIds.length}/${widget.animals.length} animal${widget.animals.length > 1 ? 'aux' : ''} sélectionné${_selectedIds.length > 1 ? 's' : ''}',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6E9E57))),
               ]),
             ),
@@ -149,17 +156,39 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
 
           const SizedBox(height: 4),
 
-          // Noms des animaux concernés
+          // Noms des animaux — tap pour désélectionner
           Wrap(spacing: 6, runSpacing: 4, children: widget.animals.map((a) {
+            final id  = a['id']?.toString() ?? '';
             final nom = (a['nom'] as String?) ?? '?';
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: _teal.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _teal.withOpacity(0.2)),
+            final sel = _selectedIds.contains(id);
+            return GestureDetector(
+              onTap: () {
+                if (id.isEmpty) return;
+                setState(() {
+                  if (sel) _selectedIds.remove(id);
+                  else _selectedIds.add(id);
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: sel ? _teal.withOpacity(0.12) : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: sel ? _teal.withOpacity(0.35) : Colors.grey.shade300),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text(nom, style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 12,
+                    color: sel ? _teal : Colors.grey,
+                    decoration: sel ? TextDecoration.none : TextDecoration.lineThrough,
+                  )),
+                  if (!sel) ...[
+                    const SizedBox(width: 4),
+                    Icon(Icons.close, size: 10, color: Colors.grey.shade400),
+                  ],
+                ]),
               ),
-              child: Text(nom, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal)),
             );
           }).toList()),
 
@@ -308,13 +337,13 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: _saving ? null : _save,
+              onPressed: (_saving || _selectedIds.isEmpty) ? null : _save,
               icon: _saving
                   ? const SizedBox(width: 16, height: 16,
                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                   : const Icon(Icons.check_circle_outline, size: 18),
               label: Text(
-                _saving ? 'Enregistrement…' : 'Enregistrer pour toute la portée',
+                _saving ? 'Enregistrement…' : 'Enregistrer pour ${_selectedIds.length} animal${_selectedIds.length > 1 ? 'aux' : ''}',
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14),
               ),
               style: ElevatedButton.styleFrom(

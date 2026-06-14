@@ -870,12 +870,22 @@ function PorteeSoinModal({ animals, uid, onClose }: {
   const [saving, setSaving]           = useState(false);
   const [saved, setSaved]             = useState(false);
   const [error, setError]             = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(animals.map(a => a.id)));
+
+  const toggleAnimal = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (!description.trim()) { setError('Le produit / la description est obligatoire.'); return; }
+    if (selectedIds.size === 0) { setError('Sélectionnez au moins un animal.'); return; }
     setSaving(true); setError('');
     let success = 0;
-    for (const animal of animals) {
+    for (const animal of animals.filter(a => selectedIds.has(a.id))) {
       try {
         await supabase.from('registre_sanitaire').insert({
           id:          `${Date.now()}_${animal.id}`,
@@ -898,7 +908,7 @@ function PorteeSoinModal({ animals, uid, onClose }: {
     setSaving(false);
     if (success > 0) { setSaved(true); setTimeout(onClose, 1200); }
     else setError('Erreur lors de l\'enregistrement. Vérifiez votre connexion.');
-  }, [animals, uid, typeActe, date, description, intervenant, ordonnance, onClose]);
+  }, [animals, uid, typeActe, date, description, intervenant, ordonnance, onClose, selectedIds]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
@@ -909,19 +919,30 @@ function PorteeSoinModal({ animals, uid, onClose }: {
             <div className="w-10 h-10 rounded-xl bg-[#FFF8E1] flex items-center justify-center text-xl">💊</div>
             <div className="flex-1">
               <p className="font-bold text-[#1F2A2E] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>Soin pour la portée</p>
-              <p className="text-xs text-[#6E9E57]">{animals.length} animal{animals.length > 1 ? 'aux' : ''} concerné{animals.length > 1 ? 's' : ''}</p>
+              <p className="text-xs text-[#6E9E57]">{selectedIds.size}/{animals.length} animal{animals.length > 1 ? 'aux' : ''} sélectionné{selectedIds.size > 1 ? 's' : ''}</p>
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
           </div>
 
-          {/* Animaux concernés */}
-          <div className="flex flex-wrap gap-1.5 mb-5">
-            {animals.map(a => (
-              <span key={a.id} className="text-xs bg-[#0C5C6C10] text-[#0C5C6C] border border-[#0C5C6C30] px-2 py-0.5 rounded-lg font-medium">
-                {a.nom ?? '?'}
-              </span>
-            ))}
+          {/* Animaux concernés — cliquer pour désélectionner */}
+          <div className="flex flex-wrap gap-1.5 mb-1">
+            {animals.map(a => {
+              const sel = selectedIds.has(a.id);
+              return (
+                <button key={a.id} onClick={() => toggleAnimal(a.id)}
+                  className={`flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-lg border transition-all ${
+                    sel
+                      ? 'bg-[#0C5C6C12] text-[#0C5C6C] border-[#0C5C6C40]'
+                      : 'bg-gray-100 text-gray-400 border-gray-200 line-through'
+                  }`}
+                  style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {a.nom ?? '?'}
+                  {!sel && <span className="text-gray-300 text-[10px]">✕</span>}
+                </button>
+              );
+            })}
           </div>
+          <p className="text-[10px] text-gray-400 mb-4">Touchez un animal pour le retirer du soin</p>
 
           {/* Type d'acte */}
           <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-2">Type de soin</p>
@@ -976,10 +997,10 @@ function PorteeSoinModal({ animals, uid, onClose }: {
               style={{ fontFamily: 'Galey, sans-serif' }}>
               Annuler
             </button>
-            <button onClick={handleSave} disabled={saving || saved}
-              className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white font-semibold py-3 rounded-xl text-sm transition-colors"
+            <button onClick={handleSave} disabled={saving || saved || selectedIds.size === 0}
+              className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl text-sm transition-colors"
               style={{ fontFamily: 'Galey, sans-serif' }}>
-              {saving ? 'Enregistrement…' : `Enregistrer pour ${animals.length} animal${animals.length > 1 ? 'aux' : ''}`}
+              {saving ? 'Enregistrement…' : `Enregistrer pour ${selectedIds.size} animal${selectedIds.size > 1 ? 'aux' : ''}`}
             </button>
           </div>
         </div>
