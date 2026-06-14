@@ -868,6 +868,7 @@ function PorteeSoinModal({ animals, uid, onClose }: {
   const [intervenant, setIntervenant] = useState('');
   const [ordonnance, setOrdonnance]   = useState('');
   const [dosage, setDosage]           = useState('');
+  const [notes, setNotes]             = useState('');
   const [saving, setSaving]           = useState(false);
   const [saved, setSaved]             = useState(false);
   const [error, setError]             = useState('');
@@ -893,12 +894,13 @@ function PorteeSoinModal({ animals, uid, onClose }: {
       try {
         const entryId = `${Date.now()}_${animal.id}`;
         // Table spécifique (lue par le carnet de santé de la fiche)
+        const n = notes.trim();
         if (typeActe === 'vermifuge') {
           await supabase.from('vermifuges').insert({
             id: entryId, animal_id: animal.id,
             produit: desc, date: dateIso, source: 'owner',
             ...(dosage.trim() ? { dosage: dosage.trim() } : {}),
-            ...(interv ? { notes: interv } : {}),
+            ...(n ? { notes: n } : {}),
           });
         } else if (typeActe === 'vaccination') {
           await supabase.from('vaccinations').insert({
@@ -910,7 +912,7 @@ function PorteeSoinModal({ animals, uid, onClose }: {
             id: entryId, animal_id: animal.id,
             produit: desc, type: 'autre', date: dateIso, source: 'owner',
             ...(dosage.trim() ? { frequence: dosage.trim() } : {}),
-            ...(interv ? { notes: interv } : {}),
+            ...(n ? { notes: n } : {}),
           });
         } else if (typeActe === 'visite' || typeActe === 'osteopathie') {
           await supabase.from('visites').insert({
@@ -918,6 +920,7 @@ function PorteeSoinModal({ animals, uid, onClose }: {
             motif: typeActe === 'osteopathie' ? 'Autre' : 'Consultation',
             veterinaire: interv, date: dateIso,
             diagnostic: typeActe === 'osteopathie' ? `Ostéopathie — ${desc}` : desc,
+            ...(n ? { notes: n } : {}),
             source: 'owner',
           });
         } else {
@@ -926,7 +929,6 @@ function PorteeSoinModal({ animals, uid, onClose }: {
             id: entryId, animal_id: animal.id,
             nom: desc, type: typeActe === 'chirurgie' ? 'autre' : 'medicament',
             date: dateIso, source: 'owner',
-            ...(interv ? { posologie: interv } : {}),
           });
         }
         // Log consolidé dans registre_sanitaire
@@ -951,7 +953,7 @@ function PorteeSoinModal({ animals, uid, onClose }: {
     setSaving(false);
     if (success > 0) { setSaved(true); setTimeout(onClose, 1200); }
     else setError('Erreur lors de l\'enregistrement. Vérifiez votre connexion.');
-  }, [animals, uid, typeActe, date, description, dosage, intervenant, ordonnance, onClose, selectedIds]);
+  }, [animals, uid, typeActe, date, description, dosage, notes, intervenant, ordonnance, onClose, selectedIds]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
@@ -1031,11 +1033,18 @@ function PorteeSoinModal({ animals, uid, onClose }: {
             </>
           )}
 
-          {/* Intervenant */}
-          <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">Intervenant (optionnel)</p>
+          {/* Administré par */}
+          <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">Administré par (optionnel)</p>
           <input value={intervenant} onChange={e => setIntervenant(e.target.value)}
-            placeholder="Dr. Dupont, éleveur, …"
+            placeholder="Éleveur, Dr. Dupont, …"
             className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4 focus:outline-none focus:border-[#0C5C6C]"
+            style={{ fontFamily: 'Galey, sans-serif' }} />
+
+          {/* Notes */}
+          <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">Notes (optionnel)</p>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+            placeholder="Observations, réactions, …"
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4 resize-none focus:outline-none focus:border-[#0C5C6C]"
             style={{ fontFamily: 'Galey, sans-serif' }} />
 
           {/* Ordonnance */}

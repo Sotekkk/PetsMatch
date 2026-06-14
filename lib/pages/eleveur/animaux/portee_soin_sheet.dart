@@ -46,6 +46,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
   final _intervenantCtrl  = TextEditingController();
   final _descriptionCtrl  = TextEditingController();
   final _dosageCtrl       = TextEditingController();
+  final _notesCtrl        = TextEditingController();
   final _ordonnanceCtrl   = TextEditingController();
   bool _saving = false;
   String? _error;
@@ -62,6 +63,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
     _intervenantCtrl.dispose();
     _descriptionCtrl.dispose();
     _dosageCtrl.dispose();
+    _notesCtrl.dispose();
     _ordonnanceCtrl.dispose();
     super.dispose();
   }
@@ -94,6 +96,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
     final desc        = _descriptionCtrl.text.trim();
     final dosage      = _dosageCtrl.text.trim();
     final interv      = _intervenantCtrl.text.trim();
+    final notes       = _notesCtrl.text.trim();
     final dateIso     = _date.toIso8601String();
     int success = 0;
     for (final animal in widget.animals) {
@@ -108,7 +111,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
               'id': entryId, 'animal_id': id,
               'produit': desc, 'date': dateIso, 'source': 'owner',
               if (dosage.isNotEmpty) 'dosage': dosage,
-              if (interv.isNotEmpty) 'notes': interv,
+              if (notes.isNotEmpty) 'notes': notes,
             });
           case 'vaccination':
             await supa.from('vaccinations').insert({
@@ -120,7 +123,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
               'id': entryId, 'animal_id': id,
               'produit': desc, 'type': 'autre', 'date': dateIso, 'source': 'owner',
               if (dosage.isNotEmpty) 'frequence': dosage,
-              if (interv.isNotEmpty) 'notes': interv,
+              if (notes.isNotEmpty) 'notes': notes,
             });
           case 'visite':
           case 'osteopathie':
@@ -129,6 +132,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
               'motif': type == 'osteopathie' ? 'Autre' : 'Consultation',
               'veterinaire': interv, 'date': dateIso,
               'diagnostic': type == 'osteopathie' ? 'Ostéopathie — $desc' : desc,
+              if (notes.isNotEmpty) 'notes': notes,
               'source': 'owner',
             });
           default: // traitement, chirurgie, autre
@@ -136,7 +140,6 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
               'id': entryId, 'animal_id': id,
               'nom': desc, 'type': type == 'chirurgie' ? 'autre' : 'medicament',
               'date': dateIso, 'source': 'owner',
-              if (interv.isNotEmpty) 'posologie': interv,
             });
         }
         // Log consolidé dans registre_sanitaire
@@ -349,15 +352,39 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
 
           const SizedBox(height: 14),
 
-          // Intervenant (optionnel)
-          const Text('Intervenant (optionnel)', style: TextStyle(fontFamily: 'Galey',
+          // Administré par (optionnel)
+          const Text('Administré par (optionnel)', style: TextStyle(fontFamily: 'Galey',
               fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0C5C6C))),
           const SizedBox(height: 6),
           TextField(
             controller: _intervenantCtrl,
             style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Dr. Dupont, éleveur, …',
+              hintText: 'Éleveur, Dr. Dupont, …',
+              hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFBDBDBD)),
+              filled: true, fillColor: const Color(0xFFF8F8F6),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: _teal.withOpacity(0.2))),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: _teal.withOpacity(0.2))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: _teal, width: 1.5)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // Notes (optionnel)
+          const Text('Notes (optionnel)', style: TextStyle(fontFamily: 'Galey',
+              fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0C5C6C))),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _notesCtrl,
+            maxLines: 2,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Observations, réactions, …',
               hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFBDBDBD)),
               filled: true, fillColor: const Color(0xFFF8F8F6),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
