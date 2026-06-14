@@ -45,6 +45,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
   DateTime _date = DateTime.now();
   final _intervenantCtrl  = TextEditingController();
   final _descriptionCtrl  = TextEditingController();
+  final _dosageCtrl       = TextEditingController();
   final _ordonnanceCtrl   = TextEditingController();
   bool _saving = false;
   String? _error;
@@ -60,6 +61,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
   void dispose() {
     _intervenantCtrl.dispose();
     _descriptionCtrl.dispose();
+    _dosageCtrl.dispose();
     _ordonnanceCtrl.dispose();
     super.dispose();
   }
@@ -90,6 +92,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
     final supa        = Supabase.instance.client;
     final type        = _selectedActe.value;
     final desc        = _descriptionCtrl.text.trim();
+    final dosage      = _dosageCtrl.text.trim();
     final interv      = _intervenantCtrl.text.trim();
     final dateIso     = _date.toIso8601String();
     int success = 0;
@@ -104,6 +107,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
             await supa.from('vermifuges').insert({
               'id': entryId, 'animal_id': id,
               'produit': desc, 'date': dateIso, 'source': 'owner',
+              if (dosage.isNotEmpty) 'dosage': dosage,
               if (interv.isNotEmpty) 'notes': interv,
             });
           case 'vaccination':
@@ -115,6 +119,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
             await supa.from('antiparasitaires').insert({
               'id': entryId, 'animal_id': id,
               'produit': desc, 'type': 'autre', 'date': dateIso, 'source': 'owner',
+              if (dosage.isNotEmpty) 'frequence': dosage,
               if (interv.isNotEmpty) 'notes': interv,
             });
           case 'visite':
@@ -245,7 +250,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
           Wrap(spacing: 8, runSpacing: 8, children: _kActes.map((a) {
             final sel = _selectedActe.value == a.value;
             return GestureDetector(
-              onTap: () => setState(() => _selectedActe = a),
+              onTap: () => setState(() { _selectedActe = a; _dosageCtrl.clear(); }),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -315,6 +320,32 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
+
+          // Dosage (visible pour vermifuge et antiparasitaire)
+          if (_selectedActe.value == 'vermifuge' || _selectedActe.value == 'antiparasitaire') ...[
+            const SizedBox(height: 14),
+            Text(
+              _selectedActe.value == 'antiparasitaire' ? 'Fréquence (optionnel)' : 'Dosage (optionnel)',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0C5C6C)),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _dosageCtrl,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(
+                hintText: _selectedActe.value == 'antiparasitaire' ? 'Ex : 1 mois' : 'Ex : 1 cp / 5 kg',
+                hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFBDBDBD)),
+                filled: true, fillColor: const Color(0xFFF8F8F6),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: _teal.withOpacity(0.2))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: _teal.withOpacity(0.2))),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: _teal, width: 1.5)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+            ),
+          ],
 
           const SizedBox(height: 14),
 

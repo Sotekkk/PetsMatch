@@ -2878,6 +2878,17 @@ class _SanteListState extends State<_SanteList> {
     }
   }
 
+  void _edit(Map<String, dynamic> data) {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _QuickEditSheet(data: data, collection: widget.collection, onSaved: _refresh),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -2905,9 +2916,11 @@ class _SanteListState extends State<_SanteList> {
                     final canDelete = isVetEntry
                         ? (widget.vetMode && d['vet_id']?.toString() == myUid)
                         : !widget.vetMode;
+                    final canEdit = !isVetEntry && !widget.vetMode;
                     return _SanteCard(
                       title: _title(d), data: d, icon: widget.icon,
                       onDelete: () => _delete(d['id']?.toString() ?? ''),
+                      onEdit: canEdit ? () => _edit(d) : null,
                       collection: widget.collection,
                       canDelete: canDelete,
                     );
@@ -3151,6 +3164,22 @@ class _SanteCard extends StatelessWidget {
     return val.toString();
   }
 
+  String? _subtitle() {
+    String? v(String key) {
+      final s = data[key]?.toString() ?? '';
+      return s.isNotEmpty ? s : null;
+    }
+    switch (collection) {
+      case 'vermifuges':       return v('dosage') ?? v('notes');
+      case 'vaccinations':     return v('veterinaire');
+      case 'antiparasitaires': return v('frequence') ?? v('notes');
+      case 'traitements':      return v('posologie');
+      case 'visites':          return v('diagnostic') ?? v('notes');
+      case 'radios':           return v('notes');
+      default:                 return null;
+    }
+  }
+
   void _showDetail(BuildContext context) {
     const _skip = {'id', 'animal_id', 'created_at', 'vet_id', 'visite_ref',
                    'source', 'pro_uid', 'owner_uid', 'rdv_id', 'extra_data'};
@@ -3264,6 +3293,13 @@ class _SanteCard extends StatelessWidget {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
             if (date.isNotEmpty) Text(date, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+            Builder(builder: (_) {
+              final sub = _subtitle();
+              if (sub == null || sub.isEmpty) return const SizedBox.shrink();
+              return Text(sub,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
+                maxLines: 1, overflow: TextOverflow.ellipsis);
+            }),
             if (isVet) ...[
               const SizedBox(height: 3),
               Container(
@@ -3284,6 +3320,159 @@ class _SanteCard extends StatelessWidget {
           if (canDelete)
             IconButton(icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
                 onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─── Sheet édition rapide santé ──────────────────────────────────────────────
+
+class _QuickEditSheet extends StatefulWidget {
+  final Map<String, dynamic> data;
+  final String collection;
+  final VoidCallback onSaved;
+  const _QuickEditSheet({required this.data, required this.collection, required this.onSaved});
+  @override State<_QuickEditSheet> createState() => _QuickEditSheetState();
+}
+
+class _QuickEditSheetState extends State<_QuickEditSheet> {
+  static const _teal = Color(0xFF0C5C6C);
+
+  // (key, label, required, multiLine)
+  static const _config = {
+    'vermifuges':       [('produit','Produit *',true,false),('dosage','Dosage',false,false),('notes','Notes',false,true)],
+    'vaccinations':     [('vaccin','Vaccin *',true,false),('lot','N° de lot',false,false),('veterinaire','Vétérinaire',false,false)],
+    'antiparasitaires': [('produit','Produit *',true,false),('frequence','Fréquence',false,false),('notes','Notes',false,true)],
+    'traitements':      [('nom','Nom *',true,false),('posologie','Posologie',false,false)],
+    'visites':          [('veterinaire','Vétérinaire',false,false),('diagnostic','Diagnostic',false,true),('notes','Notes',false,true)],
+    'radios':           [('titre','Titre *',true,false),('notes','Notes',false,true)],
+    'allergies':        [('description','Description *',true,true)],
+  };
+
+  late final Map<String, TextEditingController> _ctrls;
+  late DateTime _date;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final fields = _config[widget.collection] ?? [];
+    _ctrls = { for (final f in fields) f.$1: TextEditingController(text: (widget.data[f.$1] ?? '').toString()) };
+    final raw = widget.data['date'] as String?;
+    _date = raw != null ? (DateTime.tryParse(raw) ?? DateTime.now()) : DateTime.now();
+  }
+
+  @override
+  void dispose() { for (final c in _ctrls.values) c.dispose(); super.dispose(); }
+
+  Future<void> _pickDate() async {
+    final p = await showDatePicker(
+      context: context, initialDate: _date, firstDate: DateTime(2000), lastDate: DateTime.now(),
+      locale: const Locale('fr'),
+      builder: (ctx, child) => Theme(data: ThemeData.light().copyWith(
+          colorScheme: const ColorScheme.light(primary: _teal)), child: child!),
+    );
+    if (p != null) setState(() => _date = p);
+  }
+
+  Future<void> _save() async {
+    final fields = _config[widget.collection] ?? [];
+    for (final f in fields) {
+      if (f.$3 && (_ctrls[f.$1]?.text.trim().isEmpty ?? true)) {
+        setState(() => _error = '${f.$2.replaceAll('*', '').trim()} est obligatoire.');
+        return;
+      }
+    }
+    setState(() { _saving = true; _error = null; });
+    try {
+      final updates = <String, dynamic>{ 'date': _date.toIso8601String() };
+      for (final f in fields) {
+        final v = _ctrls[f.$1]?.text.trim() ?? '';
+        updates[f.$1] = v;
+      }
+      await Supabase.instance.client
+          .from(widget.collection).update(updates).eq('id', widget.data['id'].toString());
+      if (mounted) { Navigator.pop(context); widget.onSaved(); }
+    } catch (e) {
+      if (mounted) setState(() { _saving = false; _error = 'Erreur: $e'; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fields = _config[widget.collection] ?? [];
+    final fmt = DateFormat('dd/MM/yyyy');
+    return SingleChildScrollView(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          const Text('Modifier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 16),
+          // Date
+          GestureDetector(
+            onTap: _pickDate,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8F8F6), borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _teal.withOpacity(0.2)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.calendar_today_outlined, size: 16, color: _teal),
+                const SizedBox(width: 8),
+                Text(fmt.format(_date), style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+                const Spacer(),
+                const Icon(Icons.chevron_right, size: 18, color: Color(0xFF9E9E9E)),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final f in fields) ...[
+            TextField(
+              controller: _ctrls[f.$1],
+              maxLines: f.$4 ? 2 : 1,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(
+                labelText: f.$2,
+                labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+                filled: true, fillColor: const Color(0xFFF8F8F6),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: _teal.withOpacity(0.2))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: _teal.withOpacity(0.2))),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: _teal, width: 1.5)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (_error != null) ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: const Color(0xFFFFEBEE), borderRadius: BorderRadius.circular(10)),
+              child: Text(_error!, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFB71C1C))),
+            ),
+            const SizedBox(height: 10),
+          ],
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _saving ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _teal, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: Text(_saving ? 'Enregistrement…' : 'Enregistrer',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+            ),
+          ),
         ]),
       ),
     );

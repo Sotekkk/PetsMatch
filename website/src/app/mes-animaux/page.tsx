@@ -867,6 +867,7 @@ function PorteeSoinModal({ animals, uid, onClose }: {
   const [description, setDescription] = useState('');
   const [intervenant, setIntervenant] = useState('');
   const [ordonnance, setOrdonnance]   = useState('');
+  const [dosage, setDosage]           = useState('');
   const [saving, setSaving]           = useState(false);
   const [saved, setSaved]             = useState(false);
   const [error, setError]             = useState('');
@@ -896,6 +897,7 @@ function PorteeSoinModal({ animals, uid, onClose }: {
           await supabase.from('vermifuges').insert({
             id: entryId, animal_id: animal.id,
             produit: desc, date: dateIso, source: 'owner',
+            ...(dosage.trim() ? { dosage: dosage.trim() } : {}),
             ...(interv ? { notes: interv } : {}),
           });
         } else if (typeActe === 'vaccination') {
@@ -907,6 +909,7 @@ function PorteeSoinModal({ animals, uid, onClose }: {
           await supabase.from('antiparasitaires').insert({
             id: entryId, animal_id: animal.id,
             produit: desc, type: 'autre', date: dateIso, source: 'owner',
+            ...(dosage.trim() ? { frequence: dosage.trim() } : {}),
             ...(interv ? { notes: interv } : {}),
           });
         } else if (typeActe === 'visite' || typeActe === 'osteopathie') {
@@ -948,7 +951,7 @@ function PorteeSoinModal({ animals, uid, onClose }: {
     setSaving(false);
     if (success > 0) { setSaved(true); setTimeout(onClose, 1200); }
     else setError('Erreur lors de l\'enregistrement. Vérifiez votre connexion.');
-  }, [animals, uid, typeActe, date, description, intervenant, ordonnance, onClose, selectedIds]);
+  }, [animals, uid, typeActe, date, description, dosage, intervenant, ordonnance, onClose, selectedIds]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
@@ -988,13 +991,14 @@ function PorteeSoinModal({ animals, uid, onClose }: {
           <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-2">Type de soin</p>
           <div className="flex flex-wrap gap-2 mb-4">
             {ACTE_TYPES.map(t => (
-              <button key={t.value} onClick={() => setTypeActe(t.value)}
+              <button key={t.value}
                 className={`flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
                   typeActe === t.value
                     ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
                     : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-[#0C5C6C]'
                 }`}
-                style={{ fontFamily: 'Galey, sans-serif' }}>
+                style={{ fontFamily: 'Galey, sans-serif' }}
+                onClick={() => { setTypeActe(t.value); setDosage(''); }}>
                 {t.emoji} {t.label}
               </button>
             ))}
@@ -1013,6 +1017,19 @@ function PorteeSoinModal({ animals, uid, onClose }: {
             placeholder="Ex : Milbemax® 1 comprimé par chiot de 0,5 kg à 10 kg"
             className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4 resize-none focus:outline-none focus:border-[#0C5C6C]"
             style={{ fontFamily: 'Galey, sans-serif' }} />
+
+          {/* Dosage — vermifuge / antiparasitaire uniquement */}
+          {(typeActe === 'vermifuge' || typeActe === 'antiparasitaire') && (
+            <>
+              <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">
+                {typeActe === 'antiparasitaire' ? 'Fréquence (optionnel)' : 'Dosage (optionnel)'}
+              </p>
+              <input value={dosage} onChange={e => setDosage(e.target.value)}
+                placeholder={typeActe === 'antiparasitaire' ? 'Ex : 1 mois' : 'Ex : 1 cp / 5 kg'}
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4 focus:outline-none focus:border-[#0C5C6C]"
+                style={{ fontFamily: 'Galey, sans-serif' }} />
+            </>
+          )}
 
           {/* Intervenant */}
           <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">Intervenant (optionnel)</p>
