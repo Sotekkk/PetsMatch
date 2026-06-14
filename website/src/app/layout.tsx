@@ -12,6 +12,15 @@ export const metadata: Metadata = {
   title: "PetsMatch — Connecter · Prendre soin · Partager",
   description: "Trouvez votre compagnon idéal, découvrez les élevages certifiés et aidez les animaux perdus.",
   keywords: "animaux, élevage, chien, chat, adoption, compagnon, animaux perdus",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "PetsMatch",
+  },
+  icons: {
+    apple: "/Logo_petsmatch_fond_blanc.png",
+  },
   openGraph: {
     title: "PetsMatch",
     description: "La communauté des passionnés d'animaux",
