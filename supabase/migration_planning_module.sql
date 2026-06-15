@@ -1,4 +1,6 @@
--- Planning module — Phase 1
+-- Planning module — idempotent (safe à relancer)
+-- ════════════════════════════════════════════════════════════════
+
 -- Templates réutilisables
 CREATE TABLE IF NOT EXISTS plan_templates (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -7,13 +9,10 @@ CREATE TABLE IF NOT EXISTS plan_templates (
   type            TEXT NOT NULL CHECK (type IN ('sanitaire','nettoyage','promenade','socialisation')),
   espece          TEXT,
   description     TEXT,
-  -- Qui est ciblé par ce protocole
   cible_type      TEXT NOT NULL DEFAULT 'individuel'
                   CHECK (cible_type IN ('individuel','cheptel','males','femelles','gestantes','bebes')),
-  -- Quel événement sert de J0
   reference_event TEXT NOT NULL DEFAULT 'manuel'
                   CHECK (reference_event IN ('manuel','saillie','mise_bas','naissance','age_semaines','date_fixe')),
-  -- Lieu (pour type=nettoyage : lieu physique à nettoyer, ex: "Chatterie n°1")
   lieu            TEXT,
   created_at      TIMESTAMPTZ DEFAULT now()
 );
@@ -22,24 +21,18 @@ CREATE TABLE IF NOT EXISTS plan_templates (
 CREATE TABLE IF NOT EXISTS plan_template_etapes (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   template_id      UUID REFERENCES plan_templates(id) ON DELETE CASCADE,
-  -- Moment relatif à l'événement de référence
   offset_direction TEXT NOT NULL DEFAULT 'apres' CHECK (offset_direction IN ('avant','apres')),
-  jour_offset      INTEGER NOT NULL DEFAULT 0,    -- nombre de jours (toujours positif, direction dans offset_direction)
-  -- Pour les bébés/jeunes : à partir de quel âge (en semaines)
+  jour_offset      INTEGER NOT NULL DEFAULT 0,
   age_min_semaines INTEGER,
-  -- Type d'acte et produit
   type_acte        TEXT,
   produit          TEXT,
   dosage           TEXT,
-  -- Fréquence / répétition
   frequence        TEXT NOT NULL DEFAULT 'ponctuel'
                    CHECK (frequence IN ('ponctuel','quotidien','hebdomadaire','mensuel')),
-  nb_fois_semaine  INTEGER DEFAULT 1,   -- si frequence='hebdomadaire' : 1, 2 ou 3 fois/semaine
-  duree_semaines   INTEGER DEFAULT 1,   -- si frequence répétée : durée totale en semaines
-  duree_jours      INTEGER NOT NULL DEFAULT 1,  -- garde la compat pour 'ponctuel' multi-jours
-  -- Récurrence sans fin (génère 52 semaines automatiquement)
+  nb_fois_semaine  INTEGER DEFAULT 1,
+  duree_semaines   INTEGER DEFAULT 1,
+  duree_jours      INTEGER NOT NULL DEFAULT 1,
   is_recurrent     BOOLEAN NOT NULL DEFAULT FALSE,
-  -- Lieu (promenade, socialisation)
   lieu             TEXT,
   description      TEXT,
   ordre            INTEGER NOT NULL DEFAULT 0
@@ -81,17 +74,28 @@ CREATE TABLE IF NOT EXISTS plan_taches (
   created_at       TIMESTAMPTZ DEFAULT now()
 );
 
--- Index pour les requêtes fréquentes
-CREATE INDEX IF NOT EXISTS idx_plan_templates_eleveur ON plan_templates(uid_eleveur);
-CREATE INDEX IF NOT EXISTS idx_plans_actifs_eleveur ON plans_actifs(uid_eleveur, statut);
-CREATE INDEX IF NOT EXISTS idx_plan_taches_date ON plan_taches(uid_eleveur, date_prevue, statut);
-CREATE INDEX IF NOT EXISTS idx_plan_taches_plan ON plan_taches(plan_id);
+-- ── Colonnes ajoutées lors de la v2 (idempotent) ─────────────────────────────
+ALTER TABLE plan_templates       ADD COLUMN IF NOT EXISTS lieu         TEXT;
+ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS is_recurrent BOOLEAN NOT NULL DEFAULT FALSE;
 
--- RLS
-ALTER TABLE plan_templates ENABLE ROW LEVEL SECURITY;
+-- ── Index ─────────────────────────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_plan_templates_eleveur ON plan_templates(uid_eleveur);
+CREATE INDEX IF NOT EXISTS idx_plans_actifs_eleveur   ON plans_actifs(uid_eleveur, statut);
+CREATE INDEX IF NOT EXISTS idx_plan_taches_date       ON plan_taches(uid_eleveur, date_prevue, statut);
+CREATE INDEX IF NOT EXISTS idx_plan_taches_plan       ON plan_taches(plan_id);
+
+-- ── RLS ───────────────────────────────────────────────────────────────────────
+ALTER TABLE plan_templates       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE plan_template_etapes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE plans_actifs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE plan_taches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE plans_actifs         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE plan_taches          ENABLE ROW LEVEL SECURITY;
+
+-- Drop before recreate (évite "already exists")
+DROP POLICY IF EXISTS "owner_templates"    ON plan_templates;
+DROP POLICY IF EXISTS "owner_etapes"       ON plan_template_etapes;
+DROP POLICY IF EXISTS "owner_plans"        ON plans_actifs;
+DROP POLICY IF EXISTS "owner_taches"       ON plan_taches;
+DROP POLICY IF EXISTS "employe_taches_read" ON plan_taches;
 
 CREATE POLICY "owner_templates" ON plan_templates
   FOR ALL USING (uid_eleveur = auth.uid()::text);
@@ -107,6 +111,5 @@ CREATE POLICY "owner_plans" ON plans_actifs
 CREATE POLICY "owner_taches" ON plan_taches
   FOR ALL USING (uid_eleveur = auth.uid()::text);
 
--- Employés peuvent lire les tâches qui leur sont assignées
 CREATE POLICY "employe_taches_read" ON plan_taches
   FOR SELECT USING (assigned_to = auth.uid()::text);

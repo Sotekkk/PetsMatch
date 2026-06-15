@@ -15,7 +15,7 @@ class PlanTemplateFormPage extends StatefulWidget {
 }
 
 class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
-  static const _green = Color(0xFF6E9E57);
+  static const _green = Color(0xFF0C5C6C);
   static const _dark  = Color(0xFF1F2A2E);
 
   final _nomCtrl         = TextEditingController();
@@ -315,7 +315,7 @@ class _EtapeCard extends StatelessWidget {
     required this.refEvent, required this.onRemove, required this.onChanged,
   });
 
-  static const _green = Color(0xFF6E9E57);
+  static const _green = Color(0xFF0C5C6C);
 
   static const _typesActes = [
     ('vermifuge',       '💊 Vermifuge'),
@@ -348,7 +348,7 @@ class _EtapeCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F7EE),
+        color: const Color(0xFFE0F2F1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: _green.withValues(alpha: 0.25)),
       ),
@@ -715,8 +715,8 @@ class _InfoBox extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(9),
     margin: const EdgeInsets.only(bottom: 8),
-    decoration: BoxDecoration(color: const Color(0xFFF0F7EE), borderRadius: BorderRadius.circular(8)),
-    child: Text(text, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF5A8A45))),
+    decoration: BoxDecoration(color: const Color(0xFFE0F2F1), borderRadius: BorderRadius.circular(8)),
+    child: Text(text, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF0C5C6C))),
   );
 }
 
@@ -754,7 +754,7 @@ class _RadioTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: selected ? const Color(0xFFEEF5EA) : const Color(0xFFF8F8F6),
+        color: selected ? const Color(0xFFE0F2F1) : const Color(0xFFF8F8F6),
         border: Border.all(color: selected ? const Color(0xFF6E9E57) : Colors.grey.shade200, width: selected ? 1.5 : 1),
         borderRadius: BorderRadius.circular(10),
       ),
@@ -765,7 +765,7 @@ class _RadioTile extends StatelessWidget {
           Expanded(child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: selected ? const Color(0xFF3A6B2A) : const Color(0xFF1F2A2E))),
+              Text(title, style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: selected ? const Color(0xFF063D4A) : const Color(0xFF1F2A2E))),
               Text(subtitle, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
             ],
           )),

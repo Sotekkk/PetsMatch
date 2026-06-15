@@ -11,7 +11,7 @@ class PlanningJourPage extends StatefulWidget {
 }
 
 class _PlanningJourPageState extends State<PlanningJourPage> {
-  static const _green = Color(0xFF6E9E57);
+  static const _green = Color(0xFF0C5C6C);
   static const _dark  = Color(0xFF1F2A2E);
 
   DateTime _selectedDate = DateTime.now();
@@ -180,10 +180,10 @@ class _DateStrip extends StatelessWidget {
               width: 46,
               margin: const EdgeInsets.symmetric(horizontal: 3),
               decoration: BoxDecoration(
-                color: active ? const Color(0xFF6E9E57) : Colors.transparent,
+                color: active ? const Color(0xFF0C5C6C) : Colors.transparent,
                 borderRadius: BorderRadius.circular(12),
                 border: isToday && !active
-                    ? Border.all(color: const Color(0xFF6E9E57), width: 1.5)
+                    ? Border.all(color: const Color(0xFF0C5C6C), width: 1.5)
                     : null,
               ),
               child: Column(
@@ -201,7 +201,7 @@ class _DateStrip extends StatelessWidget {
                     '${d.day}',
                     style: TextStyle(
                       fontFamily: 'Galey', fontSize: 18, fontWeight: FontWeight.w700,
-                      color: active ? Colors.white : (isToday ? const Color(0xFF6E9E57) : Colors.white),
+                      color: active ? Colors.white : (isToday ? const Color(0xFF0C5C6C) : Colors.white),
                     ),
                   ),
                 ],
@@ -223,7 +223,7 @@ class _TacheCard extends StatelessWidget {
 
   const _TacheCard({required this.tache, required this.onValider, required this.onReporter});
 
-  static const _green  = Color(0xFF6E9E57);
+  static const _green  = Color(0xFF0C5C6C);
   static const _orange = Color(0xFFD97706);
 
   String get _typeEmoji {
@@ -342,8 +342,8 @@ class _ProgressBar extends StatelessWidget {
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: current / total,
-              backgroundColor: const Color(0xFF6E9E57).withValues(alpha: 0.15),
-              valueColor: const AlwaysStoppedAnimation(Color(0xFF6E9E57)),
+              backgroundColor: const Color(0xFF0C5C6C).withValues(alpha: 0.15),
+              valueColor: const AlwaysStoppedAnimation(Color(0xFF0C5C6C)),
               minHeight: 5,
             ),
           ),
@@ -351,7 +351,7 @@ class _ProgressBar extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           'J$current/$total',
-          style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6E9E57), fontWeight: FontWeight.w600),
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF0C5C6C), fontWeight: FontWeight.w600),
         ),
       ],
     );
@@ -416,9 +416,9 @@ class _EmptyState extends StatelessWidget {
             onPressed: () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => const PlanTemplateListPage(),
             )),
-            icon: const Icon(Icons.add, size: 18, color: Color(0xFF6E9E57)),
-            label: const Text('Créer un protocole', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6E9E57))),
-            style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF6E9E57))),
+            icon: const Icon(Icons.add, size: 18, color: Color(0xFF0C5C6C)),
+            label: const Text('Créer un protocole', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF0C5C6C))),
+            style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF0C5C6C))),
           ),
         ],
       ),

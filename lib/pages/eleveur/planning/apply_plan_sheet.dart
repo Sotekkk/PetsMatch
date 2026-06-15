@@ -14,7 +14,7 @@ class ApplyPlanSheet extends StatefulWidget {
 }
 
 class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
-  static const _green = Color(0xFF6E9E57);
+  static const _green = Color(0xFF0C5C6C);
   static const _dark  = Color(0xFF1F2A2E);
 
   DateTime _dateRef     = DateTime.now();
@@ -147,7 +147,7 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
                   children: [
                     const Icon(Icons.group_outlined, size: 18, color: _green),
                     const SizedBox(width: 8),
-                    Expanded(child: Text(_cibleDescription, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF3A6B2A)))),
+                    Expanded(child: Text(_cibleDescription, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF063D4A)))),
                   ],
                 ),
               ),
@@ -286,6 +286,6 @@ InputDecoration _inputDeco(String label) => InputDecoration(
   labelText: label,
   labelStyle: const TextStyle(fontFamily: 'Galey'),
   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF6E9E57))),
+  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF0C5C6C))),
   filled: true, fillColor: Colors.white,
 );

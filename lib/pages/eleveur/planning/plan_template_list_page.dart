@@ -11,7 +11,7 @@ class PlanTemplateListPage extends StatefulWidget {
 }
 
 class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
-  static const _green = Color(0xFF6E9E57);
+  static const _green = Color(0xFF0C5C6C);
   static const _dark  = Color(0xFF1F2A2E);
 
   List<Map<String, dynamic>> _templates = [];
@@ -129,7 +129,7 @@ class _TemplateCard extends StatelessWidget {
 
   const _TemplateCard({required this.template, required this.onEdit, required this.onDelete, required this.onApply});
 
-  static const _green = Color(0xFF6E9E57);
+  static const _green = Color(0xFF0C5C6C);
 
   String get _typeLabel => switch (template['type'] as String? ?? '') {
     'sanitaire'    => 'Sanitaire',
@@ -140,7 +140,7 @@ class _TemplateCard extends StatelessWidget {
   };
 
   Color get _typeColor => switch (template['type'] as String? ?? '') {
-    'sanitaire'    => const Color(0xFF6E9E57),
+    'sanitaire'    => const Color(0xFF0C5C6C),
     'nettoyage'    => const Color(0xFF0C5C6C),
     'promenade'    => const Color(0xFF9B59B6),
     'socialisation'=> const Color(0xFFE67E22),
