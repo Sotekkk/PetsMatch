@@ -45,12 +45,13 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
 
   // Cible : qui est concerné
   static const _cibles = [
-    ('individuel', '🐾', 'Animal individuel', 'Sélection manuelle à l\'application'),
-    ('cheptel',    '🏡', 'Tout le cheptel',   'Tous les animaux de l\'espèce'),
-    ('males',      '♂', 'Mâles',             'Tous les mâles de l\'espèce'),
-    ('femelles',   '♀', 'Femelles',           'Toutes les femelles de l\'espèce'),
-    ('gestantes',  '🤰', 'Femelles gestantes', 'Relativement à la date de mise bas'),
-    ('bebes',      '🍼', 'Bébés / Jeunes',    'Selon l\'âge en semaines'),
+    ('individuel',  '🐾', 'Animal individuel',      'Sélection manuelle à l\'application'),
+    ('cheptel',     '🏡', 'Tout le cheptel',        'Tous les animaux de l\'espèce'),
+    ('males',       '♂',  'Mâles',                  'Tous les mâles de l\'espèce'),
+    ('femelles',    '♀',  'Femelles',               'Toutes les femelles de l\'espèce'),
+    ('gestantes',   '🤰', 'Femelles gestantes',     'Relativement à la date de mise bas'),
+    ('allaitantes', '🤱', 'Femelles allaitantes',   'Femelles en nurserie / avec bébés (< 8 sem.)'),
+    ('bebes',       '🍼', 'Bébés / Jeunes',         'Selon l\'âge en semaines'),
   ];
 
   // Événement de référence pour J0
@@ -105,7 +106,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     setState(() => _saving = true);
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
-      final etapesData = _etapes.map((e) => e.toMap()).toList();
+      final etapesData = _etapes.map((e) => e.toMap(isBebes: _cibleType == 'bebes')).toList();
       final lieuNett = _lieuNettCtrl.text.trim().isEmpty ? null : _lieuNettCtrl.text.trim();
       if (widget.existing != null) {
         await PlanningService.updateTemplate(
@@ -322,6 +323,8 @@ class _EtapeCard extends StatelessWidget {
     ('antiparasitaire', '🛡️ Antiparasitaire'),
     ('traitement',      '🩺 Traitement'),
     ('visite',          '🏥 Visite vétérinaire'),
+    ('toilettage',      '🛁 Toilettage'),
+    ('peignage',        '🪮 Peignage'),
     ('nettoyage',       '🧹 Nettoyage'),
     ('promenade',       '🦮 Promenade'),
     ('socialisation',   '🐾 Socialisation'),
@@ -577,6 +580,45 @@ class _EtapeCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
 
+          // ── Moment de la journée ──
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade200)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Moment de la journée (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6, runSpacing: 4,
+                  children: [
+                    (null,         '—',   'Non défini'),
+                    ('matin',      '🌅',  'Matin'),
+                    ('midi',       '☀️',  'Midi'),
+                    ('apres_midi', '🌤️', 'Après-midi'),
+                    ('soir',       '🌙',  'Soir'),
+                  ].map((t) {
+                    final active = ctrl.trancheHoraire == t.$1;
+                    return GestureDetector(
+                      onTap: () { ctrl.trancheHoraire = t.$1; onChanged(); },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 120),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: active ? _green : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text('${t.$2} ${t.$3}', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: active ? Colors.white : Colors.grey.shade700)),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+
           // Lieu (promenade / socialisation) + description
           if (ctrl.typeActe == 'promenade' || ctrl.typeActe == 'socialisation') ...[
             TextFormField(controller: ctrl.lieuCtrl, decoration: fd('Lieu', hint: 'ex: parc, jardin, forêt…'), style: _ts, onChanged: (_) => onChanged()),
@@ -614,11 +656,12 @@ class _EtapeCard extends StatelessWidget {
 // ─── Contrôleur d'étape ───────────────────────────────────────────────────────
 
 class _EtapeCtrl {
-  String typeActe       = 'vermifuge';
-  String direction      = 'apres';
-  String frequence      = 'ponctuel';
-  int    nbFoisSemaine  = 1;
-  bool   isRecurrent    = false;
+  String  typeActe       = 'vermifuge';
+  String  direction      = 'apres';
+  String  frequence      = 'ponctuel';
+  int     nbFoisSemaine  = 1;
+  bool    isRecurrent    = false;
+  String? trancheHoraire;
   String? existingId;
 
   final TextEditingController produitCtrl;
@@ -646,6 +689,7 @@ class _EtapeCtrl {
         frequence         = d['frequence']   ?? 'ponctuel',
         nbFoisSemaine     = (d['nb_fois_semaine'] as num? ?? 1).toInt(),
         isRecurrent       = d['is_recurrent'] == true,
+        trancheHoraire    = d['tranche_horaire'] as String?,
         existingId        = d['id'] as String?,
         produitCtrl       = TextEditingController(text: d['produit'] ?? ''),
         dosageCtrl        = TextEditingController(text: d['dosage'] ?? ''),
@@ -656,12 +700,12 @@ class _EtapeCtrl {
         lieuCtrl          = TextEditingController(text: d['lieu'] ?? ''),
         descCtrl          = TextEditingController(text: d['description'] ?? '');
 
-  Map<String, dynamic> toMap() => {
+  Map<String, dynamic> toMap({bool isBebes = false}) => {
     if (existingId != null) 'id': existingId,
     'type_acte':        typeActe,
     'offset_direction': direction,
     'jour_offset':      int.tryParse(offsetCtrl.text) ?? 0,
-    'age_min_semaines': int.tryParse(ageSemainesCtrl.text),
+    'age_min_semaines': isBebes ? int.tryParse(ageSemainesCtrl.text) : null,
     'produit':          produitCtrl.text.trim().isEmpty  ? null : produitCtrl.text.trim(),
     'dosage':           dosageCtrl.text.trim().isEmpty   ? null : dosageCtrl.text.trim(),
     'frequence':        frequence,
@@ -671,6 +715,7 @@ class _EtapeCtrl {
     'duree_jours':      int.tryParse(dureeJoursCtrl.text) ?? 1,
     'lieu':             lieuCtrl.text.trim().isEmpty ? null : lieuCtrl.text.trim(),
     'description':      descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+    'tranche_horaire':  trancheHoraire,
   };
 
   void dispose() {

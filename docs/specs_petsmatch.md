@@ -1771,4 +1771,203 @@ Phase 3 (suite)
 
 ---
 
+### 14.8 Vue Agenda / Calendrier mensuel (PLN01–PLN02)
+
+> **Contexte** : la vue "Planning du jour" existe. Il faut une vue calendrier mensuelle qui montre d'un coup d'œil les jours chargés, et la possibilité de voir les tâches dans l'agenda natif du téléphone.
+
+#### PLN01 — Vue calendrier mensuelle in-app
+
+**Écran "Agenda"** accessible depuis la navigation principale du planning (onglet ou bouton bascule Jour/Mois).
+
+**Vue mois :**
+```
+         Juin 2026
+Lu Ma Me Je Ve Sa Di
+         1  2  3  4  5  6  7
+          •     ••    •
+ 8  9  10 11 12 13 14
+••        •  •• •
+15 16 17 18 19 20 21
+•         •        ••
+```
+- Pastille colorée sous chaque jour avec tâches (couleur par type : 🟢 sanitaire, 🔵 nettoyage, 🟠 promenade)
+- Tap sur un jour → slide vers la vue "Planning du jour" de ce jour
+- Navigation mois précédent / suivant
+- Badge rouge si tâches en retard (date_prevue < aujourd'hui et statut = en_attente)
+
+**Données nécessaires :** requête Supabase des jours ayant des tâches pour le mois affiché :
+```sql
+SELECT date_prevue, type_acte, COUNT(*) as nb
+FROM plan_taches
+WHERE uid_eleveur = $uid
+  AND date_prevue BETWEEN $debut_mois AND $fin_mois
+  AND statut != 'fait'
+GROUP BY date_prevue, type_acte
+```
+
+**Codes feature :**
+- **PLN01** — Vue calendrier mensuelle Flutter (package `table_calendar` ou implémentation custom)
+- **PLN02** — Vue calendrier web Next.js (même logique, `react-big-calendar` ou custom)
+
+#### PLN02 — Synchronisation agenda natif (optionnel V2)
+
+- Export des tâches récurrentes vers Google Calendar / Apple Calendar (iCal `.ics`)
+- Format : événement par groupe de tâches, description = animaux concernés + protocole
+- Déclencheur : bouton "Exporter vers mon agenda" dans les paramètres du planning
+- Ne pas synchroniser les validations (sens unique : app → agenda)
+
+---
+
+### 14.9 Intégration Tâches ↔ Employés (PLN03–PLN04)
+
+> **Contexte** : les tâches de protocole (`plan_taches`) et les tâches manuelles sont deux systèmes séparés. L'employé doit voir tout au même endroit.
+
+#### PLN03 — Vue unifiée "Mes tâches" pour l'employé
+
+**Principe :** l'employé voit dans un seul écran :
+1. Ses tâches manuelles assignées (depuis le module tâches existant)
+2. Ses tâches de protocole assignées (`plan_taches` avec `assigned_to = uid_employe`)
+
+**Règles de fusion pour l'affichage :**
+```
+Regroupement par jour (comme la vue planning éleveur)
+  → Pour chaque jour : tâches manuelles + tâches protocole, triées par tranche_horaire
+  → Section "Matin", "Midi", "Après-midi", "Soir", puis "Sans horaire"
+  → Carte commune : emoji + label + type + animal(s) si protocole
+  → Bouton "Fait" unique quelle que soit la source
+```
+
+**Validation depuis la vue employé :**
+- Tâche manuelle → update dans la table `taches` (ou équivalent existant)
+- Tâche protocole → `PlanningService.validerTache()` comme actuellement
+
+**Accès :** l'onglet "Planning" dans `EmployeurDetailPage` devient "Tâches" et affiche les deux sources fusionnées.
+
+**Codes feature :**
+- **PLN03** — Fusion tâches manuelles + protocole dans la vue employé (Flutter)
+- **PLN04** — Même vue côté employé connecté à son propre compte (son dashboard personnel)
+
+#### PLN04 — Notification employé pour tâche assignée
+
+- Quand l'éleveur assigne une tâche de protocole → notification push à l'employé
+- Rappel à 7h chaque matin pour les tâches du jour assignées
+- Badge sur l'icône de l'app (nb de tâches en attente pour aujourd'hui)
+
+---
+
+### 14.10 Export & Impression des Protocoles (PLN05–PLN07)
+
+> **Contexte** : en cas de contrôle sanitaire (DDPP, vétérinaire officiel), l'éleveur doit pouvoir présenter ses protocoles et ses registres de soins de manière lisible même sans téléphone.
+
+#### PLN05 — Export PDF d'un protocole (template)
+
+**Déclencheur :** bouton "Imprimer / Exporter" sur la page de détail d'un template.
+
+**Contenu du PDF :**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PROTOCOLE : Vermifuge portée standard chien
+Élevage : [Nom de l'élevage] — [Date d'export]
+Espèce cible : Chien | Cible : Tout le cheptel
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ÉTAPES DU PROTOCOLE
+┌──────────────────┬────────────────────┬──────────┬──────────┐
+│ Timing           │ Acte               │ Produit  │ Dosage   │
+├──────────────────┼────────────────────┼──────────┼──────────┤
+│ J+0              │ Vermifuge          │ Milbemax │ 1cp/5kg  │
+│ J+21             │ Rappel Vermifuge   │ Milbemax │ 1cp/5kg  │
+│ Chaque lundi     │ Promenade          │ —        │ —        │
+│ (52 semaines)    │                    │          │          │
+└──────────────────┴────────────────────┴──────────┴──────────┘
+
+Créé le : 01/06/2026 | Dernière mise à jour : 15/06/2026
+```
+
+**Stack Flutter :** package `pdf` + `printing` (déjà largement utilisé dans l'écosystème Flutter).
+
+```dart
+// Exemple d'usage
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+
+final pdf = pw.Document();
+pdf.addPage(pw.Page(build: (ctx) => pw.Column(children: [...])));
+await Printing.layoutPdf(onLayout: (format) => pdf.save());
+```
+
+#### PLN06 — Export PDF du planning du jour / de la semaine
+
+**Déclencheur :** bouton "Imprimer" dans la vue planning jour ou semaine.
+
+**Contenu :**
+```
+PLANNING DU JOUR — Lundi 16 juin 2026
+Élevage : [Nom]
+
+🌅 MATIN
+☐  🦮 Promenade — Rex, Fido, Utha, Bella
+☐  💊 Vermifuge (Milbemax® 1cp/5kg) — Luna  Jour 1/4
+
+☀️ MIDI
+☐  🧹 Nettoyage Chenil n°1
+
+🌙 SOIR
+☐  🦮 Promenade — Rex, Fido, Utha, Bella
+
+──────────────────────────────────────────────
+Total : 4 tâches | Imprimé le 16/06/2026 07:45
+Signature soigneur : ___________________
+```
+
+Cases à cocher imprimables → le soigneur coche manuellement si pas de téléphone.
+
+**Vue semaine :** une page par jour, ou tableau 7 colonnes condensé.
+
+#### PLN07 — Export PDF du registre de traitements (pour contrôle DDPP)
+
+**Déclencheur :** bouton "Exporter le registre" dans la section planning ou registre sanitaire.
+
+**Période sélectionnable :** ce mois / les 3 derniers mois / l'année en cours / période personnalisée.
+
+**Contenu :**
+```
+REGISTRE DE TRAITEMENTS SANITAIRES
+Élevage : [Nom] | SIRET : [XXX] | Période : 01/01/2026 – 15/06/2026
+
+Date       Animal   Traitement        Produit      Dosage   Intervenant   Notes
+──────────────────────────────────────────────────────────────────────────────
+02/01/2026 Rex      Vermifuge         Milbemax®    1cp/5kg  A. Bégrand    —
+02/01/2026 Fido     Vermifuge         Milbemax®    1cp/5kg  A. Bégrand    —
+15/01/2026 Tous     Antiparasitaire   Frontline®   1 pipette A. Bégrand   —
+…
+
+Nombre d'actes : 47 | Document généré le 15/06/2026 à 10:23
+```
+
+Ce document est conforme au format attendu lors d'un contrôle DDPP (Direction Départementale de la Protection des Populations).
+
+**SQL source :** table `registre_sanitaire` (déjà existante) + jointure `animaux`.
+
+#### Codes feature résumé
+
+| Code  | Feature | Surface | Priorité |
+|-------|---------|---------|---------|
+| PLN01 | Vue calendrier mensuelle | App Flutter | V1 |
+| PLN02 | Sync agenda natif (iCal) | App Flutter | V2 |
+| PLN03 | Vue unifiée tâches employé | App Flutter | V1 |
+| PLN04 | Notifications tâches employé | App + Push | V1 |
+| PLN05 | Export PDF protocole (template) | App + Web | V1 |
+| PLN06 | Export PDF planning jour/semaine | App + Web | V1 |
+| PLN07 | Export PDF registre DDPP | App + Web | V1 |
+
+#### Dépendances
+
+- PLN05/06/07 → package Flutter `pdf` + `printing` à ajouter dans `pubspec.yaml`
+- PLN03 → nécessite d'identifier la table des tâches manuelles existantes
+- PLN07 → données issues de `registre_sanitaire` (déjà alimenté par `validerTache`)
+- PLN01 → peut utiliser `table_calendar` (pub.dev) ou un composant custom
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

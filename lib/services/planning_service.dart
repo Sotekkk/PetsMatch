@@ -82,6 +82,7 @@ class PlanningService {
         'is_recurrent':     e.value['is_recurrent'] ?? false,
         'lieu':             e.value['lieu'],
         'description':      e.value['description'],
+        'tranche_horaire':  e.value['tranche_horaire'],
         'ordre':            e.key,
       }).toList(),
     );
@@ -100,8 +101,8 @@ class PlanningService {
     required DateTime dateReference,
     String? referenceId,
     String? referenceLabel,
-    // Pour cible individuel : passer l'animal_id
-    String? forcedAnimalId,
+    // Pour cible individuel : liste d'animal_id sélectionnés
+    List<String>? forcedAnimalIds,
   }) async {
     final cibleType    = template['cible_type']  as String? ?? 'individuel';
     final refEvent     = template['reference_event'] as String? ?? 'manuel';
@@ -114,7 +115,7 @@ class PlanningService {
       cibleType: cibleType,
       refEvent: refEvent,
       espece: espece,
-      forcedAnimalId: forcedAnimalId,
+      forcedAnimalIds: forcedAnimalIds,
       dateReference: dateReference,
     );
 
@@ -122,6 +123,8 @@ class PlanningService {
 
     // Créer un plan actif par cible (ou un seul plan si cheptel)
     int tachesCount = 0;
+    final isBebes = cibleType == 'bebes';
+
     if (cibleType == 'cheptel' || cibleType == 'males' || cibleType == 'femelles') {
       // Un seul plan pour le groupe
       final planId = await _createPlan(uid: uid, template: template, dateReference: dateReference, referenceId: referenceId, referenceLabel: referenceLabel ?? _cibleLabel(cibleType, espece));
@@ -129,12 +132,13 @@ class PlanningService {
         tachesCount += await _generateTaches(
           planId: planId, uid: uid, etapes: etapes,
           dateBase: cible['date_ref'] as DateTime? ?? dateReference,
+          isBebes: isBebes,
           animalId: cible['animal_id'] as String?,
           animalNom: cible['animal_nom'] as String?,
         );
       }
     } else {
-      // Un plan par animal (gestantes, bébés, individuel)
+      // Un plan par animal (gestantes, bébés, individuel, allaitantes)
       for (final cible in cibles) {
         final dateBase = cible['date_ref'] as DateTime? ?? dateReference;
         final planId = await _createPlan(
@@ -146,6 +150,7 @@ class PlanningService {
         tachesCount += await _generateTaches(
           planId: planId, uid: uid, etapes: etapes,
           dateBase: dateBase,
+          isBebes: isBebes,
           animalId: cible['animal_id'] as String?,
           animalNom: cible['animal_nom'] as String?,
         );
@@ -160,15 +165,18 @@ class PlanningService {
     required String cibleType,
     required String refEvent,
     String? espece,
-    String? forcedAnimalId,
+    List<String>? forcedAnimalIds,
     required DateTime dateReference,
   }) async {
     switch (cibleType) {
       case 'individuel':
-        if (forcedAnimalId != null) {
-          final rows = await _supa.from('animaux').select('id, nom').eq('id', forcedAnimalId).limit(1);
-          final a = (rows as List).isNotEmpty ? rows.first as Map<String, dynamic> : {};
-          return [{ 'animal_id': forcedAnimalId, 'animal_nom': a['nom'] ?? '', 'date_ref': dateReference }];
+        if (forcedAnimalIds != null && forcedAnimalIds.isNotEmpty) {
+          final rows = await _supa.from('animaux').select('id, nom').inFilter('id', forcedAnimalIds);
+          return (rows as List).map((a) => {
+            'animal_id': a['id'] as String?,
+            'animal_nom': a['nom'] as String?,
+            'date_ref': dateReference,
+          }).toList();
         }
         return [{ 'animal_id': null, 'animal_nom': null, 'date_ref': dateReference }];
 
@@ -229,6 +237,29 @@ class PlanningService {
             }).toList();
       }
 
+      case 'allaitantes': {
+        // Femelles dont la mise bas date de moins de 8 semaines
+        final cutoff = DateTime.now().subtract(const Duration(days: 56)).toIso8601String().split('T').first;
+        final gestRows = await _supa.from('gestations')
+            .select('animal_id, date_mise_bas, animaux(nom, espece)')
+            .eq('uid_eleveur', uid)
+            .not('date_mise_bas', 'is', null)
+            .gte('date_mise_bas', cutoff);
+        return (gestRows as List).where((g) {
+          if (espece == null || espece.isEmpty) return true;
+          final anim = g['animaux'] as Map<String, dynamic>? ?? {};
+          return anim['espece'] == espece;
+        }).map((g) {
+          final dateMiseBas = DateTime.tryParse(g['date_mise_bas'] as String? ?? '') ?? dateReference;
+          final anim = g['animaux'] as Map<String, dynamic>? ?? {};
+          return {
+            'animal_id': g['animal_id'] as String?,
+            'animal_nom': anim['nom'] as String?,
+            'date_ref': dateMiseBas,
+          };
+        }).toList();
+      }
+
       default:
         return [{ 'animal_id': null, 'animal_nom': null, 'date_ref': dateReference }];
     }
@@ -259,6 +290,7 @@ class PlanningService {
     required String uid,
     required List<Map<String, dynamic>> etapes,
     required DateTime dateBase,
+    required bool isBebes,
     String? animalId,
     String? animalNom,
   }) async {
@@ -277,60 +309,62 @@ class PlanningService {
       final lieu           = etape['lieu']?.toString();
       final desc           = etape['description']?.toString() ?? '';
       final ageSemaines    = etape['age_min_semaines'] as int?;
+      final trancheHoraire = etape['tranche_horaire'] as String?;
 
       // Calculer la date de départ de l'étape
+      final sign = direction == 'avant' ? -1 : 1;
       DateTime startDate;
-      if (ageSemaines != null) {
-        // Pour les bébés : date_naissance + age_min_semaines
+      if (isBebes && ageSemaines != null) {
+        // Mode bébé uniquement : offset calculé depuis la naissance par âge en semaines
         startDate = dateBase.add(Duration(days: ageSemaines * 7));
       } else {
-        final sign = direction == 'avant' ? -1 : 1;
         startDate = dateBase.add(Duration(days: sign * offsetJours));
       }
 
-      final labelBase = _buildLabel(typeActe, produit, dosage, desc, animalNom);
+      final labelBase = _buildLabel(typeActe, produit, dosage, desc);
 
       switch (frequence) {
         case 'ponctuel':
-          // Multi-jours possibles (ex: vermifuge 4 jours consécutifs)
           for (int jour = 1; jour <= dureeJours; jour++) {
             final date = startDate.add(Duration(days: jour - 1));
-            taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId,
+            taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId, animalNom: animalNom,
               label: dureeJours > 1 ? '$labelBase — Jour $jour/$dureeJours' : labelBase,
-              date: date, jour: jour, total: dureeJours, typeActe: typeActe, lieu: lieu));
+              date: date, jour: jour, total: dureeJours, typeActe: typeActe, lieu: lieu,
+              trancheHoraire: trancheHoraire));
           }
 
         case 'quotidien':
           final totalJours = dureeSemanines * 7;
           for (int jour = 1; jour <= totalJours; jour++) {
             final date = startDate.add(Duration(days: jour - 1));
-            taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId,
+            taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId, animalNom: animalNom,
               label: '$labelBase — Jour $jour/$totalJours',
-              date: date, jour: jour, total: totalJours, typeActe: typeActe, lieu: lieu));
+              date: date, jour: jour, total: totalJours, typeActe: typeActe, lieu: lieu,
+              trancheHoraire: trancheHoraire));
           }
 
         case 'hebdomadaire':
-          // N fois par semaine pendant dureeSemanines semaines
-          // Répartir sur la semaine : lundi, mercredi, vendredi pour 3x ; lundi, jeudi pour 2x ; lundi pour 1x
           final offsets = _weekOffsets(nbFoisSemaine);
           final totalOccurrences = nbFoisSemaine * dureeSemanines;
           int occurrence = 1;
           for (int semaine = 0; semaine < dureeSemanines; semaine++) {
             for (final dayOff in offsets) {
               final date = startDate.add(Duration(days: semaine * 7 + dayOff));
-              taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId,
+              taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId, animalNom: animalNom,
                 label: '$labelBase (${occurrence}e/${totalOccurrences}e)',
-                date: date, jour: occurrence, total: totalOccurrences, typeActe: typeActe, lieu: lieu));
+                date: date, jour: occurrence, total: totalOccurrences, typeActe: typeActe, lieu: lieu,
+                trancheHoraire: trancheHoraire));
               occurrence++;
             }
           }
 
         case 'mensuel':
-          for (int mois = 0; mois < dureeSemanines; mois++) {  // dureeSemanines = dureeeMois ici
+          for (int mois = 0; mois < dureeSemanines; mois++) {
             final date = DateTime(startDate.year, startDate.month + mois, startDate.day);
-            taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId,
+            taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId, animalNom: animalNom,
               label: '$labelBase (mois ${mois + 1}/$dureeSemanines)',
-              date: date, jour: mois + 1, total: dureeSemanines, typeActe: typeActe, lieu: lieu));
+              date: date, jour: mois + 1, total: dureeSemanines, typeActe: typeActe, lieu: lieu,
+              trancheHoraire: trancheHoraire));
           }
       }
     }
@@ -343,19 +377,22 @@ class PlanningService {
 
   static Map<String, dynamic> _tache({
     required String planId, required Map<String, dynamic> etape, required String uid,
-    String? animalId, required String label, required DateTime date,
+    String? animalId, String? animalNom, required String label, required DateTime date,
     required int jour, required int total, required String typeActe, String? lieu,
+    String? trancheHoraire,
   }) => {
     'plan_id':         planId,
     'etape_id':        etape['id'],
     'uid_eleveur':     uid,
     if (animalId != null) 'animal_id': animalId,
+    if (animalNom != null && animalNom.isNotEmpty) 'animal_nom': animalNom,
     'label':           label,
     'type_acte':       typeActe.isEmpty ? null : typeActe,
     'date_prevue':     date.toIso8601String().split('T').first,
     'jour_traitement': jour,
     'total_jours':     total,
     if (lieu != null && lieu.isNotEmpty) 'lieu': lieu,
+    if (trancheHoraire != null) 'tranche_horaire': trancheHoraire,
   };
 
   // ── Tâches du jour ───────────────────────────────────────────────────────────
@@ -363,7 +400,7 @@ class PlanningService {
     final dateStr = date.toIso8601String().split('T').first;
     final rows = await _supa
         .from('plan_taches')
-        .select('*, plans_actifs(reference_label, type_declencheur), animaux(nom, espece)')
+        .select('*, plans_actifs(reference_label, type_declencheur)')
         .eq('uid_eleveur', uid)
         .eq('date_prevue', dateStr)
         .neq('statut', 'fait')
@@ -389,6 +426,7 @@ class PlanningService {
     required String validateurUid,
     String? notes,
     required Map<String, dynamic> tacheData,
+    bool insertRegistre = false,
   }) async {
     await _supa.from('plan_taches').update({
       'statut':           'fait',
@@ -397,18 +435,62 @@ class PlanningService {
       if (notes != null && notes.isNotEmpty) 'notes_validation': notes,
     }).eq('id', tacheId);
 
-    // Créer l'entrée registre si acte sanitaire
-    final typeActe = tacheData['type_acte']?.toString() ?? '';
-    final animalId = tacheData['animal_id']?.toString();
-    if (_isSanitaire(typeActe) && animalId != null && animalId.isNotEmpty) {
-      final dateActe = DateTime.tryParse(tacheData['date_prevue']?.toString() ?? '') ?? DateTime.now();
-      await RegistreHelper.writeActe(
-        animalId: animalId,
-        typeActe: typeActe,
-        dateActe: dateActe,
-        description: tacheData['label'] ?? '',
-        intervenant: '',
-      );
+    // Insérer dans le registre uniquement si demandé explicitement
+    if (insertRegistre) {
+      final typeActe = tacheData['type_acte']?.toString() ?? '';
+      final animalId = tacheData['animal_id']?.toString();
+      if (animalId != null && animalId.isNotEmpty) {
+        final dateActe = DateTime.tryParse(tacheData['date_prevue']?.toString() ?? '') ?? DateTime.now();
+        await RegistreHelper.writeActe(
+          animalId: animalId,
+          typeActe: typeActe,
+          dateActe: dateActe,
+          description: tacheData['label'] ?? '',
+          intervenant: '',
+        );
+      }
+    }
+  }
+
+  // ── Supprimer (cette occurrence / suivantes / toutes) ───────────────────────
+  static Future<void> supprimerTaches({
+    required List<String> tacheIds,
+    required String scope, // 'cette' | 'suivantes' | 'toutes'
+    String? etapeId,
+    String? uid,
+    String? dateRef, // YYYY-MM-DD, requis pour 'suivantes'
+  }) async {
+    if (scope == 'cette') {
+      await _supa.from('plan_taches').delete().inFilter('id', tacheIds);
+    } else if (scope == 'suivantes') {
+      await _supa.from('plan_taches').delete()
+          .eq('etape_id', etapeId!).eq('uid_eleveur', uid!)
+          .gte('date_prevue', dateRef!).neq('statut', 'fait');
+    } else {
+      await _supa.from('plan_taches').delete()
+          .eq('etape_id', etapeId!).eq('uid_eleveur', uid!).neq('statut', 'fait');
+    }
+  }
+
+  // ── Modifier tranche_horaire (cette occurrence / suivantes / toutes) ────────
+  static Future<void> modifierTranche({
+    required List<String> tacheIds,
+    required String scope,
+    required String? tranche,
+    String? etapeId,
+    String? uid,
+    String? dateRef,
+  }) async {
+    final update = {'tranche_horaire': tranche};
+    if (scope == 'cette') {
+      await _supa.from('plan_taches').update(update).inFilter('id', tacheIds);
+    } else if (scope == 'suivantes') {
+      await _supa.from('plan_taches').update(update)
+          .eq('etape_id', etapeId!).eq('uid_eleveur', uid!)
+          .gte('date_prevue', dateRef!);
+    } else {
+      await _supa.from('plan_taches').update(update)
+          .eq('etape_id', etapeId!).eq('uid_eleveur', uid!);
     }
   }
 
@@ -417,7 +499,7 @@ class PlanningService {
     final newDate = dateActuelle.add(const Duration(days: 1));
     final newDateStr = newDate.toIso8601String().split('T').first;
 
-    final row = (await _supa.from('plan_taches').select().eq('id', tacheId).single()) as Map<String, dynamic>;
+    final row = await _supa.from('plan_taches').select().eq('id', tacheId).single();
     await _supa.from('plan_taches').update({ 'statut': 'reporte' }).eq('id', tacheId);
     final newRow = Map<String, dynamic>.from(row)
       ..remove('id')
@@ -444,17 +526,14 @@ class PlanningService {
     _ => List.generate(nbFois, (i) => i),
   };
 
-  static bool _isSanitaire(String type) =>
-      ['vermifuge', 'vaccination', 'antiparasitaire', 'traitement', 'visite'].contains(type);
-
-  static String _buildLabel(String typeActe, String produit, String dosage, String desc, String? animalNom) {
+  static String _buildLabel(String typeActe, String produit, String dosage, String desc) {
+    // Animal name stored separately in 'animal_nom' column — not embedded in label
     final parts = <String>[
       if (typeActe.isNotEmpty) _acteLabel(typeActe),
       if (produit.isNotEmpty) produit,
       if (dosage.isNotEmpty) '($dosage)',
     ];
     if (parts.isEmpty && desc.isNotEmpty) parts.add(desc);
-    if (animalNom != null && animalNom.isNotEmpty) parts.add('— $animalNom');
     return parts.join(' ');
   }
 
@@ -477,6 +556,8 @@ class PlanningService {
     'nettoyage'       => 'Nettoyage',
     'promenade'       => 'Promenade',
     'socialisation'   => 'Socialisation',
+    'toilettage'      => 'Toilettage',
+    'peignage'        => 'Peignage',
     _                 => type,
   };
 }

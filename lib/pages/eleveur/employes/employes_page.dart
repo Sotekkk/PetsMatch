@@ -42,6 +42,7 @@ import 'package:intl/intl.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart'
     show speciesColor, speciesIcon, speciesLabel, kSpeciesData;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:PetsMatch/services/planning_service.dart';
 
 // ─── Page principale ──────────────────────────────────────────────────────────
 
@@ -1656,18 +1657,68 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
   static const _dark = Color(0xFF1F2A2E);
   static const _bg   = Color(0xFFF8F8F6);
 
-  bool _loadingTaches = true;
-  List<Map<String, dynamic>> _taches = [];
+  bool _loadingTaches     = true;
+  bool _loadingPlanTaches = true;
+  List<Map<String, dynamic>> _taches     = [];
+  List<Map<String, dynamic>> _planTaches = [];
 
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this);
+    _tab = TabController(length: 3, vsync: this);
     _loadTaches();
+    _loadPlanTaches();
   }
 
   @override
   void dispose() { _tab.dispose(); super.dispose(); }
+
+  Future<void> _loadPlanTaches() async {
+    if (!mounted) return;
+    setState(() => _loadingPlanTaches = true);
+    try {
+      final rows = await _supa
+          .from('plan_taches')
+          .select('*, plans_actifs(reference_label)')
+          .eq('uid_eleveur', widget.eleveurUid)
+          .eq('assigned_to', _uid)
+          .neq('statut', 'fait')
+          .order('date_prevue');
+      if (mounted) setState(() {
+        _planTaches = List<Map<String, dynamic>>.from(rows);
+        _loadingPlanTaches = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingPlanTaches = false);
+    }
+  }
+
+  Future<void> _marquerPlanTacheFait(Map<String, dynamic> t) async {
+    try {
+      await PlanningService.validerTache(
+        t['id'] as String,
+        validateurUid: _uid,
+        tacheData: t,
+        insertRegistre: false,
+      );
+      _loadPlanTaches();
+      final moi = await _supa.from('users')
+          .select('firstname, lastname, name_elevage, is_elevage')
+          .eq('uid', _uid).maybeSingle();
+      final nomEmploye = moi == null ? 'Votre employé'
+          : moi['is_elevage'] == true
+              ? (moi['name_elevage'] ?? 'Votre employé')
+              : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim();
+      await _supa.from('notifications').insert({
+        'uid':   widget.eleveurUid,
+        'type':  'tache_validee',
+        'title': 'Tâche de protocole validée ✓',
+        'body':  '$nomEmploye a terminé : ${t['label']}',
+        'data':  {'tacheId': t['id'].toString(), 'eleveurUid': widget.eleveurUid},
+        'read':  false,
+      });
+    } catch (_) {}
+  }
 
   Future<void> _loadTaches() async {
     if (!mounted) return;
@@ -1736,19 +1787,85 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
           unselectedLabelColor: Colors.grey,
           indicatorColor: _teal,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
-          tabs: const [Tab(text: 'Mes Tâches'), Tab(text: 'Animaux')],
+          tabs: const [Tab(text: 'Mes Tâches'), Tab(text: 'Planning'), Tab(text: 'Animaux')],
         ),
       ),
       body: TabBarView(
         controller: _tab,
         children: [
           _buildTachesTab(),
+          _buildPlanningTab(),
           _AnimauxEmployeTab(
             eleveurUid: widget.eleveurUid,
             canEditAnimaux: widget.permissions['modifier_animaux'] == true,
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPlanningTab() {
+    if (_loadingPlanTaches) return const Center(child: CircularProgressIndicator(color: _teal));
+    return RefreshIndicator(
+      onRefresh: _loadPlanTaches,
+      color: _teal,
+      child: _planTaches.isEmpty
+          ? _empty('Aucune tâche de protocole', 'Votre responsable ne vous a assigné aucune tâche de protocole.')
+          : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+              itemCount: _planTaches.length,
+              itemBuilder: (_, i) {
+                final t       = _planTaches[i];
+                final date    = DateTime.tryParse(t['date_prevue'] as String? ?? '');
+                final dateStr = date != null ? DateFormat('dd MMM', 'fr_FR').format(date) : '';
+                final ref     = (t['plans_actifs'] as Map<String, dynamic>?)?['reference_label'] as String?;
+                final typeActe = t['type_acte']?.toString() ?? '';
+                final emoji = switch (typeActe) {
+                  'vermifuge'       => '💊',
+                  'vaccination'     => '💉',
+                  'antiparasitaire' => '🛡️',
+                  'traitement'      => '🩺',
+                  'visite'          => '🏥',
+                  'toilettage'      => '🛁',
+                  'peignage'        => '🪮',
+                  'nettoyage'       => '🧹',
+                  'promenade'       => '🦮',
+                  'socialisation'   => '🐾',
+                  _                 => '📋',
+                };
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+                  ),
+                  child: Row(children: [
+                    Container(
+                      width: 40, height: 40,
+                      decoration: BoxDecoration(color: _teal.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 18))),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(t['label'] as String? ?? '',
+                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14, color: _dark)),
+                      const SizedBox(height: 4),
+                      Wrap(spacing: 6, children: [
+                        if (dateStr.isNotEmpty) _Badge(text: '📅 $dateStr', bg: const Color(0xFFEEF5EA), fg: _teal),
+                        if (ref != null) _Badge(text: '🐾 $ref', bg: const Color(0xFFEFF6FF), fg: const Color(0xFF1D4ED8)),
+                      ]),
+                    ])),
+                    TextButton(
+                      onPressed: () => _marquerPlanTacheFait(t),
+                      style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
+                      child: const Text('Fait ✓', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal, fontWeight: FontWeight.w600)),
+                    ),
+                  ]),
+                );
+              },
+            ),
     );
   }
 

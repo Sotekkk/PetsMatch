@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS plan_templates (
   espece          TEXT,
   description     TEXT,
   cible_type      TEXT NOT NULL DEFAULT 'individuel'
-                  CHECK (cible_type IN ('individuel','cheptel','males','femelles','gestantes','bebes')),
+                  CHECK (cible_type IN ('individuel','cheptel','males','femelles','gestantes','allaitantes','bebes')),
   reference_event TEXT NOT NULL DEFAULT 'manuel'
                   CHECK (reference_event IN ('manuel','saillie','mise_bas','naissance','age_semaines','date_fixe')),
   lieu            TEXT,
