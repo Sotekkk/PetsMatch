@@ -29,8 +29,12 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
   Future<void> _load() async {
     if (_uid == null) return;
     setState(() => _loading = true);
-    final rows = await PlanningService.getTachesJour(_uid!, _selectedDate);
-    if (mounted) setState(() { _taches = rows; _loading = false; });
+    try {
+      final rows = await PlanningService.getTachesJour(_uid!, _selectedDate);
+      if (mounted) setState(() { _taches = rows; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() { _taches = []; _loading = false; });
+    }
   }
 
   Future<void> _valider(Map<String, dynamic> t, {String? notes}) async {

@@ -158,7 +158,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           else
             TextButton(
               onPressed: _save,
-              child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', color: _green, fontWeight: FontWeight.w700, fontSize: 15)),
+              child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
             ),
         ],
       ),

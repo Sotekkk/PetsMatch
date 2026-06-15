@@ -27,8 +27,12 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
   Future<void> _load() async {
     if (_uid == null) return;
     setState(() => _loading = true);
-    final rows = await PlanningService.loadTemplates(_uid!);
-    if (mounted) setState(() { _templates = rows; _loading = false; });
+    try {
+      final rows = await PlanningService.loadTemplates(_uid!);
+      if (mounted) setState(() { _templates = rows; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() { _templates = []; _loading = false; });
+    }
   }
 
   Future<void> _delete(String id, String nom) async {

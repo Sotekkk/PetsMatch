@@ -119,32 +119,17 @@ CREATE INDEX IF NOT EXISTS idx_plans_actifs_eleveur   ON plans_actifs(uid_eleveu
 CREATE INDEX IF NOT EXISTS idx_plan_taches_date       ON plan_taches(uid_eleveur, date_prevue, statut);
 CREATE INDEX IF NOT EXISTS idx_plan_taches_plan       ON plan_taches(plan_id);
 
--- ── RLS ───────────────────────────────────────────────────────────────────────
-ALTER TABLE plan_templates       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE plan_template_etapes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE plans_actifs         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE plan_taches          ENABLE ROW LEVEL SECURITY;
+-- ── RLS : désactivé (l'app utilise Firebase Auth + clé anon Supabase sans JWT) ──
+-- La sécurité est assurée par le filtrage uid_eleveur dans chaque requête.
+-- Même pattern que le reste de l'app (animaux, registre, etc.)
+ALTER TABLE plan_templates       DISABLE ROW LEVEL SECURITY;
+ALTER TABLE plan_template_etapes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE plans_actifs         DISABLE ROW LEVEL SECURITY;
+ALTER TABLE plan_taches          DISABLE ROW LEVEL SECURITY;
 
--- Drop before recreate (évite "already exists")
-DROP POLICY IF EXISTS "owner_templates"    ON plan_templates;
-DROP POLICY IF EXISTS "owner_etapes"       ON plan_template_etapes;
-DROP POLICY IF EXISTS "owner_plans"        ON plans_actifs;
-DROP POLICY IF EXISTS "owner_taches"       ON plan_taches;
+-- Nettoyer les policies précédentes si elles existent
+DROP POLICY IF EXISTS "owner_templates"     ON plan_templates;
+DROP POLICY IF EXISTS "owner_etapes"        ON plan_template_etapes;
+DROP POLICY IF EXISTS "owner_plans"         ON plans_actifs;
+DROP POLICY IF EXISTS "owner_taches"        ON plan_taches;
 DROP POLICY IF EXISTS "employe_taches_read" ON plan_taches;
-
-CREATE POLICY "owner_templates" ON plan_templates
-  FOR ALL USING (uid_eleveur = auth.uid()::text);
-
-CREATE POLICY "owner_etapes" ON plan_template_etapes
-  FOR ALL USING (
-    template_id IN (SELECT id FROM plan_templates WHERE uid_eleveur = auth.uid()::text)
-  );
-
-CREATE POLICY "owner_plans" ON plans_actifs
-  FOR ALL USING (uid_eleveur = auth.uid()::text);
-
-CREATE POLICY "owner_taches" ON plan_taches
-  FOR ALL USING (uid_eleveur = auth.uid()::text);
-
-CREATE POLICY "employe_taches_read" ON plan_taches
-  FOR SELECT USING (assigned_to = auth.uid()::text);
