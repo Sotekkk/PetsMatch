@@ -74,9 +74,44 @@ CREATE TABLE IF NOT EXISTS plan_taches (
   created_at       TIMESTAMPTZ DEFAULT now()
 );
 
--- ── Colonnes ajoutées lors de la v2 (idempotent) ─────────────────────────────
-ALTER TABLE plan_templates       ADD COLUMN IF NOT EXISTS lieu         TEXT;
-ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS is_recurrent BOOLEAN NOT NULL DEFAULT FALSE;
+-- ── Colonnes manquantes si table créée depuis une ancienne version (idempotent) ─
+-- plan_templates
+ALTER TABLE plan_templates ADD COLUMN IF NOT EXISTS espece          TEXT;
+ALTER TABLE plan_templates ADD COLUMN IF NOT EXISTS description     TEXT;
+ALTER TABLE plan_templates ADD COLUMN IF NOT EXISTS cible_type      TEXT NOT NULL DEFAULT 'individuel';
+ALTER TABLE plan_templates ADD COLUMN IF NOT EXISTS reference_event TEXT NOT NULL DEFAULT 'manuel';
+ALTER TABLE plan_templates ADD COLUMN IF NOT EXISTS lieu            TEXT;
+
+-- plan_template_etapes
+ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS offset_direction  TEXT NOT NULL DEFAULT 'apres';
+ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS jour_offset       INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS age_min_semaines  INTEGER;
+ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS produit           TEXT;
+ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS dosage            TEXT;
+ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS frequence         TEXT NOT NULL DEFAULT 'ponctuel';
+ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS nb_fois_semaine   INTEGER DEFAULT 1;
+ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS duree_semaines    INTEGER DEFAULT 1;
+ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS duree_jours       INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS is_recurrent      BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS lieu              TEXT;
+ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS description       TEXT;
+ALTER TABLE plan_template_etapes ADD COLUMN IF NOT EXISTS ordre             INTEGER NOT NULL DEFAULT 0;
+
+-- plans_actifs
+ALTER TABLE plans_actifs ADD COLUMN IF NOT EXISTS reference_id    TEXT;
+ALTER TABLE plans_actifs ADD COLUMN IF NOT EXISTS reference_label TEXT;
+
+-- plan_taches
+ALTER TABLE plan_taches ADD COLUMN IF NOT EXISTS portee_id        TEXT;
+ALTER TABLE plan_taches ADD COLUMN IF NOT EXISTS box_id           TEXT;
+ALTER TABLE plan_taches ADD COLUMN IF NOT EXISTS type_acte        TEXT;
+ALTER TABLE plan_taches ADD COLUMN IF NOT EXISTS jour_traitement  INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE plan_taches ADD COLUMN IF NOT EXISTS total_jours      INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE plan_taches ADD COLUMN IF NOT EXISTS lieu             TEXT;
+ALTER TABLE plan_taches ADD COLUMN IF NOT EXISTS assigned_to      TEXT;
+ALTER TABLE plan_taches ADD COLUMN IF NOT EXISTS valide_par       TEXT;
+ALTER TABLE plan_taches ADD COLUMN IF NOT EXISTS valide_at        TIMESTAMPTZ;
+ALTER TABLE plan_taches ADD COLUMN IF NOT EXISTS notes_validation TEXT;
 
 -- ── Index ─────────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_plan_templates_eleveur ON plan_templates(uid_eleveur);

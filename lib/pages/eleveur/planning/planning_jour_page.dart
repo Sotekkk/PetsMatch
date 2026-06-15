@@ -81,7 +81,7 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(
-        backgroundColor: _dark,
+        backgroundColor: _green,
         foregroundColor: Colors.white,
         title: const Text('Planning', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
@@ -163,7 +163,7 @@ class _DateStrip extends StatelessWidget {
     final days = List.generate(7, (i) => today.subtract(Duration(days: 2)).add(Duration(days: i)));
 
     return Container(
-      color: const Color(0xFF1F2A2E),
+      color: const Color(0xFF0C5C6C),
       height: 72,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,

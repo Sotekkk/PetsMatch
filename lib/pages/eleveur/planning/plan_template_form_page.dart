@@ -16,7 +16,6 @@ class PlanTemplateFormPage extends StatefulWidget {
 
 class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   static const _green = Color(0xFF0C5C6C);
-  static const _dark  = Color(0xFF1F2A2E);
 
   final _nomCtrl         = TextEditingController();
   final _descCtrl        = TextEditingController();
@@ -147,7 +146,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(
-        backgroundColor: _dark,
+        backgroundColor: _green,
         foregroundColor: Colors.white,
         title: Text(
           isEdit ? 'Modifier le protocole' : 'Nouveau protocole',
@@ -446,7 +445,7 @@ class _EtapeCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Expanded(child: Text('jours $refLabel', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6E9E57), fontWeight: FontWeight.w600))),
+                    Expanded(child: Text('jours $refLabel', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF0C5C6C), fontWeight: FontWeight.w600))),
                   ]),
                 ],
               ],
@@ -605,7 +604,7 @@ class _EtapeCard extends StatelessWidget {
     labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12),
     hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400),
     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF6E9E57))),
+    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF0C5C6C))),
     contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
     filled: true,
     fillColor: Colors.white,
@@ -732,8 +731,8 @@ class _Chip extends StatelessWidget {
       duration: const Duration(milliseconds: 130),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: active ? const Color(0xFF6E9E57) : Colors.white,
-        border: Border.all(color: active ? const Color(0xFF6E9E57) : Colors.grey.shade300),
+        color: active ? const Color(0xFF0C5C6C) : Colors.white,
+        border: Border.all(color: active ? const Color(0xFF0C5C6C) : Colors.grey.shade300),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text('$emoji $label', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: active ? Colors.white : const Color(0xFF1F2A2E))),
@@ -755,7 +754,7 @@ class _RadioTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
         color: selected ? const Color(0xFFE0F2F1) : const Color(0xFFF8F8F6),
-        border: Border.all(color: selected ? const Color(0xFF6E9E57) : Colors.grey.shade200, width: selected ? 1.5 : 1),
+        border: Border.all(color: selected ? const Color(0xFF0C5C6C) : Colors.grey.shade200, width: selected ? 1.5 : 1),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -769,7 +768,7 @@ class _RadioTile extends StatelessWidget {
               Text(subtitle, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
             ],
           )),
-          if (selected) const Icon(Icons.check_circle, color: Color(0xFF6E9E57), size: 18),
+          if (selected) const Icon(Icons.check_circle, color: Color(0xFF0C5C6C), size: 18),
         ],
       ),
     ),
@@ -790,7 +789,7 @@ class _Field extends StatelessWidget {
       labelStyle: const TextStyle(fontFamily: 'Galey'),
       hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade400),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF6E9E57))),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF0C5C6C))),
       filled: true, fillColor: const Color(0xFFF8F8F6),
     ),
     style: const TextStyle(fontFamily: 'Galey'),
@@ -808,7 +807,7 @@ class _DropField extends StatelessWidget {
     decoration: InputDecoration(
       labelText: label, labelStyle: const TextStyle(fontFamily: 'Galey'),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF6E9E57))),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF0C5C6C))),
       filled: true, fillColor: const Color(0xFFF8F8F6),
     ),
   );

@@ -12,7 +12,6 @@ class PlanTemplateListPage extends StatefulWidget {
 
 class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
   static const _green = Color(0xFF0C5C6C);
-  static const _dark  = Color(0xFF1F2A2E);
 
   List<Map<String, dynamic>> _templates = [];
   bool _loading = true;
@@ -59,7 +58,7 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(
-        backgroundColor: _dark,
+        backgroundColor: const Color(0xFF0C5C6C),
         foregroundColor: Colors.white,
         title: const Text('Mes protocoles', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
       ),
