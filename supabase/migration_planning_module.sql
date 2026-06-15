@@ -1,26 +1,44 @@
 -- Planning module — Phase 1
 -- Templates réutilisables
 CREATE TABLE IF NOT EXISTS plan_templates (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  uid_eleveur  TEXT NOT NULL,
-  nom          TEXT NOT NULL,
-  type         TEXT NOT NULL CHECK (type IN ('sanitaire','nettoyage','promenade','socialisation')),
-  espece       TEXT,
-  description  TEXT,
-  created_at   TIMESTAMPTZ DEFAULT now()
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  uid_eleveur     TEXT NOT NULL,
+  nom             TEXT NOT NULL,
+  type            TEXT NOT NULL CHECK (type IN ('sanitaire','nettoyage','promenade','socialisation')),
+  espece          TEXT,
+  description     TEXT,
+  -- Qui est ciblé par ce protocole
+  cible_type      TEXT NOT NULL DEFAULT 'individuel'
+                  CHECK (cible_type IN ('individuel','cheptel','males','femelles','gestantes','bebes')),
+  -- Quel événement sert de J0
+  reference_event TEXT NOT NULL DEFAULT 'manuel'
+                  CHECK (reference_event IN ('manuel','saillie','mise_bas','naissance','age_semaines','date_fixe')),
+  created_at      TIMESTAMPTZ DEFAULT now()
 );
 
 -- Étapes d'un template
 CREATE TABLE IF NOT EXISTS plan_template_etapes (
-  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  template_id    UUID REFERENCES plan_templates(id) ON DELETE CASCADE,
-  jour_offset    INTEGER NOT NULL,
-  type_acte      TEXT,
-  produit        TEXT,
-  dosage         TEXT,
-  duree_jours    INTEGER NOT NULL DEFAULT 1,
-  description    TEXT,
-  ordre          INTEGER NOT NULL DEFAULT 0
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_id      UUID REFERENCES plan_templates(id) ON DELETE CASCADE,
+  -- Moment relatif à l'événement de référence
+  offset_direction TEXT NOT NULL DEFAULT 'apres' CHECK (offset_direction IN ('avant','apres')),
+  jour_offset      INTEGER NOT NULL DEFAULT 0,    -- nombre de jours (toujours positif, direction dans offset_direction)
+  -- Pour les bébés/jeunes : à partir de quel âge (en semaines)
+  age_min_semaines INTEGER,
+  -- Type d'acte et produit
+  type_acte        TEXT,
+  produit          TEXT,
+  dosage           TEXT,
+  -- Fréquence / répétition
+  frequence        TEXT NOT NULL DEFAULT 'ponctuel'
+                   CHECK (frequence IN ('ponctuel','quotidien','hebdomadaire','mensuel')),
+  nb_fois_semaine  INTEGER DEFAULT 1,   -- si frequence='hebdomadaire' : 1, 2 ou 3 fois/semaine
+  duree_semaines   INTEGER DEFAULT 1,   -- si frequence répétée : durée totale en semaines
+  duree_jours      INTEGER NOT NULL DEFAULT 1,  -- garde la compat pour 'ponctuel' multi-jours
+  -- Lieu (promenade, socialisation)
+  lieu             TEXT,
+  description      TEXT,
+  ordre            INTEGER NOT NULL DEFAULT 0
 );
 
 -- Instances actives
@@ -46,9 +64,11 @@ CREATE TABLE IF NOT EXISTS plan_taches (
   portee_id        TEXT,
   box_id           TEXT,
   label            TEXT NOT NULL,
+  type_acte        TEXT,
   date_prevue      DATE NOT NULL,
   jour_traitement  INTEGER NOT NULL DEFAULT 1,
   total_jours      INTEGER NOT NULL DEFAULT 1,
+  lieu             TEXT,
   assigned_to      TEXT,
   statut           TEXT NOT NULL DEFAULT 'en_attente' CHECK (statut IN ('en_attente','fait','ignore','reporte')),
   valide_par       TEXT,

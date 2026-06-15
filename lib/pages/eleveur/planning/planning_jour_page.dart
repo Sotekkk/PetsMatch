@@ -39,7 +39,6 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
       validateurUid: _uid!,
       notes: notes,
       tacheData: t,
-      uid: _uid!,
     );
     _load();
   }
