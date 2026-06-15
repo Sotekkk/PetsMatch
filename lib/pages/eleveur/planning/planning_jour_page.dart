@@ -7,7 +7,8 @@ import 'package:PetsMatch/services/planning_pdf_service.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 
 class PlanningJourPage extends StatefulWidget {
-  const PlanningJourPage({super.key});
+  final DateTime? initialDate;
+  const PlanningJourPage({super.key, this.initialDate});
   @override
   State<PlanningJourPage> createState() => _PlanningJourPageState();
 }
@@ -17,7 +18,7 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
   static const _dark   = Color(0xFF1F2A2E);
   static const _orange = Color(0xFFD97706);
 
-  DateTime _selectedDate = DateTime.now();
+  late DateTime _selectedDate;
   int      _weekOffset   = 0;
   List<Map<String, dynamic>> _taches   = [];
   List<Map<String, dynamic>> _employes = [];
@@ -27,6 +28,12 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
   @override
   void initState() {
     super.initState();
+    _selectedDate = widget.initialDate ?? DateTime.now();
+    if (widget.initialDate != null) {
+      final now = DateTime.now();
+      final diff = _selectedDate.difference(DateTime(now.year, now.month, now.day)).inDays;
+      _weekOffset = (diff / 7).floor();
+    }
     _uid = FirebaseAuth.instance.currentUser?.uid;
     _load();
     _loadEmployes();
