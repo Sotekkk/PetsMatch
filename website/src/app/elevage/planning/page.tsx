@@ -19,6 +19,7 @@ interface Etape {
   nb_fois_semaine: number;
   duree_semaines: number;
   duree_jours: number;
+  is_recurrent: boolean;
   lieu: string;
   description: string;
   ordre: number;
@@ -30,6 +31,7 @@ interface Template {
   type: string;
   espece?: string;
   description?: string;
+  lieu?: string;
   cible_type: string;
   reference_event: string;
   plan_template_etapes?: Etape[];
@@ -99,6 +101,11 @@ const FREQUENCES = [
 ];
 
 const ESPECES = ['', 'chien', 'chat', 'cheval', 'lapin', 'oiseau', 'nac', 'ovin', 'caprin', 'porcin'];
+
+const LIEUX_NETTOYAGE = [
+  'Chatterie n°1', 'Chatterie n°2', 'Chenil', 'Chenil n°1', 'Chenil n°2',
+  'Cuisine', 'Salle de soins', 'Salle de quarantaine', 'Box', 'Jardin', 'Couloir',
+];
 
 const ACTE_EMOJIS: Record<string, string> = {
   vermifuge: '💊', vaccination: '💉', antiparasitaire: '🛡️',
@@ -362,7 +369,7 @@ function ProtocolesView({ templates, onNew, onEdit, onApply, onDelete }: {
 // ── Modale formulaire template ────────────────────────────────────────────────
 
 function newEtape(): Etape {
-  return { type_acte: 'vermifuge', produit: '', dosage: '', offset_direction: 'apres', jour_offset: 0, age_min_semaines: null, frequence: 'ponctuel', nb_fois_semaine: 1, duree_semaines: 1, duree_jours: 1, lieu: '', description: '', ordre: 0 };
+  return { type_acte: 'vermifuge', produit: '', dosage: '', offset_direction: 'apres', jour_offset: 0, age_min_semaines: null, frequence: 'ponctuel', nb_fois_semaine: 1, duree_semaines: 1, duree_jours: 1, is_recurrent: false, lieu: '', description: '', ordre: 0 };
 }
 
 function TemplateFormModal({ existing, uid, onClose, onSaved }: {
@@ -372,9 +379,13 @@ function TemplateFormModal({ existing, uid, onClose, onSaved }: {
   const [type, setType] = useState(existing?.type ?? 'sanitaire');
   const [espece, setEspece] = useState(existing?.espece ?? '');
   const [description, setDescription] = useState(existing?.description ?? '');
+  const [lieuNett, setLieuNett] = useState(existing?.lieu ?? '');
   const [cibleType, setCibleType] = useState(existing?.cible_type ?? 'individuel');
   const [refEvent, setRefEvent] = useState(existing?.reference_event ?? 'manuel');
-  const [etapes, setEtapes] = useState<Etape[]>(existing?.plan_template_etapes ?? [newEtape()]);
+  const [etapes, setEtapes] = useState<Etape[]>(
+    existing?.plan_template_etapes?.map(e => ({ ...e, is_recurrent: (e as Etape & { is_recurrent?: boolean }).is_recurrent ?? false }))
+    ?? [newEtape()]
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -401,18 +412,26 @@ function TemplateFormModal({ existing, uid, onClose, onSaved }: {
     if (!nom.trim()) { setError('Le nom est requis'); return; }
     setSaving(true);
     try {
+      const isNett = type === 'nettoyage' || existing?.type === 'nettoyage';
       const ep = etapes.map((e, i) => ({
         ...e, ordre: i,
         produit: e.produit || null, dosage: e.dosage || null,
         lieu: e.lieu || null, description: e.description || null,
         age_min_semaines: e.age_min_semaines ?? null,
+        duree_semaines: e.is_recurrent ? 52 : e.duree_semaines,
       }));
+      const templatePayload = {
+        nom, espece: espece || null, description: description || null,
+        lieu: isNett ? (lieuNett || null) : null,
+        cible_type: isNett ? 'cheptel' : cibleType,
+        reference_event: isNett ? 'manuel' : refEvent,
+      };
       if (existing) {
-        await supabase.from('plan_templates').update({ nom, espece: espece || null, description: description || null, cible_type: cibleType, reference_event: refEvent }).eq('id', existing.id);
+        await supabase.from('plan_templates').update(templatePayload).eq('id', existing.id);
         await supabase.from('plan_template_etapes').delete().eq('template_id', existing.id);
         if (ep.length > 0) await supabase.from('plan_template_etapes').insert(ep.map(e => ({ ...e, template_id: existing.id })));
       } else {
-        const { data: row } = await supabase.from('plan_templates').insert({ uid_eleveur: uid, nom, type, espece: espece || null, description: description || null, cible_type: cibleType, reference_event: refEvent }).select('id').single();
+        const { data: row } = await supabase.from('plan_templates').insert({ uid_eleveur: uid, nom, type, ...templatePayload }).select('id').single();
         if (row && ep.length > 0) await supabase.from('plan_template_etapes').insert(ep.map(e => ({ ...e, template_id: row.id })));
       }
       onSaved();
@@ -462,33 +481,53 @@ function TemplateFormModal({ existing, uid, onClose, onSaved }: {
             </div>
           )}
 
-          {/* Espèce + cible */}
-          <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-            <label className="block text-sm font-bold text-teal-700">Qui est concerné ?</label>
-            <p className="text-xs text-green-700 bg-green-50 p-2 rounded-lg">Définissez qui sera automatiquement ciblé quand vous appliquez ce protocole.</p>
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Espèce</label>
-              <select value={espece} onChange={e => setEspece(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500">
-                {ESPECES.map(s => <option key={s} value={s}>{s || 'Toutes espèces'}</option>)}
-              </select>
+          {/* Nettoyage : lieu physique */}
+          {type === 'nettoyage' && (
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+              <label className="block text-sm font-bold text-teal-700">Lieu à nettoyer</label>
+              <p className="text-xs text-green-700 bg-green-50 p-2 rounded-lg">Indiquez le lieu concerné par ce protocole de nettoyage.</p>
+              <div className="flex flex-wrap gap-2">
+                {LIEUX_NETTOYAGE.map(l => (
+                  <button key={l} onClick={() => setLieuNett(l)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${lieuNett === l ? 'bg-green-600 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-100'}`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <input value={lieuNett} onChange={e => setLieuNett(e.target.value)} placeholder="Ou écrivez le lieu (ex: Nurserie, Salle de traite…)"
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500 bg-white" />
             </div>
-            <div className="space-y-2">
-              {CIBLE_OPTIONS.map(c => (
-                <button key={c.value} onClick={() => handleCible(c.value)}
-                  className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition-colors ${cibleType === c.value ? 'bg-green-50 border border-green-400' : 'bg-white border border-gray-200 hover:bg-gray-50'}`}>
-                  <span className="text-lg">{c.emoji}</span>
-                  <div className="flex-1">
-                    <span className={`text-sm font-semibold ${cibleType === c.value ? 'text-green-800' : 'text-gray-700'}`}>{c.label}</span>
-                    <p className="text-xs text-gray-400">{c.desc}</p>
-                  </div>
-                  {cibleType === c.value && <span className="text-green-600 text-base">✓</span>}
-                </button>
-              ))}
-            </div>
-          </div>
+          )}
 
-          {/* Référence temporelle */}
-          {cibleType !== 'bebes' && (
+          {/* Espèce + cible (hors nettoyage) */}
+          {type !== 'nettoyage' && (
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+              <label className="block text-sm font-bold text-teal-700">Qui est concerné ?</label>
+              <p className="text-xs text-green-700 bg-green-50 p-2 rounded-lg">Définissez qui sera automatiquement ciblé quand vous appliquez ce protocole.</p>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Espèce</label>
+                <select value={espece} onChange={e => setEspece(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500">
+                  {ESPECES.map(s => <option key={s} value={s}>{s || 'Toutes espèces'}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                {CIBLE_OPTIONS.map(c => (
+                  <button key={c.value} onClick={() => handleCible(c.value)}
+                    className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition-colors ${cibleType === c.value ? 'bg-green-50 border border-green-400' : 'bg-white border border-gray-200 hover:bg-gray-50'}`}>
+                    <span className="text-lg">{c.emoji}</span>
+                    <div className="flex-1">
+                      <span className={`text-sm font-semibold ${cibleType === c.value ? 'text-green-800' : 'text-gray-700'}`}>{c.label}</span>
+                      <p className="text-xs text-gray-400">{c.desc}</p>
+                    </div>
+                    {cibleType === c.value && <span className="text-green-600 text-base">✓</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Référence temporelle (hors nettoyage et bébés) */}
+          {type !== 'nettoyage' && cibleType !== 'bebes' && (
             <div className="bg-gray-50 rounded-xl p-4 space-y-3">
               <label className="block text-sm font-bold text-teal-700">Événement de référence (J0)</label>
               <p className="text-xs text-gray-400">Tous les offsets de vos étapes sont calculés depuis cet événement.</p>
@@ -586,41 +625,59 @@ function EtapeForm({ index, etape, cibleType, refEvent, onChange, onRemove }: {
       </div>
 
       {/* Fréquence */}
-      <div className="bg-white rounded-lg p-3 border border-gray-200 space-y-2">
+      <div className="bg-white rounded-lg p-3 border border-gray-200 space-y-3">
         <p className="text-xs font-bold text-gray-500">Fréquence</p>
         <div className="flex flex-wrap gap-2">
           {FREQUENCES.map(f => (
-            <button key={f.value} onClick={() => onChange({ frequence: f.value })}
+            <button key={f.value} onClick={() => onChange({ frequence: f.value, is_recurrent: false })}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${etape.frequence === f.value ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
               {f.label}
             </button>
           ))}
         </div>
+        {/* Durée si ponctuel */}
         {etape.frequence === 'ponctuel' && (
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-xs">Durée :</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-600">Durée :</span>
             <input type="number" min={1} value={etape.duree_jours} onChange={e => onChange({ duree_jours: parseInt(e.target.value) || 1 })}
               className="w-14 border border-gray-200 rounded-lg px-2 py-1.5 text-center text-sm bg-white focus:outline-none focus:border-green-500" />
             <span className="text-xs text-gray-500">jours consécutifs</span>
           </div>
         )}
+        {/* Nb fois/sem (sur sa propre ligne) */}
+        {etape.frequence === 'hebdomadaire' && (
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-gray-600">Nb fois / semaine :</p>
+            <div className="flex gap-2">
+              {[1, 2, 3].map(n => (
+                <button key={n} onClick={() => onChange({ nb_fois_semaine: n })}
+                  className={`w-10 h-9 rounded-lg text-sm font-bold transition-colors ${etape.nb_fois_semaine === n ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  {n}x
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {/* Toggle récurrent + pendant (hors ponctuel) */}
         {etape.frequence !== 'ponctuel' && (
-          <div className="flex items-center gap-2 text-sm flex-wrap">
-            {etape.frequence === 'hebdomadaire' && (
-              <>
-                <span className="text-xs">Nb fois/sem. :</span>
-                {[1, 2, 3].map(n => (
-                  <button key={n} onClick={() => onChange({ nb_fois_semaine: n })}
-                    className={`w-8 h-8 rounded-lg text-sm font-bold transition-colors ${etape.nb_fois_semaine === n ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                    {n}
-                  </button>
-                ))}
-              </>
+          <div className="space-y-2">
+            <button onClick={() => onChange({ is_recurrent: !etape.is_recurrent })}
+              className="flex items-center gap-2 text-xs font-semibold text-gray-700">
+              <div className={`w-9 h-5 rounded-full transition-colors relative ${etape.is_recurrent ? 'bg-green-600' : 'bg-gray-300'}`}>
+                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${etape.is_recurrent ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              </div>
+              Protocole récurrent (sans fin)
+            </button>
+            {!etape.is_recurrent ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-600">Pendant :</span>
+                <input type="number" min={1} value={etape.duree_semaines} onChange={e => onChange({ duree_semaines: parseInt(e.target.value) || 1 })}
+                  className="w-14 border border-gray-200 rounded-lg px-2 py-1.5 text-center text-sm bg-white focus:outline-none focus:border-green-500" />
+                <span className="text-xs text-gray-500">{etape.frequence === 'mensuel' ? 'mois' : 'semaines'}</span>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 italic">Génère 1 an de tâches à l'application</p>
             )}
-            <span className="text-xs">Pendant :</span>
-            <input type="number" min={1} value={etape.duree_semaines} onChange={e => onChange({ duree_semaines: parseInt(e.target.value) || 1 })}
-              className="w-14 border border-gray-200 rounded-lg px-2 py-1.5 text-center text-sm bg-white focus:outline-none focus:border-green-500" />
-            <span className="text-xs text-gray-500">{etape.frequence === 'mensuel' ? 'mois' : 'semaines'}</span>
           </div>
         )}
       </div>

@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS plan_templates (
   -- Quel événement sert de J0
   reference_event TEXT NOT NULL DEFAULT 'manuel'
                   CHECK (reference_event IN ('manuel','saillie','mise_bas','naissance','age_semaines','date_fixe')),
+  -- Lieu (pour type=nettoyage : lieu physique à nettoyer, ex: "Chatterie n°1")
+  lieu            TEXT,
   created_at      TIMESTAMPTZ DEFAULT now()
 );
 
@@ -35,6 +37,8 @@ CREATE TABLE IF NOT EXISTS plan_template_etapes (
   nb_fois_semaine  INTEGER DEFAULT 1,   -- si frequence='hebdomadaire' : 1, 2 ou 3 fois/semaine
   duree_semaines   INTEGER DEFAULT 1,   -- si frequence répétée : durée totale en semaines
   duree_jours      INTEGER NOT NULL DEFAULT 1,  -- garde la compat pour 'ponctuel' multi-jours
+  -- Récurrence sans fin (génère 52 semaines automatiquement)
+  is_recurrent     BOOLEAN NOT NULL DEFAULT FALSE,
   -- Lieu (promenade, socialisation)
   lieu             TEXT,
   description      TEXT,

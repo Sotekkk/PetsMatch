@@ -18,14 +18,20 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   static const _green = Color(0xFF6E9E57);
   static const _dark  = Color(0xFF1F2A2E);
 
-  final _nomCtrl  = TextEditingController();
-  final _descCtrl = TextEditingController();
+  final _nomCtrl         = TextEditingController();
+  final _descCtrl        = TextEditingController();
+  final _lieuNettCtrl    = TextEditingController();
 
   String _type          = 'sanitaire';
   String _espece        = '';
   String _cibleType     = 'individuel';
   String _refEvent      = 'manuel';
   bool   _saving        = false;
+
+  static const _lieuxNettoyage = [
+    'Chatterie n°1', 'Chatterie n°2', 'Chenil', 'Chenil n°1', 'Chenil n°2',
+    'Cuisine', 'Salle de soins', 'Salle de quarantaine', 'Box', 'Jardin', 'Couloir',
+  ];
 
   final List<_EtapeCtrl> _etapes = [];
 
@@ -62,8 +68,9 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     super.initState();
     final e = widget.existing;
     if (e != null) {
-      _nomCtrl.text  = e['nom'] ?? '';
-      _descCtrl.text = e['description'] ?? '';
+      _nomCtrl.text      = e['nom'] ?? '';
+      _descCtrl.text     = e['description'] ?? '';
+      _lieuNettCtrl.text = e['lieu'] ?? '';
       _type      = e['type']            ?? 'sanitaire';
       _espece    = e['espece']          ?? '';
       _cibleType = e['cible_type']      ?? 'individuel';
@@ -82,6 +89,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   void dispose() {
     _nomCtrl.dispose();
     _descCtrl.dispose();
+    _lieuNettCtrl.dispose();
     for (final e in _etapes) { e.dispose(); }
     super.dispose();
   }
@@ -99,14 +107,16 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
       final etapesData = _etapes.map((e) => e.toMap()).toList();
+      final lieuNett = _lieuNettCtrl.text.trim().isEmpty ? null : _lieuNettCtrl.text.trim();
       if (widget.existing != null) {
         await PlanningService.updateTemplate(
           templateId:     widget.existing!['id'] as String,
           nom:            _nomCtrl.text.trim(),
           espece:         _espece.isEmpty ? null : _espece,
           description:    _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
-          cibleType:      _cibleType,
-          referenceEvent: _refEvent,
+          lieu:           lieuNett,
+          cibleType:      _type == 'nettoyage' ? 'cheptel' : _cibleType,
+          referenceEvent: _type == 'nettoyage' ? 'manuel' : _refEvent,
           etapes:         etapesData,
         );
       } else {
@@ -116,8 +126,9 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           type:           _type,
           espece:         _espece.isEmpty ? null : _espece,
           description:    _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
-          cibleType:      _cibleType,
-          referenceEvent: _refEvent,
+          lieu:           lieuNett,
+          cibleType:      _type == 'nettoyage' ? 'cheptel' : _cibleType,
+          referenceEvent: _type == 'nettoyage' ? 'manuel' : _refEvent,
           etapes:         etapesData,
         );
       }
@@ -176,50 +187,78 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
             const SizedBox(height: 12),
           ],
 
-          // ── Espèce + Qui est ciblé ──
-          _Card(children: [
-            _SectionTitle('Qui est concerné ?'),
-            const _InfoBox('Définissez qui sera automatiquement ciblé quand vous appliquez ce protocole.'),
-            const SizedBox(height: 10),
-            // Espèce
-            _DropField(
-              label: 'Espèce cible',
-              value: _espece,
-              items: _especes.map((e) => DropdownMenuItem(value: e, child: Text(e.isEmpty ? 'Toutes espèces' : e, style: const TextStyle(fontFamily: 'Galey')))).toList(),
-              onChanged: (v) => setState(() => _espece = v ?? ''),
-            ),
-            const SizedBox(height: 10),
-            // Cible
-            ...(_cibles.map((c) => _RadioTile(
-              emoji: c.$1,
-              title: c.$3,
-              subtitle: c.$4,
-              selected: _cibleType == c.$1,
-              onTap: () => setState(() {
-                _cibleType = c.$1;
-                // Auto-sélectionner le reference_event cohérent
-                if (c.$1 == 'gestantes') _refEvent = 'mise_bas';
-                else if (c.$1 == 'bebes') _refEvent = 'age_semaines';
-                else if (c.$1 == 'individuel') _refEvent = 'manuel';
-              }),
-            ))),
-          ]),
-          const SizedBox(height: 12),
+          // ── Nettoyage : lieu physique ──
+          if (_type == 'nettoyage') ...[
+            _Card(children: [
+              _SectionTitle('Lieu à nettoyer'),
+              const _InfoBox('Indiquez le lieu concerné par ce protocole de nettoyage.'),
+              const SizedBox(height: 8),
+              // Chips raccourci
+              Wrap(spacing: 6, runSpacing: 6, children: _lieuxNettoyage.map((l) {
+                return GestureDetector(
+                  onTap: () => setState(() => _lieuNettCtrl.text = l),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: _lieuNettCtrl.text == l ? _green : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: _lieuNettCtrl.text == l ? _green : Colors.grey.shade300),
+                    ),
+                    child: Text(l, style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: _lieuNettCtrl.text == l ? Colors.white : Colors.grey.shade700)),
+                  ),
+                );
+              }).toList()),
+              const SizedBox(height: 10),
+              _Field(controller: _lieuNettCtrl, label: 'Ou écrivez le lieu', hint: 'ex: Nurserie, Salle de traite…'),
+            ]),
+            const SizedBox(height: 12),
+          ],
 
-          // ── Référence temporelle (J0) ──
-          if (_cibleType != 'bebes') _Card(children: [
-            _SectionTitle('Événement de référence (J0)'),
-            const _InfoBox('Tous les offsets de vos étapes seront calculés depuis cet événement.'),
-            const SizedBox(height: 8),
-            ...(_refEventsFor(_cibleType).map((r) => _RadioTile(
-              emoji: r.$2,
-              title: r.$3,
-              subtitle: r.$4,
-              selected: _refEvent == r.$1,
-              onTap: () => setState(() => _refEvent = r.$1),
-            ))),
-          ]),
-          if (_cibleType != 'bebes') const SizedBox(height: 12),
+          // ── Espèce + Qui est ciblé (hors nettoyage) ──
+          if (_type != 'nettoyage') ...[
+            _Card(children: [
+              _SectionTitle('Qui est concerné ?'),
+              const _InfoBox('Définissez qui sera automatiquement ciblé quand vous appliquez ce protocole.'),
+              const SizedBox(height: 10),
+              _DropField(
+                label: 'Espèce cible',
+                value: _espece,
+                items: _especes.map((e) => DropdownMenuItem(value: e, child: Text(e.isEmpty ? 'Toutes espèces' : e, style: const TextStyle(fontFamily: 'Galey')))).toList(),
+                onChanged: (v) => setState(() => _espece = v ?? ''),
+              ),
+              const SizedBox(height: 10),
+              ...(_cibles.map((c) => _RadioTile(
+                emoji: c.$1,
+                title: c.$3,
+                subtitle: c.$4,
+                selected: _cibleType == c.$1,
+                onTap: () => setState(() {
+                  _cibleType = c.$1;
+                  if (c.$1 == 'gestantes') { _refEvent = 'mise_bas'; }
+                  else if (c.$1 == 'bebes') { _refEvent = 'age_semaines'; }
+                  else if (c.$1 == 'individuel') { _refEvent = 'manuel'; }
+                }),
+              ))),
+            ]),
+            const SizedBox(height: 12),
+          ],
+
+          // ── Référence temporelle (J0) — hors nettoyage et bébés ──
+          if (_type != 'nettoyage' && _cibleType != 'bebes') ...[
+            _Card(children: [
+              _SectionTitle('Événement de référence (J0)'),
+              const _InfoBox('Tous les offsets de vos étapes seront calculés depuis cet événement.'),
+              const SizedBox(height: 8),
+              ...(_refEventsFor(_cibleType).map((r) => _RadioTile(
+                emoji: r.$2,
+                title: r.$3,
+                subtitle: r.$4,
+                selected: _refEvent == r.$1,
+                onTap: () => setState(() => _refEvent = r.$1),
+              ))),
+            ]),
+            const SizedBox(height: 12),
+          ],
 
           // ── Étapes ──
           _Card(children: [
@@ -442,29 +481,61 @@ class _EtapeCard extends StatelessWidget {
                     );
                   }).toList(),
                 ),
+                // Nombre de fois / semaine (sur sa propre ligne)
+                if (isHebdo) ...[
+                  const SizedBox(height: 10),
+                  const Text('Nb fois / semaine :', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  Row(children: [1, 2, 3].map((n) {
+                    final sel = ctrl.nbFoisSemaine == n;
+                    return GestureDetector(
+                      onTap: () { ctrl.nbFoisSemaine = n; onChanged(); },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 120),
+                        width: 44, height: 36,
+                        margin: const EdgeInsets.only(right: 6),
+                        decoration: BoxDecoration(
+                          color: sel ? _green : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Center(child: Text(
+                          n == 1 ? '1x' : n == 2 ? '2x' : '3x',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: sel ? Colors.white : Colors.grey.shade700),
+                        )),
+                      ),
+                    );
+                  }).toList()),
+                ],
+                // Toggle récurrent (hors ponctuel)
                 if (freq != 'ponctuel') ...[
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    if (isHebdo) ...[
-                      const Text('Nb fois/semaine : ', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                      Row(children: [1, 2, 3].map((n) {
-                        final sel = ctrl.nbFoisSemaine == n;
-                        return GestureDetector(
-                          onTap: () { ctrl.nbFoisSemaine = n; onChanged(); },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 120),
-                            width: 30, height: 30,
-                            margin: const EdgeInsets.only(right: 4),
-                            decoration: BoxDecoration(
-                              color: sel ? _green : Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Center(child: Text('$n', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: sel ? Colors.white : Colors.grey.shade700))),
+                  const SizedBox(height: 10),
+                  GestureDetector(
+                    onTap: () { ctrl.isRecurrent = !ctrl.isRecurrent; onChanged(); },
+                    child: Row(children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        width: 36, height: 20,
+                        decoration: BoxDecoration(
+                          color: ctrl.isRecurrent ? _green : Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: AnimatedAlign(
+                          duration: const Duration(milliseconds: 150),
+                          alignment: ctrl.isRecurrent ? Alignment.centerRight : Alignment.centerLeft,
+                          child: Container(
+                            width: 16, height: 16,
+                            margin: const EdgeInsets.symmetric(horizontal: 2),
+                            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
                           ),
-                        );
-                      }).toList()),
-                      const SizedBox(width: 10),
-                    ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('Protocole récurrent (sans fin)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
+                  const SizedBox(height: 6),
+                  // Durée — masquée si récurrent
+                  if (!ctrl.isRecurrent) Row(children: [
                     const Text('Pendant : ', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
                     SizedBox(
                       width: 52,
@@ -479,8 +550,10 @@ class _EtapeCard extends StatelessWidget {
                       ),
                     ),
                     Text(freq == 'mensuel' ? ' mois' : ' sem.', style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                  ]),
+                  ]) else
+                    Text('Génère 1 an de tâches à l\'application', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
                 ],
+                // Durée en jours si ponctuel
                 if (freq == 'ponctuel') ...[
                   const SizedBox(height: 8),
                   Row(children: [
@@ -546,6 +619,7 @@ class _EtapeCtrl {
   String direction      = 'apres';
   String frequence      = 'ponctuel';
   int    nbFoisSemaine  = 1;
+  bool   isRecurrent    = false;
   String? existingId;
 
   final TextEditingController produitCtrl;
@@ -572,6 +646,7 @@ class _EtapeCtrl {
         direction         = d['offset_direction'] ?? 'apres',
         frequence         = d['frequence']   ?? 'ponctuel',
         nbFoisSemaine     = (d['nb_fois_semaine'] as num? ?? 1).toInt(),
+        isRecurrent       = d['is_recurrent'] == true,
         existingId        = d['id'] as String?,
         produitCtrl       = TextEditingController(text: d['produit'] ?? ''),
         dosageCtrl        = TextEditingController(text: d['dosage'] ?? ''),
@@ -592,7 +667,8 @@ class _EtapeCtrl {
     'dosage':           dosageCtrl.text.trim().isEmpty   ? null : dosageCtrl.text.trim(),
     'frequence':        frequence,
     'nb_fois_semaine':  nbFoisSemaine,
-    'duree_semaines':   int.tryParse(dureeSemainesCtrl.text) ?? 1,
+    'is_recurrent':     isRecurrent,
+    'duree_semaines':   isRecurrent ? 52 : (int.tryParse(dureeSemainesCtrl.text) ?? 1),
     'duree_jours':      int.tryParse(dureeJoursCtrl.text) ?? 1,
     'lieu':             lieuCtrl.text.trim().isEmpty ? null : lieuCtrl.text.trim(),
     'description':      descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),

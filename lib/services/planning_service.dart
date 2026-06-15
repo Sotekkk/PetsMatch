@@ -19,6 +19,7 @@ class PlanningService {
     required String type,
     String? espece,
     String? description,
+    String? lieu,
     String cibleType    = 'individuel',
     String referenceEvent = 'manuel',
     required List<Map<String, dynamic>> etapes,
@@ -31,6 +32,7 @@ class PlanningService {
       'reference_event': referenceEvent,
       if (espece != null && espece.isNotEmpty) 'espece': espece,
       if (description != null && description.isNotEmpty) 'description': description,
+      if (lieu != null && lieu.isNotEmpty) 'lieu': lieu,
     }).select('id').single();
 
     final templateId = row['id'] as String;
@@ -44,6 +46,7 @@ class PlanningService {
     required String nom,
     String? espece,
     String? description,
+    String? lieu,
     String cibleType    = 'individuel',
     String referenceEvent = 'manuel',
     required List<Map<String, dynamic>> etapes,
@@ -54,6 +57,7 @@ class PlanningService {
       'description':     description,
       'cible_type':      cibleType,
       'reference_event': referenceEvent,
+      'lieu':            lieu,
     }).eq('id', templateId);
 
     await _supa.from('plan_template_etapes').delete().eq('template_id', templateId);
@@ -73,8 +77,9 @@ class PlanningService {
         'dosage':           e.value['dosage'],
         'frequence':        e.value['frequence'] ?? 'ponctuel',
         'nb_fois_semaine':  e.value['nb_fois_semaine'] ?? 1,
-        'duree_semaines':   e.value['duree_semaines'] ?? 1,
+        'duree_semaines':   (e.value['is_recurrent'] == true) ? 52 : (e.value['duree_semaines'] ?? 1),
         'duree_jours':      e.value['duree_jours'] ?? 1,
+        'is_recurrent':     e.value['is_recurrent'] ?? false,
         'lieu':             e.value['lieu'],
         'description':      e.value['description'],
         'ordre':            e.key,
