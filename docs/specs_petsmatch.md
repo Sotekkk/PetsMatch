@@ -1580,4 +1580,195 @@ Phase 2 : YouSign devient le canal principal pour tous les contrats. Le token re
 
 ---
 
+---
+
+## 14. Module Planning Élevage — Templates & Tâches
+
+> Priorité : Phase 1 en cours d'implémentation (2026-06-15)
+
+### 14.1 Vision globale
+
+Un moteur unique **Template → Planning → Tâches** couvrant 4 types de planification :
+
+| Type | Déclencheur | Cible |
+|---|---|---|
+| **Sanitaire** | Événement (saillie, naissance, sevrage) | Animal / Portée |
+| **Nettoyage** | Hebdomadaire / récurrent | Box / Parc |
+| **Promenade** | Quotidien | Groupe d'animaux |
+| **Socialisation** | Âge des bébés (semaines) | Portée |
+
+**Principe :** L'éleveur crée un template une fois → il l'applique à chaque événement → le système génère automatiquement les tâches datées → les employés voient "mes tâches du jour" et valident.
+
+---
+
+### 14.2 Schéma BDD
+
+```sql
+-- Templates réutilisables
+CREATE TABLE plan_templates (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  uid_eleveur  TEXT NOT NULL,
+  nom          TEXT NOT NULL,
+  type         TEXT NOT NULL,  -- sanitaire | nettoyage | promenade | socialisation
+  espece       TEXT,           -- null = toutes espèces
+  description  TEXT,
+  created_at   TIMESTAMPTZ DEFAULT now()
+);
+
+-- Étapes d'un template (une étape = une tâche récurrente)
+CREATE TABLE plan_template_etapes (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_id    UUID REFERENCES plan_templates(id) ON DELETE CASCADE,
+  jour_offset    INTEGER NOT NULL, -- négatif = avant événement, positif = après
+  type_acte      TEXT,             -- vermifuge | vaccination | nettoyage | promenade | socialisation | autre
+  produit        TEXT,             -- ex: Milbemax®
+  dosage         TEXT,             -- ex: 1 cp / 5 kg
+  duree_jours    INTEGER DEFAULT 1, -- traitement sur N jours (génère N tâches consécutives)
+  description    TEXT,
+  ordre          INTEGER DEFAULT 0  -- ordre d'affichage si même jour_offset
+);
+
+-- Instances actives (template appliqué à un événement)
+CREATE TABLE plans_actifs (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_id       UUID REFERENCES plan_templates(id),
+  uid_eleveur       TEXT NOT NULL,
+  type_declencheur  TEXT NOT NULL,  -- saillie | naissance | hebdo | manuel
+  reference_id      TEXT,           -- saillie_id | portee_id | animal_id | box_id
+  reference_label   TEXT,           -- ex: "Portée Bella × Rex — 15/06/2026"
+  date_reference    DATE NOT NULL,  -- date de l'événement déclencheur
+  statut            TEXT DEFAULT 'actif',  -- actif | termine | annule
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+
+-- Tâches individuelles générées
+CREATE TABLE plan_taches (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id         UUID REFERENCES plans_actifs(id) ON DELETE CASCADE,
+  etape_id        UUID REFERENCES plan_template_etapes(id),
+  uid_eleveur     TEXT NOT NULL,
+  animal_id       TEXT,   -- si tâche ciblée sur un animal
+  portee_id       TEXT,   -- si tâche ciblée sur une portée entière
+  box_id          TEXT,   -- si tâche nettoyage
+  label           TEXT NOT NULL,  -- description lisible de la tâche
+  date_prevue     DATE NOT NULL,
+  jour_traitement INTEGER DEFAULT 1,   -- ex: "Jour 2/4" pour traitements multi-jours
+  total_jours     INTEGER DEFAULT 1,
+  assigned_to     TEXT,   -- uid employé assigné (nullable)
+  statut          TEXT DEFAULT 'en_attente',  -- en_attente | fait | ignore | reporte
+  valide_par      TEXT,   -- uid
+  valide_at       TIMESTAMPTZ,
+  notes_validation TEXT,
+  created_at      TIMESTAMPTZ DEFAULT now()
+);
+```
+
+---
+
+### 14.3 Phase 1 — Protocoles sanitaires
+
+#### 14.3.1 Création d'un template sanitaire
+
+Champs :
+- Nom du protocole (ex: "Vermifuge portée standard chien")
+- Espèce cible
+- Étapes : pour chaque étape → jour relatif à l'événement, type d'acte, produit, dosage, durée (1 à N jours)
+
+Exemples de templates prédéfinis (fournis par défaut, modifiables) :
+```
+"Vermifuge chienne — autour de la mise-bas"
+  J-15 mise-bas : vermifuge mère (Milbemax® — 1 cp/10kg) — 1 jour
+  J0  naissance : vermifuge mère (rappel) — 1 jour
+  J+15           : vermifuge mère + chiots si sevrés — 1 jour
+
+"Vermifuge chiots"
+  J+21 naissance : vermifuge (Panacur® — 0,5ml/kg/j) — 5 jours consécutifs
+  J+42           : rappel — 5 jours
+  J+56           : rappel — 3 jours
+```
+
+#### 14.3.2 Application sur un événement
+
+- Lors d'une saillie → proposition "Appliquer un protocole sanitaire ?"
+- Lors d'une naissance/portée → même proposition
+- Sélection du/des templates applicables
+- Ajustement possible des dates avant confirmation
+- Génération automatique des tâches (1 ligne `plan_taches` par jour de traitement)
+
+#### 14.3.3 Planning du jour
+
+Vue dédiée "Planning" dans l'app :
+- Liste des tâches du jour groupées par type (sanitaire / nettoyage / promenade)
+- Pour chaque tâche : animal/portée concerné, produit, dosage, "Jour X/N" si multi-jours
+- Bouton **Valider** → change statut → crée l'acte dans `registre_sanitaire` + table métier
+- Bouton **Reporter** → propose J+1
+- Notification push à 8h chaque matin pour les tâches du jour
+
+#### 14.3.4 Traitement multi-jours
+
+Quand `duree_jours > 1` sur une étape :
+- Génération de N `plan_taches` consécutives (J, J+1, J+2…)
+- Chaque tâche affiche "Jour X / N jours"
+- Validation jour par jour — chaque validation crée une entrée dans le registre
+- Si un jour est oublié : alerte "Traitement en cours non validé depuis 2 jours"
+
+---
+
+### 14.4 Phase 2 — Planning nettoyage boxes
+
+- Template hebdomadaire : lundi désinfection box A+B, mercredi litière C+D, vendredi parc extérieur
+- Lié aux `chenil_boxes` existants
+- Assignation par box à un employé
+- Checklist par tâche (produit utilisé, observations)
+- Récurrence automatique (génère la semaine suivante quand la courante est terminée)
+
+---
+
+### 14.5 Phase 3 — Rondes & socialisation
+
+**Promenades :**
+- Groupes d'animaux configurables (max N animaux par ronde selon espèce)
+- Rotation automatique entre groupes (chaque chien sort au moins 2×/jour)
+- Assignation à un employé ou bénévole
+- Durée estimée par groupe
+
+**Socialisation bébés :**
+- Protocole par semaine d'âge (S3-S4: manipulation, S5-S7: stimulation sonore, S8: bilan)
+- Adapté par espèce et race (ex: races géantes = protocole étendu)
+- Tâches quotidiennes avec durée (10 min manipulation, etc.)
+
+---
+
+### 14.6 Accès employés
+
+- Les employés voient **uniquement leurs tâches assignées** + les protocoles en lecture seule
+- L'éleveur voit tout + peut modifier/réassigner
+- Historique des validations : qui a fait quoi, quand
+- Export PDF hebdomadaire des tâches réalisées
+
+---
+
+### 14.7 Priorités d'implémentation
+
+```
+Phase 1 (maintenant)
+├── BDD : 4 tables (plan_templates, plan_template_etapes, plans_actifs, plan_taches)
+├── App Flutter : création template sanitaire
+├── App Flutter : application sur saillie/naissance → génération tâches
+├── App Flutter : vue "Planning du jour" + validation
+├── App Flutter : notification push 8h matin
+└── Traitement multi-jours : affichage "Jour X/N" + validation jour par jour
+
+Phase 2 (semaine suivante)
+├── Planning nettoyage boxes
+├── Assignation employés
+└── Web : miroir des vues Flutter
+
+Phase 3 (suite)
+├── Rondes promenade + rotation
+└── Socialisation bébés par semaine d'âge
+```
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

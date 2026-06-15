@@ -1,6 +1,7 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
+import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/eleveur_home.dart';
@@ -278,6 +279,16 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => const AbonnementPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Planning',
+                        icon: Icons.event_note_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const PlanningJourPage(),
                           ));
                         },
                       ),
