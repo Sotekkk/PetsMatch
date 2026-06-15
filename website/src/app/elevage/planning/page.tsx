@@ -51,7 +51,6 @@ interface Tache {
   etape_id?: string | null;
   tranche_horaire?: string | null;
   plans_actifs?: { reference_label?: string } | null;
-  animaux?: { nom?: string; espece?: string } | null;
 }
 
 interface TacheGroupe {
@@ -160,7 +159,7 @@ function baseLabelFromTaches(taches: Tache[]): string {
 }
 
 function animauxNomFromTaches(taches: Tache[]): string[] {
-  return taches.map(t => t.animal_nom ?? t.animaux?.nom ?? '').filter(Boolean);
+  return taches.map(t => t.animal_nom ?? '').filter(Boolean);
 }
 
 function groupeTaches(taches: Tache[]): TacheGroupe[] {
@@ -270,11 +269,12 @@ export default function PlanningPage() {
   const loadTaches = useCallback(async () => {
     if (!user) return;
     setLoadingData(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('plan_taches')
-      .select('*, plans_actifs(reference_label), animaux(nom, espece)')
+      .select('*, plans_actifs(reference_label)')
       .eq('uid_eleveur', user.uid).eq('date_prevue', selectedDate)
-      .neq('statut', 'fait').order('date_prevue');
+      .not('statut', 'eq', 'fait').order('date_prevue');
+    if (error) console.error('[plan_taches]', error.message, error.details);
     setTaches((data ?? []) as Tache[]);
     setLoadingData(false);
   }, [user, selectedDate]);

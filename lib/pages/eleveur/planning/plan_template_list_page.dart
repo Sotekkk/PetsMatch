@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/services/planning_service.dart';
+import 'package:PetsMatch/services/planning_pdf_service.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_form_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/apply_plan_sheet.dart';
 
@@ -87,6 +88,7 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
                       builder: (_) => PlanTemplateFormPage(existing: _templates[i]),
                     )).then((_) => _load()),
                     onDelete: () => _delete(_templates[i]['id'] as String, _templates[i]['nom'] as String),
+                    onPrint: () => PlanningPdfService.printProtocole(_templates[i]),
                     onApply: () => showModalBottomSheet(
                       context: context,
                       isScrollControlled: true,
@@ -129,8 +131,9 @@ class _TemplateCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onApply;
+  final VoidCallback onPrint;
 
-  const _TemplateCard({required this.template, required this.onEdit, required this.onDelete, required this.onApply});
+  const _TemplateCard({required this.template, required this.onEdit, required this.onDelete, required this.onApply, required this.onPrint});
 
   static const _green = Color(0xFF0C5C6C);
 
@@ -210,11 +213,17 @@ class _TemplateCard extends StatelessWidget {
                 ),
                 PopupMenuButton<String>(
                   onSelected: (v) {
-                    if (v == 'edit') onEdit();
+                    if (v == 'edit')   onEdit();
                     if (v == 'delete') onDelete();
+                    if (v == 'print')  onPrint();
                   },
                   itemBuilder: (_) => [
-                    const PopupMenuItem(value: 'edit', child: Text('Modifier', style: TextStyle(fontFamily: 'Galey'))),
+                    const PopupMenuItem(value: 'print', child: Row(children: [
+                      Icon(Icons.print_outlined, size: 16, color: Color(0xFF0C5C6C)),
+                      SizedBox(width: 8),
+                      Text('Imprimer', style: TextStyle(fontFamily: 'Galey')),
+                    ])),
+                    const PopupMenuItem(value: 'edit',   child: Text('Modifier',  style: TextStyle(fontFamily: 'Galey'))),
                     const PopupMenuItem(value: 'delete', child: Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),
                   ],
                   child: const Icon(Icons.more_vert, color: Color(0xFF9CA3AF)),

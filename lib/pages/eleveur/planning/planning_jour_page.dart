@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/services/planning_service.dart';
+import 'package:PetsMatch/services/planning_pdf_service.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 
 class PlanningJourPage extends StatefulWidget {
@@ -344,6 +345,12 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
         foregroundColor: Colors.white,
         title: const Text('Planning', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
+          if (_taches.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.print_outlined),
+              tooltip: 'Imprimer le planning du jour',
+              onPressed: () => PlanningPdfService.printJour(_taches, _selectedDate),
+            ),
           IconButton(
             icon: const Icon(Icons.list_alt_outlined),
             tooltip: 'Mes protocoles',
