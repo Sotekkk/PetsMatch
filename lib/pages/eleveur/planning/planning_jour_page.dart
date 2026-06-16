@@ -629,7 +629,9 @@ class _GroupedTacheCard extends StatelessWidget {
     final animaux     = _animaux;
     final count       = taches.length;
 
-    return Container(
+    return GestureDetector(
+      onTap: onValider,
+      child: Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -770,7 +772,7 @@ class _GroupedTacheCard extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ));
   }
 }
 

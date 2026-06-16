@@ -487,7 +487,8 @@ function GroupedTacheCard({ groupe, onValider, onReporter, onDelete }: {
   const ref = first?.plans_actifs?.reference_label;
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex gap-3 relative">
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex gap-3 relative cursor-pointer hover:shadow-md transition-shadow"
+         onClick={onValider}>
       <div className="w-11 h-11 rounded-xl bg-green-50 flex items-center justify-center text-xl flex-shrink-0">
         {ACTE_EMOJIS[typeActe] ?? '📋'}
       </div>
@@ -511,7 +512,7 @@ function GroupedTacheCard({ groupe, onValider, onReporter, onDelete }: {
           </div>
         )}
       </div>
-      <div className="flex flex-col gap-2 flex-shrink-0">
+      <div className="flex flex-col gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
         <button onClick={onValider} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 text-base" title="Valider">✓</button>
         <button onClick={onReporter} className="p-2 bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100 text-base" title="Reporter">⏰</button>
         <div className="relative">

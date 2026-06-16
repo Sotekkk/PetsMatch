@@ -929,29 +929,57 @@ class _TachesTabState extends State<_TachesTab> {
                 child: affichees.isEmpty
                     ? _empty(_showDone ? 'Aucune tâche terminée' : 'Aucune tâche à faire',
                         _showDone ? '' : 'Appuyez sur + pour créer une tâche.')
-                    : ListView.builder(
+                    : Builder(builder: (ctx) => ListView(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                        itemCount: affichees.length,
-                        itemBuilder: (ctx, i) {
-                          final t = affichees[i];
-                          if (t['_source'] == 'protocole') {
-                            return _buildProtoGroupCard(t);
-                          }
-                          return _TacheCard(
-                            tache: t,
-                            teal: widget.teal, dark: widget.dark,
-                            onToggle: () => _toggleStatut(t),
-                            onDelete: () => _delete(t),
-                            onEdit: () => _edit(t),
-                            onTap: () => Navigator.push(ctx, MaterialPageRoute(
-                              builder: (_) => TacheDetailPage(tache: t),
-                            )).then((_) => _load()),
-                          );
-                        },
-                      ),
+                        children: _buildTacheListItems(ctx, affichees),
+                      )),
               ),
             ]),
     );
+  }
+
+  List<Widget> _buildTacheListItems(BuildContext ctx, List<Map<String, dynamic>> items) {
+    final result  = <Widget>[];
+    final now     = DateTime.now();
+    final todayS  = DateFormat('yyyy-MM-dd').format(now);
+    final tmrS    = DateFormat('yyyy-MM-dd').format(now.add(const Duration(days: 1)));
+    String? lastD;
+
+    for (final t in items) {
+      final raw  = (t['_sort_date'] as String? ?? '');
+      final dStr = raw.length >= 10 ? raw.substring(0, 10) : raw;
+      if (dStr != lastD) {
+        lastD = dStr;
+        String label; Color col;
+        if (dStr == todayS) {
+          label = "Aujourd'hui"; col = widget.teal;
+        } else if (dStr == tmrS) {
+          label = 'Demain';      col = widget.teal;
+        } else if (dStr.isEmpty) {
+          label = 'Sans date';   col = Colors.grey;
+        } else {
+          final d   = DateTime.tryParse(dStr);
+          final past = d != null && d.isBefore(DateTime(now.year, now.month, now.day));
+          label = d != null ? DateFormat('EEE d MMM', 'fr_FR').format(d) : dStr;
+          col   = past ? Colors.red.shade400 : widget.teal;
+        }
+        result.add(_DateSectionHeader(label: label, color: col));
+      }
+      if (t['_source'] == 'protocole') {
+        result.add(_buildProtoGroupCard(t));
+      } else {
+        result.add(_TacheCard(
+          tache: t, teal: widget.teal, dark: widget.dark,
+          onToggle: () => _toggleStatut(t),
+          onDelete: () => _delete(t),
+          onEdit:   () => _edit(t),
+          onTap: () => Navigator.push(ctx, MaterialPageRoute(
+            builder: (_) => TacheDetailPage(tache: t),
+          )).then((_) => _load()),
+        ));
+      }
+    }
+    return result;
   }
 
   Widget _buildProtoGroupCard(Map<String, dynamic> group) {
@@ -1328,6 +1356,31 @@ class _AssignProtocoleSheet extends StatelessWidget {
       ]),
     );
   }
+}
+
+class _DateSectionHeader extends StatelessWidget {
+  final String label;
+  final Color  color;
+  const _DateSectionHeader({required this.label, required this.color});
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(2, 14, 0, 4),
+    child: Row(children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Text(label,
+          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+              fontWeight: FontWeight.w700, color: color)),
+      ),
+      const SizedBox(width: 10),
+      Expanded(child: Divider(color: color.withValues(alpha: 0.25))),
+    ]),
+  );
 }
 
 class _FilterChip extends StatelessWidget {
