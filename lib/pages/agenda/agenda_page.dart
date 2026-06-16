@@ -158,6 +158,7 @@ class _AgendaPageState extends State<AgendaPage> {
     final toDate = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0);
     final to   = '${toDate.year}-${toDate.month.toString().padLeft(2, '0')}-${toDate.day.toString().padLeft(2, '0')}';
     try {
+      // ── Tâches manuelles ─────────────────────────────────────────────────
       final d1 = await _supa.from('taches_elevage')
           .select('id,titre,date,statut,assigne_a,uid_eleveur')
           .eq('uid_eleveur', _uid).gte('date', from).lte('date', to);
@@ -168,12 +169,41 @@ class _AgendaPageState extends State<AgendaPage> {
       final all  = <Map<String, dynamic>>[];
       for (final t in [...(d1 as List), ...(d2 as List)]) {
         final m = Map<String, dynamic>.from(t);
-        if (seen.add(m['id'])) all.add(m);
+        if (seen.add(m['id'])) all.add({...m, '_source': 'manuel'});
       }
-      // Résoudre les noms (responsable = assigne_a ?? uid_eleveur)
+
+      // ── Tâches protocole (plan_taches) ───────────────────────────────────
+      try {
+        final p1 = await _supa.from('plan_taches')
+            .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom')
+            .eq('uid_eleveur', _uid)
+            .gte('date_prevue', from).lte('date_prevue', to)
+            .not('statut', 'eq', 'fait');
+        final p2 = await _supa.from('plan_taches')
+            .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom')
+            .eq('assigned_to', _uid)
+            .gte('date_prevue', from).lte('date_prevue', to)
+            .not('statut', 'eq', 'fait');
+        final seenPlan = <dynamic>{};
+        for (final t in [...(p1 as List), ...(p2 as List)]) {
+          final m = Map<String, dynamic>.from(t);
+          if (seenPlan.add(m['id'])) {
+            all.add({
+              ...m,
+              '_source': 'protocole',
+              // Normalise les champs pour la vue agenda
+              'titre': m['label'],
+              'date': (m['date_prevue'] as String? ?? '').split('T').first,
+            });
+          }
+        }
+      } catch (_) {}
+
+      // ── Résoudre les noms ─────────────────────────────────────────────────
       final uids = <String>{};
       for (final t in all) {
-        if (t['assigne_a'] != null) uids.add(t['assigne_a'] as String);
+        final assignee = (t['assigne_a'] ?? t['assigned_to']) as String?;
+        if (assignee != null) uids.add(assignee);
         if (t['uid_eleveur'] != null) uids.add(t['uid_eleveur'] as String);
       }
       if (uids.isNotEmpty) {
@@ -190,7 +220,8 @@ class _AgendaPageState extends State<AgendaPage> {
             if (nom.isNotEmpty) nomMap[uid] = nom;
           }
           for (final t in all) {
-            final resp = (t['assigne_a'] as String?) ?? (t['uid_eleveur'] as String?);
+            final assignee = (t['assigne_a'] ?? t['assigned_to']) as String?;
+            final resp = assignee ?? (t['uid_eleveur'] as String?);
             t['responsable_nom'] = resp != null ? nomMap[resp] : null;
           }
         } catch (_) {}
@@ -227,13 +258,30 @@ class _AgendaPageState extends State<AgendaPage> {
           ]),
           const SizedBox(height: 6),
           ...tasks.map((t) {
-            final isDone = t['statut'] == 'fait';
+            final isDone   = t['statut'] == 'fait';
+            final isProto  = t['_source'] == 'protocole';
+            final typeActe = t['type_acte']?.toString() ?? '';
+            final protoEmoji = isProto ? switch (typeActe) {
+              'vermifuge'       => '💊',
+              'vaccination'     => '💉',
+              'antiparasitaire' => '🛡️',
+              'traitement'      => '🩺',
+              'visite'          => '🏥',
+              'nettoyage'       => '🧹',
+              'promenade'       => '🦮',
+              _                 => '📋',
+            } : null;
             return Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: GestureDetector(
                 onTap: () async {
-                  final newStatut = isDone ? 'a_faire' : 'fait';
-                  await _supa.from('taches_elevage').update({'statut': newStatut}).eq('id', t['id']);
+                  if (isProto) {
+                    final newStatut = isDone ? 'en_attente' : 'fait';
+                    await _supa.from('plan_taches').update({'statut': newStatut}).eq('id', t['id']);
+                  } else {
+                    final newStatut = isDone ? 'a_faire' : 'fait';
+                    await _supa.from('taches_elevage').update({'statut': newStatut}).eq('id', t['id']);
+                  }
                   _loadTasks();
                 },
                 child: Row(children: [
@@ -254,15 +302,27 @@ class _AgendaPageState extends State<AgendaPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        t['titre'] ?? '',
-                        style: TextStyle(
-                          fontFamily: 'Galey', fontSize: 13,
-                          color: isDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
-                          decoration: isDone ? TextDecoration.lineThrough : null,
+                      Row(children: [
+                        if (isProto && protoEmoji != null) ...[
+                          Text(protoEmoji, style: const TextStyle(fontSize: 11)),
+                          const SizedBox(width: 4),
+                        ],
+                        Expanded(
+                          child: Text(
+                            t['titre'] ?? '',
+                            style: TextStyle(
+                              fontFamily: 'Galey', fontSize: 13,
+                              color: isDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
+                              decoration: isDone ? TextDecoration.lineThrough : null,
+                            ),
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                      ),
+                      ]),
+                      if (isProto && (t['animal_nom'] as String?)?.isNotEmpty == true)
+                        Text('🐾 ${t['animal_nom']}',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 10.5,
+                                color: isDone ? Colors.grey.shade400 : Colors.grey.shade500)),
                       if (t['responsable_nom'] != null)
                         Text(
                           isDone

@@ -629,10 +629,32 @@ class _TachesTabState extends State<_TachesTab> {
   final _supa = Supabase.instance.client;
   final _uid  = FirebaseAuth.instance.currentUser!.uid;
   bool _loading = true;
-  List<Map<String, dynamic>> _taches  = [];
-  List<Map<String, dynamic>> _employes = [];
-  List<Map<String, dynamic>> _animaux  = [];
+  List<Map<String, dynamic>> _taches      = [];
+  List<Map<String, dynamic>> _planTaches  = [];
+  List<Map<String, dynamic>> _employes    = [];
+  List<Map<String, dynamic>> _animaux     = [];
   bool _showDone = false;
+
+  // Liste unifiée triée par date
+  List<Map<String, dynamic>> get _toutesLesTaches {
+    final manuel = _taches.map((t) => {
+      ...t,
+      '_source': 'manuel',
+      '_sort_date': (t['date'] as String?) ?? '',
+    }).toList();
+    final proto = _planTaches.map((t) => {
+      ...t,
+      '_source': 'protocole',
+      '_sort_date': (t['date_prevue'] as String?) ?? '',
+    }).toList();
+    final all = [...manuel, ...proto];
+    all.sort((a, b) {
+      final da = DateTime.tryParse(a['_sort_date'] as String? ?? '') ?? DateTime(2099);
+      final db = DateTime.tryParse(b['_sort_date'] as String? ?? '') ?? DateTime(2099);
+      return da.compareTo(db);
+    });
+    return all;
+  }
 
   @override
   void initState() { super.initState(); _load(); }
@@ -694,11 +716,41 @@ class _TachesTabState extends State<_TachesTab> {
         return {...t, 'assigne_nom': assigneNom, 'animal_nom': animalNom, 'animal_noms': resolvedAnimalNoms};
       }).toList();
 
+      // Charger les plan_taches assignées aux employés
+      List<Map<String, dynamic>> planTaches = [];
+      try {
+        final ptRaw = await _supa
+            .from('plan_taches')
+            .select('*, plans_actifs(reference_label)')
+            .eq('uid_eleveur', _uid)
+            .not('assigned_to', 'is', null)
+            .not('statut', 'eq', 'fait')
+            .order('date_prevue');
+        planTaches = List<Map<String, dynamic>>.from(ptRaw);
+        // Enrichir avec le nom de l'assigné
+        for (final pt in planTaches) {
+          final assignedTo = pt['assigned_to'] as String?;
+          if (assignedTo != null && uidToNom.containsKey(assignedTo)) {
+            pt['assigne_nom'] = uidToNom[assignedTo];
+          } else if (assignedTo != null) {
+            final u = await _supa.from('users')
+                .select('firstname, lastname, name_elevage, is_elevage')
+                .eq('uid', assignedTo).maybeSingle();
+            if (u != null) {
+              pt['assigne_nom'] = u['is_elevage'] == true
+                  ? (u['name_elevage'] ?? 'Employé')
+                  : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+            }
+          }
+        }
+      } catch (_) {}
+
       if (mounted) setState(() {
-        _taches   = taches;
-        _employes = employes;
-        _animaux  = List<Map<String, dynamic>>.from(animauxRaw);
-        _loading  = false;
+        _taches     = taches;
+        _planTaches = planTaches;
+        _employes   = employes;
+        _animaux    = List<Map<String, dynamic>>.from(animauxRaw);
+        _loading    = false;
       });
     } catch (e) {
       if (mounted) setState(() => _loading = false);
@@ -735,9 +787,17 @@ class _TachesTabState extends State<_TachesTab> {
     _load();
   }
 
+  Future<void> _togglePlanTache(Map<String, dynamic> t) async {
+    await _supa.from('plan_taches').update({'statut': 'fait'}).eq('id', t['id']);
+    _load();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final affichees = _taches.where((t) => _showDone ? t['statut'] == 'fait' : t['statut'] != 'fait').toList();
+    final toutes = _toutesLesTaches;
+    final affichees = _showDone
+        ? toutes.where((t) => t['statut'] == 'fait').toList()
+        : toutes.where((t) => t['statut'] != 'fait').toList();
 
     return Scaffold(
       backgroundColor: widget.bg,
@@ -778,19 +838,94 @@ class _TachesTabState extends State<_TachesTab> {
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                         itemCount: affichees.length,
-                        itemBuilder: (ctx, i) => _TacheCard(
-                          tache: affichees[i],
-                          teal: widget.teal, dark: widget.dark,
-                          onToggle: () => _toggleStatut(affichees[i]),
-                          onDelete: () => _delete(affichees[i]),
-                          onEdit: () => _edit(affichees[i]),
-                          onTap: () => Navigator.push(ctx, MaterialPageRoute(
-                            builder: (_) => TacheDetailPage(tache: affichees[i]),
-                          )).then((_) => _load()),
-                        ),
+                        itemBuilder: (ctx, i) {
+                          final t = affichees[i];
+                          if (t['_source'] == 'protocole') {
+                            return _buildProtoCardEleveur(t);
+                          }
+                          return _TacheCard(
+                            tache: t,
+                            teal: widget.teal, dark: widget.dark,
+                            onToggle: () => _toggleStatut(t),
+                            onDelete: () => _delete(t),
+                            onEdit: () => _edit(t),
+                            onTap: () => Navigator.push(ctx, MaterialPageRoute(
+                              builder: (_) => TacheDetailPage(tache: t),
+                            )).then((_) => _load()),
+                          );
+                        },
                       ),
               ),
             ]),
+    );
+  }
+
+  Widget _buildProtoCardEleveur(Map<String, dynamic> t) {
+    final date     = DateTime.tryParse(t['date_prevue'] as String? ?? '');
+    final dateStr  = date != null ? DateFormat('dd MMM', 'fr_FR').format(date) : '';
+    final ref      = (t['plans_actifs'] as Map<String, dynamic>?)?['reference_label'] as String?;
+    final assigneNom = t['assigne_nom'] as String?;
+    final typeActe = t['type_acte']?.toString() ?? '';
+    final emoji = switch (typeActe) {
+      'vermifuge'       => '💊',
+      'vaccination'     => '💉',
+      'antiparasitaire' => '🛡️',
+      'traitement'      => '🩺',
+      'visite'          => '🏥',
+      'nettoyage'       => '🧹',
+      'promenade'       => '🦮',
+      'socialisation'   => '🐾',
+      _                 => '📋',
+    };
+    final animalNom = t['animal_nom'] as String?;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      child: Row(children: [
+        Container(
+          width: 40, height: 40,
+          decoration: BoxDecoration(
+              color: const Color(0xFFF0F4FF), borderRadius: BorderRadius.circular(10)),
+          child: Center(child: Text(emoji, style: const TextStyle(fontSize: 18))),
+        ),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(color: const Color(0xFFF0F4FF), borderRadius: BorderRadius.circular(6)),
+              child: const Text('Protocole', style: TextStyle(
+                  fontFamily: 'Galey', fontSize: 9, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8))),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(t['label'] as String? ?? '',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                      fontSize: 13, color: widget.dark),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Wrap(spacing: 6, children: [
+            if (dateStr.isNotEmpty) _Badge(text: '📅 $dateStr', bg: const Color(0xFFEEF5EA), fg: widget.teal),
+            if (animalNom != null) _Badge(text: '🐾 $animalNom', bg: const Color(0xFFEFF6FF), fg: const Color(0xFF1D4ED8)),
+            if (assigneNom != null) _Badge(text: '👤 $assigneNom', bg: const Color(0xFFF5F5F5), fg: Colors.grey.shade600),
+            if (ref != null) _Badge(text: ref, bg: const Color(0xFFF0F4FF), fg: const Color(0xFF1D4ED8)),
+          ]),
+        ])),
+        TextButton(
+          onPressed: () => _togglePlanTache(t),
+          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
+          child: Text('Fait ✓', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+              color: widget.teal, fontWeight: FontWeight.w600)),
+        ),
+      ]),
     );
   }
 }
@@ -925,55 +1060,88 @@ class _CreateTacheSheet extends StatefulWidget {
 }
 
 class _CreateTacheSheetState extends State<_CreateTacheSheet> {
-  final _supa   = Supabase.instance.client;
+  final _supa      = Supabase.instance.client;
   final _titreCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
-  DateTime _date = DateTime.now();
+  DateTime _date    = DateTime.now();
   TimeOfDay? _heure;
   final Set<String> _selectedAnimalIds = {};
   String? _selectedEmployeUid;
   bool _saving = false;
 
+  // ── Récurrence ─────────────────────────────────────────────────────────────
+  bool _recurrent          = false;
+  String _recurrence       = 'quotidien'; // 'quotidien' | 'jours_semaine'
+  DateTime? _dateFin;
+  final Set<int> _joursSemaine = {}; // 1=Lun … 7=Dim
+
+  static const _joursLabels = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+  List<DateTime> get _datesGenerees {
+    if (!_recurrent || _dateFin == null) return [_date];
+    final result = <DateTime>[];
+    var cur = _date;
+    while (!cur.isAfter(_dateFin!)) {
+      if (_recurrence == 'quotidien' ||
+          (_recurrence == 'jours_semaine' && _joursSemaine.contains(cur.weekday))) {
+        result.add(cur);
+      }
+      cur = cur.add(const Duration(days: 1));
+    }
+    return result;
+  }
+
+  void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg, style: const TextStyle(fontFamily: 'Galey'))));
+
   Future<void> _save() async {
     if (_titreCtrl.text.trim().isEmpty) return;
+    final dates = _datesGenerees;
+    if (dates.isEmpty) { _snack('Aucun jour dans la période.'); return; }
     setState(() => _saving = true);
     try {
       final heureStr = _heure != null
           ? '${_heure!.hour.toString().padLeft(2, '0')}:${_heure!.minute.toString().padLeft(2, '0')}:00'
           : null;
-      final result = await _supa.from('taches_elevage').insert({
-        'titre':       _titreCtrl.text.trim(),
+      final titre = _titreCtrl.text.trim();
+      final basePayload = <String, dynamic>{
+        'titre':       titre,
         'uid_eleveur': widget.uid,
-        'date':        _date.toIso8601String().split('T').first,
         if (heureStr != null) 'heure': heureStr,
         if (_selectedAnimalIds.isNotEmpty) 'animaux_ids': _selectedAnimalIds.toList(),
         if (_selectedEmployeUid != null) 'assigne_a': _selectedEmployeUid,
         if (_notesCtrl.text.trim().isNotEmpty) 'notes': _notesCtrl.text.trim(),
         'statut': 'a_faire',
-      }).select().single();
+      };
 
-      if (_selectedEmployeUid != null) {
-        final tacheId = result['id'];
-        // Notification in-app (cloche)
-        await _supa.from('notifications').insert({
-          'uid':   _selectedEmployeUid,
-          'type':  'tache',
-          'title': 'Nouvelle tâche assignée',
-          'body':  _titreCtrl.text.trim(),
-          'data':  {'eleveurUid': widget.uid, 'tacheId': tacheId.toString()},
-          'read':  false,
-        });
-        // Push FCM (best-effort)
-        try {
-          await FirebaseFunctions.instance
-              .httpsCallable('notifyTacheAssignee')
-              .call({'assigneUid': _selectedEmployeUid, 'titre': _titreCtrl.text.trim()});
-        } catch (_) {}
+      for (int i = 0; i < dates.length; i++) {
+        final result = await _supa.from('taches_elevage').insert({
+          ...basePayload,
+          'date': dates[i].toIso8601String().split('T').first,
+        }).select().single();
+
+        // Notifier l'employé seulement pour la 1ère occurrence
+        if (i == 0 && _selectedEmployeUid != null) {
+          final tacheId = result['id'];
+          await _supa.from('notifications').insert({
+            'uid':   _selectedEmployeUid,
+            'type':  'tache',
+            'title': 'Nouvelle tâche assignée',
+            'body':  dates.length > 1 ? '$titre (${dates.length} occurrences)' : titre,
+            'data':  {'eleveurUid': widget.uid, 'tacheId': tacheId.toString()},
+            'read':  false,
+          });
+          try {
+            await FirebaseFunctions.instance
+                .httpsCallable('notifyTacheAssignee')
+                .call({'assigneUid': _selectedEmployeUid, 'titre': titre});
+          } catch (_) {}
+        }
       }
 
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      if (mounted) _snack('Erreur : $e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1149,6 +1317,110 @@ class _CreateTacheSheetState extends State<_CreateTacheSheet> {
             ],
             // Notes
             _sheetField('Notes (optionnel)', _notesCtrl, maxLines: 2, teal: widget.teal),
+            const SizedBox(height: 16),
+
+            // ── Récurrence ───────────────────────────────────────────────────
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8F8F6),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE4E7E2)),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Icon(Icons.repeat, size: 16, color: widget.teal),
+                  const SizedBox(width: 8),
+                  const Text('Répétition',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
+                  const Spacer(),
+                  Switch(
+                    value: _recurrent,
+                    activeColor: widget.teal,
+                    onChanged: (v) => setState(() => _recurrent = v),
+                  ),
+                ]),
+                if (_recurrent) ...[
+                  const SizedBox(height: 12),
+                  // Type de récurrence
+                  Row(children: [
+                    _recChip('Quotidien', 'quotidien'),
+                    const SizedBox(width: 8),
+                    _recChip('Jours sélectifs', 'jours_semaine'),
+                  ]),
+                  const SizedBox(height: 12),
+                  // Jours de la semaine (si jours_semaine)
+                  if (_recurrence == 'jours_semaine') ...[
+                    Wrap(spacing: 6, children: List.generate(7, (i) {
+                      final day = i + 1;
+                      final sel = _joursSemaine.contains(day);
+                      return GestureDetector(
+                        onTap: () => setState(() => sel ? _joursSemaine.remove(day) : _joursSemaine.add(day)),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          width: 34, height: 34,
+                          decoration: BoxDecoration(
+                            color: sel ? widget.teal : Colors.white,
+                            border: Border.all(color: sel ? widget.teal : Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Center(child: Text(_joursLabels[i],
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: sel ? Colors.white : Colors.grey.shade500))),
+                        ),
+                      );
+                    })),
+                    const SizedBox(height: 12),
+                  ],
+                  // Date de fin
+                  GestureDetector(
+                    onTap: () async {
+                      final p = await showDatePicker(
+                        context: context,
+                        initialDate: _dateFin ?? _date.add(const Duration(days: 7)),
+                        firstDate: _date,
+                        lastDate: _date.add(const Duration(days: 365)),
+                        builder: (ctx, child) => Theme(
+                          data: Theme.of(ctx).copyWith(colorScheme: ColorScheme.light(primary: widget.teal)),
+                          child: child!,
+                        ),
+                      );
+                      if (p != null) setState(() => _dateFin = p);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: _dateFin != null ? widget.teal : const Color(0xFFE4E7E2)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.event_repeat_outlined, size: 16, color: widget.teal),
+                        const SizedBox(width: 8),
+                        Text(
+                          _dateFin != null
+                              ? 'Jusqu\'au ${DateFormat('dd MMMM yyyy', 'fr_FR').format(_dateFin!)}'
+                              : 'Date de fin *',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                              color: _dateFin != null ? const Color(0xFF1F2A2E) : const Color(0xFF6F767B)),
+                        ),
+                      ]),
+                    ),
+                  ),
+                  // Résumé
+                  if (_dateFin != null) ...[
+                    const SizedBox(height: 8),
+                    Builder(builder: (_) {
+                      final n = _datesGenerees.length;
+                      return Text('→ $n occurrence${n > 1 ? 's' : ''} créée${n > 1 ? 's' : ''}',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                              color: widget.teal, fontWeight: FontWeight.w600));
+                    }),
+                  ],
+                ],
+              ]),
+            ),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -1161,11 +1433,34 @@ class _CreateTacheSheetState extends State<_CreateTacheSheet> {
                 ),
                 child: _saving
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Text('Créer la tâche', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Colors.white)),
+                    : Text(
+                        _recurrent && _dateFin != null && _datesGenerees.length > 1
+                            ? 'Créer ${_datesGenerees.length} tâches'
+                            : 'Créer la tâche',
+                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Colors.white)),
               ),
             ),
           ]),
         ),
+      ),
+    );
+  }
+
+  Widget _recChip(String label, String value) {
+    final sel = _recurrence == value;
+    return GestureDetector(
+      onTap: () => setState(() => _recurrence = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: sel ? widget.teal : Colors.white,
+          border: Border.all(color: sel ? widget.teal : Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(label, style: TextStyle(
+            fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+            color: sel ? Colors.white : Colors.grey.shade600)),
       ),
     );
   }
