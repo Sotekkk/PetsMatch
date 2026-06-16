@@ -1190,6 +1190,12 @@ PODS:
   - abseil/xcprivacy (1.20240722.0)
   - app_links (7.0.0):
     - Flutter
+  - AppCheckCore (11.3.0):
+    - GoogleUtilities/Environment (~> 8.0)
+    - GoogleUtilities/UserDefaults (~> 8.0)
+    - PromisesObjC (~> 2.4)
+    - PromisesSwift (~> 2.4)
+    - RecaptchaInterop (~> 101.0)
   - BoringSSL-GRPC (0.0.37):
     - BoringSSL-GRPC/Implementation (= 0.0.37)
     - BoringSSL-GRPC/Interface (= 0.0.37)
@@ -1255,6 +1261,11 @@ PODS:
   - Firebase/Storage (12.13.0):
     - Firebase/CoreOnly
     - FirebaseStorage (~> 12.13.0)
+  - firebase_app_check (0.4.4-1):
+    - Firebase/CoreOnly (~> 12.13.0)
+    - firebase_core
+    - FirebaseAppCheck (~> 12.13.0)
+    - Flutter
   - firebase_auth (6.5.1):
     - Firebase/Auth (= 12.13.0)
     - firebase_core
@@ -1270,6 +1281,12 @@ PODS:
     - Firebase/Storage (= 12.13.0)
     - firebase_core
     - Flutter
+  - FirebaseAppCheck (12.13.0):
+    - AppCheckCore (~> 11.0)
+    - FirebaseAppCheckInterop (~> 12.13.0)
+    - FirebaseCore (~> 12.13.0)
+    - GoogleUtilities/Environment (~> 8.1)
+    - GoogleUtilities/UserDefaults (~> 8.1)
   - FirebaseAppCheckInterop (12.13.0)
   - FirebaseAuth (12.13.0):
     - FirebaseAppCheckInterop (~> 12.13.0)
@@ -1527,6 +1544,8 @@ PODS:
   - printing (1.0.0):
     - Flutter
   - PromisesObjC (2.4.0)
+  - PromisesSwift (2.4.0):
+    - PromisesObjC (= 2.4.0)
   - RecaptchaInterop (101.0.0)
   - SDWebImage (5.21.7):
     - SDWebImage/Core (= 5.21.7)
@@ -1621,6 +1640,7 @@ DEPENDENCIES:
   - cloud_firestore (from `.symlinks/plugins/cloud_firestore/ios`)
   - cloud_functions (from `.symlinks/plugins/cloud_functions/ios`)
   - file_picker (from `.symlinks/plugins/file_picker/ios`)
+  - firebase_app_check (from `.symlinks/plugins/firebase_app_check/ios`)
   - firebase_auth (from `.symlinks/plugins/firebase_auth/ios`)
   - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
   - firebase_messaging (from `.symlinks/plugins/firebase_messaging/ios`)
@@ -1653,10 +1673,12 @@ DEPENDENCIES:
 SPEC REPOS:
   https://github.com/CocoaPods/Specs.git:
     - abseil
+    - AppCheckCore
     - BoringSSL-GRPC
     - DKImagePickerController
     - DKPhotoGallery
     - Firebase
+    - FirebaseAppCheck
     - FirebaseAppCheckInterop
     - FirebaseAuth
     - FirebaseAuthInterop
@@ -1683,6 +1705,7 @@ SPEC REPOS:
     - Mantle
     - nanopb
     - PromisesObjC
+    - PromisesSwift
     - RecaptchaInterop
     - SDWebImage
     - SDWebImageWebPCoder
@@ -1707,6 +1730,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/cloud_functions/ios"
   file_picker:
     :path: ".symlinks/plugins/file_picker/ios"
+  firebase_app_check:
+    :path: ".symlinks/plugins/firebase_app_check/ios"
   firebase_auth:
     :path: ".symlinks/plugins/firebase_auth/ios"
   firebase_core:
@@ -1767,6 +1792,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   abseil: a05cc83bf02079535e17169a73c5be5ba47f714b
   app_links: a754cbec3c255bd4bbb4d236ecc06f28cd9a7ce8
+  AppCheckCore: 214137f5c378d1dec88a68425c467fe65aaff637
   BoringSSL-GRPC: dded2a44897e45f28f08ae87a55ee4bcd19bc508
   cloud_firestore: 95c2f2d0a75b8ca7ca9f629fc903ad4dbd030c2a
   cloud_functions: 9549563dcadc80b69e54eaf88ee64610a401e303
@@ -1774,10 +1800,12 @@ SPEC CHECKSUMS:
   DKPhotoGallery: b3834fecb755ee09a593d7c9e389d8b5d6deed60
   file_picker: a0560bc09d61de87f12d246fc47d2119e6ef37be
   Firebase: 7d62445aeabdaea36f7d372f33052fed9a72514f
+  firebase_app_check: b562562ecbcc44577f292aa4ef4e9ce807d3497c
   firebase_auth: bba295912fb4b0e71c91b2737d29403f4c2c3573
   firebase_core: 0013f886fbd0b4950865551eaab47784424bfdb5
   firebase_messaging: b875e4088ddd9ecd1834f6c89f6e0a1ffc7d98f0
   firebase_storage: 400da7dd1eaeb5f4b5e583dd67cdabe4ce62b4d6
+  FirebaseAppCheck: cc7e14a5cf852ca7a18e1cb488511ae8fbca3c28
   FirebaseAppCheckInterop: db09d7412340fb4b5a8727d4d410e5a5c780dd56
   FirebaseAuth: fedecd40125af7f898ba4f0a328ac9f3a9c3b8c4
   FirebaseAuthInterop: 63d36ca102054d7336f87aec87b1c68a0bab77e0
@@ -1820,6 +1848,7 @@ SPEC CHECKSUMS:
   photo_manager: d2fbcc0f2d82458700ee6256a15018210a81d413
   printing: 54ff03f28fe9ba3aa93358afb80a8595a071dd07
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
+  PromisesSwift: 9d77319bbe72ebf6d872900551f7eeba9bce2851
   RecaptchaInterop: 11e0b637842dfb48308d242afc3f448062325aba
   SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
   SDWebImageWebPCoder: 0e06e365080397465cc73a7a9b472d8a3bd0f377
@@ -1843,6 +1872,6 @@ SPEC CHECKSUMS:
   video_player_avfoundation: 2cef49524dd1f16c5300b9cd6efd9611ce03639b
   video_thumbnail: b637e0ad5f588ca9945f6e2c927f73a69a661140
 
-PODFILE CHECKSUM: fd5560b41884aff8601f56bc376a9c7ea6abd5c4
+PODFILE CHECKSUM: c7a69ee4d3575bf4ea2fdd8d454894f6a7f61e73
 
 COCOAPODS: 1.16.2

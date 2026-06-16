@@ -40,16 +40,198 @@ target 'Runner' do
 end
 
 post_install do |installer|
+  pods_root = installer.sandbox.root.to_s
+
+  # Persistent record of which headers Step 1 has EVER copied to parent dirs.
+  # This lets Step 3 know which headers CocoaPods missed (only-in-include/ pods like GMU)
+  # vs headers CocoaPods handles itself (headers in BOTH parent AND include/, like STDS*).
+  # Persists across flutter runs because CocoaPods caches pod files between installs.
+  step1_marker_path = File.join(pods_root, '.step1_created')
+  step1_ever_created = Hash.new { |h, k| h[k] = Set.new }
+  if File.exist?(step1_marker_path)
+    File.readlines(step1_marker_path).each do |line|
+      line = line.strip
+      next if line.empty?
+      tgt, hdr = line.split('|', 2)
+      step1_ever_created[tgt] << hdr if tgt && hdr
+    end
+  end
+
+  # Step 1: ensure every public header is reachable from the pod root dir.
+  # Track new copies so Step 3 knows which headers CocoaPods missed.
+  installer.pods_project.targets.each do |target|
+    pod_dir = File.join(pods_root, target.name)
+    next unless Dir.exist?(pod_dir)
+    Dir.glob(File.join(pod_dir, '**/Public', target.name, '*.h')).each do |h|
+      dest = File.join(File.dirname(File.dirname(File.dirname(h))), File.basename(h))
+      unless File.exist?(dest)
+        FileUtils.cp(h, dest)
+        step1_ever_created[target.name] << File.basename(h)
+      end
+    end
+    Dir.glob(File.join(pod_dir, '**/Public', '**', '*.h')).each do |h|
+      dest = File.join(File.dirname(h).gsub(/\/Public\/[^\/]+/, ''), File.basename(h))
+      unless File.exist?(dest)
+        FileUtils.cp(h, dest)
+        step1_ever_created[target.name] << File.basename(h)
+      end
+    end
+    Dir.glob(File.join(pod_dir, '**/include', '*.h')).each do |h|
+      dest = File.join(File.dirname(File.dirname(h)), File.basename(h))
+      unless File.exist?(dest)
+        FileUtils.cp(h, dest)
+        step1_ever_created[target.name] << File.basename(h)
+      end
+    end
+  end
+
+  # Save updated marker so subsequent runs know what we ever created
+  File.open(step1_marker_path, 'w') do |f|
+    step1_ever_created.each do |tgt, hdrs|
+      hdrs.each { |h| f.puts "#{tgt}|#{h}" }
+    end
+  end
+
+  # Step 2: replace include/*.h with symlinks when parent dir has identical copy.
+  # Reduces filesystem paths for the same header content.
+  installer.pods_project.targets.each do |target|
+    pod_dir = File.join(pods_root, target.name)
+    next unless Dir.exist?(pod_dir)
+    Dir.glob(File.join(pod_dir, '**/include', '*.h')).each do |h|
+      next if File.symlink?(h)
+      parent_h = File.join(File.dirname(File.dirname(h)), File.basename(h))
+      if File.exist?(parent_h) && FileUtils.compare_file(h, parent_h)
+        File.delete(h)
+        File.symlink(parent_h, h)
+      end
+    end
+  end
+
+  # Step 2.5: add #pragma once AND #ifndef macro guards to pod headers that lack them.
+  # #pragma once is inode-based: when the same content exists at a source path (inode X)
+  # AND a built framework copy (inode Z), it cannot prevent double-inclusion.
+  # #ifndef macro guards are shared across all inodes within a compilation unit, so
+  # once the guard fires for one include path, ALL subsequent includes skip the content.
+  installer.pods_project.targets.each do |target|
+    pod_dir = File.join(pods_root, target.name)
+    next unless Dir.exist?(pod_dir)
+    processed_inodes = Set.new
+    Dir.glob(File.join(pod_dir, '**', '*.h')).each do |h|
+      real_path = File.symlink?(h) ? (File.realpath(h) rescue nil) : h
+      next unless real_path && File.exist?(real_path)
+      begin
+        inode = File.stat(real_path).ino
+      rescue
+        next
+      end
+      next if processed_inodes.include?(inode)
+      processed_inodes << inode
+      content = File.read(real_path)
+      next if content =~ /#ifndef\s+\w|#ifdef\s+\w/
+      basename = File.basename(real_path, '.*')
+      guard = "PODS_#{target.name.gsub(/[^A-Za-z0-9]/, '_').upcase}_#{basename.gsub(/[^A-Za-z0-9]/, '_').upcase}_H"
+      if content.start_with?('#pragma once')
+        rest = content.sub(/\A#pragma once\n?/, '')
+        new_content = "#pragma once\n#ifndef #{guard}\n#define #{guard}\n#{rest.lstrip}\n#endif\n"
+      else
+        new_content = "#pragma once\n#ifndef #{guard}\n#define #{guard}\n#{content}\n#endif\n"
+      end
+      next if new_content == content
+      FileUtils.chmod('u+w', real_path) unless File.writable?(real_path)
+      File.write(real_path, new_content)
+    end
+  end
+
+  # Step 3: fix umbrella headers for pods where CocoaPods missed include/-only headers.
+  # Only adds headers that Step 1 ever newly copied to parent dirs (those that were
+  # originally ONLY in include/ subdirs and not visible to CocoaPods' umbrella generator).
+  # Headers that were already in the parent dir (like STDS*) are handled by CocoaPods
+  # and must NOT be added here to avoid duplicates.
+  support_files_root = File.join(pods_root, 'Target Support Files')
+  installer.pods_project.targets.each do |target|
+    umbrella = File.expand_path(
+      File.join(support_files_root, target.name, "#{target.name}-umbrella.h")
+    )
+    next unless File.exist?(umbrella)
+
+    ever_created = step1_ever_created[target.name]
+    next if ever_created.empty?
+
+    content = File.read(umbrella)
+    already_imported = content.scan(/^#import\s+"([^"]+)"/).flatten.map { |f| File.basename(f) }.to_set
+
+    pod_dir = File.join(pods_root, target.name)
+    next unless Dir.exist?(pod_dir)
+
+    search_dirs = []
+    import_names = []
+
+    Dir.glob(File.join(pod_dir, '**/include')).each do |inc_dir|
+      h_files = Dir.glob(File.join(inc_dir, '*.h')).map { |h| File.basename(h) }
+      new_from_inc = h_files.select { |n| ever_created.include?(n) && !already_imported.include?(n) }
+      next if new_from_inc.empty?
+      search_dirs << File.dirname(inc_dir)
+      import_names.concat(new_from_inc)
+    end
+    Dir.glob(File.join(pod_dir, '**/Public', '**', '*.h')).each do |h|
+      name = File.basename(h)
+      next unless ever_created.include?(name) && !already_imported.include?(name)
+      import_names << name
+      search_dirs << File.dirname(h)
+    end
+
+    import_names.uniq!
+    search_dirs.uniq!
+    next if import_names.empty?
+
+    target.build_configurations.each do |config|
+      hs = config.build_settings['HEADER_SEARCH_PATHS'] || '$(inherited)'
+      search_dirs.each { |d| hs = "#{hs} \"#{d}\"" }
+      config.build_settings['HEADER_SEARCH_PATHS'] = hs
+    end
+
+    import_lines = import_names.map { |n| "#import \"#{n}\"" }.join("\n")
+    new_content = content.sub(/(FOUNDATION_EXPORT double)/, "#{import_lines}\n\n\\1")
+    File.write(umbrella, new_content)
+  end
+
+  # Step 4: remove duplicate/artifact entries from Headers build phases.
+  # Removes: include/-path dups AND "Name N.h" numbered artifacts from CocoaPods duplicate dirs.
+  installer.pods_project.targets.each do |target|
+    target.build_phases.each do |phase|
+      next unless phase.is_a?(Xcodeproj::Project::Object::PBXHeadersBuildPhase)
+      seen = {}
+      duplicates = []
+      phase.files.each do |bf|
+        next if bf.file_ref.nil?
+        full_path = bf.file_ref.path.to_s
+        name = File.basename(full_path)
+        stem = File.basename(name, '.*')
+        # Drop "Foo 2.h", "Foo 3.h" etc. — artifacts from CocoaPods numbered duplicate dirs
+        if stem =~ /\s+\d+$/
+          duplicates << bf
+          next
+        end
+        if seen[name]
+          duplicates << (full_path.include?('/include/') ? bf : seen[name])
+        else
+          seen[name] = bf
+        end
+      end
+      duplicates.each { |bf| bf.remove_from_project }
+    end
+  end
+
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
 
     target.build_configurations.each do |config|
-      # Activer les permissions nécessaires pour l'application
+      config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
       config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
         '$(inherited)',
-        'PERMISSION_CAMERA=1',           # Permission pour la caméra
-        'PERMISSION_PHOTOS=1',           # Permission pour la bibliothèque de photos
-        'PERMISSION_MICROPHONE=0',       # Désactiver si non utilisé
+        'PERMISSION_CAMERA=1',
+        'PERMISSION_PHOTOS=1',
+        'PERMISSION_MICROPHONE=0',
         'PERMISSION_LOCATION=1',
         'PERMISSION_NOTIFICATIONS=1',
         'PERMISSION_REMINDERS=0',
@@ -62,5 +244,55 @@ post_install do |installer|
         'PERMISSION_CRITICAL_ALERTS=0',
       ]
     end
+  end
+
+  # Step 5: deduplicate #import lines in all umbrella headers.
+  # CocoaPods can emit the same header import twice (once per subspec that exports it),
+  # which causes "Duplicate interface definition" compiler errors.
+  installer.pods_project.targets.each do |target|
+    umbrella = File.expand_path(
+      File.join(support_files_root, target.name, "#{target.name}-umbrella.h")
+    )
+    next unless File.exist?(umbrella)
+    content = File.read(umbrella)
+    # Find sub-umbrella files: headers that themselves import several headers already
+    # directly listed in this umbrella. They're redundant and cause duplicate interface
+    # errors in framework builds because Clang re-processes their transitive imports
+    # with a different inode than the framework's own Headers copies.
+    direct_imports = content.scan(/^#import\s+"([^"]+)"/).flatten.to_set
+    sub_umbrellas = Set.new
+    direct_imports.each do |imp|
+      header_files = Dir.glob(File.join(pods_root, target.name, '**', imp))
+      next if header_files.empty?
+      real = File.realpath(header_files.first) rescue nil
+      next unless real && File.exist?(real)
+      inner = File.read(real).scan(/^#import\s+"([^"]+)"/).flatten
+      overlap = inner.count { |h| direct_imports.include?(h) }
+      sub_umbrellas << imp if overlap >= 3
+    end
+
+    seen_imports = Set.new
+    new_lines = content.each_line.map do |line|
+      if line =~ /^#import\s+"([^"]+)"\s*$/
+        import_name = $1
+        stem = File.basename(import_name, '.*')
+        # Drop "Foo 2.h" etc. — numbered artifacts from CocoaPods duplicate pod dirs
+        if stem =~ /\s+\d+$/
+          nil
+        # Drop sub-umbrella files whose transitive imports are already direct in this umbrella
+        elsif sub_umbrellas.include?(import_name)
+          nil
+        elsif seen_imports.include?(import_name)
+          nil
+        else
+          seen_imports << import_name
+          line
+        end
+      else
+        line
+      end
+    end.compact
+    new_content = new_lines.join
+    File.write(umbrella, new_content) if new_content != content
   end
 end
