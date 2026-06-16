@@ -309,7 +309,7 @@ export default function PlanningPage() {
           </button>
           <button onClick={() => setView('protocoles')}
             className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${view === 'protocoles' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-            Protocoles
+            Routines
           </button>
         </div>
       </div>
@@ -439,9 +439,9 @@ function JourView({ groupes, selectedDate, loading, onDateChange, onValider, onR
         <div className="text-center py-16">
           <div className="text-5xl mb-4">✅</div>
           <p className="text-gray-500 mb-2">Aucune tâche ce jour</p>
-          <p className="text-gray-400 text-sm mb-6">Créez des protocoles pour générer des tâches automatiquement</p>
+          <p className="text-gray-400 text-sm mb-6">Créez des routines pour générer des tâches automatiquement</p>
           <button onClick={onNewProtocol} className="px-5 py-2 border border-green-600 text-green-700 rounded-xl text-sm font-semibold hover:bg-green-50">
-            Créer un protocole
+            Créer une routine
           </button>
         </div>
       ) : (
@@ -543,14 +543,14 @@ function ProtocolesView({ templates, onNew, onEdit, onApply, onPrint, onDelete }
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-bold text-gray-800">Mes protocoles</h2>
-        <button onClick={onNew} className="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">+ Nouveau</button>
+        <h2 className="text-lg font-bold text-gray-800">Mes routines</h2>
+        <button onClick={onNew} className="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">+ Nouvelle</button>
       </div>
       {templates.length === 0 ? (
         <div className="text-center py-16">
           <div className="text-5xl mb-4">📋</div>
-          <p className="text-gray-500 mb-4">Aucun protocole créé</p>
-          <button onClick={onNew} className="px-5 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">Créer mon premier protocole</button>
+          <p className="text-gray-500 mb-4">Aucune routine créée</p>
+          <button onClick={onNew} className="px-5 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">Créer ma première routine</button>
         </div>
       ) : (
         <div className="space-y-4">
@@ -576,7 +576,7 @@ function ProtocolesView({ templates, onNew, onEdit, onApply, onPrint, onDelete }
                 </div>
               </div>
               <button onClick={() => onApply(t)} className="mt-4 w-full py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">
-                ▶ Appliquer ce protocole
+                ▶ Appliquer cette routine
               </button>
             </div>
           ))}
@@ -671,7 +671,7 @@ function TemplateFormModal({ existing, uid, onClose, onSaved }: {
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between z-10">
-          <h2 className="text-lg font-bold text-gray-800">{existing ? 'Modifier' : 'Nouveau protocole'}</h2>
+          <h2 className="text-lg font-bold text-gray-800">{existing ? 'Modifier' : 'Nouvelle routine'}</h2>
           <div className="flex gap-2">
             <button onClick={onClose} className="px-3 py-1.5 text-gray-500 text-sm">Annuler</button>
             <button onClick={save} disabled={saving} className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">
@@ -698,7 +698,7 @@ function TemplateFormModal({ existing, uid, onClose, onSaved }: {
 
           {!existing && (
             <div>
-              <label className="block text-sm font-semibold text-teal-700 mb-2">Type de protocole</label>
+              <label className="block text-sm font-semibold text-teal-700 mb-2">Type de routine</label>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(TYPE_LABELS).map(([k, v]) => (
                   <button key={k} onClick={() => setType(k)}
