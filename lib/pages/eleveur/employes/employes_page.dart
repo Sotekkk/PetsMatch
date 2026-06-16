@@ -1665,7 +1665,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 3, vsync: this);
+    _tab = TabController(length: 2, vsync: this);
     _loadTaches();
     _loadPlanTaches();
   }
@@ -1787,14 +1787,13 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
           unselectedLabelColor: Colors.grey,
           indicatorColor: _teal,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
-          tabs: const [Tab(text: 'Mes Tâches'), Tab(text: 'Planning'), Tab(text: 'Animaux')],
+          tabs: const [Tab(text: 'Mes Tâches'), Tab(text: 'Animaux')],
         ),
       ),
       body: TabBarView(
         controller: _tab,
         children: [
           _buildTachesTab(),
-          _buildPlanningTab(),
           _AnimauxEmployeTab(
             eleveurUid: widget.eleveurUid,
             canEditAnimaux: widget.permissions['modifier_animaux'] == true,
@@ -1804,75 +1803,36 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
     );
   }
 
-  Widget _buildPlanningTab() {
-    if (_loadingPlanTaches) return const Center(child: CircularProgressIndicator(color: _teal));
-    return RefreshIndicator(
-      onRefresh: _loadPlanTaches,
-      color: _teal,
-      child: _planTaches.isEmpty
-          ? _empty('Aucune tâche de protocole', 'Votre responsable ne vous a assigné aucune tâche de protocole.')
-          : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-              itemCount: _planTaches.length,
-              itemBuilder: (_, i) {
-                final t       = _planTaches[i];
-                final date    = DateTime.tryParse(t['date_prevue'] as String? ?? '');
-                final dateStr = date != null ? DateFormat('dd MMM', 'fr_FR').format(date) : '';
-                final ref     = (t['plans_actifs'] as Map<String, dynamic>?)?['reference_label'] as String?;
-                final typeActe = t['type_acte']?.toString() ?? '';
-                final emoji = switch (typeActe) {
-                  'vermifuge'       => '💊',
-                  'vaccination'     => '💉',
-                  'antiparasitaire' => '🛡️',
-                  'traitement'      => '🩺',
-                  'visite'          => '🏥',
-                  'toilettage'      => '🛁',
-                  'peignage'        => '🪮',
-                  'nettoyage'       => '🧹',
-                  'promenade'       => '🦮',
-                  'socialisation'   => '🐾',
-                  _                 => '📋',
-                };
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
-                  ),
-                  child: Row(children: [
-                    Container(
-                      width: 40, height: 40,
-                      decoration: BoxDecoration(color: _teal.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-                      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 18))),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(t['label'] as String? ?? '',
-                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14, color: _dark)),
-                      const SizedBox(height: 4),
-                      Wrap(spacing: 6, children: [
-                        if (dateStr.isNotEmpty) _Badge(text: '📅 $dateStr', bg: const Color(0xFFEEF5EA), fg: _teal),
-                        if (ref != null) _Badge(text: '🐾 $ref', bg: const Color(0xFFEFF6FF), fg: const Color(0xFF1D4ED8)),
-                      ]),
-                    ])),
-                    TextButton(
-                      onPressed: () => _marquerPlanTacheFait(t),
-                      style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
-                      child: const Text('Fait ✓', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal, fontWeight: FontWeight.w600)),
-                    ),
-                  ]),
-                );
-              },
-            ),
-    );
+  // ── Vue unifiée manuelles + protocoles ──────────────────────────────────────
+
+  List<Map<String, dynamic>> get _toutesLesTaches {
+    final manuel = _taches.map((t) => {
+      ...t,
+      '_source': 'manuel',
+      '_sort_date': t['date'] as String? ?? '',
+    }).toList();
+    final proto = _planTaches.map((t) => {
+      ...t,
+      '_source': 'protocole',
+      '_sort_date': t['date_prevue'] as String? ?? '',
+    }).toList();
+    final all = [...manuel, ...proto];
+    all.sort((a, b) {
+      final da = DateTime.tryParse(a['_sort_date'] as String? ?? '') ?? DateTime(2099);
+      final db = DateTime.tryParse(b['_sort_date'] as String? ?? '') ?? DateTime(2099);
+      return da.compareTo(db);
+    });
+    return all;
   }
 
   Widget _buildTachesTab() {
     final canGererTaches = widget.permissions['gerer_taches'] == true;
     final uid = FirebaseAuth.instance.currentUser!.uid;
-    if (_loadingTaches) return const Center(child: CircularProgressIndicator(color: _teal));
+    final loading = _loadingTaches || _loadingPlanTaches;
+    if (loading) return const Center(child: CircularProgressIndicator(color: _teal));
+
+    final all = _toutesLesTaches;
+
     return Scaffold(
       backgroundColor: _bg,
       floatingActionButton: canGererTaches ? FloatingActionButton.extended(
@@ -1895,72 +1855,167 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
         },
       ) : null,
       body: RefreshIndicator(
-      onRefresh: _loadTaches,
-      color: _teal,
-      child: _taches.isEmpty
-          ? _empty('Aucune tâche', 'Votre responsable n\'a pas encore créé de tâche pour vous.')
-          : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-              itemCount: _taches.length,
-              itemBuilder: (ctx, i) {
-                final t = _taches[i];
-                final fait = t['statut'] == 'fait';
-                final date = DateTime.tryParse(t['date'] ?? '');
-                final dateStr = date != null ? DateFormat('dd MMM', 'fr_FR').format(date) : '';
-                final animalNom = t['animal_nom'] as String?;
-                return GestureDetector(
-                  onTap: () => Navigator.push(ctx, MaterialPageRoute(
-                    builder: (_) => TacheDetailPage(tache: t),
-                  )).then((_) => _loadTaches()),
-                  child: Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
-                  ),
-                  child: Row(children: [
-                    GestureDetector(
-                      onTap: fait ? null : () => _marquerFait(t),
-                      child: Container(
-                        width: 24, height: 24,
-                        decoration: BoxDecoration(
-                          color: fait ? _teal : Colors.transparent,
-                          border: Border.all(color: fait ? _teal : Colors.grey.shade400, width: 1.5),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: fait ? const Icon(Icons.check, color: Colors.white, size: 14) : null,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(t['titre'] ?? '',
-                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
-                              fontSize: 14, color: _dark,
-                              decoration: fait ? TextDecoration.lineThrough : null)),
-                      const SizedBox(height: 4),
-                      Wrap(spacing: 6, children: [
-                        if (dateStr.isNotEmpty) _Badge(text: '📅 $dateStr', bg: const Color(0xFFEEF5EA), fg: _teal),
-                        if (animalNom != null) _Badge(text: '🐾 $animalNom', bg: const Color(0xFFEFF6FF), fg: const Color(0xFF1D4ED8)),
-                      ]),
-                      if ((t['notes'] as String?)?.isNotEmpty == true) ...[
-                        const SizedBox(height: 4),
-                        Text(t['notes'], style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
-                      ],
-                    ])),
-                    if (!fait) TextButton(
-                      onPressed: () => _marquerFait(t),
-                      style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
-                      child: const Text('Fait ✓',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal, fontWeight: FontWeight.w600)),
-                    ),
-                    const Icon(Icons.chevron_right, size: 16, color: Color(0xFFCBD5E0)),
-                  ]),
-                ));
-              },
+        onRefresh: () async { await _loadTaches(); await _loadPlanTaches(); },
+        color: _teal,
+        child: all.isEmpty
+            ? _empty('Aucune tâche', 'Votre responsable n\'a pas encore créé de tâche pour vous.')
+            : ListView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                itemCount: all.length,
+                itemBuilder: (ctx, i) {
+                  final t      = all[i];
+                  final source = t['_source'] as String;
+                  if (source == 'protocole') {
+                    return _buildProtoCard(t);
+                  } else {
+                    return _buildManuelCard(ctx, t);
+                  }
+                },
+              ),
+      ),
+    );
+  }
+
+  Widget _buildManuelCard(BuildContext ctx, Map<String, dynamic> t) {
+    final fait      = t['statut'] == 'fait';
+    final date      = DateTime.tryParse(t['date'] as String? ?? '');
+    final dateStr   = date != null ? DateFormat('dd MMM', 'fr_FR').format(date) : '';
+    final animalNom = t['animal_nom'] as String?;
+    return GestureDetector(
+      onTap: () => Navigator.push(ctx, MaterialPageRoute(
+        builder: (_) => TacheDetailPage(tache: t),
+      )).then((_) => _loadTaches()),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+        ),
+        child: Row(children: [
+          GestureDetector(
+            onTap: fait ? null : () => _marquerFait(t),
+            child: Container(
+              width: 24, height: 24,
+              decoration: BoxDecoration(
+                color: fait ? _teal : Colors.transparent,
+                border: Border.all(color: fait ? _teal : Colors.grey.shade400, width: 1.5),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: fait ? const Icon(Icons.check, color: Colors.white, size: 14) : null,
             ),
-    ));
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0F2F1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text('Tâche', style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 9, fontWeight: FontWeight.w600,
+                    color: Color(0xFF0C5C6C))),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(t['titre'] as String? ?? '',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                        fontSize: 14, color: _dark,
+                        decoration: fait ? TextDecoration.lineThrough : null),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
+            ]),
+            const SizedBox(height: 4),
+            Wrap(spacing: 6, children: [
+              if (dateStr.isNotEmpty) _Badge(text: '📅 $dateStr', bg: const Color(0xFFEEF5EA), fg: _teal),
+              if (animalNom != null) _Badge(text: '🐾 $animalNom', bg: const Color(0xFFEFF6FF), fg: const Color(0xFF1D4ED8)),
+            ]),
+            if ((t['notes'] as String?)?.isNotEmpty == true) ...[
+              const SizedBox(height: 4),
+              Text(t['notes'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
+            ],
+          ])),
+          if (!fait) TextButton(
+            onPressed: () => _marquerFait(t),
+            style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
+            child: const Text('Fait ✓', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal, fontWeight: FontWeight.w600)),
+          ),
+          const Icon(Icons.chevron_right, size: 16, color: Color(0xFFCBD5E0)),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildProtoCard(Map<String, dynamic> t) {
+    final date    = DateTime.tryParse(t['date_prevue'] as String? ?? '');
+    final dateStr = date != null ? DateFormat('dd MMM', 'fr_FR').format(date) : '';
+    final ref     = (t['plans_actifs'] as Map<String, dynamic>?)?['reference_label'] as String?;
+    final typeActe = t['type_acte']?.toString() ?? '';
+    final emoji = switch (typeActe) {
+      'vermifuge'       => '💊',
+      'vaccination'     => '💉',
+      'antiparasitaire' => '🛡️',
+      'traitement'      => '🩺',
+      'visite'          => '🏥',
+      'toilettage'      => '🛁',
+      'peignage'        => '🪮',
+      'nettoyage'       => '🧹',
+      'promenade'       => '🦮',
+      'socialisation'   => '🐾',
+      _                 => '📋',
+    };
+    final animalNom = t['animal_nom'] as String?;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      child: Row(children: [
+        Container(
+          width: 40, height: 40,
+          decoration: BoxDecoration(color: _teal.withOpacity(0.08), borderRadius: BorderRadius.circular(10)),
+          child: Center(child: Text(emoji, style: const TextStyle(fontSize: 18))),
+        ),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F4FF),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text('Protocole', style: TextStyle(
+                  fontFamily: 'Galey', fontSize: 9, fontWeight: FontWeight.w600,
+                  color: Color(0xFF1D4ED8))),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(t['label'] as String? ?? '',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14, color: _dark),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Wrap(spacing: 6, children: [
+            if (dateStr.isNotEmpty) _Badge(text: '📅 $dateStr', bg: const Color(0xFFEEF5EA), fg: _teal),
+            if (animalNom != null) _Badge(text: '🐾 $animalNom', bg: const Color(0xFFEFF6FF), fg: const Color(0xFF1D4ED8)),
+            if (ref != null) _Badge(text: ref, bg: const Color(0xFFF0F4FF), fg: const Color(0xFF1D4ED8)),
+          ]),
+        ])),
+        TextButton(
+          onPressed: () => _marquerPlanTacheFait(t),
+          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
+          child: const Text('Fait ✓', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal, fontWeight: FontWeight.w600)),
+        ),
+      ]),
+    );
   }
 
 }
