@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { triggerAutoProtocoles } from '@/lib/planning-service';
 import { useAuth } from '@/lib/auth-context';
 import { loadBreeds } from '@/lib/breeds';
 import { uploadBlob } from '@/lib/upload-media';
@@ -119,6 +120,16 @@ export default function AjouterAnimalPage() {
 
       const { error: err } = await supabase.from('animaux').insert([row]);
       if (err) throw err;
+
+      // Protocoles automatiques pour un nouvel animal entrant (éleveurs uniquement)
+      if (isEleveur) {
+        triggerAutoProtocoles({
+          uid: user.uid, declencheur: 'entree',
+          animalId: id,
+          dateEvenement: new Date(), espece,
+        }).catch(() => {});
+      }
+
       router.push('/mes-animaux?added=1');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erreur lors de la sauvegarde');

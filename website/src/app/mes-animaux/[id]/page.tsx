@@ -10,6 +10,7 @@ import HealthSection from '@/components/animaux/HealthSection';
 import { uploadBlob, uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
 import AlimentationTab from './AlimentationTab';
+import { triggerAutoProtocoles } from '@/lib/planning-service';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1178,13 +1179,30 @@ export default function AnimalFichePage() {
 
   // ── Ajout repro
   async function saveRepro(table: string, data: Record<string,string>) {
-    if (!id) return;
+    if (!id || !user) return;
     setSavingRepro(true);
     const processed: Record<string, unknown> = { ...data };
     if ('gestation_confirmee' in processed) {
       processed.gestation_confirmee = processed.gestation_confirmee === 'true';
     }
     await supabase.from(table).insert({ ...processed, animal_id: id, id: crypto.randomUUID() });
+
+    // Protocoles automatiques
+    if (table === 'chaleurs' && data.date) {
+      triggerAutoProtocoles({
+        uid: user.uid, declencheur: 'chaleurs',
+        animalId: id, dateEvenement: new Date(data.date),
+        espece: animal.espece,
+      }).catch(() => {});
+    }
+    if (table === 'gestations' && processed.gestation_confirmee === true && data.date_prevue) {
+      triggerAutoProtocoles({
+        uid: user.uid, declencheur: 'gestation',
+        animalId: id, dateEvenement: new Date(data.date_prevue),
+        espece: animal.espece,
+      }).catch(() => {});
+    }
+
     await loadRepro();
     setReproAdd(null);
     setSavingRepro(false);
@@ -1196,7 +1214,7 @@ export default function AnimalFichePage() {
   }
 
   async function updateRepro(table: string, recordId: string, data: Record<string, string>) {
-    if (!id) return;
+    if (!id || !user) return;
     setSavingRepro(true);
     try {
       const processed: Record<string, unknown> = { ...data };
@@ -1204,6 +1222,20 @@ export default function AnimalFichePage() {
         processed.gestation_confirmee = processed.gestation_confirmee === 'true';
       }
       await supabase.from(table).update(processed).eq('id', recordId);
+
+      // Protocoles automatiques gestation lors de la confirmation
+      if (table === 'gestations' && processed.gestation_confirmee === true && data.date_prevue) {
+        // Vérifier que la gestation n'était pas déjà confirmée
+        const prev = gestations.find(g => g.id === recordId);
+        if (!prev?.gestation_confirmee) {
+          triggerAutoProtocoles({
+            uid: user.uid, declencheur: 'gestation',
+            animalId: id, dateEvenement: new Date(data.date_prevue),
+            espece: animal.espece,
+          }).catch(() => {});
+        }
+      }
+
       await loadRepro();
     } finally {
       setSavingRepro(false);

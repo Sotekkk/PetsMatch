@@ -15,6 +15,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
+import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -522,6 +523,20 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       };
 
       await _supa.from('animaux').upsert(data);
+
+      // Protocoles auto pour un nouvel animal entrant
+      if (widget.animalId == null) {
+        try {
+          await PlanningService.triggerAutoProtocoles(
+            uid: uid,
+            declencheur: 'entree',
+            animalId: id,
+            dateEvenement: _dateEntree ?? DateTime.now(),
+            espece: _espece,
+          );
+        } catch (_) {}
+      }
+
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
@@ -2599,9 +2614,24 @@ class _ReproListState extends State<_ReproList> {
 
       if (datePrevue != null && uid != null) {
         String animalNom = 'animal';
+        String? animalEspece;
         try {
-          final a = await supa.from('animaux').select('nom').eq('id', widget.animalId).maybeSingle();
-          if (a != null) animalNom = (a['nom'] as String?)?.isNotEmpty == true ? a['nom'] as String : 'animal';
+          final a = await supa.from('animaux').select('nom, espece').eq('id', widget.animalId).maybeSingle();
+          if (a != null) {
+            animalNom    = (a['nom']    as String?)?.isNotEmpty == true ? a['nom']    as String : 'animal';
+            animalEspece = a['espece'] as String?;
+          }
+        } catch (_) {}
+
+        // Protocoles automatiques gestation
+        try {
+          await PlanningService.triggerAutoProtocoles(
+            uid: uid,
+            declencheur: 'gestation',
+            animalId: widget.animalId,
+            dateEvenement: DateTime.tryParse(datePrevue) ?? DateTime.now(),
+            espece: animalEspece,
+          );
         } catch (_) {}
 
         final existing = await supa.from('agenda_events')
@@ -4828,6 +4858,19 @@ class _AddChaleursDialogState extends State<_AddChaleursDialog> {
             }
           }
         }
+        // Protocoles automatiques chaleurs
+        try {
+          final uidAuto = FirebaseAuth.instance.currentUser?.uid;
+          if (uidAuto != null) {
+            await PlanningService.triggerAutoProtocoles(
+              uid: uidAuto,
+              declencheur: 'chaleurs',
+              animalId: widget.animalId,
+              dateEvenement: _date!,
+              espece: widget.espece,
+            );
+          }
+        } catch (_) {}
       }
       return true;
     },

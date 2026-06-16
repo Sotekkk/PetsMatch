@@ -20,8 +20,9 @@ class PlanningService {
     String? espece,
     String? description,
     String? lieu,
-    String cibleType    = 'individuel',
+    String cibleType      = 'individuel',
     String referenceEvent = 'manuel',
+    String? declencheurAuto,
     required List<Map<String, dynamic>> etapes,
   }) async {
     final row = await _supa.from('plan_templates').insert({
@@ -30,6 +31,7 @@ class PlanningService {
       'type':            type,
       'cible_type':      cibleType,
       'reference_event': referenceEvent,
+      if (declencheurAuto != null && declencheurAuto.isNotEmpty) 'declencheur_auto': declencheurAuto,
       if (espece != null && espece.isNotEmpty) 'espece': espece,
       if (description != null && description.isNotEmpty) 'description': description,
       if (lieu != null && lieu.isNotEmpty) 'lieu': lieu,
@@ -47,17 +49,19 @@ class PlanningService {
     String? espece,
     String? description,
     String? lieu,
-    String cibleType    = 'individuel',
+    String cibleType      = 'individuel',
     String referenceEvent = 'manuel',
+    String? declencheurAuto,
     required List<Map<String, dynamic>> etapes,
   }) async {
     await _supa.from('plan_templates').update({
-      'nom':             nom,
-      'espece':          espece,
-      'description':     description,
-      'cible_type':      cibleType,
-      'reference_event': referenceEvent,
-      'lieu':            lieu,
+      'nom':              nom,
+      'espece':           espece,
+      'description':      description,
+      'cible_type':       cibleType,
+      'reference_event':  referenceEvent,
+      'lieu':             lieu,
+      'declencheur_auto': (declencheurAuto != null && declencheurAuto.isNotEmpty) ? declencheurAuto : null,
     }).eq('id', templateId);
 
     await _supa.from('plan_template_etapes').delete().eq('template_id', templateId);
@@ -394,6 +398,60 @@ class PlanningService {
     if (lieu != null && lieu.isNotEmpty) 'lieu': lieu,
     if (trancheHoraire != null) 'tranche_horaire': trancheHoraire,
   };
+
+  // ── Déclencher automatiquement les protocoles sur un événement ──────────────
+  // Cherche tous les templates avec declencheur_auto == declencheur,
+  // filtre par espece, vérifie les doublons, puis applique.
+  static Future<int> triggerAutoProtocoles({
+    required String uid,
+    required String declencheur, // 'naissance' | 'chaleurs' | 'gestation' | 'entree'
+    required String animalId,
+    required DateTime dateEvenement,
+    String? espece,
+  }) async {
+    final rows = await _supa
+        .from('plan_templates')
+        .select('*, plan_template_etapes(*)')
+        .eq('uid_eleveur', uid)
+        .eq('declencheur_auto', declencheur);
+
+    final templates = List<Map<String, dynamic>>.from(rows);
+    if (templates.isEmpty) return 0;
+
+    int total = 0;
+    for (final template in templates) {
+      // Filtre espece : null/vide = toutes espèces
+      final tEspece = template['espece'] as String?;
+      if (tEspece != null && tEspece.isNotEmpty && espece != null && tEspece != espece) continue;
+
+      // Déduplication : si des tâches issues de ce template existent déjà pour cet animal
+      final etapes = (template['plan_template_etapes'] as List?) ?? [];
+      if (etapes.isEmpty) continue;
+      final etapeIds = etapes.map((e) => e['id'].toString()).toList();
+      final window = dateEvenement.subtract(const Duration(days: 30)).toIso8601String().split('T').first;
+
+      final existing = await _supa
+          .from('plan_taches')
+          .select('id')
+          .eq('uid_eleveur', uid)
+          .eq('animal_id', animalId)
+          .inFilter('etape_id', etapeIds)
+          .gte('date_prevue', window)
+          .limit(1);
+
+      if ((existing as List).isNotEmpty) continue; // déjà appliqué
+
+      // Forcer cible individuelle pour ne cibler que cet animal
+      final mod = Map<String, dynamic>.from(template)..['cible_type'] = 'individuel';
+      total += await applyTemplate(
+        uid: uid,
+        template: mod,
+        dateReference: dateEvenement,
+        forcedAnimalIds: [animalId],
+      );
+    }
+    return total;
+  }
 
   // ── Tâches du jour ───────────────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> getTachesJour(String uid, DateTime date) async {

@@ -21,11 +21,12 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   final _descCtrl        = TextEditingController();
   final _lieuNettCtrl    = TextEditingController();
 
-  String _type          = 'sanitaire';
-  String _espece        = '';
-  String _cibleType     = 'individuel';
-  String _refEvent      = 'manuel';
-  bool   _saving        = false;
+  String _type            = 'sanitaire';
+  String _espece          = '';
+  String _cibleType       = 'individuel';
+  String _refEvent        = 'manuel';
+  String _declencheurAuto = '';
+  bool   _saving          = false;
 
   static const _lieuxNettoyage = [
     'Chatterie n°1', 'Chatterie n°2', 'Chenil', 'Chenil n°1', 'Chenil n°2',
@@ -71,10 +72,11 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
       _nomCtrl.text      = e['nom'] ?? '';
       _descCtrl.text     = e['description'] ?? '';
       _lieuNettCtrl.text = e['lieu'] ?? '';
-      _type      = e['type']            ?? 'sanitaire';
-      _espece    = e['espece']          ?? '';
-      _cibleType = e['cible_type']      ?? 'individuel';
-      _refEvent  = e['reference_event'] ?? 'manuel';
+      _type            = e['type']              ?? 'sanitaire';
+      _espece          = e['espece']            ?? '';
+      _cibleType       = e['cible_type']        ?? 'individuel';
+      _refEvent        = e['reference_event']   ?? 'manuel';
+      _declencheurAuto = e['declencheur_auto']  ?? '';
       final etapesData = e['plan_template_etapes'];
       if (etapesData is List) {
         for (final et in etapesData) {
@@ -108,28 +110,31 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
       final uid = FirebaseAuth.instance.currentUser!.uid;
       final etapesData = _etapes.map((e) => e.toMap(isBebes: _cibleType == 'bebes')).toList();
       final lieuNett = _lieuNettCtrl.text.trim().isEmpty ? null : _lieuNettCtrl.text.trim();
+      final auto = _type == 'nettoyage' ? null : (_declencheurAuto.isEmpty ? null : _declencheurAuto);
       if (widget.existing != null) {
         await PlanningService.updateTemplate(
-          templateId:     widget.existing!['id'] as String,
-          nom:            _nomCtrl.text.trim(),
-          espece:         _espece.isEmpty ? null : _espece,
-          description:    _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
-          lieu:           lieuNett,
-          cibleType:      _type == 'nettoyage' ? 'cheptel' : _cibleType,
-          referenceEvent: _type == 'nettoyage' ? 'manuel' : _refEvent,
-          etapes:         etapesData,
+          templateId:      widget.existing!['id'] as String,
+          nom:             _nomCtrl.text.trim(),
+          espece:          _espece.isEmpty ? null : _espece,
+          description:     _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+          lieu:            lieuNett,
+          cibleType:       _type == 'nettoyage' ? 'cheptel' : _cibleType,
+          referenceEvent:  _type == 'nettoyage' ? 'manuel' : _refEvent,
+          declencheurAuto: auto,
+          etapes:          etapesData,
         );
       } else {
         await PlanningService.createTemplate(
-          uid:            uid,
-          nom:            _nomCtrl.text.trim(),
-          type:           _type,
-          espece:         _espece.isEmpty ? null : _espece,
-          description:    _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
-          lieu:           lieuNett,
-          cibleType:      _type == 'nettoyage' ? 'cheptel' : _cibleType,
-          referenceEvent: _type == 'nettoyage' ? 'manuel' : _refEvent,
-          etapes:         etapesData,
+          uid:             uid,
+          nom:             _nomCtrl.text.trim(),
+          type:            _type,
+          espece:          _espece.isEmpty ? null : _espece,
+          description:     _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+          lieu:            lieuNett,
+          cibleType:       _type == 'nettoyage' ? 'cheptel' : _cibleType,
+          referenceEvent:  _type == 'nettoyage' ? 'manuel' : _refEvent,
+          declencheurAuto: auto,
+          etapes:          etapesData,
         );
       }
       if (mounted) Navigator.pop(context, true);
@@ -256,6 +261,31 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
                 selected: _refEvent == r.$1,
                 onTap: () => setState(() => _refEvent = r.$1),
               ))),
+            ]),
+            const SizedBox(height: 12),
+          ],
+
+          // ── Déclenchement automatique ──
+          if (_type != 'nettoyage') ...[
+            _Card(children: [
+              _SectionTitle('Déclenchement automatique'),
+              const _InfoBox('Si activé, ce protocole sera appliqué automatiquement à l\'animal concerné dès que l\'événement est enregistré dans l\'élevage.'),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 6, children: [
+                for (final d in [
+                  ('',          '—',   'Manuel uniquement'),
+                  ('naissance', '🐣',  'Naissance'),
+                  ('chaleurs',  '🌡️', 'Chaleurs'),
+                  ('gestation', '🤰',  'Gestation confirmée'),
+                  ('entree',    '🏠',  'Entrée animal'),
+                ])
+                  _Chip(
+                    emoji:  d.$2,
+                    label:  d.$3,
+                    active: _declencheurAuto == d.$1,
+                    onTap:  () => setState(() => _declencheurAuto = d.$1),
+                  ),
+              ]),
             ]),
             const SizedBox(height: 12),
           ],

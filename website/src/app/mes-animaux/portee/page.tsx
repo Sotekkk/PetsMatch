@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { triggerAutoProtocoles } from '@/lib/planning-service';
 import { useAuth } from '@/lib/auth-context';
 import { loadBreeds } from '@/lib/breeds';
 import { uploadBlob } from '@/lib/upload-media';
@@ -253,6 +254,17 @@ export default function PorteePage() {
 
       const { error: err } = await supabase.from('animaux').upsert(rows);
       if (err) throw err;
+
+      // Protocoles automatiques pour chaque nouveau-né
+      const dateNaissanceDate = new Date(dateNaissance);
+      for (let i = 0; i < animaux.length; i++) {
+        triggerAutoProtocoles({
+          uid: user.uid, declencheur: 'naissance',
+          animalId: `${porteeId}_${i}`,
+          dateEvenement: dateNaissanceDate, espece,
+        }).catch(() => {});
+      }
+
       router.push('/mes-animaux?portee=1');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erreur lors de la sauvegarde');

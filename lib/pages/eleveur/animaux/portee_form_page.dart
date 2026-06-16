@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
+import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 
@@ -352,6 +353,20 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
       }).toList();
 
       await _supa.from('animaux').upsert(rows);
+
+      // Protocoles automatiques pour chaque nouveau-né
+      try {
+        for (final entry in _animaux.asMap().entries) {
+          await PlanningService.triggerAutoProtocoles(
+            uid: uid,
+            declencheur: 'naissance',
+            animalId: '${porteeId}_${entry.key}',
+            dateEvenement: _dateNaissance!,
+            espece: _espece,
+          );
+        }
+      } catch (_) {}
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('${_animaux.length} animal(s) créé(s) avec succès'),

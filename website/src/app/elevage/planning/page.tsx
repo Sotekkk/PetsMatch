@@ -35,6 +35,7 @@ interface Template {
   lieu?: string;
   cible_type: string;
   reference_event: string;
+  declencheur_auto?: string | null;
   plan_template_etapes?: Etape[];
 }
 
@@ -42,6 +43,7 @@ interface Tache {
   id: string;
   label: string;
   animal_nom?: string | null;
+  animaux?: { nom?: string } | null;
   date_prevue: string;
   statut: string;
   jour_traitement: number;
@@ -604,6 +606,7 @@ function TemplateFormModal({ existing, uid, onClose, onSaved }: {
   const [lieuNett, setLieuNett] = useState(existing?.lieu ?? '');
   const [cibleType, setCibleType] = useState(existing?.cible_type ?? 'individuel');
   const [refEvent, setRefEvent] = useState(existing?.reference_event ?? 'manuel');
+  const [declencheurAuto, setDeclencheurAuto] = useState(existing?.declencheur_auto ?? '');
   const [etapes, setEtapes] = useState<Etape[]>(
     existing?.plan_template_etapes?.map(e => ({
       ...e,
@@ -648,6 +651,7 @@ function TemplateFormModal({ existing, uid, onClose, onSaved }: {
         lieu: isNett ? (lieuNett || null) : null,
         cible_type: isNett ? 'cheptel' : cibleType,
         reference_event: isNett ? 'manuel' : refEvent,
+        declencheur_auto: (isNett || !declencheurAuto) ? null : declencheurAuto,
       };
       if (existing) {
         await supabase.from('plan_templates').update(templatePayload).eq('id', existing.id);
@@ -764,6 +768,27 @@ function TemplateFormModal({ existing, uid, onClose, onSaved }: {
                       <p className="text-xs text-gray-400">{r.desc}</p>
                     </div>
                     {refEvent === r.value && <span className="text-green-600">✓</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {type !== 'nettoyage' && (
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+              <label className="block text-sm font-bold text-teal-700">Déclenchement automatique</label>
+              <p className="text-xs text-gray-400">Si activé, ce protocole sera appliqué automatiquement à l&apos;animal concerné dès que l&apos;événement est enregistré.</p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: '',          emoji: '—',   label: 'Manuel uniquement' },
+                  { value: 'naissance', emoji: '🐣',  label: 'Naissance' },
+                  { value: 'chaleurs',  emoji: '🌡️', label: 'Chaleurs' },
+                  { value: 'gestation', emoji: '🤰',  label: 'Gestation confirmée' },
+                  { value: 'entree',    emoji: '🏠',  label: 'Entrée animal' },
+                ].map(d => (
+                  <button key={d.value} onClick={() => setDeclencheurAuto(d.value)}
+                    className={`px-3 py-1.5 rounded-xl text-sm font-semibold transition-colors ${declencheurAuto === d.value ? 'bg-teal-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                    {d.emoji} {d.label}
                   </button>
                 ))}
               </div>
