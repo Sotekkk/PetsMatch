@@ -635,6 +635,39 @@ class _TachesTabState extends State<_TachesTab> {
   List<Map<String, dynamic>> _animaux     = [];
   bool _showDone = false;
 
+  // Groupe les plan_taches par (etape_id, date_prevue) pour afficher une carte par groupe
+  List<Map<String, dynamic>> get _protocoleGroupes {
+    final Map<String, List<Map<String, dynamic>>> byKey = {};
+    for (final t in _planTaches) {
+      final etapeId = t['etape_id'] as String? ?? t['id'].toString();
+      final date = (t['date_prevue'] as String? ?? '').split('T').first;
+      final key = '${etapeId}_$date';
+      byKey.putIfAbsent(key, () => []).add(t);
+    }
+    final groups = byKey.values.map((groupe) {
+      final first = groupe.first;
+      final done  = groupe.where((t) => t['statut'] == 'fait').length;
+      return <String, dynamic>{
+        '_groupe':     groupe,
+        '_total':      groupe.length,
+        '_done':       done,
+        '_source':     'protocole',
+        '_sort_date':  (first['date_prevue'] as String?) ?? '',
+        'label':       first['label'],
+        'date_prevue': first['date_prevue'],
+        'assigned_to': first['assigned_to'],
+        'assigne_nom': first['assigne_nom'],
+        'type_acte':   first['type_acte'],
+      };
+    }).toList();
+    groups.sort((a, b) {
+      final da = DateTime.tryParse(a['_sort_date'] as String? ?? '') ?? DateTime(2099);
+      final db = DateTime.tryParse(b['_sort_date'] as String? ?? '') ?? DateTime(2099);
+      return da.compareTo(db);
+    });
+    return groups;
+  }
+
   // Liste unifiée triée par date
   List<Map<String, dynamic>> get _toutesLesTaches {
     final manuel = _taches.map((t) => {
@@ -642,12 +675,7 @@ class _TachesTabState extends State<_TachesTab> {
       '_source': 'manuel',
       '_sort_date': (t['date'] as String?) ?? '',
     }).toList();
-    final proto = _planTaches.map((t) => {
-      ...t,
-      '_source': 'protocole',
-      '_sort_date': (t['date_prevue'] as String?) ?? '',
-    }).toList();
-    final all = [...manuel, ...proto];
+    final all = [...manuel, ..._protocoleGroupes];
     all.sort((a, b) {
       final da = DateTime.tryParse(a['_sort_date'] as String? ?? '') ?? DateTime(2099);
       final db = DateTime.tryParse(b['_sort_date'] as String? ?? '') ?? DateTime(2099);
@@ -719,26 +747,30 @@ class _TachesTabState extends State<_TachesTab> {
       // Charger toutes les plan_taches de l'éleveur (protocoles)
       List<Map<String, dynamic>> planTaches = [];
       try {
+        // animal_nom n'est pas en DB — on résout depuis animalNoms après le select
         final ptRaw = await _supa
             .from('plan_taches')
-            .select('id, label, date_prevue, statut, assigned_to, uid_eleveur, type_acte, animal_nom, animal_id')
+            .select('id, label, date_prevue, statut, assigned_to, uid_eleveur, type_acte, animal_id, etape_id, portee_id, plan_id')
             .eq('uid_eleveur', _uid)
-            .not('statut', 'eq', 'fait')
             .order('date_prevue');
         planTaches = List<Map<String, dynamic>>.from(ptRaw);
-        // Enrichir avec le nom de l'assigné
+        // Enrichir : nom animal + nom assigné
         for (final pt in planTaches) {
+          final animalId   = pt['animal_id'] as String?;
+          if (animalId != null) pt['animal_nom'] = animalNoms[animalId];
           final assignedTo = pt['assigned_to'] as String?;
-          if (assignedTo != null && uidToNom.containsKey(assignedTo)) {
-            pt['assigne_nom'] = uidToNom[assignedTo];
-          } else if (assignedTo != null) {
-            final u = await _supa.from('users')
-                .select('firstname, lastname, name_elevage, is_elevage')
-                .eq('uid', assignedTo).maybeSingle();
-            if (u != null) {
-              pt['assigne_nom'] = u['is_elevage'] == true
-                  ? (u['name_elevage'] ?? 'Employé')
-                  : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+          if (assignedTo != null) {
+            if (uidToNom.containsKey(assignedTo)) {
+              pt['assigne_nom'] = uidToNom[assignedTo];
+            } else {
+              final u = await _supa.from('users')
+                  .select('firstname, lastname, name_elevage, is_elevage')
+                  .eq('uid', assignedTo).maybeSingle();
+              if (u != null) {
+                pt['assigne_nom'] = u['is_elevage'] == true
+                    ? (u['name_elevage'] ?? 'Employé')
+                    : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+              }
             }
           }
         }
@@ -786,8 +818,59 @@ class _TachesTabState extends State<_TachesTab> {
     _load();
   }
 
-  Future<void> _togglePlanTache(Map<String, dynamic> t) async {
-    await _supa.from('plan_taches').update({'statut': 'fait'}).eq('id', t['id']);
+  // Assigne toutes les tâches d'un groupe au même employé
+  Future<void> _assignPlanTache(Map<String, dynamic> group) async {
+    if (_employes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Aucun employé dans votre élevage',
+              style: TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AssignProtocoleSheet(
+        employes: _employes,
+        currentUid: group['assigned_to'] as String?,
+        teal: widget.teal,
+        dark: widget.dark,
+      ),
+    );
+    if (result == null) return;
+
+    final newAssignedUid = result.isEmpty ? null : result;
+    final groupe = group['_groupe'] as List<Map<String, dynamic>>;
+    final ids = groupe.map((t) => t['id']).toList();
+    await _supa.from('plan_taches').update({'assigned_to': newAssignedUid}).inFilter('id', ids);
+
+    // Notification uniquement si assignation (pas si désassignation)
+    if (newAssignedUid != null) {
+      try {
+        final profile = await _supa.from('users')
+            .select('name_elevage, firstname, lastname')
+            .eq('uid', _uid)
+            .maybeSingle();
+        final nomElevage = (profile?['name_elevage'] as String?)?.trim().isNotEmpty == true
+            ? profile!['name_elevage'] as String
+            : '${profile?['firstname'] ?? ''} ${profile?['lastname'] ?? ''}'.trim();
+        final label = group['label'] as String? ?? 'Tâche de protocole';
+        final total = group['_total'] as int;
+        final titre = total > 1 ? '$label ($total animaux)' : label;
+
+        await _supa.from('notifications').insert({
+          'uid':   newAssignedUid,
+          'type':  'tache',
+          'title': 'Nouvelle tâche assignée',
+          'body':  '$nomElevage vous a assigné : $titre',
+          'data':  {'eleveurUid': _uid},
+          'read':  false,
+        });
+        await FirebaseFunctions.instance
+            .httpsCallable('notifyTacheAssignee')
+            .call({'assigneUid': newAssignedUid, 'titre': titre});
+      } catch (_) {}
+    }
+
     _load();
   }
 
@@ -795,8 +878,20 @@ class _TachesTabState extends State<_TachesTab> {
   Widget build(BuildContext context) {
     final toutes = _toutesLesTaches;
     final affichees = _showDone
-        ? toutes.where((t) => t['statut'] == 'fait').toList()
-        : toutes.where((t) => t['statut'] != 'fait').toList();
+        ? toutes.where((t) {
+            if (t['_source'] == 'protocole') {
+              final total = t['_total'] as int;
+              final done  = t['_done'] as int;
+              return total > 0 && done == total;
+            }
+            return t['statut'] == 'fait';
+          }).toList()
+        : toutes.where((t) {
+            if (t['_source'] == 'protocole') {
+              return (t['_done'] as int) < (t['_total'] as int);
+            }
+            return t['statut'] != 'fait';
+          }).toList();
 
     return Scaffold(
       backgroundColor: widget.bg,
@@ -840,7 +935,7 @@ class _TachesTabState extends State<_TachesTab> {
                         itemBuilder: (ctx, i) {
                           final t = affichees[i];
                           if (t['_source'] == 'protocole') {
-                            return _buildProtoCardEleveur(t);
+                            return _buildProtoGroupCard(t);
                           }
                           return _TacheCard(
                             tache: t,
@@ -859,11 +954,15 @@ class _TachesTabState extends State<_TachesTab> {
     );
   }
 
-  Widget _buildProtoCardEleveur(Map<String, dynamic> t) {
-    final date     = DateTime.tryParse(t['date_prevue'] as String? ?? '');
-    final dateStr  = date != null ? DateFormat('dd MMM', 'fr_FR').format(date) : '';
-    final assigneNom = t['assigne_nom'] as String?;
-    final typeActe = t['type_acte']?.toString() ?? '';
+  Widget _buildProtoGroupCard(Map<String, dynamic> group) {
+    final total      = group['_total'] as int;
+    final done       = group['_done'] as int;
+    final pct        = total > 0 ? done / total : 0.0;
+    final isSingle   = total == 1;
+    final date       = DateTime.tryParse(group['date_prevue'] as String? ?? '');
+    final dateStr    = date != null ? DateFormat('dd MMM', 'fr_FR').format(date) : '';
+    final assigneNom = group['assigne_nom'] as String?;
+    final typeActe   = group['type_acte']?.toString() ?? '';
     final emoji = switch (typeActe) {
       'vermifuge'       => '💊',
       'vaccination'     => '💉',
@@ -875,53 +974,357 @@ class _TachesTabState extends State<_TachesTab> {
       'socialisation'   => '🐾',
       _                 => '📋',
     };
-    final animalNom = t['animal_nom'] as String?;
+    final groupe = group['_groupe'] as List<Map<String, dynamic>>;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
-      ),
-      child: Row(children: [
-        Container(
-          width: 40, height: 40,
-          decoration: BoxDecoration(
-              color: const Color(0xFFF0F4FF), borderRadius: BorderRadius.circular(10)),
-          child: Center(child: Text(emoji, style: const TextStyle(fontSize: 18))),
+    return GestureDetector(
+      onTap: () async {
+        await showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => _ProtoDetailSheet(
+            groupe: groupe,
+            label: group['label'] as String? ?? '',
+            dateStr: dateStr,
+            emoji: emoji,
+            teal: widget.teal,
+            dark: widget.dark,
+          ),
+        );
+        _load();
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
         ),
-        const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
+            // Icône type
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(color: const Color(0xFFF0F4FF), borderRadius: BorderRadius.circular(6)),
-              child: const Text('Protocole', style: TextStyle(
-                  fontFamily: 'Galey', fontSize: 9, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8))),
+              width: 40, height: 40,
+              decoration: BoxDecoration(color: const Color(0xFFF0F4FF), borderRadius: BorderRadius.circular(10)),
+              child: Center(child: Text(emoji, style: const TextStyle(fontSize: 18))),
             ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(t['label'] as String? ?? '',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
-                      fontSize: 13, color: widget.dark),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(color: const Color(0xFFF0F4FF), borderRadius: BorderRadius.circular(6)),
+                  child: const Text('Protocole', style: TextStyle(
+                      fontFamily: 'Galey', fontSize: 9, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8))),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(group['label'] as String? ?? '',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                          fontSize: 13, color: widget.dark),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                ),
+              ]),
+              const SizedBox(height: 4),
+              Wrap(spacing: 6, children: [
+                if (dateStr.isNotEmpty) _Badge(text: '📅 $dateStr', bg: const Color(0xFFEEF5EA), fg: widget.teal),
+                if (!isSingle) _Badge(
+                  text: '$done/$total ${typeActe == 'nettoyage' ? 'boxes' : 'animaux'}',
+                  bg: done == total ? const Color(0xFFEEF5EA) : const Color(0xFFFFF8E1),
+                  fg: done == total ? widget.teal : const Color(0xFFE65100),
+                ),
+                if (assigneNom != null) _Badge(text: '👤 $assigneNom', bg: const Color(0xFFF5F5F5), fg: Colors.grey.shade600),
+              ]),
+            ])),
+            // Bouton assigner + chevron
+            Column(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(
+                icon: Icon(
+                  assigneNom != null ? Icons.person : Icons.person_add_outlined,
+                  size: 20,
+                  color: assigneNom != null ? widget.teal : Colors.grey.shade400,
+                ),
+                tooltip: assigneNom != null ? 'Réassigner' : 'Assigner',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () => _assignPlanTache(group),
+              ),
+              Icon(Icons.chevron_right, size: 16, color: Colors.grey.shade400),
+            ]),
+          ]),
+          // Barre de progression (masquée si tâche individuelle ou groupe terminé)
+          if (!isSingle) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: pct,
+                minHeight: 6,
+                backgroundColor: const Color(0xFFE8E8E4),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                    done == total ? widget.teal : const Color(0xFFE65100)),
+              ),
             ),
-          ]),
-          const SizedBox(height: 4),
-          Wrap(spacing: 6, children: [
-            if (dateStr.isNotEmpty) _Badge(text: '📅 $dateStr', bg: const Color(0xFFEEF5EA), fg: widget.teal),
-            if (animalNom != null) _Badge(text: '🐾 $animalNom', bg: const Color(0xFFEFF6FF), fg: const Color(0xFF1D4ED8)),
-            if (assigneNom != null) _Badge(text: '👤 $assigneNom', bg: const Color(0xFFF5F5F5), fg: Colors.grey.shade600),
-          ]),
-        ])),
-        TextButton(
-          onPressed: () => _togglePlanTache(t),
-          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
-          child: Text('Fait ✓', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-              color: widget.teal, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text(
+              '${(pct * 100).round()}% — Appuyer pour valider chaque animal',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xFF6F767B)),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+// ─── Bottom sheet : Détail d'un groupe de tâches protocole ───────────────────
+
+class _ProtoDetailSheet extends StatefulWidget {
+  final List<Map<String, dynamic>> groupe;
+  final String label, dateStr, emoji;
+  final Color teal, dark;
+  /// Appelé quand un animal est marqué "fait" — utile pour envoyer une notif employeur
+  final Future<void> Function(Map<String, dynamic> tache)? onMarquerFait;
+
+  const _ProtoDetailSheet({
+    required this.groupe,
+    required this.label,
+    required this.dateStr,
+    required this.emoji,
+    required this.teal,
+    required this.dark,
+    this.onMarquerFait,
+  });
+
+  @override
+  State<_ProtoDetailSheet> createState() => _ProtoDetailSheetState();
+}
+
+class _ProtoDetailSheetState extends State<_ProtoDetailSheet> {
+  final _supa = Supabase.instance.client;
+  late List<Map<String, dynamic>> _items;
+
+  @override
+  void initState() {
+    super.initState();
+    _items = List<Map<String, dynamic>>.from(widget.groupe);
+  }
+
+  int get _done  => _items.where((t) => t['statut'] == 'fait').length;
+  int get _total => _items.length;
+  double get _pct => _total > 0 ? _done / _total : 0.0;
+
+  Future<void> _toggle(int index) async {
+    final t = _items[index];
+    final newStatut = t['statut'] == 'fait' ? 'en_attente' : 'fait';
+    setState(() => _items[index] = {...t, 'statut': newStatut});
+    try {
+      await _supa.from('plan_taches').update({'statut': newStatut}).eq('id', t['id']);
+      if (newStatut == 'fait' && widget.onMarquerFait != null) {
+        await widget.onMarquerFait!(t);
+      }
+    } catch (_) {
+      setState(() => _items[index] = t);
+    }
+  }
+
+  String _animalLabel(Map<String, dynamic> t) {
+    final nom = t['animal_nom'] as String?;
+    if (nom != null && nom.isNotEmpty) return nom;
+    final porteeId = t['portee_id'] as String?;
+    if (porteeId != null) return 'Portée #${porteeId.substring(0, 6)}';
+    final typeActe = t['type_acte'] as String? ?? '';
+    return typeActe == 'nettoyage' ? 'Box / Enclos' : 'Animal';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allDone = _done == _total;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      maxChildSize: 0.92,
+      minChildSize: 0.4,
+      builder: (_, sc) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
+        child: Column(children: [
+          // Poignée
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 8),
+            child: Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          ),
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Text(widget.emoji, style: const TextStyle(fontSize: 22)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(widget.label,
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                          fontSize: 16, color: widget.dark)),
+                ),
+              ]),
+              if (widget.dateStr.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text('📅 ${widget.dateStr}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+              ],
+              const SizedBox(height: 12),
+              // Barre de progression
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: LinearProgressIndicator(
+                  value: _pct,
+                  minHeight: 8,
+                  backgroundColor: const Color(0xFFE8E8E4),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                      allDone ? widget.teal : const Color(0xFFE65100)),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text('$_done / $_total validé${_done > 1 ? 's' : ''}',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: allDone ? widget.teal : const Color(0xFFE65100))),
+                Text('${(_pct * 100).round()}%',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: allDone ? widget.teal : const Color(0xFFE65100))),
+              ]),
+            ]),
+          ),
+          const Divider(height: 1),
+          // Liste des animaux / boxes
+          Expanded(
+            child: ListView.separated(
+              controller: sc,
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              itemCount: _items.length,
+              separatorBuilder: (_, __) => const Divider(height: 1, indent: 56),
+              itemBuilder: (_, i) {
+                final t = _items[i];
+                final isDone = t['statut'] == 'fait';
+                final label = _animalLabel(t);
+                return ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  leading: GestureDetector(
+                    onTap: () => _toggle(i),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      width: 28, height: 28,
+                      decoration: BoxDecoration(
+                        color: isDone ? widget.teal : Colors.transparent,
+                        border: Border.all(
+                            color: isDone ? widget.teal : Colors.grey.shade400, width: 2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: isDone
+                          ? const Icon(Icons.check, color: Colors.white, size: 16)
+                          : null,
+                    ),
+                  ),
+                  title: Text(label,
+                      style: TextStyle(
+                        fontFamily: 'Galey',
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: isDone ? Colors.grey : widget.dark,
+                        decoration: isDone ? TextDecoration.lineThrough : null,
+                      )),
+                  onTap: () => _toggle(i),
+                );
+              },
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─── Bottom sheet : Assigner un employé à une tâche protocole ────────────────
+
+class _AssignProtocoleSheet extends StatelessWidget {
+  final List<Map<String, dynamic>> employes;
+  final String? currentUid;
+  final Color teal, dark;
+
+  const _AssignProtocoleSheet({
+    required this.employes,
+    required this.teal,
+    required this.dark,
+    this.currentUid,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 40, height: 4,
+          decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Assigner à un employé',
+          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+              fontSize: 16, color: dark),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Choisissez qui doit réaliser cette tâche de protocole.',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 16),
+        // Option "Désassigner"
+        if (currentUid != null) ...[
+          ListTile(
+            leading: const CircleAvatar(
+              backgroundColor: Color(0xFFF3F4F6),
+              child: Icon(Icons.person_off_outlined, color: Colors.grey),
+            ),
+            title: const Text('Aucun (désassigner)',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.red)),
+            onTap: () => Navigator.pop(context, ''),
+          ),
+          const Divider(height: 1),
+        ],
+        // Liste des employés
+        ...employes.map((e) {
+          final uid = e['uid_employe'] as String;
+          final nom = e['nom'] as String? ?? 'Employé';
+          final isCurrent = uid == currentUid;
+          return ListTile(
+            leading: CircleAvatar(
+              backgroundColor: teal.withOpacity(0.12),
+              child: Text(
+                nom.isNotEmpty ? nom[0].toUpperCase() : '?',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: teal),
+              ),
+            ),
+            title: Text(nom,
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                    fontSize: 14, color: dark)),
+            trailing: isCurrent
+                ? Icon(Icons.check_circle, color: teal, size: 20)
+                : null,
+            onTap: () => Navigator.pop(context, uid),
+          );
+        }),
       ]),
     );
   }
@@ -1953,6 +2356,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
   bool _loadingPlanTaches = true;
   List<Map<String, dynamic>> _taches     = [];
   List<Map<String, dynamic>> _planTaches = [];
+  final Map<String, String> _animalNoms  = {};
 
   @override
   void initState() {
@@ -1974,10 +2378,29 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
           .select('*, plans_actifs(reference_label)')
           .eq('uid_eleveur', widget.eleveurUid)
           .eq('assigned_to', _uid)
-          .neq('statut', 'fait')
           .order('date_prevue');
+
+      // Charger les noms d'animaux manquants
+      final animalIds = (rows as List)
+          .map((r) => r['animal_id'] as String?)
+          .whereType<String>()
+          .toSet()
+          .where((id) => !_animalNoms.containsKey(id))
+          .toList();
+      if (animalIds.isNotEmpty) {
+        final animaux = await _supa.from('animaux').select('id, nom').inFilter('id', animalIds);
+        for (final a in animaux as List) {
+          _animalNoms[a['id'].toString()] = a['nom'] as String? ?? '—';
+        }
+      }
+      // Enrichir chaque tâche avec son nom d'animal
+      final enriched = rows.map<Map<String, dynamic>>((r) {
+        final animalId = r['animal_id'] as String?;
+        return {...r, if (animalId != null) 'animal_nom': _animalNoms[animalId]};
+      }).toList();
+
       if (mounted) setState(() {
-        _planTaches = List<Map<String, dynamic>>.from(rows);
+        _planTaches = enriched;
         _loadingPlanTaches = false;
       });
     } catch (_) {
@@ -2097,17 +2520,43 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
 
   // ── Vue unifiée manuelles + protocoles ──────────────────────────────────────
 
+  List<Map<String, dynamic>> get _protocoleGroupes {
+    final Map<String, List<Map<String, dynamic>>> byKey = {};
+    for (final t in _planTaches) {
+      final etapeId = t['etape_id'] as String? ?? t['id'].toString();
+      final date    = (t['date_prevue'] as String? ?? '').split('T').first;
+      byKey.putIfAbsent('${etapeId}_$date', () => []).add(t);
+    }
+    final groups = byKey.values.map((groupe) {
+      final first = groupe.first;
+      final done  = groupe.where((t) => t['statut'] == 'fait').length;
+      return <String, dynamic>{
+        '_groupe':     groupe,
+        '_total':      groupe.length,
+        '_done':       done,
+        '_source':     'protocole',
+        '_sort_date':  (first['date_prevue'] as String?) ?? '',
+        'label':       first['label'],
+        'date_prevue': first['date_prevue'],
+        'type_acte':   first['type_acte'],
+        'plans_actifs': first['plans_actifs'],
+      };
+    }).toList()
+      ..sort((a, b) {
+        final da = DateTime.tryParse(a['_sort_date'] as String? ?? '') ?? DateTime(2099);
+        final db = DateTime.tryParse(b['_sort_date'] as String? ?? '') ?? DateTime(2099);
+        return da.compareTo(db);
+      });
+    return groups;
+  }
+
   List<Map<String, dynamic>> get _toutesLesTaches {
-    final manuel = _taches.map((t) => {
-      ...t,
-      '_source': 'manuel',
-      '_sort_date': t['date'] as String? ?? '',
-    }).toList();
-    final proto = _planTaches.map((t) => {
-      ...t,
-      '_source': 'protocole',
-      '_sort_date': t['date_prevue'] as String? ?? '',
-    }).toList();
+    final manuel = _taches
+        .where((t) => t['statut'] != 'fait')
+        .map((t) => {...t, '_source': 'manuel', '_sort_date': t['date'] as String? ?? ''})
+        .toList();
+    // Exclure les groupes 100% terminés
+    final proto = _protocoleGroupes.where((g) => (g['_done'] as int) < (g['_total'] as int)).toList();
     final all = [...manuel, ...proto];
     all.sort((a, b) {
       final da = DateTime.tryParse(a['_sort_date'] as String? ?? '') ?? DateTime(2099);
@@ -2158,7 +2607,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
                   final t      = all[i];
                   final source = t['_source'] as String;
                   if (source == 'protocole') {
-                    return _buildProtoCard(t);
+                    return _buildProtoGroupCardEmploye(t);
                   } else {
                     return _buildManuelCard(ctx, t);
                   }
@@ -2241,11 +2690,14 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
     );
   }
 
-  Widget _buildProtoCard(Map<String, dynamic> t) {
-    final date    = DateTime.tryParse(t['date_prevue'] as String? ?? '');
-    final dateStr = date != null ? DateFormat('dd MMM', 'fr_FR').format(date) : '';
-    final ref     = (t['plans_actifs'] as Map<String, dynamic>?)?['reference_label'] as String?;
-    final typeActe = t['type_acte']?.toString() ?? '';
+  Widget _buildProtoGroupCardEmploye(Map<String, dynamic> group) {
+    final total    = group['_total'] as int;
+    final done     = group['_done'] as int;
+    final pct      = total > 0 ? done / total : 0.0;
+    final isSingle = total == 1;
+    final date     = DateTime.tryParse(group['date_prevue'] as String? ?? '');
+    final dateStr  = date != null ? DateFormat('dd MMM', 'fr_FR').format(date) : '';
+    final typeActe = group['type_acte']?.toString() ?? '';
     final emoji = switch (typeActe) {
       'vermifuge'       => '💊',
       'vaccination'     => '💉',
@@ -2259,54 +2711,87 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
       'socialisation'   => '🐾',
       _                 => '📋',
     };
-    final animalNom = t['animal_nom'] as String?;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
-      ),
-      child: Row(children: [
-        Container(
-          width: 40, height: 40,
-          decoration: BoxDecoration(color: _teal.withOpacity(0.08), borderRadius: BorderRadius.circular(10)),
-          child: Center(child: Text(emoji, style: const TextStyle(fontSize: 18))),
+    final groupe = group['_groupe'] as List<Map<String, dynamic>>;
+
+    return GestureDetector(
+      onTap: () async {
+        await showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => _ProtoDetailSheet(
+            groupe: groupe,
+            label: group['label'] as String? ?? '',
+            dateStr: dateStr,
+            emoji: emoji,
+            teal: _teal,
+            dark: _dark,
+            onMarquerFait: _marquerPlanTacheFait,
+          ),
+        );
+        _loadPlanTaches();
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
         ),
-        const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF0F4FF),
-                borderRadius: BorderRadius.circular(6),
+              width: 40, height: 40,
+              decoration: BoxDecoration(color: _teal.withOpacity(0.08), borderRadius: BorderRadius.circular(10)),
+              child: Center(child: Text(emoji, style: const TextStyle(fontSize: 18))),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(color: const Color(0xFFF0F4FF), borderRadius: BorderRadius.circular(6)),
+                  child: const Text('Protocole', style: TextStyle(
+                      fontFamily: 'Galey', fontSize: 9, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8))),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(group['label'] as String? ?? '',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: _dark),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                ),
+              ]),
+              const SizedBox(height: 4),
+              Wrap(spacing: 6, children: [
+                if (dateStr.isNotEmpty) _Badge(text: '📅 $dateStr', bg: const Color(0xFFEEF5EA), fg: _teal),
+                if (!isSingle) _Badge(
+                  text: '$done/$total ${typeActe == 'nettoyage' ? 'boxes' : 'animaux'}',
+                  bg: done == total ? const Color(0xFFEEF5EA) : const Color(0xFFFFF8E1),
+                  fg: done == total ? _teal : const Color(0xFFE65100),
+                ),
+              ]),
+            ])),
+            const Icon(Icons.chevron_right, size: 18, color: Color(0xFFCBD5E0)),
+          ]),
+          if (!isSingle) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: pct,
+                minHeight: 6,
+                backgroundColor: const Color(0xFFE8E8E4),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                    done == total ? _teal : const Color(0xFFE65100)),
               ),
-              child: const Text('Protocole', style: TextStyle(
-                  fontFamily: 'Galey', fontSize: 9, fontWeight: FontWeight.w600,
-                  color: Color(0xFF1D4ED8))),
             ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(t['label'] as String? ?? '',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14, color: _dark),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
-          ]),
-          const SizedBox(height: 4),
-          Wrap(spacing: 6, children: [
-            if (dateStr.isNotEmpty) _Badge(text: '📅 $dateStr', bg: const Color(0xFFEEF5EA), fg: _teal),
-            if (animalNom != null) _Badge(text: '🐾 $animalNom', bg: const Color(0xFFEFF6FF), fg: const Color(0xFF1D4ED8)),
-            if (ref != null) _Badge(text: ref, bg: const Color(0xFFF0F4FF), fg: const Color(0xFF1D4ED8)),
-          ]),
-        ])),
-        TextButton(
-          onPressed: () => _marquerPlanTacheFait(t),
-          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
-          child: const Text('Fait ✓', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal, fontWeight: FontWeight.w600)),
-        ),
-      ]),
+            const SizedBox(height: 4),
+            Text('${(pct * 100).round()}% — Appuyer pour valider chaque animal',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xFF6F767B))),
+          ],
+        ]),
+      ),
     );
   }
 

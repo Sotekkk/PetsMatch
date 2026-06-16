@@ -128,8 +128,33 @@ export async function applyTemplateToAnimal(
     }
   }
 
-  if (taches.length > 0) await supabase.from('plan_taches').insert(taches);
-  return taches.length;
+  if (taches.length === 0) return 0;
+
+  // Dedup : filtrer les tâches qui existent déjà (même etape_id + date_prevue + animal_id)
+  try {
+    const etapeIds = [...new Set(taches.map(t => t.etape_id as string).filter(Boolean))];
+    const dates    = [...new Set(taches.map(t => t.date_prevue as string))];
+    const { data: existing } = await supabase
+      .from('plan_taches')
+      .select('etape_id, date_prevue, animal_id')
+      .eq('uid_eleveur', uid)
+      .in('etape_id', etapeIds)
+      .in('date_prevue', dates);
+
+    const existingKeys = new Set(
+      (existing ?? []).map((e: Record<string, unknown>) =>
+        `${e.etape_id}_${e.date_prevue}_${e.animal_id ?? ''}`)
+    );
+    const toInsert = taches.filter(t => {
+      const key = `${t.etape_id}_${t.date_prevue}_${t.animal_id ?? ''}`;
+      return !existingKeys.has(key);
+    });
+    if (toInsert.length > 0) await supabase.from('plan_taches').insert(toInsert);
+    return toInsert.length;
+  } catch {
+    await supabase.from('plan_taches').insert(taches);
+    return taches.length;
+  }
 }
 
 // ── Déclencher automatiquement les protocoles sur un événement ────────────────

@@ -373,10 +373,32 @@ class PlanningService {
       }
     }
 
-    if (taches.isNotEmpty) {
+    if (taches.isEmpty) return 0;
+
+    // Dedup : filtrer les tâches qui existent déjà (même etape_id + date_prevue + animal_id)
+    try {
+      final etapeIds = taches.map((t) => t['etape_id']).whereType<String>().toSet().toList();
+      final dates    = taches.map((t) => t['date_prevue'] as String).toSet().toList();
+      final existing = await _supa
+          .from('plan_taches')
+          .select('etape_id, date_prevue, animal_id')
+          .eq('uid_eleveur', uid)
+          .inFilter('etape_id', etapeIds)
+          .inFilter('date_prevue', dates);
+      final existingKeys = <String>{
+        for (final e in existing as List)
+          '${e['etape_id']}_${e['date_prevue']}_${e['animal_id'] ?? ''}'
+      };
+      final toInsert = taches.where((t) {
+        final key = '${t['etape_id']}_${t['date_prevue']}_${t['animal_id'] ?? ''}';
+        return !existingKeys.contains(key);
+      }).toList();
+      if (toInsert.isNotEmpty) await _supa.from('plan_taches').insert(toInsert);
+      return toInsert.length;
+    } catch (_) {
       await _supa.from('plan_taches').insert(taches);
+      return taches.length;
     }
-    return taches.length;
   }
 
   static Map<String, dynamic> _tache({

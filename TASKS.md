@@ -285,6 +285,19 @@
 |---|---|---|---|---|
 | ~~MKT08~~ | ~~**Facturation Stripe automatique**~~ | ~~Haute~~ | ~~Firebase Functions + Stripe~~ | ✅ Terminé 2026-06-08 — `functions/marketplace_billing.js` : cron 1er du mois, calcul CPM+CPL, plafond mensuel, invoice Stripe auto, suspension si échec paiement. Stripe en mode test. |
 
+### Module Planning Élevage — Templates & Tâches (PLN01–PLN07)
+
+| # | Tâche | Priorité | Repo | Statut |
+|---|---|---|---|---|
+| ~~PLN00~~ | ~~Phase 1 — BDD (4 tables) + PlanningService + vues Jour/Protocoles (App + Web) + déclenchement auto sur événements élevage~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-15 — `lib/services/planning_service.dart`, `lib/pages/eleveur/planning/`, `website/src/app/elevage/planning/`, `website/src/lib/planning-service.ts`. Dedup fix 2026-06-16 : `_generateTaches` + `applyTemplateToAnimal` web |
+| ~~PLN01~~ | ~~Vue calendrier mensuel in-app — grille avec pastilles colorées par type d'acte, tap → vue Jour, badge rouge si retard, navigation mois~~ | ~~Haute~~ | ~~App~~ | ✅ Terminé 2026-06-15 — `planning_mois_page.dart`, câblé dans le drawer éleveur |
+| PLN02 | Vue calendrier mensuel Web (Next.js) — même logique que PLN01 dans `/elevage/planning` | Haute | Web | `website/src/app/elevage/planning/page.tsx` |
+| ~~PLN03~~ | ~~Assignation tâches protocole aux employés — bouton dans onglet Tâches > cartes protocole, bottom sheet choix employé, update `plan_taches.assigned_to`~~ | ~~Haute~~ | ~~App~~ | ✅ Terminé 2026-06-16 — `employes_page.dart` : vue groupée (1 carte/étape + checkboxes par animal + barre progression %), `_ProtoDetailSheet`, `_AssignProtocoleSheet`, `_assignPlanTache()`, notifications Supabase + FCM |
+| PLN04 | Vue unifiée "Mes tâches" côté employé — fusion `taches_elevage` + `plan_taches assigned_to=uid` dans son propre dashboard | Haute | App | `employes_page.dart` ou nouveau `employe_dashboard.dart` |
+| PLN05 | Notification push employé — assignation tâche protocole + rappel 7h matin pour tâches du jour assignées | Moyenne | App + Firebase Functions | `functions/planning.js` |
+| PLN06 | Export PDF protocole (template) — tableau étapes, produits, dosages, header élevage | Moyenne | App | `lib/services/planning_pdf_service.dart` |
+| PLN07 | Export PDF planning semaine — toutes les tâches groupées par jour, colonnes animal/employé/acte | Basse | App + Web | `planning_pdf_service.dart` + API route web |
+
 ### Conseils pratiques — **Angélique**
 
 | # | Tâche | Priorité | Repo | Notes |
@@ -392,6 +405,8 @@
 | A07 — Saillie → gestation automatique avec date mise-bas prévue selon espèce | 2026-05-28 | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` (petsmatch-web + website) |
 | A08 — Gestation confirmée (switch + rappel écho/palpation selon espèce) + badge dans liste | 2026-05-28 | App + Web | `animal_fiche.dart`, `mes-animaux/[id]/page.tsx` (petsmatch-web + website) |
 | Fix — Photos animaux perdus : object-contain + suppression render URL Supabase | 2026-05-28 | Web | `animaux-perdus/page.tsx` (petsmatch-web + website) |
+| PLN03 (étendu) — Vue groupée protocoles : 1 carte par étape, checkboxes par animal, barre de progression + %, `_ProtoDetailSheet` réutilisable (callback `onMarquerFait`), notification employé à l'assignation (Supabase + FCM), notification employeur quand employé valide | 2026-06-16 | App | `lib/pages/eleveur/employes/employes_page.dart` |
+| Fix dedup plan_taches — vérification doublons avant insert (`etape_id + date_prevue + animal_id`) dans `_generateTaches` Flutter + `applyTemplateToAnimal` web | 2026-06-16 | App + Web | `lib/services/planning_service.dart`, `website/src/lib/planning-service.ts` |
 | Inscription web — 3 étapes (rôle → infos perso + adresse Google Places → email/mdp) | 2026-05-28 | Web | `inscription/page.tsx` (petsmatch-web + website) |
 | Fix warnings ListTile/DecoratedBox sur ExpansionTile | 2026-05-28 | App | `animal_fiche.dart`, `contrat_reservation.dart` |
 | Registre E/S fiche animal — info mère (nom+puce) + auto-fill date_entrée + adresse élevage si naissance | 2026-05-28 | App | `animal_fiche.dart` |
