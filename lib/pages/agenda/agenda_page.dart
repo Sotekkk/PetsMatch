@@ -175,12 +175,12 @@ class _AgendaPageState extends State<AgendaPage> {
       // ── Tâches protocole (plan_taches) ───────────────────────────────────
       try {
         final p1 = await _supa.from('plan_taches')
-            .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom')
+            .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
             .eq('uid_eleveur', _uid)
             .gte('date_prevue', from).lte('date_prevue', to)
             .not('statut', 'eq', 'fait');
         final p2 = await _supa.from('plan_taches')
-            .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom')
+            .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
             .eq('assigned_to', _uid)
             .gte('date_prevue', from).lte('date_prevue', to)
             .not('statut', 'eq', 'fait');
@@ -235,8 +235,36 @@ class _AgendaPageState extends State<AgendaPage> {
     return _tasks.where((t) => (t['date'] ?? '').toString().startsWith(key)).toList();
   }
 
+  // ── Section tâches du jour (agenda) — groupée par etape_id ─────────────────
+
+  static String _protoEmoji(String? typeActe) => switch (typeActe ?? '') {
+    'vermifuge'       => '💊',
+    'vaccination'     => '💉',
+    'antiparasitaire' => '🛡️',
+    'traitement'      => '🩺',
+    'visite'          => '🏥',
+    'nettoyage'       => '🧹',
+    'promenade'       => '🦮',
+    'socialisation'   => '🐾',
+    _                 => '📋',
+  };
+
   Widget _buildDayTasksSection(List<Map<String, dynamic>> tasks) {
-    final done = tasks.where((t) => t['statut'] == 'fait').length;
+    // Séparer manuelles et protocoles
+    final manuel = tasks.where((t) => t['_source'] != 'protocole').toList();
+
+    // Grouper protocoles par etape_id (1 carte par étape)
+    final protoMap = <String, List<Map<String, dynamic>>>{};
+    for (final t in tasks.where((t) => t['_source'] == 'protocole')) {
+      final key = (t['etape_id'] as String?) ?? 'solo_${t['id']}';
+      protoMap.putIfAbsent(key, () => []).add(t);
+    }
+    final protoGroups = protoMap.values.toList();
+
+    final totalItems = manuel.length + protoGroups.length;
+    final doneItems  = manuel.where((t) => t['statut'] == 'fait').length
+        + protoGroups.where((g) => g.every((t) => t['statut'] == 'fait')).length;
+
     return Container(
       decoration: const BoxDecoration(
         color: Color(0xFFEDF6F7),
@@ -253,35 +281,81 @@ class _AgendaPageState extends State<AgendaPage> {
             const Text('Tâches du jour',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: _kTeal)),
             const Spacer(),
-            Text('$done/${tasks.length}',
+            Text('$doneItems/$totalItems',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
           ]),
-          const SizedBox(height: 6),
-          ...tasks.map((t) {
-            final isDone   = t['statut'] == 'fait';
-            final isProto  = t['_source'] == 'protocole';
-            final typeActe = t['type_acte']?.toString() ?? '';
-            final protoEmoji = isProto ? switch (typeActe) {
-              'vermifuge'       => '💊',
-              'vaccination'     => '💉',
-              'antiparasitaire' => '🛡️',
-              'traitement'      => '🩺',
-              'visite'          => '🏥',
-              'nettoyage'       => '🧹',
-              'promenade'       => '🦮',
-              _                 => '📋',
-            } : null;
+          const SizedBox(height: 8),
+
+          // ── Protocoles groupés ─────────────────────────────────────────────
+          ...protoGroups.map((groupe) {
+            final total  = groupe.length;
+            final done   = groupe.where((t) => t['statut'] == 'fait').length;
+            final pct    = total > 0 ? done / total : 0.0;
+            final first  = groupe.first;
+            final label  = (first['titre'] ?? first['label'] ?? '') as String;
+            final emoji  = _protoEmoji(first['type_acte']?.toString());
+            final allDone = done == total;
+
+            return GestureDetector(
+              onTap: () async {
+                await showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => _AgendaProtoSheet(
+                    groupe: groupe, label: label, emoji: emoji,
+                    onDone: _loadTasks,
+                  ),
+                );
+              },
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: allDone ? Colors.grey.shade50 : Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _kTeal.withValues(alpha: allDone ? 0.1 : 0.25)),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Text(emoji, style: const TextStyle(fontSize: 14)),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(label,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: allDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
+                          decoration: allDone ? TextDecoration.lineThrough : null),
+                      maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    Text('$done/$total',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                          color: allDone ? Colors.grey : _kTeal, fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 4),
+                    Icon(Icons.chevron_right, size: 16,
+                        color: allDone ? Colors.grey.shade300 : Colors.grey.shade400),
+                  ]),
+                  if (total > 1) ...[
+                    const SizedBox(height: 5),
+                    LinearProgressIndicator(
+                      value: pct,
+                      backgroundColor: _kTeal.withValues(alpha: 0.12),
+                      valueColor: AlwaysStoppedAnimation(allDone ? Colors.grey.shade300 : _kTeal),
+                      minHeight: 3,
+                    ),
+                  ],
+                ]),
+              ),
+            );
+          }),
+
+          // ── Tâches manuelles ───────────────────────────────────────────────
+          ...manuel.map((t) {
+            final isDone = t['statut'] == 'fait';
             return Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: GestureDetector(
                 onTap: () async {
-                  if (isProto) {
-                    final newStatut = isDone ? 'en_attente' : 'fait';
-                    await _supa.from('plan_taches').update({'statut': newStatut}).eq('id', t['id']);
-                  } else {
-                    final newStatut = isDone ? 'a_faire' : 'fait';
-                    await _supa.from('taches_elevage').update({'statut': newStatut}).eq('id', t['id']);
-                  }
+                  final newStatut = isDone ? 'a_faire' : 'fait';
+                  await _supa.from('taches_elevage').update({'statut': newStatut}).eq('id', t['id']);
                   _loadTasks();
                 },
                 child: Row(children: [
@@ -290,47 +364,25 @@ class _AgendaPageState extends State<AgendaPage> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: isDone ? const Color(0xFF6E9E57) : Colors.grey.shade300, width: 2),
+                          color: isDone ? const Color(0xFF6E9E57) : Colors.grey.shade300, width: 2),
                       color: isDone ? const Color(0xFF6E9E57) : Colors.transparent,
                     ),
-                    child: isDone
-                        ? const Icon(Icons.check, size: 11, color: Colors.white)
-                        : null,
+                    child: isDone ? const Icon(Icons.check, size: 11, color: Colors.white) : null,
                   ),
                   const SizedBox(width: 8),
                   Expanded(child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Row(children: [
-                        if (isProto && protoEmoji != null) ...[
-                          Text(protoEmoji, style: const TextStyle(fontSize: 11)),
-                          const SizedBox(width: 4),
-                        ],
-                        Expanded(
-                          child: Text(
-                            t['titre'] ?? '',
-                            style: TextStyle(
-                              fontFamily: 'Galey', fontSize: 13,
-                              color: isDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
-                              decoration: isDone ? TextDecoration.lineThrough : null,
-                            ),
-                            maxLines: 1, overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ]),
-                      if (isProto && (t['animal_nom'] as String?)?.isNotEmpty == true)
-                        Text('🐾 ${t['animal_nom']}',
+                      Text(t['titre'] ?? '',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                            color: isDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
+                            decoration: isDone ? TextDecoration.lineThrough : null),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                      if (t['responsable_nom'] != null)
+                        Text(isDone ? 'Fait par : ${t['responsable_nom']}' : '👤 ${t['responsable_nom']}',
                             style: TextStyle(fontFamily: 'Galey', fontSize: 10.5,
                                 color: isDone ? Colors.grey.shade400 : Colors.grey.shade500)),
-                      if (t['responsable_nom'] != null)
-                        Text(
-                          isDone
-                              ? 'Fait par : ${t['responsable_nom']}'
-                              : '👤 ${t['responsable_nom']}',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 10.5,
-                              color: isDone ? Colors.grey.shade400 : Colors.grey.shade500),
-                        ),
                     ],
                   )),
                 ]),
@@ -1740,6 +1792,125 @@ class _AddEventSheetState extends State<_AddEventSheet> {
           ),
         ),
       ]),
+    );
+  }
+}
+
+// ── Bottom sheet protocole agenda ─────────────────────────────────────────────
+
+class _AgendaProtoSheet extends StatefulWidget {
+  final List<Map<String, dynamic>> groupe;
+  final String label;
+  final String emoji;
+  final VoidCallback onDone;
+  const _AgendaProtoSheet({required this.groupe, required this.label, required this.emoji, required this.onDone});
+  @override
+  State<_AgendaProtoSheet> createState() => _AgendaProtoSheetState();
+}
+
+class _AgendaProtoSheetState extends State<_AgendaProtoSheet> {
+  final _supa = Supabase.instance.client;
+  late List<Map<String, dynamic>> _items;
+
+  @override
+  void initState() {
+    super.initState();
+    _items = List<Map<String, dynamic>>.from(widget.groupe);
+  }
+
+  Future<void> _toggle(int idx) async {
+    final t         = _items[idx];
+    final isDone    = t['statut'] == 'fait';
+    final newStatut = isDone ? 'en_attente' : 'fait';
+    await _supa.from('plan_taches').update({'statut': newStatut}).eq('id', t['id']);
+    setState(() => _items[idx] = {...t, 'statut': newStatut});
+    widget.onDone();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = _items.length;
+    final done  = _items.where((t) => t['statut'] == 'fait').length;
+    final pct   = total > 0 ? done / total : 0.0;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.55,
+      minChildSize: 0.35,
+      maxChildSize: 0.85,
+      builder: (_, ctrl) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: ListView(controller: ctrl, padding: EdgeInsets.zero, children: [
+          // Handle
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 4),
+              width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+
+          // En-tête
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Row(children: [
+              Text(widget.emoji, style: const TextStyle(fontSize: 22)),
+              const SizedBox(width: 10),
+              Expanded(child: Text(widget.label,
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _kTeal),
+                maxLines: 2)),
+              Text('$done/$total',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _kTeal)),
+            ]),
+          ),
+
+          // Barre de progression
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              LinearProgressIndicator(
+                value: pct,
+                backgroundColor: _kTeal.withValues(alpha: 0.12),
+                valueColor: AlwaysStoppedAnimation(done == total ? Colors.grey.shade300 : _kTeal),
+                minHeight: 5,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              const SizedBox(height: 2),
+              Text('${(pct * 100).round()} %',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade500)),
+            ]),
+          ),
+
+          const Divider(height: 24),
+
+          // Liste animaux
+          ..._items.asMap().entries.map((e) {
+            final idx    = e.key;
+            final t      = e.value;
+            final isDone = t['statut'] == 'fait';
+            final nom    = (t['animal_nom'] as String?)?.isNotEmpty == true
+                ? t['animal_nom'] as String
+                : 'Animal #${idx + 1}';
+            return CheckboxListTile(
+              value: isDone,
+              onChanged: (_) => _toggle(idx),
+              activeColor: _kTeal,
+              title: Text(nom,
+                style: TextStyle(
+                  fontFamily: 'Galey', fontSize: 14,
+                  color: isDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
+                  decoration: isDone ? TextDecoration.lineThrough : null,
+                )),
+              secondary: const Icon(Icons.pets, size: 18, color: _kTeal),
+              controlAffinity: ListTileControlAffinity.leading,
+            );
+          }),
+
+          const SizedBox(height: 24),
+        ]),
+      ),
     );
   }
 }
