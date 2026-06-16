@@ -716,14 +716,13 @@ class _TachesTabState extends State<_TachesTab> {
         return {...t, 'assigne_nom': assigneNom, 'animal_nom': animalNom, 'animal_noms': resolvedAnimalNoms};
       }).toList();
 
-      // Charger les plan_taches assignées aux employés
+      // Charger toutes les plan_taches de l'éleveur (protocoles)
       List<Map<String, dynamic>> planTaches = [];
       try {
         final ptRaw = await _supa
             .from('plan_taches')
-            .select('*, plans_actifs(reference_label)')
+            .select('id, label, date_prevue, statut, assigned_to, uid_eleveur, type_acte, animal_nom, animal_id')
             .eq('uid_eleveur', _uid)
-            .not('assigned_to', 'is', null)
             .not('statut', 'eq', 'fait')
             .order('date_prevue');
         planTaches = List<Map<String, dynamic>>.from(ptRaw);
@@ -863,7 +862,6 @@ class _TachesTabState extends State<_TachesTab> {
   Widget _buildProtoCardEleveur(Map<String, dynamic> t) {
     final date     = DateTime.tryParse(t['date_prevue'] as String? ?? '');
     final dateStr  = date != null ? DateFormat('dd MMM', 'fr_FR').format(date) : '';
-    final ref      = (t['plans_actifs'] as Map<String, dynamic>?)?['reference_label'] as String?;
     final assigneNom = t['assigne_nom'] as String?;
     final typeActe = t['type_acte']?.toString() ?? '';
     final emoji = switch (typeActe) {
@@ -916,7 +914,6 @@ class _TachesTabState extends State<_TachesTab> {
             if (dateStr.isNotEmpty) _Badge(text: '📅 $dateStr', bg: const Color(0xFFEEF5EA), fg: widget.teal),
             if (animalNom != null) _Badge(text: '🐾 $animalNom', bg: const Color(0xFFEFF6FF), fg: const Color(0xFF1D4ED8)),
             if (assigneNom != null) _Badge(text: '👤 $assigneNom', bg: const Color(0xFFF5F5F5), fg: Colors.grey.shade600),
-            if (ref != null) _Badge(text: ref, bg: const Color(0xFFF0F4FF), fg: const Color(0xFF1D4ED8)),
           ]),
         ])),
         TextButton(
