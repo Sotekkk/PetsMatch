@@ -177,7 +177,7 @@ class PlanningPdfService {
 
     await Printing.layoutPdf(
       onLayout: (_) async => doc.save(),
-      name: 'Protocole_$nom',
+      name: 'Routine_$nom',
     );
   }
 

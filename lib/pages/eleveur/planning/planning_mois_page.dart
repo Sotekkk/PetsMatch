@@ -147,7 +147,7 @@ class _PlanningMoisPageState extends State<PlanningMoisPage> {
           ),
           IconButton(
             icon: const Icon(Icons.playlist_add_check_outlined),
-            tooltip: 'Mes protocoles',
+            tooltip: 'Mes routines',
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const PlanTemplateListPage())),
           ),

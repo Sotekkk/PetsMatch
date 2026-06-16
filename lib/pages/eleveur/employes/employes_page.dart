@@ -853,7 +853,7 @@ class _TachesTabState extends State<_TachesTab> {
         final nomElevage = (profile?['name_elevage'] as String?)?.trim().isNotEmpty == true
             ? profile!['name_elevage'] as String
             : '${profile?['firstname'] ?? ''} ${profile?['lastname'] ?? ''}'.trim();
-        final label = group['label'] as String? ?? 'Tâche de protocole';
+        final label = group['label'] as String? ?? 'Tâche de routine';
         final total = group['_total'] as int;
         final titre = total > 1 ? '$label ($total animaux)' : label;
 
@@ -1043,7 +1043,7 @@ class _TachesTabState extends State<_TachesTab> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                   decoration: BoxDecoration(color: const Color(0xFFF0F4FF), borderRadius: BorderRadius.circular(6)),
-                  child: const Text('Protocole', style: TextStyle(
+                  child: const Text('Routine', style: TextStyle(
                       fontFamily: 'Galey', fontSize: 9, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8))),
                 ),
                 const SizedBox(width: 6),
@@ -1313,7 +1313,7 @@ class _AssignProtocoleSheet extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         const Text(
-          'Choisissez qui doit réaliser cette tâche de protocole.',
+          'Choisissez qui doit réaliser cette tâche de routine.',
           style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
           textAlign: TextAlign.center,
         ),
@@ -2480,7 +2480,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
       await _supa.from('notifications').insert({
         'uid':   widget.eleveurUid,
         'type':  'tache_validee',
-        'title': 'Tâche de protocole validée ✓',
+        'title': 'Tâche de routine validée ✓',
         'body':  '$nomEmploye a terminé : ${t['label']}',
         'data':  {'tacheId': t['id'].toString(), 'eleveurUid': widget.eleveurUid},
         'read':  false,
@@ -2805,7 +2805,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                   decoration: BoxDecoration(color: const Color(0xFFF0F4FF), borderRadius: BorderRadius.circular(6)),
-                  child: const Text('Protocole', style: TextStyle(
+                  child: const Text('Routine', style: TextStyle(
                       fontFamily: 'Galey', fontSize: 9, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8))),
                 ),
                 const SizedBox(width: 6),
