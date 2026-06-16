@@ -744,16 +744,37 @@ class _TachesTabState extends State<_TachesTab> {
         return {...t, 'assigne_nom': assigneNom, 'animal_nom': animalNom, 'animal_noms': resolvedAnimalNoms};
       }).toList();
 
-      // Charger toutes les plan_taches de l'éleveur (protocoles)
+      // Charger les plan_taches : à faire (toutes dates) + terminées récentes (30j)
+      // Deux queries pour éviter le plafond Supabase 1000 lignes sur un historique long.
       List<Map<String, dynamic>> planTaches = [];
       try {
-        // animal_nom n'est pas en DB — on résout depuis animalNoms après le select
-        final ptRaw = await _supa
-            .from('plan_taches')
-            .select('id, label, date_prevue, statut, assigned_to, uid_eleveur, type_acte, animal_id, etape_id, portee_id, plan_id')
-            .eq('uid_eleveur', _uid)
-            .order('date_prevue');
-        planTaches = List<Map<String, dynamic>>.from(ptRaw);
+        final pastCutoff = DateTime.now().subtract(const Duration(days: 30));
+        final pastStr    = pastCutoff.toIso8601String().substring(0, 10);
+
+        final results = await Future.wait([
+          // À faire : toutes les tâches non-faites, triées par date croissante
+          _supa
+              .from('plan_taches')
+              .select('id, label, date_prevue, statut, assigned_to, uid_eleveur, type_acte, animal_id, etape_id, portee_id, plan_id')
+              .eq('uid_eleveur', _uid)
+              .not('statut', 'eq', 'fait')
+              .order('date_prevue'),
+          // Terminées : seulement les 30 derniers jours pour l'onglet "Terminées"
+          _supa
+              .from('plan_taches')
+              .select('id, label, date_prevue, statut, assigned_to, uid_eleveur, type_acte, animal_id, etape_id, portee_id, plan_id')
+              .eq('uid_eleveur', _uid)
+              .eq('statut', 'fait')
+              .gte('date_prevue', pastStr)
+              .order('date_prevue', ascending: false),
+        ]);
+
+        final seen = <String>{};
+        final merged = [...results[0], ...results[1]];
+        planTaches = merged
+            .where((r) => seen.add(r['id'].toString()))
+            .map((r) => Map<String, dynamic>.from(r))
+            .toList();
         // Enrichir : nom animal + nom assigné
         for (final pt in planTaches) {
           final animalId   = pt['animal_id'] as String?;
@@ -2426,12 +2447,33 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
     if (!mounted) return;
     setState(() => _loadingPlanTaches = true);
     try {
-      final rows = await _supa
-          .from('plan_taches')
-          .select('*, plans_actifs(reference_label)')
-          .eq('uid_eleveur', widget.eleveurUid)
-          .eq('assigned_to', _uid)
-          .order('date_prevue');
+      final pastStr = DateTime.now()
+          .subtract(const Duration(days: 30))
+          .toIso8601String()
+          .substring(0, 10);
+
+      final results = await Future.wait([
+        _supa
+            .from('plan_taches')
+            .select('*, plans_actifs(reference_label)')
+            .eq('uid_eleveur', widget.eleveurUid)
+            .eq('assigned_to', _uid)
+            .not('statut', 'eq', 'fait')
+            .order('date_prevue'),
+        _supa
+            .from('plan_taches')
+            .select('*, plans_actifs(reference_label)')
+            .eq('uid_eleveur', widget.eleveurUid)
+            .eq('assigned_to', _uid)
+            .eq('statut', 'fait')
+            .gte('date_prevue', pastStr)
+            .order('date_prevue', ascending: false),
+      ]);
+
+      final seen = <String>{};
+      final rows = [...results[0], ...results[1]]
+          .where((r) => seen.add(r['id'].toString()))
+          .toList();
 
       // Charger les noms d'animaux manquants
       final animalIds = (rows as List)
