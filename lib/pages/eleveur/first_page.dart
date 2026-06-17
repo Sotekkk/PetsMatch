@@ -155,9 +155,9 @@ class _RegisterEleveurInformationPageState
 
           // ── Nom / Prénom ──────────────────────────────────────────────────────
           _card([
-            _field(ctrl: _nomCtrl, label: 'Nom', icon: Icons.person_outline, valid: _nomOk, error: 'Nom requis'),
+            _field(ctrl: _nomCtrl, label: 'Nom *', icon: Icons.person_outline, valid: _nomOk, error: 'Nom requis'),
             const SizedBox(height: 12),
-            _field(ctrl: _prenomCtrl, label: 'Prénom', icon: Icons.badge_outlined, valid: _prenomOk, error: 'Prénom requis'),
+            _field(ctrl: _prenomCtrl, label: 'Prénom *', icon: Icons.badge_outlined, valid: _prenomOk, error: 'Prénom requis'),
           ]),
           const SizedBox(height: 16),
 
@@ -244,7 +244,7 @@ class _RegisterEleveurInformationPageState
         readOnly: true,
         style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
         decoration: InputDecoration(
-          labelText: 'Date de naissance',
+          labelText: 'Date de naissance *',
           labelStyle:
               const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
           prefixIcon: const Icon(Icons.cake_outlined, size: 18, color: Color(0xFF6F767B)),
