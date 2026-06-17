@@ -510,6 +510,31 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
         nomEleveur:  _nomElevageCtrl.text.trim(),
       );
 
+      // ── Auto-check profil éleveur ──────────────────────────────────────────
+      try {
+        final siretRaw = _siretCtrl.text.trim().replaceAll(RegExp(r'\s'), '');
+        final siretFormatOk = RegExp(r'^\d{14}$').hasMatch(siretRaw) && siretRaw != '00000000000000';
+        bool siretDuplicate = false;
+        if (siretFormatOk) {
+          final dup = await Supabase.instance.client
+              .from('users').select('uid').eq('siret', siretRaw).neq('uid', uid);
+          siretDuplicate = (dup as List).isNotEmpty;
+        }
+        final hasSiretDoc = siretDocUrl != null && siretDocUrl.isNotEmpty;
+        final hasAcacedDoc = acacedDocUrl != null && acacedDocUrl.isNotEmpty;
+        final autoCheckPassed = siretFormatOk && !siretDuplicate && hasSiretDoc && hasAcacedDoc;
+        await FirebaseFirestore.instance.collection('users').doc(uid).update({
+          'autoCheck': {
+            'siretFormatOk': siretFormatOk,
+            'siretDuplicate': siretDuplicate,
+            'hasSiretDoc': hasSiretDoc,
+            'hasAcacedDoc': hasAcacedDoc,
+            'passed': autoCheckPassed,
+            'checkedAt': DateTime.now().millisecondsSinceEpoch,
+          },
+        });
+      } catch (_) {}
+
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e')));

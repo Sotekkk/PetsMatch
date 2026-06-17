@@ -309,6 +309,56 @@ petsmatch.contact@gmail.com
                       data['descEntreprise'] ?? ''),
                   const SizedBox(height: 20),
 
+                  // Vérification automatique
+                  if (data['autoCheck'] != null) ...[
+                    _SectionTitle('Vérification automatique'),
+                    _CheckRow('Format SIRET valide (14 chiffres)',
+                        data['autoCheck']['siretFormatOk'] == true),
+                    _CheckRow('SIRET unique (pas de doublon)',
+                        data['autoCheck']['siretDuplicate'] != true),
+                    _CheckRow('Justificatif SIRET fourni',
+                        data['autoCheck']['hasSiretDoc'] == true),
+                    _CheckRow('Certificat ACACED fourni',
+                        data['autoCheck']['hasAcacedDoc'] == true),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: data['autoCheck']['passed'] == true
+                            ? Colors.green.withOpacity(0.1)
+                            : Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: data['autoCheck']['passed'] == true
+                              ? Colors.green.withOpacity(0.3)
+                              : Colors.orange.withOpacity(0.3),
+                        ),
+                      ),
+                      child: Row(children: [
+                        Icon(
+                          data['autoCheck']['passed'] == true
+                              ? Icons.check_circle_outline
+                              : Icons.warning_amber_outlined,
+                          color: data['autoCheck']['passed'] == true
+                              ? Colors.green : Colors.orange,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(
+                          data['autoCheck']['passed'] == true
+                              ? 'Dossier complet — vérification manuelle recommandée'
+                              : 'Dossier incomplet ou suspect — vérifier avant approbation',
+                          style: TextStyle(
+                            fontFamily: 'Galey', fontSize: 13,
+                            color: data['autoCheck']['passed'] == true
+                                ? Colors.green : Colors.orange,
+                          ),
+                        )),
+                      ]),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+
                   // Document Kbis
                   _SectionTitle('Document officiel (Kbis / Attestation)'),
                   if (kbisUrl.isNotEmpty)
@@ -575,6 +625,30 @@ class _InfoRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CheckRow extends StatelessWidget {
+  final String label;
+  final bool ok;
+
+  const _CheckRow(this.label, this.ok);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Icon(
+          ok ? Icons.check_circle_outline : Icons.cancel_outlined,
+          size: 18,
+          color: ok ? Colors.green : Colors.red,
+        ),
+        const SizedBox(width: 8),
+        Expanded(child: Text(label,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+      ]),
     );
   }
 }

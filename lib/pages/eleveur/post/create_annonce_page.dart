@@ -666,6 +666,40 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         'updated_at': now,
       };
 
+      // ── Auto-check annonce suspect ─────────────────────────────────────────
+      final _suspectReasons = <String>[];
+      final _prixCheck = supaData['prix'] as double?;
+      final _prixPorteeCheck = supaData['prix_min_portee'] as double?;
+      final _maxPrix = <String, double>{
+        'chien': 20000, 'chat': 6000, 'cheval': 150000,
+        'lapin': 1000, 'oiseau': 5000, 'nac': 3000,
+      }[_espece] ?? 50000;
+      final _minPrix = <String, double>{
+        'chien': 150, 'chat': 100, 'cheval': 800,
+        'lapin': 20, 'oiseau': 30,
+      }[_espece] ?? 20;
+      if (_prixCheck != null && _prixCheck > 0 && _prixCheck < _minPrix) {
+        _suspectReasons.add('prix_tres_bas');
+      }
+      if (_prixCheck != null && _prixCheck > _maxPrix) {
+        _suspectReasons.add('prix_tres_eleve');
+      }
+      if (_prixPorteeCheck != null && _prixPorteeCheck > 0 && _prixPorteeCheck < _minPrix) {
+        _suspectReasons.add('prix_portee_bas');
+      }
+      final _fullText =
+          '${supaData['titre'] ?? ''} ${supaData['description'] ?? ''}'.toLowerCase();
+      const _blacklistWords = [
+        'bitcoin', 'crypto', 'western union', 'mandat cash',
+        'arnaque', 'don gratuit', 'livraison longue distance',
+        'visa gift', 'paypal friends',
+      ];
+      for (final w in _blacklistWords) {
+        if (_fullText.contains(w)) _suspectReasons.add('mot_suspect:$w');
+      }
+      supaData['is_suspect'] = _suspectReasons.isNotEmpty;
+      supaData['suspect_reasons'] = _suspectReasons;
+
       if (widget.annonceId != null) {
         await Supabase.instance.client
             .from('annonces').update(supaData).eq('id', widget.annonceId!);

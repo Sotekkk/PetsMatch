@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/admin/annonces_admin.dart';
 import 'package:PetsMatch/pages/admin/pro_list.dart';
 import 'package:PetsMatch/pages/admin/signalements_admin.dart';
 import 'package:PetsMatch/pages/admin/supabase_migration_page.dart';
@@ -22,6 +23,7 @@ class AdminPanel extends StatefulWidget {
 class _AdminPanelState extends State<AdminPanel> {
   int _selectedIndex = 0;
   int _pendingSig = 0;
+  int _suspectAnnonces = 0;
 
   late final List<Widget> _pages;
 
@@ -35,8 +37,10 @@ class _AdminPanelState extends State<AdminPanel> {
       const ProList(),
       const SignalementsAdmin(),
       const AdminMarketplaceTab(),
+      const AnnoncesAdmin(),
     ];
     _loadPendingSig();
+    _loadSuspectAnnonces();
   }
 
   Future<void> _loadPendingSig() async {
@@ -46,6 +50,17 @@ class _AdminPanelState extends State<AdminPanel> {
           .select('id')
           .eq('statut', 'en_attente');
       if (mounted) setState(() => _pendingSig = (res as List).length);
+    } catch (_) {}
+  }
+
+  Future<void> _loadSuspectAnnonces() async {
+    try {
+      final res = await Supabase.instance.client
+          .from('annonces')
+          .select('id')
+          .eq('is_suspect', true)
+          .neq('statut', 'suspendu');
+      if (mounted) setState(() => _suspectAnnonces = (res as List).length);
     } catch (_) {}
   }
 
@@ -92,6 +107,7 @@ class _AdminPanelState extends State<AdminPanel> {
         onTap: (index) {
           setState(() => _selectedIndex = index);
           if (index == 4) _loadPendingSig();
+          if (index == 6) _loadSuspectAnnonces();
         },
         items: [
           const BottomNavigationBarItem(
@@ -123,6 +139,16 @@ class _AdminPanelState extends State<AdminPanel> {
           const BottomNavigationBarItem(
             icon: Icon(Icons.local_offer_outlined),
             label: 'Marketplace',
+          ),
+          BottomNavigationBarItem(
+            icon: _suspectAnnonces > 0
+                ? Badge(
+                    label: Text('$_suspectAnnonces',
+                        style: const TextStyle(fontSize: 10, fontFamily: 'Galey')),
+                    child: const Icon(Icons.campaign_outlined),
+                  )
+                : const Icon(Icons.campaign_outlined),
+            label: 'Annonces',
           ),
         ],
       ),
