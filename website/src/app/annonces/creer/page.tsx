@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import Link from 'next/link';
@@ -76,7 +76,7 @@ const DB_TO_ESPECE: Record<string, string> = {
   'cheval': 'Cheval', 'nac': 'Reptile', 'autre': 'Autre',
 };
 
-export default function CreerAnnoncePage() {
+function CreerAnnoncePageInner() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1396,5 +1396,13 @@ export default function CreerAnnoncePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function CreerAnnoncePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>}>
+      <CreerAnnoncePageInner />
+    </Suspense>
   );
 }
