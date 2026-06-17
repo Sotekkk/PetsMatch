@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { usePlan } from '@/lib/use-plan';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -64,6 +65,7 @@ function groupRoutines(routines: Routine[]): RoutineGroupe[] {
 export default function AgendaElevagePage() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const { config: planConfig, loading: planLoading } = usePlan();
   const [selectedDate, setSelectedDate] = useState(toISODate(new Date()));
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [tachesM, setTachesM] = useState<TacheManuelle[]>([]);
@@ -71,6 +73,30 @@ export default function AgendaElevagePage() {
   const [validateGroupe, setValidateGroupe] = useState<RoutineGroupe | null>(null);
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
+
+  if (!loading && !planLoading && !planConfig.hasPlanning) {
+    return (
+      <div className="min-h-screen bg-[#F8F8F6] flex items-center justify-center p-6">
+        <div className="bg-white rounded-2xl shadow-sm border border-[#E5E7EB] max-w-md w-full p-8 text-center">
+          <div className="text-5xl mb-4">👑</div>
+          <h2 className="text-xl font-bold text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Fonctionnalité Premium
+          </h2>
+          <p className="text-[#6B7280] text-sm mb-6" style={{ fontFamily: 'Galey, sans-serif' }}>
+            L&apos;agenda des routines est réservé aux abonnements <strong>Premium</strong>.
+            Gérez vos protocoles quotidiens et suivez l&apos;avancement par animal.
+          </p>
+          <button
+            onClick={() => router.push('/abonnement')}
+            className="w-full py-3 rounded-xl text-white font-semibold text-sm"
+            style={{ backgroundColor: '#D97706', fontFamily: 'Galey, sans-serif' }}
+          >
+            Passer en Premium
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const load = useCallback(async () => {
     if (!user) return;

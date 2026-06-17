@@ -12,6 +12,7 @@ export interface PlanConfig {
   dureeDays: number;
   autoPublish: boolean;
   hasRegistres: boolean;       // Pro + Premium : suivi sanitaire, entrées/sorties
+  hasPlanning: boolean;        // Premium uniquement : planning, routines, agenda
   hasPremiumFeatures: boolean; // Premium uniquement : facturation, contrats
   color: string;
   bg: string;
@@ -19,9 +20,9 @@ export interface PlanConfig {
 }
 
 export const PLAN_CONFIG: Record<PlanCode, PlanConfig> = {
-  free:    { label: 'Gratuit', maxAnnonces: 3,  dureeDays: 30, autoPublish: false, hasRegistres: false, hasPremiumFeatures: false, color: '#6B7280', bg: '#F3F4F6', badge: '🌱' },
-  pro:     { label: 'Pro',     maxAnnonces: 10, dureeDays: 45, autoPublish: true,  hasRegistres: true,  hasPremiumFeatures: false, color: '#0C5C6C', bg: '#E8F4F6', badge: '⚡' },
-  premium: { label: 'Premium', maxAnnonces: -1, dureeDays: 60, autoPublish: true,  hasRegistres: true,  hasPremiumFeatures: true,  color: '#D97706', bg: '#FEF3C7', badge: '👑' },
+  free:    { label: 'Gratuit', maxAnnonces: 3,  dureeDays: 30, autoPublish: false, hasRegistres: false, hasPlanning: false, hasPremiumFeatures: false, color: '#6B7280', bg: '#F3F4F6', badge: '🌱' },
+  pro:     { label: 'Pro',     maxAnnonces: 10, dureeDays: 45, autoPublish: true,  hasRegistres: true,  hasPlanning: false, hasPremiumFeatures: false, color: '#0C5C6C', bg: '#E8F4F6', badge: '⚡' },
+  premium: { label: 'Premium', maxAnnonces: -1, dureeDays: 60, autoPublish: true,  hasRegistres: true,  hasPlanning: true,  hasPremiumFeatures: true,  color: '#D97706', bg: '#FEF3C7', badge: '👑' },
 };
 
 export interface UsePlanResult {

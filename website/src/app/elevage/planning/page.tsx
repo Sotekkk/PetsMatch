@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { usePlan } from '@/lib/use-plan';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -253,6 +254,7 @@ ${sectionsHtml}
 export default function PlanningPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const { config: planConfig, loading: planLoading } = usePlan();
 
   const [view, setView] = useState<'jour' | 'protocoles'>('jour');
   const [taches, setTaches] = useState<Tache[]>([]);
@@ -267,6 +269,30 @@ export default function PlanningPage() {
   const [deleteGroupe, setDeleteGroupe] = useState<TacheGroupe | null>(null);
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
+
+  if (!loading && !planLoading && !planConfig.hasPlanning) {
+    return (
+      <div className="min-h-screen bg-[#F8F8F6] flex items-center justify-center p-6">
+        <div className="bg-white rounded-2xl shadow-sm border border-[#E5E7EB] max-w-md w-full p-8 text-center">
+          <div className="text-5xl mb-4">👑</div>
+          <h2 className="text-xl font-bold text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Fonctionnalité Premium
+          </h2>
+          <p className="text-[#6B7280] text-sm mb-6" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Le planning des routines est réservé aux abonnements <strong>Premium</strong>.
+            Créez des modèles de routines et planifiez-les pour toute votre portée.
+          </p>
+          <button
+            onClick={() => router.push('/abonnement')}
+            className="w-full py-3 rounded-xl text-white font-semibold text-sm"
+            style={{ backgroundColor: '#D97706', fontFamily: 'Galey, sans-serif' }}
+          >
+            Passer en Premium
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const loadTaches = useCallback(async () => {
     if (!user) return;

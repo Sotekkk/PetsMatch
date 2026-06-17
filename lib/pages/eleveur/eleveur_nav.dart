@@ -284,13 +284,21 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
-                        label: 'Planning',
+                        label: 'Routines',
                         icon: Icons.event_note_outlined,
+                        locked: _planCode != 'premium',
+                        badgeLabel: 'Premium',
                         onTap: () {
                           Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const PlanningMoisPage(),
-                          ));
+                          if (_planCode != 'premium') {
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const AbonnementPage(),
+                            ));
+                          } else {
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const PlanningMoisPage(),
+                            ));
+                          }
                         },
                       ),
                       _DrawerSubItem(
@@ -674,9 +682,11 @@ class _DrawerSubItem extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final bool locked;
+  final String badgeLabel;
 
   const _DrawerSubItem({
-    required this.label, required this.icon, required this.onTap, this.locked = false,
+    required this.label, required this.icon, required this.onTap,
+    this.locked = false, this.badgeLabel = 'Pro',
   });
 
   @override
@@ -696,8 +706,8 @@ class _DrawerSubItem extends StatelessWidget {
               decoration: BoxDecoration(
                   color: const Color(0xFFD97706).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8)),
-              child: const Text('Pro',
-                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700,
+              child: Text(badgeLabel,
+                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700,
                       fontFamily: 'Galey', color: Color(0xFFD97706))),
             ),
           ],
