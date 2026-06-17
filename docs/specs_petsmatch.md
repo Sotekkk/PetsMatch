@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-06-14  
+> Dernière mise à jour : 2026-06-17  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -1118,6 +1118,27 @@ RLS : `marketplace_partners` et `marketplace_ads` accessibles uniquement par le 
 
 > Surfaces : **App Flutter (Android + iOS) + Site Web Next.js + Panel Admin**
 
+### 9.0 Statut d'implémentation (2026-06-17)
+
+| Feature | Code | Statut | Notes |
+|---|---|---|---|
+| Contrôle format SIRET (14 chiffres, pas de doublons) | A12 | ✅ App Flutter | Dans `profil_eleveur_edit._save()` + affiché dans `verification_detail.dart` |
+| Détection annonces suspectes (prix + mots-clés) | A13 | ✅ App Flutter | Dans `create_annonce_page.dart`, table `annonces.is_suspect` / `suspect_reasons` |
+| Onglet "Annonces" dans panel admin | A13 | ✅ App Flutter | `annonces_admin.dart` — 3 onglets : Suspectes / Toutes / Suspendues |
+| Particuliers auto-validés à l'inscription | — | ✅ App Flutter + Web | `verifemail.dart` + `ValidationGuard.tsx` |
+| Backfill CGU anciens comptes app | RGPD01 | ✅ Web | Silencieux dans `ValidationGuard.tsx` |
+| Vérification SIRET via API `recherche-entreprises.api.gouv.fr` | 9.1 | 🔜 À faire | Nécessite Cloud Function / Edge Function |
+| Badges de confiance dans les cards | 9.3 | ✅ Web | `VerificationBadge.tsx` + `getBadgeLevel()` |
+
+**SQL à appliquer (non encore exécuté) :**
+```sql
+ALTER TABLE annonces ADD COLUMN IF NOT EXISTS is_suspect BOOLEAN DEFAULT false;
+ALTER TABLE annonces ADD COLUMN IF NOT EXISTS suspect_reasons JSONB DEFAULT '[]';
+UPDATE users SET cgu_accepted_at = created_at WHERE cgu_accepted_at IS NULL;
+```
+
+---
+
 ### 9.1 Validation automatique à l'inscription
 
 Lors du dépôt de dossier (éleveur ou professionnel), des contrôles automatiques bloquent immédiatement les données manifestement incorrectes avant d'envoyer le dossier en queue admin.
@@ -1967,6 +1988,56 @@ Ce document est conforme au format attendu lors d'un contrôle DDPP (Direction D
 - PLN03 → nécessite d'identifier la table des tâches manuelles existantes
 - PLN07 → données issues de `registre_sanitaire` (déjà alimenté par `validerTache`)
 - PLN01 → peut utiliser `table_calendar` (pub.dev) ou un composant custom
+
+---
+
+---
+
+## 10. Onboarding éleveur (A39) ✅
+
+> Implémenté le 2026-06-17
+
+### 10.1 Flutter — Première connexion
+
+**Fichier :** `lib/pages/onboarding/onboarding_eleveur.dart`  
+**Déclenchement :** `EleveurNav.initState()` via `SharedPreferences` (`onboarding_eleveur_done`)
+
+5 slides (PageView) avec indicateur de points, bouton "Passer" + "Suivant" / "Commencer !" :
+
+| Slide | Titre | Contenu |
+|---|---|---|
+| 1 | Bienvenue dans votre espace élevage | Vue d'ensemble dashboard |
+| 2 | Vos animaux au complet | Carnet de santé, vaccinations, actes véto |
+| 3 | Publiez vos annonces | Chiots, portées, saillies, pensions |
+| 4 | Planning & Agenda | Routines, rappels, vue hebdomadaire |
+| 5 | Documents & Certifications | Contrats, CEI, factures, registres |
+
+**État :** `onboarding_eleveur_done: bool` dans SharedPreferences. Affiché une seule fois au premier login.
+
+### 10.2 Web — Page profil élevage ✅
+
+**URL :** `/elevage/profil`  
+**Fichier :** `website/src/app/elevage/profil/page.tsx`
+
+Page dédiée dans l'espace de gestion élevage (même niveau que `/elevage/agenda`, `/elevage/planning`). Accessible depuis :
+- Header EleveurDashboard (avatar + bouton)
+- Quick links dashboard (tuile "Mon profil élevage")
+
+**Contenu :**
+- Bannière + photo de profil + nom d'élevage + ville
+- Badge validation (Profil validé ✓ / En attente ⏳)
+- Espèces élevées + races
+- Description
+- Coordonnées (téléphone + adresse)
+- Certifications (SIRET ✓/✗, justificatif, ACACED ✓/✗, certificat)
+- Bouton "Modifier mon profil" → `/profil` (formulaire complet)
+- Bouton "Voir mon profil public" → `/elevages/[uid]` (si validé)
+
+### 10.3 À faire
+
+- **A40** : Onboarding pro (3-4 slides : profil pro, agenda/RDV, clients, documents)
+- **A41** : Onboarding particulier (2-3 slides : mes animaux, alertes perdus, annonces)
+- Onboarding web (animation côté web pour les mêmes profils au 1er login)
 
 ---
 
