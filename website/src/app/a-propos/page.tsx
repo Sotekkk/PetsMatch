@@ -20,15 +20,16 @@ const INFO_CARDS = [
   {
     title: '👤 Responsables de la publication',
     items: [
-      ['Président', 'Nabil Ksouri'],
-      ['Directeur général', 'Mevinn Allee'],
+      ['Présidente', 'Natacha Loisiel'],
+      ['Directeur général', 'Nabil Ksouri'],
     ],
   },
   {
     title: '☁️ Hébergement',
     items: [
-      ['Hébergeur', 'Google Firebase (Google LLC)'],
-      ['Adresse', '1600 Amphitheatre Parkway, Mountain View, CA 94043, USA'],
+      ['Base de données', 'Supabase (Supabase Inc.)'],
+      ['Auth & stockage', 'Google Firebase (Google LLC)'],
+      ['Données Firebase', '1600 Amphitheatre Parkway, Mountain View, CA 94043, USA'],
     ],
   },
 ];
