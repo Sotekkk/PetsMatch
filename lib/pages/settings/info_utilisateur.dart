@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:PetsMatch/utils.dart';
 import 'package:PetsMatch/main.dart';
 import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -16,11 +15,14 @@ class InfoUserSettings extends StatefulWidget {
 }
 
 class _InfoUserSettingsState extends State<InfoUserSettings> {
+  static const _teal = Color(0xFF0C5C6C);
+  static const _green = Color(0xFF6E9E57);
+  static const _border = Color(0xFFE4E7E2);
+
   final TextEditingController _firstnameController = TextEditingController();
   final TextEditingController _lastnameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _elevagePhoneController = TextEditingController();
-  final TextEditingController _nicknameController = TextEditingController();
   final TextEditingController _dobController = TextEditingController();
   final TextEditingController _rueController = TextEditingController();
   final TextEditingController _villeController = TextEditingController();
@@ -32,19 +34,16 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   final TextEditingController _paysElevageController = TextEditingController();
   final TextEditingController _elevageNameController = TextEditingController();
   final TextEditingController _phoneISOCodeController = TextEditingController();
-  final TextEditingController _elevagePhoneISOCodeController =
-      TextEditingController();
-
+  final TextEditingController _elevagePhoneISOCodeController = TextEditingController();
 
   List<Country> countries = [];
   Country? selectedCountry;
   Country? selectedElevageCountry;
-  String _selectedCountryCode = User_Info.codeISO; // France par défaut
-  String _selectedElevageCountryCode =
-      User_Info.codeISOElevage; // France par défaut
+  String _selectedCountryCode = User_Info.codeISO;
+  String _selectedElevageCountryCode = User_Info.codeISOElevage;
 
-  bool _isPhoneValid = true;
-  bool _isElevagePhoneValid = true;
+  final bool _isPhoneValid = true;
+  final bool _isElevagePhoneValid = true;
   bool _isDog = false;
   bool _isCat = false;
   List<String> _selectedDogBreeds = [];
@@ -70,43 +69,40 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   }
 
   Future<void> _loadUserInfo() async {
-      var user = FirebaseAuth.instance.currentUser;
+    var user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       var userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       User_Info.updateUserInfo(userDoc.data() as Map<String, dynamic>);
-       _firstnameController.text = User_Info.firstname;
-    _lastnameController.text = User_Info.lastname;
-    _dobController.text = User_Info.dateofbirth;
-    _phoneISOCodeController.text = User_Info.codeISO;
-    if (User_Info.isElevage || User_Info.isPro) {
-      _elevageNameController.text = User_Info.nameElevage;
-      _elevagePhoneISOCodeController.text = User_Info.codeISOElevage;
-      _elevagePhoneController.text = User_Info.numeroElevage;
-      _rueElevageController.text = User_Info.rueElevage;
-      _villeElevageController.text = User_Info.villeElevage;
-      _codePostalElevageController.text = User_Info.codePostalElevage;
-      _paysElevageController.text = User_Info.paysElevage.isNotEmpty ? User_Info.paysElevage : 'France';
-      _phoneController.text = User_Info.numeroElevage;
-      _isDog = User_Info.isDog;
-      _isCat = User_Info.isCat;
-      _selectedDogBreeds = List<String>.from(User_Info.dogBreeds);
-      _selectedCatBreeds = List<String>.from(User_Info.catBreeds);
+      _firstnameController.text = User_Info.firstname;
+      _lastnameController.text = User_Info.lastname;
+      _dobController.text = User_Info.dateofbirth;
+      _phoneISOCodeController.text = User_Info.codeISO;
+      if (User_Info.isElevage || User_Info.isPro) {
+        _elevageNameController.text = User_Info.nameElevage;
+        _elevagePhoneISOCodeController.text = User_Info.codeISOElevage;
+        _elevagePhoneController.text = User_Info.numeroElevage;
+        _rueElevageController.text = User_Info.rueElevage;
+        _villeElevageController.text = User_Info.villeElevage;
+        _codePostalElevageController.text = User_Info.codePostalElevage;
+        _paysElevageController.text = User_Info.paysElevage.isNotEmpty ? User_Info.paysElevage : 'France';
+        _phoneController.text = User_Info.numeroElevage;
+        _isDog = User_Info.isDog;
+        _isCat = User_Info.isCat;
+        _selectedDogBreeds = List<String>.from(User_Info.dogBreeds);
+        _selectedCatBreeds = List<String>.from(User_Info.catBreeds);
+      }
+      if (!User_Info.isElevage && !User_Info.isPro) {
+        _phoneController.text = User_Info.phone_number;
+        _rueController.text = User_Info.rue;
+        _villeController.text = User_Info.ville;
+        _codePostalController.text = User_Info.codePostal;
+        _paysController.text = User_Info.pays.isNotEmpty ? User_Info.pays : 'France';
+      }
     }
-    if (!User_Info.isElevage && !User_Info.isPro) {
-      _phoneController.text = User_Info.phone_number;
-      _rueController.text = User_Info.rue;
-      _villeController.text = User_Info.ville;
-      _codePostalController.text = User_Info.codePostal;
-      _paysController.text = User_Info.pays.isNotEmpty ? User_Info.pays : 'France';
-    }
-    }
-    // Remplir les contrôleurs avec les informations utilisateur existantes
-   
   }
 
   Future<void> _loadCountries() async {
-    final String response =
-        await rootBundle.loadString('assets/CountryCodes.json');
+    final String response = await rootBundle.loadString('assets/CountryCodes.json');
     final data = await json.decode(response) as List;
     countries = data.map((item) => Country.fromJson(item)).toList();
     setState(() {
@@ -120,7 +116,6 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   }
 
   void _updateUserInfo() async {
-    // Validation des champs obligatoires
     final bool isElevageOrPro = User_Info.isElevage || User_Info.isPro;
     if (isElevageOrPro) {
       if (_elevagePhoneController.text.trim().isEmpty ||
@@ -152,7 +147,6 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
       }
     }
 
-    // Mettre à jour les informations dans Firebase
     await FirebaseFirestore.instance
         .collection('users')
         .doc(User_Info.uid)
@@ -186,7 +180,6 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
       'isElevage': User_Info.isElevage,
     });
 
-    // Mettre à jour les informations dans User_Info
     User_Info.firstname = _firstnameController.text;
     User_Info.lastname = _lastnameController.text;
     User_Info.dateofbirth = _dobController.text;
@@ -197,7 +190,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
       User_Info.codePostal = _codePostalController.text;
       User_Info.pays = _paysController.text;
     }
-    User_Info.codeISO = _selectedCountryCode as String;
+    User_Info.codeISO = _selectedCountryCode;
     if (User_Info.isElevage || User_Info.isPro) {
       User_Info.nameElevage = _elevageNameController.text;
       User_Info.numeroElevage = _elevagePhoneController.text;
@@ -212,7 +205,6 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
       User_Info.catBreeds = List<String>.from(_selectedCatBreeds);
     }
 
-    // Mettre à jour Supabase (synchronisation avec le web)
     final supa = Supabase.instance.client;
     final supaPayload = <String, dynamic>{
       'firstname': _firstnameController.text,
@@ -233,10 +225,15 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     }
     await supa.from('users').update(supaPayload).eq('uid', User_Info.uid);
 
-    // Afficher un message de confirmation
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Information utilisateur mise à jour')),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Informations mises à jour', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Color(0xFF0C5C6C),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -258,7 +255,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0C5C6C),
+        backgroundColor: _teal,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -268,390 +265,252 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Colors.white)),
       ),
       body: SingleChildScrollView(
-        child: Center(
-          child: Column(
-            children: [
-              const SizedBox(height: 24),
-              _buildStyledTextField(
-                  _firstnameController, 'Prénom', Icons.person),
-              SizedBox(
-                  height:
-                      UTILS.calculHeight(15, UTILS.heightReference(context))),
-              _buildStyledTextField(_lastnameController, 'Nom', Icons.person),
-              SizedBox(
-                  height:
-                      UTILS.calculHeight(15, UTILS.heightReference(context))),
-              _buildDateField(_dobController, 'Date de naissance'),
-              SizedBox(
-                  height:
-                      UTILS.calculHeight(15, UTILS.heightReference(context))),
-              _buildStyledTextFieldZeub(),
-              if (!User_Info.isElevage && !User_Info.isPro)
-                SizedBox(
-                    height:
-                        UTILS.calculHeight(15, UTILS.heightReference(context))),
-              if (!User_Info.isElevage && !User_Info.isPro)
-                _buildPhoneField(_phoneController, 'Téléphone', selectedCountry,
-                    _isPhoneValid, (Country? country) {
-                  setState(() {
-                    selectedCountry = country;
-                    _selectedCountryCode = selectedCountry?.dialCode as String;
-                  });
-                }),
-              SizedBox(
-                  height:
-                      UTILS.calculHeight(15, UTILS.heightReference(context))),
-              if (User_Info.isElevage || User_Info.isPro)
-                _buildStyledTextField(_elevageNameController,
-                    'Nom de l\'élevage', Icons.business),
-              if (User_Info.isElevage || User_Info.isPro)
-                SizedBox(
-                    height:
-                        UTILS.calculHeight(15, UTILS.heightReference(context))),
-              if (User_Info.isElevage || User_Info.isPro)
-                _buildPhoneField(
-                    _elevagePhoneController,
-                    'Numéro Élevage',
-                    selectedElevageCountry,
-                    _isElevagePhoneValid, (Country? country) {
-                  setState(() {
-                    selectedElevageCountry = country;
-                    _selectedElevageCountryCode =
-                        selectedElevageCountry?.dialCode as String;
-                  });
-                }),
-              if (User_Info.isElevage || User_Info.isPro)
-                SizedBox(
-                    height:
-                        UTILS.calculHeight(15, UTILS.heightReference(context))),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _card('Identité', [
+              _field('Prénom', _firstnameController),
+              _field('Nom', _lastnameController),
+              _dateField('Date de naissance', _dobController),
+              _readOnlyField('Email', User_Info.email, Icons.email_outlined),
+            ]),
+            const SizedBox(height: 12),
+            _card('Coordonnées', [
               if (!User_Info.isElevage && !User_Info.isPro) ...[
-                _buildStyledTextField(_rueController, 'Rue', Icons.home),
-                SizedBox(height: UTILS.calculHeight(15, UTILS.heightReference(context))),
-                Row(
-                  children: [
-                    SizedBox(width: UTILS.calculWidth(16, UTILS.widthReference(context))),
-                    Expanded(
-                      flex: 2,
-                      child: _buildStyledTextFieldRaw(_villeController, 'Ville', Icons.location_city),
-                    ),
-                    SizedBox(width: UTILS.calculWidth(8, UTILS.widthReference(context))),
-                    Expanded(
-                      flex: 1,
-                      child: _buildStyledTextFieldRaw(_codePostalController, 'Code postal', Icons.markunread_mailbox),
-                    ),
-                    SizedBox(width: UTILS.calculWidth(16, UTILS.widthReference(context))),
-                  ],
-                ),
-                SizedBox(height: UTILS.calculHeight(15, UTILS.heightReference(context))),
-                _buildStyledTextField(_paysController, 'Pays', Icons.flag),
+                _phoneField(_phoneController, 'Téléphone', selectedCountry, _isPhoneValid,
+                    (Country? c) => setState(() {
+                          selectedCountry = c;
+                          _selectedCountryCode = c?.dialCode ?? _selectedCountryCode;
+                        })),
+                const SizedBox(height: 12),
+                _field('Rue', _rueController),
+                Row(children: [
+                  Expanded(flex: 2, child: _fieldRaw('Ville', _villeController)),
+                  const SizedBox(width: 8),
+                  Expanded(flex: 1, child: _fieldRaw('Code postal', _codePostalController,
+                      inputType: TextInputType.number)),
+                ]),
+                const SizedBox(height: 12),
+                _field('Pays', _paysController),
               ],
               if (User_Info.isElevage || User_Info.isPro) ...[
-                _buildStyledTextField(_rueElevageController, 'Rue', Icons.home),
-                SizedBox(height: UTILS.calculHeight(15, UTILS.heightReference(context))),
-                Row(
-                  children: [
-                    SizedBox(width: UTILS.calculWidth(16, UTILS.widthReference(context))),
-                    Expanded(
-                      flex: 2,
-                      child: _buildStyledTextFieldRaw(_villeElevageController, 'Ville', Icons.location_city),
-                    ),
-                    SizedBox(width: UTILS.calculWidth(8, UTILS.widthReference(context))),
-                    Expanded(
-                      flex: 1,
-                      child: _buildStyledTextFieldRaw(_codePostalElevageController, 'Code postal', Icons.markunread_mailbox),
-                    ),
-                    SizedBox(width: UTILS.calculWidth(16, UTILS.widthReference(context))),
-                  ],
-                ),
-                SizedBox(height: UTILS.calculHeight(15, UTILS.heightReference(context))),
-                _buildStyledTextField(_paysElevageController, 'Pays', Icons.flag),
+                _field("Nom de l'élevage", _elevageNameController),
+                _phoneField(_elevagePhoneController, 'Téléphone élevage', selectedElevageCountry,
+                    _isElevagePhoneValid, (Country? c) => setState(() {
+                          selectedElevageCountry = c;
+                          _selectedElevageCountryCode = c?.dialCode ?? _selectedElevageCountryCode;
+                        })),
+                const SizedBox(height: 12),
+                _field('Rue', _rueElevageController),
+                Row(children: [
+                  Expanded(flex: 2, child: _fieldRaw('Ville', _villeElevageController)),
+                  const SizedBox(width: 8),
+                  Expanded(flex: 1, child: _fieldRaw('Code postal', _codePostalElevageController,
+                      inputType: TextInputType.number)),
+                ]),
+                const SizedBox(height: 12),
+                _field('Pays', _paysElevageController),
               ],
-              if (User_Info.isElevage || User_Info.isPro) ...[
-                SizedBox(
-                    height: UTILS.calculHeight(
-                        15, UTILS.heightReference(context))),
-                SizedBox(
-                  width: UTILS.calculWidth(367, UTILS.widthReference(context)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8, bottom: 8),
-                        child: Text(
-                          User_Info.isPro
-                              ? (User_Info.catPro == 'sante' || User_Info.catPro == 'veterinaire'
-                                  ? 'Espèces soignées'
-                                  : User_Info.catPro == 'pension' || User_Info.catPro == 'garde'
-                                      ? 'Espèces gardées'
-                                      : User_Info.catPro == 'education' || User_Info.catPro == 'comportement' || User_Info.catPro == 'educateur'
-                                          ? 'Espèces prises en charge'
-                                          : 'Espèces acceptées')
-                              : 'Espèces élevées',
-                          style: TextStyle(
-                            fontFamily: 'Galey',
-                            fontWeight: FontWeight.w500,
-                            fontSize: UTILS.calculWidth(
-                                15, UTILS.widthReference(context)),
-                          ),
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          _buildSpeciesToggle(
-                            label: 'Chien',
-                            emoji: '🐶',
-                            value: _isDog,
-                            onChanged: (v) => setState(() {
-                              _isDog = v;
-                              if (!v) _selectedDogBreeds.clear();
-                            }),
-                          ),
-                          const SizedBox(width: 12),
-                          _buildSpeciesToggle(
-                            label: 'Chat',
-                            emoji: '🐱',
-                            value: _isCat,
-                            onChanged: (v) => setState(() {
-                              _isCat = v;
-                              if (!v) _selectedCatBreeds.clear();
-                            }),
-                          ),
-                        ],
-                      ),
-                      if (_isDog) ...[
-                        const SizedBox(height: 12),
-                        _buildBreedSelector(
-                          label: 'Races de chiens',
-                          allBreeds: _allDogBreeds,
-                          selected: _selectedDogBreeds,
-                          onChanged: (breeds) =>
-                              setState(() => _selectedDogBreeds = breeds),
-                        ),
-                      ],
-                      if (_isCat) ...[
-                        const SizedBox(height: 12),
-                        _buildBreedSelector(
-                          label: 'Races de chats',
-                          allBreeds: _allCatBreeds,
-                          selected: _selectedCatBreeds,
-                          onChanged: (breeds) =>
-                              setState(() => _selectedCatBreeds = breeds),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-              SizedBox(
-                  height:
-                      UTILS.calculHeight(20, UTILS.heightReference(context))),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _updateUserInfo,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0C5C6C),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      elevation: 0,
-                    ),
-                    child: const Text('Enregistrer les modifications',
-                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15)),
-                  ),
-                ),
-              ),
+            ]),
+            if (User_Info.isElevage || User_Info.isPro) ...[
+              const SizedBox(height: 12),
+              _especesCard(),
             ],
-          ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _updateUserInfo,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _teal,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 0,
+                ),
+                child: const Text('Enregistrer les modifications',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15)),
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildStyledTextField(
-      TextEditingController controller, String label, IconData icon) {
-    return SizedBox(
-      height: UTILS.calculHeight(53, UTILS.heightReference(context)),
-      width: UTILS.calculWidth(367, UTILS.widthReference(context)),
+  // ── Cards & fields ─────────────────────────────────────────────────────────────
+
+  Widget _card(String title, List<Widget> children) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+            fontSize: 14, color: Color(0xFF1F2A2E))),
+        const SizedBox(height: 14),
+        ...children,
+      ]),
+    );
+  }
+
+  Widget _field(String label, TextEditingController ctrl,
+      {TextInputType? inputType}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
       child: TextFormField(
-        cursorColor: Colors.black,
-        controller: controller,
+        controller: ctrl,
+        keyboardType: inputType,
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
         decoration: InputDecoration(
           labelText: label,
-          filled: true,
-          contentPadding: EdgeInsets.symmetric(
-            vertical: UTILS.calculHeight(12.0, UTILS.heightReference(context)),
-            horizontal: UTILS.calculWidth(15.0, UTILS.widthReference(context)),
-          ),
-          fillColor: Color(0xFFA7C79A),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(
-                UTILS.calculWidth(50.0, UTILS.widthReference(context))),
-            borderSide: BorderSide(color: Colors.transparent),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(
-                UTILS.calculWidth(30.0, UTILS.widthReference(context))),
-            borderSide: BorderSide(color: Colors.transparent),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(
-                UTILS.calculWidth(30.0, UTILS.widthReference(context))),
-            borderSide: BorderSide(
-                color: Color(0xFFA7C79A),
-                width: UTILS.calculWidth(2.0, UTILS.widthReference(context))),
-          ),
-          labelStyle: TextStyle(
-            fontFamily: 'Galey',
-            fontWeight: FontWeight.w500,
-            color: Colors.black,
-            fontSize: UTILS.calculWidth(17, UTILS.widthReference(context)),
-          ),
-          prefixIcon: Padding(
-            padding: EdgeInsets.symmetric(
-                horizontal:
-                    UTILS.calculWidth(15.0, UTILS.widthReference(context))),
-            child: Icon(icon),
-          ),
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: _border)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: _green, width: 1.5)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          isDense: true,
         ),
       ),
     );
   }
 
-  Widget _buildStyledTextFieldZeub() {
-    return SizedBox(
-      height: UTILS.calculHeight(53, UTILS.heightReference(context)),
-      width: UTILS.calculWidth(367, UTILS.widthReference(context)),
+  Widget _fieldRaw(String label, TextEditingController ctrl,
+      {TextInputType? inputType}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
       child: TextFormField(
-        initialValue: User_Info.email,
-        enabled: false,
-        cursorColor: Colors.black,
+        controller: ctrl,
+        keyboardType: inputType,
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
         decoration: InputDecoration(
-          labelText: 'Email',
+          labelText: label,
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: _border)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: _green, width: 1.5)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          isDense: true,
+        ),
+      ),
+    );
+  }
+
+  Widget _readOnlyField(String label, String value, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextFormField(
+        initialValue: value,
+        enabled: false,
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF9CA3AF)),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+          prefixIcon: Icon(icon, size: 18, color: const Color(0xFF9CA3AF)),
+          disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
           filled: true,
-          contentPadding: EdgeInsets.symmetric(
-            vertical: UTILS.calculHeight(12.0, UTILS.heightReference(context)),
-            horizontal: UTILS.calculWidth(15.0, UTILS.widthReference(context)),
-          ),
-          fillColor: Color(0xFFA7C79A),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(
-                UTILS.calculWidth(50.0, UTILS.widthReference(context))),
-            borderSide: BorderSide(color: Colors.transparent),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(
-                UTILS.calculWidth(30.0, UTILS.widthReference(context))),
-            borderSide: BorderSide(color: Colors.transparent),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(
-                UTILS.calculWidth(30.0, UTILS.widthReference(context))),
-            borderSide: BorderSide(
-                color: Color(0xFFA7C79A),
-                width: UTILS.calculWidth(2.0, UTILS.widthReference(context))),
-          ),
-          labelStyle: TextStyle(
-            fontFamily: 'Galey',
-            fontWeight: FontWeight.w500,
-            color: Colors.black,
-            fontSize: UTILS.calculWidth(17, UTILS.widthReference(context)),
-          ),
-          prefixIcon: Padding(
-            padding: EdgeInsets.symmetric(
-                horizontal:
-                    UTILS.calculWidth(15.0, UTILS.widthReference(context))),
-            child: Icon(Icons.email),
+          fillColor: const Color(0xFFF9FAFB),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          isDense: true,
+        ),
+      ),
+    );
+  }
+
+  Widget _dateField(String label, TextEditingController ctrl) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GestureDetector(
+        onTap: () => _selectDate(context),
+        child: AbsorbPointer(
+          child: TextFormField(
+            controller: ctrl,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              labelText: label,
+              labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+              suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF6F767B)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: _border)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              isDense: true,
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildDateField(TextEditingController controller, String label) {
-    return GestureDetector(
-      onTap: () => _selectDate(context),
-      child: AbsorbPointer(
-        child: _buildStyledTextField(controller, label, Icons.calendar_today),
-      ),
-    );
-  }
-
-  Widget _buildPhoneField(
+  Widget _phoneField(
       TextEditingController controller,
       String label,
       Country? selectedCountry,
       bool isValid,
       void Function(Country?) onChanged) {
-    return Container(
-      width: UTILS.calculWidth(372, UTILS.widthReference(context)),
-      height: UTILS.calculHeight(53, UTILS.heightReference(context)),
-      padding: EdgeInsets.symmetric(
-          horizontal: UTILS.calculWidth(20, UTILS.widthReference(context))),
-      decoration: BoxDecoration(
-        color: Color(0xFFA7C79A),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(
-          color: isValid ? Colors.transparent : Colors.red,
-          width: 2.0,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: isValid ? _border : Colors.red, width: 1.0),
         ),
-      ),
-      child: Theme(
-        data: Theme.of(context)
-            .copyWith(canvasColor: Color(0xFFA7C79A)),
         child: Row(
-          children: <Widget>[
-            Expanded(
-              flex: 1,
-              child: DropdownButton<Country>(
-                value: selectedCountry,
-                icon: Icon(Icons.arrow_drop_down),
-                underline: Container(),
-                onChanged: onChanged,
-                items:
-                    countries.map<DropdownMenuItem<Country>>((Country country) {
-                  return DropdownMenuItem<Country>(
-                    value: country,
-                    child: Row(
-                      children: <Widget>[
+          children: [
+            Theme(
+              data: Theme.of(context).copyWith(canvasColor: Colors.white),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: DropdownButton<Country>(
+                  value: selectedCountry,
+                  icon: const Icon(Icons.arrow_drop_down, size: 18, color: Color(0xFF6F767B)),
+                  underline: const SizedBox(),
+                  isDense: true,
+                  onChanged: onChanged,
+                  items: countries.map<DropdownMenuItem<Country>>((Country country) {
+                    return DropdownMenuItem<Country>(
+                      value: country,
+                      child: Row(children: [
                         Image.asset(
                           'assets/country/${country.code.toLowerCase()}.png',
-                          width: UTILS.calculWidth(
-                              19, UTILS.widthReference(context)),
-                          height: UTILS.calculHeight(
-                              20, UTILS.heightReference(context)),
-                          errorBuilder: (BuildContext context, Object exception,
-                              StackTrace? stackTrace) {
-                            return Icon(Icons.flag);
-                          },
+                          width: 20, height: 14,
+                          errorBuilder: (_, __, ___) => const Icon(Icons.flag, size: 16),
                         ),
-                        SizedBox(
-                            width: UTILS.calculWidth(
-                                10, UTILS.widthReference(context))),
-                        Text(country.dialCode),
-                      ],
-                    ),
-                  );
-                }).toList(),
+                        const SizedBox(width: 6),
+                        Text(country.dialCode,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                      ]),
+                    );
+                  }).toList(),
+                ),
               ),
             ),
-            SizedBox(
-                width: UTILS.calculWidth(18, UTILS.widthReference(context))),
+            const SizedBox(width: 4),
+            Container(width: 1, height: 28, color: _border),
+            const SizedBox(width: 8),
             Expanded(
-              flex: 2,
               child: TextField(
                 controller: controller,
-                keyboardType: TextInputType.number,
+                keyboardType: TextInputType.phone,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
                 decoration: InputDecoration(
                   border: InputBorder.none,
                   hintText: label,
+                  hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF9CA3AF)),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-                onChanged: (value) {
-                  print("Numéro modifié : ${selectedCountry?.dialCode}$value");
-                },
               ),
             ),
           ],
@@ -660,81 +519,112 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     );
   }
 
-  Widget _buildBreedSelector({
-    required String label,
-    required List<String> allBreeds,
-    required List<String> selected,
-    required ValueChanged<List<String>> onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          borderRadius: BorderRadius.circular(30),
-          onTap: () => _openBreedPicker(
-            label: label,
-            allBreeds: allBreeds,
-            selected: selected,
-            onChanged: onChanged,
-          ),
-          child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFA7C79A),
-              borderRadius: BorderRadius.circular(30),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.search, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    selected.isEmpty
-                        ? 'Sélectionner des races...'
-                        : '${selected.length} race${selected.length > 1 ? 's' : ''} sélectionnée${selected.length > 1 ? 's' : ''}',
-                    style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w500,
-                      fontSize: UTILS.calculWidth(
-                          14, UTILS.widthReference(context)),
-                    ),
-                  ),
-                ),
-                const Icon(Icons.arrow_drop_down, size: 20),
-              ],
-            ),
-          ),
-        ),
-        if (selected.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: selected
-                .map(
-                  (breed) => Chip(
-                    label: Text(
-                      breed,
-                      style: const TextStyle(
-                          fontFamily: 'Galey', fontSize: 12),
-                    ),
-                    backgroundColor: Colors.white,
-                    side: const BorderSide(
-                        color: Color(0xFFA7C79A)),
-                    deleteIconColor: Colors.grey,
-                    onDeleted: () {
-                      final updated = List<String>.from(selected)
-                        ..remove(breed);
-                      onChanged(updated);
-                    },
-                  ),
-                )
-                .toList(),
-          ),
-        ],
+  // ── Espèces ───────────────────────────────────────────────────────────────────
+
+  Widget _especesCard() {
+    final label = User_Info.isPro
+        ? (User_Info.catPro == 'sante' || User_Info.catPro == 'veterinaire'
+            ? 'Espèces soignées'
+            : User_Info.catPro == 'pension' || User_Info.catPro == 'garde'
+                ? 'Espèces gardées'
+                : 'Espèces acceptées')
+        : 'Espèces élevées';
+
+    return _card(label, [
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        _speciesChip('Chien', '🐶', _isDog, (v) => setState(() {
+          _isDog = v;
+          if (!v) _selectedDogBreeds.clear();
+        })),
+        _speciesChip('Chat', '🐱', _isCat, (v) => setState(() {
+          _isCat = v;
+          if (!v) _selectedCatBreeds.clear();
+        })),
+      ]),
+      if (_isDog) ...[
+        const SizedBox(height: 12),
+        _breedSelector('Races de chiens', _allDogBreeds, _selectedDogBreeds,
+            (breeds) => setState(() => _selectedDogBreeds = breeds)),
       ],
+      if (_isCat) ...[
+        const SizedBox(height: 12),
+        _breedSelector('Races de chats', _allCatBreeds, _selectedCatBreeds,
+            (breeds) => setState(() => _selectedCatBreeds = breeds)),
+      ],
+    ]);
+  }
+
+  Widget _speciesChip(String label, String emoji, bool active, ValueChanged<bool> onChanged) {
+    return GestureDetector(
+      onTap: () => onChanged(!active),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFFEEF5EA) : Colors.transparent,
+          border: Border.all(
+            color: active ? _green : const Color(0xFFD1D5DB),
+            width: 1.5,
+          ),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(emoji, style: const TextStyle(fontSize: 16)),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+              color: active ? const Color(0xFF1F2A2E) : const Color(0xFF6B7280),
+              fontWeight: active ? FontWeight.w600 : FontWeight.normal)),
+          if (active) ...[
+            const SizedBox(width: 6),
+            const Icon(Icons.check_circle, size: 15, color: _green),
+          ],
+        ]),
+      ),
     );
+  }
+
+  Widget _breedSelector(String label, List<String> allBreeds, List<String> selected,
+      ValueChanged<List<String>> onChanged) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      GestureDetector(
+        onTap: () => _openBreedPicker(label: label, allBreeds: allBreeds,
+            selected: selected, onChanged: onChanged),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            border: Border.all(color: _border),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(children: [
+            const Icon(Icons.search, size: 16, color: Color(0xFF6F767B)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                selected.isEmpty
+                    ? 'Sélectionner des races...'
+                    : '${selected.length} race${selected.length > 1 ? 's' : ''} sélectionnée${selected.length > 1 ? 's' : ''}',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+              ),
+            ),
+            const Icon(Icons.arrow_drop_down, size: 18, color: Color(0xFF6F767B)),
+          ]),
+        ),
+      ),
+      if (selected.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Wrap(spacing: 6, runSpacing: 6,
+          children: selected.map((breed) => Chip(
+            label: Text(breed, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            backgroundColor: const Color(0xFFEEF5EA),
+            side: const BorderSide(color: _green, width: 0.8),
+            deleteIconColor: Colors.grey,
+            onDeleted: () => onChanged(List.from(selected)..remove(breed)),
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
+          )).toList(),
+        ),
+      ],
+    ]);
   }
 
   Future<void> _openBreedPicker({
@@ -758,99 +648,9 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     );
     if (result != null) onChanged(result);
   }
-
-  Widget _buildStyledTextFieldRaw(
-      TextEditingController controller, String label, IconData icon) {
-    return TextFormField(
-      cursorColor: Colors.black,
-      controller: controller,
-      decoration: InputDecoration(
-        labelText: label,
-        filled: true,
-        contentPadding: EdgeInsets.symmetric(
-          vertical: UTILS.calculHeight(12.0, UTILS.heightReference(context)),
-          horizontal: UTILS.calculWidth(12.0, UTILS.widthReference(context)),
-        ),
-        fillColor: const Color(0xFFA7C79A),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(
-              UTILS.calculWidth(30.0, UTILS.widthReference(context))),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(
-              UTILS.calculWidth(30.0, UTILS.widthReference(context))),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(
-              UTILS.calculWidth(30.0, UTILS.widthReference(context))),
-          borderSide: BorderSide(
-              color: const Color(0xFFA7C79A),
-              width: UTILS.calculWidth(2.0, UTILS.widthReference(context))),
-        ),
-        labelStyle: TextStyle(
-          fontFamily: 'Galey',
-          fontWeight: FontWeight.w500,
-          color: Colors.black,
-          fontSize: UTILS.calculWidth(14, UTILS.widthReference(context)),
-        ),
-        prefixIcon: Icon(icon, size: 18),
-      ),
-    );
-  }
-
-  Widget _buildSpeciesToggle({
-    required String label,
-    required String emoji,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    return GestureDetector(
-      onTap: () => onChanged(!value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: value
-              ? const Color(0xFFA7C79A)
-              : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(
-            color: value
-                ? const Color(0xFFA7C79A)
-                : Colors.grey.shade300,
-            width: 1.5,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 18)),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Galey',
-                fontWeight: FontWeight.w500,
-                fontSize: UTILS.calculWidth(14, UTILS.widthReference(context)),
-                color: value ? Colors.black87 : Colors.grey.shade600,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(
-              value ? Icons.check_circle : Icons.radio_button_unchecked,
-              size: 18,
-              color: value ? Colors.black54 : Colors.grey.shade400,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
 }
+
+// ── Breed picker ─────────────────────────────────────────────────────────────
 
 class _BreedPickerSheet extends StatefulWidget {
   final String label;
@@ -895,55 +695,33 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
       maxChildSize: 0.95,
       minChildSize: 0.4,
       builder: (_, scrollController) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         child: Column(
           children: [
             const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+            Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: 16),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.label,
-                      style: const TextStyle(
-                        fontFamily: 'Galey',
-                        fontWeight: FontWeight.w500,
-                        fontSize: 18,
-                      ),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, _selected),
-                    child: const Text(
-                      'Valider',
-                      style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF6E9E57),
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              child: Row(children: [
+                Expanded(child: Text(widget.label,
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 18))),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, _selected),
+                  child: const Text('Valider',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500,
+                          color: Color(0xFF6E9E57), fontSize: 16)),
+                ),
+              ]),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: TextField(
                 controller: _searchController,
                 onChanged: _onSearch,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
                 decoration: InputDecoration(
                   hintText: 'Rechercher une race...',
                   hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 14),
@@ -952,32 +730,23 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
                   fillColor: Colors.grey.shade100,
                   contentPadding: const EdgeInsets.symmetric(vertical: 0),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(30),
-                    borderSide: BorderSide.none,
-                  ),
+                      borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
                 ),
               ),
             ),
             if (_selected.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: _selected
-                      .map(
-                        (b) => Chip(
-                          label: Text(b,
-                              style: const TextStyle(
-                                  fontFamily: 'Galey', fontSize: 12)),
-                          backgroundColor: const Color.fromARGB(
-                              255, 250, 192, 187),
-                          deleteIconColor: Colors.black54,
-                          onDeleted: () =>
-                              setState(() => _selected.remove(b)),
-                        ),
-                      )
-                      .toList(),
+                child: Wrap(spacing: 6, runSpacing: 4,
+                  children: _selected.map((b) => Chip(
+                    label: Text(b, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                    backgroundColor: const Color(0xFFEEF5EA),
+                    side: const BorderSide(color: Color(0xFF6E9E57), width: 0.8),
+                    deleteIconColor: Colors.black54,
+                    onDeleted: () => setState(() => _selected.remove(b)),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  )).toList(),
                 ),
               ),
             const Divider(height: 1),
@@ -990,22 +759,11 @@ class _BreedPickerSheetState extends State<_BreedPickerSheet> {
                   final isSelected = _selected.contains(breed);
                   return ListTile(
                     dense: true,
-                    title: Text(
-                      breed,
-                      style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontSize: 14,
-                        fontWeight: isSelected
-                            ? FontWeight.w500
-                            : FontWeight.normal,
-                      ),
-                    ),
+                    title: Text(breed, style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                        fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal)),
                     trailing: isSelected
-                        ? const Icon(Icons.check_circle,
-                            color: Color(0xFF6E9E57),
-                            size: 20)
-                        : const Icon(Icons.radio_button_unchecked,
-                            color: Colors.grey, size: 20),
+                        ? const Icon(Icons.check_circle, color: Color(0xFF6E9E57), size: 20)
+                        : const Icon(Icons.radio_button_unchecked, color: Colors.grey, size: 20),
                     onTap: () {
                       setState(() {
                         if (isSelected) {

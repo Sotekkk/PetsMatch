@@ -35,14 +35,14 @@ class AboutUs extends StatelessWidget {
             ]),
             const SizedBox(height: 12),
             _InfoCard(title: '👤 Responsables de la publication', items: const [
-              ('Président', 'Nabil Ksouri'),
-              ('Directeur général', 'Mevinn Allee'),
+              ('Présidente', 'Natacha Loisiel'),
+              ('Directeur général', 'Nabil Ksouri'),
             ]),
             const SizedBox(height: 12),
             _InfoCard(title: '☁️ Hébergement', items: const [
-              ('Hébergeur', 'Google Firebase (Google LLC)'),
-              ('Adresse', '1600 Amphitheatre Parkway, Mountain View, CA 94043, USA'),
-              ('Contact', 'support@firebase.google.com'),
+              ('Base de données', 'Supabase (Supabase Inc.)'),
+              ('Auth & stockage', 'Google Firebase (Google LLC)'),
+              ('Données Firebase', '1600 Amphitheatre Parkway, Mountain View, CA 94043, USA'),
             ]),
             const SizedBox(height: 12),
             _TextCard(

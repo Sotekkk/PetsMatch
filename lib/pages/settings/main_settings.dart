@@ -56,6 +56,15 @@ class _SettingsMainPageState extends State<SettingsMainPage>
     super.dispose();
   }
 
+  dynamic _toJsonSafe(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate().toIso8601String();
+    if (value is Map) return value.map((k, v) => MapEntry(k.toString(), _toJsonSafe(v)));
+    if (value is List) return value.map(_toJsonSafe).toList();
+    if (value is String || value is num || value is bool) return value;
+    return value.toString();
+  }
+
   Future<void> _exportUserData(BuildContext context) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -83,14 +92,14 @@ class _SettingsMainPageState extends State<SettingsMainPage>
       final annonces = await supa.from('annonces').select().eq('uid_eleveur', uid);
       final fsUser = await FirebaseFirestore.instance.collection('users').doc(uid).get();
 
-      final exportData = {
+      final exportData = _toJsonSafe({
         'exported_at': DateTime.now().toIso8601String(),
         'uid': uid,
         'profil': userProfile,
         'animaux': animaux,
         'annonces': annonces,
         'donnees_supplementaires': fsUser.data(),
-      };
+      });
 
       if (dialogCtx != null && mounted) Navigator.of(dialogCtx!).pop();
 
