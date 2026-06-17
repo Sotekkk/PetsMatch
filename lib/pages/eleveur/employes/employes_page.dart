@@ -833,6 +833,34 @@ class _TachesTabState extends State<_TachesTab> {
     _load();
   }
 
+  Future<void> _deleteProtoGroup(Map<String, dynamic> group) async {
+    final label = group['label'] as String? ?? 'Routine';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Supprimer la routine du jour ?',
+          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
+          TextButton(onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final groupe = group['_groupe'] as List<Map<String, dynamic>>;
+    final ids = groupe.map((t) => t['id']).toList();
+    final dayDate = (groupe.first['date_prevue'] as String? ?? '').split('T').first;
+    await _supa.from('plan_taches').delete()
+        .inFilter('id', ids)
+        .gte('date_prevue', '${dayDate}T00:00:00')
+        .lte('date_prevue', '${dayDate}T23:59:59');
+    _load();
+  }
+
   Future<void> _edit(Map<String, dynamic> tache) async {
     await showModalBottomSheet(
       context: context,
@@ -1035,6 +1063,7 @@ class _TachesTabState extends State<_TachesTab> {
     final groupe = group['_groupe'] as List<Map<String, dynamic>>;
 
     return GestureDetector(
+      onLongPress: () => _deleteProtoGroup(group),
       onTap: () async {
         await showModalBottomSheet(
           context: context,
@@ -1047,6 +1076,14 @@ class _TachesTabState extends State<_TachesTab> {
             emoji: emoji,
             teal: widget.teal,
             dark: widget.dark,
+            onDelete: (ids) async {
+              final dayDate = (groupe.first['date_prevue'] as String? ?? '').split('T').first;
+              await _supa.from('plan_taches').delete()
+                  .inFilter('id', ids)
+                  .gte('date_prevue', '${dayDate}T00:00:00')
+                  .lte('date_prevue', '${dayDate}T23:59:59');
+              _load();
+            },
           ),
         );
         _load();
@@ -1095,7 +1132,7 @@ class _TachesTabState extends State<_TachesTab> {
                 if (assigneNom != null) _Badge(text: '👤 $assigneNom', bg: const Color(0xFFF5F5F5), fg: Colors.grey.shade600),
               ]),
             ])),
-            // Bouton assigner + chevron
+            // Boutons assigner / supprimer
             Column(mainAxisSize: MainAxisSize.min, children: [
               IconButton(
                 icon: Icon(
@@ -1108,7 +1145,13 @@ class _TachesTabState extends State<_TachesTab> {
                 constraints: const BoxConstraints(),
                 onPressed: () => _assignPlanTache(group),
               ),
-              Icon(Icons.chevron_right, size: 16, color: Colors.grey.shade400),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                tooltip: 'Supprimer',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () => _deleteProtoGroup(group),
+              ),
             ]),
           ]),
           // Barre de progression (masquée si tâche individuelle ou groupe terminé)
@@ -1142,8 +1185,8 @@ class _ProtoDetailSheet extends StatefulWidget {
   final List<Map<String, dynamic>> groupe;
   final String label, dateStr, emoji;
   final Color teal, dark;
-  /// Appelé quand un animal est marqué "fait" — utile pour envoyer une notif employeur
   final Future<void> Function(Map<String, dynamic> tache)? onMarquerFait;
+  final Future<void> Function(List<dynamic> ids)? onDelete;
 
   const _ProtoDetailSheet({
     required this.groupe,
@@ -1153,6 +1196,7 @@ class _ProtoDetailSheet extends StatefulWidget {
     required this.teal,
     required this.dark,
     this.onMarquerFait,
+    this.onDelete,
   });
 
   @override
@@ -1228,6 +1272,37 @@ class _ProtoDetailSheetState extends State<_ProtoDetailSheet> {
                       style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                           fontSize: 16, color: widget.dark)),
                 ),
+                if (widget.onDelete != null)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                    tooltip: 'Supprimer cette routine du jour',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () async {
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          title: const Text('Supprimer la routine du jour ?',
+                            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                          content: Text(widget.label,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
+                            TextButton(onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Supprimer', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600))),
+                          ],
+                        ),
+                      );
+                      if (ok == true && mounted) {
+                        final ids = _items.map((t) => t['id']).toList();
+                        await widget.onDelete!(ids);
+                        if (mounted) Navigator.pop(context); // ignore: use_build_context_synchronously
+                      }
+                    },
+                  ),
               ]),
               if (widget.dateStr.isNotEmpty) ...[
                 const SizedBox(height: 4),
@@ -1271,33 +1346,62 @@ class _ProtoDetailSheetState extends State<_ProtoDetailSheet> {
                 final t = _items[i];
                 final isDone = t['statut'] == 'fait';
                 final label = _animalLabel(t);
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  leading: GestureDetector(
-                    onTap: () => _toggle(i),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      width: 28, height: 28,
-                      decoration: BoxDecoration(
-                        color: isDone ? widget.teal : Colors.transparent,
-                        border: Border.all(
-                            color: isDone ? widget.teal : Colors.grey.shade400, width: 2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: isDone
-                          ? const Icon(Icons.check, color: Colors.white, size: 16)
-                          : null,
+                return Dismissible(
+                  key: Key('emp_pt_${t['id']}'),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    color: Colors.red.shade50,
+                    child: Icon(Icons.delete_outline, color: Colors.red.shade400),
+                  ),
+                  confirmDismiss: (_) => showDialog<bool>(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      title: const Text('Supprimer ?',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                      content: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
+                        TextButton(onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Supprimer', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600))),
+                      ],
                     ),
                   ),
-                  title: Text(label,
-                      style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        color: isDone ? Colors.grey : widget.dark,
-                        decoration: isDone ? TextDecoration.lineThrough : null,
-                      )),
-                  onTap: () => _toggle(i),
+                  onDismissed: (_) async {
+                    await Supabase.instance.client.from('plan_taches').delete().eq('id', t['id']);
+                    setState(() => _items.removeAt(i));
+                  },
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    leading: GestureDetector(
+                      onTap: () => _toggle(i),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        width: 28, height: 28,
+                        decoration: BoxDecoration(
+                          color: isDone ? widget.teal : Colors.transparent,
+                          border: Border.all(
+                              color: isDone ? widget.teal : Colors.grey.shade400, width: 2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: isDone
+                            ? const Icon(Icons.check, color: Colors.white, size: 16)
+                            : null,
+                      ),
+                    ),
+                    title: Text(label,
+                        style: TextStyle(
+                          fontFamily: 'Galey',
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          color: isDone ? Colors.grey : widget.dark,
+                          decoration: isDone ? TextDecoration.lineThrough : null,
+                        )),
+                    onTap: () => _toggle(i),
+                  ),
                 );
               },
             ),
