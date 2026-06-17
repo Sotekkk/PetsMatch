@@ -4,13 +4,19 @@ import 'package:PetsMatch/main.dart';
 import 'package:geocoding/geocoding.dart' as geo;
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_webservice/places.dart';
+import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
+import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/eleveur/choice_publication.dart';
 import 'package:PetsMatch/pages/eleveur/elevage_gestion_select_menu.dart';
+import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
+import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
 import 'package:PetsMatch/pages/eleveur/postDetail.dart';
 import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
+import 'package:PetsMatch/services/plan_service.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
@@ -41,10 +47,33 @@ class _UserElevageFeedState extends State<UserElevageFeed>
   String? profilePictureUrlElevage;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  // Profil enrichi
+  String? _bannerUrl;
+  String _desc = '';
+  List<Map<String, dynamic>> _especesElevees = [];
+  String _planCode = 'free';
+
   // Perdus tab
   List<Map<String, dynamic>> _alertes = [];
   bool _loadingAlertes = false;
   List<Map<String, dynamic>> _eleveurAnimaux = [];
+
+  static const _especeEmoji = {
+    'chien': '🐕', 'chat': '🐈', 'cheval': '🐴', 'lapin': '🐰',
+    'oiseau': '🦜', 'ovin': '🐑', 'caprin': '🐐', 'porcin': '🐷',
+    'nac': '🐾', 'autre': '📋',
+  };
+  static const _especeLabel = {
+    'chien': 'Chien', 'chat': 'Chat', 'cheval': 'Cheval', 'lapin': 'Lapin',
+    'oiseau': 'Oiseau', 'ovin': 'Ovin', 'caprin': 'Caprin', 'porcin': 'Porcin',
+    'nac': 'NAC', 'autre': 'Autre',
+  };
+  static const _planColor = {
+    'free': Color(0xFF6B7280), 'pro': Color(0xFF0C5C6C), 'premium': Color(0xFFD97706),
+  };
+  static const _planLabel = {
+    'free': 'Gratuit 🌱', 'pro': 'Pro ⚡', 'premium': 'Premium 👑',
+  };
 
   @override
   void initState() {
@@ -68,13 +97,39 @@ class _UserElevageFeedState extends State<UserElevageFeed>
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
     final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-    if (doc.exists) {
-      setState(() {
-        addressElevage = doc.data()?['adressElevage'];
-        numeroElevage = doc.data()?['numeroElevage'];
-        profilePictureUrlElevage = doc.data()?['profilePictureUrlElevage'];
-      });
+    final d = doc.data() ?? {};
+
+    // Bannière : Firestore → fallback Supabase
+    String? banner = d['bannerUrl'] as String?;
+    if (banner == null || banner.isEmpty) {
+      try {
+        final row = await _supa.from('users').select('banner_url').eq('uid', uid).maybeSingle();
+        final url = row?['banner_url'] as String?;
+        if (url != null && url.isNotEmpty) banner = url;
+      } catch (_) {}
     }
+
+    // Espèces élevées
+    List<Map<String, dynamic>> especes = [];
+    final rawEsp = d['especesElevees'];
+    if (rawEsp is List && rawEsp.isNotEmpty) {
+      especes = rawEsp.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } else {
+      if (d['isDog'] == true) especes.add({'espece': 'chien', 'races': List<String>.from(d['dogBreeds'] ?? [])});
+      if (d['isCat'] == true) especes.add({'espece': 'chat', 'races': List<String>.from(d['catBreeds'] ?? [])});
+    }
+
+    final planCode = await PlanService.getPlanCode(uid);
+
+    if (mounted) setState(() {
+      addressElevage          = d['adressElevage'] as String?;
+      numeroElevage           = d['numeroElevage'] as String?;
+      profilePictureUrlElevage = d['profilePictureUrlElevage'] as String?;
+      _bannerUrl              = banner;
+      _desc                   = (d['desc'] as String?) ?? '';
+      _especesElevees         = especes;
+      _planCode               = planCode;
+    });
   }
 
   Future<void> _pickImage() async {
@@ -486,65 +541,176 @@ class _UserElevageFeedState extends State<UserElevageFeed>
   }
 
   Widget _buildProfilTab() {
+    final planColor = _planColor[_planCode] ?? const Color(0xFF6B7280);
+    final planLbl   = _planLabel[_planCode] ?? 'Gratuit 🌱';
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 28, 20, 100),
+      padding: const EdgeInsets.only(bottom: 100),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GestureDetector(
-            onTap: _pickImage,
-            child: Stack(
-              alignment: Alignment.bottomRight,
-              children: [
-                CircleAvatar(
-                  radius: 50,
-                  backgroundColor: Colors.transparent,
-                  backgroundImage: _imageFile != null
-                      ? FileImage(_imageFile!) as ImageProvider
-                      : CachedNetworkImageProvider(
-                          profilePictureUrlElevage ?? _defaultAvatar),
+          // ── Bannière + photo ──────────────────────────────────────────────
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Bannière
+              SizedBox(
+                width: double.infinity, height: 140,
+                child: _bannerUrl != null && _bannerUrl!.isNotEmpty
+                    ? CachedNetworkImage(imageUrl: _bannerUrl!, fit: BoxFit.cover)
+                    : Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF0C5C6C), Color(0xFF6E9E57)],
+                            begin: Alignment.topLeft, end: Alignment.bottomRight,
+                          ),
+                        ),
+                      ),
+              ),
+              // Photo profil chevauchante
+              Positioned(
+                left: 20, bottom: -40,
+                child: GestureDetector(
+                  onTap: _pickImage,
+                  child: Stack(
+                    children: [
+                      Container(
+                        width: 86, height: 86,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 3),
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 8)],
+                        ),
+                        child: ClipOval(
+                          child: _imageFile != null
+                              ? Image.file(_imageFile!, fit: BoxFit.cover)
+                              : CachedNetworkImage(
+                                  imageUrl: profilePictureUrlElevage ?? _defaultAvatar,
+                                  fit: BoxFit.cover),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 2, right: 2,
+                        child: CircleAvatar(
+                          radius: 12, backgroundColor: const Color(0xFF6E9E57),
+                          child: const Icon(Icons.camera_alt, size: 12, color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                CircleAvatar(
-                  radius: 14,
-                  backgroundColor: const Color(0xFF6E9E57),
-                  child: const Icon(Icons.edit, size: 16, color: Colors.black),
+              ),
+            ],
+          ),
+          const SizedBox(height: 52), // espace photo chevauchante
+
+          // ── Contenu ───────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Nom + badge plan
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        User_Info.nameElevage,
+                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Color(0xFF1F2A2E)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: planColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: planColor.withValues(alpha: 0.3)),
+                      ),
+                      child: Text(planLbl, style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: planColor)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+
+                // Description
+                if (_desc.isNotEmpty) ...[
+                  Text(_desc, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6B7280)), maxLines: 3, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 12),
+                ],
+
+                // Adresse + téléphone
+                if (addressElevage != null && addressElevage!.isNotEmpty)
+                  _InfoRow(icon: Icons.location_on_outlined, text: addressElevage!, onTap: () => _openMap(addressElevage!)),
+                if (numeroElevage != null && numeroElevage!.isNotEmpty)
+                  _InfoRow(icon: Icons.phone_outlined, text: numeroElevage!, onTap: () => _callPhoneNumber(numeroElevage!)),
+
+                // Espèces élevées
+                if (_especesElevees.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  const Text('Espèces élevées', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF9CA3AF))),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8, runSpacing: 8,
+                    children: _especesElevees.map((e) {
+                      final esp = e['espece'] as String? ?? '';
+                      final races = List<String>.from(e['races'] ?? []);
+                      final emoji = _especeEmoji[esp] ?? '🐾';
+                      final lbl   = _especeLabel[esp] ?? esp;
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEEF5EA),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFF6E9E57).withValues(alpha: 0.3)),
+                        ),
+                        child: Text(
+                          '$emoji $lbl${races.isNotEmpty ? ' (${races.length})' : ''}',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF3D6B3A)),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+
+                const SizedBox(height: 20),
+
+                // Bouton modifier
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0C5C6C),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                    ),
+                    icon: const Icon(Icons.edit_outlined, color: Colors.white, size: 18),
+                    label: const Text('Modifier mon profil',
+                        style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
+                    onPressed: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => User_Info.isPro
+                            ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)
+                            : const ProfilEleveurEditPage())),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFD97706),
+                      side: const BorderSide(color: Color(0xFFD97706), width: 1.2),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                    ),
+                    icon: const Icon(Icons.star_outline, size: 18),
+                    label: const Text('Mon abonnement',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AbonnementPage())),
+                  ),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            User_Info.nameElevage,
-            style: const TextStyle(
-                fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18),
-          ),
-          const SizedBox(height: 20),
-          if (addressElevage != null && addressElevage!.isNotEmpty)
-            _InfoRow(
-              icon: Icons.location_on_outlined,
-              text: addressElevage!,
-              onTap: () => _openMap(addressElevage!),
-            ),
-          if (numeroElevage != null && numeroElevage!.isNotEmpty)
-            _InfoRow(
-              icon: Icons.phone_outlined,
-              text: numeroElevage!,
-              onTap: () => _callPhoneNumber(numeroElevage!),
-            ),
-          const SizedBox(height: 28),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1E2025),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              icon: const Icon(Icons.edit_outlined, color: Colors.white, size: 18),
-              label: const Text('Modifier mon profil',
-                  style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
-              onPressed: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => User_Info.isPro ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null) : ProfilEleveurEditPage())),
             ),
           ),
         ],
@@ -631,28 +797,65 @@ class _UserElevageFeedState extends State<UserElevageFeed>
   }
 
   Widget _buildElevageTab() {
+    final isPremium = _planCode == 'premium';
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 100),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _ElevageActionCard(
-            icon: Icons.add_photo_alternate_outlined,
-            color: const Color(0xFFE3F2FD),
-            iconColor: const Color(0xFF1E88E5),
-            title: 'Publications',
-            subtitle: 'Créer et gérer vos annonces',
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => ChoicePublicationType())),
-          ),
-          const SizedBox(height: 14),
+          const Text('Animaux & Publications', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF9CA3AF))),
+          const SizedBox(height: 10),
           _ElevageActionCard(
             icon: Icons.pets,
-            color: const Color(0xFFE8F5E9),
-            iconColor: const Color(0xFF6E9E57),
+            color: const Color(0xFFE8F5E9), iconColor: const Color(0xFF6E9E57),
+            title: 'Mes Animaux',
+            subtitle: 'Liste, fiches santé, reproductions',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnimauxPage())),
+          ),
+          const SizedBox(height: 10),
+          _ElevageActionCard(
+            icon: Icons.add_photo_alternate_outlined,
+            color: const Color(0xFFE3F2FD), iconColor: const Color(0xFF1E88E5),
+            title: 'Publications',
+            subtitle: 'Créer et gérer vos annonces',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChoicePublicationType())),
+          ),
+          const SizedBox(height: 10),
+          _ElevageActionCard(
+            icon: Icons.manage_accounts_outlined,
+            color: const Color(0xFFF3F4F6), iconColor: const Color(0xFF6B7280),
             title: 'Gestion élevage',
-            subtitle: 'Gérer vos animaux et reproductions',
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => ElevageSelectGestionPage())),
+            subtitle: 'Vue d\'ensemble, portées, reproductions',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ElevageSelectGestionPage())),
+          ),
+
+          const SizedBox(height: 20),
+          const Text('Administration', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF9CA3AF))),
+          const SizedBox(height: 10),
+          _ElevageActionCard(
+            icon: Icons.medical_services_outlined,
+            color: const Color(0xFFFFF3E0), iconColor: const Color(0xFFE65100),
+            title: 'Registre sanitaire',
+            subtitle: 'Traitements, vaccinations, visites',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RegistreSanitairePage())),
+          ),
+          const SizedBox(height: 10),
+          _ElevageActionCard(
+            icon: Icons.groups_outlined,
+            color: const Color(0xFFEDE7F6), iconColor: const Color(0xFF7B1FA2),
+            title: 'Mes Employés',
+            subtitle: 'Équipe, tâches assignées, planning',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployesPage())),
+          ),
+          const SizedBox(height: 10),
+          _ElevageActionCard(
+            icon: Icons.event_note_outlined,
+            color: isPremium ? const Color(0xFFFEF3C7) : const Color(0xFFF3F4F6),
+            iconColor: isPremium ? const Color(0xFFD97706) : const Color(0xFF9CA3AF),
+            title: 'Routines${isPremium ? '' : ' 👑'}',
+            subtitle: isPremium ? 'Protocoles, planning quotidien' : 'Réservé aux abonnements Premium',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
+                isPremium ? const PlanningMoisPage() : const AbonnementPage())),
           ),
         ],
       ),
