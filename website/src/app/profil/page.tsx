@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { updateProfile, EmailAuthProvider, reauthenticateWithCredential, deleteUser } from 'firebase/auth';
+import { updateProfile, EmailAuthProvider, reauthenticateWithCredential, deleteUser, sendPasswordResetEmail, getAuth } from 'firebase/auth';
 import { doc, updateDoc, deleteDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
@@ -960,6 +960,25 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   );
 }
 
+// ── SettingsAction ────────────────────────────────────────────────────────────
+
+function SettingsAction({ icon, iconBg, title, subtitle, onClick }: {
+  icon: React.ReactNode; iconBg: string; title: string; subtitle: string; onClick: () => void;
+}) {
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-4 bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-4 hover:shadow-md transition-shadow text-left">
+      <div className={`w-10 h-10 rounded-xl ${iconBg} flex items-center justify-center flex-shrink-0`}>{icon}</div>
+      <div className="flex-1">
+        <p className="font-semibold text-[#1F2A2E] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>{title}</p>
+        <p className="text-xs text-gray-400">{subtitle}</p>
+      </div>
+      <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/>
+      </svg>
+    </button>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ProfilPage() {
@@ -1552,6 +1571,55 @@ export default function ProfilPage() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
       </Link>
+
+      {/* ── Sécurité & aide ── */}
+      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 mt-1" style={{ fontFamily: 'Galey, sans-serif' }}>Sécurité & aide</p>
+      <div className="space-y-3 mb-6">
+        <SettingsAction
+          icon={<svg className="w-5 h-5 text-[#0C5C6C]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>}
+          iconBg="bg-[#E6F4F7]"
+          title="Réinitialiser mon mot de passe"
+          subtitle="Recevoir un lien de réinitialisation par email"
+          onClick={async () => {
+            if (!user?.email) return;
+            await sendPasswordResetEmail(getAuth(), user.email);
+            alert('Email de réinitialisation envoyé à ' + user.email);
+          }}
+        />
+        <SettingsAction
+          icon={<svg className="w-5 h-5 text-[#0C5C6C]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>}
+          iconBg="bg-[#E6F4F7]"
+          title="Poser une question"
+          subtitle="Contacter l'équipe support PetsMatch"
+          onClick={() => {
+            const subject = encodeURIComponent('Question Support');
+            const body = encodeURIComponent(`Bonjour,\n\n[Votre question]\n\n---\nEmail: ${user?.email}`);
+            window.open(`mailto:petsmatch.contact@gmail.com?subject=${subject}&body=${body}`);
+          }}
+        />
+        <Link href="https://www.petsmatchapp.com/cgu" target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-4 bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-4 hover:shadow-md transition-shadow">
+          <div className="w-10 h-10 rounded-xl bg-[#E6F4F7] flex items-center justify-center flex-shrink-0">
+            <svg className="w-5 h-5 text-[#0C5C6C]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-[#1F2A2E] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Confidentialité & CGU</p>
+            <p className="text-xs text-gray-400">Conditions générales et politique de confidentialité</p>
+          </div>
+          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+        </Link>
+        <Link href="/a-propos"
+          className="flex items-center gap-4 bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-4 hover:shadow-md transition-shadow">
+          <div className="w-10 h-10 rounded-xl bg-[#E6F4F7] flex items-center justify-center flex-shrink-0">
+            <svg className="w-5 h-5 text-[#0C5C6C]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-[#1F2A2E] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>À propos de PetsMatch</p>
+            <p className="text-xs text-gray-400">Éditeur, mentions légales, version</p>
+          </div>
+          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+        </Link>
+      </div>
 
       <form onSubmit={handleSave} className="space-y-4">
 
