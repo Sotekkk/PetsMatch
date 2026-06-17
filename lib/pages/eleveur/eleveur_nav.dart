@@ -1,4 +1,5 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
@@ -575,6 +576,17 @@ class _EleveurNavState extends State<EleveurNav> {
                       builder: (_) => User_Info.isPro
                           ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)
                           : const ProfilEleveurEditPage(),
+                    ));
+                  },
+                ),
+                const Divider(height: 8),
+                _DrawerItem(
+                  icon: Icons.settings_outlined,
+                  label: 'Paramètres',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const SettingsMainPage(),
                     ));
                   },
                 ),
