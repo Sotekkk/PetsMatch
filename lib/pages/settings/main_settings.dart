@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:PetsMatch/main.dart';
@@ -131,7 +131,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
       final response = await callable();
       print('Réponse de la fonction : ${response.data}');
     } catch (e) {
-      print('Erreur lors de l’appel de la fonction : $e');
+      print("Erreur lors de l'appel de la fonction : $e");
     }
   }
 
@@ -146,8 +146,8 @@ class _SettingsMainPageState extends State<SettingsMainPage>
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text(‘Paramètres’,
-            style: TextStyle(fontFamily: ‘Galey’, fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white)),
+        title: const Text('Paramètres',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white)),
       ),
       body: Center(
         child: Container(
@@ -156,11 +156,11 @@ class _SettingsMainPageState extends State<SettingsMainPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              _SectionLabel(‘À propos du compte’),
+              _SectionLabel('À propos du compte'),
               buildSettingsOption(
                 context,
                 icon: Icons.account_circle_outlined,
-                text: ‘Information utilisateur’,
+                text: 'Information utilisateur',
                 onTap: () {
                   Navigator.of(context).push(MaterialPageRoute(
                       builder: (context) => InfoUserSettings()));
@@ -170,7 +170,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                 buildSettingsOption(
                   context,
                   icon: Icons.business_center_outlined,
-                  text: ‘Mon profil professionnel’,
+                  text: 'Mon profil professionnel',
                   onTap: () {
                     Navigator.of(context).push(MaterialPageRoute(
                         builder: (context) => ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)));
@@ -179,7 +179,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                 buildSettingsOption(
                   context,
                   icon: Icons.calendar_month_outlined,
-                  text: ‘Mon agenda RDV’,
+                  text: 'Mon agenda RDV',
                   onTap: () {
                     Navigator.of(context).push(MaterialPageRoute(
                         builder: (context) => const ProAgendaPage()));
@@ -189,7 +189,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
               buildSettingsOption(
                 context,
                 icon: Icons.block_outlined,
-                text: ‘Utilisateurs bloqués’,
+                text: 'Utilisateurs bloqués',
                 iconColor: Colors.red.shade400,
                 onTap: () {
                   Navigator.of(context).push(MaterialPageRoute(
@@ -199,18 +199,18 @@ class _SettingsMainPageState extends State<SettingsMainPage>
               buildSettingsOption(
                 context,
                 icon: Icons.security_outlined,
-                text: ‘Connexion et sécurité’,
+                text: 'Connexion et sécurité',
                 onTap: () {
                   Navigator.of(context).push(MaterialPageRoute(
                       builder: (context) => SecuConnectionSetting()));
                 },
               ),
               const SizedBox(height: 24),
-              _SectionLabel(‘À propos de l\’application’),
+              _SectionLabel('À propos de l\'application'),
               buildSettingsOption(
                 context,
                 icon: Icons.privacy_tip_outlined,
-                text: ‘Paramètres de confidentialité’,
+                text: 'Paramètres de confidentialité',
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (context) => ParametreConfi()),
@@ -220,7 +220,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
               buildSettingsOption(
                 context,
                 icon: Icons.info_outline,
-                text: ‘À propos’,
+                text: 'À propos',
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (context) => AboutUs()),
@@ -230,7 +230,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
               buildSettingsOption(
                 context,
                 icon: Icons.download_rounded,
-                text: ‘Exporter mes données’,
+                text: 'Exporter mes données',
                 onTap: () => _exportUserData(context),
               ),
               const SizedBox(height: 32),
@@ -238,8 +238,8 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   icon: const Icon(Icons.logout, size: 18),
-                  label: const Text(‘Se deconnecter’,
-                      style: TextStyle(fontFamily: ‘Galey’, fontWeight: FontWeight.w600, fontSize: 15)),
+                  label: const Text('Se deconnecter',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15)),
                   onPressed: () async {
                     await _auth.signOut();
                     Navigator.of(context).pushAndRemoveUntil(
