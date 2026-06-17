@@ -9,6 +9,7 @@ import 'package:PetsMatch/pages/settings/about_us.dart';
 import 'package:PetsMatch/pages/settings/connectionSecu.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/settings/parametre_config.dart';
+import 'package:PetsMatch/pages/settings/utilisateurs_bloques_page.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -229,6 +230,15 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                   },
                 ),
               ],
+              buildSettingsOption(
+                context,
+                icon: Icons.block_outlined,
+                text: 'Utilisateurs bloqués',
+                onTap: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (context) => const UtilisatesBloquesPage()));
+                },
+              ),
               buildSettingsOption(
                 context,
                 icon: Icons.security,
