@@ -177,13 +177,11 @@ class _AgendaPageState extends State<AgendaPage> {
         final p1 = await _supa.from('plan_taches')
             .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
             .eq('uid_eleveur', _uid)
-            .gte('date_prevue', from).lte('date_prevue', to)
-            .not('statut', 'eq', 'fait');
+            .gte('date_prevue', from).lte('date_prevue', to);
         final p2 = await _supa.from('plan_taches')
             .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
             .eq('assigned_to', _uid)
-            .gte('date_prevue', from).lte('date_prevue', to)
-            .not('statut', 'eq', 'fait');
+            .gte('date_prevue', from).lte('date_prevue', to);
         final seenPlan = <dynamic>{};
         for (final t in [...(p1 as List), ...(p2 as List)]) {
           final m = Map<String, dynamic>.from(t);
@@ -250,10 +248,8 @@ class _AgendaPageState extends State<AgendaPage> {
   };
 
   Widget _buildDayTasksSection(List<Map<String, dynamic>> tasks) {
-    // Séparer manuelles et protocoles
     final manuel = tasks.where((t) => t['_source'] != 'protocole').toList();
 
-    // Grouper protocoles par etape_id (1 carte par étape)
     final protoMap = <String, List<Map<String, dynamic>>>{};
     for (final t in tasks.where((t) => t['_source'] == 'protocole')) {
       final key = (t['etape_id'] as String?) ?? 'solo_${t['id']}';
@@ -261,9 +257,142 @@ class _AgendaPageState extends State<AgendaPage> {
     }
     final protoGroups = protoMap.values.toList();
 
+    final protoEnCours    = protoGroups.where((g) => !g.every((t) => t['statut'] == 'fait')).toList();
+    final protoEffectuees = protoGroups.where((g) =>  g.every((t) => t['statut'] == 'fait')).toList();
+    final manuelEnCours    = manuel.where((t) => t['statut'] != 'fait').toList();
+    final manuelEffectuees = manuel.where((t) => t['statut'] == 'fait').toList();
+
     final totalItems = manuel.length + protoGroups.length;
-    final doneItems  = manuel.where((t) => t['statut'] == 'fait').length
-        + protoGroups.where((g) => g.every((t) => t['statut'] == 'fait')).length;
+    final doneItems  = manuelEffectuees.length + protoEffectuees.length;
+
+    // ── Carte d'un groupe protocole ─────────────────────────────────────────
+    Widget protoCard(List<Map<String, dynamic>> groupe, {bool effectuee = false}) {
+      final total   = groupe.length;
+      final done    = groupe.where((t) => t['statut'] == 'fait').length;
+      final pct     = total > 0 ? done / total : 0.0;
+      final first   = groupe.first;
+      final label   = (first['titre'] ?? first['label'] ?? '') as String;
+      final emoji   = _protoEmoji(first['type_acte']?.toString());
+      final allDone = done == total;
+
+      return GestureDetector(
+        onTap: effectuee
+            ? null
+            : () async {
+                await showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => _AgendaProtoSheet(
+                    groupe: groupe, label: label, emoji: emoji,
+                    onDone: _loadTasks,
+                    onDelete: (ids) async {
+                      final dayDate = (groupe.first['date_prevue'] as String? ??
+                          groupe.first['date'] as String? ?? '').split('T').first;
+                      await _supa.from('plan_taches').delete()
+                          .inFilter('id', ids)
+                          .gte('date_prevue', '${dayDate}T00:00:00')
+                          .lte('date_prevue', '${dayDate}T23:59:59');
+                      _loadTasks();
+                    },
+                  ),
+                );
+              },
+        onLongPress: () => _deleteProtoGroup(groupe),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: allDone ? Colors.grey.shade50 : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: _kTeal.withValues(alpha: allDone ? 0.1 : 0.25)),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Text(emoji, style: const TextStyle(fontSize: 14)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(label,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                    color: allDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
+                    decoration: allDone ? TextDecoration.lineThrough : null),
+                maxLines: 1, overflow: TextOverflow.ellipsis)),
+              if (effectuee)
+                GestureDetector(
+                  onTap: () => _deleteProtoGroup(groupe),
+                  child: Icon(Icons.delete_outline, size: 16, color: Colors.grey.shade400),
+                )
+              else ...[
+                Text('$done/$total',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      color: allDone ? Colors.grey : _kTeal, fontWeight: FontWeight.w700)),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right, size: 16,
+                    color: allDone ? Colors.grey.shade300 : Colors.grey.shade400),
+              ],
+            ]),
+            if (total > 1 && !effectuee) ...[
+              const SizedBox(height: 5),
+              LinearProgressIndicator(
+                value: pct,
+                backgroundColor: _kTeal.withValues(alpha: 0.12),
+                valueColor: AlwaysStoppedAnimation(allDone ? Colors.grey.shade300 : _kTeal),
+                minHeight: 3,
+              ),
+            ],
+          ]),
+        ),
+      );
+    }
+
+    // ── Ligne d'une tâche manuelle ──────────────────────────────────────────
+    Widget manuelRow(Map<String, dynamic> t) {
+      final isDone = t['statut'] == 'fait';
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(children: [
+          GestureDetector(
+            onTap: () async {
+              final newStatut = isDone ? 'a_faire' : 'fait';
+              await _supa.from('taches_elevage').update({'statut': newStatut}).eq('id', t['id']);
+              _loadTasks();
+            },
+            child: Container(
+              width: 18, height: 18,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                    color: isDone ? const Color(0xFF6E9E57) : Colors.grey.shade300, width: 2),
+                color: isDone ? const Color(0xFF6E9E57) : Colors.transparent,
+              ),
+              child: isDone ? const Icon(Icons.check, size: 11, color: Colors.white) : null,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(t['titre'] ?? '',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                    color: isDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
+                    decoration: isDone ? TextDecoration.lineThrough : null),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (t['responsable_nom'] != null)
+                Text(isDone ? 'Fait par : ${t['responsable_nom']}' : '👤 ${t['responsable_nom']}',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 10.5,
+                        color: isDone ? Colors.grey.shade400 : Colors.grey.shade500)),
+            ],
+          )),
+          GestureDetector(
+            onTap: () => _deleteManualTask(t),
+            child: Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: Icon(Icons.delete_outline, size: 16, color: Colors.grey.shade400),
+            ),
+          ),
+        ]),
+      );
+    }
 
     return Container(
       decoration: const BoxDecoration(
@@ -275,6 +404,7 @@ class _AgendaPageState extends State<AgendaPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          // ── En-tête ────────────────────────────────────────────────────
           Row(children: [
             const Text('✅', style: TextStyle(fontSize: 12)),
             const SizedBox(width: 6),
@@ -286,112 +416,81 @@ class _AgendaPageState extends State<AgendaPage> {
           ]),
           const SizedBox(height: 8),
 
-          // ── Protocoles groupés ─────────────────────────────────────────────
-          ...protoGroups.map((groupe) {
-            final total  = groupe.length;
-            final done   = groupe.where((t) => t['statut'] == 'fait').length;
-            final pct    = total > 0 ? done / total : 0.0;
-            final first  = groupe.first;
-            final label  = (first['titre'] ?? first['label'] ?? '') as String;
-            final emoji  = _protoEmoji(first['type_acte']?.toString());
-            final allDone = done == total;
+          // ── À faire : protocoles ──────────────────────────────────────
+          ...protoEnCours.map((g) => protoCard(g)),
 
-            return GestureDetector(
-              onTap: () async {
-                await showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (_) => _AgendaProtoSheet(
-                    groupe: groupe, label: label, emoji: emoji,
-                    onDone: _loadTasks,
-                  ),
-                );
-              },
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: allDone ? Colors.grey.shade50 : Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _kTeal.withValues(alpha: allDone ? 0.1 : 0.25)),
-                ),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Text(emoji, style: const TextStyle(fontSize: 14)),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(label,
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: allDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
-                          decoration: allDone ? TextDecoration.lineThrough : null),
-                      maxLines: 1, overflow: TextOverflow.ellipsis)),
-                    Text('$done/$total',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                          color: allDone ? Colors.grey : _kTeal, fontWeight: FontWeight.w700)),
-                    const SizedBox(width: 4),
-                    Icon(Icons.chevron_right, size: 16,
-                        color: allDone ? Colors.grey.shade300 : Colors.grey.shade400),
-                  ]),
-                  if (total > 1) ...[
-                    const SizedBox(height: 5),
-                    LinearProgressIndicator(
-                      value: pct,
-                      backgroundColor: _kTeal.withValues(alpha: 0.12),
-                      valueColor: AlwaysStoppedAnimation(allDone ? Colors.grey.shade300 : _kTeal),
-                      minHeight: 3,
-                    ),
-                  ],
-                ]),
-              ),
-            );
-          }),
+          // ── À faire : manuelles ──────────────────────────────────────
+          ...manuelEnCours.map((t) => manuelRow(t)),
 
-          // ── Tâches manuelles ───────────────────────────────────────────────
-          ...manuel.map((t) {
-            final isDone = t['statut'] == 'fait';
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: GestureDetector(
-                onTap: () async {
-                  final newStatut = isDone ? 'a_faire' : 'fait';
-                  await _supa.from('taches_elevage').update({'statut': newStatut}).eq('id', t['id']);
-                  _loadTasks();
-                },
-                child: Row(children: [
-                  Container(
-                    width: 18, height: 18,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: isDone ? const Color(0xFF6E9E57) : Colors.grey.shade300, width: 2),
-                      color: isDone ? const Color(0xFF6E9E57) : Colors.transparent,
-                    ),
-                    child: isDone ? const Icon(Icons.check, size: 11, color: Colors.white) : null,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(t['titre'] ?? '',
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                            color: isDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
-                            decoration: isDone ? TextDecoration.lineThrough : null),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                      if (t['responsable_nom'] != null)
-                        Text(isDone ? 'Fait par : ${t['responsable_nom']}' : '👤 ${t['responsable_nom']}',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 10.5,
-                                color: isDone ? Colors.grey.shade400 : Colors.grey.shade500)),
-                    ],
-                  )),
-                ]),
+          // ── Effectuées ────────────────────────────────────────────────
+          if (doneItems > 0) ...[
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: Divider(color: Colors.grey.shade300, height: 1)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text('Effectuées ($doneItems)',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade500)),
               ),
-            );
-          }),
+              Expanded(child: Divider(color: Colors.grey.shade300, height: 1)),
+            ]),
+            const SizedBox(height: 6),
+            ...protoEffectuees.map((g) => protoCard(g, effectuee: true)),
+            ...manuelEffectuees.map((t) => manuelRow(t)),
+          ],
         ],
       ),
     );
+  }
+
+  Future<void> _deleteManualTask(Map<String, dynamic> t) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Supprimer la tâche ?',
+          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text(t['titre'] ?? '', style: const TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _supa.from('taches_elevage').delete().eq('id', t['id']);
+      _loadTasks();
+    }
+  }
+
+  Future<void> _deleteProtoGroup(List<Map<String, dynamic>> groupe) async {
+    final label = (groupe.first['titre'] ?? groupe.first['label'] ?? '') as String;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Supprimer la routine du jour ?',
+          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text(label, style: const TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      final ids = groupe.map((t) => t['id']).toList();
+      // On scope explicitement sur la date du jour pour ne pas toucher les récurrences futures
+      final dayDate = (groupe.first['date_prevue'] as String? ??
+          groupe.first['date'] as String? ?? '').split('T').first;
+      await _supa.from('plan_taches').delete()
+          .inFilter('id', ids)
+          .gte('date_prevue', '${dayDate}T00:00:00')
+          .lte('date_prevue', '${dayDate}T23:59:59');
+      _loadTasks();
+    }
   }
 
   void _prevMonth() { _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1); _load(); _loadTasks(); }
@@ -1803,7 +1902,11 @@ class _AgendaProtoSheet extends StatefulWidget {
   final String label;
   final String emoji;
   final VoidCallback onDone;
-  const _AgendaProtoSheet({required this.groupe, required this.label, required this.emoji, required this.onDone});
+  final Future<void> Function(List<dynamic> ids)? onDelete;
+  const _AgendaProtoSheet({
+    required this.groupe, required this.label, required this.emoji, required this.onDone,
+    this.onDelete,
+  });
   @override
   State<_AgendaProtoSheet> createState() => _AgendaProtoSheetState();
 }
@@ -1854,7 +1957,7 @@ class _AgendaProtoSheetState extends State<_AgendaProtoSheet> {
 
           // En-tête
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            padding: const EdgeInsets.fromLTRB(20, 12, 12, 0),
             child: Row(children: [
               Text(widget.emoji, style: const TextStyle(fontSize: 22)),
               const SizedBox(width: 10),
@@ -1863,6 +1966,35 @@ class _AgendaProtoSheetState extends State<_AgendaProtoSheet> {
                 maxLines: 2)),
               Text('$done/$total',
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _kTeal)),
+              if (widget.onDelete != null)
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                  tooltip: 'Supprimer cette routine',
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: const Text('Supprimer la routine ?',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                        content: Text(widget.label,
+                          style: const TextStyle(fontFamily: 'Galey')),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Annuler')),
+                          TextButton(onPressed: () => Navigator.pop(context, true),
+                            child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true && mounted) {
+                      final ids = _items.map((t) => t['id']).toList();
+                      await widget.onDelete!(ids);
+                      if (mounted) Navigator.pop(context); // ignore: use_build_context_synchronously
+                    }
+                  },
+                ),
             ]),
           ),
 
@@ -1893,18 +2025,47 @@ class _AgendaProtoSheetState extends State<_AgendaProtoSheet> {
             final nom    = (t['animal_nom'] as String?)?.isNotEmpty == true
                 ? t['animal_nom'] as String
                 : 'Animal #${idx + 1}';
-            return CheckboxListTile(
-              value: isDone,
-              onChanged: (_) => _toggle(idx),
-              activeColor: _kTeal,
-              title: Text(nom,
-                style: TextStyle(
-                  fontFamily: 'Galey', fontSize: 14,
-                  color: isDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
-                  decoration: isDone ? TextDecoration.lineThrough : null,
-                )),
-              secondary: const Icon(Icons.pets, size: 18, color: _kTeal),
-              controlAffinity: ListTileControlAffinity.leading,
+            return Dismissible(
+              key: Key('pt_${t['id']}'),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: 20),
+                color: Colors.red.shade50,
+                child: Icon(Icons.delete_outline, color: Colors.red.shade400),
+              ),
+              confirmDismiss: (_) => showDialog<bool>(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text('Supprimer ?',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  content: Text(nom, style: const TextStyle(fontFamily: 'Galey')),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Annuler')),
+                    TextButton(onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
+                  ],
+                ),
+              ),
+              onDismissed: (_) async {
+                await _supa.from('plan_taches').delete().eq('id', t['id']);
+                setState(() => _items.removeAt(idx));
+                widget.onDone();
+              },
+              child: CheckboxListTile(
+                value: isDone,
+                onChanged: (_) => _toggle(idx),
+                activeColor: _kTeal,
+                title: Text(nom,
+                  style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 14,
+                    color: isDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
+                    decoration: isDone ? TextDecoration.lineThrough : null,
+                  )),
+                secondary: const Icon(Icons.pets, size: 18, color: _kTeal),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
             );
           }),
 

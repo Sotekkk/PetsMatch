@@ -71,6 +71,7 @@ export default function AgendaElevagePage() {
   const [tachesM, setTachesM] = useState<TacheManuelle[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [validateGroupe, setValidateGroupe] = useState<RoutineGroupe | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ label: string; onConfirm: () => void } | null>(null);
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
 
@@ -112,7 +113,6 @@ export default function AgendaElevagePage() {
         .select('id,titre,date,statut')
         .eq('uid_eleveur', user.uid).eq('date', selectedDate),
     ]);
-    // Dedup plan_taches by id (eleveur peut aussi être assigned_to sur ses propres tâches)
     const seen = new Set<string>();
     const allR = [...(r1.data ?? []), ...(r2.data ?? [])] as Routine[];
     setRoutines(allR.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; }));
@@ -122,23 +122,148 @@ export default function AgendaElevagePage() {
 
   useEffect(() => { if (user) load(); }, [user, load]);
 
+  const deleteGroupe = useCallback(async (g: RoutineGroupe) => {
+    const ids = g.routines.map(r => r.id);
+    await supabase.from('plan_taches').delete()
+      .in('id', ids)
+      .gte('date_prevue', `${selectedDate}T00:00:00`)
+      .lte('date_prevue', `${selectedDate}T23:59:59`);
+    load();
+  }, [selectedDate, load]);
+
+  const deleteManuelTask = useCallback(async (t: TacheManuelle) => {
+    await supabase.from('taches_elevage').delete().eq('id', t.id);
+    load();
+  }, [load]);
+
   if (loading || !user) return (
     <div className="flex justify-center items-center h-64">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
     </div>
   );
 
-  const groupes   = groupRoutines(routines);
-  const today     = new Date();
-  const days      = Array.from({ length: 7 }, (_, i) => addDays(today, -3 + i));
-  const doneR     = groupes.filter(g => g.routines.every(r => r.statut === 'fait')).length;
-  const doneT     = tachesM.filter(t => t.statut === 'fait').length;
+  const groupes           = groupRoutines(routines);
+  const groupesEnCours    = groupes.filter(g => !g.routines.every(r => r.statut === 'fait'));
+  const groupesEffectuees = groupes.filter(g => g.routines.every(r => r.statut === 'fait'));
+  const tachesMEnCours    = tachesM.filter(t => t.statut !== 'fait');
+  const tachesMEffectuees = tachesM.filter(t => t.statut === 'fait');
+
+  const today      = new Date();
+  const days       = Array.from({ length: 7 }, (_, i) => addDays(today, -3 + i));
   const totalItems = groupes.length + tachesM.length;
-  const doneItems  = doneR + doneT;
+  const doneItems  = groupesEffectuees.length + tachesMEffectuees.length;
 
   const dateLabel = selectedDate === toISODate(new Date())
     ? "Aujourd'hui"
     : new Date(selectedDate + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  const confirmDeleteAction = (label: string, onConfirm: () => void) =>
+    setConfirmDelete({ label, onConfirm });
+
+  const GroupeCard = ({ g, effectuee = false }: { g: RoutineGroupe; effectuee?: boolean }) => {
+    const done    = g.routines.filter(r => r.statut === 'fait').length;
+    const total   = g.routines.length;
+    const pct     = total > 0 ? done / total : 0;
+    const allDone = done === total;
+    const emoji   = ACTE_EMOJIS[g.typeActe] ?? '📋';
+
+    return (
+      <div className={`bg-white rounded-2xl shadow-sm border p-4 ${
+        effectuee ? 'border-gray-100 opacity-70' : allDone ? 'border-gray-100 opacity-60' : 'border-teal-100'
+      }`}>
+        <div className="flex items-center gap-3">
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 cursor-pointer hover:shadow-md transition-all ${
+              effectuee || allDone ? 'bg-gray-50' : 'bg-teal-50'
+            }`}
+            onClick={() => !effectuee && setValidateGroupe(g)}
+          >
+            {emoji}
+          </div>
+          <div
+            className="flex-1 min-w-0 cursor-pointer"
+            onClick={() => !effectuee && setValidateGroupe(g)}
+          >
+            <p className={`font-semibold text-sm ${effectuee || allDone ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+              {g.label}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Routine · {total} animal{total > 1 ? 'x' : ''}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {!effectuee && (
+              <span className={`text-sm font-bold ${allDone ? 'text-gray-400' : 'text-teal-600'}`}>
+                {done}/{total}
+              </span>
+            )}
+            <button
+              onClick={() => confirmDeleteAction(
+                `Supprimer la routine "${g.label}" de ce jour ?`,
+                () => deleteGroupe(g)
+              )}
+              className="p-1 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors"
+              title="Supprimer cette routine du jour"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+            {!effectuee && <span className="text-gray-300 text-base">›</span>}
+          </div>
+        </div>
+        {total > 1 && !effectuee && (
+          <div className="mt-3">
+            <div className="w-full bg-gray-100 rounded-full h-1.5">
+              <div
+                className={`h-1.5 rounded-full transition-all ${allDone ? 'bg-gray-300' : 'bg-teal-500'}`}
+                style={{ width: `${pct * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const ManuelRow = ({ t }: { t: TacheManuelle }) => {
+    const isDone = t.statut === 'fait';
+    return (
+      <div className={`bg-white rounded-2xl shadow-sm border p-4 flex items-center gap-3 ${
+        isDone ? 'border-gray-100 opacity-70' : 'border-gray-100'
+      }`}>
+        <button
+          onClick={async () => {
+            const newStatut = isDone ? 'a_faire' : 'fait';
+            await supabase.from('taches_elevage').update({ statut: newStatut }).eq('id', t.id);
+            load();
+          }}
+          className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+            isDone ? 'bg-green-500 border-green-500' : 'border-gray-300 hover:border-teal-400'
+          }`}
+        >
+          {isDone && <span className="text-white text-xs font-bold leading-none">✓</span>}
+        </button>
+        <span className={`text-sm font-medium flex-1 ${isDone ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+          {t.titre}
+        </span>
+        <button
+          onClick={() => confirmDeleteAction(
+            `Supprimer la tâche "${t.titre}" ?`,
+            () => deleteManuelTask(t)
+          )}
+          className="p-1 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors flex-shrink-0"
+          title="Supprimer cette tâche"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
@@ -194,96 +319,76 @@ export default function AgendaElevagePage() {
       ) : (
         <div className="space-y-3">
 
-          {/* ── Routines groupées ────────────────────────────────────────────── */}
-          {groupes.map(g => {
-            const done    = g.routines.filter(r => r.statut === 'fait').length;
-            const total   = g.routines.length;
-            const pct     = total > 0 ? done / total : 0;
-            const allDone = done === total;
-            const emoji   = ACTE_EMOJIS[g.typeActe] ?? '📋';
+          {/* ── À faire : routines ───────────────────────────────────────────── */}
+          {groupesEnCours.map(g => <GroupeCard key={g.etapeId} g={g} />)}
 
-            return (
-              <div key={g.etapeId}
-                className={`bg-white rounded-2xl shadow-sm border p-4 cursor-pointer hover:shadow-md transition-all ${
-                  allDone ? 'border-gray-100 opacity-60' : 'border-teal-100'
-                }`}
-                onClick={() => setValidateGroupe(g)}>
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${
-                    allDone ? 'bg-gray-50' : 'bg-teal-50'
-                  }`}>
-                    {emoji}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`font-semibold text-sm ${allDone ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
-                      {g.label}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      Routine · {total} animal{total > 1 ? 'x' : ''}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <span className={`text-sm font-bold ${allDone ? 'text-gray-400' : 'text-teal-600'}`}>
-                      {done}/{total}
-                    </span>
-                    <span className="text-gray-300 text-base">›</span>
-                  </div>
-                </div>
-                {total > 1 && (
-                  <div className="mt-3">
-                    <div className="w-full bg-gray-100 rounded-full h-1.5">
-                      <div
-                        className={`h-1.5 rounded-full transition-all ${allDone ? 'bg-gray-300' : 'bg-teal-500'}`}
-                        style={{ width: `${pct * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Séparateur tâches manuelles */}
-          {groupes.length > 0 && tachesM.length > 0 && (
+          {/* ── À faire : tâches manuelles ───────────────────────────────────── */}
+          {tachesMEnCours.length > 0 && groupesEnCours.length > 0 && (
             <div className="flex items-center gap-2 py-1">
               <div className="flex-1 h-px bg-gray-200" />
               <span className="text-xs text-gray-400 font-semibold px-1">Tâches manuelles</span>
               <div className="flex-1 h-px bg-gray-200" />
             </div>
           )}
+          {tachesMEnCours.map(t => <ManuelRow key={t.id} t={t} />)}
 
-          {/* ── Tâches manuelles ─────────────────────────────────────────────── */}
-          {tachesM.map(t => {
-            const isDone = t.statut === 'fait';
-            return (
-              <div key={t.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-3">
-                <button
-                  onClick={async () => {
-                    const newStatut = isDone ? 'a_faire' : 'fait';
-                    await supabase.from('taches_elevage').update({ statut: newStatut }).eq('id', t.id);
-                    load();
-                  }}
-                  className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                    isDone ? 'bg-green-500 border-green-500' : 'border-gray-300 hover:border-teal-400'
-                  }`}>
-                  {isDone && <span className="text-white text-xs font-bold leading-none">✓</span>}
-                </button>
-                <span className={`text-sm font-medium flex-1 ${isDone ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-                  {t.titre}
+          {/* ── Effectuées ───────────────────────────────────────────────────── */}
+          {doneItems > 0 && (
+            <>
+              <div className="flex items-center gap-2 py-1">
+                <div className="flex-1 h-px bg-gray-200" />
+                <span className="text-xs text-gray-400 font-semibold px-2">
+                  Effectuées ({doneItems})
                 </span>
+                <div className="flex-1 h-px bg-gray-200" />
               </div>
-            );
-          })}
+              {groupesEffectuees.map(g => <GroupeCard key={g.etapeId} g={g} effectuee />)}
+              {tachesMEffectuees.map(t => <ManuelRow key={t.id} t={t} />)}
+            </>
+          )}
         </div>
       )}
 
-      {/* Modal par-animal */}
+      {/* Modal validation par animal */}
       {validateGroupe && (
         <RoutineModal
           groupe={validateGroupe}
+          selectedDate={selectedDate}
           onClose={() => setValidateGroupe(null)}
           onUpdated={() => { setValidateGroupe(null); load(); }}
+          onDeleteGroupe={(g) => {
+            setValidateGroupe(null);
+            confirmDeleteAction(
+              `Supprimer la routine "${g.label}" de ce jour ?`,
+              () => deleteGroupe(g)
+            );
+          }}
         />
+      )}
+
+      {/* Dialog confirmation suppression */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <p className="text-sm font-semibold text-gray-800 mb-5 text-center">
+              {confirmDelete.label}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 font-medium"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => { confirmDelete.onConfirm(); setConfirmDelete(null); }}
+                className="flex-1 py-2.5 bg-red-500 text-white rounded-xl text-sm font-semibold hover:bg-red-600"
+              >
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -291,10 +396,12 @@ export default function AgendaElevagePage() {
 
 // ── Modal routines — checkboxes par animal ─────────────────────────────────────
 
-function RoutineModal({ groupe, onClose, onUpdated }: {
+function RoutineModal({ groupe, selectedDate, onClose, onUpdated, onDeleteGroupe }: {
   groupe: RoutineGroupe;
+  selectedDate: string;
   onClose: () => void;
   onUpdated: () => void;
+  onDeleteGroupe: (g: RoutineGroupe) => void;
 }) {
   const [items, setItems] = useState<Routine[]>([...groupe.routines]);
 
@@ -303,6 +410,16 @@ function RoutineModal({ groupe, onClose, onUpdated }: {
     const newStatut = r.statut === 'fait' ? 'en_attente' : 'fait';
     await supabase.from('plan_taches').update({ statut: newStatut }).eq('id', r.id);
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, statut: newStatut } : it));
+  };
+
+  const deleteItem = async (r: Routine, idx: number) => {
+    if (!confirm(`Supprimer "${r.animal_nom || `Animal #${idx + 1}`}" de cette routine ?`)) return;
+    await supabase.from('plan_taches').delete()
+      .eq('id', r.id)
+      .gte('date_prevue', `${selectedDate}T00:00:00`)
+      .lte('date_prevue', `${selectedDate}T23:59:59`);
+    setItems(prev => prev.filter((_, i) => i !== idx));
+    onUpdated();
   };
 
   const total = items.length;
@@ -325,6 +442,16 @@ function RoutineModal({ groupe, onClose, onUpdated }: {
                 Routine · {done}/{total} fait{done > 1 ? 's' : ''}
               </p>
             </div>
+            <button
+              onClick={() => onDeleteGroupe(groupe)}
+              className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors"
+              title="Supprimer cette routine du jour"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none flex-shrink-0">×</button>
           </div>
           <div className="mt-3">
@@ -344,18 +471,32 @@ function RoutineModal({ groupe, onClose, onUpdated }: {
             const isDone = r.statut === 'fait';
             const nom    = r.animal_nom?.trim() || `Animal #${idx + 1}`;
             return (
-              <button key={r.id} onClick={() => toggle(idx)}
-                className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 text-left">
-                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                  isDone ? 'bg-teal-600 border-teal-600' : 'border-gray-300 hover:border-teal-400'
-                }`}>
+              <div key={r.id}
+                className="flex items-center gap-3 px-5 py-3.5 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
+                <button onClick={() => toggle(idx)}
+                  className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                    isDone ? 'bg-teal-600 border-teal-600' : 'border-gray-300 hover:border-teal-400'
+                  }`}>
                   {isDone && <span className="text-white text-xs font-bold leading-none">✓</span>}
-                </div>
+                </button>
                 <span className="text-sm mr-0.5">🐾</span>
-                <span className={`text-sm font-medium flex-1 ${isDone ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                <span
+                  className={`text-sm font-medium flex-1 cursor-pointer ${isDone ? 'line-through text-gray-400' : 'text-gray-800'}`}
+                  onClick={() => toggle(idx)}
+                >
                   {nom}
                 </span>
-              </button>
+                <button
+                  onClick={() => deleteItem(r, idx)}
+                  className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors flex-shrink-0"
+                  title="Supprimer"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
             );
           })}
         </div>

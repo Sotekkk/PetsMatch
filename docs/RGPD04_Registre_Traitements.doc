@@ -1,0 +1,524 @@
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<!--[if gte mso 9]>
+<xml>
+  <w:WordDocument>
+    <w:View>Normal</w:View>
+    <w:Zoom>90</w:Zoom>
+    <w:DoNotOptimizeForBrowser/>
+  </w:WordDocument>
+</xml>
+<![endif]-->
+<style>
+  /* Général */
+  @page {
+    size: A4 landscape;
+    margin: 2cm 1.5cm 2cm 1.5cm;
+  }
+  body {
+    font-family: Calibri, Arial, sans-serif;
+    font-size: 10pt;
+    color: #1F2A2E;
+    background: #fff;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Entête */
+  .cover {
+    background-color: #0C5C6C;
+    color: white;
+    padding: 30pt 24pt 24pt 24pt;
+    margin-bottom: 18pt;
+  }
+  .cover h1 {
+    font-size: 22pt;
+    font-weight: bold;
+    margin: 0 0 6pt 0;
+    color: white;
+  }
+  .cover .subtitle {
+    font-size: 12pt;
+    color: #B2D8E0;
+    margin: 0 0 14pt 0;
+  }
+  .cover .meta {
+    font-size: 9pt;
+    color: #D0EEF4;
+    border-top: 1px solid rgba(255,255,255,0.3);
+    padding-top: 10pt;
+  }
+  .cover .meta span { margin-right: 28pt; }
+
+  /* Sections */
+  h2 {
+    font-size: 13pt;
+    font-weight: bold;
+    color: #0C5C6C;
+    border-bottom: 2pt solid #0C5C6C;
+    padding-bottom: 4pt;
+    margin: 20pt 0 10pt 0;
+  }
+  h3 {
+    font-size: 11pt;
+    font-weight: bold;
+    color: #0C5C6C;
+    background-color: #EDF6F7;
+    padding: 5pt 8pt;
+    margin: 14pt 0 4pt 0;
+    border-left: 4pt solid #0C5C6C;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 12pt;
+    font-size: 9.5pt;
+  }
+  th {
+    background-color: #0C5C6C;
+    color: white;
+    font-weight: bold;
+    padding: 5pt 7pt;
+    text-align: left;
+    border: 1pt solid #0C5C6C;
+    vertical-align: top;
+  }
+  td {
+    padding: 4pt 7pt;
+    border: 1pt solid #D0E8EB;
+    vertical-align: top;
+    line-height: 1.4;
+  }
+  tr:nth-child(even) td {
+    background-color: #F7FBFC;
+  }
+  td.label {
+    font-weight: bold;
+    color: #0C5C6C;
+    width: 22%;
+    background-color: #EDF6F7;
+    white-space: nowrap;
+  }
+
+  /* Badges */
+  .badge-contract  { background:#DBEAFE; color:#1E40AF; padding:1pt 5pt; border-radius:3pt; font-size:8.5pt; font-weight:bold; }
+  .badge-consent   { background:#D1FAE5; color:#065F46; padding:1pt 5pt; border-radius:3pt; font-size:8.5pt; font-weight:bold; }
+  .badge-legal     { background:#FEF3C7; color:#92400E; padding:1pt 5pt; border-radius:3pt; font-size:8.5pt; font-weight:bold; }
+  .badge-interest  { background:#EDE9FE; color:#5B21B6; padding:1pt 5pt; border-radius:3pt; font-size:8.5pt; font-weight:bold; }
+
+  /* Notes */
+  .note {
+    background-color: #FFF9E6;
+    border-left: 4pt solid #F59E0B;
+    padding: 6pt 10pt;
+    font-size: 9pt;
+    margin: 8pt 0;
+    color: #78350F;
+  }
+  .todo {
+    background-color: #FEF2F2;
+    border-left: 4pt solid #EF4444;
+    padding: 6pt 10pt;
+    font-size: 9pt;
+    margin: 8pt 0;
+    color: #991B1B;
+  }
+  .confidential {
+    text-align: center;
+    font-size: 8.5pt;
+    color: #6B7280;
+    border-top: 1pt solid #E5E7EB;
+    padding-top: 10pt;
+    margin-top: 20pt;
+  }
+
+  /* Page break */
+  .page-break { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════
+     PAGE DE GARDE
+══════════════════════════════════════════════════════ -->
+<div class="cover">
+  <h1>Registre des activités de traitement</h1>
+  <div class="subtitle">Règlement Général sur la Protection des Données — Article 30 du RGPD UE 2016/679</div>
+  <div class="meta">
+    <span><strong>Entité :</strong> PetsMatch SAS</span>
+    <span><strong>Version :</strong> 1.0 — Brouillon</span>
+    <span><strong>Date :</strong> Juin 2026</span>
+    <span><strong>Classification :</strong> CONFIDENTIEL — Usage interne</span>
+  </div>
+</div>
+
+<!-- Informations responsable -->
+<h2>1. Responsable du traitement</h2>
+<table>
+  <tr><td class="label">Dénomination sociale</td><td>PetsMatch SAS <em>(statuts en cours de refonte — 4 actionnaires)</em></td></tr>
+  <tr><td class="label">Siège social</td><td><em>À compléter après finalisation des statuts</em></td></tr>
+  <tr><td class="label">SIRET</td><td><em>À compléter — ancienne entité dissoute : RCS 931 344 816</em></td></tr>
+  <tr><td class="label">Représentant légal</td><td><em>À compléter — Président à désigner dans les nouveaux statuts</em></td></tr>
+  <tr><td class="label">Responsable désigné RGPD</td><td><strong>Directeur Administratif et Financier (DAF)</strong> — contact@petsmatch.fr</td></tr>
+  <tr><td class="label">DPO</td><td>Non désigné <em>(à évaluer — obligatoire si traitement à grande échelle de données sensibles)</em></td></tr>
+  <tr><td class="label">Contact RGPD</td><td>contact@petsmatch.fr</td></tr>
+  <tr><td class="label">Dernière mise à jour</td><td>Juin 2026 — <strong>BROUILLON en attente de validation DAF</strong></td></tr>
+</table>
+
+<div class="note">
+  <strong>⚠️ Note :</strong> Ce registre doit être tenu à jour, conservé en interne et présenté à la CNIL sur simple demande (art. 30 §4 RGPD). Il ne doit pas être diffusé publiquement. Le DAF est responsable de sa mise à jour annuelle et de sa validation.
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     TRAITEMENTS
+══════════════════════════════════════════════════════ -->
+<h2>2. Activités de traitement</h2>
+
+<!-- ── T1 ── -->
+<h3>T1 — Gestion des comptes utilisateurs et authentification</h3>
+<table>
+  <tr><td class="label">Finalité</td><td>Création et gestion de comptes, authentification, communication transactionnelle (email de confirmation, réinitialisation mot de passe)</td></tr>
+  <tr><td class="label">Base légale</td><td><span class="badge-contract">Art. 6.1.b — Exécution d'un contrat</span></td></tr>
+  <tr><td class="label">Personnes concernées</td><td>Particuliers, éleveurs et professionnels inscrits sur PetsMatch</td></tr>
+  <tr><td class="label">Catégories de données</td><td>Nom, prénom, date de naissance, adresse email, mot de passe (haché par Firebase — jamais accessible en clair), numéro de téléphone, adresse postale, photo de profil, rôle (particulier / éleveur / pro), date d'acceptation des CGU (<code>cgu_accepted_at</code>)</td></tr>
+  <tr><td class="label">Destinataires</td><td>Équipe PetsMatch (admin) ; sous-traitants Firebase Auth et Supabase</td></tr>
+  <tr><td class="label">Transferts hors UE</td><td>Google Firebase (USA) — Clauses Contractuelles Types (CCT) Commission européenne</td></tr>
+  <tr><td class="label">Durée de conservation</td><td>Durée du compte actif + 3 ans après clôture ou dernière activité</td></tr>
+  <tr><td class="label">Mesures de sécurité</td><td>Authentification Firebase (hachage bcrypt), HTTPS/TLS, RLS Supabase (Row Level Security), accès admin restreint par rôle <code>is_admin</code></td></tr>
+</table>
+
+<!-- ── T2 ── -->
+<h3>T2 — Profils utilisateurs et annonces éleveurs</h3>
+<table>
+  <tr><td class="label">Finalité</td><td>Afficher les profils publics des éleveurs, permettre la mise en relation avec des particuliers souhaitant adopter un animal, publier et gérer les annonces de cession</td></tr>
+  <tr><td class="label">Base légale</td><td><span class="badge-contract">Art. 6.1.b — Exécution d'un contrat</span></td></tr>
+  <tr><td class="label">Personnes concernées</td><td>Éleveurs inscrits et utilisateurs consultant les annonces</td></tr>
+  <tr><td class="label">Catégories de données</td><td>Nom de l'élevage, SIRET (éleveurs pro), ville/département, espèces et races proposées, photos des animaux, prix, description, coordonnées de contact publiées volontairement, plan d'abonnement</td></tr>
+  <tr><td class="label">Destinataires</td><td>Public (annonces visibles sans compte pour les visiteurs) ; équipe PetsMatch (admin)</td></tr>
+  <tr><td class="label">Transferts hors UE</td><td>Supabase (base de données) ; Firebase Storage (photos) — CCT</td></tr>
+  <tr><td class="label">Durée de conservation</td><td>Durée de publication de l'annonce + 1 an après expiration ou suppression</td></tr>
+  <tr><td class="label">Mesures de sécurité</td><td>Modération des contenus, validation profil éleveur par l'équipe admin, HTTPS</td></tr>
+</table>
+
+<!-- ── T3 ── -->
+<h3>T3 — Messagerie entre utilisateurs</h3>
+<table>
+  <tr><td class="label">Finalité</td><td>Permettre la communication directe entre acheteurs/vendeurs et entre clients et professionnels dans le cadre de la mise en relation</td></tr>
+  <tr><td class="label">Base légale</td><td><span class="badge-contract">Art. 6.1.b — Exécution d'un contrat</span></td></tr>
+  <tr><td class="label">Personnes concernées</td><td>Tous les utilisateurs inscrits</td></tr>
+  <tr><td class="label">Catégories de données</td><td>Contenu des messages, horodatage, identifiants des participants (UID Firebase)</td></tr>
+  <tr><td class="label">Destinataires</td><td>Émetteur et destinataire du message uniquement ; équipe admin en cas de signalement</td></tr>
+  <tr><td class="label">Transferts hors UE</td><td>Google Firebase Firestore (USA) — CCT</td></tr>
+  <tr><td class="label">Durée de conservation</td><td>3 ans après le dernier message ou clôture du compte</td></tr>
+  <tr><td class="label">Mesures de sécurité</td><td>Accès restreint par règles Firestore (UID), HTTPS/TLS, aucun accès tiers sans signalement</td></tr>
+</table>
+
+<!-- ── T4 ── -->
+<h3>T4 — Carnet de santé animal (registre sanitaire)</h3>
+<table>
+  <tr><td class="label">Finalité</td><td>Permettre aux éleveurs et particuliers de tenir un carnet de santé numérique pour leurs animaux et d'en partager l'accès à des vétérinaires autorisés</td></tr>
+  <tr><td class="label">Base légale</td><td><span class="badge-contract">Art. 6.1.b — Exécution d'un contrat</span> ; <span class="badge-consent">Art. 6.1.a — Consentement</span> (pour le partage vétérinaire)</td></tr>
+  <tr><td class="label">Personnes concernées</td><td>Éleveurs, particuliers propriétaires d'animaux ; vétérinaires autorisés</td></tr>
+  <tr><td class="label">Catégories de données</td><td>Données de l'animal : nom, espèce, race, sexe, n° de puce/identification, date de naissance. Données de santé animale : vaccinations, traitements, vermifuges, antiparasitaires, allergies, poids, visites. Nom et coordonnées du vétérinaire intervenant. Ordonnances (PDF).</td></tr>
+  <tr><td class="label">Destinataires</td><td>Propriétaire de l'animal ; vétérinaires explicitement autorisés via <code>vet_access_grants</code> ; équipe PetsMatch (admin)</td></tr>
+  <tr><td class="label">Transferts hors UE</td><td>Supabase (données tabulaires) ; Firebase Storage (PDFs) — CCT</td></tr>
+  <tr><td class="label">Durée de conservation</td><td>Durée du compte + 5 ans (valeur légale du carnet de santé vétérinaire)</td></tr>
+  <tr><td class="label">Mesures de sécurité</td><td>RLS Supabase par UID, accès vétérinaire soumis à autorisation explicite du propriétaire, token d'accès temporaire (72h), HTTPS</td></tr>
+</table>
+<div class="note">
+  ⚠️ Les données de santé des animaux ne constituent pas des données de santé <em>humaines</em> au sens de l'art. 9 RGPD. Toutefois, le nom du vétérinaire et les pathologies peuvent indirectement concerner des personnes physiques — traiter avec précaution.
+</div>
+
+<!-- ── T5 ── -->
+<h3>T5 — Planning et routines d'élevage</h3>
+<table>
+  <tr><td class="label">Finalité</td><td>Permettre aux éleveurs abonnés Premium de planifier et de suivre les protocoles de soins récurrents (vaccinations, vermifuges, nettoyage…) pour chaque animal de l'élevage, et d'en assigner l'exécution à des employés</td></tr>
+  <tr><td class="label">Base légale</td><td><span class="badge-contract">Art. 6.1.b — Exécution d'un contrat</span></td></tr>
+  <tr><td class="label">Personnes concernées</td><td>Éleveurs abonnés Premium ; employés de l'élevage</td></tr>
+  <tr><td class="label">Catégories de données</td><td>Libellé et type de soin, date prévue, statut (fait / en attente), animal concerné (nom), UID de l'éleveur, UID de l'employé assigné, identifiant de l'étape du protocole</td></tr>
+  <tr><td class="label">Destinataires</td><td>Éleveur responsable ; employés assignés à la tâche ; équipe PetsMatch (admin)</td></tr>
+  <tr><td class="label">Transferts hors UE</td><td>Supabase — CCT</td></tr>
+  <tr><td class="label">Durée de conservation</td><td>Durée du contrat éleveur + 2 ans</td></tr>
+  <tr><td class="label">Mesures de sécurité</td><td>RLS Supabase par UID éleveur, accès employé limité aux tâches qui lui sont assignées, fonctionnalité réservée aux abonnements Premium</td></tr>
+</table>
+
+<!-- ── T6 ── -->
+<h3>T6 — Gestion des employés d'élevage</h3>
+<table>
+  <tr><td class="label">Finalité</td><td>Permettre à l'éleveur de gérer les membres de son équipe, leur attribuer des tâches et suivre leur activité au sein de l'élevage</td></tr>
+  <tr><td class="label">Base légale</td><td><span class="badge-contract">Art. 6.1.b — Exécution d'un contrat</span> ; <span class="badge-interest">Art. 6.1.f — Intérêt légitime</span> (gestion RH interne)</td></tr>
+  <tr><td class="label">Personnes concernées</td><td>Employés de l'élevage (personnes physiques membres de l'équipe)</td></tr>
+  <tr><td class="label">Catégories de données</td><td>Nom, prénom, adresse email, rôle dans l'élevage, tâches assignées, statut de complétion des tâches</td></tr>
+  <tr><td class="label">Destinataires</td><td>Éleveur employeur uniquement ; équipe PetsMatch (admin technique)</td></tr>
+  <tr><td class="label">Transferts hors UE</td><td>Supabase — CCT</td></tr>
+  <tr><td class="label">Durée de conservation</td><td>Durée de la relation de travail + 5 ans (prescription prud'homale)</td></tr>
+  <tr><td class="label">Mesures de sécurité</td><td>Accès strictement restreint à l'UID de l'éleveur responsable, RLS Supabase, données non visibles par d'autres éleveurs</td></tr>
+</table>
+<div class="note">
+  ⚠️ Les employés doivent être informés du traitement de leurs données (art. 13 RGPD) par l'éleveur employeur. PetsMatch doit mentionner ce traitement dans sa politique de confidentialité. Une mention dans les CGU côté éleveurs est recommandée.
+</div>
+
+<!-- ── T7 ── -->
+<h3>T7 — Agenda et rendez-vous</h3>
+<table>
+  <tr><td class="label">Finalité</td><td>Permettre la prise de rendez-vous entre particuliers/éleveurs et professionnels (vétérinaires, toiletteurs, pensions…) et la gestion du calendrier d'élevage</td></tr>
+  <tr><td class="label">Base légale</td><td><span class="badge-contract">Art. 6.1.b — Exécution d'un contrat</span></td></tr>
+  <tr><td class="label">Personnes concernées</td><td>Utilisateurs demandant un RDV ; professionnels recevant la demande</td></tr>
+  <tr><td class="label">Catégories de données</td><td>Date/heure du RDV, motif, type d'événement, statut (confirmé/annulé/terminé), identifiants des parties, animal concerné, notes</td></tr>
+  <tr><td class="label">Destinataires</td><td>Les deux parties au RDV ; équipe PetsMatch (admin)</td></tr>
+  <tr><td class="label">Transferts hors UE</td><td>Supabase — CCT</td></tr>
+  <tr><td class="label">Durée de conservation</td><td>3 ans après la date de l'événement</td></tr>
+  <tr><td class="label">Mesures de sécurité</td><td>RLS Supabase par UID, notifications push chiffrées (FCM)</td></tr>
+</table>
+
+<!-- ── T8 ── -->
+<h3>T8 — Signalement d'animaux perdus / trouvés</h3>
+<table>
+  <tr><td class="label">Finalité</td><td>Permettre aux utilisateurs de signaler des animaux perdus ou trouvés et de faciliter leur identification et récupération</td></tr>
+  <tr><td class="label">Base légale</td><td><span class="badge-interest">Art. 6.1.f — Intérêt légitime</span> (aide aux animaux perdus, service à la communauté)</td></tr>
+  <tr><td class="label">Personnes concernées</td><td>Utilisateurs signalant un animal perdu ou trouvé</td></tr>
+  <tr><td class="label">Catégories de données</td><td>Photo de l'animal, localisation approximative (commune/département), description, coordonnées de contact de la personne signalant</td></tr>
+  <tr><td class="label">Destinataires</td><td>Utilisateurs de la zone géographique concernée (notification) ; équipe PetsMatch</td></tr>
+  <tr><td class="label">Transferts hors UE</td><td>Firebase (notifications) — CCT</td></tr>
+  <tr><td class="label">Durée de conservation</td><td>Jusqu'à clôture de l'alerte par l'utilisateur + 1 an</td></tr>
+  <tr><td class="label">Mesures de sécurité</td><td>Localisation floue publiée (commune uniquement, pas de coordonnées GPS exactes)</td></tr>
+</table>
+
+<!-- ── T9 ── -->
+<h3>T9 — Paiements et facturation</h3>
+<table>
+  <tr><td class="label">Finalité</td><td>Traitement des abonnements Pro/Premium éleveurs et professionnels ; achats ponctuels (boosts, mises en avant)</td></tr>
+  <tr><td class="label">Base légale</td><td><span class="badge-contract">Art. 6.1.b — Exécution d'un contrat</span> ; <span class="badge-legal">Art. 6.1.c — Obligation légale</span> (facturation et comptabilité)</td></tr>
+  <tr><td class="label">Personnes concernées</td><td>Utilisateurs payants (éleveurs PRO/PREMIUM, professionnels abonnés)</td></tr>
+  <tr><td class="label">Catégories de données</td><td>Nom, email, montant payé, référence de transaction Stripe, numéro de facture, date de paiement. <strong>Aucune donnée bancaire n'est stockée par PetsMatch</strong> (gérée intégralement par Stripe).</td></tr>
+  <tr><td class="label">Destinataires</td><td>Stripe Inc. (prestataire de paiement) ; expert-comptable de PetsMatch</td></tr>
+  <tr><td class="label">Transferts hors UE</td><td>Stripe (USA) — CCT + Privacy Framework UE-USA</td></tr>
+  <tr><td class="label">Durée de conservation</td><td>10 ans (obligation comptable légale — art. L123-22 Code de commerce)</td></tr>
+  <tr><td class="label">Mesures de sécurité</td><td>Aucune donnée bancaire ne transite ni n'est stockée par PetsMatch ; tokenisation Stripe PCI-DSS</td></tr>
+</table>
+
+<!-- ── T10 ── -->
+<h3>T10 — Notifications push</h3>
+<table>
+  <tr><td class="label">Finalité</td><td>Envoyer des alertes aux utilisateurs : rappels de soins, nouveaux messages, alertes animaux perdus, confirmation RDV, tâches du jour</td></tr>
+  <tr><td class="label">Base légale</td><td><span class="badge-consent">Art. 6.1.a — Consentement</span> (l'utilisateur autorise les notifications dans l'app)</td></tr>
+  <tr><td class="label">Personnes concernées</td><td>Utilisateurs ayant activé les notifications push</td></tr>
+  <tr><td class="label">Catégories de données</td><td>Token FCM (identifiant d'appareil, non nominatif), contenu de la notification, horodatage</td></tr>
+  <tr><td class="label">Destinataires</td><td>Google Firebase Cloud Messaging (FCM)</td></tr>
+  <tr><td class="label">Transferts hors UE</td><td>Google Firebase (USA) — CCT</td></tr>
+  <tr><td class="label">Durée de conservation</td><td>Token FCM conservé jusqu'à déconnexion, désinstallation ou désactivation des notifications</td></tr>
+  <tr><td class="label">Mesures de sécurité</td><td>Token stocké dans Firestore avec règles d'accès restreint par UID</td></tr>
+</table>
+
+<!-- ── T11 ── -->
+<h3>T11 — Géolocalisation pour la recherche de services</h3>
+<table>
+  <tr><td class="label">Finalité</td><td>Permettre aux utilisateurs de trouver des éleveurs et professionnels à proximité de leur localisation</td></tr>
+  <tr><td class="label">Base légale</td><td><span class="badge-consent">Art. 6.1.a — Consentement</span> (permission de géolocalisation demandée par l'app)</td></tr>
+  <tr><td class="label">Personnes concernées</td><td>Utilisateurs recherchant des services à proximité</td></tr>
+  <tr><td class="label">Catégories de données</td><td>Coordonnées GPS approximatives (commune/département — jamais stockées précisément), rayon de recherche</td></tr>
+  <tr><td class="label">Destinataires</td><td>PetsMatch uniquement pour le filtrage ; Google Maps API pour l'affichage cartographique</td></tr>
+  <tr><td class="label">Transferts hors UE</td><td>Google LLC (USA) pour Maps API — CCT</td></tr>
+  <tr><td class="label">Durée de conservation</td><td>Non conservée — traitement à la volée, non persisté</td></tr>
+  <tr><td class="label">Mesures de sécurité</td><td>Géolocalisation demandée uniquement si nécessaire ; granularité limitée à la commune (pas de GPS exact publié)</td></tr>
+</table>
+
+<!-- ── T12 ── -->
+<h3>T12 — Cookies et mesure d'audience (site web)</h3>
+<table>
+  <tr><td class="label">Finalité</td><td>Mesure de l'audience du site web PetsMatch, amélioration de l'expérience utilisateur, détection d'anomalies</td></tr>
+  <tr><td class="label">Base légale</td><td><span class="badge-consent">Art. 6.1.a — Consentement</span> (bandeau cookies, opt-in explicite requis)</td></tr>
+  <tr><td class="label">Personnes concernées</td><td>Visiteurs du site web petsmatch.fr / petsmatch.com</td></tr>
+  <tr><td class="label">Catégories de données</td><td>Identifiant de cookie analytics (<code>_ga</code>), pages visitées, durée de session, type d'appareil, pays</td></tr>
+  <tr><td class="label">Destinataires</td><td>Google Analytics (Google LLC, USA) ; Firebase Analytics</td></tr>
+  <tr><td class="label">Transferts hors UE</td><td>Google LLC (USA) — CCT</td></tr>
+  <tr><td class="label">Durée de conservation</td><td>13 mois (cookies analytics standard) ; 90 jours (Firebase Analytics)</td></tr>
+  <tr><td class="label">Mesures de sécurité</td><td>Consentement stocké dans <code>localStorage</code> (<code>pm_cookie_consent</code>) ; aucun cookie analytics déposé sans consentement préalable</td></tr>
+</table>
+
+<!-- ── T13 ── -->
+<h3>T13 — Administration et modération de la plateforme</h3>
+<table>
+  <tr><td class="label">Finalité</td><td>Permettre à l'équipe PetsMatch de gérer les profils, valider les comptes éleveurs et professionnels, traiter les signalements et assurer la sécurité de la plateforme</td></tr>
+  <tr><td class="label">Base légale</td><td><span class="badge-interest">Art. 6.1.f — Intérêt légitime</span> (sécurité et intégrité de la plateforme)</td></tr>
+  <tr><td class="label">Personnes concernées</td><td>Tous les utilisateurs inscrits</td></tr>
+  <tr><td class="label">Catégories de données</td><td>Toutes les données du compte utilisateur ; logs d'actions admin</td></tr>
+  <tr><td class="label">Destinataires</td><td>Équipe admin PetsMatch uniquement (accès restreint par rôle <code>is_admin</code>)</td></tr>
+  <tr><td class="label">Transferts hors UE</td><td>Supabase, Firebase — CCT</td></tr>
+  <tr><td class="label">Durée de conservation</td><td>Logs admin : 12 mois. Données utilisateur : durée du compte + délais légaux applicables</td></tr>
+  <tr><td class="label">Mesures de sécurité</td><td>Accès admin restreint par rôle, authentification renforcée recommandée (MFA), journalisation des accès</td></tr>
+</table>
+
+<!-- ══════════════════════════════════════════════════════
+     SOUS-TRAITANTS
+══════════════════════════════════════════════════════ -->
+<div class="page-break"></div>
+<h2>3. Sous-traitants — Article 28 RGPD</h2>
+<table>
+  <tr>
+    <th>Sous-traitant</th>
+    <th>Rôle</th>
+    <th>Pays d'hébergement</th>
+    <th>Base du transfert</th>
+    <th>Données concernées</th>
+  </tr>
+  <tr>
+    <td><strong>Google Firebase</strong><br><small>Google LLC</small></td>
+    <td>Authentification (Firebase Auth), base de données temps réel (Firestore), stockage fichiers (Storage), notifications push (FCM), analytics</td>
+    <td>USA (serveurs EU disponibles)</td>
+    <td>CCT — Décision d'adéquation UE-USA 2023</td>
+    <td>Comptes, messages, notifications, photos, annonces</td>
+  </tr>
+  <tr>
+    <td><strong>Supabase Inc.</strong></td>
+    <td>Base de données PostgreSQL principale, stockage secondaire (avatars, bannières)</td>
+    <td>Singapour / Europe (AWS eu-west)</td>
+    <td>CCT</td>
+    <td>Profils, animaux, RDV, planning, routines, tâches, employés, paiements</td>
+  </tr>
+  <tr>
+    <td><strong>Vercel Inc.</strong></td>
+    <td>Hébergement du site web Next.js, CDN, logs d'accès</td>
+    <td>USA / Europe (Edge network)</td>
+    <td>CCT</td>
+    <td>Logs de navigation, données de session web</td>
+  </tr>
+  <tr>
+    <td><strong>Stripe Inc.</strong></td>
+    <td>Traitement des paiements et des abonnements</td>
+    <td>USA / Europe</td>
+    <td>CCT + Privacy Framework UE-USA</td>
+    <td>Données de paiement (gérées intégralement par Stripe — PCI-DSS)</td>
+  </tr>
+  <tr>
+    <td><strong>Google Maps / Places API</strong></td>
+    <td>Autocomplétion d'adresse, affichage cartographique</td>
+    <td>USA</td>
+    <td>CCT</td>
+    <td>Requêtes de géolocalisation (non nominatives, non persistées)</td>
+  </tr>
+</table>
+
+<!-- ══════════════════════════════════════════════════════
+     DROITS DES PERSONNES
+══════════════════════════════════════════════════════ -->
+<h2>4. Droits des personnes concernées — Procédure interne</h2>
+<table>
+  <tr>
+    <th>Droit</th>
+    <th>Article RGPD</th>
+    <th>Délai de réponse</th>
+    <th>Procédure</th>
+    <th>Statut</th>
+  </tr>
+  <tr>
+    <td><strong>Accès</strong></td>
+    <td>Art. 15</td>
+    <td>30 jours</td>
+    <td>Email à contact@petsmatch.fr → export manuel depuis Supabase / Firebase Dashboard</td>
+    <td>Manuel (export à implémenter RGPD06)</td>
+  </tr>
+  <tr>
+    <td><strong>Rectification</strong></td>
+    <td>Art. 16</td>
+    <td>30 jours</td>
+    <td>L'utilisateur modifie ses données depuis son profil ; sinon email → correction admin</td>
+    <td>✅ Disponible via l'app et le site</td>
+  </tr>
+  <tr>
+    <td><strong>Effacement</strong></td>
+    <td>Art. 17</td>
+    <td>30 jours</td>
+    <td>Suppression du compte → cascade Firebase + Supabase + Storage à implémenter (RGPD07)</td>
+    <td>En cours d'implémentation (RGPD07)</td>
+  </tr>
+  <tr>
+    <td><strong>Limitation</strong></td>
+    <td>Art. 18</td>
+    <td>30 jours</td>
+    <td>Email à contact@petsmatch.fr → suspension manuelle du compte</td>
+    <td>Manuel</td>
+  </tr>
+  <tr>
+    <td><strong>Portabilité</strong></td>
+    <td>Art. 20</td>
+    <td>30 jours</td>
+    <td>Export JSON des données → à implémenter (RGPD06)</td>
+    <td>Prévu (RGPD06)</td>
+  </tr>
+  <tr>
+    <td><strong>Opposition</strong></td>
+    <td>Art. 21</td>
+    <td>Immédiat</td>
+    <td>Analytics : désactivation via bandeau cookies. Notifications : désactivables dans l'app.</td>
+    <td>✅ Disponible</td>
+  </tr>
+  <tr>
+    <td><strong>Réclamation CNIL</strong></td>
+    <td>Art. 77</td>
+    <td>—</td>
+    <td>Renvoi vers cnil.fr/fr/plaintes</td>
+    <td>✅ Mentionné dans la politique de confidentialité</td>
+  </tr>
+</table>
+
+<!-- ══════════════════════════════════════════════════════
+     POINTS EN ATTENTE
+══════════════════════════════════════════════════════ -->
+<h2>5. Points à compléter — Actions DAF</h2>
+<div class="todo">
+  <p><strong>Actions requises avant validation finale du registre :</strong></p>
+  <ol style="margin:6pt 0 0 16pt; padding:0;">
+    <li style="margin-bottom:4pt;">Compléter la <strong>dénomination exacte</strong> et la forme juridique de la nouvelle entité (SAS 4 actionnaires)</li>
+    <li style="margin-bottom:4pt;">Renseigner le <strong>SIRET</strong> de la nouvelle entité dès attribution</li>
+    <li style="margin-bottom:4pt;">Renseigner l'<strong>adresse du siège social</strong></li>
+    <li style="margin-bottom:4pt;">Désigner le <strong>Président / représentant légal</strong> dans les statuts et reporter son nom ici</li>
+    <li style="margin-bottom:4pt;">Évaluer la nécessité de désigner un <strong>DPO</strong> (obligatoire si traitement à grande échelle de données sensibles — art. 37 RGPD)</li>
+    <li style="margin-bottom:4pt;">Signer et dater le registre (section ci-dessous) — <strong>le DAF est responsable de la validation</strong></li>
+    <li style="margin-bottom:4pt;">Planifier une <strong>revue annuelle</strong> (prochain contrôle recommandé : juin 2027)</li>
+    <li style="margin-bottom:4pt;">Mettre à jour les pages légales du site (<code>/mentions-legales</code>, <code>/confidentialite</code>, <code>/cgu</code>) avec les informations définitives</li>
+    <li>Conclure formellement les <strong>DPA (Data Processing Agreements)</strong> avec Firebase, Supabase, Vercel, Stripe si pas encore signés</li>
+  </ol>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SIGNATURE
+══════════════════════════════════════════════════════ -->
+<h2>6. Validation et signatures</h2>
+<table>
+  <tr>
+    <th style="width:33%">Rôle</th>
+    <th style="width:33%">Nom et prénom</th>
+    <th style="width:33%">Date et signature</th>
+  </tr>
+  <tr>
+    <td>Directeur Administratif et Financier<br><small>(Responsable désigné du traitement)</small></td>
+    <td>&nbsp;</td>
+    <td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /2026</td>
+  </tr>
+  <tr>
+    <td>Président / Représentant légal<br><small>(À désigner dans les statuts)</small></td>
+    <td>&nbsp;</td>
+    <td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /2026</td>
+  </tr>
+  <tr>
+    <td>Rédigé par</td>
+    <td>PetsMatch — équipe tech</td>
+    <td>Juin 2026</td>
+  </tr>
+</table>
+
+<div class="confidential">
+  Document confidentiel — Usage interne exclusif — Ne pas diffuser publiquement<br>
+  Registre tenu conformément à l'article 30 du RGPD (UE) 2016/679 — Version 1.0 Brouillon — Juin 2026<br>
+  PetsMatch SAS — contact@petsmatch.fr
+</div>
+
+</body>
+</html>
