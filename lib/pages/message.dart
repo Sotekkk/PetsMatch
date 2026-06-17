@@ -11,36 +11,47 @@ class MessagePage extends StatefulWidget {
   _MessagePageState createState() => _MessagePageState();
 }
 
-const _catKeys = [null, 'animaux-perdus', 'annonces', 'communaute'];
-const _catLabels = ['Tous', 'Perdus', 'Annonces', 'Communauté'];
-const _catEmojis = ['💬', '🐾', '📢', '🌿'];
+// ── Catégories ───────────────────────────────────────────────────────────────
+
+const _catKeys = <String?>[
+  null, 'animaux-perdus', 'annonces', 'contact-elevage', 'service-professionnel', 'communaute', '__archived__',
+];
+const _catLabels = ['Tous', 'Perdus', 'Annonces', 'Élevages', 'Services', 'Communauté', 'Archivés'];
+const _catEmojis = ['💬', '🐾', '📢', '🏡', '🔧', '🌿', '📦'];
 
 const _catBadgeColor = {
-  'animaux-perdus': Color(0xFFFED7AA),
-  'annonces':       Color(0xFFDBEAFE),
-  'communaute':     Color(0xFFD1FAE5),
+  'animaux-perdus':        Color(0xFFFED7AA),
+  'annonces':              Color(0xFFDBEAFE),
+  'communaute':            Color(0xFFD1FAE5),
+  'contact-elevage':       Color(0xFFCCEBF2),
+  'service-professionnel': Color(0xFFEDE9FE),
 };
 const _catBadgeText = {
-  'animaux-perdus': Color(0xFFC2410C),
-  'annonces':       Color(0xFF1D4ED8),
-  'communaute':     Color(0xFF166534),
+  'animaux-perdus':        Color(0xFFC2410C),
+  'annonces':              Color(0xFF1D4ED8),
+  'communaute':            Color(0xFF166534),
+  'contact-elevage':       Color(0xFF0C5C6C),
+  'service-professionnel': Color(0xFF6B21A8),
 };
 const _catBadgeLabel = {
-  'animaux-perdus': '🐾 Perdus',
-  'annonces':       '📢 Annonces',
-  'communaute':     '🌿 Communauté',
+  'animaux-perdus':        '🐾 Perdus',
+  'annonces':              '📢 Annonces',
+  'communaute':            '🌿 Communauté',
+  'contact-elevage':       '🏡 Élevage',
+  'service-professionnel': '🔧 Service',
 };
 
-const _teal = Color(0xFF0C5C6C);
+const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
 
+// ── Page ─────────────────────────────────────────────────────────────────────
+
 class _MessagePageState extends State<MessagePage> {
-  final TextEditingController _searchController = TextEditingController();
+  final _searchCtrl = TextEditingController();
   String _searchText = '';
   int _catIndex = 0;
 
   final Map<String, Map<String, String?>> _userCache = {};
-  final Map<String, Map<String, dynamic>> _conversationCache = {};
   List<String> _blockedUsers = [];
 
   String get _currentProfileType {
@@ -53,147 +64,207 @@ class _MessagePageState extends State<MessagePage> {
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(() {
-      setState(() => _searchText = _searchController.text.toLowerCase());
-    });
-    loadBlockedUsers().then((_) { if (mounted) setState(() {}); });
+    _searchCtrl.addListener(() => setState(() => _searchText = _searchCtrl.text.toLowerCase()));
+    _loadBlockedUsers();
   }
 
   @override
   void dispose() {
-    _searchController.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> loadBlockedUsers() async {
+  Future<void> _loadBlockedUsers() async {
     final uid = FirebaseAuth.instance.currentUser!.uid;
     final doc = await FirebaseFirestore.instance.collection('bloquer').doc(uid).get();
     if (doc.exists && doc.data() != null) {
-      _blockedUsers = (doc.data() as Map<String, dynamic>).keys.toList();
+      final keys = (doc.data() as Map<String, dynamic>).keys.toList();
+      if (mounted) setState(() => _blockedUsers = keys);
     }
   }
 
-  Future<void> _deleteConversation(String conversationId) async {
+  // ── Actions Firestore ───────────────────────────────────────────────────────
+
+  Future<void> _togglePin(String id, bool current) async {
     final uid = FirebaseAuth.instance.currentUser!.uid;
-    await FirebaseFirestore.instance
-        .collection('conversations')
-        .doc(conversationId)
+    await FirebaseFirestore.instance.collection('conversations').doc(id)
+        .update({'pinnedFor.$uid': !current});
+  }
+
+  Future<void> _toggleArchive(String id, bool current) async {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    await FirebaseFirestore.instance.collection('conversations').doc(id)
+        .update({'archivedFor.$uid': !current});
+  }
+
+  Future<void> _toggleMute(String id, bool current) async {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final until = current ? 0 : DateTime.now().add(const Duration(hours: 8)).millisecondsSinceEpoch;
+    await FirebaseFirestore.instance.collection('conversations').doc(id)
+        .update({'mutedFor.$uid': until});
+  }
+
+  Future<void> _blockUser(String otherId) async {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    await FirebaseFirestore.instance.collection('bloquer').doc(uid)
+        .set({otherId: true}, SetOptions(merge: true));
+    if (mounted) setState(() => _blockedUsers.add(otherId));
+  }
+
+  Future<void> _delete(String id) async {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    await FirebaseFirestore.instance.collection('conversations').doc(id)
         .update({'deletedFor.$uid': true});
   }
 
-  void _showDeleteDialog(BuildContext context, String conversationId) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Supprimer la conversation',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-        content: const Text(
-            'Cette conversation sera supprimée de votre liste. L\'autre participant peut toujours y accéder.',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 14)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Annuler',
-                style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6B7280))),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await _deleteConversation(conversationId);
-            },
-            child: const Text('Supprimer',
-                style: TextStyle(fontFamily: 'Galey', color: Colors.red, fontWeight: FontWeight.w600)),
-          ),
-        ],
+  // ── Bottom sheet options ────────────────────────────────────────────────────
+
+  void _showOptions(BuildContext ctx, String id, String otherId, Map<String, dynamic> data) {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final isPinned  = (data['pinnedFor']  as Map?)?[uid] == true;
+    final isArchived = (data['archivedFor'] as Map?)?[uid] == true;
+    final mutedUntil = ((data['mutedFor'] as Map?)?[uid] as int?) ?? 0;
+    final isMuted   = mutedUntil > DateTime.now().millisecondsSinceEpoch;
+
+    showModalBottomSheet(
+      context: ctx,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.only(top: 10, bottom: 12),
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+            ),
+            _Option(
+              icon: isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+              label: isPinned ? 'Désépingler' : 'Épingler',
+              color: _teal,
+              onTap: () async { Navigator.pop(ctx); await _togglePin(id, isPinned); },
+            ),
+            _Option(
+              icon: isArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
+              label: isArchived ? 'Désarchiver' : 'Archiver',
+              color: Colors.blueGrey,
+              onTap: () async { Navigator.pop(ctx); await _toggleArchive(id, isArchived); },
+            ),
+            _Option(
+              icon: isMuted ? Icons.notifications_outlined : Icons.notifications_off_outlined,
+              label: isMuted ? 'Réactiver les notifications' : 'Mettre en sourdine (8h)',
+              color: Colors.orange.shade700,
+              onTap: () async { Navigator.pop(ctx); await _toggleMute(id, isMuted); },
+            ),
+            _Option(
+              icon: Icons.block_outlined,
+              label: 'Bloquer cet utilisateur',
+              color: Colors.red.shade700,
+              onTap: () async {
+                Navigator.pop(ctx);
+                final ok = await _confirm(ctx, 'Bloquer cet utilisateur',
+                    'Vous ne recevrez plus de messages de cet utilisateur.');
+                if (ok) await _blockUser(otherId);
+              },
+            ),
+            const Divider(height: 1, indent: 20, endIndent: 20),
+            _Option(
+              icon: Icons.delete_outline,
+              label: 'Supprimer la conversation',
+              color: Colors.red,
+              onTap: () async {
+                Navigator.pop(ctx);
+                final ok = await _confirm(ctx, 'Supprimer la conversation',
+                    "Cette conversation sera supprimée de votre liste. L'autre participant peut toujours y accéder.");
+                if (ok) await _delete(id);
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
       ),
     );
   }
 
-  Future<Map<String, String?>> getUserInfo(String userId) async {
-    if (_userCache.containsKey(userId)) return _userCache[userId]!;
-    if (userId.isEmpty) {
-      return {'name': 'Utilisateur inconnu', 'profilePictureUrl': null};
-    }
-    final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
-    if (userDoc.exists) {
-      final data = userDoc.data() as Map<String, dynamic>;
-      final name = data['isElevage'] == true
-          ? (data['nameElevage'] ?? 'Élevage inconnu')
-          : '${data['firstname'] ?? ''} ${data['lastname'] ?? ''}'.trim();
-      final rawUrl = data['isElevage'] == true
-          ? data['profilePictureUrlElevage']
-          : data['profilePictureUrl'];
-      const defaultPp = 'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60';
-      final profilePictureUrl = (rawUrl != null && rawUrl.startsWith('http') && rawUrl != defaultPp)
-          ? rawUrl as String
-          : null;
-      _userCache[userId] = {'name': name, 'profilePictureUrl': profilePictureUrl};
-      return _userCache[userId]!;
-    }
-    return {'name': 'Utilisateur inconnu', 'profilePictureUrl': null};
+  Future<bool> _confirm(BuildContext ctx, String title, String body) async {
+    return await showDialog<bool>(
+      context: ctx,
+      builder: (d) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        content: Text(body, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () => Navigator.pop(d, true),
+            child: Text(title.startsWith('Suppr') ? 'Supprimer' : 'Confirmer',
+                style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    ) ?? false;
   }
 
-  String _formatTime(Timestamp? ts) {
+  // ── User info ───────────────────────────────────────────────────────────────
+
+  Future<Map<String, String?>> _userInfo(String uid) async {
+    if (_userCache.containsKey(uid)) return _userCache[uid]!;
+    if (uid.isEmpty) return {'name': 'Utilisateur inconnu', 'photo': null};
+    final snap = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+    if (snap.exists) {
+      final d = snap.data()!;
+      final name = d['isElevage'] == true
+          ? (d['nameElevage'] ?? 'Élevage')
+          : '${d['firstname'] ?? ''} ${d['lastname'] ?? ''}'.trim();
+      const dflt = 'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60';
+      final rawUrl = d['isElevage'] == true ? d['profilePictureUrlElevage'] : d['profilePictureUrl'];
+      final photo = (rawUrl != null && rawUrl.startsWith('http') && rawUrl != dflt) ? rawUrl as String : null;
+      _userCache[uid] = {'name': name.isEmpty ? 'Utilisateur' : name, 'photo': photo};
+    } else {
+      _userCache[uid] = {'name': 'Utilisateur inconnu', 'photo': null};
+    }
+    return _userCache[uid]!;
+  }
+
+  String _fmtTime(Timestamp? ts) {
     if (ts == null) return '';
     final dt = ts.toDate();
     final now = DateTime.now();
-    if (dt.day == now.day && dt.month == now.month && dt.year == now.year) {
-      return DateFormat('HH:mm').format(dt);
-    }
-    if (now.difference(dt).inDays < 7) {
-      return DateFormat('EEE', 'fr_FR').format(dt);
-    }
+    if (dt.day == now.day && dt.month == now.month && dt.year == now.year) return DateFormat('HH:mm').format(dt);
+    if (now.difference(dt).inDays < 7) return DateFormat('EEE', 'fr_FR').format(dt);
     return DateFormat('dd/MM').format(dt);
   }
 
+  // ── Build ───────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
-    final currentUserId = FirebaseAuth.instance.currentUser!.uid;
+    final uid = FirebaseAuth.instance.currentUser!.uid;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       appBar: AppBar(
-        backgroundColor: _teal,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        title: const Text(
-          'Messages',
-          style: TextStyle(
-            fontFamily: 'Galey',
-            fontWeight: FontWeight.w700,
-            fontSize: 20,
-            color: Colors.white,
-          ),
-        ),
+        backgroundColor: _teal, elevation: 0, automaticallyImplyLeading: false,
+        title: const Text('Messages', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white)),
       ),
       body: Column(
         children: [
-          // Barre de recherche
+          // Recherche
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
             child: TextField(
-              controller: _searchController,
+              controller: _searchCtrl,
               style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search, color: _teal, size: 20),
                 hintText: 'Rechercher une conversation…',
                 hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400),
                 contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: Colors.grey.shade200),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: _teal, width: 1.5),
-                ),
+                filled: true, fillColor: Colors.white,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade200)),
+                focusedBorder: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(14)), borderSide: BorderSide(color: _teal, width: 1.5)),
               ),
             ),
           ),
@@ -206,29 +277,22 @@ class _MessagePageState extends State<MessagePage> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: _catKeys.length,
               separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, i) {
-                final isActive = _catIndex == i;
+              itemBuilder: (_, i) {
+                final active = _catIndex == i;
+                final isArchive = _catKeys[i] == '__archived__';
                 return GestureDetector(
                   onTap: () => setState(() => _catIndex = i),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                     decoration: BoxDecoration(
-                      color: isActive ? _teal : Colors.white,
+                      color: active ? (isArchive ? Colors.blueGrey : _teal) : Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: isActive ? _teal : Colors.grey.shade200,
-                      ),
+                      border: Border.all(color: active ? (isArchive ? Colors.blueGrey : _teal) : Colors.grey.shade200),
                     ),
-                    child: Text(
-                      '${_catEmojis[i]}  ${_catLabels[i]}',
-                      style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: isActive ? Colors.white : const Color(0xFF6B7280),
-                      ),
-                    ),
+                    child: Text('${_catEmojis[i]}  ${_catLabels[i]}',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                          color: active ? Colors.white : const Color(0xFF6B7280))),
                   ),
                 );
               },
@@ -236,253 +300,180 @@ class _MessagePageState extends State<MessagePage> {
           ),
           const SizedBox(height: 8),
 
-          // Liste conversations
+          // Liste
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('conversations')
-                  .where('participants', arrayContains: currentUserId)
+                  .where('participants', arrayContains: uid)
                   .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child: CircularProgressIndicator(color: _green));
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator(color: _green));
                 }
-
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return _EmptyState(
-                      emoji: _catEmojis[_catIndex],
-                      label: 'Aucune conversation');
+                if (!snap.hasData || snap.data!.docs.isEmpty) {
+                  return _EmptyState(emoji: _catEmojis[_catIndex], label: 'Aucune conversation');
                 }
 
                 final activeCat = _catKeys[_catIndex];
-                final conversations = snapshot.data!.docs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  if (activeCat != null && data['categorie'] != activeCat) return false;
-                  final deletedFor = data['deletedFor'] as Map<String, dynamic>?;
-                  if (deletedFor?[currentUserId] == true) return false;
-                  final profileTypes = data['participant_profile_types'] as Map<String, dynamic>? ?? {};
-                  final myType = profileTypes[currentUserId] as String?;
+
+                var docs = snap.data!.docs.where((d) {
+                  final data = d.data() as Map<String, dynamic>;
+
+                  if ((data['deletedFor'] as Map?)?[uid] == true) return false;
+
+                  // Filtre profil
+                  final profileTypes = data['participant_profile_types'] as Map? ?? {};
+                  final myType = profileTypes[uid] as String?;
                   if (myType != null && myType.isNotEmpty && myType != _currentProfileType) return false;
-                  if (User_Info.isPro && profileTypes[currentUserId] == null) {
+                  if (User_Info.isPro && myType == null) {
                     final pid = User_Info.activeProfileId;
-                    final convoProfileId = data['pro_profile_id'] as String? ?? '';
-                    if (pid.isEmpty && convoProfileId.isNotEmpty) return false;
-                    if (pid.isNotEmpty && convoProfileId != pid) return false;
+                    final convPid = data['pro_profile_id'] as String? ?? '';
+                    if (pid.isEmpty && convPid.isNotEmpty) return false;
+                    if (pid.isNotEmpty && convPid != pid) return false;
                   }
+
+                  // Bloqués
+                  final others = (data['participants'] as List).where((p) => p != uid);
+                  if (others.any((p) => _blockedUsers.contains(p))) return false;
+
+                  // Archive
+                  final isArchived = (data['archivedFor'] as Map?)?[uid] == true;
+                  if (activeCat == '__archived__') return isArchived;
+                  if (isArchived) return false;
+
+                  // Catégorie
+                  if (activeCat != null && data['categorie'] != activeCat) return false;
+
                   return true;
                 }).toList();
 
-                if (conversations.isEmpty) {
-                  return _EmptyState(
-                      emoji: _catEmojis[_catIndex],
-                      label: 'Aucun message dans ${_catLabels[_catIndex]}');
+                // Tri : épinglées en premier, puis timestamp desc
+                docs.sort((a, b) {
+                  final da = a.data() as Map<String, dynamic>;
+                  final db = b.data() as Map<String, dynamic>;
+                  final ap = (da['pinnedFor'] as Map?)?[uid] == true;
+                  final bp = (db['pinnedFor'] as Map?)?[uid] == true;
+                  if (ap && !bp) return -1;
+                  if (!ap && bp) return 1;
+                  final at = (da['timestamp'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+                  final bt = (db['timestamp'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+                  return bt.compareTo(at);
+                });
+
+                if (docs.isEmpty) {
+                  return _EmptyState(emoji: _catEmojis[_catIndex], label: 'Aucun message dans ${_catLabels[_catIndex]}');
                 }
 
                 return ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                  itemCount: conversations.length,
+                  itemCount: docs.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final doc = conversations[index];
-                    final data = doc.data() as Map<String, dynamic>;
-                    final conversationId = doc.id;
-                    final categorie = data['categorie'] as String?;
+                  itemBuilder: (context, i) {
+                    final d     = docs[i];
+                    final data  = d.data() as Map<String, dynamic>;
+                    final id    = d.id;
+                    final cat   = data['categorie'] as String?;
+                    final isPinned = (data['pinnedFor'] as Map?)?[uid] == true;
+                    final mutedUntil = ((data['mutedFor'] as Map?)?[uid] as int?) ?? 0;
+                    final isMuted = mutedUntil > DateTime.now().millisecondsSinceEpoch;
 
-                    _conversationCache[conversationId] = {
-                      'lastMessage': data['lastMessage'] ?? '',
-                      'timestamp': data['timestamp'] as Timestamp?,
-                      'unreadCount': (data['unreadCount'] as Map<String, dynamic>?)?[currentUserId] ?? 0,
-                    };
+                    final lastMsg = (data['lastMessage'] ?? '') as String;
+                    final ts      = data['timestamp'] as Timestamp?;
+                    final unread  = ((data['unreadCount'] as Map?)?[uid] as int?) ?? 0;
+                    final shown   = isMuted ? 0 : unread;
 
-                    final lastMessage = _conversationCache[conversationId]!['lastMessage'] as String;
-                    final timestamp = _conversationCache[conversationId]!['timestamp'] as Timestamp?;
-                    final unreadCount = _conversationCache[conversationId]!['unreadCount'] as int;
-
-                    final participantIds = (data['participants'] as List<dynamic>)
-                        .where((id) => id != currentUserId)
-                        .toList();
-                    if (participantIds.isEmpty) return const SizedBox.shrink();
-
-                    final otherParticipantId = participantIds[0] as String;
-                    if (_blockedUsers.contains(otherParticipantId)) return const SizedBox.shrink();
+                    final others = (data['participants'] as List).where((p) => p != uid).toList();
+                    if (others.isEmpty) return const SizedBox.shrink();
+                    final otherId = others[0] as String;
 
                     return FutureBuilder<Map<String, String?>>(
-                      future: getUserInfo(otherParticipantId),
-                      builder: (context, snap) {
-                        if (!snap.hasData) return const SizedBox.shrink();
-                        final userInfo = snap.data!;
-                        final name = userInfo['name'] ?? 'Inconnu';
-                        if (_searchText.isNotEmpty &&
-                            !name.toLowerCase().contains(_searchText)) {
+                      future: _userInfo(otherId),
+                      builder: (context, userSnap) {
+                        if (!userSnap.hasData) return const SizedBox.shrink();
+                        final info = userSnap.data!;
+                        final name = info['name'] ?? 'Inconnu';
+                        if (_searchText.isNotEmpty && !name.toLowerCase().contains(_searchText)) {
                           return const SizedBox.shrink();
                         }
 
                         return GestureDetector(
-                          onLongPress: () => _showDeleteDialog(context, conversationId),
+                          onLongPress: () => _showOptions(context, id, otherId, data),
                           onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ChatScreen(
-                                  conversationId: conversationId,
-                                  eleveurId: otherParticipantId,
-                                ),
-                              ),
-                            ).then((_) {
-                              FirebaseFirestore.instance
-                                  .collection('conversations')
-                                  .doc(conversationId)
-                                  .update({'unreadCount.$currentUserId': 0});
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => ChatScreen(conversationId: id, eleveurId: otherId),
+                            )).then((_) {
+                              FirebaseFirestore.instance.collection('conversations')
+                                  .doc(id).update({'unreadCount.$uid': 0});
                             });
                           },
                           child: Container(
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: isPinned ? const Color(0xFFF0F9FF) : Colors.white,
                               borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.04),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
+                              border: isPinned ? Border.all(color: _teal.withValues(alpha: 0.2)) : null,
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
                             ),
-                            child: Row(
-                              children: [
-                                // Avatar
-                                Stack(
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 26,
-                                      backgroundColor: const Color(0xFFD4E6CD),
-                                      backgroundImage: userInfo['profilePictureUrl'] != null
-                                          ? CachedNetworkImageProvider(userInfo['profilePictureUrl']!)
-                                          : null,
-                                      child: userInfo['profilePictureUrl'] == null
-                                          ? const Icon(Icons.person, color: Colors.white, size: 26)
-                                          : null,
-                                    ),
-                                    if (unreadCount > 0)
-                                      Positioned(
-                                        right: 0,
-                                        top: 0,
-                                        child: Container(
-                                          width: 14,
-                                          height: 14,
-                                          decoration: const BoxDecoration(
-                                            color: _teal,
-                                            shape: BoxShape.circle,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
+                            child: Row(children: [
+                              Stack(children: [
+                                CircleAvatar(
+                                  radius: 26,
+                                  backgroundColor: const Color(0xFFD4E6CD),
+                                  backgroundImage: info['photo'] != null ? CachedNetworkImageProvider(info['photo']!) : null,
+                                  child: info['photo'] == null ? const Icon(Icons.person, color: Colors.white, size: 26) : null,
                                 ),
-                                const SizedBox(width: 12),
-
-                                // Contenu
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              name,
-                                              style: TextStyle(
-                                                fontFamily: 'Galey',
-                                                fontWeight: unreadCount > 0
-                                                    ? FontWeight.w700
-                                                    : FontWeight.w600,
-                                                fontSize: 14,
-                                                color: Colors.black87,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          if (timestamp != null)
-                                            Text(
-                                              _formatTime(timestamp),
-                                              style: TextStyle(
-                                                fontFamily: 'Galey',
-                                                fontSize: 11,
-                                                color: unreadCount > 0
-                                                    ? _teal
-                                                    : Colors.grey.shade500,
-                                                fontWeight: unreadCount > 0
-                                                    ? FontWeight.w700
-                                                    : FontWeight.normal,
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              lastMessage,
-                                              style: TextStyle(
-                                                fontFamily: 'Galey',
-                                                fontSize: 12,
-                                                color: unreadCount > 0
-                                                    ? Colors.black87
-                                                    : Colors.grey.shade500,
-                                                fontWeight: unreadCount > 0
-                                                    ? FontWeight.w600
-                                                    : FontWeight.normal,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          if (unreadCount > 0)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                  horizontal: 7, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: _teal,
-                                                borderRadius: BorderRadius.circular(10),
-                                              ),
-                                              child: Text(
-                                                unreadCount > 9 ? '9+' : '$unreadCount',
-                                                style: const TextStyle(
-                                                    fontFamily: 'Galey',
-                                                    color: Colors.white,
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.w700),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                      if (categorie != null && _catBadgeLabel.containsKey(categorie)) ...[
-                                        const SizedBox(height: 5),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 7, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: _catBadgeColor[categorie],
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: Text(
-                                            _catBadgeLabel[categorie]!,
-                                            style: TextStyle(
-                                              fontFamily: 'Galey',
-                                              fontSize: 10,
-                                              color: _catBadgeText[categorie],
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
+                                if (shown > 0)
+                                  Positioned(right: 0, top: 0,
+                                    child: Container(width: 14, height: 14,
+                                      decoration: const BoxDecoration(color: _teal, shape: BoxShape.circle))),
+                              ]),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Row(children: [
+                                    if (isPinned) ...[
+                                      const Icon(Icons.push_pin, size: 12, color: _teal),
+                                      const SizedBox(width: 3),
                                     ],
-                                  ),
-                                ),
-                              ],
-                            ),
+                                    Expanded(
+                                      child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(fontFamily: 'Galey', fontWeight: shown > 0 ? FontWeight.w700 : FontWeight.w600, fontSize: 14, color: Colors.black87)),
+                                    ),
+                                    if (isMuted) ...[const SizedBox(width: 4), const Icon(Icons.notifications_off, size: 12, color: Colors.grey)],
+                                    if (ts != null) Text(_fmtTime(ts),
+                                      style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                                          color: shown > 0 ? _teal : Colors.grey.shade500,
+                                          fontWeight: shown > 0 ? FontWeight.w700 : FontWeight.normal)),
+                                  ]),
+                                  const SizedBox(height: 3),
+                                  Row(children: [
+                                    Expanded(
+                                      child: Text(lastMsg, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                            color: shown > 0 ? Colors.black87 : Colors.grey.shade500,
+                                            fontWeight: shown > 0 ? FontWeight.w600 : FontWeight.normal)),
+                                    ),
+                                    if (shown > 0)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                        decoration: BoxDecoration(color: _teal, borderRadius: BorderRadius.circular(10)),
+                                        child: Text(shown > 9 ? '9+' : '$shown',
+                                          style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                                      ),
+                                  ]),
+                                  if (cat != null && _catBadgeLabel.containsKey(cat)) ...[
+                                    const SizedBox(height: 5),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                      decoration: BoxDecoration(color: _catBadgeColor[cat], borderRadius: BorderRadius.circular(8)),
+                                      child: Text(_catBadgeLabel[cat]!,
+                                        style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: _catBadgeText[cat], fontWeight: FontWeight.w600)),
+                                    ),
+                                  ],
+                                ]),
+                              ),
+                            ]),
                           ),
                         );
                       },
@@ -498,27 +489,40 @@ class _MessagePageState extends State<MessagePage> {
   }
 }
 
+// ── Widgets helpers ───────────────────────────────────────────────────────────
+
+class _Option extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _Option({required this.icon, required this.label, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    leading: Icon(icon, color: color, size: 22),
+    title: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: color, fontWeight: FontWeight.w500)),
+    onTap: onTap,
+    dense: true,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+  );
+}
+
 class _EmptyState extends StatelessWidget {
   final String emoji;
   final String label;
   const _EmptyState({required this.emoji, required this.label});
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 48)),
-          const SizedBox(height: 12),
-          Text(label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  fontFamily: 'Galey',
-                  fontSize: 15,
-                  color: Color(0xFF9CA3AF))),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(emoji, style: const TextStyle(fontSize: 48)),
+        const SizedBox(height: 12),
+        Text(label, textAlign: TextAlign.center,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: Color(0xFF9CA3AF))),
+      ],
+    ),
+  );
 }

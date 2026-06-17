@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import {
   collection, query, where, orderBy, onSnapshot,
-  addDoc, serverTimestamp, doc, updateDoc, getDoc,
+  addDoc, serverTimestamp, doc, updateDoc, getDoc, setDoc,
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -16,19 +16,24 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 // conversations/{id} → { participants[], lastMessage, timestamp, unreadCount:{uid:n} }
 // conversations/{id}/messages → { text, senderId, timestamp, isRead, imageUrl?, type?, lat?, lng? }
 
-type ConvCategorie = 'animaux-perdus' | 'annonces' | 'communaute' | null;
+type ConvCategorie = 'animaux-perdus' | 'annonces' | 'communaute' | 'contact-elevage' | 'service-professionnel' | '__archived__' | null;
 
 const CAT_CONFIG: { key: ConvCategorie; label: string; emoji: string; bg: string; text: string }[] = [
-  { key: null,             label: 'Tous',       emoji: '💬', bg: 'bg-[#0C5C6C]',   text: 'text-white' },
-  { key: 'animaux-perdus', label: 'Perdus',     emoji: '🐾', bg: 'bg-orange-500',  text: 'text-white' },
-  { key: 'annonces',       label: 'Annonces',   emoji: '📢', bg: 'bg-blue-500',    text: 'text-white' },
-  { key: 'communaute',     label: 'Communauté', emoji: '🌿', bg: 'bg-[#6E9E57]',   text: 'text-white' },
+  { key: null,                     label: 'Tous',       emoji: '💬', bg: 'bg-[#0C5C6C]',        text: 'text-white' },
+  { key: 'animaux-perdus',         label: 'Perdus',     emoji: '🐾', bg: 'bg-orange-500',       text: 'text-white' },
+  { key: 'annonces',               label: 'Annonces',   emoji: '📢', bg: 'bg-blue-500',         text: 'text-white' },
+  { key: 'contact-elevage',        label: 'Élevages',   emoji: '🏡', bg: 'bg-[#0C5C6C]',        text: 'text-white' },
+  { key: 'service-professionnel',  label: 'Services',   emoji: '🔧', bg: 'bg-violet-600',       text: 'text-white' },
+  { key: 'communaute',             label: 'Communauté', emoji: '🌿', bg: 'bg-[#6E9E57]',        text: 'text-white' },
+  { key: '__archived__',           label: 'Archivés',   emoji: '📦', bg: 'bg-slate-500',        text: 'text-white' },
 ];
 
 const CAT_BADGE: Record<string, { bg: string; label: string }> = {
-  'animaux-perdus': { bg: 'bg-orange-100 text-orange-700', label: '🐾 Perdus' },
-  'annonces':       { bg: 'bg-blue-100 text-blue-700',     label: '📢 Annonces' },
-  'communaute':     { bg: 'bg-[#EEF5EA] text-[#4A7A36]',  label: '🌿 Communauté' },
+  'animaux-perdus':        { bg: 'bg-orange-100 text-orange-700',      label: '🐾 Perdus' },
+  'annonces':              { bg: 'bg-blue-100 text-blue-700',           label: '📢 Annonces' },
+  'contact-elevage':       { bg: 'bg-[#CCE8F0] text-[#0C5C6C]',       label: '🏡 Élevage' },
+  'service-professionnel': { bg: 'bg-violet-100 text-violet-700',      label: '🔧 Service' },
+  'communaute':            { bg: 'bg-[#EEF5EA] text-[#4A7A36]',       label: '🌿 Communauté' },
 };
 
 interface Conversation {
@@ -39,6 +44,10 @@ interface Conversation {
   unreadCount: Record<string, number>;
   categorie?: string;
   pro_profile_id?: string;
+  pinnedFor?: Record<string, boolean>;
+  archivedFor?: Record<string, boolean>;
+  mutedFor?: Record<string, number>;
+  deletedFor?: Record<string, boolean>;
 }
 
 interface Message {
@@ -96,12 +105,49 @@ function MessagesPageInner() {
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<ConvCategorie>(null);
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list');
+  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
   }, [loading, user, router]);
+
+  useEffect(() => {
+    if (!user) return;
+    getDoc(doc(db, 'bloquer', user.uid)).then(snap => {
+      if (snap.exists()) setBlockedUsers(Object.keys(snap.data() ?? {}));
+    });
+  }, [user]);
+
+  // ── Actions Firestore ─────────────────────────────────────────────────────
+  async function togglePin(id: string, current: boolean) {
+    if (!user) return;
+    await updateDoc(doc(db, 'conversations', id), { [`pinnedFor.${user.uid}`]: !current });
+  }
+  async function toggleArchive(id: string, current: boolean) {
+    if (!user) return;
+    await updateDoc(doc(db, 'conversations', id), { [`archivedFor.${user.uid}`]: !current });
+  }
+  async function toggleMute(id: string, current: boolean) {
+    if (!user) return;
+    const until = current ? 0 : Date.now() + 8 * 3600 * 1000;
+    await updateDoc(doc(db, 'conversations', id), { [`mutedFor.${user.uid}`]: until });
+  }
+  async function blockUser(otherId: string) {
+    if (!user) return;
+    const ref = doc(db, 'bloquer', user.uid);
+    const snap = await getDoc(ref);
+    const existing = snap.exists() ? (snap.data() ?? {}) : {};
+    await setDoc(ref, { ...existing, [otherId]: true });
+    setBlockedUsers(prev => [...prev, otherId]);
+  }
+  async function deleteConv(id: string) {
+    if (!user) return;
+    await updateDoc(doc(db, 'conversations', id), { [`deletedFor.${user.uid}`]: true });
+    if (selectedId === id) setSelectedId(null);
+  }
 
   // Pré-sélectionner une conversation via ?conv= (depuis le profil éleveur)
   useEffect(() => {
@@ -218,23 +264,39 @@ function MessagesPageInner() {
   const otherUid = selectedConv?.participants.find(p => p !== user.uid);
   const otherInfo = otherUid ? (userInfoCacheRef.current[otherUid] ?? { name: '…' }) : null;
 
-  const filteredConvs = conversations.filter(conv => {
-    // Isoler les conversations par profil actif
-    if (activeProfileId) {
-      if ((conv.pro_profile_id ?? '') !== activeProfileId) return false;
-    } else {
-      // Profil principal : exclure les conversations liées à des profils secondaires
-      if (conv.pro_profile_id) return false;
-    }
-    if (activeCategory !== null) {
-      if ((conv.categorie ?? null) !== activeCategory) return false;
-    }
-    if (!search) return true;
-    const oUid = conv.participants.find(p => p !== user.uid);
-    const oName = oUid ? (userInfoCacheRef.current[oUid]?.name ?? '') : '';
-    return oName.toLowerCase().includes(search.toLowerCase()) ||
-      (conv.lastMessage ?? '').toLowerCase().includes(search.toLowerCase());
-  });
+  const filteredConvs = conversations
+    .filter(conv => {
+      if (conv.deletedFor?.[user.uid]) return false;
+      const others = conv.participants.filter(p => p !== user.uid);
+      if (others.some(p => blockedUsers.includes(p))) return false;
+
+      if (activeProfileId) {
+        if ((conv.pro_profile_id ?? '') !== activeProfileId) return false;
+      } else {
+        if (conv.pro_profile_id) return false;
+      }
+
+      const isArchived = conv.archivedFor?.[user.uid] === true;
+      if (activeCategory === '__archived__') return isArchived;
+      if (isArchived) return false;
+
+      if (activeCategory !== null) {
+        if ((conv.categorie ?? null) !== activeCategory) return false;
+      }
+
+      if (!search) return true;
+      const oUid = conv.participants.find(p => p !== user.uid);
+      const oName = oUid ? (userInfoCacheRef.current[oUid]?.name ?? '') : '';
+      return oName.toLowerCase().includes(search.toLowerCase()) ||
+        (conv.lastMessage ?? '').toLowerCase().includes(search.toLowerCase());
+    })
+    .sort((a, b) => {
+      const ap = a.pinnedFor?.[user.uid] === true;
+      const bp = b.pinnedFor?.[user.uid] === true;
+      if (ap && !bp) return -1;
+      if (!ap && bp) return 1;
+      return (b.timestamp?.toMillis() ?? 0) - (a.timestamp?.toMillis() ?? 0);
+    });
 
   return (
     <div className="h-[calc(100vh-64px)] flex bg-[#F8F8F6] overflow-hidden">
@@ -306,7 +368,10 @@ function MessagesPageInner() {
             filteredConvs.map(conv => {
               const oUid = conv.participants.find(p => p !== user.uid);
               const oInfo = oUid ? (userInfoCacheRef.current[oUid] ?? { name: '…' }) : { name: '…' };
-              const unread = conv.unreadCount?.[user.uid] ?? 0;
+              const rawUnread = conv.unreadCount?.[user.uid] ?? 0;
+              const isMuted = (conv.mutedFor?.[user.uid] ?? 0) > Date.now();
+              const unread = isMuted ? 0 : rawUnread;
+              const isPinned = conv.pinnedFor?.[user.uid] === true;
               const isSelected = conv.id === selectedId;
               return (
                 <button
@@ -314,9 +379,13 @@ function MessagesPageInner() {
                   onClick={() => {
                     setSelectedId(conv.id);
                     setMobileView('thread');
+                    setContextMenu(null);
                     if (oUid && !userInfoCacheRef.current[oUid]) getUserInfo(oUid);
                   }}
-                  className={`w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 transition-colors relative ${isSelected ? 'bg-[#0C5C6C]/5' : ''}`}>
+                  onContextMenu={e => { e.preventDefault(); setContextMenu({ id: conv.id, x: e.clientX, y: e.clientY }); }}
+                  className={`w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 transition-colors relative ${
+                    isSelected ? 'bg-[#0C5C6C]/5' : isPinned ? 'bg-[#F0F9FF]' : ''
+                  }`}>
                   {isSelected && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#0C5C6C]" />}
                   <div className="relative w-12 h-12 flex-shrink-0">
                     <div className="w-12 h-12 rounded-full bg-[#6E9E57] flex items-center justify-center overflow-hidden relative">
@@ -333,11 +402,15 @@ function MessagesPageInner() {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className={`text-sm truncate ${unread > 0 ? 'font-bold text-[#1F2A2E]' : 'font-medium text-gray-700'}`}>
-                        {oInfo.name}
-                      </span>
-                      <span className="text-xs text-gray-400 ml-2 flex-shrink-0">{fmtTime(conv.timestamp)}</span>
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-1 min-w-0">
+                        {isPinned && <span className="text-[#0C5C6C] text-xs flex-shrink-0">📌</span>}
+                        <span className={`text-sm truncate ${unread > 0 ? 'font-bold text-[#1F2A2E]' : 'font-medium text-gray-700'}`}>
+                          {oInfo.name}
+                        </span>
+                        {isMuted && <span className="text-gray-400 text-xs flex-shrink-0">🔕</span>}
+                      </div>
+                      <span className="text-xs text-gray-400 flex-shrink-0">{fmtTime(conv.timestamp)}</span>
                     </div>
                     <p className={`text-xs truncate ${unread > 0 ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>
                       {conv.lastMessage ?? ''}
@@ -468,6 +541,50 @@ function MessagesPageInner() {
           </>
         )}
       </main>
+      {/* ── Context menu (right-click) ──────────────────────────────────── */}
+      {contextMenu && (() => {
+        const conv = conversations.find(c => c.id === contextMenu.id);
+        if (!conv) return null;
+        const isPinned   = conv.pinnedFor?.[user.uid] === true;
+        const isArchived = conv.archivedFor?.[user.uid] === true;
+        const isMuted    = (conv.mutedFor?.[user.uid] ?? 0) > Date.now();
+        const oUid       = conv.participants.find(p => p !== user.uid) ?? '';
+        const close      = () => setContextMenu(null);
+        return (
+          <>
+            <div className="fixed inset-0 z-40" onClick={close} onContextMenu={e => { e.preventDefault(); close(); }} />
+            <div
+              className="fixed z-50 bg-white rounded-xl shadow-xl border border-gray-100 py-1 w-56"
+              style={{ left: contextMenu.x, top: contextMenu.y }}>
+              {[
+                { icon: '📌', label: isPinned ? 'Désépingler' : 'Épingler', action: () => { togglePin(contextMenu.id, isPinned); close(); } },
+                { icon: isArchived ? '📤' : '📦', label: isArchived ? 'Désarchiver' : 'Archiver', action: () => { toggleArchive(contextMenu.id, isArchived); close(); } },
+                { icon: isMuted ? '🔔' : '🔕', label: isMuted ? 'Réactiver les notifications' : 'Mettre en sourdine (8h)', action: () => { toggleMute(contextMenu.id, isMuted); close(); } },
+              ].map(item => (
+                <button key={item.label} onClick={item.action}
+                  className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left">
+                  <span>{item.icon}</span>{item.label}
+                </button>
+              ))}
+              <div className="my-1 border-t border-gray-100" />
+              <button onClick={async () => {
+                close();
+                if (!confirm('Bloquer cet utilisateur ? Vous ne recevrez plus ses messages.')) return;
+                await blockUser(oUid);
+              }} className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red-600 hover:bg-red-50 text-left">
+                <span>🚫</span>Bloquer cet utilisateur
+              </button>
+              <button onClick={async () => {
+                close();
+                if (!confirm('Supprimer cette conversation ?')) return;
+                await deleteConv(contextMenu.id);
+              }} className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red-600 hover:bg-red-50 text-left">
+                <span>🗑️</span>Supprimer la conversation
+              </button>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
