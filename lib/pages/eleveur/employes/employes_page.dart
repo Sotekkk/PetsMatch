@@ -751,22 +751,31 @@ class _TachesTabState extends State<_TachesTab> {
         final pastCutoff = DateTime.now().subtract(const Duration(days: 30));
         final pastStr    = pastCutoff.toIso8601String().substring(0, 10);
 
+        final futureStr = DateTime.now()
+            .add(const Duration(days: 90))
+            .toIso8601String()
+            .substring(0, 10);
+
         final results = await Future.wait([
-          // À faire : toutes les tâches non-faites, triées par date croissante
+          // À faire : fenêtre [J-7 ; J+90], non-faites — évite le plafond 1000 lignes
           _supa
               .from('plan_taches')
               .select('id, label, date_prevue, statut, assigned_to, uid_eleveur, type_acte, animal_id, etape_id, portee_id, plan_id')
               .eq('uid_eleveur', _uid)
               .not('statut', 'eq', 'fait')
-              .order('date_prevue'),
-          // Terminées : seulement les 30 derniers jours pour l'onglet "Terminées"
+              .gte('date_prevue', pastStr)
+              .lte('date_prevue', futureStr)
+              .order('date_prevue')
+              .limit(5000),
+          // Terminées : 30 derniers jours
           _supa
               .from('plan_taches')
               .select('id, label, date_prevue, statut, assigned_to, uid_eleveur, type_acte, animal_id, etape_id, portee_id, plan_id')
               .eq('uid_eleveur', _uid)
               .eq('statut', 'fait')
               .gte('date_prevue', pastStr)
-              .order('date_prevue', ascending: false),
+              .order('date_prevue', ascending: false)
+              .limit(500),
         ]);
 
         final seen = <String>{};
@@ -2452,14 +2461,24 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
           .toIso8601String()
           .substring(0, 10);
 
+      final futureStr = DateTime.now()
+          .add(const Duration(days: 90))
+          .toIso8601String()
+          .substring(0, 10);
+
       final results = await Future.wait([
+        // À faire : fenêtre [J-7 ; J+90], non-faites
         _supa
             .from('plan_taches')
             .select('*, plans_actifs(reference_label)')
             .eq('uid_eleveur', widget.eleveurUid)
             .eq('assigned_to', _uid)
             .not('statut', 'eq', 'fait')
-            .order('date_prevue'),
+            .gte('date_prevue', pastStr)
+            .lte('date_prevue', futureStr)
+            .order('date_prevue')
+            .limit(5000),
+        // Terminées : 30 derniers jours
         _supa
             .from('plan_taches')
             .select('*, plans_actifs(reference_label)')
@@ -2467,7 +2486,8 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
             .eq('assigned_to', _uid)
             .eq('statut', 'fait')
             .gte('date_prevue', pastStr)
-            .order('date_prevue', ascending: false),
+            .order('date_prevue', ascending: false)
+            .limit(500),
       ]);
 
       final seen = <String>{};
