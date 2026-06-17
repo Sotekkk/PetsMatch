@@ -577,10 +577,10 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
                 children: [
                   _photoSection(),
                   const SizedBox(height: 16),
-                  _card('Identité', [
-                    _field('Prénom', _prenomCtrl),
-                    _field('Nom', _nomCtrl),
-                    _dateRow('Date de naissance', _dobCtrl),
+                  _card('Identité *', [
+                    _field('Prénom *', _prenomCtrl),
+                    _field('Nom *', _nomCtrl),
+                    _dateRow('Date de naissance *', _dobCtrl),
                     _readOnly('Email', User_Info.email, Icons.email_outlined),
                   ]),
                   const SizedBox(height: 12),

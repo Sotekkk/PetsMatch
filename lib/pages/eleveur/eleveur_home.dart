@@ -2,6 +2,8 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
+import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
+import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/widgets/marketplace_banner.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
@@ -554,6 +556,20 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
                 builder: (_) => _planCode == 'free'
                     ? const AbonnementPage()
                     : const RegistreEntreeSortiePage()))),
+        _QuickTile(
+            icon: Icons.groups_outlined,
+            label: 'Mes\nEmployés',
+            color: const Color(0xFF7B1FA2),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployesPage()))),
+        _QuickTile(
+            icon: Icons.event_note_outlined,
+            label: 'Routines',
+            color: _planCode == 'premium' ? const Color(0xFFD97706) : Colors.grey,
+            isLocked: _planCode != 'premium',
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => _planCode == 'premium'
+                    ? const PlanningMoisPage()
+                    : const AbonnementPage()))),
       ] else if (isVet) ...[
         _QuickTile(icon: Icons.favorite_outline, label: 'Mes\nPatients', color: const Color(0xFF5B8648),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VetPatientsPage()))),
