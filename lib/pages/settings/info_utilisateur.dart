@@ -256,67 +256,22 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF8F8F8),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0C5C6C),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text('Information utilisateur',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Colors.white)),
+      ),
       body: SingleChildScrollView(
         child: Center(
           child: Column(
             children: [
-              SizedBox(
-                width: UTILS.widthReference(context),
-                height: UTILS.calculHeight(
-                  105,
-                  UTILS.heightReference(context),
-                ),
-                child: Stack(
-                  children: [
-                    Image.asset(
-                      'assets/deco/arrondi_rose_2.png',
-              color: const Color(0xFFA7C79A),
-              colorBlendMode: BlendMode.srcIn,
-                      fit: BoxFit.cover,
-                      width:
-                          UTILS.calculWidth(211, UTILS.widthReference(context)),
-                      height: UTILS.calculHeight(
-                        104,
-                        UTILS.heightReference(context),
-                      ),
-                    ),
-                    Positioned(
-                      top: UTILS.calculHeight(
-                          42, UTILS.heightReference(context)),
-                      left:
-                          UTILS.calculWidth(10, UTILS.widthReference(context)),
-                      child: IconButton(
-                        icon: Icon(Icons.arrow_back, color: Colors.black),
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                        },
-                      ),
-                    ),
-                    Positioned(
-                      top: UTILS.calculHeight(
-                          53, UTILS.heightReference(context)),
-                      left: 0,
-                      right: 0,
-                      child: Align(
-                        alignment: Alignment.center,
-                        child: Text(
-                          'Information utilisateur',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: 'Galey',
-                            fontWeight: FontWeight.w500,
-                            fontSize: UTILS.calculWidth(
-                                20, UTILS.widthReference(context)),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(
-                  height:
-                      UTILS.calculHeight(30, UTILS.heightReference(context))),
+              const SizedBox(height: 24),
               _buildStyledTextField(
                   _firstnameController, 'Prénom', Icons.person),
               SizedBox(
@@ -490,27 +445,24 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
               SizedBox(
                   height:
                       UTILS.calculHeight(20, UTILS.heightReference(context))),
-              SizedBox(
-                  height:
-                      UTILS.calculHeight(61, UTILS.heightReference(context)),
-                  width: UTILS.calculWidth(325, UTILS.widthReference(context)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: SizedBox(
+                  width: double.infinity,
                   child: ElevatedButton(
                     onPressed: _updateUserInfo,
-                    child: Text(
-                      'MODIFIER',
-                      style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontWeight: FontWeight.w500,
-                        color: Color.fromARGB(255, 0, 0, 0),
-                        fontSize: UTILS.calculWidth(
-                            17, UTILS.widthReference(context)),
-                      ),
-                    ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Color.fromARGB(
-                          255, 255, 192, 187), // Couleur de fond du bouton
+                      backgroundColor: const Color(0xFF0C5C6C),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      elevation: 0,
                     ),
-                  )),
+                    child: const Text('Enregistrer les modifications',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15)),
+                  ),
+                ),
+              ),
             ],
           ),
         ),

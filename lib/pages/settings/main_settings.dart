@@ -19,6 +19,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 4, bottom: 10),
+    child: Text(text, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF6B7280), letterSpacing: 0.5)),
+  );
+}
+
 class SettingsMainPage extends StatefulWidget {
   const SettingsMainPage({super.key});
 
@@ -128,83 +138,29 @@ class _SettingsMainPageState extends State<SettingsMainPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF8F8F8),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0C5C6C),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(‘Paramètres’,
+            style: TextStyle(fontFamily: ‘Galey’, fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white)),
+      ),
       body: Center(
         child: Container(
-          child: Column(
-            children: [
-              SizedBox(
-                width: UTILS.widthReference(context),
-                height: UTILS.calculHeight(
-                  105,
-                  UTILS.heightReference(context),
-                ),
-                child: Stack(
-                  children: [
-                    Image.asset(
-                      'assets/deco/arrondi_rose_2.png',
-              color: const Color(0xFFA7C79A),
-              colorBlendMode: BlendMode.srcIn,
-                      fit: BoxFit.cover,
-                      width:
-                          UTILS.calculWidth(211, UTILS.widthReference(context)),
-                      height: UTILS.calculHeight(
-                        104,
-                        UTILS.heightReference(context),
-                      ),
-                    ),
-                    Positioned(
-                      top: UTILS.calculHeight(
-                          42, UTILS.heightReference(context)),
-                      left:
-                          UTILS.calculWidth(10, UTILS.widthReference(context)),
-                      child: IconButton(
-                        icon: Icon(Icons.arrow_back, color: Colors.black),
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                        },
-                      ),
-                    ),
-                    Positioned(
-                      top: UTILS.calculHeight(
-                          53, UTILS.heightReference(context)),
-                      left: 0,
-                      right: 0,
-                      child: Align(
-                        alignment: Alignment.center,
-                        child: Text(
-                          'Paramètres',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: 'Galey',
-                            fontWeight: FontWeight.w500,
-                            fontSize: UTILS.calculWidth(
-                                20, UTILS.widthReference(context)),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(
-                height: UTILS.calculHeight(20, UTILS.heightReference(context)),
-              ),
-              Text(
-                'A propos du compte',
-                style: TextStyle(
-                  fontFamily: 'Galey',
-                  fontWeight: FontWeight.w500,
-                  fontSize:
-                      UTILS.calculWidth(18, UTILS.widthReference(context)),
-                ),
-              ),
-              SizedBox(
-                height: UTILS.calculHeight(10, UTILS.heightReference(context)),
-              ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+              _SectionLabel(‘À propos du compte’),
               buildSettingsOption(
                 context,
-                icon: Icons.account_circle,
-                text: 'Information utilisateur',
+                icon: Icons.account_circle_outlined,
+                text: ‘Information utilisateur’,
                 onTap: () {
                   Navigator.of(context).push(MaterialPageRoute(
                       builder: (context) => InfoUserSettings()));
@@ -214,7 +170,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                 buildSettingsOption(
                   context,
                   icon: Icons.business_center_outlined,
-                  text: 'Mon profil professionnel',
+                  text: ‘Mon profil professionnel’,
                   onTap: () {
                     Navigator.of(context).push(MaterialPageRoute(
                         builder: (context) => ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)));
@@ -223,7 +179,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                 buildSettingsOption(
                   context,
                   icon: Icons.calendar_month_outlined,
-                  text: 'Mon agenda RDV',
+                  text: ‘Mon agenda RDV’,
                   onTap: () {
                     Navigator.of(context).push(MaterialPageRoute(
                         builder: (context) => const ProAgendaPage()));
@@ -233,7 +189,8 @@ class _SettingsMainPageState extends State<SettingsMainPage>
               buildSettingsOption(
                 context,
                 icon: Icons.block_outlined,
-                text: 'Utilisateurs bloqués',
+                text: ‘Utilisateurs bloqués’,
+                iconColor: Colors.red.shade400,
                 onTap: () {
                   Navigator.of(context).push(MaterialPageRoute(
                       builder: (context) => const UtilisatesBloquesPage()));
@@ -241,111 +198,68 @@ class _SettingsMainPageState extends State<SettingsMainPage>
               ),
               buildSettingsOption(
                 context,
-                icon: Icons.security,
-                text: 'Connexion et sécurité',
+                icon: Icons.security_outlined,
+                text: ‘Connexion et sécurité’,
                 onTap: () {
                   Navigator.of(context).push(MaterialPageRoute(
                       builder: (context) => SecuConnectionSetting()));
-                  // Naviguer vers la page des paramètres de sécurité
                 },
               ),
-              // buildSettingsOption(
-              //   context,
-              //   icon: Icons.favorite,
-              //   text: 'Bien être utilisateur',
-              //   onTap: () {
-              //     // Naviguer vers la page des paramètres de bien-être
-              //   },
-              // ),
-              SizedBox(
-                height: UTILS.calculHeight(20, UTILS.heightReference(context)),
-              ),
-              Text(
-                'A propos de l’application',
-                style: TextStyle(
-                  fontFamily: 'Galey',
-                  fontWeight: FontWeight.w500,
-                  fontSize:
-                      UTILS.calculWidth(18, UTILS.widthReference(context)),
-                ),
-              ),
-              SizedBox(
-                height: UTILS.calculHeight(10, UTILS.heightReference(context)),
-              ),
+              const SizedBox(height: 24),
+              _SectionLabel(‘À propos de l\’application’),
               buildSettingsOption(
                 context,
-                icon: Icons.privacy_tip,
-                text: 'Paramètre de confidentialité',
+                icon: Icons.privacy_tip_outlined,
+                text: ‘Paramètres de confidentialité’,
                 onTap: () {
                   Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => ParametreConfi(),
-                    ),
+                    MaterialPageRoute(builder: (context) => ParametreConfi()),
                   );
                 },
               ),
-              // buildSettingsOption(
-              //   context,
-              //   icon: Icons.help,
-              //   text: 'Aide',
-              //   onTap: () {
-              //        _triggerVaccinationReminder();
-              //     // Naviguer vers la page d'aide
-              //   },
-              // ),
               buildSettingsOption(
                 context,
-                icon: Icons.info,
-                text: 'A propos',
+                icon: Icons.info_outline,
+                text: ‘À propos’,
                 onTap: () {
-                  // Naviguer vers la page à propos
                   Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => AboutUs(),
-                    ),
+                    MaterialPageRoute(builder: (context) => AboutUs()),
                   );
                 },
               ),
               buildSettingsOption(
                 context,
                 icon: Icons.download_rounded,
-                text: 'Exporter mes données',
+                text: ‘Exporter mes données’,
                 onTap: () => _exportUserData(context),
               ),
+              const SizedBox(height: 32),
               SizedBox(
-                height: UTILS.calculHeight(30, UTILS.heightReference(context)),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  await _auth.signOut();
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (context) => WelcomePage()),
-                    (Route<dynamic> route) => false,
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      Colors.red, // Couleur rouge pour le bouton de déconnexion
-                  minimumSize: Size(
-                    UTILS.calculWidth(406, UTILS.widthReference(context)),
-                    UTILS.calculHeight(45, UTILS.heightReference(context)),
-                  ),
-                ),
-                child: Text(
-                  'SE DÉCONNECTER',
-                  style: TextStyle(
-                    fontFamily: 'Galey',
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
-                    fontSize:
-                        UTILS.calculWidth(17, UTILS.widthReference(context)),
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.logout, size: 18),
+                  label: const Text(‘Se deconnecter’,
+                      style: TextStyle(fontFamily: ‘Galey’, fontWeight: FontWeight.w600, fontSize: 15)),
+                  onPressed: () async {
+                    await _auth.signOut();
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (context) => WelcomePage()),
+                      (Route<dynamic> route) => false,
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade600,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
                   ),
                 ),
               ),
+              const SizedBox(height: 12),
               SizedBox(
-                height: UTILS.calculHeight(30, UTILS.heightReference(context)),
-              ),
-              ElevatedButton(
+                width: double.infinity,
+                child: ElevatedButton(
                 onPressed: () async {
                   final user = FirebaseAuth.instance.currentUser;
                   final email = user?.email;
@@ -489,78 +403,57 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                   }
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  minimumSize: Size(
-                    UTILS.calculWidth(406, UTILS.widthReference(context)),
-                    UTILS.calculHeight(45, UTILS.heightReference(context)),
-                  ),
+                  backgroundColor: Colors.red.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 0,
                 ),
-                child: Text(
+                child: const Text(
                   'Supprimer le compte',
-                  style: TextStyle(
-                    fontFamily: 'Galey',
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
-                    fontSize:
-                        UTILS.calculWidth(17, UTILS.widthReference(context)),
-                  ),
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15),
                 ),
               ),
-              SizedBox(
-                height: UTILS.calculHeight(30, UTILS.heightReference(context)),
               ),
+              const SizedBox(height: 32),
             ],
           ),
         ),
+      ),
       ),
     );
   }
 
   Widget buildSettingsOption(BuildContext context,
-      {required IconData icon, required String text, required Function onTap}) {
+      {required IconData icon, required String text, required Function onTap, Color? iconColor}) {
     return Padding(
-      padding: EdgeInsets.symmetric(
-          vertical: UTILS.calculHeight(8, UTILS.heightReference(context))),
+      padding: const EdgeInsets.only(bottom: 10),
       child: GestureDetector(
         onTap: () => onTap(),
         child: Container(
-          width: UTILS.calculWidth(406, UTILS.widthReference(context)),
-          height: UTILS.calculHeight(45, UTILS.heightReference(context)),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: Color.fromARGB(177, 250, 192, 187),
-            borderRadius: BorderRadius.circular(500),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  SizedBox(
-                      width:
-                          UTILS.calculWidth(16, UTILS.widthReference(context))),
-                  Icon(icon, color: Colors.black),
-                  SizedBox(
-                      width:
-                          UTILS.calculWidth(16, UTILS.widthReference(context))),
-                  Text(
-                    text,
-                    style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w500,
-                      fontSize:
-                          UTILS.calculWidth(17, UTILS.widthReference(context)),
-                    ),
-                  ),
-                ],
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: (iconColor ?? const Color(0xFF0C5C6C)).withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: iconColor ?? const Color(0xFF0C5C6C), size: 20),
               ),
-              Padding(
-                padding: EdgeInsets.only(
-                    right:
-                        UTILS.calculWidth(16, UTILS.widthReference(context))),
-                child: Icon(Icons.arrow_forward_ios,
-                    color: Colors.black,
-                    size: UTILS.calculWidth(20, UTILS.widthReference(context))),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(text,
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15, color: Color(0xFF1F2A2E))),
               ),
+              const Icon(Icons.arrow_forward_ios, color: Color(0xFF9CA3AF), size: 16),
             ],
           ),
         ),
