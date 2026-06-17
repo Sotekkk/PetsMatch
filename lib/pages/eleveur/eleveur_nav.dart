@@ -41,8 +41,10 @@ import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_eleveur.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -68,6 +70,20 @@ class _EleveurNavState extends State<EleveurNav> {
     super.initState();
     _checkIsEmploye();
     _loadPlan();
+    _checkOnboarding();
+  }
+
+  Future<void> _checkOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    final done = prefs.getBool('onboarding_eleveur_done') ?? false;
+    if (!done && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => const OnboardingEleveurPage(),
+          fullscreenDialog: true,
+        ));
+      });
+    }
   }
 
   Future<void> _checkIsEmploye() async {

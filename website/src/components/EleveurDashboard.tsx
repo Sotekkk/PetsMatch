@@ -28,6 +28,7 @@ const QUICK_LINKS = [
   { href: '/mes-annonces',                   label: 'Mes Annonces',       icon: '📋', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: false },
   { href: '/annonces/creer',                 label: 'Nouvelle annonce',   icon: '➕', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: false },
   { href: '/animaux-perdus',                 label: 'Animaux perdus',     icon: '🔍', bg: 'bg-amber-50',  border: 'border-amber-200',    text: 'text-amber-700', pro: false },
+  { href: '/elevage/profil',                  label: 'Mon profil élevage', icon: '🏡', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: false },
   { href: '/elevage/agenda',                 label: 'Agenda du jour',     icon: '🗓️', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: false },
   { href: '/elevage/planning',               label: 'Routines',           icon: '📅', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: false },
   { href: '/elevage/registre-sanitaire',     label: 'Registre sanitaire', icon: '🏥', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: true  },
@@ -89,7 +90,7 @@ export default function EleveurDashboard() {
     <div className="bg-[#F8F8F6] min-h-screen">
       <div className="bg-gradient-to-br from-[#0C5C6C] to-[#5F9EAA] text-white">
         <div className="max-w-6xl mx-auto px-4 py-8 flex items-center gap-5">
-          <Link href="/profil" className="flex-shrink-0">
+          <Link href="/elevage/profil" className="flex-shrink-0">
             <div className="w-20 h-20 rounded-full bg-[#A7C79A] overflow-hidden flex items-center justify-center border-2 border-white/30">
               {avatar ? (
                 <Image src={avatar} alt="" width={80} height={80} className="object-cover w-full h-full" />
@@ -113,9 +114,9 @@ export default function EleveurDashboard() {
             </div>
             {city && <p className="text-white/70 text-sm mt-0.5">📍 {city}</p>}
             <div className="mt-2 flex items-center gap-2 flex-wrap">
-              <Link href="/profil"
+              <Link href="/elevage/profil"
                 className="inline-flex items-center gap-1.5 text-xs border border-white/40 rounded-full px-3 py-1 hover:bg-white/10 transition-colors">
-                ✏️ Modifier le profil
+                🏡 Mon profil élevage
               </Link>
               {plan === 'free' && (
                 <Link href="/abonnement"
