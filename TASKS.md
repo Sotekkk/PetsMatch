@@ -318,13 +318,13 @@
 
 | # | Tâche | Priorité | Repo | Notes |
 |---|---|---|---|---|
-| RGPD01 | **CGU + Politique de confidentialité** — pages statiques web + lien depuis app (drawer / paramètres) | Haute | App + Web | `src/app/cgu/page.tsx`, `src/app/confidentialite/page.tsx` |
-| RGPD02 | **Bannière cookies web** — opt-in/opt-out RGPD (Google Analytics, Firebase), sauvegarde consentement localStorage | Haute | Web | `src/components/CookieBanner.tsx` |
-| RGPD03 | **Mentions légales** — page web (éditeur, hébergeur, responsable traitement) | Haute | Web | `src/app/mentions-legales/page.tsx` |
-| RGPD04 | **Registre des traitements RGPD** — document interne listant toutes les données collectées, base légale, durée conservation, sous-traitants (Supabase, Firebase, Stripe, Google) | Haute | Interne | Document Word/Notion hors-code |
-| RGPD05 | **Consentement explicite à l'inscription** — case à cocher CGU + politique confidentialité (non pré-cochée), stocké dans Supabase `users` (`cgu_accepted_at`) | Haute | App + Web | `inscription/page.tsx`, `login_page.dart` |
-| RGPD06 | **Export données utilisateur** (RGPD art. 20) — bouton "Télécharger mes données" dans profil → JSON de toutes ses données Supabase (animaux, alertes, annonces, messages) | Haute | App + Web | `info_utilisateur.dart`, `profil/page.tsx` |
-| RGPD07 | **Suppression compte + données** (RGPD art. 17) — bouton "Supprimer mon compte" → supprime Firebase Auth + toutes tables Supabase (cascade) + photos Storage | Haute | App + Web | `info_utilisateur.dart`, `profil/page.tsx`, Edge Function Supabase `delete-user` |
+| ~~RGPD01~~ | ~~**CGU + Politique de confidentialité**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-17 — `/cgu/page.tsx` + `/confidentialite/page.tsx` + lien drawer app (`eleveur_nav.dart` ligne 582) |
+| ~~RGPD02~~ | ~~**Bannière cookies web**~~ | ~~Haute~~ | ~~Web~~ | ✅ Terminé 2026-06-17 — `CookieBanner.tsx` (64 lignes) importé dans `layout.tsx` |
+| ~~RGPD03~~ | ~~**Mentions légales**~~ | ~~Haute~~ | ~~Web~~ | ✅ Terminé 2026-06-17 — `/mentions-legales/page.tsx` : éditeur, hébergeurs (Vercel/Supabase/Firebase), PI, responsabilité, contact. À compléter SIRET/RCS après finalisation SAS |
+| RGPD04 | **Registre des traitements RGPD** — document interne listant toutes les données collectées, base légale, durée conservation, sous-traitants (Supabase, Firebase, Stripe, Google) | Haute | Interne | ⬜ Document Word/Notion hors-code — à créer manuellement |
+| ~~RGPD05~~ | ~~**Consentement explicite à l'inscription**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-17 — Web : checkbox non pré-cochée + `cgu_accepted_at` stocké (`inscription/page.tsx`). App : `cgu_accepted_at` stocké à l'inscription (`verifemail.dart`). Pas de checkbox visible côté app (acceptable V1 car web = canal principal) |
+| ~~RGPD06~~ | ~~**Export données utilisateur** (RGPD art. 20)~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-17 — Web : `handleExportData()` dans `profil/page.tsx` → JSON. App : `_exportUserData()` dans `main_settings.dart` |
+| ~~RGPD07~~ | ~~**Suppression compte + données** (RGPD art. 17)~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-17 — Web : `handleDeleteAccount()` dans `profil/page.tsx`. App : bouton "Supprimer le compte" dans `main_settings.dart` |
 
 #### 🟠 V2 — Sécurité avancée
 
@@ -333,7 +333,7 @@
 | SEC01 | **RLS Supabase — audit et durcissement** — revoir toutes les tables avec `USING (true)` (trop permissif), remplacer par `USING (auth.uid() = uid)` ou équivalent. Tables concernées : `animaux_trouves`, `notifications`, `messages`, `agenda_events` | Haute | Supabase | SQL Editor — policies par table |
 | SEC02 | **Authentification forte (2FA)** — option opt-in : code SMS ou TOTP (Google Authenticator) à l'activation dans les paramètres | Moyenne | App + Web | Firebase Auth MFA ou Supabase Auth MFA |
 | SEC03 | **Gestion rôles fins** — permissions par rôle (admin, éleveur, particulier, pro, vétérinaire) via colonne `role` Supabase + middleware Next.js + vérification Flutter | Haute | App + Web | `lib/main.dart`, `middleware.ts` |
-| SEC04 | **Partage vétérinaire temporaire** — lien avec token court durée (72h) donnant accès en lecture seule au carnet de santé d'un animal | Haute | App + Web | Créer `lib/pages/partage_sante/` + table `partage_tokens` |
+| ~~SEC04~~ | ~~**Partage vétérinaire temporaire**~~ | ~~Haute~~ | ~~App + Web~~ | ✅ Terminé 2026-06-05 (via VET03) — table `partage_tokens` + `/sante/[token]/page.tsx` + `/partage/[token]/page.tsx`. Voir VET03. |
 | SEC05 | **Logs d'accès admin** — traçabilité : qui s'est connecté, quelle fiche consultée, quelle action effectuée (archivage 6 mois) | Moyenne | App + Web | Table `audit_logs` Supabase + panel admin |
 | SEC06 | **Audit actions admin** — toute action admin (valider profil, supprimer compte, modifier annonce) loggée dans `audit_logs` avec timestamp + uid admin + détail action | Haute | App + Web | `admin_panel.dart`, `src/app/admin/page.tsx` |
 | SEC07 | **Chiffrement données sensibles** — numéros de puce (`identification`), données santé critiques : chiffrement AES côté serveur (Edge Function) avant stockage | Moyenne | Supabase | Edge Functions + colonne `encrypted_*` |
