@@ -1,21 +1,47 @@
-import 'package:PetsMatch/pages/eleveur/postDetail.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/pro/partenaire.dart';
 import 'package:flutter/material.dart';
-import 'package:carousel_slider/carousel_slider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/utils.dart';
 
-class UserDetailPage extends StatelessWidget {
+class UserDetailPage extends StatefulWidget {
   final User user;
+  const UserDetailPage({super.key, required this.user});
 
-  UserDetailPage({required this.user});
+  @override
+  State<UserDetailPage> createState() => _UserDetailPageState();
+}
+
+class _UserDetailPageState extends State<UserDetailPage> {
+  late final Future<List<Map<String, dynamic>>> _annonces;
+
+  @override
+  void initState() {
+    super.initState();
+    _annonces = _loadAnnonces();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadAnnonces() async {
+    final rows = await Supabase.instance.client
+        .from('annonces')
+        .select(
+          'id, titre, espece, race, type, type_vente, photos, '
+          'animaux_portee, prix, saillie_prix, ville_eleveur, sexe, '
+          'nom_eleveur, uid_eleveur, description, registre_type, '
+          'date_naissance, date_naissance_animal, '
+          'nom_pere, nom_mere, race_pere, race_mere',
+        )
+        .eq('uid_eleveur', widget.user.uid)
+        .eq('statut', 'disponible')
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows);
+  }
 
   Future<void> _openMap(String address) async {
-    String googleUrl =
+    final googleUrl =
         'https://www.google.com/maps/search/?api=1&query=$address';
-    String appleUrl = 'https://maps.apple.com/?q=$address';
-
+    final appleUrl = 'https://maps.apple.com/?q=$address';
     if (await canLaunch(googleUrl)) {
       await launch(googleUrl);
     } else if (await canLaunch(appleUrl)) {
@@ -26,28 +52,11 @@ class UserDetailPage extends StatelessWidget {
   }
 
   Future<void> _callPhoneNumber(String phoneNumber) async {
-    String telUrl = 'tel:$phoneNumber';
-
+    final telUrl = 'tel:$phoneNumber';
     if (await canLaunch(telUrl)) {
       await launch(telUrl);
     } else {
       throw 'Could not launch phone app';
-    }
-  }
-
-  Future<void> _deletePost(String postId) async {
-    final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-    await _firestore.collection('post').doc(postId).delete();
-
-    // Suppression du post des likes des utilisateurs
-    QuerySnapshot likedPostsSnapshot =
-        await _firestore.collection('likedPost').get();
-    for (var doc in likedPostsSnapshot.docs) {
-      Map<String, dynamic> likedPosts = doc.data() as Map<String, dynamic>;
-      if (likedPosts.containsKey(postId)) {
-        likedPosts.remove(postId);
-        await _firestore.collection('likedPost').doc(doc.id).set(likedPosts);
-      }
     }
   }
 
@@ -66,34 +75,24 @@ class UserDetailPage extends StatelessWidget {
                     Image.asset(
                       'assets/deco/arrondideco.png',
                       fit: BoxFit.cover,
-                      width:
-                          UTILS.calculWidth(151, UTILS.widthReference(context)),
-                      height: UTILS.calculHeight(
-                          141, UTILS.heightReference(context)),
-                    color: const Color(0xFFA7C79A),
-                    colorBlendMode: BlendMode.srcIn,
+                      width: UTILS.calculWidth(151, UTILS.widthReference(context)),
+                      height: UTILS.calculHeight(141, UTILS.heightReference(context)),
+                      color: const Color(0xFFA7C79A),
+                      colorBlendMode: BlendMode.srcIn,
                     ),
                     Positioned(
-                      top: UTILS.calculHeight(
-                          53, UTILS.heightReference(context)),
-                      left: UTILS.calculWidth(
-                          40,
-                          UTILS.widthReference(
-                              context)), // Ajustez la valeur si nécessaire
-                      right: UTILS.calculWidth(
-                          40,
-                          UTILS.widthReference(
-                              context)), // Ajustez la valeur si nécessaire
+                      top: UTILS.calculHeight(53, UTILS.heightReference(context)),
+                      left: UTILS.calculWidth(40, UTILS.widthReference(context)),
+                      right: UTILS.calculWidth(40, UTILS.widthReference(context)),
                       child: Align(
                         alignment: Alignment.center,
                         child: Text(
-                          user.nameElevage,
+                          widget.user.nameElevage,
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontFamily: 'Galey',
                             fontWeight: FontWeight.w500,
-                            fontSize: UTILS.calculWidth(
-                                20, UTILS.widthReference(context)),
+                            fontSize: UTILS.calculWidth(20, UTILS.widthReference(context)),
                           ),
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
@@ -101,16 +100,11 @@ class UserDetailPage extends StatelessWidget {
                       ),
                     ),
                     Positioned(
-                      top: UTILS.calculHeight(
-                          42, UTILS.heightReference(context)),
-                      left:
-                          UTILS.calculWidth(10, UTILS.widthReference(context)),
+                      top: UTILS.calculHeight(42, UTILS.heightReference(context)),
+                      left: UTILS.calculWidth(10, UTILS.widthReference(context)),
                       child: IconButton(
-                        icon: Icon(Icons.arrow_back,
-                            color: Colors.black), // Icône de la flèche noire
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                        },
+                        icon: const Icon(Icons.arrow_back, color: Colors.black),
+                        onPressed: () => Navigator.of(context).pop(),
                       ),
                     ),
                   ],
@@ -120,16 +114,13 @@ class UserDetailPage extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   CircleAvatar(
-                        backgroundColor: Colors.black,
+                    backgroundColor: Colors.black,
                     radius: 39.5,
-                    backgroundImage: user.profilePictureUrlElevage.isNotEmpty
-                        ? NetworkImage(user.profilePictureUrlElevage)
-                        : AssetImage('https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60')
-                            as ImageProvider,
+                    backgroundImage: widget.user.profilePictureUrlElevage.isNotEmpty
+                        ? NetworkImage(widget.user.profilePictureUrlElevage)
+                        : const AssetImage('assets/default_pp.png') as ImageProvider,
                   ),
-                  SizedBox(
-                      height: UTILS.calculHeight(
-                          13, UTILS.heightReference(context))),
+                  SizedBox(height: UTILS.calculHeight(13, UTILS.heightReference(context))),
                   Align(
                     alignment: Alignment.center,
                     child: Text(
@@ -138,36 +129,30 @@ class UserDetailPage extends StatelessWidget {
                       style: TextStyle(
                         fontFamily: 'Galey',
                         fontWeight: FontWeight.w500,
-                        fontSize: UTILS.calculWidth(
-                            20, UTILS.widthReference(context)),
+                        fontSize: UTILS.calculWidth(20, UTILS.widthReference(context)),
                       ),
                     ),
                   ),
-                  if (user.adressElevage.isNotEmpty)
+                  if (widget.user.adressElevage.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 8.0),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.location_on,
-                              size: UTILS.calculHeight(
-                                  18, UTILS.heightReference(context)),
+                              size: UTILS.calculHeight(18, UTILS.heightReference(context)),
                               color: Colors.black),
-                          SizedBox(
-                              width: UTILS.calculWidth(
-                                  8, UTILS.widthReference(context))),
+                          SizedBox(width: UTILS.calculWidth(8, UTILS.widthReference(context))),
                           GestureDetector(
-                            onTap: () => _openMap(user.adressElevage),
-                            child: Container(
-                              width: UTILS.widthReference(context) *
-                                  0.6, // Ajustez la largeur selon vos besoins
+                            onTap: () => _openMap(widget.user.adressElevage),
+                            child: SizedBox(
+                              width: UTILS.widthReference(context) * 0.6,
                               child: Text(
-                                user.adressElevage,
+                                widget.user.adressElevage,
                                 style: TextStyle(
                                   fontFamily: 'Galey',
                                   fontWeight: FontWeight.w400,
-                                  fontSize: UTILS.calculWidth(
-                                      16, UTILS.widthReference(context)),
+                                  fontSize: UTILS.calculWidth(16, UTILS.widthReference(context)),
                                 ),
                                 overflow: TextOverflow.ellipsis,
                                 softWrap: false,
@@ -177,31 +162,26 @@ class UserDetailPage extends StatelessWidget {
                         ],
                       ),
                     ),
-                  if (user.numeroElevage.isNotEmpty)
+                  if (widget.user.numeroElevage.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 8.0),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.phone,
-                              size: UTILS.calculHeight(
-                                  18, UTILS.heightReference(context)),
+                              size: UTILS.calculHeight(18, UTILS.heightReference(context)),
                               color: Colors.black),
-                          SizedBox(
-                              width: UTILS.calculWidth(
-                                  8, UTILS.widthReference(context))),
+                          SizedBox(width: UTILS.calculWidth(8, UTILS.widthReference(context))),
                           GestureDetector(
-                            onTap: () => _callPhoneNumber(user.numeroElevage),
-                            child: Container(
-                              width: UTILS.widthReference(context) *
-                                  0.6, // Ajustez la largeur selon vos besoins
+                            onTap: () => _callPhoneNumber(widget.user.numeroElevage),
+                            child: SizedBox(
+                              width: UTILS.widthReference(context) * 0.6,
                               child: Text(
-                                user.numeroElevage,
+                                widget.user.numeroElevage,
                                 style: TextStyle(
                                   fontFamily: 'Galey',
                                   fontWeight: FontWeight.w400,
-                                  fontSize: UTILS.calculWidth(
-                                      16, UTILS.widthReference(context)),
+                                  fontSize: UTILS.calculWidth(16, UTILS.widthReference(context)),
                                 ),
                                 overflow: TextOverflow.ellipsis,
                                 softWrap: false,
@@ -211,82 +191,66 @@ class UserDetailPage extends StatelessWidget {
                         ],
                       ),
                     ),
-                  SizedBox(
-                      height: UTILS.calculHeight(
-                          13, UTILS.heightReference(context))),
-                  StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('post')
-                        .where('uidEleveur', isEqualTo: user.uid)
-                        .snapshots(),
+                  SizedBox(height: UTILS.calculHeight(13, UTILS.heightReference(context))),
+                  FutureBuilder<List<Map<String, dynamic>>>(
+                    future: _annonces,
                     builder: (context, snapshot) {
-                      if (!snapshot.hasData) {
-                        return CircularProgressIndicator();
+                      if (snapshot.connectionState != ConnectionState.done) {
+                        return const Padding(
+                          padding: EdgeInsets.all(32),
+                          child: CircularProgressIndicator(),
+                        );
                       }
-
-                      final posts = snapshot.data!.docs.map((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        data['id'] = doc.id;
-                        return data;
-                      }).toList();
-
-                      if (posts.isEmpty) {
+                      if (snapshot.hasError) {
+                        return Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text('Erreur : ${snapshot.error}'),
+                        );
+                      }
+                      final annonces = snapshot.data ?? [];
+                      if (annonces.isEmpty) {
                         return Padding(
                           padding: const EdgeInsets.only(top: 8.0),
                           child: Text(
-                            'Aucun post à afficher.',
+                            'Aucune annonce à afficher.',
                             style: TextStyle(
                               fontFamily: 'Galey',
                               fontWeight: FontWeight.w400,
-                              fontSize: UTILS.calculWidth(
-                                  16, UTILS.widthReference(context)),
+                              fontSize: UTILS.calculWidth(16, UTILS.widthReference(context)),
                             ),
                           ),
                         );
                       }
-
                       return GridView.builder(
                         shrinkWrap: true,
-                        physics: NeverScrollableScrollPhysics(),
-                        itemCount: posts.length,
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: annonces.length,
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 3,
                           crossAxisSpacing: 5.0,
                           mainAxisSpacing: 5.0,
                         ),
                         itemBuilder: (context, index) {
-                          final post = posts[index];
+                          final annonce = annonces[index];
+                          final photos = (annonce['photos'] as List?)?.cast<String>() ?? [];
+                          final thumb = photos.isNotEmpty ? photos.first : null;
                           return GestureDetector(
                             onTap: () {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) =>
-                                      PostDetailPage(post: post),
+                                  builder: (_) => AnnonceDetailPage(
+                                    annonceId: annonce['id'].toString(),
+                                    initialData: annonce,
+                                  ),
                                 ),
                               );
                             },
-                            onLongPress: () {},
-                            child: post['mediaStockage'].length > 1
-                                ? CarouselSlider.builder(
-                                    itemCount: post['mediaStockage'].length,
-                                    itemBuilder:
-                                        (context, itemIndex, realIndex) {
-                                      return Image.network(
-                                        post['mediaStockage'][itemIndex]
-                                            ['path'],
-                                        fit: BoxFit.cover,
-                                      );
-                                    },
-                                    options: CarouselOptions(
-                                      viewportFraction: 1,
-                                      aspectRatio: 1,
-                                      enableInfiniteScroll: false,
-                                    ),
-                                  )
-                                : Image.network(
-                                    post['mediaStockage'][0]['path'],
-                                    fit: BoxFit.cover,
+                            child: thumb != null
+                                ? Image.network(thumb, fit: BoxFit.cover)
+                                : Container(
+                                    color: const Color(0xFFE4E7E2),
+                                    child: const Icon(Icons.pets, color: Color(0xFF9CA3AF)),
                                   ),
                           );
                         },

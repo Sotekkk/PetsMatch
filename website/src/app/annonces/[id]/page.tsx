@@ -110,6 +110,13 @@ export default function AnnonceDetailPage() {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
 
+  // Likes
+  const [likeCount, setLikeCount] = useState(0);
+  const [isLiked, setIsLiked] = useState(false);
+  const [likers, setLikers] = useState<{ uid: string; firstname?: string; profile_picture_url?: string }[]>([]);
+  const [likeLoading, setLikeLoading] = useState(false);
+  const [showLikersModal, setShowLikersModal] = useState(false);
+
   // Signalement
   const [showSigModal, setShowSigModal] = useState(false);
   const [sigRaison, setSigRaison] = useState('contenu_inapproprie');
@@ -131,7 +138,20 @@ export default function AnnonceDetailPage() {
         }
         setLoading(false);
       }, () => setLoading(false));
-  }, [id]);
+
+    // Charge les likes
+    supabase.from('likes').select('user_uid').eq('annonce_id', id).is('bebe_index', null)
+      .then(({ data: rows }: { data: { user_uid: string }[] | null }) => {
+        if (!rows) return;
+        setLikeCount(rows.length);
+        if (!user) return;
+        setIsLiked(rows.some(r => r.user_uid === user.uid));
+        if (rows.length === 0) return;
+        const uids = rows.slice(0, 20).map(r => r.user_uid);
+        supabase.from('users').select('uid, firstname, profile_picture_url').in('uid', uids)
+          .then(({ data: u }) => { if (u) setLikers(u as typeof likers); });
+      });
+  }, [id, user]);
 
   const handleContact = async () => {
     if (!user || !annonce?.uid_eleveur) { router.push('/connexion'); return; }
@@ -194,6 +214,39 @@ export default function AnnonceDetailPage() {
       }
     } finally {
       setSigLoading(false);
+    }
+  };
+
+  const toggleLike = async () => {
+    if (!user) { router.push('/connexion'); return; }
+    setLikeLoading(true);
+    const wasLiked = isLiked;
+    setIsLiked(!wasLiked);
+    setLikeCount(c => c + (wasLiked ? -1 : 1));
+    try {
+      if (wasLiked) {
+        await supabase.from('likes').delete()
+          .eq('user_uid', user.uid).eq('annonce_id', id!).is('bebe_index', null);
+      } else {
+        await supabase.from('likes').upsert({ user_uid: user.uid, annonce_id: id!, bebe_index: null, profile_type: 'particulier' });
+      }
+      const { data: rows } = await supabase.from('likes').select('user_uid').eq('annonce_id', id!).is('bebe_index', null);
+      if (rows) {
+        setLikeCount(rows.length);
+        setIsLiked(rows.some((r: { user_uid: string }) => r.user_uid === user.uid));
+        const uids = rows.slice(0, 20).map((r: { user_uid: string }) => r.user_uid);
+        if (uids.length > 0) {
+          const { data: u } = await supabase.from('users').select('uid, firstname, profile_picture_url').in('uid', uids);
+          if (u) setLikers(u as typeof likers);
+        } else {
+          setLikers([]);
+        }
+      }
+    } catch {
+      setIsLiked(wasLiked);
+      setLikeCount(c => c + (wasLiked ? 1 : -1));
+    } finally {
+      setLikeLoading(false);
     }
   };
 
@@ -369,6 +422,80 @@ export default function AnnonceDetailPage() {
           </div>
         )}
 
+        {/* Parents */}
+        {!isSaillie && (annonce.pere_nom || annonce.mere_nom || annonce.pere_race || annonce.mere_race) && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm">
+            <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide mb-3">Parents</h2>
+            <div className="grid grid-cols-2 gap-3">
+              {(annonce.pere_nom || annonce.pere_race) && (
+                <div className="bg-[#F0F7FF] rounded-xl p-3">
+                  <p className="text-xs font-bold text-[#0C5C6C] uppercase mb-2">♂ Père</p>
+                  {annonce.pere_nom && <p className="font-['Galey'] font-semibold text-sm text-[#1E2025]">{annonce.pere_nom}</p>}
+                  {annonce.pere_race && <p className="text-xs text-gray-500 mt-0.5">{annonce.pere_race}</p>}
+                </div>
+              )}
+              {(annonce.mere_nom || annonce.mere_race) && (
+                <div className="bg-[#FFF0F6] rounded-xl p-3">
+                  <p className="text-xs font-bold text-[#EC4899] uppercase mb-2">♀ Mère</p>
+                  {annonce.mere_nom && <p className="font-['Galey'] font-semibold text-sm text-[#1E2025]">{annonce.mere_nom}</p>}
+                  {annonce.mere_race && <p className="text-xs text-gray-500 mt-0.5">{annonce.mere_race}</p>}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Likes */}
+        <div className="bg-white rounded-2xl p-4 shadow-sm flex items-center gap-3 flex-wrap">
+          <button
+            onClick={toggleLike}
+            disabled={likeLoading}
+            className="flex items-center gap-2 px-4 py-2 rounded-full border transition-all disabled:opacity-50 cursor-pointer"
+            style={{
+              background: isLiked ? '#FDECEA' : '#F9F9F9',
+              borderColor: isLiked ? '#F87171' : '#E5E7EB',
+              color: isLiked ? '#EF4444' : '#6B7280',
+            }}
+          >
+            <span className="text-base">{isLiked ? '❤️' : '🤍'}</span>
+            <span className="font-['Galey'] font-semibold text-sm">
+              {likeCount > 0 ? likeCount : "J’aime"}
+            </span>
+          </button>
+          {user && likers.length > 0 && (
+            <button
+              onClick={() => setShowLikersModal(true)}
+              className="flex items-center gap-2 hover:opacity-70 transition-opacity"
+            >
+              <div className="flex">
+                {likers.slice(0, 3).map((l, i) => (
+                  <div key={l.uid} className="w-7 h-7 rounded-full border-2 border-white overflow-hidden bg-[#0C5C6C] flex items-center justify-center flex-shrink-0"
+                    style={{ marginLeft: i > 0 ? '-8px' : '0', zIndex: 3 - i }}>
+                    {l.profile_picture_url ? (
+                      <Image src={l.profile_picture_url} alt="" width={28} height={28} className="object-cover w-7 h-7" unoptimized />
+                    ) : (
+                      <span className="text-white text-xs">👤</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <span className="font-['Galey'] text-xs text-gray-500">
+                {likeCount === 1
+                  ? `${likers[0]?.firstname ?? ''} a aimé`
+                  : likeCount <= likers.length
+                    ? `${likers[0]?.firstname ?? ''} et ${likeCount - 1} autre${likeCount > 2 ? 's' : ''}`
+                    : `Voir les ${likeCount} j’aimes`
+                }
+              </span>
+            </button>
+          )}
+          {!user && likeCount > 0 && (
+            <span className="font-['Galey'] text-xs text-gray-400">
+              {likeCount} j&apos;aime{likeCount > 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+
         {/* Éleveur */}
         {(pro || annonce.nom_eleveur) && (
           <div className="bg-white rounded-2xl p-5 shadow-sm">
@@ -452,6 +579,49 @@ export default function AnnonceDetailPage() {
 
       </div>
     </div>
+
+    {/* Modal likers */}
+    {showLikersModal && user && likers.length > 0 && (
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center sm:items-center" onClick={() => setShowLikersModal(false)}>
+        <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-sm max-h-[60vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <span className="text-red-400">❤️</span>
+              <span className="font-['Galey'] font-bold text-[#1F2A2E]">
+                {likeCount} j&apos;aime{likeCount > 1 ? 's' : ''}
+              </span>
+            </div>
+            <button onClick={() => setShowLikersModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 6L6 18M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+          <div className="overflow-y-auto flex-1">
+            {likers.map(l => (
+              <div key={l.uid} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors">
+                <div className="w-10 h-10 rounded-full bg-[#0C5C6C] flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {l.profile_picture_url ? (
+                    <Image src={l.profile_picture_url} alt="" width={40} height={40} className="object-cover" unoptimized />
+                  ) : (
+                    <span className="text-white text-lg">👤</span>
+                  )}
+                </div>
+                <span className="font-['Galey'] font-semibold text-sm text-[#1F2A2E] flex-1">
+                  {l.firstname ?? 'Utilisateur'}
+                </span>
+                <span className="text-red-300 text-sm">❤️</span>
+              </div>
+            ))}
+            {likeCount > likers.length && (
+              <p className="text-center text-xs text-gray-400 py-3 font-['Galey']">
+                ... et {likeCount - likers.length} autre{likeCount - likers.length > 1 ? 's' : ''}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* Modal signalement */}
     {showSigModal && (

@@ -39,6 +39,10 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   bool _eleveurLoaded = false;
   Map<String, dynamic>? _annonceData;
 
+  bool _isLiked = false;
+  int  _likeCount = 0;
+  List<Map<String, dynamic>> _likers = [];
+
   static const _sigRaisons = [
     ('contenu_inapproprie', 'Contenu inapproprié'),
     ('spam',               'Spam ou arnaque'),
@@ -196,9 +200,70 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   void initState() {
     super.initState();
     _loadAnnonce();
+    _loadLikeState();
     final uid = widget.initialData?['uidEleveur'] as String?
         ?? widget.initialData?['uid_eleveur'] as String?;
     if (uid != null) { _eleveurLoaded = true; _loadEleveur(uid); }
+  }
+
+  Future<void> _loadLikeState() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('likes')
+          .select('user_uid')
+          .eq('annonce_id', widget.annonceId)
+          .isFilter('bebe_index', null);
+      final all = List<Map<String, dynamic>>.from(rows);
+      final myUid = FirebaseAuth.instance.currentUser?.uid;
+      final liked = myUid != null && all.any((r) => r['user_uid'] == myUid);
+
+      List<Map<String, dynamic>> likers = [];
+      if (myUid != null && all.isNotEmpty) {
+        final uids = all.map((r) => r['user_uid'] as String).take(5).toList();
+        final users = await Supabase.instance.client
+            .from('users')
+            .select('uid, firstname, profile_picture_url')
+            .inFilter('uid', uids);
+        likers = List<Map<String, dynamic>>.from(users);
+      }
+
+      if (mounted) setState(() {
+        _likeCount = all.length;
+        _isLiked   = liked;
+        _likers    = likers;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _toggleLike() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final wasLiked = _isLiked;
+    setState(() {
+      _isLiked   = !wasLiked;
+      _likeCount = (_likeCount + (wasLiked ? -1 : 1)).clamp(0, 9999999);
+    });
+    try {
+      if (wasLiked) {
+        await Supabase.instance.client.from('likes').delete()
+            .eq('user_uid', uid)
+            .eq('annonce_id', widget.annonceId)
+            .isFilter('bebe_index', null);
+      } else {
+        await Supabase.instance.client.from('likes').upsert({
+          'user_uid':    uid,
+          'annonce_id':  widget.annonceId,
+          'bebe_index':  null,
+          'profile_type': User_Info.activeType,
+        });
+      }
+      await _loadLikeState();
+    } catch (_) {
+      if (mounted) setState(() {
+        _isLiked   = wasLiked;
+        _likeCount = (_likeCount + (wasLiked ? 1 : -1)).clamp(0, 9999999);
+      });
+    }
   }
 
   Future<void> _loadAnnonce() async {
@@ -301,7 +366,22 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _HeaderCard(data: data),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
+                      _LikesRow(
+                        annonceId: widget.annonceId,
+                        count: _likeCount,
+                        isLiked: _isLiked,
+                        likers: _likers,
+                        onLike: _toggleLike,
+                        onShowList: FirebaseAuth.instance.currentUser != null
+                            ? () => showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (_) => _LikersSheet(annonceId: widget.annonceId))
+                            : null,
+                      ),
+                      const SizedBox(height: 4),
                       if (desc.isNotEmpty)
                         ...[_DescCard(desc: desc), const SizedBox(height: 12)],
                       if (type == 'portee')
@@ -1652,6 +1732,258 @@ class _ShareSheet extends StatelessWidget {
               bg: const Color(0xFFEA4335), label: 'Email',
               onTap: () => _launch(context, emailUrl)),
         ]),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Likes row (sous le header de l'annonce)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LikesRow extends StatelessWidget {
+  final String annonceId;
+  final int count;
+  final bool isLiked;
+  final List<Map<String, dynamic>> likers;
+  final VoidCallback onLike;
+  final VoidCallback? onShowList;
+
+  const _LikesRow({
+    required this.annonceId,
+    required this.count,
+    required this.isLiked,
+    required this.likers,
+    required this.onLike,
+    this.onShowList,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isConnected = FirebaseAuth.instance.currentUser != null;
+    return Row(
+      children: [
+        // Bouton like
+        GestureDetector(
+          onTap: isConnected ? onLike : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: isLiked
+                  ? Colors.redAccent.withValues(alpha: 0.1)
+                  : Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isLiked ? Colors.redAccent.withValues(alpha: 0.4) : Colors.grey.shade300,
+              ),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(
+                isLiked ? Icons.favorite : Icons.favorite_border,
+                color: isLiked ? Colors.redAccent : Colors.grey.shade500,
+                size: 18,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                count > 0 ? '$count' : "J'aime",
+                style: TextStyle(
+                  fontFamily: 'Galey',
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: isLiked ? Colors.redAccent : Colors.grey.shade600,
+                ),
+              ),
+            ]),
+          ),
+        ),
+        // Avatars des likeurs (connectés seulement)
+        if (isConnected && likers.isNotEmpty) ...[
+          const SizedBox(width: 10),
+          GestureDetector(
+            onTap: onShowList,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              // Avatars empilés
+              SizedBox(
+                width: likers.length * 20.0 + 12,
+                height: 28,
+                child: Stack(
+                  children: likers.asMap().entries.map((e) {
+                    final u = e.value;
+                    final photo = u['profile_picture_url'] as String?;
+                    return Positioned(
+                      left: e.key * 20.0,
+                      child: Container(
+                        width: 28, height: 28,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                        child: ClipOval(
+                          child: photo != null && photo.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: photo,
+                                  fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) => Container(
+                                      color: _teal,
+                                      child: const Icon(Icons.person, color: Colors.white, size: 14)),
+                                )
+                              : Container(
+                                  color: _teal,
+                                  child: const Icon(Icons.person, color: Colors.white, size: 14)),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(width: 6),
+              if (count > 0)
+                Text(
+                  count == 1
+                      ? '${likers.first['firstname'] ?? ''} a aimé'
+                      : count <= likers.length
+                          ? '${likers.first['firstname'] ?? ''} et ${count - 1} autre${count > 2 ? 's' : ''}'
+                          : 'Voir les ${count} j\'aimes',
+                  style: TextStyle(
+                    fontFamily: 'Galey',
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+            ]),
+          ),
+        ],
+        // Anonyme : juste le compte si > 0 et pas de bouton
+        if (!isConnected && count > 0) ...[
+          const SizedBox(width: 10),
+          Text(
+            '$count j\'aime${count > 1 ? 's' : ''}',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bottom sheet : liste complète des likeurs
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LikersSheet extends StatefulWidget {
+  final String annonceId;
+  const _LikersSheet({required this.annonceId});
+  @override
+  State<_LikersSheet> createState() => _LikersSheetState();
+}
+
+class _LikersSheetState extends State<_LikersSheet> {
+  bool _loading = true;
+  List<Map<String, dynamic>> _list = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('likes')
+          .select('user_uid')
+          .eq('annonce_id', widget.annonceId)
+          .isFilter('bebe_index', null)
+          .order('created_at', ascending: false);
+      final uids = List<Map<String, dynamic>>.from(rows)
+          .map((r) => r['user_uid'] as String)
+          .toList();
+      if (uids.isEmpty) {
+        if (mounted) setState(() { _list = []; _loading = false; });
+        return;
+      }
+      final users = await Supabase.instance.client
+          .from('users')
+          .select('uid, firstname, lastname, profile_picture_url')
+          .inFilter('uid', uids);
+      final userMap = <String, Map<String, dynamic>>{
+        for (final u in List<Map<String, dynamic>>.from(users))
+          u['uid'] as String: u,
+      };
+      final ordered = uids.map((id) => userMap[id]).whereType<Map<String, dynamic>>().toList();
+      if (mounted) setState(() { _list = ordered; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final safe = MediaQuery.of(context).padding;
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.fromLTRB(0, 12, 0, safe.bottom + 16),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 40, height: 4,
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2))),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(children: [
+            const Icon(Icons.favorite, color: Colors.redAccent, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              _loading ? "J'aimes" : '${_list.length} j\'aime${_list.length > 1 ? 's' : ''}',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                  fontSize: 15, color: _dark),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 12),
+        if (_loading)
+          const Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator())
+        else if (_list.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text("Sois le premier à aimer cette annonce !",
+                style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500,
+                    fontSize: 13),
+                textAlign: TextAlign.center),
+          )
+        else
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 320),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: _list.length,
+              itemBuilder: (_, i) {
+                final u = _list[i];
+                final photo = u['profile_picture_url'] as String?;
+                final name = [u['firstname'], u['lastname']]
+                    .where((s) => s?.toString().isNotEmpty == true)
+                    .join(' ');
+                return ListTile(
+                  leading: CircleAvatar(
+                    radius: 20,
+                    backgroundColor: _teal,
+                    backgroundImage: photo?.isNotEmpty == true
+                        ? CachedNetworkImageProvider(photo!) : null,
+                    child: photo?.isNotEmpty != true
+                        ? const Icon(Icons.person, color: Colors.white, size: 18) : null,
+                  ),
+                  title: Text(name.isNotEmpty ? name : 'Utilisateur',
+                      style: const TextStyle(fontFamily: 'Galey',
+                          fontWeight: FontWeight.w600, fontSize: 14)),
+                  trailing: const Icon(Icons.favorite, color: Colors.redAccent, size: 16),
+                );
+              },
+            ),
+          ),
       ]),
     );
   }
