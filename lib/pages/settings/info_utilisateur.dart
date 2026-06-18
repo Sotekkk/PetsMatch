@@ -48,24 +48,12 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   bool _isCat = false;
   List<String> _selectedDogBreeds = [];
   List<String> _selectedCatBreeds = [];
-  List<String> _allDogBreeds = [];
-  List<String> _allCatBreeds = [];
 
   @override
   void initState() {
     super.initState();
     _loadUserInfo();
     _loadCountries();
-    _loadBreeds();
-  }
-
-  Future<void> _loadBreeds() async {
-    final dogJson = await rootBundle.loadString('assets/dog_breeds.json');
-    final catJson = await rootBundle.loadString('assets/cat_breeds.json');
-    setState(() {
-      _allDogBreeds = List<String>.from(json.decode(dogJson));
-      _allCatBreeds = List<String>.from(json.decode(catJson));
-    });
   }
 
   Future<void> _loadUserInfo() async {
@@ -270,15 +258,15 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _card('Identité', [
-              _field('Prénom', _firstnameController),
-              _field('Nom', _lastnameController),
+              _field('Prénom *', _firstnameController),
+              _field('Nom *', _lastnameController),
               _dateField('Date de naissance', _dobController),
               _readOnlyField('Email', User_Info.email, Icons.email_outlined),
             ]),
             const SizedBox(height: 12),
             _card('Coordonnées', [
               if (!User_Info.isElevage && !User_Info.isPro) ...[
-                _phoneField(_phoneController, 'Téléphone', selectedCountry, _isPhoneValid,
+                _phoneField(_phoneController, 'Téléphone *', selectedCountry, _isPhoneValid,
                     (Country? c) => setState(() {
                           selectedCountry = c;
                           _selectedCountryCode = c?.dialCode ?? _selectedCountryCode;
@@ -286,9 +274,9 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
                 const SizedBox(height: 12),
                 _field('Rue', _rueController),
                 Row(children: [
-                  Expanded(flex: 2, child: _fieldRaw('Ville', _villeController)),
+                  Expanded(flex: 2, child: _fieldRaw('Ville *', _villeController)),
                   const SizedBox(width: 8),
-                  Expanded(flex: 1, child: _fieldRaw('Code postal', _codePostalController,
+                  Expanded(flex: 1, child: _fieldRaw('Code postal *', _codePostalController,
                       inputType: TextInputType.number)),
                 ]),
                 const SizedBox(height: 12),
@@ -296,7 +284,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
               ],
               if (User_Info.isElevage || User_Info.isPro) ...[
                 _field("Nom de l'élevage", _elevageNameController),
-                _phoneField(_elevagePhoneController, 'Téléphone élevage', selectedElevageCountry,
+                _phoneField(_elevagePhoneController, 'Téléphone élevage *', selectedElevageCountry,
                     _isElevagePhoneValid, (Country? c) => setState(() {
                           selectedElevageCountry = c;
                           _selectedElevageCountryCode = c?.dialCode ?? _selectedElevageCountryCode;
@@ -304,19 +292,15 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
                 const SizedBox(height: 12),
                 _field('Rue', _rueElevageController),
                 Row(children: [
-                  Expanded(flex: 2, child: _fieldRaw('Ville', _villeElevageController)),
+                  Expanded(flex: 2, child: _fieldRaw('Ville *', _villeElevageController)),
                   const SizedBox(width: 8),
-                  Expanded(flex: 1, child: _fieldRaw('Code postal', _codePostalElevageController,
+                  Expanded(flex: 1, child: _fieldRaw('Code postal *', _codePostalElevageController,
                       inputType: TextInputType.number)),
                 ]),
                 const SizedBox(height: 12),
                 _field('Pays', _paysElevageController),
               ],
             ]),
-            if (User_Info.isElevage || User_Info.isPro) ...[
-              const SizedBox(height: 12),
-              _especesCard(),
-            ],
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -519,135 +503,6 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     );
   }
 
-  // ── Espèces ───────────────────────────────────────────────────────────────────
-
-  Widget _especesCard() {
-    final label = User_Info.isPro
-        ? (User_Info.catPro == 'sante' || User_Info.catPro == 'veterinaire'
-            ? 'Espèces soignées'
-            : User_Info.catPro == 'pension' || User_Info.catPro == 'garde'
-                ? 'Espèces gardées'
-                : 'Espèces acceptées')
-        : 'Espèces élevées';
-
-    return _card(label, [
-      Wrap(spacing: 8, runSpacing: 8, children: [
-        _speciesChip('Chien', '🐶', _isDog, (v) => setState(() {
-          _isDog = v;
-          if (!v) _selectedDogBreeds.clear();
-        })),
-        _speciesChip('Chat', '🐱', _isCat, (v) => setState(() {
-          _isCat = v;
-          if (!v) _selectedCatBreeds.clear();
-        })),
-      ]),
-      if (_isDog) ...[
-        const SizedBox(height: 12),
-        _breedSelector('Races de chiens', _allDogBreeds, _selectedDogBreeds,
-            (breeds) => setState(() => _selectedDogBreeds = breeds)),
-      ],
-      if (_isCat) ...[
-        const SizedBox(height: 12),
-        _breedSelector('Races de chats', _allCatBreeds, _selectedCatBreeds,
-            (breeds) => setState(() => _selectedCatBreeds = breeds)),
-      ],
-    ]);
-  }
-
-  Widget _speciesChip(String label, String emoji, bool active, ValueChanged<bool> onChanged) {
-    return GestureDetector(
-      onTap: () => onChanged(!active),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: active ? const Color(0xFFEEF5EA) : Colors.transparent,
-          border: Border.all(
-            color: active ? _green : const Color(0xFFD1D5DB),
-            width: 1.5,
-          ),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(emoji, style: const TextStyle(fontSize: 16)),
-          const SizedBox(width: 6),
-          Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-              color: active ? const Color(0xFF1F2A2E) : const Color(0xFF6B7280),
-              fontWeight: active ? FontWeight.w600 : FontWeight.normal)),
-          if (active) ...[
-            const SizedBox(width: 6),
-            const Icon(Icons.check_circle, size: 15, color: _green),
-          ],
-        ]),
-      ),
-    );
-  }
-
-  Widget _breedSelector(String label, List<String> allBreeds, List<String> selected,
-      ValueChanged<List<String>> onChanged) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      GestureDetector(
-        onTap: () => _openBreedPicker(label: label, allBreeds: allBreeds,
-            selected: selected, onChanged: onChanged),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            border: Border.all(color: _border),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(children: [
-            const Icon(Icons.search, size: 16, color: Color(0xFF6F767B)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                selected.isEmpty
-                    ? 'Sélectionner des races...'
-                    : '${selected.length} race${selected.length > 1 ? 's' : ''} sélectionnée${selected.length > 1 ? 's' : ''}',
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
-              ),
-            ),
-            const Icon(Icons.arrow_drop_down, size: 18, color: Color(0xFF6F767B)),
-          ]),
-        ),
-      ),
-      if (selected.isNotEmpty) ...[
-        const SizedBox(height: 8),
-        Wrap(spacing: 6, runSpacing: 6,
-          children: selected.map((breed) => Chip(
-            label: Text(breed, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-            backgroundColor: const Color(0xFFEEF5EA),
-            side: const BorderSide(color: _green, width: 0.8),
-            deleteIconColor: Colors.grey,
-            onDeleted: () => onChanged(List.from(selected)..remove(breed)),
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            visualDensity: VisualDensity.compact,
-          )).toList(),
-        ),
-      ],
-    ]);
-  }
-
-  Future<void> _openBreedPicker({
-    required String label,
-    required List<String> allBreeds,
-    required List<String> selected,
-    required ValueChanged<List<String>> onChanged,
-  }) async {
-    final result = await showModalBottomSheet<List<String>>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => _BreedPickerSheet(
-        label: label,
-        allBreeds: allBreeds,
-        initialSelected: List<String>.from(selected),
-      ),
-    );
-    if (result != null) onChanged(result);
-  }
 }
 
 // ── Breed picker ─────────────────────────────────────────────────────────────

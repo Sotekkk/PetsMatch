@@ -2041,4 +2041,123 @@ Page dédiée dans l'espace de gestion élevage (même niveau que `/elevage/agen
 
 ---
 
+---
+
+## 15. Messagerie & Paramètres utilisateur
+
+> Dernière mise à jour : 2026-06-18  
+> Surfaces : **App Flutter (Android/iOS) + Site Web Next.js**
+
+---
+
+### 15.1 Messagerie — Catégories et organisation
+
+Les conversations sont regroupées par catégorie affichée sous forme d'onglets horizontaux.
+
+| Clé Firestore | Label | Emoji | Couleur |
+|---|---|---|---|
+| `null` / non défini | Tous | — | — |
+| `animaux-perdus` | Perdus/Trouvés | 🐾 | Orange |
+| `annonces` | Annonces | 🏷️ | Teal |
+| `communaute` | Communauté | 💬 | Violet |
+| `contact-elevage` | Élevages | 🐕 | Teal foncé |
+| `service-professionnel` | Services | 🔧 | Violet foncé |
+| `__archived__` | Archivés | 📦 | Ardoise |
+
+**Attribution de la catégorie :** définie côté créateur de la conversation selon le contexte (annonce, profil éleveur, profil pro). La valeur est stockée dans le document Firestore `conversations/{id}.categorie`.
+
+---
+
+### 15.2 Messagerie — Actions sur une conversation (long-press)
+
+**Flutter :** `showModalBottomSheet` au long-press sur une carte conversation.  
+**Web :** menu contextuel (right-click / clic droit) avec overlay positionné aux coordonnées de la souris.
+
+| Action | Champ Firestore | Comportement |
+|---|---|---|
+| **Épingler / Désépingler** | `pinnedFor.$uid: bool` | Conversation remontée en tête de liste |
+| **Archiver / Désarchiver** | `archivedFor.$uid: bool` | Masquée des onglets, visible uniquement dans "Archivés" |
+| **Sourdine 8h** | `mutedFor.$uid: epochMs` | Icône 🔕 sur la carte, notifications désactivées jusqu'à l'heure définie |
+| **Bloquer l'utilisateur** | `bloquer/$uid` (doc Firestore) | Conversation masquée définitivement, expéditeur ne peut plus contacter |
+| **Supprimer** | `deletedFor.$uid: bool` | Conversation masquée uniquement pour l'utilisateur courant |
+
+**Ordre d'affichage :** épinglées en premier, puis par timestamp décroissant.  
+**Filtrage :** les conversations supprimées, archivées (sauf onglet Archivés) et bloquées sont exclues.
+
+---
+
+### 15.3 Messagerie — Visuel des cartes
+
+- Fond `#F0F9FF` + icône 📌 en haut à droite si conversation épinglée
+- Icône 🔕 si sourdine active (`mutedFor.$uid > Date.now()`)
+- Avatar + nom + dernière message + timestamp (format relatif)
+
+---
+
+### 15.4 Paramètres utilisateur — Pages Flutter
+
+Accessible depuis le drawer de navigation (tous profils). Pages sous `lib/pages/settings/`.
+
+| Page | Fichier | Contenu |
+|---|---|---|
+| **Menu principal** | `main_settings.dart` | Liens vers toutes les sous-pages + bouton déconnexion + suppression compte |
+| **Information utilisateur** | `info_utilisateur.dart` | Identité (Prénom *, Nom *), Coordonnées (Téléphone *, Ville *, Code postal *), adresse. Les espèces élevées sont gérées dans le profil éleveur (`profil_eleveur_edit.dart`) |
+| **Connexion & sécurité** | `connectionSecu.dart` | Email affiché (lecture seule), réinitialisation mot de passe (Firebase Auth), contact support (`mailto:`) |
+| **Confidentialité** | `parametre_config.dart` | Droits RGPD, résumé CGU, lien vers petsmatchapp.com/cgu |
+| **À propos** | `about_us.dart` | Informations légales éditeur, responsables, hébergement, données personnelles |
+| **Utilisateurs bloqués** | `utilisateurs_bloques_page.dart` | Liste des comptes bloqués avec déblocage (suppression clé dans `bloquer/$uid`) |
+
+**Design commun :** AppBar teal `#0C5C6C`, fond `#F8F8F8`, cartes blanches avec ombre, typographie Galey.
+
+---
+
+### 15.5 Paramètres utilisateur — Section Web (`/profil`)
+
+Section "Sécurité & aide" ajoutée en bas de la page `/profil` :
+
+| Tuile | Action |
+|---|---|
+| Réinitialiser mon mot de passe | `sendPasswordResetEmail(getAuth(), user.email)` — email Firebase Auth |
+| Poser une question | `mailto:petsmatch.contact@gmail.com` avec objet/corps pré-remplis |
+| Confidentialité & CGU | Lien externe `www.petsmatchapp.com/cgu` |
+| À propos | Lien interne `/a-propos` |
+
+Page `/a-propos` : informations légales éditeur (SIREN, SIRET, TVA, adresse), responsables (Présidente : Natacha Loisiel, DG : Nabil Ksouri), hébergement (Supabase + Firebase), propriété intellectuelle, données personnelles, litiges (tribunaux de Rennes).
+
+Page `/profil/bloques` : liste des utilisateurs bloqués avec bouton de déblocage (même logique que Flutter).
+
+---
+
+### 15.6 Export des données (RGPD)
+
+**Flutter uniquement** (pas de version web prévue en V1) — bouton "Exporter mes données" dans les paramètres.
+
+**Données exportées :**
+- Profil Supabase (`users`)
+- Animaux Supabase (`animaux`)
+- Annonces Supabase (`annonces`)
+- Données complémentaires Firestore (`users/{uid}`)
+
+**Format :** JSON indenté, nom de fichier horodaté. Partagé via `Share.shareXFiles` (share_plus).  
+**Contrainte technique :** les `Timestamp` Firestore sont convertis en ISO 8601 avant sérialisation (conversion `_toJsonSafe`).
+
+---
+
+### 15.7 Statut d'implémentation
+
+| Feature | Code | App Flutter | Web | Notes |
+|---|---|---|---|---|
+| Catégories messagerie (7 onglets) | MSG01 | ✅ | ✅ | Firestore `categorie` |
+| Actions long-press (5 actions) | MSG02 | ✅ | ✅ | Right-click web |
+| Épinglage / archivage / sourdine | MSG03 | ✅ | ✅ | Champs `pinnedFor` etc. |
+| Blocage + page utilisateurs bloqués | MSG04 | ✅ | ✅ | `bloquer/$uid` Firestore |
+| Paramètres — menu principal | SET01 | ✅ | ✅ (section /profil) | — |
+| Paramètres — info utilisateur | SET02 | ✅ | — | Espèces → profil éleveur |
+| Paramètres — connexion & sécurité | SET03 | ✅ | ✅ | Reset mdp Firebase |
+| Paramètres — confidentialité | SET04 | ✅ | ✅ (lien CGU) | — |
+| Paramètres — à propos | SET05 | ✅ | ✅ (`/a-propos`) | — |
+| Export données RGPD | SET06 | ✅ | ❌ à faire | JSON via share_plus |
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*
