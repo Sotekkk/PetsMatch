@@ -68,6 +68,7 @@ export default function InventairePage() {
   const [detailItem, setDetailItem] = useState<Item | null>(null);
   const [mouvements, setMouvements] = useState<Mouvement[]>([]);
   const [mvtLoading, setMvtLoading] = useState(false);
+  const [taskToast,  setTaskToast]  = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/connexion');
@@ -116,6 +117,30 @@ export default function InventairePage() {
     setMvtLoading(false);
   }
 
+  async function createCommandeTask(nom: string, uid: string) {
+    const label = `Commander : ${nom}`;
+    const today = new Date().toISOString().split('T')[0];
+    const { data: existing } = await supabase
+      .from('plan_taches')
+      .select('id')
+      .eq('uid_eleveur', uid)
+      .eq('label', label)
+      .eq('statut', 'en_attente')
+      .maybeSingle();
+    if (existing) return;
+    await supabase.from('plan_taches').insert({
+      uid_eleveur: uid,
+      label,
+      type_acte: 'commande',
+      date_prevue: today,
+      statut: 'en_attente',
+      jour_traitement: 1,
+      total_jours: 1,
+    });
+    setTaskToast(nom);
+    setTimeout(() => setTaskToast(null), 4000);
+  }
+
   async function openDetail(item: Item) {
     setDetailItem(item);
     await loadMouvements(item.id);
@@ -134,7 +159,7 @@ export default function InventairePage() {
       .update({ quantite: newQte, updated_at: new Date().toISOString() })
       .eq('id', item.id);
 
-    // Notification si seuil atteint
+    // Notification + tâche de commande si seuil atteint
     if (type === 'consommation' && item.alerte_active && item.quantite_alerte !== null
         && newQte <= item.quantite_alerte) {
       await supabase.from('notifications').insert({
@@ -144,6 +169,7 @@ export default function InventairePage() {
         data: { itemId: item.id },
         read: false,
       });
+      await createCommandeTask(item.nom, user.uid);
     }
 
     loadItems();
@@ -168,6 +194,14 @@ export default function InventairePage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 pb-24">
+
+      {/* Toast tâche créée */}
+      {taskToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-[#0C5C6C] text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-lg animate-fade-in">
+          <span>📋 Tâche créée : commander {taskToast}</span>
+          <a href="/elevage/planning" className="underline underline-offset-2 whitespace-nowrap">Voir</a>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between mb-5">

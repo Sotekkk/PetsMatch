@@ -117,6 +117,7 @@ class _InventairePageState extends State<InventairePage> {
           'data': {'itemId': item['id']},
           'read': false,
         });
+        await _createCommandeTask(item);
       }
 
       await _load();
@@ -126,6 +127,43 @@ class _InventairePageState extends State<InventairePage> {
           SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red),
         );
       }
+    }
+  }
+
+  Future<void> _createCommandeTask(Map<String, dynamic> item) async {
+    final label = 'Commander : ${item['nom']}';
+    final today = DateTime.now().toIso8601String().split('T').first;
+    // Évite les doublons : une seule tâche en_attente par article
+    final existing = await _supa
+        .from('plan_taches')
+        .select('id')
+        .eq('uid_eleveur', _uid)
+        .eq('label', label)
+        .eq('statut', 'en_attente')
+        .maybeSingle();
+    if (existing != null) return;
+
+    await _supa.from('plan_taches').insert({
+      'uid_eleveur': _uid,
+      'label': label,
+      'type_acte': 'commande',
+      'date_prevue': today,
+      'statut': 'en_attente',
+      'jour_traitement': 1,
+      'total_jours': 1,
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('📋 Tâche créée : commande à passer'),
+        backgroundColor: _teal,
+        action: SnackBarAction(
+          label: 'Voir',
+          textColor: Colors.white,
+          onPressed: () => Navigator.pushNamed(context, '/planning'),
+        ),
+        duration: const Duration(seconds: 4),
+      ));
     }
   }
 
@@ -261,6 +299,7 @@ class _InventairePageState extends State<InventairePage> {
               builder: (_) => _ItemFormSheet(uid: _uid, item: item, onSaved: _load),
             ),
             onDelta: (delta) => _quickDelta(item, delta),
+            onCreateTask: _createCommandeTask,
           ))),
       ]),
     );
@@ -303,12 +342,14 @@ class _ItemCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onEdit;
   final void Function(double delta) onDelta;
+  final void Function(Map<String, dynamic>) onCreateTask;
 
   const _ItemCard({
     required this.item,
     required this.onTap,
     required this.onEdit,
     required this.onDelta,
+    required this.onCreateTask,
   });
 
   @override
@@ -431,6 +472,7 @@ class _ItemCard extends StatelessWidget {
         item: item, type: type,
         uid: FirebaseAuth.instance.currentUser!.uid,
         onSaved: () {},
+        onAlerte: type == 'consommation' ? () => onCreateTask(item) : null,
       ),
     );
   }
@@ -469,7 +511,8 @@ class _QuickMvtSheet extends StatefulWidget {
   final String type;
   final String uid;
   final VoidCallback onSaved;
-  const _QuickMvtSheet({required this.item, required this.type, required this.uid, required this.onSaved});
+  final VoidCallback? onAlerte;
+  const _QuickMvtSheet({required this.item, required this.type, required this.uid, required this.onSaved, this.onAlerte});
   @override
   State<_QuickMvtSheet> createState() => _QuickMvtSheetState();
 }
@@ -544,6 +587,7 @@ class _QuickMvtSheetState extends State<_QuickMvtSheet> {
           'data': {'itemId': widget.item['id']},
           'read': false,
         });
+        widget.onAlerte?.call();
       }
 
       widget.onSaved();
