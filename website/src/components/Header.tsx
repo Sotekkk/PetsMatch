@@ -98,6 +98,7 @@ const MENU_ELEVEUR = [
       { href: '/annonces/creer',                 label: 'Nouvelle annonce',   icon: '➕' },
       { href: '/abonnement',                     label: 'Mon abonnement',     icon: '⭐' },
       { href: '/employes',                        label: 'Mes employés',       icon: '👥' },
+      { href: '/elevage/inventaire',              label: 'Inventaire',         icon: '📦' },
       { href: '/mes-taches',                      label: 'Mes tâches',         icon: '✅' },
       { href: '/elevage/agenda',                 label: 'Agenda du jour',     icon: '🗓️' },
       { href: '/elevage/planning',               label: 'Routines',           icon: '📅' },

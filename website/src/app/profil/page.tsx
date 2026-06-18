@@ -1593,6 +1593,23 @@ export default function ProfilPage() {
       {/* Mes employeurs — visible si l'utilisateur est employé dans un élevage */}
       <EmployeursLink uid={user?.uid ?? ''} />
 
+      {/* Inventaire — visible pour éleveurs */}
+      {isEleveur && (
+        <Link href="/elevage/inventaire"
+          className="flex items-center gap-4 bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-4 hover:shadow-md transition-shadow mb-5">
+          <div className="w-10 h-10 rounded-xl bg-[#FFF8E8] flex items-center justify-center flex-shrink-0 text-xl">
+            📦
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-[#1F2A2E] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Inventaire</p>
+            <p className="text-xs text-gray-400">Stocks alimentation, litière, médicaments et alertes</p>
+          </div>
+          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </Link>
+      )}
+
       {/* Employés — visible pour éleveurs, pros et associations */}
       {(isEleveur || userData?.isPro || userData?.isAssociation) && (
         <Link href="/employes"
