@@ -167,7 +167,7 @@ export default function ParticulierDashboard() {
                 const isMale = a.sexe?.toLowerCase().startsWith('m');
                 const isFemale = a.sexe?.toLowerCase().startsWith('f');
                 return (
-                  <Link key={a.id} href="/mes-animaux"
+                  <Link key={a.id} href={`/mes-animaux/${a.id}`}
                     className="flex-shrink-0 w-32 bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
                     <div className="relative aspect-square bg-[#EAF4EC]">
                       {a.photo_url ? (

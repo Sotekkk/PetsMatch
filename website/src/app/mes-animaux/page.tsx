@@ -534,7 +534,7 @@ export default function MesAnimauxPage() {
       {/* Sous-onglets présents */}
       {tab === 'presents' && (
         <div className="flex items-center gap-2 mb-4 flex-wrap">
-          {([['tous', 'Tous'], ['repro', '⭐ Repro'], ['bebes', '🐣 Bébés']] as const).map(([v, l]) => (
+          {isEleveur && ([['tous', 'Tous'], ['repro', '⭐ Repro'], ['bebes', '🐣 Bébés']] as const).map(([v, l]) => (
             <button key={v} onClick={() => { setPresentsSubTab(v); setSelectMode(false); setSelectedIds(new Set()); }}
               className={`px-4 py-1.5 rounded-full border text-sm font-medium transition-all ${
                 presentsSubTab === v
@@ -645,8 +645,8 @@ export default function MesAnimauxPage() {
               <div>
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Statut spécial</p>
                 <div className="flex flex-wrap gap-2">
-                  <Chip label="🏁 Retraité"   active={filtreRetraite} color="#B45309" onClick={() => setFiltreRetraite(!filtreRetraite)} />
-                  <Chip label="⭐ Repro"       active={filtreRepro}    color="#0C5C6C" onClick={() => setFiltreRepro(!filtreRepro)} />
+                  {isEleveur && <Chip label="🏁 Retraité" active={filtreRetraite} color="#B45309" onClick={() => setFiltreRetraite(!filtreRetraite)} />}
+                  {isEleveur && <Chip label="⭐ Repro"    active={filtreRepro}    color="#0C5C6C" onClick={() => setFiltreRepro(!filtreRepro)} />}
                   <Chip label="🤰 Gestante"    active={filtreGestante} color="#6E9E57" onClick={() => setFiltreGestante(!filtreGestante)} />
                   <Chip label="🌸 En chaleur"  active={filtreChaleur}  color="#F472B6" onClick={() => setFiltreChaleur(!filtreChaleur)} />
                 </div>
@@ -744,8 +744,8 @@ export default function MesAnimauxPage() {
                     chaleurFlag={!!chaleurFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
                     selectMode={selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
                     onDelete={selectMode ? undefined : () => deleteAnimal(a.id)}
-                    onToggleReproducteur={selectMode ? undefined : () => toggleReproducteur(a.id, !!a.reproducteur)}
-                    onToggleRetraite={selectMode ? undefined : () => toggleRetraite(a.id, !!a.is_retraite)} />)}
+                    onToggleReproducteur={isEleveur && !selectMode ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
+                    onToggleRetraite={isEleveur && !selectMode ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined} />)}
                 </div>
               </div>
             );
@@ -758,8 +758,8 @@ export default function MesAnimauxPage() {
             chaleurFlag={!!chaleurFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
             selectMode={tab === 'presents' && selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
             onDelete={selectMode ? undefined : () => deleteAnimal(a.id)}
-            onToggleReproducteur={tab === 'presents' && !selectMode ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
-            onToggleRetraite={tab === 'presents' && !selectMode ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined} />)}
+            onToggleReproducteur={isEleveur && tab === 'presents' && !selectMode ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
+            onToggleRetraite={isEleveur && tab === 'presents' && !selectMode ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined} />)}
         </div>
       )}
 

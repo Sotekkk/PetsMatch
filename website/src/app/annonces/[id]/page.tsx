@@ -290,7 +290,7 @@ export default function AnnonceDetailPage() {
         {/* Carrousel photos */}
         {photos.length > 0 && (
           <div className="rounded-2xl overflow-hidden bg-black relative aspect-square">
-            <Image src={photos[imgIdx]} alt={titre} fill className="object-contain" />
+            <Image src={photos[imgIdx]} alt={titre} fill className="object-contain" sizes="(max-width: 672px) 100vw, 672px" />
             {photos.length > 1 && (
               <>
                 <button onClick={() => setImgIdx(i => (i - 1 + photos.length) % photos.length)}
@@ -401,7 +401,7 @@ export default function AnnonceDetailPage() {
                   <div key={i} className="rounded-xl overflow-hidden border border-[#E8EDE6] bg-[#F8F8F6]">
                     <div className="aspect-square relative bg-[#EEF5EA]">
                       {bPhotos.length > 0 ? (
-                        <Image src={bPhotos[0]} alt={b.nom || `Bébé ${i+1}`} fill className="object-cover" />
+                        <Image src={bPhotos[0]} alt={b.nom || `Bébé ${i+1}`} fill className="object-cover" sizes="(max-width: 672px) 50vw, 336px" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-3xl">🐾</div>
                       )}
@@ -504,7 +504,7 @@ export default function AnnonceDetailPage() {
               {annonce.uid_eleveur ? (
                 <Link href={`/elevages/${annonce.uid_eleveur}`} className="w-12 h-12 rounded-full bg-[#EEF5EA] overflow-hidden flex-shrink-0 relative block hover:opacity-90 transition-opacity">
                   {pro?.profile_picture_url_elevage ? (
-                    <Image src={pro.profile_picture_url_elevage} alt="éleveur" fill className="object-cover" />
+                    <Image src={pro.profile_picture_url_elevage} alt="éleveur" fill className="object-cover" sizes="64px" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-xl">🏡</div>
                   )}
@@ -512,7 +512,7 @@ export default function AnnonceDetailPage() {
               ) : (
                 <div className="w-12 h-12 rounded-full bg-[#EEF5EA] overflow-hidden flex-shrink-0 relative">
                   {pro?.profile_picture_url_elevage ? (
-                    <Image src={pro.profile_picture_url_elevage} alt="éleveur" fill className="object-cover" />
+                    <Image src={pro.profile_picture_url_elevage} alt="éleveur" fill className="object-cover" sizes="64px" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-xl">🏡</div>
                   )}

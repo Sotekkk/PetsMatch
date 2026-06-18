@@ -255,9 +255,10 @@ const MENU_PARTICULIER = [
     section: 'Mon Profil',
     icon: '👤',
     items: [
-      { href: '/profil',      label: 'Mon Profil',  icon: '👤' },
-      { href: '/mes-animaux', label: 'Mes Animaux', icon: '🐾' },
-      { href: '/mes-taches',  label: 'Mes tâches',  icon: '✅' },
+      { href: '/profil',          label: 'Mon Profil',      icon: '👤' },
+      { href: '/mes-animaux',     label: 'Mes Animaux',     icon: '🐾' },
+      { href: '/mes-employeurs',  label: 'Mes employeurs',  icon: '🏡' },
+      { href: '/mes-taches',      label: 'Mes tâches',      icon: '✅' },
     ],
   },
   {

@@ -224,9 +224,9 @@ export default function EleveurProfilePage() {
       <div className="relative">
         <div className="h-52 sm:h-64 bg-[#EEF5EA] overflow-hidden relative">
           {eleveur.banner ? (
-            <Image src={eleveur.banner} alt={eleveur.name} fill className="object-cover" />
+            <Image src={eleveur.banner} alt={eleveur.name} fill className="object-cover" sizes="100vw" />
           ) : eleveur.photo ? (
-            <Image src={eleveur.photo} alt={eleveur.name} fill className="object-cover brightness-75" />
+            <Image src={eleveur.photo} alt={eleveur.name} fill className="object-cover brightness-75" sizes="100vw" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-8xl">🏡</div>
           )}
@@ -236,7 +236,7 @@ export default function EleveurProfilePage() {
         {/* Photo profil en overlay */}
         <div className="absolute -bottom-10 left-5 sm:left-8 w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-white shadow-md bg-[#EEF5EA] overflow-hidden">
           {eleveur.photo ? (
-            <Image src={eleveur.photo} alt={eleveur.name} fill className="object-cover" />
+            <Image src={eleveur.photo} alt={eleveur.name} fill className="object-cover" sizes="96px" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-4xl">🏡</div>
           )}
@@ -394,7 +394,7 @@ function AnnonceCard({ annonce: a }: { annonce: Annonce }) {
       className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow block">
       <div className="aspect-square bg-[#F5F5F0] relative">
         {photo ? (
-          <Image src={photo} alt={a.titre ?? ''} fill className="object-contain" />
+          <Image src={photo} alt={a.titre ?? ''} fill className="object-contain" sizes="(max-width: 640px) 50vw, 200px" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-4xl">🐾</div>
         )}

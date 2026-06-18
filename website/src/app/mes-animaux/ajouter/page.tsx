@@ -114,6 +114,8 @@ export default function AjouterAnimalPage() {
         row.provenance_qualite = 'naissance';
         row.provenance_nom = userData?.nameElevage ?? null;
       } else {
+        // uid_eleveur est aussi renseigné pour satisfaire la politique RLS INSERT
+        row.uid_eleveur      = user.uid;
         row.uid_proprietaire = user.uid;
         row.provenance_qualite = 'achat';
       }
