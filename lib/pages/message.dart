@@ -208,20 +208,34 @@ class _MessagePageState extends State<MessagePage> {
 
   // ── User info ───────────────────────────────────────────────────────────────
 
-  Future<Map<String, String?>> _userInfo(String uid) async {
+  Future<Map<String, String?>> _userInfo(String uid, {Map<String, dynamic>? cached}) async {
     if (_userCache.containsKey(uid)) return _userCache[uid]!;
     if (uid.isEmpty) return {'name': 'Utilisateur inconnu', 'photo': null};
-    final snap = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-    if (snap.exists) {
-      final d = snap.data()!;
-      final name = d['isElevage'] == true
-          ? (d['nameElevage'] ?? 'Élevage')
-          : '${d['firstname'] ?? ''} ${d['lastname'] ?? ''}'.trim();
-      const dflt = 'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60';
-      final rawUrl = d['isElevage'] == true ? d['profilePictureUrlElevage'] : d['profilePictureUrl'];
-      final photo = (rawUrl != null && rawUrl.startsWith('http') && rawUrl != dflt) ? rawUrl as String : null;
+
+    // Priorité aux infos stockées dans la conversation (participants_info)
+    if (cached != null) {
+      final name = (cached['name'] as String?) ?? '';
+      final photo = cached['photo'] as String?;
       _userCache[uid] = {'name': name.isEmpty ? 'Utilisateur' : name, 'photo': photo};
-    } else {
+      return _userCache[uid]!;
+    }
+
+    // Fallback Firestore
+    try {
+      final snap = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if (snap.exists) {
+        final d = snap.data()!;
+        final name = d['isElevage'] == true
+            ? (d['nameElevage'] ?? 'Élevage')
+            : '${d['firstname'] ?? ''} ${d['lastname'] ?? ''}'.trim();
+        const dflt = 'https://firebasestorage.googleapis.com/v0/b/petsmatch-eb96d.appspot.com/o/files%2Fdefault_pp.png?alt=media&token=192f3539-c479-44af-bfd8-34b3d836dd60';
+        final rawUrl = d['isElevage'] == true ? d['profilePictureUrlElevage'] : d['profilePictureUrl'];
+        final photo = (rawUrl != null && rawUrl.startsWith('http') && rawUrl != dflt) ? rawUrl as String : null;
+        _userCache[uid] = {'name': name.isEmpty ? 'Utilisateur' : name, 'photo': photo};
+      } else {
+        _userCache[uid] = {'name': 'Utilisateur inconnu', 'photo': null};
+      }
+    } catch (_) {
       _userCache[uid] = {'name': 'Utilisateur inconnu', 'photo': null};
     }
     return _userCache[uid]!;
@@ -385,10 +399,14 @@ class _MessagePageState extends State<MessagePage> {
 
                     final others = (data['participants'] as List).where((p) => p != uid).toList();
                     if (others.isEmpty) return const SizedBox.shrink();
-                    final otherId = others[0] as String;
+                    final otherId = others[0].toString();
+
+                    // Infos mises en cache dans la conversation (stockées à l'envoi)
+                    final pInfoMap = data['participants_info'];
+                    final cached = (pInfoMap is Map) ? (pInfoMap[otherId] as Map<String, dynamic>?) : null;
 
                     return FutureBuilder<Map<String, String?>>(
-                      future: _userInfo(otherId),
+                      future: _userInfo(otherId, cached: cached),
                       builder: (context, userSnap) {
                         if (!userSnap.hasData) return const SizedBox.shrink();
                         final info = userSnap.data!;

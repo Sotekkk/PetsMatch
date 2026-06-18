@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,6 +8,76 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+// ─────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────
+
+String _uuid() {
+  final rng = Random.secure();
+  final b = List<int>.generate(16, (_) => rng.nextInt(256));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  String h(int v) => v.toRadixString(16).padLeft(2, '0');
+  return '${h(b[0])}${h(b[1])}${h(b[2])}${h(b[3])}'
+      '-${h(b[4])}${h(b[5])}'
+      '-${h(b[6])}${h(b[7])}'
+      '-${h(b[8])}${h(b[9])}'
+      '-${h(b[10])}${h(b[11])}${h(b[12])}${h(b[13])}${h(b[14])}${h(b[15])}';
+}
+
+// DD/MM/YYYY → YYYY-MM-DD  (pour écriture Supabase)
+String? _frToIso(String? v) {
+  if (v == null || v.isEmpty) return null;
+  final p = v.split('/');
+  if (p.length != 3) return null;
+  return '${p[2]}-${p[1].padLeft(2, '0')}-${p[0].padLeft(2, '0')}';
+}
+
+// YYYY-MM-DD → DD/MM/YYYY  (pour affichage depuis Supabase)
+String _isoToFr(dynamic v) {
+  if (v == null) return '';
+  final s = v.toString();
+  if (s.length < 10) return s;
+  final p = s.substring(0, 10).split('-');
+  if (p.length == 3) return '${p[2]}/${p[1]}/${p[0]}';
+  return s;
+}
+
+// Convertit une ligne Supabase (snake_case) → camelCase pour l'UI / PDF
+Map<String, dynamic> _supaToUi(Map<String, dynamic> r) => {
+  'id':                 r['id'],
+  'numeroFacture':      r['numero_facture'],
+  'dateFacture':        _isoToFr(r['date_facture']),
+  'datePrestation':     _isoToFr(r['date_prestation']),
+  'dateEcheance':       _isoToFr(r['date_echeance']),
+  'lignes':             r['lignes'] ?? [],
+  'totalHT':            r['total_ht'],
+  'totalTVA':           r['total_tva'],
+  'totalTTC':           r['total_ttc'],
+  'regimeTVA':          r['regime_tva'],
+  'nomClient':          r['nom_client'],
+  'prenomClient':       r['prenom_client'],
+  'emailClient':        r['email_client'],
+  'telephoneClient':    r['telephone_client'],
+  'rueClient':          r['rue_client'],
+  'cpClient':           r['cp_client'],
+  'villeClient':        r['ville_client'],
+  'paysClient':         r['pays_client'],
+  'nomEmetteur':        r['nom_emetteur'],
+  'rueEmetteur':        r['rue_emetteur'],
+  'cpEmetteur':         r['cp_emetteur'],
+  'villeEmetteur':      r['ville_emetteur'],
+  'paysEmetteur':       r['pays_emetteur'],
+  'siretEmetteur':      r['siret_emetteur'],
+  'tvaEmetteur':        r['tva_emetteur'],
+  'emailEmetteur':      r['email_emetteur'],
+  'modePaiement':       r['mode_paiement'],
+  'delaiPaiement':      r['delai_paiement'],
+  'noteComplementaire': r['note_complementaire'],
+  'statut':             r['statut'],
+};
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -19,12 +90,37 @@ const _dark = Color(0xFF1F2A2E);
 // ─────────────────────────────────────────────────────────────
 // 1. LIST PAGE
 // ─────────────────────────────────────────────────────────────
-class FacturationPage extends StatelessWidget {
+class FacturationPage extends StatefulWidget {
   const FacturationPage({super.key});
+  @override
+  State<FacturationPage> createState() => _FacturationPageState();
+}
+
+class _FacturationPageState extends State<FacturationPage> {
+  final _supa = Supabase.instance.client;
+  late Future<List<Map<String, dynamic>>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<List<Map<String, dynamic>>> _load() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return [];
+    final rows = await _supa
+        .from('factures')
+        .select()
+        .eq('uid_eleveur', uid)
+        .order('created_at', ascending: false);
+    return rows.map(_supaToUi).toList();
+  }
+
+  void _refresh() => setState(() => _future = _load());
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
@@ -38,50 +134,49 @@ class FacturationPage extends StatelessWidget {
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text('Nouvelle facture',
             style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CreerFacturePage())),
+        onPressed: () async {
+          await Navigator.push(context, MaterialPageRoute(builder: (_) => const CreerFacturePage()));
+          _refresh();
+        },
       ),
-      body: uid == null
-          ? const Center(child: Text('Non connecté'))
-          : StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(uid)
-                  .collection('factures')
-                  .orderBy('createdAt', descending: true)
-                  .snapshots(),
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator(color: _green));
-                }
-                final docs = snap.data?.docs ?? [];
-                if (docs.isEmpty) {
-                  return Center(
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.receipt_long_outlined, size: 64, color: Colors.grey.shade300),
-                      const SizedBox(height: 16),
-                      Text('Aucune facture', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade400, fontSize: 16)),
-                    ]),
-                  );
-                }
-                return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
-                  itemCount: docs.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, i) {
-                    final d = docs[i].data() as Map<String, dynamic>;
-                    final statut = d['statut'] ?? 'emise';
-                    return _FactureCard(
-                      data: d,
-                      docId: docs[i].id,
-                      statut: statut,
-                      onTap: () => Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => FactureDetailPage(data: d, docId: docs[i].id),
-                      )),
-                    );
-                  },
-                );
-              },
-            ),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator(color: _green));
+          }
+          final docs = snap.data ?? [];
+          if (docs.isEmpty) {
+            return Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.receipt_long_outlined, size: 64, color: Colors.grey.shade300),
+                const SizedBox(height: 16),
+                Text('Aucune facture', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade400, fontSize: 16)),
+              ]),
+            );
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
+            itemCount: docs.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, i) {
+              final d = docs[i];
+              final statut = d['statut'] ?? 'emise';
+              return _FactureCard(
+                data: d,
+                docId: d['id'].toString(),
+                statut: statut,
+                onTap: () async {
+                  await Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => FactureDetailPage(data: d, docId: d['id'].toString()),
+                  ));
+                  _refresh();
+                },
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
@@ -175,11 +270,10 @@ class FactureDetailPage extends StatelessWidget {
           ),
           PopupMenuButton<String>(
             onSelected: (v) async {
-              final uid = FirebaseAuth.instance.currentUser?.uid;
-              if (uid == null) return;
-              await FirebaseFirestore.instance
-                  .collection('users').doc(uid).collection('factures').doc(docId)
-                  .update({'statut': v});
+              await Supabase.instance.client
+                  .from('factures')
+                  .update({'statut': v})
+                  .eq('id', docId);
               if (context.mounted) Navigator.pop(context);
             },
             itemBuilder: (_) => [
@@ -320,7 +414,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
   String _modePaiement = 'Virement bancaire';
   final _delaiPaiement = TextEditingController(text: '30');
   final _noteComplementaire = TextEditingController();
-  bool _franchise = false; // TVA franchise en base
+  bool _franchise = false;
 
   // Lignes
   List<_Ligne> _lignes = [];
@@ -334,12 +428,17 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
   Future<void> _loadUserData() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    // Profil depuis Firestore (source de vérité pour les infos élevage)
     final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
     final d = doc.data() ?? {};
-    final factures = await FirebaseFirestore.instance
-        .collection('users').doc(uid).collection('factures')
-        .orderBy('numeroFacture', descending: true).limit(1).get();
-    final last = factures.docs.isEmpty ? 0 : (factures.docs.first['numeroFacture'] ?? 0) as int;
+    // Dernier numéro de facture depuis Supabase
+    final rows = await Supabase.instance.client
+        .from('factures')
+        .select('numero_facture')
+        .eq('uid_eleveur', uid)
+        .order('numero_facture', ascending: false)
+        .limit(1);
+    final last = rows.isEmpty ? 0 : ((rows.first['numero_facture'] as num?) ?? 0).toInt();
 
     if (!mounted) return;
     setState(() {
@@ -389,12 +488,42 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     setState(() => _saving = true);
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
-      final data = _buildData();
-      await FirebaseFirestore.instance
-          .collection('users').doc(uid).collection('factures')
-          .add(data);
+      final d = _buildData();
+      await Supabase.instance.client.from('factures').insert({
+        'id':                  _uuid(),
+        'uid_eleveur':         uid,
+        'numero_facture':      d['numeroFacture'],
+        'date_facture':        _frToIso(d['dateFacture']),
+        'date_prestation':     _frToIso(d['datePrestation']),
+        'date_echeance':       _frToIso(d['dateEcheance']),
+        'lignes':              d['lignes'],
+        'total_ht':            d['totalHT'],
+        'total_tva':           d['totalTVA'],
+        'total_ttc':           d['totalTTC'],
+        'regime_tva':          d['regimeTVA'],
+        'nom_client':          d['nomClient'],
+        'prenom_client':       d['prenomClient'],
+        'email_client':        d['emailClient'],
+        'telephone_client':    d['telephoneClient'],
+        'rue_client':          d['rueClient'],
+        'cp_client':           d['cpClient'],
+        'ville_client':        d['villeClient'],
+        'pays_client':         d['paysClient'],
+        'nom_emetteur':        d['nomEmetteur'],
+        'rue_emetteur':        d['rueEmetteur'],
+        'cp_emetteur':         d['cpEmetteur'],
+        'ville_emetteur':      d['villeEmetteur'],
+        'pays_emetteur':       d['paysEmetteur'],
+        'siret_emetteur':      d['siretEmetteur'],
+        'tva_emetteur':        d['tvaEmetteur'],
+        'email_emetteur':      d['emailEmetteur'],
+        'mode_paiement':       d['modePaiement'],
+        'delai_paiement':      d['delaiPaiement'],
+        'note_complementaire': d['noteComplementaire'],
+        'statut':              'emise',
+      });
       if (!mounted) return;
-      final bytes = await _buildPdf(data);
+      final bytes = await _buildPdf(d);
       await Printing.layoutPdf(onLayout: (_) async => bytes);
       if (mounted) Navigator.pop(context);
     } finally {
@@ -435,7 +564,6 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     'regimeTVA': _franchise ? 'franchise' : 'normal',
     'noteComplementaire': _noteComplementaire.text,
     'statut': 'emise',
-    'createdAt': FieldValue.serverTimestamp(),
   };
 
   @override
@@ -733,7 +861,6 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
   final totalTVA = (d['totalTVA'] ?? 0.0) as num;
   final totalTTC = (d['totalTTC'] ?? 0.0) as num;
   final tealPdf = PdfColor.fromHex('#0C5C6C');
-  final greenPdf = PdfColor.fromHex('#6E9E57');
   final greyLight = PdfColor.fromHex('#F8F8F6');
 
   pdf.addPage(pw.MultiPage(
@@ -1080,7 +1207,6 @@ class _TableRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final totalTTC = (ligne['totalTTC'] ?? ligne['totalHT'] ?? 0.0) as num;
     final totalHT = (ligne['totalHT'] ?? 0.0) as num;
-    final montantTVA = (ligne['montantTVA'] ?? 0.0) as num;
     final qty = (ligne['quantite'] ?? 1.0) as num;
     final tva = (ligne['tauxTVA'] ?? 20.0) as num;
     return Container(

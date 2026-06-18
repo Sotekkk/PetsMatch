@@ -27,6 +27,18 @@ String _catEmoji(String cat) =>
 Color _catColor(String cat) =>
     _categories.firstWhere((c) => c.$1 == cat, orElse: () => _categories.last).$4;
 
+String _fmtQte(double q) =>
+    q == q.truncateToDouble() ? q.toInt().toString() : q.toStringAsFixed(1);
+
+// Pluriel français : kg/g/L/mL invariables, sinon +s si qté > 1
+String _plural(String unite, double qty) {
+  if (qty <= 1) return unite;
+  const invariable = {'kg', 'g', 'L', 'l', 'mL', 'ml', 'cl', 'dl', '%'};
+  if (invariable.contains(unite)) return unite;
+  if (unite.endsWith('s') || unite.endsWith('x')) return unite;
+  return '${unite}s';
+}
+
 // ── Page principale ─────────────────────────────────────────────────────────────
 
 class InventairePage extends StatefulWidget {
@@ -56,9 +68,64 @@ class _InventairePageState extends State<InventairePage> {
           .eq('uid_eleveur', _uid)
           .order('categorie')
           .order('nom');
-      if (mounted) setState(() { _items = List<Map<String, dynamic>>.from(rows); _loading = false; });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() {
+        _items = List<Map<String, dynamic>>.from(rows);
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur chargement : $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // Mise à jour directe ±delta sans dialog
+  Future<void> _quickDelta(Map<String, dynamic> item, double delta) async {
+    final currentQte = (item['quantite'] as num).toDouble();
+    final newQte = (currentQte + delta).clamp(0.0, double.infinity);
+    final type = delta > 0 ? 'restock' : 'consommation';
+
+    try {
+      await _supa.from('inventaire_mouvements').insert({
+        'item_id': item['id'],
+        'uid_eleveur': _uid,
+        'uid_auteur': _uid,
+        'type': type,
+        'quantite': delta.abs(),
+        'note': null,
+      });
+      await _supa.from('inventaire_items')
+          .update({'quantite': newQte, 'updated_at': DateTime.now().toIso8601String()})
+          .eq('id', item['id']);
+
+      // Alerte stock bas
+      final seuil = item['quantite_alerte'] != null
+          ? (item['quantite_alerte'] as num).toDouble()
+          : null;
+      if (type == 'consommation' &&
+          item['alerte_active'] == true &&
+          seuil != null &&
+          newQte <= seuil) {
+        await _supa.from('notifications').insert({
+          'uid': _uid,
+          'type': 'inventaire_alerte',
+          'title': '⚠️ Stock bas : ${item['nom']}',
+          'body': 'Il ne reste que ${_fmtQte(newQte)} ${_plural(item['unite'] as String? ?? '', newQte)} de ${item['nom']}.',
+          'data': {'itemId': item['id']},
+          'read': false,
+        });
+      }
+
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -66,10 +133,13 @@ class _InventairePageState extends State<InventairePage> {
       ? _items
       : _items.where((i) => i['categorie'] == _catFilter).toList();
 
-  List<Map<String, dynamic>> get _alertes => _items.where((i) =>
-      i['alerte_active'] == true &&
-      i['quantite_alerte'] != null &&
-      (i['quantite'] as num) <= (i['quantite_alerte'] as num)).toList();
+  List<Map<String, dynamic>> get _alertes => _items.where((i) {
+    if (i['alerte_active'] != true) return false;
+    if (i['quantite_alerte'] == null) return false;
+    final q = (i['quantite'] as num?)?.toDouble() ?? 0;
+    final s = (i['quantite_alerte'] as num).toDouble();
+    return q <= s;
+  }).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -101,9 +171,7 @@ class _InventairePageState extends State<InventairePage> {
           : RefreshIndicator(
               onRefresh: _load, color: _teal,
               child: CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(child: _buildContent()),
-                ],
+                slivers: [SliverToBoxAdapter(child: _buildContent())],
               ),
             ),
     );
@@ -131,7 +199,8 @@ class _InventairePageState extends State<InventairePage> {
               ..._alertes.map((a) => Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Text(
-                  '${a['nom']} — ${a['quantite']} ${a['unite']} restant(s)',
+                  '${_catEmoji(a['categorie'] as String? ?? 'autre')} ${a['nom']} — '
+                  '${_fmtQte((a['quantite'] as num).toDouble())} ${_plural(a['unite'] as String? ?? '', (a['quantite'] as num).toDouble())} restant${(a['quantite'] as num) > 1 ? 's' : ''}',
                   style: const TextStyle(fontSize: 12, color: Color(0xFF92400E)),
                 ),
               )),
@@ -191,6 +260,7 @@ class _InventairePageState extends State<InventairePage> {
               backgroundColor: Colors.transparent,
               builder: (_) => _ItemFormSheet(uid: _uid, item: item, onSaved: _load),
             ),
+            onDelta: (delta) => _quickDelta(item, delta),
           ))),
       ]),
     );
@@ -232,15 +302,25 @@ class _ItemCard extends StatelessWidget {
   final Map<String, dynamic> item;
   final VoidCallback onTap;
   final VoidCallback onEdit;
-  const _ItemCard({required this.item, required this.onTap, required this.onEdit});
+  final void Function(double delta) onDelta;
+
+  const _ItemCard({
+    required this.item,
+    required this.onTap,
+    required this.onEdit,
+    required this.onDelta,
+  });
 
   @override
   Widget build(BuildContext context) {
     final cat   = item['categorie'] as String? ?? 'autre';
-    final qte   = (item['quantite'] as num).toDouble();
-    final seuil = item['quantite_alerte'] != null ? (item['quantite_alerte'] as num).toDouble() : null;
+    final qte   = (item['quantite'] as num?)?.toDouble() ?? 0;
+    final seuil = item['quantite_alerte'] != null
+        ? (item['quantite_alerte'] as num).toDouble()
+        : null;
     final isLow = item['alerte_active'] == true && seuil != null && qte <= seuil;
     final color = _catColor(cat);
+    final unite = item['unite'] as String? ?? '';
 
     return GestureDetector(
       onTap: onTap,
@@ -254,107 +334,139 @@ class _ItemCard extends StatelessWidget {
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(children: [
-            // Icône catégorie
-            Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Center(child: Text(_catEmoji(cat), style: const TextStyle(fontSize: 20))),
-            ),
-            const SizedBox(width: 12),
-
-            // Infos
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Expanded(
-                    child: Text(item['nom'] as String? ?? '',
-                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14, color: _dark),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ),
-                  if (isLow)
-                    Container(
-                      margin: const EdgeInsets.only(left: 6),
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEF3C7),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text('⚠️ bas', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF92400E))),
-                    ),
-                ]),
-                const SizedBox(height: 2),
-                Text(
-                  '${_fmtQte(qte)} ${item['unite'] ?? ''}${seuil != null ? '  ·  seuil ${_fmtQte(seuil)} ${item['unite'] ?? ''}' : ''}',
-                  style: TextStyle(fontSize: 12, color: isLow ? const Color(0xFFB45309) : color, fontWeight: FontWeight.w600),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              // Icône
+              Container(
+                width: 38, height: 38,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-              ]),
-            ),
-
-            const SizedBox(width: 8),
-            // Boutons rapides
-            _QuickBtn('+', color: _green, onTap: () => _showQuickMvt(context, item, 'restock')),
-            const SizedBox(width: 6),
-            _QuickBtn('−', color: Colors.red.shade400, onTap: () => _showQuickMvt(context, item, 'consommation')),
-            const SizedBox(width: 6),
-            GestureDetector(
-              onTap: onEdit,
-              child: Container(
-                width: 32, height: 32,
-                decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
-                child: const Center(child: Text('✏️', style: TextStyle(fontSize: 14))),
+                child: Center(child: Text(_catEmoji(cat), style: const TextStyle(fontSize: 18))),
               ),
-            ),
+              const SizedBox(width: 10),
+              // Nom + quantité
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Expanded(
+                      child: Text(item['nom'] as String? ?? '',
+                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                              fontSize: 14, color: _dark),
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ),
+                    if (isLow)
+                      Container(
+                        margin: const EdgeInsets.only(left: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF3C7),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text('⚠️ bas',
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF92400E))),
+                      ),
+                  ]),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_fmtQte(qte)} ${_plural(unite, qte)}'
+                    '${seuil != null ? '  ·  seuil ${_fmtQte(seuil)} ${_plural(unite, seuil)}' : ''}',
+                    style: TextStyle(fontSize: 12,
+                        color: isLow ? const Color(0xFFB45309) : color,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ]),
+              ),
+              // Bouton édition
+              GestureDetector(
+                onTap: onEdit,
+                child: Container(
+                  width: 32, height: 32,
+                  decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
+                  child: const Center(child: Text('✏️', style: TextStyle(fontSize: 14))),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 10),
+            // Boutons ±1 et ±custom
+            Row(children: [
+              // −1 direct
+              _DeltaBtn(label: '−1', color: Colors.red.shade400, onTap: () => onDelta(-1)),
+              const SizedBox(width: 6),
+              // −N personnalisé
+              _DeltaBtn(label: '−', color: Colors.red.shade300, onTap: () => _showSheet(context, 'consommation')),
+              const Spacer(),
+              // Historique
+              GestureDetector(
+                onTap: onTap,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _teal.withOpacity(0.07),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text('📋 Historique',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _teal)),
+                ),
+              ),
+              const Spacer(),
+              // +N personnalisé
+              _DeltaBtn(label: '+', color: _green.withOpacity(0.7), onTap: () => _showSheet(context, 'restock')),
+              const SizedBox(width: 6),
+              // +1 direct
+              _DeltaBtn(label: '+1', color: _green, onTap: () => onDelta(1)),
+            ]),
           ]),
         ),
       ),
     );
   }
 
-  void _showQuickMvt(BuildContext context, Map<String, dynamic> item, String type) {
+  void _showSheet(BuildContext context, String type) {
     showModalBottomSheet(
       context: context, isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _QuickMvtSheet(
-        item: item,
-        type: type,
+        item: item, type: type,
         uid: FirebaseAuth.instance.currentUser!.uid,
-        onSaved: () => Navigator.pop(context),
+        onSaved: () {},
       ),
     );
   }
 }
 
-class _QuickBtn extends StatelessWidget {
+class _DeltaBtn extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
-  const _QuickBtn(this.label, {required this.color, required this.onTap});
+  const _DeltaBtn({required this.label, required this.color, required this.onTap});
 
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
     child: Container(
-      width: 32, height: 32,
+      constraints: const BoxConstraints(minWidth: 36),
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
-      child: Center(child: Text(label, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: color))),
+      child: Center(
+        child: Text(label,
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
+      ),
     ),
   );
 }
 
-String _fmtQte(double q) => q == q.truncateToDouble() ? q.toInt().toString() : q.toStringAsFixed(1);
-
-// ── Bottom sheet mouvement rapide ──────────────────────────────────────────────
+// ── Bottom sheet mouvement avec quantité personnalisée ─────────────────────────
 
 class _QuickMvtSheet extends StatefulWidget {
   final Map<String, dynamic> item;
-  final String type; // 'consommation' | 'restock'
+  final String type;
   final String uid;
   final VoidCallback onSaved;
   const _QuickMvtSheet({required this.item, required this.type, required this.uid, required this.onSaved});
@@ -363,131 +475,208 @@ class _QuickMvtSheet extends StatefulWidget {
 }
 
 class _QuickMvtSheetState extends State<_QuickMvtSheet> {
-  final _supa = Supabase.instance.client;
+  final _supa     = Supabase.instance.client;
   final _qteCtrl  = TextEditingController(text: '1');
   final _noteCtrl = TextEditingController();
   bool _saving = false;
+  String? _error;
+  double? _preview;
+
+  @override
+  void initState() {
+    super.initState();
+    _qteCtrl.addListener(_updatePreview);
+  }
+
+  void _updatePreview() {
+    final qte = double.tryParse(_qteCtrl.text.replaceAll(',', '.'));
+    final current = (widget.item['quantite'] as num).toDouble();
+    setState(() {
+      if (qte != null && qte > 0) {
+        _preview = widget.type == 'consommation'
+            ? (current - qte).clamp(0.0, double.infinity)
+            : current + qte;
+      } else {
+        _preview = null;
+      }
+    });
+  }
 
   @override
   void dispose() { _qteCtrl.dispose(); _noteCtrl.dispose(); super.dispose(); }
 
   Future<void> _save() async {
-    final qte = double.tryParse(_qteCtrl.text);
-    if (qte == null || qte <= 0) return;
-    setState(() => _saving = true);
-
-    final isConsomm = widget.type == 'consommation';
-    final currentQte = (widget.item['quantite'] as num).toDouble();
-    final newQte = isConsomm ? (currentQte - qte).clamp(0, double.infinity) : currentQte + qte;
-
-    await _supa.from('inventaire_mouvements').insert({
-      'item_id': widget.item['id'],
-      'uid_eleveur': widget.uid,
-      'uid_auteur': widget.uid,
-      'type': widget.type,
-      'quantite': qte,
-      'note': _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
-    });
-    await _supa.from('inventaire_items')
-        .update({'quantite': newQte, 'updated_at': DateTime.now().toIso8601String()})
-        .eq('id', widget.item['id']);
-
-    // Notification si seuil atteint
-    if (isConsomm &&
-        widget.item['alerte_active'] == true &&
-        widget.item['quantite_alerte'] != null &&
-        newQte <= (widget.item['quantite_alerte'] as num)) {
-      await _supa.from('notifications').insert({
-        'uid': widget.uid,
-        'type': 'inventaire_alerte',
-        'title': '⚠️ Stock bas : ${widget.item['nom']}',
-        'body': 'Il ne reste que ${_fmtQte(newQte)} ${widget.item['unite']} de ${widget.item['nom']}.',
-        'data': {'itemId': widget.item['id']},
-        'read': false,
-      });
+    final qte = double.tryParse(_qteCtrl.text.replaceAll(',', '.'));
+    if (qte == null || qte <= 0) {
+      setState(() => _error = 'Quantité invalide');
+      return;
     }
+    setState(() { _saving = true; _error = null; });
 
-    if (mounted) { widget.onSaved(); Navigator.pop(context); }
+    try {
+      final isConsomm = widget.type == 'consommation';
+      final currentQte = (widget.item['quantite'] as num).toDouble();
+      final newQte = isConsomm
+          ? (currentQte - qte).clamp(0.0, double.infinity)
+          : currentQte + qte;
+
+      await _supa.from('inventaire_mouvements').insert({
+        'item_id': widget.item['id'],
+        'uid_eleveur': widget.uid,
+        'uid_auteur': widget.uid,
+        'type': widget.type,
+        'quantite': qte,
+        'note': _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+      });
+      await _supa.from('inventaire_items')
+          .update({'quantite': newQte, 'updated_at': DateTime.now().toIso8601String()})
+          .eq('id', widget.item['id']);
+
+      final seuil = widget.item['quantite_alerte'] != null
+          ? (widget.item['quantite_alerte'] as num).toDouble()
+          : null;
+      if (isConsomm && widget.item['alerte_active'] == true && seuil != null && newQte <= seuil) {
+        await _supa.from('notifications').insert({
+          'uid': widget.uid,
+          'type': 'inventaire_alerte',
+          'title': '⚠️ Stock bas : ${widget.item['nom']}',
+          'body': 'Il ne reste que ${_fmtQte(newQte)} ${_plural(widget.item['unite'] as String? ?? '', newQte)} de ${widget.item['nom']}.',
+          'data': {'itemId': widget.item['id']},
+          'read': false,
+        });
+      }
+
+      widget.onSaved();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      setState(() { _saving = false; _error = e.toString(); });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final isConsomm = widget.type == 'consommation';
-    final color     = isConsomm ? Colors.red : _green;
+    final color = isConsomm ? Colors.red : _green;
 
-    return Container(
-      margin: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(
-          '${isConsomm ? '📉 Consommation' : '📦 Réapprovisionnement'} — ${widget.item['nom']}',
-          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _dark),
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        const SizedBox(height: 16),
-        Text('Quantité (${widget.item['unite'] ?? 'unité'})',
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _qteCtrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          autofocus: true,
-          decoration: InputDecoration(
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: color, width: 2),
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // Handle
+          Center(child: Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 14),
+          Text(
+            '${isConsomm ? '📉 Consommation' : '📦 Réapprovisionnement'} — ${widget.item['nom']}',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _dark),
           ),
-        ),
-        const SizedBox(height: 12),
-        Text('Note (optionnel)',
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _noteCtrl,
-          decoration: InputDecoration(
-            hintText: isConsomm ? 'ex : paquet de croquettes terminé' : 'ex : livraison reçue',
-            hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: color, width: 2),
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          ),
-        ),
-        const SizedBox(height: 20),
-        Row(children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () => Navigator.pop(context),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          const SizedBox(height: 16),
+          Text('Quantité (${widget.item['unite'] ?? 'unité'})',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _qteCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            autofocus: true,
+            decoration: InputDecoration(
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: color, width: 2),
               ),
-              child: const Text('Annuler'),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: _saving ? null : _save,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: color,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          const SizedBox(height: 12),
+          if (_preview != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: color.withOpacity(0.2)),
               ),
-              child: Text(_saving ? '…' : 'Enregistrer',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+              child: Row(children: [
+                Text(
+                  '${_fmtQte((widget.item['quantite'] as num).toDouble())} '
+                  '${_plural(widget.item['unite'] as String? ?? '', (widget.item['quantite'] as num).toDouble())}',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600, fontFamily: 'Galey'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(isConsomm ? '−' : '+',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: color)),
+                ),
+                Text(
+                  '${_fmtQte(double.tryParse(_qteCtrl.text.replaceAll(',', '.')) ?? 0)} '
+                  '${_plural(widget.item['unite'] as String? ?? '', double.tryParse(_qteCtrl.text.replaceAll(',', '.')) ?? 0)}',
+                  style: TextStyle(fontSize: 13, color: color, fontFamily: 'Galey'),
+                ),
+                const Spacer(),
+                Text('= ', style: TextStyle(fontSize: 14, color: Colors.grey.shade500)),
+                Text(
+                  '${_fmtQte(_preview!)} ${_plural(widget.item['unite'] as String? ?? '', _preview!)}',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 15,
+                      fontWeight: FontWeight.w700, color: _dark),
+                ),
+              ]),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Text('Note (optionnel)',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _noteCtrl,
+            decoration: InputDecoration(
+              hintText: isConsomm ? 'ex : paquet de croquettes terminé' : 'ex : livraison reçue',
+              hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: color, width: 2),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
           ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+          ],
+          const SizedBox(height: 20),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Annuler'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _saving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: color,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text(_saving ? '…' : 'Enregistrer',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
         ]),
-      ]),
+      ),
     );
   }
 }
@@ -518,7 +707,10 @@ class _ItemDetailSheetState extends State<_ItemDetailSheet> {
         .eq('item_id', widget.item['id'])
         .order('created_at', ascending: false)
         .limit(30);
-    if (mounted) setState(() { _mouvements = List<Map<String, dynamic>>.from(rows); _loading = false; });
+    if (mounted) setState(() {
+      _mouvements = List<Map<String, dynamic>>.from(rows);
+      _loading = false;
+    });
   }
 
   @override
@@ -534,10 +726,8 @@ class _ItemDetailSheetState extends State<_ItemDetailSheet> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(children: [
-          // Handle
           Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-          // Header
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Row(children: [
@@ -551,7 +741,6 @@ class _ItemDetailSheetState extends State<_ItemDetailSheet> {
             ]),
           ),
           const Divider(height: 1),
-          // Mouvements
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: _teal))
@@ -575,15 +764,13 @@ class _ItemDetailSheetState extends State<_ItemDetailSheet> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  Row(children: [
-                                    Text(
-                                      '${type == 'consommation' ? '−' : '+'}${_fmtQte(qte)} ${item['unite'] ?? ''}',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700, fontSize: 14,
-                                        color: type == 'consommation' ? Colors.red.shade600 : Colors.green.shade600,
-                                      ),
+                                  Text(
+                                    '${type == 'consommation' ? '−' : '+'}${_fmtQte(qte)} ${_plural(item['unite'] as String? ?? '', qte)}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700, fontSize: 14,
+                                      color: type == 'consommation' ? Colors.red.shade600 : Colors.green.shade600,
                                     ),
-                                  ]),
+                                  ),
                                   if ((m['note'] as String?)?.isNotEmpty == true)
                                     Text(m['note'] as String,
                                         style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
@@ -605,7 +792,7 @@ class _ItemDetailSheetState extends State<_ItemDetailSheet> {
   }
 }
 
-// ── Formulaire article ─────────────────────────────────────────────────────────
+// ── Formulaire article (ajout / édition) ──────────────────────────────────────
 
 class _ItemFormSheet extends StatefulWidget {
   final String uid;
@@ -617,17 +804,18 @@ class _ItemFormSheet extends StatefulWidget {
 }
 
 class _ItemFormSheetState extends State<_ItemFormSheet> {
-  final _supa     = Supabase.instance.client;
-  final _nomCtrl  = TextEditingController();
-  final _qteCtrl  = TextEditingController(text: '0');
+  final _supa      = Supabase.instance.client;
+  final _nomCtrl   = TextEditingController();
+  final _qteCtrl   = TextEditingController(text: '0');
   final _seuilCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
 
   String _cat   = 'alimentation';
   String _unite = 'kg';
-  bool   _alerte = true;
+  bool   _alerte  = true;
   bool   _saving  = false;
   bool   _deleting = false;
+  String? _error;
 
   @override
   void initState() {
@@ -639,7 +827,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
       _cat             = item['categorie'] as String? ?? 'alimentation';
       _unite           = item['unite'] as String? ?? 'kg';
       _alerte          = item['alerte_active'] as bool? ?? true;
-      _notesCtrl.text = item['notes'] as String? ?? '';
+      _notesCtrl.text  = item['notes'] as String? ?? '';
       if (item['quantite_alerte'] != null) {
         _seuilCtrl.text = _fmtQte((item['quantite_alerte'] as num).toDouble());
       }
@@ -654,32 +842,53 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   }
 
   Future<void> _save() async {
-    if (_nomCtrl.text.trim().isEmpty) return;
-    setState(() => _saving = true);
-    final payload = {
-      'uid_eleveur': widget.uid,
-      'nom': _nomCtrl.text.trim(),
-      'categorie': _cat,
-      'unite': _unite,
-      'quantite': double.tryParse(_qteCtrl.text) ?? 0,
-      'quantite_alerte': _seuilCtrl.text.isNotEmpty ? double.tryParse(_seuilCtrl.text) : null,
-      'alerte_active': _alerte,
-      'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-      'updated_at': DateTime.now().toIso8601String(),
-    };
-    if (widget.item != null) {
-      await _supa.from('inventaire_items').update(payload).eq('id', widget.item!['id']);
-    } else {
-      await _supa.from('inventaire_items').insert(payload);
+    if (_nomCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'Le nom est requis');
+      return;
     }
-    if (mounted) { widget.onSaved(); Navigator.pop(context); }
+    final qte = double.tryParse(_qteCtrl.text.replaceAll(',', '.'));
+    if (qte == null) {
+      setState(() => _error = 'Quantité invalide');
+      return;
+    }
+    setState(() { _saving = true; _error = null; });
+
+    try {
+      final payload = {
+        'uid_eleveur': widget.uid,
+        'nom': _nomCtrl.text.trim(),
+        'categorie': _cat,
+        'unite': _unite,
+        'quantite': qte,
+        'quantite_alerte': (_alerte && _seuilCtrl.text.isNotEmpty)
+            ? double.tryParse(_seuilCtrl.text.replaceAll(',', '.'))
+            : null,
+        'alerte_active': _alerte,
+        'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      if (widget.item != null) {
+        await _supa.from('inventaire_items').update(payload).eq('id', widget.item!['id']);
+      } else {
+        await _supa.from('inventaire_items').insert(payload);
+      }
+      widget.onSaved();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      setState(() { _saving = false; _error = e.toString(); });
+    }
   }
 
   Future<void> _delete() async {
     if (widget.item == null) return;
     setState(() => _deleting = true);
-    await _supa.from('inventaire_items').delete().eq('id', widget.item!['id']);
-    if (mounted) { widget.onSaved(); Navigator.pop(context); }
+    try {
+      await _supa.from('inventaire_items').delete().eq('id', widget.item!['id']);
+      widget.onSaved();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      setState(() { _deleting = false; _error = e.toString(); });
+    }
   }
 
   InputDecoration _dec(String label, [String? hint]) => InputDecoration(
@@ -694,39 +903,48 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    // Container fixe avec scroll interne — le bouton "Enregistrer" est toujours visible
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.9,
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: DraggableScrollableSheet(
-        initialChildSize: 0.85, maxChildSize: 0.95, minChildSize: 0.5,
-        builder: (_, ctrl) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(children: [
-            Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Row(children: [
-                Text(widget.item == null ? 'Nouvel article' : 'Modifier l\'article',
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: _dark)),
-                const Spacer(),
-                IconButton(icon: const Icon(Icons.close, color: Colors.grey), onPressed: () => Navigator.pop(context)),
-              ]),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: ListView(controller: ctrl, padding: const EdgeInsets.all(16), children: [
-                // Nom
-                TextField(controller: _nomCtrl, decoration: _dec('Nom de l\'article *', 'ex : Croquettes Royal Canin…'),
-                    textCapitalization: TextCapitalization.sentences),
-                const SizedBox(height: 14),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(children: [
+        // Handle + header
+        Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Row(children: [
+            Text(widget.item == null ? 'Nouvel article' : 'Modifier l\'article',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: _dark)),
+            const Spacer(),
+            IconButton(icon: const Icon(Icons.close, color: Colors.grey), onPressed: () => Navigator.pop(context)),
+          ]),
+        ),
+        const Divider(height: 1),
 
-                // Catégorie
-                const Text('Catégorie', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
-                const SizedBox(height: 8),
-                Wrap(spacing: 8, runSpacing: 8, children: _categories.map((c) {
+        // Formulaire scrollable
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // Nom
+              TextField(
+                controller: _nomCtrl,
+                decoration: _dec('Nom de l\'article *', 'ex : Croquettes Royal Canin…'),
+                textCapitalization: TextCapitalization.sentences,
+              ),
+              const SizedBox(height: 14),
+
+              // Catégorie
+              const Text('Catégorie', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8, runSpacing: 8,
+                children: _categories.map((c) {
                   final sel = _cat == c.$1;
                   return GestureDetector(
                     onTap: () => setState(() => _cat = c.$1),
@@ -742,104 +960,120 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                               color: sel ? Colors.white : Colors.grey.shade700)),
                     ),
                   );
-                }).toList()),
-                const SizedBox(height: 14),
+                }).toList(),
+              ),
+              const SizedBox(height: 14),
 
-                // Quantité + Unité
-                Row(children: [
-                  Expanded(
-                    child: TextField(controller: _qteCtrl, decoration: _dec('Quantité actuelle'),
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+              // Quantité + Unité
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: _qteCtrl,
+                    decoration: _dec('Quantité actuelle'),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      value: _unite,
-                      decoration: _dec('Unité'),
-                      items: _unites.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
-                      onChanged: (v) => setState(() => _unite = v!),
-                    ),
-                  ),
-                ]),
-                const SizedBox(height: 14),
-
-                // Alerte
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFFBEB),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFFCD34D)),
-                  ),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                      const Text('⚠️ Alerte stock bas',
-                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF92400E))),
-                      Switch(
-                        value: _alerte,
-                        activeColor: const Color(0xFFF59E0B),
-                        onChanged: (v) => setState(() => _alerte = v),
-                      ),
-                    ]),
-                    if (_alerte) ...[
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _seuilCtrl,
-                        decoration: InputDecoration(
-                          labelText: 'Notifier quand il reste moins de… ($_unite)',
-                          hintText: 'ex : 2',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Color(0xFFF59E0B), width: 2),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        ),
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      ),
-                    ],
-                  ]),
                 ),
-                const SizedBox(height: 14),
-
-                // Notes
-                TextField(controller: _notesCtrl, decoration: _dec('Notes', 'Marque, fournisseur, remarques…'),
-                    maxLines: 2),
-                const SizedBox(height: 24),
-
-                // Boutons
-                Row(children: [
-                  if (widget.item != null) ...[
-                    OutlinedButton(
-                      onPressed: _deleting ? null : _delete,
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.red),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      child: Text(_deleting ? '…' : 'Supprimer',
-                          style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
-                    ),
-                    const SizedBox(width: 10),
-                  ],
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _saving ? null : _save,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _teal,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      child: Text(_saving ? 'Enregistrement…' : widget.item == null ? 'Ajouter' : 'Enregistrer',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                    ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _unite,
+                    decoration: _dec('Unité'),
+                    items: _unites.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                    onChanged: (v) => setState(() => _unite = v!),
                   ),
-                ]),
+                ),
               ]),
+              const SizedBox(height: 14),
+
+              // Alerte
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFCD34D)),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                    const Text('⚠️ Alerte stock bas',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF92400E))),
+                    Switch(
+                      value: _alerte,
+                      activeColor: const Color(0xFFF59E0B),
+                      onChanged: (v) => setState(() => _alerte = v),
+                    ),
+                  ]),
+                  if (_alerte) ...[
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _seuilCtrl,
+                      decoration: InputDecoration(
+                        labelText: 'Notifier quand il reste moins de… ($_unite)',
+                        hintText: 'ex : 2',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFF59E0B), width: 2),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                  ],
+                ]),
+              ),
+              const SizedBox(height: 14),
+
+              // Notes
+              TextField(
+                controller: _notesCtrl,
+                decoration: _dec('Notes', 'Marque, fournisseur, remarques…'),
+                maxLines: 2,
+              ),
+              const SizedBox(height: 8),
+            ]),
+          ),
+        ),
+
+        // Boutons toujours visibles en bas
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Row(children: [
+            if (widget.item != null) ...[
+              OutlinedButton(
+                onPressed: _deleting ? null : _delete,
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.red),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text(_deleting ? '…' : 'Supprimer',
+                    style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _saving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _teal,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text(
+                  _saving ? 'Enregistrement…' : widget.item == null ? 'Ajouter' : 'Enregistrer',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+              ),
             ),
           ]),
         ),
-      ),
+      ]),
     );
   }
 }

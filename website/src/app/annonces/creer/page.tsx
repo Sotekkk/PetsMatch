@@ -217,8 +217,8 @@ function CreerAnnoncePageInner() {
       setNombreBebes(members.length);
       setType('portee');
 
-      // Chiots
-      setAnimauxPortee(members.map((m: Record<string, unknown>) => ({
+      // Chiots — générer les IDs avant pour pré-charger les photos
+      const porteeAnimaux = members.map((m: Record<string, unknown>) => ({
         id: crypto.randomUUID(),
         animalId: m.id as string,
         nom: (m.nom as string) ?? '',
@@ -229,7 +229,16 @@ function CreerAnnoncePageInner() {
         description: '',
         photos: m.photo_url ? [m.photo_url as string] : [],
         isLinked: true,
-      })));
+      }));
+      setAnimauxPortee(porteeAnimaux);
+
+      // Pré-charger les photos existantes dans babyPhotos (pour l'affichage dans les cartes)
+      const initBabyPhotos: Record<string, { blobs: Blob[]; previews: string[] }> = {};
+      porteeAnimaux.forEach(baby => {
+        const url = (baby.photos as string[])[0];
+        if (url) initBabyPhotos[baby.id] = { blobs: [], previews: [url] };
+      });
+      if (Object.keys(initBabyPhotos).length > 0) setBabyPhotos(initBabyPhotos);
 
       // Chercher père et mère dans les animaux de l'éleveur
       const nomPere = (first.nom_pere as string) ?? '';
@@ -490,7 +499,7 @@ function CreerAnnoncePageInner() {
     if (!editingBaby) return;
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
-    const currentCount = babyPhotos[editingBaby.id]?.blobs.length ?? 0;
+    const currentCount = babyPhotos[editingBaby.id]?.previews.length ?? 0;
     const available = 4 - currentCount;
     if (available <= 0) return;
     const toProcess = files.slice(0, available);
@@ -515,9 +524,34 @@ function CreerAnnoncePageInner() {
   function removeBabyPhoto(babyId: string, index: number) {
     setBabyPhotos(prev => {
       const cur = prev[babyId]; if (!cur) return prev;
-      URL.revokeObjectURL(cur.previews[index]);
-      return { ...prev, [babyId]: { blobs: cur.blobs.filter((_, i) => i !== index), previews: cur.previews.filter((_, i) => i !== index) } };
+      const removedUrl = cur.previews[index];
+      // Ne pas revoker les URLs https:// (déjà hébergées)
+      if (removedUrl?.startsWith('blob:')) URL.revokeObjectURL(removedUrl);
+
+      // Compter combien de previews avant ce point sont des URLs https (pré-chargées)
+      const httpCount = cur.previews.slice(0, index).filter(p => !p.startsWith('blob:')).length;
+      const blobIdx = index - httpCount;
+
+      return {
+        ...prev,
+        [babyId]: {
+          blobs: blobIdx >= 0 && blobIdx < cur.blobs.length
+            ? cur.blobs.filter((_, i) => i !== blobIdx)
+            : cur.blobs,
+          previews: cur.previews.filter((_, i) => i !== index),
+        },
+      };
     });
+    // Si c'est une URL existante (http), la retirer aussi de animauxPortee
+    setAnimauxPortee(prev => prev.map(a => {
+      if (a.id !== babyId) return a;
+      const photos = ((a as any).photos as string[] | undefined) ?? [];
+      const preview = (babyPhotos[babyId]?.previews ?? [])[index];
+      if (preview && !preview.startsWith('blob:')) {
+        return { ...a, photos: photos.filter((p: string) => p !== preview) };
+      }
+      return a;
+    }));
   }
 
   // ── Main photos
@@ -593,18 +627,21 @@ function CreerAnnoncePageInner() {
         }
       }
 
-      // ANTI02 : max 2 portées actives par éleveur
+      // ANTI02 : limite portées actives (plan-aware)
       if (type === 'portee') {
-        const { count } = await supabase
-          .from('annonces')
-          .select('id', { count: 'exact', head: true })
-          .eq('uid_eleveur', user!.uid)
-          .eq('type', 'portee')
-          .neq('statut', 'archivée');
-        if ((count ?? 0) >= 2) {
-          setError('Limite atteinte : 2 portées actives maximum. Archivez une portée existante avant d\'en créer une nouvelle.');
-          setSaving(false);
-          return;
+        const maxPortees = planCode === 'premium' ? -1 : planCode === 'pro' ? 5 : 2;
+        if (maxPortees !== -1) {
+          const { count } = await supabase
+            .from('annonces')
+            .select('id', { count: 'exact', head: true })
+            .eq('uid_eleveur', user!.uid)
+            .eq('type', 'portee')
+            .neq('statut', 'archivée');
+          if ((count ?? 0) >= maxPortees) {
+            setError(`Limite atteinte : ${maxPortees} portée${maxPortees > 1 ? 's' : ''} active${maxPortees > 1 ? 's' : ''} maximum sur votre plan. Archivez une portée existante ou passez à Premium pour des portées illimitées.`);
+            setSaving(false);
+            return;
+          }
         }
       }
 
@@ -1235,7 +1272,7 @@ function CreerAnnoncePageInner() {
                         className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-black/60 rounded-full flex items-center justify-center text-white text-xs">×</button>
                     </div>
                   ))}
-                  {(babyPhotos[editingBaby.id]?.blobs.length ?? 0) < 4 && (
+                  {(babyPhotos[editingBaby.id]?.previews.length ?? 0) < 4 && (
                     <label className="cursor-pointer w-20 h-20 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center gap-1 hover:border-[#0C5C6C] hover:text-[#0C5C6C] text-gray-300 transition-colors">
                       <span className="text-2xl">📷</span>
                       <span className="text-xs font-medium">Ajouter</span>

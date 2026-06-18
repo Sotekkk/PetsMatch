@@ -203,6 +203,10 @@ class _SupabaseMigrationPageState extends State<SupabaseMigrationPage> {
   Future<void> _migrateAnimaux() async {
     _log('🐾 Migration animaux...');
     final snap = await _db.collection('animaux').get();
+
+    final knownUsers = await _supa.from('users').select('uid');
+    final knownUids = <String>{for (final r in knownUsers) r['uid'].toString()};
+
     final rows = snap.docs.map((d) {
       final data = _clean(d.data());
       return {
@@ -248,11 +252,15 @@ class _SupabaseMigrationPageState extends State<SupabaseMigrationPage> {
         'contacts_urgence':     data['contactsUrgence'] ?? [],
         'created_at':           data['createdAt'],
       };
-    }).where((r) => r['uid_eleveur'] != null).toList();
+    }).where((r) {
+      final uid = r['uid_eleveur'];
+      if (uid == null) return false;
+      return knownUids.contains(uid.toString());
+    }).toList();
 
     await _upsert('animaux', rows);
     setState(() { _done += snap.docs.length; _total += snap.docs.length; });
-    _log('  ✓ ${snap.docs.length} animaux migrés');
+    _log('  ✓ ${rows.length} animaux migrés');
 
     // Sous-collections
     await _migrateAnimalSubcollections(snap.docs);
@@ -290,6 +298,10 @@ class _SupabaseMigrationPageState extends State<SupabaseMigrationPage> {
     };
     final newDocs = snap.docs.where((d) => !existingIds.contains(d.id)).toList();
     _log('  ℹ️ ${existingIds.length} déjà dans Supabase, ${newDocs.length} à importer');
+
+    // UIDs connus pour respecter le FK uid_eleveur → users(uid)
+    final knownUsers = await _supa.from('users').select('uid');
+    final knownUids = <String>{for (final r in knownUsers) r['uid'].toString()};
 
     final rows = newDocs.map((d) {
       final data = _clean(d.data());
@@ -350,7 +362,11 @@ class _SupabaseMigrationPageState extends State<SupabaseMigrationPage> {
         'updated_at':           data['updatedAt'],
         'expires_at':           data['expiresAt'],
       };
-    }).where((r) => r['uid_eleveur'] != null).toList();
+    }).where((r) {
+      final uid = r['uid_eleveur'];
+      if (uid == null) return false;
+      return knownUids.contains(uid.toString());
+    }).toList();
 
     await _upsert('annonces', rows);
     setState(() { _done += newDocs.length; _total += snap.docs.length; });
@@ -402,6 +418,11 @@ class _SupabaseMigrationPageState extends State<SupabaseMigrationPage> {
   Future<void> _migratePosts() async {
     _log('📸 Migration posts...');
     final snap = await _db.collection('post').get();
+
+    // Récupère les UIDs connus dans Supabase pour éviter la violation FK
+    final knownUsers = await _supa.from('users').select('uid');
+    final knownUids = <String>{for (final r in knownUsers) r['uid'].toString()};
+
     final rows = snap.docs.map((d) {
       final data = _clean(d.data());
       return {
@@ -431,11 +452,19 @@ class _SupabaseMigrationPageState extends State<SupabaseMigrationPage> {
         'number_porter':    _toInt(data['numberPorter']),
         'created_at':       data['timestamp'],
       };
-    }).where((r) => (r['uid_eleveur'] as String).isNotEmpty).toList();
+    }).where((r) {
+      final uid = r['uid_eleveur'] as String;
+      if (uid.isEmpty) return false;
+      if (!knownUids.contains(uid)) {
+        _log('  ⚠️ Post ${r['id']} ignoré : uid "$uid" absent de users');
+        return false;
+      }
+      return true;
+    }).toList();
 
     await _upsert('posts', rows);
     setState(() { _done += snap.docs.length; _total += snap.docs.length; });
-    _log('  ✓ ${snap.docs.length} posts migrés');
+    _log('  ✓ ${rows.length} posts migrés (${snap.docs.length - rows.length} ignorés)');
   }
 
   Future<void> _migrateUserSubcollections() async {
@@ -460,17 +489,43 @@ class _SupabaseMigrationPageState extends State<SupabaseMigrationPage> {
       }).toList();
       if (rsRows.isNotEmpty) { await _upsert('registre_sanitaire', rsRows); rsCount += rsRows.length; }
 
-      // Factures
+      // Factures — mapping explicite camelCase Firestore → snake_case Supabase
       final facts = await user.reference.collection('factures').get();
       final factRows = facts.docs.map((d) {
         final data = _clean(d.data());
-        // Convertir les champs numériques des factures
         return {
-          'id': d.id, 'uid_eleveur': user.id,
-          ...data.map((k, v) {
-            if (['total_ht','total_tva','total_ttc'].contains(k)) return MapEntry(k, _toNum(v));
-            return MapEntry(k, v);
-          }),
+          'id':                  d.id,
+          'uid_eleveur':         user.id,
+          'numero_facture':      _toInt(data['numeroFacture']),
+          'date_facture':        _toIsoDate(data['dateFacture']),
+          'date_prestation':     _toIsoDate(data['datePrestation']),
+          'date_echeance':       _toIsoDate(data['dateEcheance']),
+          'lignes':              data['lignes'] ?? [],
+          'total_ht':            _toNum(data['totalHT']),
+          'total_tva':           _toNum(data['totalTVA']),
+          'total_ttc':           _toNum(data['totalTTC']),
+          'regime_tva':          data['regimeTVA'],
+          'nom_client':          data['nomClient'],
+          'prenom_client':       data['prenomClient'],
+          'email_client':        data['emailClient'],
+          'telephone_client':    data['telephoneClient'],
+          'rue_client':          data['rueClient'],
+          'cp_client':           data['cpClient'],
+          'ville_client':        data['villeClient'],
+          'pays_client':         data['paysClient'],
+          'nom_emetteur':        data['nomEmetteur'],
+          'rue_emetteur':        data['rueEmetteur'],
+          'cp_emetteur':         data['cpEmetteur'],
+          'ville_emetteur':      data['villeEmetteur'],
+          'pays_emetteur':       data['paysEmetteur'],
+          'siret_emetteur':      data['siretEmetteur'],
+          'tva_emetteur':        data['tvaEmetteur'],
+          'email_emetteur':      data['emailEmetteur'],
+          'mode_paiement':       data['modePaiement'],
+          'delai_paiement':      data['delaiPaiement'],
+          'note_complementaire': data['noteComplementaire'],
+          'statut':              data['statut'] ?? 'emise',
+          'created_at':          data['createdAt'],
         };
       }).toList();
       if (factRows.isNotEmpty) { await _upsert('factures', factRows); factCount += factRows.length; }

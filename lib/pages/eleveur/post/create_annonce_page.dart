@@ -547,6 +547,33 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             return;
           }
         }
+        // ── Limite portées actives (plan-aware) ─────────────────────────────
+        if (_type == 'portee') {
+          final maxPortees = planCode == 'premium' ? -1 : planCode == 'pro' ? 5 : 2;
+          if (maxPortees != -1) {
+            final rows = await Supabase.instance.client
+                .from('annonces')
+                .select('id')
+                .eq('uid_eleveur', uid)
+                .eq('type', 'portee')
+                .neq('statut', 'archivée');
+            if ((rows as List).length >= maxPortees) {
+              if (mounted) {
+                setState(() => _saving = false);
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(
+                    'Limite atteinte : $maxPortees portée${maxPortees > 1 ? 's' : ''} active${maxPortees > 1 ? 's' : ''} sur votre plan. '
+                    'Archivez une portée ou passez à Premium pour des portées illimitées.',
+                    style: const TextStyle(fontFamily: 'Galey'),
+                  ),
+                  backgroundColor: Colors.red.shade700,
+                  duration: const Duration(seconds: 5),
+                ));
+              }
+              return;
+            }
+          }
+        }
       } catch (_) {}
     }
 
@@ -562,10 +589,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       String? perePhotoUrl = _perePhotoUrl;
       if (_perePhotoFile != null) perePhotoUrl = await _uploadFile(_perePhotoFile!, 'annonces/parents');
 
-      // Photos bébés inline
+      // Photos bébés inline — pour tous les animaux (liés ou non), upload les chemins locaux
       final animauxSaved = <Map<String, dynamic>>[];
       for (final animal in _animauxPortee) {
-        if (animal['isLinked'] == true) { animauxSaved.add(animal); continue; }
         final localPaths = List<String>.from(animal['photos'] ?? []);
         final uploaded = <String>[];
         for (final p in localPaths) {
@@ -1643,10 +1669,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
               '${animal['isLinked'] == true ? ' · lié' : ''}',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
         ])),
-        if (animal['isLinked'] != true)
-          IconButton(icon: const Icon(Icons.edit_outlined, color: _teal, size: 18),
-              onPressed: () => _editAnimalInline(index, animal),
-              padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 32, minHeight: 32)),
+        IconButton(icon: const Icon(Icons.edit_outlined, color: _teal, size: 18),
+            onPressed: () => _editAnimalInline(index, animal),
+            padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 32, minHeight: 32)),
         GestureDetector(
           onTap: () {
             const statuts = ['disponible', 'reserve', 'vendu'];
@@ -1938,7 +1963,10 @@ class _AddAnimalPageState extends State<_AddAnimalPage> {
     'nom': _nomCtrl.text.trim(), 'sexe': _sexe, 'couleur': _couleurCtrl.text.trim(),
     'prix': double.tryParse(_prixCtrl.text.trim()),
     'description': _descCtrl.text.trim(),
-    'statut': _statut, 'isLinked': false,
+    'statut': _statut,
+    // Préserve isLinked + animalId si l'animal était lié (portée)
+    if (widget.initial?['isLinked'] == true) 'isLinked': true,
+    if (widget.initial?['animalId'] != null) 'animalId': widget.initial!['animalId'],
     'photos': [..._existingPhotos, ..._newPhotos.map((f) => f.path)],
   };
 

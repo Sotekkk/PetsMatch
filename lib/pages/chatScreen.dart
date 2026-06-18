@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/main_feed.dart';
 import 'package:PetsMatch/pages/user_details_particulier.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -92,11 +93,25 @@ class _ChatScreenState extends State<ChatScreen> {
     for (final p in (data['participants'] as List<dynamic>? ?? [])) {
       if (p != senderId) unread[p] = (unread[p] ?? 0) + 1;
     }
+    // Stocke le nom/avatar de l'expéditeur dans la conversation pour éviter
+    // de relire Firestore à chaque affichage dans la liste des messages.
+    final myName = User_Info.isElevage
+        ? (User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : '${User_Info.firstname} ${User_Info.lastname}'.trim())
+        : '${User_Info.firstname} ${User_Info.lastname}'.trim();
+    final myPhoto = User_Info.isElevage
+        ? User_Info.profilePictureUrlElevage
+        : User_Info.profilePictureUrl;
+    final myInfo = <String, dynamic>{
+      'name': myName.isEmpty ? 'Utilisateur' : myName,
+      if (myPhoto.isNotEmpty && myPhoto != _defaultPp) 'photo': myPhoto,
+    };
+
     await convRef.update({
       'unreadCount': unread,
       'lastMessage': imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : text),
       'timestamp': FieldValue.serverTimestamp(),
       'deletedFor': FieldValue.delete(),
+      'participants_info.$senderId': myInfo,
     });
     _scrollToBottom();
   }

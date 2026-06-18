@@ -68,14 +68,37 @@ Future<bool> registerUser(String email, String password) async {
 
       'CGU': true,
       'mentionlegal': true,
-
-      // Ajouter d'autres champs comme nécessaire
     });
 
-    return true; // Succès de l'enregistrement
+    // Sync Supabase (particulier — pas d'élevage ni pro)
+    try {
+      await Supabase.instance.client.from('users').upsert({
+        'uid':                 uid,
+        'firstname':           User_Info.firstname,
+        'lastname':            User_Info.lastname,
+        'email':               User_Info.email,
+        'phone_number':        User_Info.phone_number,
+        'code_iso':            User_Info.codeISO,
+        'adress':              User_Info.adress,
+        'profile_picture_url': User_Info.profilePictureUrl,
+        'is_elevage':          false,
+        'is_validate':         true,
+        'is_pub':              User_Info.isPub,
+        'is_pro':              false,
+        'is_partenaire':       false,
+        'is_admin':            false,
+        'is_dev':              User_Info.isDev,
+        'is_association':      false,
+        'cgu_accepted_at':     DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      debugPrint("Supabase sync error (particulier): $e");
+    }
+
+    return true;
   } catch (e) {
     print("Erreur lors de la création de l'utilisateur: $e");
-    return false; // Échec de l'enregistrement
+    return false;
   }
 }
 
@@ -206,7 +229,7 @@ Future<Object> registerElevage(String email, String password) async {
         'is_pub':                User_Info.isPub,
         'is_pro':                User_Info.isPro,
         'is_partenaire':         User_Info.isPartenaire,
-        'is_admin':              User_Info.isAdmin,
+        'is_admin':              false,
         'is_dev':                User_Info.isDev,
         // Champs pro/éleveur
         'cat_pro':               User_Info.catPro,
@@ -237,6 +260,9 @@ Future<Object> registerElevage(String email, String password) async {
       });
     } catch (e) {
       print("Supabase user sync error: $e");
+      // Affiche l'erreur en développement pour diagnostic
+      // ignore: avoid_print
+      debugPrint("Supabase sync DETAIL: ${e.toString()}");
     }
 
     return uid; // Succès de l'enregistrement
