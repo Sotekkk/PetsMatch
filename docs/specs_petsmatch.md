@@ -1653,7 +1653,8 @@ CREATE TABLE plan_template_etapes (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   template_id    UUID REFERENCES plan_templates(id) ON DELETE CASCADE,
   jour_offset    INTEGER NOT NULL, -- négatif = avant événement, positif = après
-  type_acte      TEXT,             -- vermifuge | vaccination | nettoyage | promenade | socialisation | autre
+  type_acte      TEXT,             -- vermifuge | vaccination | desinfection | promenade_socialisation | alimentaire | toilettage | autre
+                                   -- ✅ mis à jour 2026-06-19 (Natacha) : nettoyage→desinfection, promenade+socialisation fusionnés, ajout alimentaire+toilettage
   produit        TEXT,             -- ex: Milbemax®
   dosage         TEXT,             -- ex: 1 cp / 5 kg
   duree_jours    INTEGER DEFAULT 1, -- traitement sur N jours (génère N tâches consécutives)
@@ -1805,6 +1806,8 @@ Phase 3 (suite)
 ---
 
 ### 14.8 Vue Agenda / Calendrier mensuel (PLN01–PLN02)
+
+> **✅ PLN01 Livré 2026-06-19 (Natacha)** : calendrier mois avec pastilles colorées par type de protocole sur app Flutter et web. Vue jour avec navigation prev/next. Bouton reporter sur tâches manuelles et protocoles.
 
 > **Contexte** : la vue "Planning du jour" existe. Il faut une vue calendrier mensuelle qui montre d'un coup d'œil les jours chargés, et la possibilité de voir les tâches dans l'agenda natif du téléphone.
 
@@ -1986,7 +1989,7 @@ Ce document est conforme au format attendu lors d'un contrôle DDPP (Direction D
 
 | Code  | Feature | Surface | Priorité |
 |-------|---------|---------|---------|
-| PLN01 | Vue calendrier mensuelle | App Flutter | V1 |
+| PLN01 | Vue calendrier mensuelle | App Flutter | ✅ Livré 2026-06-19 |
 | PLN02 | Sync agenda natif (iCal) | App Flutter | V2 |
 | PLN03 | Vue unifiée tâches employé | App Flutter | V1 |
 | PLN04 | Notifications tâches employé | App + Push | V1 |
