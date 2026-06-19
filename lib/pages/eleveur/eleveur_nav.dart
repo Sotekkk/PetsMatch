@@ -249,6 +249,19 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
+                        label: 'Suivi sanitaire',
+                        icon: Icons.health_and_safety_outlined,
+                        locked: _planCode == 'free',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => _planCode == 'free'
+                                ? const AbonnementPage()
+                                : const RegistreSanitairePage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
                         label: 'Facturation',
                         icon: Icons.receipt_long_outlined,
                         onTap: () {
@@ -278,19 +291,6 @@ class _EleveurNavState extends State<EleveurNav> {
                             builder: (_) => _planCode == 'free'
                                 ? const AbonnementPage()
                                 : const CertificatsEngagementPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Suivi sanitaire',
-                        icon: Icons.health_and_safety_outlined,
-                        locked: _planCode == 'free',
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => _planCode == 'free'
-                                ? const AbonnementPage()
-                                : const RegistreSanitairePage(),
                           ));
                         },
                       ),
