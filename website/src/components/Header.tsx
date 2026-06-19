@@ -100,8 +100,6 @@ const MENU_ELEVEUR = [
       { href: '/elevage/inventaire',              label: 'Inventaire',         icon: '📦' },
       { href: '/employes',                        label: 'Mes employés',       icon: '👥' },
       { href: '/elevage/registre-entree-sortie', label: 'Entrée - Sortie',  icon: '📂', pro: true },
-      { href: '/mes-annonces',                   label: 'Mes Annonces',       icon: '📋' },
-      { href: '/annonces/creer',                 label: 'Nouvelle annonce',   icon: '➕' },
       { href: '/abonnement',                     label: 'Mon abonnement',     icon: '⭐' },
       { href: '/mes-taches',                      label: 'Mes tâches',         icon: '✅' },
     ],
@@ -119,8 +117,10 @@ const MENU_ELEVEUR = [
     section: 'Annonces',
     icon: '📢',
     items: [
-      { href: '/annonces',   label: 'Trouver un compagnon', icon: '❤️' },
-      { href: '/elevages',   label: 'Carte des élevages',   icon: '🗺️' },
+      { href: '/mes-annonces',   label: 'Mes Annonces',         icon: '📋' },
+      { href: '/annonces/creer', label: 'Nouvelle annonce',     icon: '➕' },
+      { href: '/annonces',       label: 'Trouver un compagnon', icon: '❤️' },
+      { href: '/elevages',       label: 'Carte des élevages',   icon: '🗺️' },
     ],
   },
   {

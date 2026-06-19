@@ -295,16 +295,6 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
-                        label: 'Mes Annonces',
-                        icon: Icons.campaign_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const MesAnnoncesPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
                         label: 'Mon abonnement',
                         icon: Icons.star_outline,
                         onTap: () {
@@ -370,6 +360,16 @@ class _EleveurNavState extends State<EleveurNav> {
                     icon: Icons.campaign_outlined,
                     label: 'Annonces',
                     children: [
+                      _DrawerSubItem(
+                        label: 'Mes Annonces',
+                        icon: Icons.campaign_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const MesAnnoncesPage(),
+                          ));
+                        },
+                      ),
                       _DrawerSubItem(
                         label: 'Déposer une annonce',
                         icon: Icons.add_circle_outline_rounded,
