@@ -1447,15 +1447,17 @@ STRIPE_CONTRACT_PRICE_ID=... # price_id Stripe pour le 2€/contrat
 | Code | Feature | Statut |
 |------|---------|--------|
 | SIGN00 | Signature canvas + stockage Supabase (fallback) | ✅ Livré 2026-06-19 |
-| SIGN01 | Intégration YouSign API v3 — contrat vente + réservation | 🔜 V1.5 |
-| SIGN02 | YouSign — certificat d'engagement | 🔜 V1.5 |
-| SIGN03 | Webhook completion → PDF signé archivé dans documents_animaux | 🔜 V1.5 |
-| SIGN04 | Quota mensuel + paiement Stripe 2€/contrat au-delà | 🔜 V1.5 |
+| SIGN01 | Intégration YouSign API v3 — contrat vente + réservation | 🔚 Fin de projet |
+| SIGN02 | YouSign — certificat d'engagement | 🔚 Fin de projet |
+| SIGN03 | Webhook completion → PDF signé archivé dans documents_animaux | 🔚 Fin de projet |
+| SIGN04 | Quota mensuel + paiement Stripe 2€/contrat au-delà | 🔚 Fin de projet |
 | SIGN05 | Multi-signataires / co-adoption | 🔜 V2 |
 | SIGN06 | Portail signatures (tableau de bord statuts) | 🔜 V2 |
 
-**Dépendances :**
-- SIGN01 → compte YouSign + `YOUSIGN_API_KEY` + endpoint Next.js `/api/yousign/create`
+> ⚠️ **SIGN01–SIGN04 à implémenter en toute fin de projet**, une fois toutes les autres fonctionnalités livrées. La signature canvas (SIGN00) reste active en attendant.
+
+**Dépendances (quand on implémentera) :**
+- SIGN01 → compte YouSign actif + `YOUSIGN_API_KEY` + endpoint `/api/yousign/create`
 - SIGN03 → endpoint webhook `/api/yousign/webhook` + bucket Supabase `contrats`
 - SIGN04 → `STRIPE_CONTRACT_PRICE_ID` + table `contrats_yousign_usage`
 - Profils gratuits : bouton "Signer" masqué, message "Fonctionnalité Premium"
