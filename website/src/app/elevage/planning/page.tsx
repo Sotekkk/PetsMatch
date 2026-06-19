@@ -256,11 +256,19 @@ export default function PlanningPage() {
   const router = useRouter();
   const { config: planConfig, loading: planLoading } = usePlan();
 
-  const [view, setView] = useState<'jour' | 'protocoles'>('jour');
+  const [view, setView] = useState<'jour' | 'mois' | 'protocoles'>('mois');
   const [taches, setTaches] = useState<Tache[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(toISODate(new Date()));
   const [loadingData, setLoadingData] = useState(true);
+
+  // ── Calendrier mensuel ───────────────────────────────────────────────────────
+  const [focusedMonth, setFocusedMonth] = useState<Date>(() => {
+    const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d;
+  });
+  const [tasksByDate, setTasksByDate] = useState<Record<string, string[]>>({});
+  const [overdueSet, setOverdueSet]   = useState<Set<string>>(new Set());
+  const [monthLoading, setMonthLoading] = useState(false);
 
   const [showTemplateForm, setShowTemplateForm] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
@@ -314,7 +322,36 @@ export default function PlanningPage() {
     setTemplates((data ?? []) as Template[]);
   }, [user]);
 
+  const loadMonth = useCallback(async () => {
+    if (!user) return;
+    setMonthLoading(true);
+    const first = new Date(focusedMonth); first.setDate(1);
+    const last  = new Date(focusedMonth.getFullYear(), focusedMonth.getMonth() + 1, 0);
+    const fmt = (d: Date) => d.toISOString().split('T')[0];
+    const { data } = await supabase
+      .from('plan_taches')
+      .select('date_prevue, type_acte, statut')
+      .eq('uid_eleveur', user.uid)
+      .gte('date_prevue', fmt(first))
+      .lte('date_prevue', fmt(last))
+      .not('statut', 'eq', 'fait');
+    const byDate: Record<string, string[]> = {};
+    const overdue = new Set<string>();
+    const todayStr = fmt(new Date());
+    for (const r of (data ?? []) as { date_prevue: string; type_acte?: string }[]) {
+      const ds = (r.date_prevue ?? '').split('T')[0];
+      if (!ds) continue;
+      if (!byDate[ds]) byDate[ds] = [];
+      if (r.type_acte) byDate[ds].push(r.type_acte);
+      if (ds < todayStr) overdue.add(ds);
+    }
+    setTasksByDate(byDate);
+    setOverdueSet(overdue);
+    setMonthLoading(false);
+  }, [user, focusedMonth]);
+
   useEffect(() => { if (user) { loadTaches(); loadTemplates(); } }, [user, loadTaches, loadTemplates]);
+  useEffect(() => { if (user && view === 'mois') loadMonth(); }, [user, view, loadMonth]);
 
   if (loading || !user) return (
     <div className="flex justify-center items-center h-64">
@@ -329,16 +366,32 @@ export default function PlanningPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Planning</h1>
         <div className="flex gap-2">
+          <button onClick={() => setView('mois')}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${view === 'mois' ? 'bg-[#0C5C6C] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            Mois
+          </button>
           <button onClick={() => setView('jour')}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${view === 'jour' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-            Aujourd&apos;hui
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${view === 'jour' ? 'bg-[#0C5C6C] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            Jour
           </button>
           <button onClick={() => setView('protocoles')}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${view === 'protocoles' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${view === 'protocoles' ? 'bg-[#0C5C6C] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
             Routines
           </button>
         </div>
       </div>
+
+      {view === 'mois' && (
+        <MoisView
+          focusedMonth={focusedMonth}
+          tasksByDate={tasksByDate}
+          overdueSet={overdueSet}
+          loading={monthLoading}
+          onPrevMonth={() => setFocusedMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+          onNextMonth={() => setFocusedMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+          onDayClick={(ds) => { setSelectedDate(ds); setView('jour'); }}
+        />
+      )}
 
       {view === 'jour' && (
         <JourView
@@ -393,6 +446,151 @@ export default function PlanningPage() {
           onClose={() => setDeleteGroupe(null)}
           onDeleted={() => { setDeleteGroupe(null); loadTaches(); }} />
       )}
+    </div>
+  );
+}
+
+// ── Couleurs par type d'acte ──────────────────────────────────────────────────
+
+const TYPE_DOT_COLORS: Record<string, string> = {
+  vaccination:     '#4CAF50',
+  visite:          '#2196F3',
+  traitement:      '#0C5C6C',
+  vermifuge:       '#FFC107',
+  antiparasitaire: '#FF9800',
+  osteopathie:     '#9C27B0',
+  ferrage:         '#795548',
+  radiographie:    '#607D8B',
+  chirurgie:       '#F44336',
+  nettoyage:       '#00BCD4',
+  promenade:       '#673AB7',
+  socialisation:   '#FF5722',
+  commande:        '#6E9E57',
+};
+
+const DOT_LEGEND = [
+  { color: '#EF4444',  label: 'En retard' },
+  { color: '#0C5C6C',  label: 'Traitement' },
+  { color: '#4CAF50',  label: 'Vaccination' },
+  { color: '#2196F3',  label: 'Visite' },
+  { color: '#FFC107',  label: 'Vermifuge' },
+  { color: '#FF9800',  label: 'Antiparasitaire' },
+  { color: '#00BCD4',  label: 'Nettoyage' },
+  { color: '#673AB7',  label: 'Promenade' },
+  { color: '#FF5722',  label: 'Socialisation' },
+];
+
+const MONTH_NAMES_FR = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+
+// ── Vue Mois ──────────────────────────────────────────────────────────────────
+
+function MoisView({ focusedMonth, tasksByDate, overdueSet, loading, onPrevMonth, onNextMonth, onDayClick }: {
+  focusedMonth: Date;
+  tasksByDate: Record<string, string[]>;
+  overdueSet: Set<string>;
+  loading: boolean;
+  onPrevMonth: () => void;
+  onNextMonth: () => void;
+  onDayClick: (ds: string) => void;
+}) {
+  const today = toISODate(new Date());
+  const year  = focusedMonth.getFullYear();
+  const month = focusedMonth.getMonth();
+  const firstDay = new Date(year, month, 1);
+  // offset lundi=0 … dimanche=6
+  const startOffset = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const totalCells  = Math.ceil((startOffset + daysInMonth) / 7) * 7;
+  const fmt = (y: number, m: number, d: number) =>
+    `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+  return (
+    <div>
+      {/* Navigation mois */}
+      <div className="flex items-center justify-between mb-4 px-1">
+        <button onClick={onPrevMonth} className="p-2 rounded-xl hover:bg-gray-100 transition-colors text-[#0C5C6C]">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <span className="text-base font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+          {MONTH_NAMES_FR[month]} {year}
+        </span>
+        <button onClick={onNextMonth} className="p-2 rounded-xl hover:bg-gray-100 transition-colors text-[#0C5C6C]">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Entête jours */}
+      <div className="grid grid-cols-7 mb-1">
+        {['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'].map(d => (
+          <div key={d} className="text-center text-xs font-semibold text-gray-400 py-1">{d}</div>
+        ))}
+      </div>
+
+      {/* Grille */}
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <div className="w-7 h-7 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-7 gap-1">
+          {Array.from({ length: totalCells }, (_, i) => {
+            const dayNum = i - startOffset + 1;
+            if (dayNum < 1 || dayNum > daysInMonth) {
+              return <div key={i} />;
+            }
+            const ds      = fmt(year, month, dayNum);
+            const isToday = ds === today;
+            const isOver  = overdueSet.has(ds);
+            const types   = tasksByDate[ds] ?? [];
+            const unique  = [...new Set(types)].slice(0, 3);
+
+            return (
+              <button key={ds} onClick={() => onDayClick(ds)}
+                className={`relative flex flex-col items-center justify-center rounded-xl aspect-square transition-colors text-sm font-semibold
+                  ${isToday
+                    ? 'bg-[#0C5C6C] text-white shadow-md'
+                    : isOver && types.length > 0
+                      ? 'bg-white border-2 border-red-300 text-[#1F2A2E] hover:bg-red-50'
+                      : 'bg-white border border-gray-100 text-[#1F2A2E] hover:bg-gray-50'
+                  }`}>
+                <span className="text-sm font-bold leading-none">{dayNum}</span>
+                {types.length > 0 && (
+                  <div className="flex gap-0.5 mt-1 items-center">
+                    {isOver && !isToday ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
+                    ) : (
+                      unique.map((t, idx) => (
+                        <span key={idx} className="w-1.5 h-1.5 rounded-full inline-block"
+                          style={{ backgroundColor: TYPE_DOT_COLORS[t] ?? '#9CA3AF' }} />
+                      ))
+                    )}
+                    {types.length > 3 && !isOver && (
+                      <span className={`text-[8px] font-bold leading-none ${isToday ? 'text-white/70' : 'text-gray-400'}`}>
+                        +{types.length - 3}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Légende */}
+      <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1.5 px-1">
+        {DOT_LEGEND.map(({ color, label }) => (
+          <div key={label} className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+            <span className="text-xs text-gray-500">{label}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
