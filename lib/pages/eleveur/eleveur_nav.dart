@@ -294,16 +294,6 @@ class _EleveurNavState extends State<EleveurNav> {
                           ));
                         },
                       ),
-                      _DrawerSubItem(
-                        label: 'Mon abonnement',
-                        icon: Icons.star_outline,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const AbonnementPage(),
-                          ));
-                        },
-                      ),
                       if (_isEmploye)
                         _DrawerSubItem(
                           label: 'Mes Employeurs',

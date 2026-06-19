@@ -1633,6 +1633,15 @@ export default function ProfilPage() {
       {/* ── Sécurité & aide ── */}
       <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 mt-1" style={{ fontFamily: 'Galey, sans-serif' }}>Sécurité & aide</p>
       <div className="space-y-3 mb-6">
+        <Link href="/abonnement"
+          className="flex items-center gap-4 bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-4 hover:shadow-md transition-shadow">
+          <div className="w-10 h-10 rounded-xl bg-[#FFF8E8] flex items-center justify-center flex-shrink-0 text-xl">⭐</div>
+          <div className="flex-1">
+            <p className="font-semibold text-[#1F2A2E] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Mon abonnement</p>
+            <p className="text-xs text-gray-400">Gérer votre abonnement PetsMatch</p>
+          </div>
+          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+        </Link>
         <SettingsAction
           icon={<svg className="w-5 h-5 text-[#0C5C6C]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>}
           iconBg="bg-[#E6F4F7]"

@@ -5,6 +5,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
+import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/settings/about_us.dart';
 import 'package:PetsMatch/pages/settings/connectionSecu.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
@@ -203,6 +204,15 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                 onTap: () {
                   Navigator.of(context).push(MaterialPageRoute(
                       builder: (context) => const UtilisatesBloquesPage()));
+                },
+              ),
+              buildSettingsOption(
+                context,
+                icon: Icons.star_outline,
+                text: 'Mon abonnement',
+                onTap: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (context) => const AbonnementPage()));
                 },
               ),
               buildSettingsOption(
