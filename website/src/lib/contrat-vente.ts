@@ -50,10 +50,14 @@ h2{font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:0.5p
 .between{text-align:center;font-style:italic;margin:12px 0}
 .art-title{font-weight:bold;margin:18px 0 6px;font-size:12px;text-transform:uppercase}
 .block{margin-bottom:10px}
-.sign-row{display:flex;gap:60px;margin-top:50px}
-.sign-block{flex:1;text-align:center}
-.sign-line{border-bottom:1px solid #555;margin-top:50px;margin-bottom:4px}
-.foot{margin-top:20px;font-size:9px;color:#aaa;text-align:center}
+.sign-row{display:flex;gap:40px;margin-top:40px}
+.sign-block{flex:1;border:1px solid #ddd;border-radius:8px;padding:14px 16px;text-align:center}
+.sign-label{font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:0.5px;color:#0C5C6C;margin-bottom:2px}
+.sign-name{font-size:10px;color:#555;margin-bottom:4px}
+.sign-line{border-bottom:1px solid #555;margin-top:44px;margin-bottom:6px}
+.sign-note{font-size:9px;color:#888}
+.copy-banner{border:2px dashed #0C5C6C;border-radius:6px;padding:6px 14px;text-align:center;font-size:10px;color:#0C5C6C;font-weight:bold;margin:20px 0 8px;letter-spacing:0.5px}
+.foot{margin-top:16px;font-size:9px;color:#aaa;text-align:center}
 .cb{display:inline-block;width:12px;height:12px;border:1px solid #444;vertical-align:middle;margin-right:3px;cursor:pointer;background:#fff;text-align:center;line-height:11px;font-size:9px}
 .cb.checked{background:#0C5C6C;color:#fff}
 .e{border-bottom:1px solid #0C5C6C;min-width:60px;display:inline-block;outline:none;padding:0 3px;color:#0C5C6C;cursor:text}
@@ -61,13 +65,22 @@ h2{font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:0.5p
 .e.wide{min-width:200px}
 .e.full{min-width:100%;display:block;margin-top:2px}
 .no-print{background:#0C5C6C;color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:13px;margin:0 6px}
+.btn2{background:#6E9E57;color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:13px;margin:0 6px}
 .toolbar{position:fixed;top:0;left:0;right:0;background:#f0f9ff;border-bottom:2px solid #0C5C6C;padding:8px 20px;display:flex;align-items:center;gap:12px;z-index:999}
 .tip{font-size:11px;color:#555}
 .page-break{page-break-before:always}
-@media print{.toolbar{display:none!important}.e{border-bottom:1px solid #555;color:#222}.page{padding:20px 30px}}
+@media print{.toolbar{display:none!important}.e{border-bottom:1px solid #555;color:#222}.page{padding:20px 30px}.sign-block{border:1px solid #aaa}}
 `;
 
-const SCRIPT = `function toggleCb(el){el.classList.toggle('checked');el.textContent=el.classList.contains('checked')?'✓':'';}`;
+const SCRIPT = `
+function toggleCb(el){el.classList.toggle('checked');el.textContent=el.classList.contains('checked')?'✓':'';}
+function print2(){
+  var t=document.querySelector('.toolbar');
+  if(t)t.style.display='none';
+  window.print();
+  setTimeout(function(){window.print();if(t)t.style.display='';},800);
+}
+`;
 
 export function generateContratHTML(animal: AnimalContrat, data: DataContrat, eleveur: EleveurContrat): string {
   const today = new Date().toLocaleDateString('fr-FR');
@@ -87,7 +100,8 @@ export function generateContratHTML(animal: AnimalContrat, data: DataContrat, el
 </head><body>
 <div class="toolbar no-print">
   <span class="tip">✏️ Cliquez sur les champs soulignés pour les modifier · Cochez les cases · Puis imprimez</span>
-  <button class="no-print" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
+  <button class="no-print" onclick="window.print()">🖨️ Imprimer 1 exemplaire</button>
+  <button class="btn2" onclick="print2()">🖨️🖨️ Imprimer 2 exemplaires</button>
 </div>
 <div class="page" style="margin-top:52px">
 
@@ -192,18 +206,24 @@ ${data.notes ? `<div class="block"><strong>Conditions particulières :</strong><
 
 <div style="margin-top:30px">Le <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA">${dateVente}</span></div>
 
+<div class="copy-banner">📄 Contrat établi en DEUX exemplaires originaux — un pour chaque partie</div>
+
 <div class="sign-row">
   <div class="sign-block">
-    <div style="font-size:11px;font-weight:bold">LE VENDEUR</div>
-    <div style="font-size:10px;color:#555">${eleveur.nom}</div>
+    <div class="sign-label">Le Vendeur</div>
+    <div class="sign-name">${eleveur.nom}</div>
+    <div style="font-size:9px;color:#888;margin-bottom:2px">Éleveur / Vendeur</div>
     <div class="sign-line"></div>
-    <div style="font-size:9px;color:#aaa">« Lu et approuvé » · Date et signature</div>
+    <div class="sign-note">« Lu et approuvé » · Date et signature</div>
+    <div style="margin-top:10px;font-size:9px"><span class="cb" onclick="toggleCb(this)">☐</span> J'ai reçu mon exemplaire original</div>
   </div>
   <div class="sign-block">
-    <div style="font-size:11px;font-weight:bold">L'ACHETEUR</div>
-    <div style="font-size:10px;color:#555">${acheteurNom || '...'}</div>
+    <div class="sign-label">L'Acheteur</div>
+    <div class="sign-name">${acheteurNom || '…'}</div>
+    <div style="font-size:9px;color:#888;margin-bottom:2px">Acheteur / Acquéreur</div>
     <div class="sign-line"></div>
-    <div style="font-size:9px;color:#aaa">« Lu et approuvé » · Date et signature</div>
+    <div class="sign-note">« Lu et approuvé » · Date et signature</div>
+    <div style="margin-top:10px;font-size:9px"><span class="cb" onclick="toggleCb(this)">☐</span> J'ai reçu mon exemplaire original</div>
   </div>
 </div>
 
@@ -245,22 +265,26 @@ Le cédant restitue ou délivre au cessionnaire les documents suivants : Carte I
 Fait en double exemplaire à <span class="e" contenteditable="true" data-ph="Ville"></span>, le <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA">${dateVente}</span>
 </div>
 
+<div class="copy-banner">📄 Attestation établie en DEUX exemplaires originaux — un pour chaque partie</div>
+
 <div class="sign-row">
   <div class="sign-block">
-    <div style="font-size:11px;font-weight:bold">Le cédant</div>
-    <div style="font-size:10px;color:#555">${acheteurNom || '...'}</div>
+    <div class="sign-label">Le cédant (Acheteur)</div>
+    <div class="sign-name">${acheteurNom || '…'}</div>
     <div class="sign-line"></div>
-    <div style="font-size:9px;color:#aaa">« Lu et approuvé »</div>
+    <div class="sign-note">« Lu et approuvé » · Date et signature</div>
+    <div style="margin-top:10px;font-size:9px"><span class="cb" onclick="toggleCb(this)">☐</span> J'ai reçu mon exemplaire original</div>
   </div>
   <div class="sign-block">
-    <div style="font-size:11px;font-weight:bold">Le cessionnaire</div>
-    <div style="font-size:10px;color:#555">${eleveur.nom}</div>
+    <div class="sign-label">Le cessionnaire (Vendeur)</div>
+    <div class="sign-name">${eleveur.nom}</div>
     <div class="sign-line"></div>
-    <div style="font-size:9px;color:#aaa">« Lu et approuvé »</div>
+    <div class="sign-note">« Lu et approuvé » · Date et signature</div>
+    <div style="margin-top:10px;font-size:9px"><span class="cb" onclick="toggleCb(this)">☐</span> J'ai reçu mon exemplaire original</div>
   </div>
 </div>
 
-<p class="foot">Contrat établi en deux exemplaires originaux · ${today} · PetsMatch</p>
+<p class="foot">Document établi en deux exemplaires originaux · ${today} · PetsMatch</p>
 </div></body></html>`;
 }
 

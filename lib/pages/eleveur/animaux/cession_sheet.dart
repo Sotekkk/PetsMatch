@@ -3,6 +3,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -57,6 +58,7 @@ class _CessionSheetState extends State<CessionSheet> {
   bool _uploadingCertificat = false;
 
   bool _saving = false;
+  bool _generatingPdf = false;
   String? _error;
 
   @override
@@ -122,6 +124,31 @@ class _CessionSheetState extends State<CessionSheet> {
       setState(() => _error = 'Erreur upload : $e');
     } finally {
       loadSetter(false);
+    }
+  }
+
+  Future<void> _genererPdf() async {
+    setState(() { _generatingPdf = true; _error = null; });
+    try {
+      final profil = await _supa.from('users').select(
+        'firstname, lastname, name_elevage, is_elevage, adress_elevage, adress, siret, numero_elevage, code_iso_elevage, email'
+      ).eq('uid', widget.uid).maybeSingle();
+      await genererContratPDF(
+        context: context,
+        animal: widget.animal,
+        eleveur: profil ?? {},
+        acquereurNom:     _nomCtrl.text.trim(),
+        acquereurAdresse: _adresseCtrl.text.trim(),
+        acquereurEmail:   _emailCtrl.text.trim(),
+        acquereurTel:     _telCtrl.text.trim(),
+        prix:             _prixCtrl.text.trim(),
+        dateCession:      _dateCession,
+        notes:            _notesCtrl.text.trim(),
+      );
+    } catch (e) {
+      setState(() => _error = 'Erreur génération PDF : $e');
+    } finally {
+      setState(() => _generatingPdf = false);
     }
   }
 
@@ -364,6 +391,27 @@ class _CessionSheetState extends State<CessionSheet> {
 
           // ── Étape 2 : Documents ──────────────────────────────
           if (_step == 2) ...[
+            // Bouton générer contrat PDF
+            OutlinedButton.icon(
+              onPressed: _generatingPdf ? null : _genererPdf,
+              icon: _generatingPdf
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: _teal, strokeWidth: 2))
+                  : const Icon(Icons.picture_as_pdf_outlined, size: 16, color: _teal),
+              label: Text(_generatingPdf ? 'Génération...' : '📄 Générer contrat de vente (PDF)',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: _teal)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: _teal),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                minimumSize: const Size(double.infinity, 0),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4),
+              child: Text('Imprimez en 2 exemplaires (un pour chaque partie), signez, puis uploadez le signé.',
+                  style: TextStyle(fontSize: 10, color: Colors.grey)),
+            ),
+            const SizedBox(height: 8),
             _DocRow(
               title: '📜 Certificat de cession',
               subtitle: 'Document légal de transfert',
