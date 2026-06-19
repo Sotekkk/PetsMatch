@@ -1329,6 +1329,56 @@ Pour les dossiers d'adoption en couple ou en famille, prévoir **plusieurs signa
 - Bouton "🖨️🖨️ Imprimer 2 exemplaires" dans la toolbar web
 - Suffisant pour contrats non-litigieux (vente animaux) — pas de valeur légale eIDAS — risque si contesté
 
+### 9bis.5 Architecture cible — Documents liés à l'animal (V1.5)
+
+> **Décision 2026-06-19** : refonte de la gestion des documents pour centraliser dans la section Administratif et lier chaque document à l'animal.
+
+**Principe** : tous les documents (contrats, certificats) sont créés depuis **Administratif**, stockés dans Supabase Storage et liés à l'animal via la table `documents_animaux`. Ils apparaissent dans la fiche animal et suivent l'animal lors d'une cession.
+
+**Table `documents_animaux` :**
+```sql
+CREATE TABLE documents_animaux (
+  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  animal_id   TEXT REFERENCES animaux(id) ON DELETE CASCADE,
+  uid_eleveur TEXT NOT NULL,
+  type        TEXT NOT NULL,  -- contrat_vente | contrat_reservation | certificat_engagement | certificat_cession
+  url         TEXT,           -- Supabase Storage bucket 'contrats'
+  statut      TEXT DEFAULT 'brouillon',  -- brouillon | signe | archive
+  signe_le    TIMESTAMPTZ,
+  metadata    JSONB,          -- { acquereur_nom, acquereur_email, prix, date_cession, ... }
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Flux par type de document :**
+
+| Document | Créé depuis | Lié à | Requis avant |
+|----------|------------|-------|--------------|
+| Certificat d'engagement | Administratif > Certificats | Animal | Cession (7j délai chien/chat) |
+| Contrat de réservation | Administratif > Contrats | Animal | Réservation |
+| Contrat de vente | Administratif > Contrats | Animal | Cession |
+| Certificat de cession | Administratif > Certificats | Animal | Cession (attestation finale) |
+
+**Workflow :**
+1. Éleveur ouvre Administratif > Contrats/Certificats
+2. Sélectionne l'animal → pré-remplissage automatique (nom, espèce, race, puce, date naissance)
+3. Saisit les infos acquéreur + prix + date
+4. Signature électronique canvas (ou impression + scan)
+5. Document stocké Supabase + lié à l'animal (`documents_animaux`)
+6. Visible dans la fiche animal onglet Documents
+7. Lors de la cession → le système trouve le contrat de vente signé lié à l'animal → l'attache automatiquement
+
+**Codes feature :**
+
+| Code | Feature | Surface | Priorité |
+|------|---------|---------|---------|
+| DOC01 | Table `documents_animaux` + migration SQL | Backend | V1.5 |
+| DOC02 | Page Contrats dynamiques (sélecteur animal + signature) | App + Web | V1.5 |
+| DOC03 | Certificat d'engagement avec signature électronique | App + Web | V1.5 |
+| DOC04 | Fiche animal onglet Documents — affichage docs liés | App + Web | V1.5 |
+| DOC05 | Cession — attach auto du contrat de vente signé | App + Web | V1.5 |
+| DOC06 | Certificat de cession (attestation de transfert) | App + Web | V1.5 |
+
 **TODO YouSign (SIGN01)** :
 - Remplacer les canvas par appel API YouSign : `POST /procedures` avec les deux signataires, récupérer les `signatureLinks`, envoyer par email/notification
 - Webhook `procedure.finished` → stocker PDF final YouSign dans Supabase Storage
