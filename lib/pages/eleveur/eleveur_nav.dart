@@ -295,39 +295,6 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
-                        label: 'Facturation',
-                        icon: Icons.receipt_long_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const FacturationPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Contrats',
-                        icon: Icons.description_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => ContratReservationPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Certificats d\'engagement',
-                        icon: Icons.edit_document,
-                        locked: _planCode == 'free',
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => _planCode == 'free'
-                                ? const AbonnementPage()
-                                : const CertificatsEngagementPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
                         label: 'Mes Annonces',
                         icon: Icons.campaign_outlined,
                         onTap: () {
@@ -358,6 +325,45 @@ class _EleveurNavState extends State<EleveurNav> {
                             ));
                           },
                         ),
+                    ],
+                  ),
+                  _DrawerSection(
+                    icon: Icons.folder_outlined,
+                    label: 'Administratif',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Certificats',
+                        icon: Icons.edit_document,
+                        locked: _planCode == 'free',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => _planCode == 'free'
+                                ? const AbonnementPage()
+                                : const CertificatsEngagementPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Contrats',
+                        icon: Icons.description_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => ContratReservationPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Facturation',
+                        icon: Icons.receipt_long_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const FacturationPage(),
+                          ));
+                        },
+                      ),
                     ],
                   ),
                   _DrawerSection(

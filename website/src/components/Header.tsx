@@ -104,9 +104,15 @@ const MENU_ELEVEUR = [
       { href: '/annonces/creer',                 label: 'Nouvelle annonce',   icon: '➕' },
       { href: '/abonnement',                     label: 'Mon abonnement',     icon: '⭐' },
       { href: '/mes-taches',                      label: 'Mes tâches',         icon: '✅' },
-      { href: '/elevage/certificat-engagement', label: 'Certificats',        icon: '✍️', pro: true },
-      { href: '/elevage/contrat',               label: 'Contrats',           icon: '📄', premium: true },
-      { href: '/elevage/facturation',            label: 'Facturation',        icon: '🧾', premium: true },
+    ],
+  },
+  {
+    section: 'Administratif',
+    icon: '📁',
+    items: [
+      { href: '/elevage/certificat-engagement', label: 'Certificats',  icon: '✍️', pro: true },
+      { href: '/elevage/contrat',               label: 'Contrats',     icon: '📄', premium: true },
+      { href: '/elevage/facturation',            label: 'Facturation',  icon: '🧾', premium: true },
     ],
   },
   {
