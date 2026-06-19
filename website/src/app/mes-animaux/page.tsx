@@ -306,8 +306,8 @@ export default function MesAnimauxPage() {
     if (!user) return;
     setFetching(true);
     const query = isEleveur
-      ? supabase.from('animaux').select('*').or(`uid_eleveur.eq.${user.uid},uid_acquereur.eq.${user.uid}`).order('nom', { ascending: true })
-      : supabase.from('animaux').select('*').or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid},uid_acquereur.eq.${user.uid}`).order('nom', { ascending: true });
+      ? supabase.from('animaux').select('*').eq('uid_eleveur', user.uid).order('nom', { ascending: true })
+      : supabase.from('animaux').select('*').or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`).order('nom', { ascending: true });
 
     query.then(async ({ data }) => {
       const list = (data ?? []) as Animal[];
@@ -878,7 +878,7 @@ export default function MesAnimauxPage() {
           setCederAnimal(null);
           setFetching(true);
           supabase.from('animaux')
-            .select('*').or(`uid_eleveur.eq.${user.uid},uid_acquereur.eq.${user.uid}`)
+            .select('*').eq('uid_eleveur', user.uid)
             .order('nom', { ascending: true })
             .then(({ data }) => { setAnimaux((data ?? []) as Animal[]); setFetching(false); });
         }}
