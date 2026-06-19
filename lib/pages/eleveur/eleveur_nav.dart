@@ -223,6 +223,14 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
+                        label: 'Mon Agenda',
+                        icon: Icons.calendar_month_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          setState(() => _selectedIndex = 3);
+                        },
+                      ),
+                      _DrawerSubItem(
                         label: 'Facturation',
                         icon: Icons.receipt_long_outlined,
                         onTap: () {
@@ -461,14 +469,7 @@ class _EleveurNavState extends State<EleveurNav> {
                     ),
                   ],
                 ),
-                _DrawerItem(
-                  icon: Icons.calendar_month_outlined,
-                  label: 'Mon Agenda',
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(() => _selectedIndex = 3);
-                  },
-                ),
+
                 if (!User_Info.isPro)
                   _DrawerItem(
                     icon: Icons.favorite_border,
