@@ -1,0 +1,462 @@
+import 'dart:io';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+const _teal  = Color(0xFF0C5C6C);
+const _green = Color(0xFF6E9E57);
+const _dark  = Color(0xFF1F2A2E);
+
+// ── Feuille de cession ────────────────────────────────────────────────────────
+
+class CessionSheet extends StatefulWidget {
+  final Map<String, dynamic> animal;
+  final String uid;
+  final String nomElevage;
+  final VoidCallback onCeded;
+
+  const CessionSheet({
+    super.key,
+    required this.animal,
+    required this.uid,
+    required this.nomElevage,
+    required this.onCeded,
+  });
+
+  @override
+  State<CessionSheet> createState() => _CessionSheetState();
+}
+
+class _CessionSheetState extends State<CessionSheet> {
+  final _supa = Supabase.instance.client;
+
+  // Étapes
+  int _step = 0; // 0 = acquéreur, 1 = détails, 2 = documents
+
+  // Recherche utilisateur PetsMatch
+  final _searchCtrl = TextEditingController();
+  Map<String, dynamic>? _foundUser;
+  bool _searching = false;
+  bool _searchDone = false;
+
+  // Champs acquéreur
+  String _qualite = 'particulier';
+  final _nomCtrl      = TextEditingController();
+  final _emailCtrl    = TextEditingController();
+  final _telCtrl      = TextEditingController();
+  final _adresseCtrl  = TextEditingController();
+  final _prixCtrl     = TextEditingController();
+  final _notesCtrl    = TextEditingController();
+  late DateTime _dateCession;
+
+  // Documents
+  String? _contratUrl;
+  String? _certificatUrl;
+  bool _uploadingContrat    = false;
+  bool _uploadingCertificat = false;
+
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _dateCession = DateTime.now();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _nomCtrl.dispose();
+    _emailCtrl.dispose();
+    _telCtrl.dispose();
+    _adresseCtrl.dispose();
+    _prixCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _searchUser() async {
+    final email = _searchCtrl.text.trim().toLowerCase();
+    if (email.isEmpty) return;
+    setState(() { _searching = true; _searchDone = false; _foundUser = null; });
+    try {
+      final res = await _supa
+          .from('users')
+          .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url')
+          .eq('email', email)
+          .maybeSingle();
+      if (res != null) {
+        final isElv = res['is_elevage'] == true;
+        final nom = isElv
+            ? (res['name_elevage'] as String? ?? '${res['firstname'] ?? ''} ${res['lastname'] ?? ''}'.trim())
+            : '${res['firstname'] ?? ''} ${res['lastname'] ?? ''}'.trim();
+        setState(() {
+          _foundUser = {...res, 'nom': nom.isEmpty ? 'Utilisateur PetsMatch' : nom};
+          _nomCtrl.text = _foundUser!['nom'] as String;
+          _emailCtrl.text = email;
+        });
+      }
+    } finally {
+      setState(() { _searching = false; _searchDone = true; });
+    }
+  }
+
+  Future<void> _uploadDoc(String type) async {
+    final res = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png']);
+    if (res == null || res.files.isEmpty) return;
+    final file = File(res.files.first.path!);
+    final ext  = res.files.first.extension ?? 'pdf';
+    final setter = type == 'contrat' ? (v) => _contratUrl = v : (v) => _certificatUrl = v;
+    final loadSetter = type == 'contrat'
+        ? (v) => setState(() => _uploadingContrat = v)
+        : (v) => setState(() => _uploadingCertificat = v);
+    loadSetter(true);
+    try {
+      final path = 'cessions/${widget.uid}/${widget.animal['id']}/${type}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final snap = await FirebaseStorage.instance.ref(path).putFile(file);
+      final url  = await snap.ref.getDownloadURL();
+      setState(() { setter(url); });
+    } catch (e) {
+      setState(() => _error = 'Erreur upload : $e');
+    } finally {
+      loadSetter(false);
+    }
+  }
+
+  Future<void> _save() async {
+    if (_nomCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'Le nom de l\'acquéreur est requis.');
+      return;
+    }
+    setState(() { _saving = true; _error = null; });
+    try {
+      await _supa.from('animaux').update({
+        'statut':                 'sorti',
+        'date_sortie':            _dateCession.toIso8601String().split('T').first,
+        'destinataire_qualite':   _qualite,
+        'destinataire_nom':       _nomCtrl.text.trim(),
+        'destinataire_adresse':   _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),
+        'uid_acquereur':          _foundUser?['uid'],
+        'cession_contrat_url':    _contratUrl,
+        'cession_certificat_url': _certificatUrl,
+        'cession_prix':           _prixCtrl.text.isEmpty ? null : double.tryParse(_prixCtrl.text.replaceAll(',', '.')),
+        'cession_notes':          _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+      }).eq('id', widget.animal['id']);
+
+      // Notification à l'acquéreur PetsMatch
+      if (_foundUser?['uid'] != null) {
+        await _supa.from('notifications').insert({
+          'uid':   _foundUser!['uid'],
+          'type':  'cession_animal',
+          'title': '🐾 Animal reçu : ${widget.animal['nom'] ?? 'Animal'}',
+          'body':  '${widget.nomElevage} vous a cédé ${widget.animal['nom'] ?? 'un animal'}.',
+          'data':  {'animalId': widget.animal['id']},
+          'read':  false,
+        });
+      }
+
+      if (mounted) Navigator.pop(context);
+      widget.onCeded();
+    } catch (e) {
+      setState(() { _saving = false; _error = 'Erreur : $e'; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // Handle + titre
+          Center(child: Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('🤝 Céder ${widget.animal['nom'] ?? 'cet animal'}',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _dark)),
+              Text('Étape ${_step + 1}/3', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            ])),
+            if (_step > 0)
+              GestureDetector(
+                onTap: () => setState(() => _step--),
+                child: const Icon(Icons.chevron_left, color: _teal),
+              ),
+          ]),
+          const SizedBox(height: 16),
+
+          if (_error != null)
+            Container(margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
+                child: Text(_error!, style: TextStyle(fontSize: 12, color: Colors.red.shade700))),
+
+          // ── Étape 0 : Acquéreur ─────────────────────────────
+          if (_step == 0) ...[
+            const Text('Rechercher sur PetsMatch',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+            const SizedBox(height: 6),
+            Row(children: [
+              Expanded(child: TextField(
+                controller: _searchCtrl,
+                keyboardType: TextInputType.emailAddress,
+                onSubmitted: (_) => _searchUser(),
+                decoration: InputDecoration(
+                  hintText: 'Email de l\'acquéreur',
+                  hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: _teal, width: 2)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+              )),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: _searching ? null : _searchUser,
+                style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                child: _searching ? const SizedBox(width: 16, height: 16,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('Chercher'),
+              ),
+            ]),
+            if (_searchDone) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _foundUser != null ? _teal.withOpacity(0.06) : Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _foundUser != null ? _teal.withOpacity(0.2) : Colors.grey.shade200),
+                ),
+                child: _foundUser != null
+                    ? Row(children: [
+                        const Icon(Icons.verified_user_outlined, color: _teal, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(_foundUser!['nom'] as String,
+                            style: const TextStyle(fontWeight: FontWeight.w600, color: _teal, fontFamily: 'Galey'))),
+                      ])
+                    : const Text('Aucun utilisateur trouvé avec cet email.',
+                        style: TextStyle(fontSize: 13, color: Colors.grey)),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Row(children: [
+              const Expanded(child: Divider()),
+              const Padding(padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Text('ou', style: TextStyle(color: Colors.grey, fontSize: 12))),
+              const Expanded(child: Divider()),
+            ]),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => setState(() { _step = 1; }),
+              icon: const Icon(Icons.edit_outlined, size: 16),
+              label: const Text('Saisie manuelle', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _dark,
+                side: BorderSide(color: Colors.grey.shade300),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                minimumSize: const Size(double.infinity, 0),
+              ),
+            ),
+            if (_foundUser != null) ...[
+              const SizedBox(height: 10),
+              ElevatedButton(
+                onPressed: () => setState(() => _step = 1),
+                style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 46),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                child: const Text('Continuer →', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ],
+
+          // ── Étape 1 : Détails ────────────────────────────────
+          if (_step == 1) ...[
+            if (_foundUser != null) Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: _teal.withOpacity(0.06), borderRadius: BorderRadius.circular(10)),
+              child: Row(children: [
+                const Icon(Icons.verified_user_outlined, color: _teal, size: 16),
+                const SizedBox(width: 6),
+                Text(_foundUser!['nom'] as String,
+                    style: const TextStyle(color: _teal, fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+              ]),
+            ),
+            Row(children: [
+              Expanded(child: _FieldBlock('Qualité', child: DropdownButtonFormField<String>(
+                value: _qualite,
+                items: const [
+                  DropdownMenuItem(value: 'particulier', child: Text('Particulier')),
+                  DropdownMenuItem(value: 'eleveur',     child: Text('Éleveur')),
+                  DropdownMenuItem(value: 'refuge',      child: Text('Refuge')),
+                  DropdownMenuItem(value: 'autre',       child: Text('Autre')),
+                ],
+                onChanged: (v) => setState(() => _qualite = v!),
+                decoration: _inputDec('Qualité'),
+              ))),
+              const SizedBox(width: 8),
+              Expanded(child: _FieldBlock('Date de cession', child: GestureDetector(
+                onTap: () async {
+                  final d = await showDatePicker(context: context,
+                      initialDate: _dateCession, firstDate: DateTime(2000), lastDate: DateTime.now().add(const Duration(days: 365)));
+                  if (d != null) setState(() => _dateCession = d);
+                },
+                child: Container(
+                  height: 48,
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text('${_dateCession.day.toString().padLeft(2, '0')}/${_dateCession.month.toString().padLeft(2, '0')}/${_dateCession.year}',
+                      style: const TextStyle(fontSize: 13)),
+                ),
+              ))),
+            ]),
+            const SizedBox(height: 10),
+            _FieldBlock('Nom de l\'acquéreur *', child: TextField(
+              controller: _nomCtrl,
+              decoration: _inputDec('Nom complet'),
+            )),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: _FieldBlock('Email', child: TextField(
+                controller: _emailCtrl, keyboardType: TextInputType.emailAddress,
+                decoration: _inputDec('email@exemple.fr'),
+              ))),
+              const SizedBox(width: 8),
+              Expanded(child: _FieldBlock('Prix (€)', child: TextField(
+                controller: _prixCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: _inputDec('0'),
+              ))),
+            ]),
+            const SizedBox(height: 10),
+            _FieldBlock('Adresse', child: TextField(
+              controller: _adresseCtrl,
+              decoration: _inputDec('Adresse de l\'acquéreur'),
+            )),
+            const SizedBox(height: 10),
+            _FieldBlock('Notes', child: TextField(
+              controller: _notesCtrl, maxLines: 2,
+              decoration: _inputDec('Conditions particulières…'),
+            )),
+            const SizedBox(height: 14),
+            ElevatedButton(
+              onPressed: _nomCtrl.text.trim().isEmpty ? null : () => setState(() => _step = 2),
+              style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 46),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              child: const Text('Documents →', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            ),
+          ],
+
+          // ── Étape 2 : Documents ──────────────────────────────
+          if (_step == 2) ...[
+            _DocRow(
+              title: '📜 Certificat de cession',
+              subtitle: 'Document légal de transfert',
+              uploaded: _certificatUrl != null,
+              uploading: _uploadingCertificat,
+              onUpload: () => _uploadDoc('certificat'),
+            ),
+            const SizedBox(height: 10),
+            _DocRow(
+              title: '🤝 Contrat de vente',
+              subtitle: 'Inclut garanties légales',
+              uploaded: _contratUrl != null,
+              uploading: _uploadingContrat,
+              onUpload: () => _uploadDoc('contrat'),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _saving ? null : _save,
+              style: ElevatedButton.styleFrom(backgroundColor: _green, foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 46),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              child: _saving
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Text('✓ Valider la cession', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            ),
+            const SizedBox(height: 6),
+            const Center(child: Text('Les documents sont optionnels.',
+                style: TextStyle(fontSize: 11, color: Colors.grey))),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+// ── Helpers UI ────────────────────────────────────────────────────────────────
+
+InputDecoration _inputDec(String hint) => InputDecoration(
+  hintText: hint,
+  hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+  focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _teal, width: 2)),
+  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+);
+
+class _FieldBlock extends StatelessWidget {
+  final String label;
+  final Widget child;
+  const _FieldBlock(this.label, {required this.child});
+  @override
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey)),
+    const SizedBox(height: 4),
+    child,
+  ]);
+}
+
+class _DocRow extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final bool uploaded;
+  final bool uploading;
+  final VoidCallback onUpload;
+  const _DocRow({required this.title, required this.subtitle, required this.uploaded, required this.uploading, required this.onUpload});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      border: Border.all(color: Colors.grey.shade200),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(children: [
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _dark, fontFamily: 'Galey')),
+        Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        if (uploaded)
+          const Text('✓ Uploadé', style: TextStyle(fontSize: 11, color: _green, fontWeight: FontWeight.w600)),
+      ])),
+      OutlinedButton(
+        onPressed: uploading ? null : onUpload,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _teal,
+          side: const BorderSide(color: _teal),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        ),
+        child: uploading
+            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: _teal, strokeWidth: 2))
+            : Text(uploaded ? 'Remplacer' : '⬆️ Uploader',
+                style: const TextStyle(fontSize: 12, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+      ),
+    ]),
+  );
+}

@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { loadBreeds } from '@/lib/breeds';
 import HealthSection from '@/components/animaux/HealthSection';
+import CessionModal from '@/components/animaux/CessionModal';
 import { uploadBlob, uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
 import AlimentationTab from './AlimentationTab';
@@ -28,7 +29,9 @@ interface Animal {
   date_entree?: string; provenance_qualite?: string; provenance_nom?: string;
   provenance_adresse?: string; date_sortie?: string; destinataire_qualite?: string;
   destinataire_nom?: string; destinataire_adresse?: string; cause_mort?: string;
-  uid_eleveur?: string | null; uid_proprietaire?: string | null;
+  uid_eleveur?: string | null; uid_proprietaire?: string | null; uid_acquereur?: string | null;
+  cession_contrat_url?: string | null; cession_certificat_url?: string | null;
+  cession_prix?: number | null; cession_notes?: string | null;
 }
 
 interface HealthRecord { id: string; [key: string]: unknown; }
@@ -874,6 +877,9 @@ export default function AnimalFichePage() {
   const [animal, setAnimal] = useState<Animal>({ id:'', espece:'chien', sexe:'male' });
   const [breeds, setBreeds] = useState<string[]>([]);
 
+  // ── Cession
+  const [showCession, setShowCession] = useState(false);
+
   // ── État enregistre entrée/sortie
   const [showRegistre, setShowRegistre] = useState(false);
 
@@ -1347,7 +1353,13 @@ export default function AnimalFichePage() {
     return <div className="flex items-center justify-center py-32"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin"/></div>;
   }
 
-  const tabs = isEleveur
+  const isCede = animal.statut === 'sorti' || animal.statut === 'decede';
+  const isOriginalBreeder = isEleveur && user?.uid === animal.uid_eleveur;
+  const isAcquereur = user?.uid === animal.uid_acquereur;
+  // Animal cédé vu par l'éleveur d'origine → lecture seule, juste Identité
+  const tabs = (isCede && isOriginalBreeder && !isAcquereur)
+    ? [{ key:'identite', label:'Identité' }]
+    : isEleveur
     ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet Santé' }, { key:'repro', label:'Suivi Repro' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }]
     : [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet de santé' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }];
 
@@ -1380,10 +1392,18 @@ export default function AnimalFichePage() {
               className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 text-sm transition-colors">
               📊
             </button>
-            <button onClick={() => setEditing(true)}
-              className="text-sm text-[#0C5C6C] font-semibold border border-[#0C5C6C]/30 rounded-full px-3 py-1.5 hover:bg-[#0C5C6C]/5">
-              Modifier
-            </button>
+            {isEleveur && !isCede && (
+              <button onClick={() => setShowCession(true)}
+                className="text-sm text-amber-700 font-semibold border border-amber-300 rounded-full px-3 py-1.5 hover:bg-amber-50 transition-colors">
+                🤝 Céder
+              </button>
+            )}
+            {isEleveur && !isCede && (
+              <button onClick={() => setEditing(true)}
+                className="text-sm text-[#0C5C6C] font-semibold border border-[#0C5C6C]/30 rounded-full px-3 py-1.5 hover:bg-[#0C5C6C]/5">
+                Modifier
+              </button>
+            )}
           </div>
         )}
         {editing && (
@@ -1396,6 +1416,47 @@ export default function AnimalFichePage() {
       {saveError && (
         <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
           {saveError}
+        </div>
+      )}
+
+      {/* Bannière cession */}
+      {isCede && animal.date_sortie && (
+        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-2xl p-4">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">🤝</span>
+            <div className="flex-1">
+              <p className="text-sm font-bold text-blue-800" style={{ fontFamily:'Galey,sans-serif' }}>
+                Animal {animal.statut === 'decede' ? 'décédé' : 'cédé'} le {new Date(animal.date_sortie).toLocaleDateString('fr-FR')}
+              </p>
+              {animal.destinataire_nom && (
+                <p className="text-xs text-blue-600 mt-0.5">
+                  Acquéreur : {animal.destinataire_nom}
+                  {animal.destinataire_adresse ? ` · ${animal.destinataire_adresse}` : ''}
+                </p>
+              )}
+              {animal.cession_prix && <p className="text-xs text-blue-600">Prix : {animal.cession_prix} €</p>}
+              <div className="flex gap-2 mt-2 flex-wrap">
+                {animal.cession_certificat_url && (
+                  <a href={animal.cession_certificat_url} target="_blank" rel="noopener"
+                    className="text-xs font-semibold text-blue-700 border border-blue-300 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition-colors">
+                    📜 Certificat de cession
+                  </a>
+                )}
+                {animal.cession_contrat_url && (
+                  <a href={animal.cession_contrat_url} target="_blank" rel="noopener"
+                    className="text-xs font-semibold text-blue-700 border border-blue-300 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition-colors">
+                    🤝 Contrat de vente
+                  </a>
+                )}
+                {animal.uid_acquereur && (
+                  <span className="text-xs font-semibold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-lg">
+                    ✓ Acquéreur sur PetsMatch
+                  </span>
+                )}
+              </div>
+              {animal.cession_notes && <p className="text-xs text-blue-500 mt-1 italic">{animal.cession_notes}</p>}
+            </div>
+          </div>
         </div>
       )}
 
@@ -2203,6 +2264,16 @@ export default function AnimalFichePage() {
       {cropSrc && (
         <ImageCropModal src={cropSrc} aspect={1} maxDim={800}
           onConfirm={handleCropConfirm} onCancel={handleCropCancel} />
+      )}
+
+      {showCession && user && (
+        <CessionModal
+          animal={animal}
+          uid={user.uid}
+          eleveurInfo={{ nom: nomElevage || user.email || 'Éleveur', adresse: adresseElevage, email: user.email ?? '' }}
+          onClose={() => setShowCession(false)}
+          onCeded={() => { setShowCession(false); loadAnimal(); }}
+        />
       )}
     </div>
   );

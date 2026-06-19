@@ -14,6 +14,7 @@ import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/cession_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
@@ -120,6 +121,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   String    _causeMort           = ''; // 'maladie' | 'accident' | 'naturelle' | 'inconnue'
   String? _nomElevage;
   String? _adresseElevage;
+  // ── Cession
+  String? _uidAcquereur;
+  String? _cessionContratUrl;
+  String? _cessionCertificatUrl;
+  double? _cessionPrix;
+  String? _cessionNotes;
+
   bool _pedigree = false;
   bool _isRetraite = false;
   final _clubRegistreCtrl = TextEditingController();
@@ -149,11 +157,18 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     return list;
   }
 
+  int get _tabCount {
+    if (widget.vetMode) return 5;
+    if (widget.isAssociation) return 4;
+    // Animal cédé vu par l'éleveur d'origine → Identité seule
+    if (_statut == 'sorti' && !widget.vetMode && !widget.isAssociation) return 1;
+    return 5;
+  }
+
   @override
   void initState() {
     super.initState();
-    final tabCount = widget.vetMode ? 5 : widget.isAssociation ? 4 : 5;
-    _tabs = TabController(length: tabCount, vsync: this);
+    _tabs = TabController(length: 5, vsync: this); // 5 par défaut, réajusté après chargement
     if (widget.isAssociation && widget.animalId == null) _statut = 'en_soin';
     if (widget.initialTabIndex != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -229,7 +244,15 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           .select('*')
           .eq('id', widget.animalId!)
           .single();
-      if (mounted) setState(() => _fillFromData(Map<String, dynamic>.from(data)));
+      if (mounted) setState(() {
+        _fillFromData(Map<String, dynamic>.from(data));
+        // Reconstituer le TabController si le nombre d'onglets a changé
+        final needed = _tabCount;
+        if (_tabs.length != needed) {
+          _tabs.dispose();
+          _tabs = TabController(length: needed, vsync: this);
+        }
+      });
     } catch (_) {}
     _loadPensionAcces();
   }
@@ -441,6 +464,12 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _dateEntree      = _parseDate(d['date_entree']);
     _dateNaissanceMere = _parseDate(d['date_naissance_mere']);
     _dateSortie      = _parseDate(d['date_sortie']);
+    // Cession
+    _uidAcquereur          = d['uid_acquereur'] as String?;
+    _cessionContratUrl     = d['cession_contrat_url'] as String?;
+    _cessionCertificatUrl  = d['cession_certificat_url'] as String?;
+    _cessionPrix           = (d['cession_prix'] as num?)?.toDouble();
+    _cessionNotes          = d['cession_notes'] as String?;
   }
 
   @override
@@ -863,6 +892,36 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               tooltip: 'Partager avec mon vétérinaire',
               onPressed: () => showVetShareSheet(context, widget.animalId!),
             ),
+          if (widget.animalId != null && !widget.vetMode && !widget.isAssociation
+              && _statut != 'sorti' && _statut != 'decede')
+            IconButton(
+              icon: const Icon(Icons.handshake_outlined, size: 20),
+              tooltip: 'Céder cet animal',
+              onPressed: () => showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => CessionSheet(
+                  animal: {
+                    'id': widget.animalId,
+                    'nom': _nomCtrl.text.isNotEmpty ? _nomCtrl.text : null,
+                    'espece': _espece,
+                    'race': _raceCtrl.text.isNotEmpty ? _raceCtrl.text : null,
+                    'sexe': _sexe,
+                    'identification': _identCtrl.text.isNotEmpty ? _identCtrl.text : null,
+                    'date_naissance': _dateNaissance?.toIso8601String(),
+                  },
+                  uid: FirebaseAuth.instance.currentUser!.uid,
+                  nomElevage: _nomElevage ?? '',
+                  onCeded: () {
+                    _refreshFromSupabase();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('✓ Cession enregistrée'), backgroundColor: Color(0xFF6E9E57)),
+                    );
+                  },
+                ),
+              ),
+            ),
           if (widget.readOnly)
             const Padding(
               padding: EdgeInsets.only(right: 16),
@@ -894,7 +953,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations')]
               : widget.isAssociation
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')]
-                  : const [Tab(text: 'Identité'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')],
+                  : (_statut == 'sorti'
+                      ? const [Tab(text: 'Identité')]
+                      : const [Tab(text: 'Identité'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')]),
         ),
       ),
       body: TabBarView(
@@ -971,6 +1032,15 @@ class _IdentiteTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (s._statut == 'sorti') _CessionBanner(
+            dateDepart: s._dateSortie,
+            nomDestinataire: s._destinataireNomCtrl.text,
+            prix: s._cessionPrix,
+            notes: s._cessionNotes,
+            contratUrl: s._cessionContratUrl,
+            certificatUrl: s._cessionCertificatUrl,
+          ),
+          if (s._statut == 'sorti') const SizedBox(height: 12),
           if (_joursAvantRetraite != null && _joursAvantRetraite! <= 30)
             _RetraiteBanner(jours: _joursAvantRetraite!, espece: s._espece),
           if (_joursAvantRetraite != null && _joursAvantRetraite! <= 30)
@@ -2448,6 +2518,102 @@ class _DocIcon extends StatelessWidget {
     width: 48, height: 48,
     color: const Color(0xFFB07D3A).withOpacity(0.12),
     child: const Icon(Icons.picture_as_pdf_outlined, color: Color(0xFFB07D3A), size: 26),
+  );
+}
+
+// ─── Banner cession ───────────────────────────────────────────────────────────
+
+class _CessionBanner extends StatelessWidget {
+  final DateTime? dateDepart;
+  final String nomDestinataire;
+  final double? prix;
+  final String? notes;
+  final String? contratUrl;
+  final String? certificatUrl;
+
+  const _CessionBanner({
+    this.dateDepart, required this.nomDestinataire, this.prix,
+    this.notes, this.contratUrl, this.certificatUrl,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dateStr = dateDepart != null
+        ? '${dateDepart!.day.toString().padLeft(2, '0')}/${dateDepart!.month.toString().padLeft(2, '0')}/${dateDepart!.year}'
+        : '—';
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE3F2FD),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF90CAF9)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Row(children: [
+          Icon(Icons.handshake_outlined, color: Color(0xFF1565C0), size: 18),
+          SizedBox(width: 6),
+          Text('Animal cédé (lecture seule)',
+              style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1565C0), fontFamily: 'Galey', fontSize: 13)),
+        ]),
+        const SizedBox(height: 8),
+        if (nomDestinataire.isNotEmpty)
+          _CessionLine(Icons.person_outline, 'Acquéreur', nomDestinataire),
+        _CessionLine(Icons.calendar_today_outlined, 'Date de départ', dateStr),
+        if (prix != null)
+          _CessionLine(Icons.euro_outlined, 'Prix', '${prix!.toStringAsFixed(prix! % 1 == 0 ? 0 : 2)} €'),
+        if (notes != null && notes!.isNotEmpty)
+          _CessionLine(Icons.notes_outlined, 'Notes', notes!),
+        if (contratUrl != null || certificatUrl != null) ...[
+          const Divider(height: 14),
+          const Text('Documents', style: TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          if (certificatUrl != null)
+            _DocLink('📜 Certificat de cession', certificatUrl!),
+          if (contratUrl != null)
+            _DocLink('🤝 Contrat de vente', contratUrl!),
+        ],
+      ]),
+    );
+  }
+}
+
+class _CessionLine extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  const _CessionLine(this.icon, this.label, this.value);
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(children: [
+      Icon(icon, size: 14, color: const Color(0xFF1565C0)),
+      const SizedBox(width: 6),
+      Text('$label : ', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      Flexible(child: Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E)))),
+    ]),
+  );
+}
+
+class _DocLink extends StatelessWidget {
+  final String label;
+  final String url;
+  const _DocLink(this.label, this.url);
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: () {
+      // Ouverture du document via url_launcher
+      final uri = Uri.tryParse(url);
+      if (uri != null) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ouverture : $label'), backgroundColor: const Color(0xFF0C5C6C)));
+    },
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        const Icon(Icons.open_in_new, size: 13, color: Color(0xFF1565C0)),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF1565C0), decoration: TextDecoration.underline)),
+      ]),
+    ),
   );
 }
 

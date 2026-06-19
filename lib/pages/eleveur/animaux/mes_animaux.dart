@@ -120,7 +120,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (_animauxData.isEmpty) setState(() => _loading = true);
     try {
       final supa = Supabase.instance.client;
-      final rows = await supa.from('animaux').select().eq('uid_eleveur', _uid!)
+      final rows = await supa.from('animaux').select()
+          .or('uid_eleveur.eq.$_uid,uid_acquereur.eq.$_uid')
           .or('is_association.eq.false,is_association.is.null');
       final animaux = List<Map<String, dynamic>>.from(rows as List);
 
@@ -1029,7 +1030,10 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     // Base filter: présents only + search + espèce/sexe/race
     var base = _animauxData.where((data) {
       final statut = data['statut'] as String? ?? '';
-      if (statut == 'sorti' || statut == 'decede') return false;
+      final isReceived = data['uid_acquereur'] == _uid;
+      // Reçus par cession → comptent comme "présents" pour le nouvel acquéreur
+      if (isReceived) { /* keep */ }
+      else if (statut == 'sorti' || statut == 'decede') return false;
       if (_filterEspece != 'tous' && data['espece'] != _filterEspece) return false;
       if (_filterSexe != 'tous' && data['sexe'] != _filterSexe) return false;
       if (_filterRace.isNotEmpty &&
@@ -1367,6 +1371,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
     var docs = _animauxData.where((data) {
       final statut = data['statut'] as String? ?? '';
+      // Animaux reçus par cession → côté acquéreur = "présents", pas "anciens"
+      if (data['uid_acquereur'] == _uid) return false;
       if (statut != 'sorti' && statut != 'decede') return false;
       if (_anciensEspece != 'tous' && data['espece'] != _anciensEspece) return false;
       if (_anciensStatut != 'tous' && statut != _anciensStatut) return false;

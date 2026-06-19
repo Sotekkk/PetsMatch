@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 import { thumbUrl } from '@/lib/upload-media';
+import CessionModal from '@/components/animaux/CessionModal';
 
 interface Animal {
   id: string;
@@ -72,11 +73,12 @@ function Chip({
   );
 }
 
-function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, isRetraite = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, onDelete, onToggleReproducteur, onToggleRetraite, onSelect }: {
+function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, isRetraite = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, onDelete, onToggleReproducteur, onToggleRetraite, onSelect, onCeder }: {
   a: Animal; tab: 'presents' | 'anciens'; showPorteeBadge?: boolean;
   reproducteur?: boolean; isRetraite?: boolean; chaleurFlag?: boolean; gestanteFlag?: boolean;
   selectMode?: boolean; selected?: boolean;
   onDelete?: () => void; onToggleReproducteur?: () => void; onToggleRetraite?: () => void; onSelect?: () => void;
+  onCeder?: () => void;
 }) {
   const espColor = SPECIES.find(s => s.value === a.espece)?.color ?? '#6F767B';
   const isMale   = (a.sexe ?? '').toLowerCase().startsWith('m');
@@ -189,6 +191,14 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, isR
           🏁
         </button>
       )}
+      {!selectMode && tab === 'presents' && onCeder && (
+        <button
+          onClick={e => { e.preventDefault(); onCeder(); }}
+          className="absolute top-[108px] right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-amber-500 text-white rounded-full w-7 h-7 flex items-center justify-center shadow-md text-xs"
+          title="Céder cet animal">
+          🤝
+        </button>
+      )}
       {!selectMode && onDelete && (
         <button
           onClick={e => { e.preventDefault(); setConfirmDelete(true); }}
@@ -235,6 +245,9 @@ export default function MesAnimauxPage() {
   const [chaleurFlags, setChaleurFlags] = useState<Record<string, boolean>>({});
   const [gestanteFlags, setGestanteFlags] = useState<Record<string, boolean>>({});
   const [tab, setTab] = useState<'presents' | 'anciens'>('presents');
+  const [cederAnimal, setCederAnimal] = useState<Animal | null>(null);
+  const [nomElevage, setNomElevage] = useState('');
+  const [adresseElevage, setAdresseElevage] = useState('');
   const [presentsSubTab, setPresentsSubTab] = useState<'tous' | 'repro' | 'bebes'>('tous');
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -278,11 +291,23 @@ export default function MesAnimauxPage() {
   }, [loading, user, router]);
 
   useEffect(() => {
+    if (!user || !isEleveur) return;
+    supabase.from('users').select('name_elevage, rue_elevage, ville_elevage, email').eq('uid', user.uid).maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setNomElevage((data as {name_elevage?:string}).name_elevage ?? '');
+          const parts = [(data as {rue_elevage?:string}).rue_elevage, (data as {ville_elevage?:string}).ville_elevage].filter(Boolean);
+          setAdresseElevage(parts.join(', '));
+        }
+      });
+  }, [user, isEleveur]);
+
+  useEffect(() => {
     if (!user) return;
     setFetching(true);
     const query = isEleveur
-      ? supabase.from('animaux').select('*').eq('uid_eleveur', user.uid).order('nom', { ascending: true })
-      : supabase.from('animaux').select('*').or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`).order('nom', { ascending: true });
+      ? supabase.from('animaux').select('*').or(`uid_eleveur.eq.${user.uid},uid_acquereur.eq.${user.uid}`).order('nom', { ascending: true })
+      : supabase.from('animaux').select('*').or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid},uid_acquereur.eq.${user.uid}`).order('nom', { ascending: true });
 
     query.then(async ({ data }) => {
       const list = (data ?? []) as Animal[];
@@ -759,7 +784,8 @@ export default function MesAnimauxPage() {
             selectMode={tab === 'presents' && selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
             onDelete={selectMode ? undefined : () => deleteAnimal(a.id)}
             onToggleReproducteur={isEleveur && tab === 'presents' && !selectMode ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
-            onToggleRetraite={isEleveur && tab === 'presents' && !selectMode ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined} />)}
+            onToggleRetraite={isEleveur && tab === 'presents' && !selectMode ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined}
+            onCeder={isEleveur && tab === 'presents' && !selectMode ? () => setCederAnimal(a) : undefined} />)}
         </div>
       )}
 
@@ -838,6 +864,24 @@ export default function MesAnimauxPage() {
         animals={soinPorteeAnimals}
         uid={user?.uid ?? ''}
         onClose={() => setSoinPorteeAnimals(null)}
+      />
+    )}
+
+    {/* Modal cession */}
+    {cederAnimal && user && (
+      <CessionModal
+        animal={cederAnimal}
+        uid={user.uid}
+        eleveurInfo={{ nom: nomElevage || user.email || 'Éleveur', adresse: adresseElevage, email: user.email ?? '' }}
+        onClose={() => setCederAnimal(null)}
+        onCeded={() => {
+          setCederAnimal(null);
+          setFetching(true);
+          supabase.from('animaux')
+            .select('*').or(`uid_eleveur.eq.${user.uid},uid_acquereur.eq.${user.uid}`)
+            .order('nom', { ascending: true })
+            .then(({ data }) => { setAnimaux((data ?? []) as Animal[]); setFetching(false); });
+        }}
       />
     )}
     </>
@@ -1071,6 +1115,7 @@ function PorteeSoinModal({ animals, uid, onClose }: {
           </div>
         </div>
       </div>
+
     </div>
   );
 }
