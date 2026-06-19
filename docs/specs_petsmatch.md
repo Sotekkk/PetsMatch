@@ -1384,24 +1384,81 @@ CREATE TABLE documents_animaux (
 - App `contrat_reservation.dart` : migré Firestore → Supabase `documents_animaux`, sélecteur animal, génération PDF via `genererContratPDF`, recherche acquéreur PetsMatch
 - **MIGRATION SQL À APPLIQUER dans Supabase** : `supabase/migration_documents_animaux.sql`
 
-**TODO YouSign (SIGN01)** :
-- Remplacer les canvas par appel API YouSign : `POST /procedures` avec les deux signataires, récupérer les `signatureLinks`, envoyer par email/notification
-- Webhook `procedure.finished` → stocker PDF final YouSign dans Supabase Storage
-- Supprimer `signature_pad` une fois YouSign intégré
+### 9bis.5 Intégration YouSign — Modèle économique & Quotas (SIGN01)
 
-**Recommandation** : Option B active pour la V1, passer à Option A (YouSign ~0,50€/contrat) en V2 quand volume le justifie.
+> **Décision 2026-06-19** : intégrer YouSign pour les 3 contrats (vente, réservation, engagement). Accès conditionné au plan Premium, avec quota mensuel inclus et facturation à l'unité au-delà.
 
-### 9bis.4 Codes feature
+#### Pricing YouSign (coût PetsMatch)
+- YouSign **Plan Standard** : ~15€/mois pour 20 enveloppes
+- Au-delà : ~0,75€/enveloppe (une enveloppe = 1 contrat avec N signataires)
+- Coût moyen estimé : **0,75€/contrat** pour PetsMatch
+
+#### Tarification utilisateur
+| Profil | Contrats YouSign inclus | Au-delà |
+|--------|------------------------|---------|
+| **Gratuit** | ❌ 0 — accès refusé | — |
+| **Premium éleveur** | 3/mois inclus | **2€/contrat** via Stripe |
+| **Pro (pension, véto, etc.)** | 5/mois inclus | **2€/contrat** via Stripe |
+
+> Marge : ~1,25€/contrat au-delà du quota. Les 3/5 inclus sont absorbés dans le coût du plan.
+
+#### Implémentation technique
+
+**Table quota :**
+```sql
+-- Suivi utilisation contrats YouSign par utilisateur
+CREATE TABLE contrats_yousign_usage (
+  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  uid         TEXT NOT NULL,
+  mois        TEXT NOT NULL,   -- 'YYYY-MM'
+  nb_utilises INTEGER DEFAULT 0,
+  nb_inclus   INTEGER DEFAULT 3,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(uid, mois)
+);
+```
+
+**Flow création contrat :**
+1. Éleveur initie → vérifier `contrats_yousign_usage` pour le mois en cours
+2. Si `nb_utilises < nb_inclus` → créer gratuitement + incrémenter
+3. Si quota dépassé → afficher "2€/contrat — Payer pour continuer"
+   → Stripe Payment Intent one-time 2€ → succès → créer le contrat YouSign
+
+**Flow YouSign API v3 :**
+```
+POST /v3/signature_requests  →  { name, delivery_mode: 'email' }
+POST /v3/signature_requests/{id}/documents  →  upload PDF
+POST /v3/signature_requests/{id}/signers    →  vendeur + acheteur (nom + email)
+POST /v3/signature_requests/{id}/activate   →  envoi emails automatique
+Webhook signature_request.done  →  stocker PDF signé dans Supabase Storage + màj documents_animaux
+```
+
+**Variables d'environnement à ajouter :**
+```
+YOUSIGN_API_KEY=...          # clé API YouSign (sandbox: ys_... / prod: yp_...)
+YOUSIGN_WEBHOOK_SECRET=...   # pour valider les webhooks entrants
+STRIPE_CONTRACT_PRICE_ID=... # price_id Stripe pour le 2€/contrat
+```
+
+**Contrats concernés :** contrat de vente, contrat de réservation, certificat d'engagement
+
+### 9bis.6 Codes feature
 
 | Code | Feature | Statut |
 |------|---------|--------|
-| SIGN01 | Intégration YouSign API (V2) | 🔜 V2 |
-| SIGN02 | Multi-signataires / co-adoption | 🔜 V2 |
-| SIGN03 | Webhook completion → archivage PDF | 🔜 V2 |
-| SIGN04 | Portail signatures pour les pros (tableau de bord statuts) | 🔜 V2 |
-| SIGN00 | Signature canvas + stockage Supabase (Option B V1) | ✅ Livré 2026-06-19 |
+| SIGN00 | Signature canvas + stockage Supabase (fallback) | ✅ Livré 2026-06-19 |
+| SIGN01 | Intégration YouSign API v3 — contrat vente + réservation | 🔜 V1.5 |
+| SIGN02 | YouSign — certificat d'engagement | 🔜 V1.5 |
+| SIGN03 | Webhook completion → PDF signé archivé dans documents_animaux | 🔜 V1.5 |
+| SIGN04 | Quota mensuel + paiement Stripe 2€/contrat au-delà | 🔜 V1.5 |
+| SIGN05 | Multi-signataires / co-adoption | 🔜 V2 |
+| SIGN06 | Portail signatures (tableau de bord statuts) | 🔜 V2 |
 
-**Dépendance** : SIGN01 remplacera SIGN00 — même contrat HTML/PDF, seul le mécanisme de signature change.
+**Dépendances :**
+- SIGN01 → compte YouSign + `YOUSIGN_API_KEY` + endpoint Next.js `/api/yousign/create`
+- SIGN03 → endpoint webhook `/api/yousign/webhook` + bucket Supabase `contrats`
+- SIGN04 → `STRIPE_CONTRACT_PRICE_ID` + table `contrats_yousign_usage`
+- Profils gratuits : bouton "Signer" masqué, message "Fonctionnalité Premium"
 
 ---
 
