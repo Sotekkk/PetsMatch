@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 
@@ -191,33 +192,65 @@ class _CessionSheetState extends State<CessionSheet> {
     }
     setState(() { _saving = true; _error = null; });
     try {
+      // 1. Créer l'enregistrement de cession (sans transférer la fiche)
+      final row = await _supa.from('cessions').insert({
+        'animal_id':          widget.animal['id'],
+        'uid_eleveur':        widget.uid,
+        'uid_acquereur':      _foundUser?['uid'],
+        'email_acquereur':    _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
+        'nom_acquereur':      _nomCtrl.text.trim(),
+        'tel_acquereur':      _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
+        'adresse_acquereur':  _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),
+        'qualite':            _qualite,
+        'prix':               _prixCtrl.text.isEmpty ? null : double.tryParse(_prixCtrl.text.replaceAll(',', '.')),
+        'notes':              _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+        'date_cession':       _dateCession.toIso8601String().split('T').first,
+        'statut':             'en_attente_acquereur',
+        'contrat_url':        _contratUrl,
+        'certificat_url':     _certificatUrl,
+      }).select('token').single();
+
+      final token = row['token'] as String;
+      const baseUrl = 'https://petsmatchapp.com';
+      final signingUrl = '$baseUrl/signer-cession/$token';
+
+      // 2. Passer l'animal en 'cession_en_cours' (pas encore sorti)
       await _supa.from('animaux').update({
-        'statut':                 'sorti',
-        'date_sortie':            _dateCession.toIso8601String().split('T').first,
-        'destinataire_qualite':   _qualite,
-        'destinataire_nom':       _nomCtrl.text.trim(),
-        'destinataire_adresse':   _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),
-        'uid_acquereur':          _foundUser?['uid'],
-        'cession_contrat_url':    _contratUrl,
+        'statut':               'cession_en_cours',
+        'destinataire_qualite': _qualite,
+        'destinataire_nom':     _nomCtrl.text.trim(),
+        'destinataire_adresse': _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),
+        'cession_prix':         _prixCtrl.text.isEmpty ? null : double.tryParse(_prixCtrl.text.replaceAll(',', '.')),
+        'cession_notes':        _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+        'cession_contrat_url':  _contratUrl,
         'cession_certificat_url': _certificatUrl,
-        'cession_prix':           _prixCtrl.text.isEmpty ? null : double.tryParse(_prixCtrl.text.replaceAll(',', '.')),
-        'cession_notes':          _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       }).eq('id', widget.animal['id']);
 
-      // Notification à l'acquéreur PetsMatch
+      // 3. Notifier l'acquéreur (si compte PetsMatch)
       if (_foundUser?['uid'] != null) {
         await _supa.from('notifications').insert({
           'uid':   _foundUser!['uid'],
-          'type':  'cession_animal',
-          'title': '🐾 Animal reçu : ${widget.animal['nom'] ?? 'Animal'}',
-          'body':  '${widget.nomElevage} vous a cédé ${widget.animal['nom'] ?? 'un animal'}.',
-          'data':  {'animalId': widget.animal['id']},
+          'type':  'cession_signature_demandee',
+          'title': '✍️ Signature requise — ${widget.animal['nom'] ?? 'Animal'}',
+          'body':  '${widget.nomElevage} souhaite vous céder ${widget.animal['nom'] ?? 'un animal'}. Signez le contrat pour valider.',
+          'data':  {'animalId': widget.animal['id'], 'token': token, 'signingUrl': signingUrl},
           'read':  false,
         });
       }
 
-      if (mounted) Navigator.pop(context);
-      widget.onCeded();
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onCeded();
+        // Afficher le lien de signature
+        showDialog(
+          context: context,
+          builder: (_) => _SigningLinkDialog(
+            url: signingUrl,
+            nomAcquereur: _nomCtrl.text.trim(),
+            hasAccount: _foundUser != null,
+          ),
+        );
+      }
     } catch (e) {
       setState(() { _saving = false; _error = 'Erreur : $e'; });
     }
@@ -563,5 +596,49 @@ class _DocRow extends StatelessWidget {
                 style: const TextStyle(fontSize: 12, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
       ),
     ]),
+  );
+}
+
+// ── Dialogue lien de signature ────────────────────────────────────────────────
+
+class _SigningLinkDialog extends StatelessWidget {
+  final String url;
+  final String nomAcquereur;
+  final bool hasAccount;
+
+  const _SigningLinkDialog({required this.url, required this.nomAcquereur, required this.hasAccount});
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    title: const Text('✅ Cession en cours', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+    content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+      if (hasAccount)
+        const Text('Une notification a été envoyée à l\'acquéreur. L\'animal reste dans votre compte jusqu\'à votre confirmation finale.')
+      else ...[
+        Text('Partagez ce lien de signature à $nomAcquereur :',
+            style: const TextStyle(fontSize: 13)),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: const Color(0xFFF0F9FF), borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFF0C5C6C).withOpacity(0.3))),
+          child: Text(url, style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Color(0xFF0C5C6C))),
+        ),
+      ],
+      const SizedBox(height: 10),
+      const Text('L\'animal restera dans votre compte. Une fois l\'acquéreur signé, vous recevrez une notification pour confirmer ou révoquer la cession.',
+          style: TextStyle(fontSize: 11, color: Colors.grey)),
+    ]),
+    actions: [
+      TextButton(
+        onPressed: () { Clipboard.setData(ClipboardData(text: url)); Navigator.pop(context); },
+        child: const Text('📋 Copier le lien', style: TextStyle(color: Color(0xFF0C5C6C), fontFamily: 'Galey')),
+      ),
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Fermer', style: TextStyle(color: Colors.grey)),
+      ),
+    ],
   );
 }
