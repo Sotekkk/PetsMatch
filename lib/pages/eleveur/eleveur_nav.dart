@@ -302,7 +302,7 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
-                        label: 'Routines',
+                        label: 'Protocoles',
                         icon: Icons.event_note_outlined,
                         locked: _planCode != 'premium',
                         badgeLabel: 'Premium',

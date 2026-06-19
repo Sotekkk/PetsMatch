@@ -101,7 +101,7 @@ const MENU_ELEVEUR = [
       { href: '/elevage/inventaire',              label: 'Inventaire',         icon: '📦' },
       { href: '/mes-taches',                      label: 'Mes tâches',         icon: '✅' },
       { href: '/elevage/agenda',                 label: 'Agenda du jour',     icon: '🗓️' },
-      { href: '/elevage/planning',               label: 'Routines',           icon: '📅' },
+      { href: '/elevage/planning',               label: 'Protocoles',         icon: '📅' },
       { href: '/elevage/registre-sanitaire',     label: 'Suivi sanitaire',    icon: '🏥', pro: true },
       { href: '/elevage/registre-entree-sortie', label: 'Entrées / Sorties',  icon: '📂', pro: true },
       { href: '/elevage/certificat-engagement', label: 'Certificats',        icon: '✍️', pro: true },

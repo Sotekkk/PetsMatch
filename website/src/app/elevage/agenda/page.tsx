@@ -102,7 +102,7 @@ export default function AgendaElevagePage() {
             Fonctionnalité Premium
           </h2>
           <p className="text-[#6B7280] text-sm mb-6" style={{ fontFamily: 'Galey, sans-serif' }}>
-            L&apos;agenda des routines est réservé aux abonnements <strong>Premium</strong>.
+            L&apos;agenda des protocoles est réservé aux abonnements <strong>Premium</strong>.
             Gérez vos protocoles quotidiens et suivez l&apos;avancement par animal.
           </p>
           <button
@@ -237,7 +237,7 @@ export default function AgendaElevagePage() {
               {g.label}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">
-              Routine · {total} animal{total > 1 ? 'x' : ''}
+              Protocole · {total} animal{total > 1 ? 'x' : ''}
             </p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -248,11 +248,11 @@ export default function AgendaElevagePage() {
             )}
             <button
               onClick={() => confirmDeleteAction(
-                `Supprimer la routine "${g.label}" de ce jour ?`,
+                `Supprimer le protocole "${g.label}" de ce jour ?`,
                 () => deleteGroupe(g)
               )}
               className="p-1 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors"
-              title="Supprimer cette routine du jour"
+              title="Supprimer ce protocole du jour"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -402,7 +402,7 @@ export default function AgendaElevagePage() {
           <div className="text-5xl mb-4">✅</div>
           <p className="text-gray-500 mb-2">Rien de prévu ce jour</p>
           <p className="text-gray-400 text-sm">
-            Créez des routines depuis{' '}
+            Créez des protocoles depuis{' '}
             <a href="/elevage/planning" className="text-teal-600 underline font-medium">Planning</a>
           </p>
         </div>
@@ -449,7 +449,7 @@ export default function AgendaElevagePage() {
           onDeleteGroupe={(g) => {
             setValidateGroupe(null);
             confirmDeleteAction(
-              `Supprimer la routine "${g.label}" de ce jour ?`,
+              `Supprimer le protocole "${g.label}" de ce jour ?`,
               () => deleteGroupe(g)
             );
           }}
@@ -503,7 +503,7 @@ function RoutineModal({ groupe, selectedDate, onClose, onUpdated, onDeleteGroupe
   };
 
   const deleteItem = async (r: Routine, idx: number) => {
-    if (!confirm(`Supprimer "${r.animal_nom || `Animal #${idx + 1}`}" de cette routine ?`)) return;
+    if (!confirm(`Supprimer "${r.animal_nom || `Animal #${idx + 1}`}" de ce protocole ?`)) return;
     await supabase.from('plan_taches').delete()
       .eq('id', r.id)
       .gte('date_prevue', `${selectedDate}T00:00:00`)
@@ -529,13 +529,13 @@ function RoutineModal({ groupe, selectedDate, onClose, onUpdated, onDeleteGroupe
             <div className="flex-1 min-w-0">
               <h3 className="font-bold text-gray-800 text-base">{groupe.label}</h3>
               <p className="text-xs text-gray-400 mt-0.5">
-                Routine · {done}/{total} fait{done > 1 ? 's' : ''}
+                Protocole · {done}/{total} fait{done > 1 ? 's' : ''}
               </p>
             </div>
             <button
               onClick={() => onDeleteGroupe(groupe)}
               className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors"
-              title="Supprimer cette routine du jour"
+              title="Supprimer ce protocole du jour"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}

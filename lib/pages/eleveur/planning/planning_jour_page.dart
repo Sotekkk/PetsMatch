@@ -221,7 +221,7 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
         await Supabase.instance.client.from('notifications').insert({
           'uid':   employeUid,
           'type':  'tache',
-          'title': 'Tâches de routine assignées',
+          'title': 'Tâches de protocole assignées',
           'body':  nomTache,
           'data':  {'eleveurUid': _uid, 'count': group.length},
           'read':  false,
@@ -360,7 +360,7 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
             ),
           IconButton(
             icon: const Icon(Icons.list_alt_outlined),
-            tooltip: 'Mes routines',
+            tooltip: 'Mes protocoles',
             onPressed: () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => const PlanTemplateListPage(),
             )).then((_) => _load()),
@@ -974,7 +974,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Créez des routines pour générer\ndes tâches automatiquement',
+            'Créez des protocoles pour générer\ndes tâches automatiquement',
             textAlign: TextAlign.center,
             style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400),
           ),
@@ -982,7 +982,7 @@ class _EmptyState extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PlanTemplateListPage())),
             icon: const Icon(Icons.add, size: 18, color: Color(0xFF0C5C6C)),
-            label: const Text('Créer une routine', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF0C5C6C))),
+            label: const Text('Créer un protocole', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF0C5C6C))),
             style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF0C5C6C))),
           ),
         ],

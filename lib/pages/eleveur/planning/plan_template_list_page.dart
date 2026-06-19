@@ -40,8 +40,8 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Supprimer cette routine ?', style: TextStyle(fontFamily: 'Galey')),
-        content: Text('La routine "$nom" sera supprimée définitivement.',
+        title: const Text('Supprimer ce protocole ?', style: TextStyle(fontFamily: 'Galey')),
+        content: Text('Le protocole "$nom" sera supprimé définitivement.',
             style: const TextStyle(fontFamily: 'Galey')),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
@@ -65,7 +65,7 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF0C5C6C),
         foregroundColor: Colors.white,
-        title: const Text('Mes routines', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        title: const Text('Mes protocoles', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: _green,
@@ -111,11 +111,11 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
       children: [
         Icon(Icons.playlist_add_outlined, size: 72, color: Colors.grey.shade300),
         const SizedBox(height: 16),
-        Text('Aucune routine créée',
+        Text('Aucun protocole créé',
             style: TextStyle(fontFamily: 'Galey', fontSize: 16, color: Colors.grey.shade500)),
         const SizedBox(height: 8),
         Text(
-          'Créez des routines réutilisables\npour vos soins, nettoyages et rondes',
+          'Créez des protocoles réutilisables\npour vos soins, nettoyages et rondes',
           textAlign: TextAlign.center,
           style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400),
         ),
@@ -240,7 +240,7 @@ class _TemplateCard extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: onApply,
                 icon: const Icon(Icons.play_arrow_rounded, size: 18, color: Colors.white),
-                label: const Text('Appliquer cette routine', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
+                label: const Text('Appliquer ce protocole', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _green,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

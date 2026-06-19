@@ -331,7 +331,7 @@ export default function EmployesPage() {
                               {g.label}
                             </p>
                             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                              <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded font-semibold">Routine</span>
+                              <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded font-semibold">Protocole</span>
                               <span className={`text-xs font-semibold ${allDone ? 'text-gray-400' : 'text-teal-600'}`}>
                                 {done}/{total}
                               </span>
@@ -343,7 +343,7 @@ export default function EmployesPage() {
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <button
                               onClick={() => setConfirmDelete({
-                                label: `Supprimer la routine "${g.label}" du ${dateLabel(g.date)} ?`,
+                                label: `Supprimer le protocole "${g.label}" du ${dateLabel(g.date)} ?`,
                                 onConfirm: () => deleteProtoGroupe(g),
                               })}
                               className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors"
@@ -419,7 +419,7 @@ export default function EmployesPage() {
                 </div>
                 <button
                   onClick={() => setConfirmDelete({
-                    label: `Supprimer toute la routine "${protoModal.label}" du jour ?`,
+                    label: `Supprimer tout le protocole "${protoModal.label}" du jour ?`,
                     onConfirm: () => { deleteProtoGroupe(protoModal); setProtoModal(null); },
                   })}
                   className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors"
@@ -464,7 +464,7 @@ export default function EmployesPage() {
                     </span>
                     <button
                       onClick={() => setConfirmDelete({
-                        label: `Supprimer "${nom}" de cette routine ?`,
+                        label: `Supprimer "${nom}" de ce protocole ?`,
                         onConfirm: () => deleteProtoItem(t),
                       })}
                       className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-400 transition-colors"

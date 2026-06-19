@@ -155,7 +155,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
         backgroundColor: _green,
         foregroundColor: Colors.white,
         title: Text(
-          isEdit ? 'Modifier la routine' : 'Nouvelle routine',
+          isEdit ? 'Modifier le protocole' : 'Nouveau protocole',
           style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700),
         ),
         actions: [
@@ -174,16 +174,16 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           // ── Informations générales ──
           _Card(children: [
             _SectionTitle('Informations générales'),
-            _Field(controller: _nomCtrl, label: 'Nom de la routine *', hint: 'ex: Vermifuge portée standard chien'),
+            _Field(controller: _nomCtrl, label: 'Nom du protocole *', hint: 'ex: Vermifuge portée standard chien'),
             const SizedBox(height: 10),
-            _Field(controller: _descCtrl, label: 'Description (optionnel)', hint: 'Notes sur cette routine', maxLines: 2),
+            _Field(controller: _descCtrl, label: 'Description (optionnel)', hint: 'Notes sur ce protocole', maxLines: 2),
           ]),
           const SizedBox(height: 12),
 
           // ── Type de protocole ── (seulement à la création)
           if (!isEdit) ...[
             _Card(children: [
-              _SectionTitle('Type de routine'),
+              _SectionTitle('Type de protocole'),
               Wrap(spacing: 8, runSpacing: 6, children: _types.map((t) {
                 final active = _type == t.$1;
                 return _Chip(emoji: t.$2, label: t.$3, active: active, onTap: () => setState(() => _type = t.$1));
@@ -196,7 +196,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           if (_type == 'nettoyage') ...[
             _Card(children: [
               _SectionTitle('Lieu à nettoyer'),
-              const _InfoBox('Indiquez le lieu concerné par cette routine de nettoyage.'),
+              const _InfoBox('Indiquez le lieu concerné par ce protocole de nettoyage.'),
               const SizedBox(height: 8),
               // Chips raccourci
               Wrap(spacing: 6, runSpacing: 6, children: _lieuxNettoyage.map((l) {
@@ -223,7 +223,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           if (_type != 'nettoyage') ...[
             _Card(children: [
               _SectionTitle('Qui est concerné ?'),
-              const _InfoBox('Définissez qui sera automatiquement ciblé quand vous appliquez cette routine.'),
+              const _InfoBox('Définissez qui sera automatiquement ciblé quand vous appliquez ce protocole.'),
               const SizedBox(height: 10),
               _DropField(
                 label: 'Espèce cible',
@@ -269,7 +269,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           if (_type != 'nettoyage') ...[
             _Card(children: [
               _SectionTitle('Déclenchement automatique'),
-              const _InfoBox('Si activé, cette routine sera appliquée automatiquement à l\'animal concerné dès que l\'événement est enregistré dans l\'élevage.'),
+              const _InfoBox('Si activé, ce protocole sera appliqué automatiquement à l\'animal concerné dès que l\'événement est enregistré dans l\'élevage.'),
               const SizedBox(height: 8),
               Wrap(spacing: 8, runSpacing: 6, children: [
                 for (final d in [
@@ -293,7 +293,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           // ── Étapes ──
           _Card(children: [
             Row(children: [
-              const Expanded(child: _SectionTitle('Étapes de la routine')),
+              const Expanded(child: _SectionTitle('Étapes du protocole')),
               Text('${_etapes.length} étape${_etapes.length > 1 ? 's' : ''}',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
             ]),
@@ -562,7 +562,7 @@ class _EtapeCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Text('Routine récurrente (sans fin)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+                      const Text('Protocole récurrent (sans fin)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
                     ]),
                   ),
                   const SizedBox(height: 6),

@@ -30,7 +30,7 @@ const QUICK_LINKS = [
   { href: '/animaux-perdus',                 label: 'Animaux perdus',     icon: '🔍', bg: 'bg-amber-50',  border: 'border-amber-200',    text: 'text-amber-700', pro: false },
   { href: '/elevage/profil',                  label: 'Mon profil élevage', icon: '🏡', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: false },
   { href: '/elevage/agenda',                 label: 'Agenda du jour',     icon: '🗓️', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: false },
-  { href: '/elevage/planning',               label: 'Routines',           icon: '📅', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: false },
+  { href: '/elevage/planning',               label: 'Protocoles',         icon: '📅', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: false },
   { href: '/elevage/registre-sanitaire',     label: 'Registre sanitaire', icon: '🏥', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: true  },
   { href: '/elevage/registre-entree-sortie', label: 'Entrées / Sorties',  icon: '📂', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: true  },
   { href: '/elevage/facturation',            label: 'Facturation',        icon: '🧾', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: true  },
