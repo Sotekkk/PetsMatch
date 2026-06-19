@@ -79,30 +79,62 @@ class _CessionSheetState extends State<CessionSheet> {
     super.dispose();
   }
 
+  List<Map<String, dynamic>> _searchResults = [];
+
   Future<void> _searchUser() async {
-    final email = _searchCtrl.text.trim().toLowerCase();
-    if (email.isEmpty) return;
-    setState(() { _searching = true; _searchDone = false; _foundUser = null; });
+    final q = _searchCtrl.text.trim();
+    if (q.isEmpty) return;
+    setState(() { _searching = true; _searchDone = false; _foundUser = null; _searchResults = []; });
     try {
-      final res = await _supa
-          .from('users')
-          .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url')
-          .eq('email', email)
-          .maybeSingle();
-      if (res != null) {
-        final isElv = res['is_elevage'] == true;
+      final isEmail = q.contains('@');
+      List<Map<String, dynamic>> rows;
+      if (isEmail) {
+        final res = await _supa
+            .from('users')
+            .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, phone_number, code_iso, adress, rue, ville, code_postal, numero_elevage, code_iso_elevage, adress_elevage, email')
+            .eq('email', q.toLowerCase())
+            .maybeSingle();
+        rows = res != null ? [res] : [];
+      } else {
+        rows = await _supa
+            .from('users')
+            .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, phone_number, code_iso, adress, rue, ville, code_postal, numero_elevage, code_iso_elevage, adress_elevage, email')
+            .or('firstname.ilike.%$q%,lastname.ilike.%$q%,name_elevage.ilike.%$q%')
+            .limit(8);
+      }
+      final mapped = rows.map((r) {
+        final isElv = r['is_elevage'] == true;
         final nom = isElv
-            ? (res['name_elevage'] as String? ?? '${res['firstname'] ?? ''} ${res['lastname'] ?? ''}'.trim())
-            : '${res['firstname'] ?? ''} ${res['lastname'] ?? ''}'.trim();
-        setState(() {
-          _foundUser = {...res, 'nom': nom.isEmpty ? 'Utilisateur PetsMatch' : nom};
-          _nomCtrl.text = _foundUser!['nom'] as String;
-          _emailCtrl.text = email;
-        });
+            ? (r['name_elevage'] as String? ?? '${r['firstname'] ?? ''} ${r['lastname'] ?? ''}'.trim())
+            : '${r['firstname'] ?? ''} ${r['lastname'] ?? ''}'.trim();
+        return {...r, 'nom': nom.isEmpty ? 'Utilisateur PetsMatch' : nom};
+      }).toList();
+      if (mapped.length == 1) {
+        _selectUser(mapped.first);
+      } else {
+        setState(() { _searchResults = mapped; });
       }
     } finally {
       setState(() { _searching = false; _searchDone = true; });
     }
+  }
+
+  void _selectUser(Map<String, dynamic> r) {
+    final isElv = r['is_elevage'] == true;
+    final adresse = isElv
+        ? (r['adress_elevage'] as String? ?? [r['rue'], r['ville'], r['code_postal']].where((e) => e != null).join(', '))
+        : (r['adress'] as String? ?? [r['rue'], r['ville'], r['code_postal']].where((e) => e != null).join(', '));
+    final tel = isElv
+        ? '${r['code_iso_elevage'] ?? '+33'} ${r['numero_elevage'] ?? ''}'.trim()
+        : '${r['code_iso'] ?? '+33'} ${r['phone_number'] ?? ''}'.trim();
+    setState(() {
+      _foundUser = r;
+      _nomCtrl.text    = r['nom'] as String;
+      _emailCtrl.text  = (r['email'] as String? ?? '');
+      _telCtrl.text    = tel;
+      _adresseCtrl.text = adresse;
+      _searchResults   = [];
+    });
   }
 
   Future<void> _uploadDoc(String type) async {
@@ -234,11 +266,11 @@ class _CessionSheetState extends State<CessionSheet> {
             Row(children: [
               Expanded(child: TextField(
                 controller: _searchCtrl,
-                keyboardType: TextInputType.emailAddress,
                 onSubmitted: (_) => _searchUser(),
                 decoration: InputDecoration(
-                  hintText: 'Email de l\'acquéreur',
+                  hintText: 'Nom, prénom ou email…',
                   hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                  prefixIcon: const Icon(Icons.search, size: 18, color: Colors.grey),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
                       borderSide: const BorderSide(color: _teal, width: 2)),
@@ -255,7 +287,33 @@ class _CessionSheetState extends State<CessionSheet> {
                     : const Text('Chercher'),
               ),
             ]),
-            if (_searchDone) ...[
+            // Résultats multiples
+            if (_searchResults.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ...(_searchResults.map((r) => GestureDetector(
+                onTap: () => _selectUser(r),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.person_outline, color: _teal, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(r['nom'] as String, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, fontFamily: 'Galey')),
+                      if (r['email'] != null) Text(r['email'] as String, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                    ])),
+                    const Icon(Icons.chevron_right, size: 16, color: Colors.grey),
+                  ]),
+                ),
+              ))),
+            ],
+            // Résultat unique trouvé
+            if (_searchDone && _searchResults.isEmpty) ...[
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -271,8 +329,7 @@ class _CessionSheetState extends State<CessionSheet> {
                         Expanded(child: Text(_foundUser!['nom'] as String,
                             style: const TextStyle(fontWeight: FontWeight.w600, color: _teal, fontFamily: 'Galey'))),
                       ])
-                    : const Text('Aucun utilisateur trouvé avec cet email.',
-                        style: TextStyle(fontSize: 13, color: Colors.grey)),
+                    : const Text('Aucun utilisateur trouvé.', style: TextStyle(fontSize: 13, color: Colors.grey)),
               ),
             ],
             const SizedBox(height: 12),

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { uploadDocument } from '@/lib/upload-media';
 import { generateContratHTML as generateContratHTMLLib } from '@/lib/contrat-vente';
@@ -157,7 +157,9 @@ function generateCertificatHTML(animal: Animal, data: CessionData, eleveur: Elev
 
 
 function generateContratHTML(animal: Animal, data: CessionData, eleveur: EleveurInfo): string {
-  return generateContratHTMLLib(animal, data, eleveur);
+  const sbUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+  const sbKey  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+  return generateContratHTMLLib(animal, data, eleveur, { animalId: animal.id, supabaseUrl: sbUrl, supabaseKey: sbKey });
 }
 function openPrint(html: string) {
   const win = window.open('', '_blank');
@@ -200,8 +202,20 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
   const contratRef    = useRef<HTMLInputElement>(null);
   const certificatRef = useRef<HTMLInputElement>(null);
 
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState('');
+  const [saving, setSaving]           = useState(false);
+  const [error, setError]             = useState('');
+  const [contratSigne, setContratSigne] = useState(false);
+
+  // Écoute le contrat signé depuis la popup
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type !== 'contract_signed') return;
+      if (e.data.url) setContratUrl(e.data.url);
+      setContratSigne(true);
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
 
   function fillFromUser(data: Record<string, unknown>) {
     const isElv = data.is_elevage === true;
@@ -554,28 +568,35 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
                 </div>
               </div>
 
-              {/* Contrat de vente */}
-              <div className="border border-gray-200 rounded-xl p-4 space-y-3">
+              {/* Contrat de vente numérique */}
+              <div className={`border rounded-xl p-4 space-y-3 ${contratSigne ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-bold text-[#1F2A2E]">🤝 Contrat de vente</p>
-                    <p className="text-xs text-gray-400">Inclut garanties légales et clauses de vente</p>
+                    <p className="text-xs text-gray-400">Signature numérique · Stocké pour les deux parties</p>
                   </div>
                   <button
                     onClick={() => openPrint(generateContratHTML(animal, cessionData, eleveurInfo))}
-                    className="text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C]/30 px-3 py-1.5 rounded-lg hover:bg-[#0C5C6C]/5 transition-colors">
-                    🖨️ Générer
+                    className="text-xs font-semibold text-[#6E9E57] border border-[#6E9E57]/40 px-3 py-1.5 rounded-lg hover:bg-[#6E9E57]/5 transition-colors">
+                    ✍️ Signer en ligne
                   </button>
                 </div>
-                <div>
-                  <input ref={contratRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
-                    onChange={e => { if (e.target.files?.[0]) uploadDoc(e.target.files[0], 'contrat'); }} />
-                  <button onClick={() => contratRef.current?.click()} disabled={uploadingContrat}
-                    className="w-full border-2 border-dashed border-gray-200 rounded-xl py-2.5 text-xs text-gray-400 hover:border-[#0C5C6C]/40 hover:text-[#0C5C6C] transition-colors">
-                    {uploadingContrat ? '⏳ Upload…' : contratUrl ? '✓ Contrat uploadé · Remplacer' : '⬆️ Uploader le contrat signé'}
-                  </button>
-                  {contratUrl && <p className="text-xs text-green-600 mt-1">✓ Contrat enregistré</p>}
-                </div>
+                {contratSigne && (
+                  <div className="flex items-center gap-2 text-xs text-green-700 font-semibold">
+                    <span>✅ Contrat signé numériquement et enregistré</span>
+                    {contratUrl && <a href={contratUrl} target="_blank" rel="noreferrer" className="underline">Voir</a>}
+                  </div>
+                )}
+                {!contratSigne && (
+                  <div>
+                    <input ref={contratRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
+                      onChange={e => { if (e.target.files?.[0]) uploadDoc(e.target.files[0], 'contrat'); }} />
+                    <button onClick={() => contratRef.current?.click()} disabled={uploadingContrat}
+                      className="w-full border-2 border-dashed border-gray-200 rounded-xl py-2 text-xs text-gray-400 hover:border-[#0C5C6C]/40 hover:text-[#0C5C6C] transition-colors">
+                      {uploadingContrat ? '⏳ Upload…' : contratUrl ? '✓ Uploadé · Remplacer' : '⬆️ Ou uploader un PDF signé'}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}

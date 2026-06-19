@@ -1318,23 +1318,35 @@ Pour les dossiers d'adoption en couple ou en famille, prévoir **plusieurs signa
 - SDK JS/Dart disponible
 - Webhook sur completion → stocker PDF signé dans Firebase Storage
 
-**Option B — Signature canvas in-app** *(sans coût, valeur légale limitée)*
-- Déjà prévu dans les specs Certificat d'Engagement (CERT02)
-- Suffisant pour contrats non-litigieux (réservation, hébergement)
-- Pas de valeur légale eIDAS — risque si contesté
+**Option B — Signature canvas in-app** *(sans coût, valeur légale limitée)*  
+✅ **IMPLÉMENTÉ V1 (2026-06-19)**
+- `lib/contrat-vente.ts` (web) : contrat 8 articles + attestation de cession adaptés par espèce, champs éditables `contenteditable`, deux pads de signature `signature_pad@4.1.7` (canvas HTML5)
+- Bouton **"✅ Finaliser et enregistrer"** : injecte les signatures dans le HTML, upload dans Supabase Storage bucket `contrats`, met à jour `animaux.cession_contrat_url`, postMessage vers la modale parente
+- `CessionModal.tsx` (web) : écoute `postMessage` type `contract_signed`, affiche statut "Contrat signé numériquement", lien de consultation
+- `contrat_pdf.dart` (Flutter) : génère un PDF 2 pages (contrat + attestation) via package `pdf`/`printing` avec blocs de signature à remplir manuellement — pour le workflow impression + scan
+- Sauts de page corrigés : `break-inside: avoid` sur chaque article, signatures, bannières
+- Copie double : bannière "2 exemplaires originaux" + case à cocher "J'ai reçu mon exemplaire original" pour chaque partie
+- Bouton "🖨️🖨️ Imprimer 2 exemplaires" dans la toolbar web
+- Suffisant pour contrats non-litigieux (vente animaux) — pas de valeur légale eIDAS — risque si contesté
 
-**Recommandation** : Option B pour la V1 (gratuit, déjà dans le périmètre CERT02), Option A pour la V2 quand les revenus le permettent.
+**TODO YouSign (SIGN01)** :
+- Remplacer les canvas par appel API YouSign : `POST /procedures` avec les deux signataires, récupérer les `signatureLinks`, envoyer par email/notification
+- Webhook `procedure.finished` → stocker PDF final YouSign dans Supabase Storage
+- Supprimer `signature_pad` une fois YouSign intégré
+
+**Recommandation** : Option B active pour la V1, passer à Option A (YouSign ~0,50€/contrat) en V2 quand volume le justifie.
 
 ### 9bis.4 Codes feature
 
-| Code | Feature |
-|------|---------|
-| SIGN01 | Intégration YouSign API (V2) |
-| SIGN02 | Multi-signataires / co-adoption |
-| SIGN03 | Webhook completion → archivage PDF |
-| SIGN04 | Portail signatures pour les pros (tableau de bord statuts) |
+| Code | Feature | Statut |
+|------|---------|--------|
+| SIGN01 | Intégration YouSign API (V2) | 🔜 V2 |
+| SIGN02 | Multi-signataires / co-adoption | 🔜 V2 |
+| SIGN03 | Webhook completion → archivage PDF | 🔜 V2 |
+| SIGN04 | Portail signatures pour les pros (tableau de bord statuts) | 🔜 V2 |
+| SIGN00 | Signature canvas + stockage Supabase (Option B V1) | ✅ Livré 2026-06-19 |
 
-**Dépendance** : SIGN01 nécessite CERT02 (signature canvas) comme base.
+**Dépendance** : SIGN01 remplacera SIGN00 — même contrat HTML/PDF, seul le mécanisme de signature change.
 
 ---
 
