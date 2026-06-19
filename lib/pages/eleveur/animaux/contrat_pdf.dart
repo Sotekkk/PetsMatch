@@ -254,3 +254,105 @@ Future<void> genererContratPDF({
 }
 
 String _fmt(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+// ── Certificat de cession PDF ──────────────────────────────────────────────────
+
+Future<void> genererCertificatCessionPDF({
+  required BuildContext context,
+  required Map<String, dynamic> animal,
+  required Map<String, dynamic> eleveur,
+  String acquereurNom     = '',
+  String acquereurAdresse = '',
+  String acquereurEmail   = '',
+  String acquereurTel     = '',
+  String prix             = '',
+  DateTime? dateCession,
+  String notes            = '',
+}) async {
+  final pdf = pw.Document();
+  final t = _termes(animal['espece'] as String?);
+  final today = _fmt(DateTime.now());
+  final dateVente = dateCession != null ? _fmt(dateCession) : '___/___/______';
+  final dn = animal['date_naissance'] != null ? _fmt(DateTime.tryParse(animal['date_naissance'] as String) ?? DateTime.now()) : '—';
+  final isMasculin = ['male', 'mâle', 'm'].contains((animal['sexe'] as String? ?? '').toLowerCase());
+  final espece = (animal['espece'] as String? ?? '');
+  final especeLabel = espece.isNotEmpty ? (espece[0].toUpperCase() + espece.substring(1)) : '—';
+
+  final eleveurNom    = (eleveur['name_elevage'] as String?) ?? '${eleveur['firstname'] ?? ''} ${eleveur['lastname'] ?? ''}'.trim();
+  final eleveurAdresse= (eleveur['adress_elevage'] as String?) ?? (eleveur['adress'] as String?) ?? '';
+  final eleveurSiret  = (eleveur['siret'] as String?) ?? '';
+  final eleveurTel    = '${eleveur['code_iso_elevage'] ?? '+33'} ${eleveur['numero_elevage'] ?? ''}'.trim();
+
+  pdf.addPage(pw.MultiPage(
+    pageFormat: PdfPageFormat.a4,
+    margin: const pw.EdgeInsets.symmetric(horizontal: 36, vertical: 36),
+    build: (ctx) => [
+      pw.Center(child: pw.Text('CERTIFICAT DE CESSION', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: _teal, letterSpacing: 1))),
+      pw.SizedBox(height: 4),
+      pw.Center(child: pw.Text('Établi conformément aux articles L214-8 et suivants du Code rural', style: _small())),
+      pw.SizedBox(height: 16),
+
+      // Parties
+      pw.Text('ENTRE :', style: _bold()),
+      pw.SizedBox(height: 4),
+      pw.Text('Vendeur / Cédant : $eleveurNom${eleveurAdresse.isNotEmpty ? ' — $eleveurAdresse' : ''}${eleveurSiret.isNotEmpty ? ' — SIRET $eleveurSiret' : ''}${eleveurTel.trim().isNotEmpty && eleveurTel.trim() != '+33' ? ' — $eleveurTel' : ''}', style: _body()),
+      pw.SizedBox(height: 8),
+      pw.Text('ET :', style: _bold()),
+      pw.SizedBox(height: 4),
+      pw.Text('Acquéreur : $acquereurNom${acquereurAdresse.isNotEmpty ? ' — $acquereurAdresse' : ''}${acquereurEmail.isNotEmpty ? ' — $acquereurEmail' : ''}${acquereurTel.isNotEmpty ? ' — $acquereurTel' : ''}', style: _body()),
+      pw.SizedBox(height: 14),
+
+      // Article 1 — Animal
+      pw.Text('Article 1 — Animal cédé', style: _artTitle()),
+      pw.SizedBox(height: 4),
+      pw.Text('Espèce : $especeLabel   Race : ${animal['race'] ?? '—'}   Sexe : ${isMasculin ? 'Mâle' : 'Femelle'}', style: _body()),
+      pw.Text('Nom : ${animal['nom'] ?? '—'}   Date de naissance : $dn', style: _body()),
+      pw.Text('N° identification (puce/tatouage) : ${animal['identification'] ?? '—'}', style: _body()),
+      pw.SizedBox(height: 14),
+
+      // Article 2 — Conditions
+      pw.Text('Article 2 — Conditions de cession', style: _artTitle()),
+      pw.SizedBox(height: 4),
+      pw.Text('Date effective de cession : $dateVente', style: _body()),
+      if (prix.isNotEmpty) pw.Text('Prix de cession : $prix euros TTC', style: _body()),
+      if (notes.isNotEmpty) pw.Text('Conditions particulières : $notes', style: _body()),
+      pw.SizedBox(height: 14),
+
+      // Article 3 — Garanties
+      pw.Text('Article 3 — Garanties légales', style: _artTitle()),
+      pw.SizedBox(height: 4),
+      pw.Text(
+        'Le cédant certifie que l\'animal est, à sa connaissance, en bonne santé au jour de la cession. '
+        'La présente cession est soumise aux garanties légales contre les vices rédhibitoires suivants : ${t['vices']}. '
+        'Délai de garantie légale : 30 jours à compter de la livraison.',
+        style: _body(),
+      ),
+      pw.SizedBox(height: 14),
+
+      // Article 4 — Documents remis
+      pw.Text('Article 4 — Documents remis', style: _artTitle()),
+      pw.SizedBox(height: 4),
+      pw.Text('☐ Carnet de santé / passeport européen', style: _body()),
+      pw.Text('☐ Certificat vétérinaire de moins de 5 jours', style: _body()),
+      pw.Text('☐ Pedigree / document de filiation', style: _body()),
+      pw.Text('☐ Certificat d\'engagement et de connaissance', style: _body()),
+      pw.Text('☐ Contrat de vente / réservation', style: _body()),
+      pw.SizedBox(height: 20),
+
+      // Signatures
+      pw.Text('Fait à _________________, le $today', style: _body(), textAlign: pw.TextAlign.right),
+      pw.SizedBox(height: 8),
+      pw.Center(child: pw.Text('Document établi en DEUX exemplaires originaux', style: pw.TextStyle(fontSize: 8, color: _teal, fontWeight: pw.FontWeight.bold))),
+      pw.SizedBox(height: 8),
+      pw.Row(children: [
+        _signBlock('Le Vendeur', eleveurNom),
+        pw.SizedBox(width: 24),
+        _signBlock('L\'Acquéreur', acquereurNom),
+      ]),
+      pw.SizedBox(height: 8),
+      pw.Center(child: pw.Text('$today · PetsMatch — Ce document ne remplace pas les obligations légales d\'identification (I-CAD)', style: _small())),
+    ],
+  ));
+
+  await Printing.layoutPdf(onLayout: (format) => pdf.save());
+}

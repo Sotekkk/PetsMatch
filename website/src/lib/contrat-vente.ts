@@ -180,6 +180,91 @@ function imprimerFinalise() { window.print(); }
 `;
 }
 
+function buildScriptCert(animalId: string, supabaseUrl: string, supabaseKey: string, eleveurUid: string) {
+  return `
+var _pads = [];
+var _animalId = ${JSON.stringify(animalId)};
+var _sbUrl = ${JSON.stringify(supabaseUrl)};
+var _sbKey = ${JSON.stringify(supabaseKey)};
+var _eleveurUid = ${JSON.stringify(eleveurUid)};
+
+window.addEventListener('load', function() {
+  if (typeof SignaturePad === 'undefined') return;
+  ['sigVendeur','sigAcheteur'].forEach(function(id, i) {
+    var c = document.getElementById(id);
+    if (c) _pads[i] = new SignaturePad(c, {backgroundColor:'rgba(0,0,0,0)', penColor:'#1F2A2E', minWidth:1, maxWidth:2.5});
+  });
+});
+
+function toggleCb(el){el.classList.toggle('checked');el.textContent=el.classList.contains('checked')?'✓':'';}
+function clearSig(i){ if(_pads[i]) _pads[i].clear(); }
+
+function injectSigs(imgs) {
+  ['vendeur','acheteur'].forEach(function(role, i) {
+    var sig = imgs[i];
+    document.querySelectorAll('[data-signer="'+role+'"] .sign-img').forEach(function(el) {
+      el.innerHTML = sig
+        ? '<img src="'+sig+'" style="max-height:60px;max-width:100%;object-fit:contain">'
+        : '<span style="font-size:9px;color:#aaa;font-style:italic">Signature manuscrite</span>';
+    });
+  });
+}
+
+async function finaliser() {
+  if (!_pads[0] || !_pads[1]) { alert('Initialisation incomplète.'); return; }
+  var imgs = [
+    !_pads[0].isEmpty() ? _pads[0].toDataURL('image/png') : null,
+    !_pads[1].isEmpty() ? _pads[1].toDataURL('image/png') : null,
+  ];
+  injectSigs(imgs);
+  var panel = document.querySelector('.sig-panel');
+  var toolbar = document.querySelector('.toolbar');
+  if (panel) panel.style.display = 'none';
+  if (toolbar) toolbar.style.display = 'none';
+  var html = '<!DOCTYPE html>' + document.documentElement.outerHTML;
+
+  if (_animalId && _sbUrl && _sbKey) {
+    try {
+      var blob = new Blob([html], {type:'text/html;charset=utf-8'});
+      var filename = 'certificat_cession_'+_animalId+'_'+Date.now()+'.html';
+      var uploadRes = await fetch(_sbUrl+'/storage/v1/object/contrats/'+filename, {
+        method: 'POST',
+        headers: {'apikey':_sbKey,'Authorization':'Bearer '+_sbKey,'Content-Type':'text/html;charset=utf-8','x-upsert':'true'},
+        body: blob
+      });
+      if (uploadRes.ok) {
+        var publicUrl = _sbUrl+'/storage/v1/object/public/contrats/'+filename;
+        // Màj cession_certificat_url sur l'animal
+        await fetch(_sbUrl+'/rest/v1/animaux?id=eq.'+_animalId, {
+          method: 'PATCH',
+          headers: {'apikey':_sbKey,'Authorization':'Bearer '+_sbKey,'Content-Type':'application/json','Prefer':'return=minimal'},
+          body: JSON.stringify({cession_certificat_url: publicUrl})
+        });
+        // Insérer dans documents_animaux
+        await fetch(_sbUrl+'/rest/v1/documents_animaux', {
+          method: 'POST',
+          headers: {'apikey':_sbKey,'Authorization':'Bearer '+_sbKey,'Content-Type':'application/json','Prefer':'return=minimal'},
+          body: JSON.stringify({animal_id:_animalId, uid_eleveur:_eleveurUid, type:'certificat_cession', titre:'Certificat de cession', url:publicUrl, statut:'signe', signe_le: new Date().toISOString()})
+        });
+        // Notifier le parent
+        if (window.opener) window.opener.postMessage({type:'certificate_signed', url: publicUrl, animalId: _animalId}, '*');
+        var st = document.getElementById('sign-status');
+        if (st) { st.textContent = '✅ Certificat signé et enregistré'; st.style.display='block'; }
+      }
+    } catch(e) { console.error('Upload certificat:', e); }
+  } else {
+    if (window.opener) window.opener.postMessage({type:'certificate_signed', html: html}, '*');
+  }
+
+  if (toolbar) toolbar.style.display = '';
+  var pb = document.getElementById('print-btn');
+  if (pb) pb.style.display = 'inline-block';
+}
+
+function imprimerFinalise() { window.print(); }
+`;
+}
+
 function signBlock(role: 'vendeur' | 'acheteur', nom: string) {
   return `
 <div class="sign-block" data-signer="${role}">
@@ -414,6 +499,151 @@ ${hasSign ? `
 
 export function generateContratVente(eleveur: EleveurContrat): string {
   return generateContratHTML({}, {}, eleveur);
+}
+
+// ── Certificat de cession ─────────────────────────────────────────────────────
+
+export function generateCertificatCessionHTML(
+  animal: AnimalContrat,
+  data: DataContrat,
+  eleveur: EleveurContrat,
+  opts?: { animalId?: string; supabaseUrl?: string; supabaseKey?: string; eleveurUid?: string }
+): string {
+  const t = animalTerms(animal.espece);
+  const today = new Date().toLocaleDateString('fr-FR');
+  const dn = animal.date_naissance ? new Date(animal.date_naissance).toLocaleDateString('fr-FR') : '';
+  const dateVente = data.dateCession ? new Date(data.dateCession).toLocaleDateString('fr-FR') : today;
+  const acqNom = data.nom ?? '';
+  const espece = animal.espece ? (animal.espece.charAt(0).toUpperCase() + animal.espece.slice(1)) : '—';
+  const animalId = opts?.animalId ?? '';
+  const sbUrl    = opts?.supabaseUrl ?? '';
+  const sbKey    = opts?.supabaseKey ?? '';
+  const elvUid   = opts?.eleveurUid ?? '';
+  const hasSign  = !!animalId;
+  const isMasculin = ['male','mâle','m'].includes((animal.sexe ?? '').toLowerCase());
+  const vicesSpec = t.vices;
+
+  return `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><title>Certificat de cession — ${animal.nom || t.jeune}</title>
+<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"><\/script>
+<style>${CSS}</style>
+<script>${buildScriptCert(animalId, sbUrl, sbKey, elvUid)}<\/script>
+</head><body>
+
+<div class="toolbar">
+  <span class="tip">✏️ Modifiez les champs soulignés · Signez dans le panneau en bas · Finalisez</span>
+  <button class="btn-outline" onclick="window.print()">🖨️ Imprimer</button>
+  ${hasSign ? `<button class="btn-green" onclick="finaliser()">✅ Finaliser et enregistrer</button>` : ''}
+  <button id="print-btn" class="btn-primary" onclick="imprimerFinalise()" style="display:none">🖨️ Imprimer le certificat signé</button>
+</div>
+
+<div class="page" style="margin-top:56px">
+
+<div id="sign-status" class="status-ok" style="display:none"></div>
+
+<h1>Certificat de cession</h1>
+<h2 style="font-size:11px;color:#555;text-align:center;margin-top:0">Établi conformément aux dispositions des articles L214-8 et suivants du Code rural</h2>
+
+<div class="parties">
+<strong>ENTRE :</strong><br>
+<strong>Vendeur / Cédant</strong><br>
+${eleveur.nom}${eleveur.adresse ? `, ${eleveur.adresse}` : ''}${eleveur.siret ? ` — SIRET ${eleveur.siret}` : ''}${eleveur.tel ? ` — Tél. ${eleveur.tel}` : ''}${eleveur.email ? ` — ${eleveur.email}` : ''}
+</div>
+
+<div class="between">ET :</div>
+
+<div class="parties">
+<strong>Acquéreur</strong><br>
+<span class="cb" onclick="toggleCb(this)">☐</span> M. &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> Mme<br>
+Nom / Prénom : <span class="e wide" contenteditable="true" data-ph="Nom et prénom">${acqNom}</span><br>
+Adresse : <span class="e full" contenteditable="true" data-ph="Adresse complète">${data.adresse ?? ''}</span>
+Email : <span class="e wide" contenteditable="true" data-ph="Email">${data.email ?? ''}</span> &nbsp;
+Téléphone : <span class="e wide" contenteditable="true" data-ph="Téléphone">${data.tel ?? ''}</span>
+</div>
+
+<div class="article">
+<div class="art-title">Article 1 — Animal cédé</div>
+<div class="block">
+Espèce : <span class="e wide" contenteditable="true" data-ph="Espèce">${espece}</span> &nbsp;
+Race : <span class="e wide" contenteditable="true" data-ph="Race">${animal.race ?? ''}</span><br>
+Sexe : <span class="cb" onclick="toggleCb(this)">${isMasculin ? '✓' : '☐'}</span> Mâle &nbsp; <span class="cb" onclick="toggleCb(this)">${!isMasculin ? '✓' : '☐'}</span> Femelle<br>
+Nom de l'animal : <span class="e wide" contenteditable="true" data-ph="Nom">${animal.nom ?? ''}</span><br>
+Date de naissance : <span class="e wide" contenteditable="true" data-ph="jj/mm/aaaa">${dn}</span><br>
+N° d'identification (puce / tatouage) : <span class="e wide" contenteditable="true" data-ph="N° identification">${animal.identification ?? ''}</span><br>
+${animal.espece?.toLowerCase() === 'chien' || animal.espece?.toLowerCase() === 'chat'
+  ? `Numéro de pedigree : <span class="e full" contenteditable="true" data-ph="${t.pedigree}"></span>`
+  : ''}
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 2 — Conditions de cession</div>
+<div class="block">
+Date effective de cession : <span class="e wide" contenteditable="true" data-ph="jj/mm/aaaa">${dateVente}</span><br>
+Prix de cession : <span class="e wide" contenteditable="true" data-ph="Montant en euros">${data.prix ? `${parseFloat(data.prix).toLocaleString('fr-FR')} euros TTC` : ''}</span><br>
+Mode de règlement : <span class="cb" onclick="toggleCb(this)">☐</span> Virement &nbsp;
+<span class="cb" onclick="toggleCb(this)">☐</span> Espèces &nbsp;
+<span class="cb" onclick="toggleCb(this)">☐</span> Chèque<br>
+${data.notes ? `Conditions particulières : <span class="e full" contenteditable="true">${data.notes}</span>` : 'Conditions particulières : <span class="e full" contenteditable="true" data-ph="Conditions particulières éventuelles"></span>'}
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 3 — Garanties légales</div>
+<div class="block">
+Le cédant certifie que l'animal est, à sa connaissance, en bonne santé au jour de la cession et a bénéficié de l'ensemble des soins nécessaires à son bon développement (vaccinations, vermifugations, antiparasitaires).<br><br>
+Conformément à l'article L213-1 du Code rural, la présente cession est soumise aux garanties légales contre les vices rédhibitoires suivants : <span class="e full" contenteditable="true">${vicesSpec}</span><br><br>
+Le délai de garantie légale est de <span class="e" contenteditable="true" data-ph="30">30</span> jours à compter de la livraison pour les vices rédhibitoires.<br><br>
+L'acquéreur déclare avoir reçu les informations nécessaires concernant les besoins spécifiques, l'entretien et le mode de vie adapté à cette espèce/race.
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 4 — Documents remis</div>
+<div class="block">
+<span class="cb" onclick="toggleCb(this)">☐</span> Carnet de santé / passeport européen<br>
+<span class="cb" onclick="toggleCb(this)">☐</span> Certificat vétérinaire de moins de 5 jours<br>
+<span class="cb" onclick="toggleCb(this)">☐</span> Attestation de cession (présent document)<br>
+<span class="cb" onclick="toggleCb(this)">☐</span> Pedigree / document de filiation<br>
+<span class="cb" onclick="toggleCb(this)">☐</span> Certificat d'engagement et de connaissance<br>
+<span class="cb" onclick="toggleCb(this)">☐</span> Contrat de vente / réservation
+</div>
+</div>
+
+<div class="sign-section">
+  <div class="block" style="text-align:right;margin-bottom:8px">
+    Fait à <span class="e" contenteditable="true" data-ph="Ville">___________</span>, le <span class="e" contenteditable="true" data-ph="date">${today}</span>
+  </div>
+  <div class="copy-banner">📄 Attestation établie en DEUX exemplaires originaux — un pour chaque partie</div>
+  <div class="sign-row">
+    ${signBlock('vendeur', eleveur.nom)}
+    ${signBlock('acheteur', acqNom || "L'Acquéreur")}
+  </div>
+</div>
+
+<p class="foot">Certificat de cession établi le ${today} · PetsMatch — Ce document ne remplace pas les obligations légales d'identification et de déclaration auprès du fichier national d'identification (I-CAD).</p>
+</div>
+
+${hasSign ? `
+<div class="sig-panel">
+  <div class="sig-pad">
+    <div class="sig-pad-label">✍️ Vendeur — ${eleveur.nom}</div>
+    <canvas id="sigVendeur" class="sig-canvas" width="220" height="80"></canvas>
+    <button class="sig-clear" onclick="clearSig(0)">✕ Effacer</button>
+  </div>
+  <div class="sig-pad">
+    <div class="sig-pad-label">✍️ Acquéreur — ${acqNom || '…'}</div>
+    <canvas id="sigAcheteur" class="sig-canvas" width="220" height="80"></canvas>
+    <button class="sig-clear" onclick="clearSig(1)">✕ Effacer</button>
+  </div>
+  <div style="text-align:center">
+    <button class="btn-green" onclick="finaliser()">✅ Finaliser et enregistrer</button>
+    <div style="font-size:9px;color:#888;margin-top:4px">Signatures intégrées · document sauvegardé pour les deux parties</div>
+  </div>
+</div>
+` : ''}
+
+</body></html>`;
 }
 
 // ── Contrat de réservation ────────────────────────────────────────────────────

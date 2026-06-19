@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { uploadDocument } from '@/lib/upload-media';
-import { generateContratHTML as generateContratHTMLLib } from '@/lib/contrat-vente';
+import { generateContratHTML as generateContratHTMLLib, generateCertificatCessionHTML } from '@/lib/contrat-vente';
 
 interface Animal {
   id: string;
@@ -56,117 +56,25 @@ function fmtDate(s?: string) {
   return new Date(s).toLocaleDateString('fr-FR');
 }
 
-function generateCertificatHTML(animal: Animal, data: CessionData, eleveur: EleveurInfo): string {
-  const today = new Date().toLocaleDateString('fr-FR');
-  const espece = animal.espece ? (animal.espece.charAt(0).toUpperCase() + animal.espece.slice(1)) : '—';
-  return `<!DOCTYPE html>
-<html lang="fr"><head><meta charset="UTF-8"><title>Certificat de cession</title>
-<style>
-  body{font-family:Arial,sans-serif;font-size:12px;margin:40px;color:#222}
-  h1{font-size:20px;text-align:center;margin-bottom:4px;color:#0C5C6C}
-  .sub{text-align:center;font-size:11px;color:#666;margin-bottom:28px}
-  .section{margin-bottom:18px}
-  .section-title{font-size:13px;font-weight:bold;color:#0C5C6C;border-bottom:1px solid #0C5C6C;padding-bottom:3px;margin-bottom:8px}
-  .row{display:flex;gap:24px;margin-bottom:6px}
-  .field{flex:1}
-  .label{font-size:10px;color:#666;margin-bottom:2px}
-  .value{font-size:12px;font-weight:600}
-  .sign-row{display:flex;gap:48px;margin-top:40px}
-  .sign-block{flex:1}
-  .sign-line{border-bottom:1px solid #888;margin-top:40px;margin-bottom:4px}
-  .foot{margin-top:32px;font-size:9px;color:#aaa;text-align:center}
-  @media print{body{margin:20px}}
-</style></head><body>
-<h1>Certificat de cession</h1>
-<p class="sub">Établi conformément aux dispositions légales en vigueur</p>
-
-<div class="section">
-  <div class="section-title">Vendeur / Cédant</div>
-  <div class="row">
-    <div class="field"><div class="label">Nom / Raison sociale</div><div class="value">${eleveur.nom}</div></div>
-    <div class="field"><div class="label">Adresse</div><div class="value">${eleveur.adresse ?? '—'}</div></div>
-  </div>
-  <div class="row">
-    <div class="field"><div class="label">Email</div><div class="value">${eleveur.email ?? '—'}</div></div>
-    <div class="field"><div class="label">Téléphone</div><div class="value">${eleveur.tel ?? '—'}</div></div>
-    ${eleveur.siret ? `<div class="field"><div class="label">SIRET</div><div class="value">${eleveur.siret}</div></div>` : ''}
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title">Acquéreur</div>
-  <div class="row">
-    <div class="field"><div class="label">Nom</div><div class="value">${data.nom || '—'}</div></div>
-    <div class="field"><div class="label">Qualité</div><div class="value">${QUALITES.find(q => q.value === data.qualite)?.label ?? data.qualite}</div></div>
-  </div>
-  <div class="row">
-    <div class="field"><div class="label">Adresse</div><div class="value">${data.adresse || '—'}</div></div>
-    <div class="field"><div class="label">Email</div><div class="value">${data.email || '—'}</div></div>
-    <div class="field"><div class="label">Téléphone</div><div class="value">${data.tel || '—'}</div></div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title">Animal cédé</div>
-  <div class="row">
-    <div class="field"><div class="label">Nom</div><div class="value">${animal.nom ?? '—'}</div></div>
-    <div class="field"><div class="label">Espèce / Race</div><div class="value">${espece} — ${animal.race ?? '—'}</div></div>
-    <div class="field"><div class="label">Sexe</div><div class="value">${animal.sexe ?? '—'}</div></div>
-  </div>
-  <div class="row">
-    <div class="field"><div class="label">Date de naissance</div><div class="value">${fmtDate(animal.date_naissance)}</div></div>
-    <div class="field"><div class="label">N° identification</div><div class="value">${animal.identification ?? '—'}</div></div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title">Conditions de cession</div>
-  <div class="row">
-    <div class="field"><div class="label">Date de cession</div><div class="value">${fmtDate(data.dateCession)}</div></div>
-    <div class="field"><div class="label">Prix de cession</div><div class="value">${data.prix ? data.prix + ' €' : 'Non communiqué'}</div></div>
-  </div>
-  ${data.notes ? `<div style="margin-top:6px"><div class="label">Notes</div><div class="value">${data.notes}</div></div>` : ''}
-</div>
-
-<div class="section">
-  <p style="font-size:11px;line-height:1.6;color:#444">
-    Je soussigné·e, vendeur / cédant, certifie que l'animal décrit ci-dessus est en bonne santé au jour de la cession,
-    à ma connaissance, et qu'il a fait l'objet des soins nécessaires à son bon développement.<br/>
-    L'acquéreur reconnaît avoir pris connaissance de l'état de santé de l'animal et accepte les conditions de la présente cession.
-  </p>
-</div>
-
-<div class="sign-row">
-  <div class="sign-block">
-    <div style="font-size:11px;font-weight:bold">Signature du vendeur</div>
-    <div style="font-size:10px;color:#666;margin-bottom:2px">${eleveur.nom}</div>
-    <div class="sign-line"></div>
-    <div style="font-size:9px;color:#aaa">Date et signature</div>
-  </div>
-  <div class="sign-block">
-    <div style="font-size:11px;font-weight:bold">Signature de l'acquéreur</div>
-    <div style="font-size:10px;color:#666;margin-bottom:2px">${data.nom || '...'}</div>
-    <div class="sign-line"></div>
-    <div style="font-size:9px;color:#aaa">Date et signature</div>
-  </div>
-</div>
-
-<p class="foot">Document généré le ${today} via PetsMatch · Ce certificat ne remplace pas les obligations légales d'identification et de déclaration.</p>
-</body></html>`;
-}
 
 
-function generateContratHTML(animal: Animal, data: CessionData, eleveur: EleveurInfo): string {
+function buildContratHTML(animal: Animal, data: CessionData, eleveur: EleveurInfo): string {
   const sbUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
   const sbKey  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
   return generateContratHTMLLib(animal, data, eleveur, { animalId: animal.id, supabaseUrl: sbUrl, supabaseKey: sbKey });
 }
-function openPrint(html: string) {
-  const win = window.open('', '_blank');
-  if (!win) { alert('Autorisez les popups pour imprimer'); return; }
+
+function buildCertHTML(animal: Animal, data: CessionData, eleveur: EleveurInfo, eleveurUid: string): string {
+  const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+  const sbKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+  return generateCertificatCessionHTML(animal, data, eleveur, { animalId: animal.id, supabaseUrl: sbUrl, supabaseKey: sbKey, eleveurUid });
+}
+
+function openDoc(html: string) {
+  const win = window.open('', '_blank', 'width=900,height=700');
+  if (!win) { alert('Autorisez les popups'); return; }
   win.document.write(html);
   win.document.close();
-  setTimeout(() => win.print(), 400);
 }
 
 export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCeded }: Props) {
@@ -202,19 +110,24 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
   const contratRef    = useRef<HTMLInputElement>(null);
   const certificatRef = useRef<HTMLInputElement>(null);
 
-  const [saving, setSaving]           = useState(false);
-  const [error, setError]             = useState('');
-  const [contratSigne, setContratSigne] = useState(false);
+  const [saving, setSaving]             = useState(false);
+  const [error, setError]               = useState('');
+  const [contratSigne, setContratSigne]       = useState(false);
+  const [certificatSigne, setCertificatSigne] = useState(false);
 
   // Contrat existant dans documents_animaux (auto-attach DOC05)
   const [existingContrat, setExistingContrat] = useState<{ type: string; statut: string; url: string } | null>(null);
 
-  // Écoute le contrat signé depuis la popup
+  // Écoute le contrat ou certificat signé depuis la popup
   useEffect(() => {
     const handler = (e: MessageEvent) => {
-      if (e.data?.type !== 'contract_signed') return;
-      if (e.data.url) setContratUrl(e.data.url);
-      setContratSigne(true);
+      if (e.data?.type === 'contract_signed') {
+        if (e.data.url) setContratUrl(e.data.url);
+        setContratSigne(true);
+      } else if (e.data?.type === 'certificate_signed') {
+        if (e.data.url) setCertificatUrl(e.data.url);
+        setCertificatSigne(true);
+      }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
@@ -577,27 +490,34 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
               )}
 
               {/* Certificat de cession */}
-              <div className="border border-gray-200 rounded-xl p-4 space-y-3">
+              <div className={`border rounded-xl p-4 space-y-3 ${certificatSigne ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-bold text-[#1F2A2E]">📜 Certificat de cession</p>
-                    <p className="text-xs text-gray-400">Document légal de transfert de propriété</p>
+                    <p className="text-xs text-gray-400">Document légal de transfert — champs modifiables + signature canvas</p>
                   </div>
                   <button
-                    onClick={() => openPrint(generateCertificatHTML(animal, cessionData, eleveurInfo))}
+                    onClick={() => openDoc(buildCertHTML(animal, cessionData, eleveurInfo, uid))}
                     className="text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C]/30 px-3 py-1.5 rounded-lg hover:bg-[#0C5C6C]/5 transition-colors">
-                    🖨️ Générer
+                    ✍️ Générer &amp; signer
                   </button>
                 </div>
-                <div>
-                  <input ref={certificatRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
-                    onChange={e => { if (e.target.files?.[0]) uploadDoc(e.target.files[0], 'certificat'); }} />
-                  <button onClick={() => certificatRef.current?.click()} disabled={uploadingCertificat}
-                    className="w-full border-2 border-dashed border-gray-200 rounded-xl py-2.5 text-xs text-gray-400 hover:border-[#0C5C6C]/40 hover:text-[#0C5C6C] transition-colors">
-                    {uploadingCertificat ? '⏳ Upload…' : certificatUrl ? '✓ Certificat uploadé · Remplacer' : '⬆️ Uploader le certificat signé'}
-                  </button>
-                  {certificatUrl && <p className="text-xs text-green-600 mt-1">✓ Certificat enregistré</p>}
-                </div>
+                {certificatSigne && (
+                  <div className="flex items-center gap-2 text-xs text-green-700 font-semibold">
+                    <span>✅ Certificat signé numériquement et enregistré</span>
+                    {certificatUrl && <a href={certificatUrl} target="_blank" rel="noreferrer" className="underline">Voir</a>}
+                  </div>
+                )}
+                {!certificatSigne && (
+                  <div>
+                    <input ref={certificatRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
+                      onChange={e => { if (e.target.files?.[0]) uploadDoc(e.target.files[0], 'certificat'); }} />
+                    <button onClick={() => certificatRef.current?.click()} disabled={uploadingCertificat}
+                      className="w-full border-2 border-dashed border-gray-200 rounded-xl py-2.5 text-xs text-gray-400 hover:border-[#0C5C6C]/40 hover:text-[#0C5C6C] transition-colors">
+                      {uploadingCertificat ? '⏳ Upload…' : certificatUrl ? '✓ Uploadé · Remplacer' : '⬆️ Ou uploader un PDF signé'}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Contrat de vente numérique */}
@@ -608,7 +528,7 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
                     <p className="text-xs text-gray-400">Signature numérique · Stocké pour les deux parties</p>
                   </div>
                   <button
-                    onClick={() => openPrint(generateContratHTML(animal, cessionData, eleveurInfo))}
+                    onClick={() => openDoc(buildContratHTML(animal, cessionData, eleveurInfo))}
                     className="text-xs font-semibold text-[#6E9E57] border border-[#6E9E57]/40 px-3 py-1.5 rounded-lg hover:bg-[#6E9E57]/5 transition-colors">
                     ✍️ Signer en ligne
                   </button>

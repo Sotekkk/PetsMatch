@@ -1377,7 +1377,7 @@ CREATE TABLE documents_animaux (
 | DOC03 | Certificat d'engagement avec signature électronique | App + Web | ✅ Existant (`certificats_engagement`) |
 | DOC04 | Fiche animal onglet Documents — affichage docs liés | App + Web | ✅ Livré 2026-06-19 |
 | DOC05 | Cession — attach auto du contrat de vente signé existant | App + Web | ✅ Livré 2026-06-19 |
-| DOC06 | Certificat de cession (attestation de transfert) | App + Web | 🔜 V1.5 |
+| DOC06 | Certificat de cession (attestation de transfert) | App + Web | ✅ Livré 2026-06-19 |
 
 **Notes DOC01-DOC02 :**
 - Web `/elevage/contrat/page.tsx` : migré Firestore → Supabase `documents_animaux`, sélecteur animal, génération dynamique via `generateContratHTML`, types vente/reservation/cession

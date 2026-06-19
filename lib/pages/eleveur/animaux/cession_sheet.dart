@@ -62,7 +62,8 @@ class _CessionSheetState extends State<CessionSheet> {
   Map<String, dynamic>? _existingContrat;
 
   bool _saving = false;
-  bool _generatingPdf = false;
+  bool _generatingPdf  = false;
+  bool _generatingCert = false;
   String? _error;
 
   @override
@@ -202,6 +203,31 @@ class _CessionSheetState extends State<CessionSheet> {
       setState(() => _error = 'Erreur génération PDF : $e');
     } finally {
       setState(() => _generatingPdf = false);
+    }
+  }
+
+  Future<void> _genererCertificat() async {
+    setState(() { _generatingCert = true; _error = null; });
+    try {
+      final profil = await _supa.from('users').select(
+        'firstname, lastname, name_elevage, is_elevage, adress_elevage, adress, siret, numero_elevage, code_iso_elevage, email'
+      ).eq('uid', widget.uid).maybeSingle();
+      await genererCertificatCessionPDF(
+        context: context,
+        animal: widget.animal,
+        eleveur: profil ?? {},
+        acquereurNom:     _nomCtrl.text.trim(),
+        acquereurAdresse: _adresseCtrl.text.trim(),
+        acquereurEmail:   _emailCtrl.text.trim(),
+        acquereurTel:     _telCtrl.text.trim(),
+        prix:             _prixCtrl.text.trim(),
+        dateCession:      _dateCession,
+        notes:            _notesCtrl.text.trim(),
+      );
+    } catch (e) {
+      setState(() => _error = 'Erreur génération certificat : $e');
+    } finally {
+      setState(() => _generatingCert = false);
     }
   }
 
@@ -528,6 +554,22 @@ class _CessionSheetState extends State<CessionSheet> {
               ),
               const SizedBox(height: 12),
             ],
+            // Bouton générer certificat de cession PDF
+            OutlinedButton.icon(
+              onPressed: _generatingCert ? null : _genererCertificat,
+              icon: _generatingCert
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: _teal, strokeWidth: 2))
+                  : const Icon(Icons.assignment_turned_in_outlined, size: 16, color: _teal),
+              label: Text(_generatingCert ? 'Génération...' : '📜 Générer certificat de cession (PDF)',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: _teal)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: _teal),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                minimumSize: const Size(double.infinity, 0),
+              ),
+            ),
+            const SizedBox(height: 8),
             // Bouton générer contrat PDF
             OutlinedButton.icon(
               onPressed: _generatingPdf ? null : _genererPdf,
