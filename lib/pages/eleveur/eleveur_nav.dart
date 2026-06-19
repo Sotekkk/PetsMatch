@@ -231,6 +231,24 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
+                        label: 'Protocoles',
+                        icon: Icons.event_note_outlined,
+                        locked: _planCode != 'premium',
+                        badgeLabel: 'Premium',
+                        onTap: () {
+                          Navigator.pop(context);
+                          if (_planCode != 'premium') {
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const AbonnementPage(),
+                            ));
+                          } else {
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const PlanningMoisPage(),
+                            ));
+                          }
+                        },
+                      ),
+                      _DrawerSubItem(
                         label: 'Facturation',
                         icon: Icons.receipt_long_outlined,
                         onTap: () {
@@ -307,24 +325,6 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => const AbonnementPage(),
                           ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Protocoles',
-                        icon: Icons.event_note_outlined,
-                        locked: _planCode != 'premium',
-                        badgeLabel: 'Premium',
-                        onTap: () {
-                          Navigator.pop(context);
-                          if (_planCode != 'premium') {
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const AbonnementPage(),
-                            ));
-                          } else {
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const PlanningMoisPage(),
-                            ));
-                          }
                         },
                       ),
                       _DrawerSubItem(
