@@ -124,7 +124,7 @@ const MENU_ELEVEUR = [
     ],
   },
   {
-    section: 'Animaux perdus',
+    section: 'Animaux perdus / trouvés',
     icon: '🔍',
     items: [
       { href: '/mes-alertes',    label: 'Gérer mes alertes',       icon: '🔔' },
@@ -269,7 +269,7 @@ const MENU_PARTICULIER = [
     ],
   },
   {
-    section: 'Animaux perdus',
+    section: 'Animaux perdus / trouvés',
     icon: '🔍',
     items: [
       { href: '/mes-alertes',    label: 'Gérer mes alertes',       icon: '🔔' },

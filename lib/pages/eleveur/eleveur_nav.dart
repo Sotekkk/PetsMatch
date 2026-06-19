@@ -441,7 +441,7 @@ class _EleveurNavState extends State<EleveurNav> {
                 ],
                 _DrawerSection(
                   icon: Icons.search_off_rounded,
-                  label: 'Perdus & Trouvés',
+                  label: 'Animaux perdus / trouvés',
                   children: [
                     _DrawerSubItem(
                       label: 'Mes déclarations perdues/trouvées',
