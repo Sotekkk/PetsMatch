@@ -1372,12 +1372,17 @@ CREATE TABLE documents_animaux (
 
 | Code | Feature | Surface | Priorité |
 |------|---------|---------|---------|
-| DOC01 | Table `documents_animaux` + migration SQL | Backend | V1.5 |
-| DOC02 | Page Contrats dynamiques (sélecteur animal + signature) | App + Web | V1.5 |
-| DOC03 | Certificat d'engagement avec signature électronique | App + Web | V1.5 |
-| DOC04 | Fiche animal onglet Documents — affichage docs liés | App + Web | V1.5 |
-| DOC05 | Cession — attach auto du contrat de vente signé | App + Web | V1.5 |
-| DOC06 | Certificat de cession (attestation de transfert) | App + Web | V1.5 |
+| DOC01 | Table `documents_animaux` + migration SQL | Backend | ✅ Livré 2026-06-19 |
+| DOC02 | Page Contrats dynamiques (sélecteur animal + génération PDF/web) | App + Web | ✅ Livré 2026-06-19 |
+| DOC03 | Certificat d'engagement avec signature électronique | App + Web | ✅ Existant (`certificats_engagement`) |
+| DOC04 | Fiche animal onglet Documents — affichage docs liés | App + Web | 🔜 V1.5 |
+| DOC05 | Cession — attach auto du contrat de vente signé existant | App + Web | 🔜 V1.5 |
+| DOC06 | Certificat de cession (attestation de transfert) | App + Web | 🔜 V1.5 |
+
+**Notes DOC01-DOC02 :**
+- Web `/elevage/contrat/page.tsx` : migré Firestore → Supabase `documents_animaux`, sélecteur animal, génération dynamique via `generateContratHTML`, types vente/reservation/cession
+- App `contrat_reservation.dart` : migré Firestore → Supabase `documents_animaux`, sélecteur animal, génération PDF via `genererContratPDF`, recherche acquéreur PetsMatch
+- **MIGRATION SQL À APPLIQUER dans Supabase** : `supabase/migration_documents_animaux.sql`
 
 **TODO YouSign (SIGN01)** :
 - Remplacer les canvas par appel API YouSign : `POST /procedures` avec les deux signataires, récupérer les `signatureLinks`, envoyer par email/notification

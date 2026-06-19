@@ -1,987 +1,74 @@
-import 'dart:convert';
-import 'dart:io';
-import 'dart:typed_data';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
-import 'package:intl/intl.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Page principale : espace contrats
-// ─────────────────────────────────────────────────────────────────────────────
-
-class ContratReservationPage extends StatelessWidget {
+class ContratReservationPage extends StatefulWidget {
   const ContratReservationPage({super.key});
+  @override
+  State<ContratReservationPage> createState() => _ContratReservationPageState();
+}
 
-  static const _teal = Color(0xFF0C5C6C);
+class _ContratReservationPageState extends State<ContratReservationPage> {
+  static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
-  static const _bg = Color(0xFFF8F8F6);
+  static const _dark  = Color(0xFF1F2A2E);
+  static const _bg    = Color(0xFFF5F5F0);
+
+  final _supa = Supabase.instance.client;
+
+  List<Map<String, dynamic>> _docs    = [];
+  List<Map<String, dynamic>> _animaux = [];
+  Map<String, dynamic>?      _profil;
+  bool _loading = true;
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _bg,
-      appBar: AppBar(
-        backgroundColor: _teal,
-        foregroundColor: Colors.white,
-        title: const Text('Contrats',
-            style: TextStyle(
-                fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
-      ),
-      body: const _ContratsBody(),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: _green,
-        icon: const Icon(Icons.upload_file_outlined, color: Colors.white),
-        label: const Text('Ajouter',
-            style: TextStyle(
-                fontFamily: 'Galey',
-                fontWeight: FontWeight.w600,
-                color: Colors.white)),
-        onPressed: () => _ContratsBody.uploadContrat(context),
-      ),
-    );
-  }
-}
+  void initState() { super.initState(); _load(); }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Corps de la page
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ContratsBody extends StatelessWidget {
-  const _ContratsBody();
-
-  // Types de contrat modèles
-  static const _modeles = [
-    (type: 'reservation', label: 'Réservation', icon: Icons.pets_outlined,
-     color: Color(0xFFE0F2F1), desc: 'Arrhes, conditions, disponibilité'),
-    (type: 'vente', label: 'Vente', icon: Icons.handshake_outlined,
-     color: Color(0xFFE8F5E9), desc: 'Transfert de propriété, garanties'),
-    (type: 'saillie', label: 'Saillie extérieure', icon: Icons.favorite_border,
-     color: Color(0xFFFCE4EC), desc: 'Conditions de la saillie, honoraires'),
-  ];
-
-  static String _uid() => FirebaseAuth.instance.currentUser?.uid ?? '';
-
-  // ── Upload ────────────────────────────────────────────────────────────────
-
-  static Future<void> uploadContrat(BuildContext context) async {
-    // Sélection du fichier
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
-      withData: true,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final file = result.files.first;
-    if (file.bytes == null) return;
-
-    // Choix du type via bottom sheet
-    if (!context.mounted) return;
-    final type = await showModalBottomSheet<String>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _TypePickerSheet(),
-    );
-    if (type == null) return;
-    if (!context.mounted) return;
-
-    // Nom du document
-    String nom = file.name.replaceAll(RegExp(r'\.[^\.]+$'), '');
-    final nomCtrl = TextEditingController(text: nom);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Nommer le document',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        content: TextField(
-          controller: nomCtrl,
-          autofocus: true,
-          style: const TextStyle(fontFamily: 'Galey'),
-          decoration: InputDecoration(
-            hintText: 'Nom du contrat',
-            hintStyle:
-                const TextStyle(fontFamily: 'Galey', color: Color(0xFF6F767B)),
-            enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
-            focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide:
-                    const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Annuler',
-                  style: TextStyle(fontFamily: 'Galey', color: Colors.grey))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6E9E57)),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Enregistrer',
-                style: TextStyle(
-                    fontFamily: 'Galey',
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    nom = nomCtrl.text.trim().isEmpty ? file.name : nomCtrl.text.trim();
-
-    // Upload Firebase Storage
-    if (!context.mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final ext = file.extension ?? 'pdf';
-      final storagePath =
-          'contrats/${_uid()}/${DateTime.now().millisecondsSinceEpoch}_${file.name}';
-      final ref = FirebaseStorage.instance.ref().child(storagePath);
-      await ref.putData(file.bytes!);
-      final url = await ref.getDownloadURL();
-
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(_uid())
-          .collection('contrats')
-          .add({
-        'nom': nom,
-        'type': type,
-        'fileName': file.name,
-        'ext': ext,
-        'url': url,
-        'storagePath': storagePath,
-        'dateUpload': FieldValue.serverTimestamp(),
-      });
-
-      messenger.showSnackBar(const SnackBar(
-          content: Text('Document enregistré',
-              style: TextStyle(fontFamily: 'Galey'))));
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(
-          content: Text('Erreur : $e',
-              style: const TextStyle(fontFamily: 'Galey'))));
-    }
-  }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // ── Modèles ──────────────────────────────────────────────────────────
-        const Text('Modèles de contrats',
-            style: TextStyle(
-                fontFamily: 'Galey',
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
-                color: Color(0xFF1F2A2E))),
-        const SizedBox(height: 4),
-        Text('Générez un contrat pré-rempli depuis l\'application.',
-            style: TextStyle(
-                fontFamily: 'Galey',
-                fontSize: 12,
-                color: Colors.grey.shade500)),
-        const SizedBox(height: 12),
-        ..._modeles.map((m) => _ModeleCard(
-              type: m.type,
-              label: m.label,
-              icon: m.icon,
-              color: m.color,
-              desc: m.desc,
-            )),
-
-        const SizedBox(height: 28),
-
-        // ── Contrats stockés ─────────────────────────────────────────────────
-        const Text('Documents stockés',
-            style: TextStyle(
-                fontFamily: 'Galey',
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
-                color: Color(0xFF1F2A2E))),
-        const SizedBox(height: 4),
-        Text('Contrats signés, scannés ou importés.',
-            style: TextStyle(
-                fontFamily: 'Galey',
-                fontSize: 12,
-                color: Colors.grey.shade500)),
-        const SizedBox(height: 12),
-
-        StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('users')
-              .doc(_uid())
-              .collection('contrats')
-              .orderBy('dateUpload', descending: true)
-              .snapshots(),
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Center(
-                  child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator()));
-            }
-            final docs = snap.data?.docs ?? [];
-            if (docs.isEmpty) {
-              return _EmptyState();
-            }
-            return Column(
-              children: docs
-                  .map((d) => _ContratCard(
-                      doc: d,
-                      onDelete: () => _deleteContrat(context, d)))
-                  .toList(),
-            );
-          },
-        ),
-      ]),
-    );
-  }
-
-  Future<void> _deleteContrat(
-      BuildContext context, DocumentSnapshot doc) async {
-    final data = doc.data() as Map<String, dynamic>;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Supprimer ?',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        content: Text('Supprimer « ${data['nom'] ?? 'ce document'} » ?',
-            style: const TextStyle(fontFamily: 'Galey')),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Annuler',
-                  style: TextStyle(fontFamily: 'Galey', color: Colors.grey))),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Supprimer',
-                  style: TextStyle(
-                      fontFamily: 'Galey', color: Colors.redAccent))),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    try {
-      final path = data['storagePath'] as String?;
-      if (path != null && path.isNotEmpty) {
-        await FirebaseStorage.instance.ref().child(path).delete();
-      }
-      await doc.reference.delete();
-    } catch (_) {}
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Widgets
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ModeleCard extends StatelessWidget {
-  final String type;
-  final String label;
-  final IconData icon;
-  final Color color;
-  final String desc;
-
-  const _ModeleCard({
-    required this.type,
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.desc,
-  });
-
-  static const _teal = Color(0xFF0C5C6C);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 6,
-              offset: const Offset(0, 2))
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () => _open(context),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                    color: color, borderRadius: BorderRadius.circular(10)),
-                child: Icon(icon, size: 22, color: _teal),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(label,
-                          style: const TextStyle(
-                              fontFamily: 'Galey',
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
-                              color: Color(0xFF1F2A2E))),
-                      const SizedBox(height: 2),
-                      Text(desc,
-                          style: TextStyle(
-                              fontFamily: 'Galey',
-                              fontSize: 12,
-                              color: Colors.grey.shade500)),
-                    ]),
-              ),
-              const Icon(Icons.arrow_forward_ios_rounded,
-                  size: 14, color: Color(0xFF6F767B)),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _open(BuildContext context) {
-    if (type == 'reservation') {
-      Navigator.push(context,
-          MaterialPageRoute(builder: (_) => const _ContratReservationFormPage()));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Bientôt disponible',
-                style: TextStyle(fontFamily: 'Galey'))),
-      );
-    }
-  }
-}
-
-class _ContratCard extends StatelessWidget {
-  final DocumentSnapshot doc;
-  final VoidCallback onDelete;
-
-  const _ContratCard({required this.doc, required this.onDelete});
-
-  static const _typeLabels = {
-    'reservation': 'Réservation',
-    'vente': 'Vente',
-    'saillie': 'Saillie',
-    'autre': 'Autre',
-  };
-
-  static const _typeColors = {
-    'reservation': Color(0xFFE0F2F1),
-    'vente': Color(0xFFE8F5E9),
-    'saillie': Color(0xFFFCE4EC),
-    'autre': Color(0xFFF3E5F5),
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final data = doc.data() as Map<String, dynamic>;
-    final nom = data['nom'] ?? 'Document';
-    final type = data['type'] ?? 'autre';
-    final ext = (data['ext'] ?? 'pdf').toLowerCase();
-    final url = data['url'] as String?;
-    final ts = data['dateUpload'] as Timestamp?;
-    final date = ts != null
-        ? DateFormat('dd/MM/yyyy').format(ts.toDate())
-        : '—';
-
-    final isPdf = ext == 'pdf';
-    final isImage = ['jpg', 'jpeg', 'png'].contains(ext);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 6,
-              offset: const Offset(0, 2))
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: url != null ? () => _view(context, url, nom, isPdf, isImage) : null,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: _typeColors[type] ?? const Color(0xFFF3E5F5),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  isPdf
-                      ? Icons.picture_as_pdf_outlined
-                      : isImage
-                          ? Icons.image_outlined
-                          : Icons.insert_drive_file_outlined,
-                  size: 22,
-                  color: const Color(0xFF0C5C6C),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(nom,
-                          style: const TextStyle(
-                              fontFamily: 'Galey',
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                              color: Color(0xFF1F2A2E)),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: 4),
-                      Row(children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: _typeColors[type] ?? const Color(0xFFF3E5F5),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                              _typeLabels[type] ?? 'Autre',
-                              style: const TextStyle(
-                                  fontFamily: 'Galey',
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF0C5C6C))),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(date,
-                            style: TextStyle(
-                                fontFamily: 'Galey',
-                                fontSize: 11,
-                                color: Colors.grey.shade400)),
-                      ]),
-                    ]),
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline,
-                    size: 20, color: Colors.redAccent),
-                onPressed: onDelete,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _view(BuildContext context, String url, String nom, bool isPdf, bool isImage) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _DocumentViewer(
-          url: url, nom: nom, isPdf: isPdf, isImage: isImage),
-    );
-  }
-}
-
-class _DocumentViewer extends StatelessWidget {
-  final String url;
-  final String nom;
-  final bool isPdf;
-  final bool isImage;
-
-  const _DocumentViewer(
-      {required this.url,
-      required this.nom,
-      required this.isPdf,
-      required this.isImage});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(
-            width: 40, height: 4,
-            decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2))),
-        const SizedBox(height: 16),
-        Icon(
-          isPdf
-              ? Icons.picture_as_pdf
-              : isImage
-                  ? Icons.image
-                  : Icons.insert_drive_file,
-          size: 48,
-          color: const Color(0xFF0C5C6C),
-        ),
-        const SizedBox(height: 12),
-        Text(nom,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-                fontFamily: 'Galey',
-                fontWeight: FontWeight.w700,
-                fontSize: 16)),
-        const SizedBox(height: 20),
-        if (isPdf)
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0C5C6C),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12))),
-              icon: const Icon(Icons.print_outlined,
-                  color: Colors.white, size: 18),
-              label: const Text('Imprimer / Partager',
-                  style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white)),
-              onPressed: () async {
-                Navigator.pop(context);
-                try {
-                  final resp = await http.get(Uri.parse(url));
-                  await Printing.sharePdf(
-                      bytes: resp.bodyBytes, filename: '$nom.pdf');
-                } catch (_) {}
-              },
-            ),
-          ),
-        if (isImage) ...[
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6E9E57),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12))),
-              icon:
-                  const Icon(Icons.open_in_new, color: Colors.white, size: 18),
-              label: const Text('Voir l\'image',
-                  style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white)),
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => Scaffold(
-                      appBar: AppBar(
-                          backgroundColor: const Color(0xFF0C5C6C),
-                          foregroundColor: Colors.white,
-                          title: Text(nom,
-                              style: const TextStyle(
-                                  fontFamily: 'Galey', fontSize: 16))),
-                      body: InteractiveViewer(
-                        child: Center(
-                          child: Image.network(url, fit: BoxFit.contain),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-        const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFFE4E7E2)),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
-            icon: const Icon(Icons.copy_outlined,
-                size: 16, color: Color(0xFF6F767B)),
-            label: const Text('Copier le lien',
-                style: TextStyle(
-                    fontFamily: 'Galey',
-                    color: Color(0xFF6F767B),
-                    fontWeight: FontWeight.w500)),
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: url));
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Lien copié',
-                      style: TextStyle(fontFamily: 'Galey'))));
-            },
-          ),
-        ),
-      ]),
-    );
-  }
-}
-
-class _TypePickerSheet extends StatelessWidget {
-  static const _types = [
-    (value: 'reservation', label: 'Réservation', icon: Icons.pets_outlined),
-    (value: 'vente', label: 'Vente', icon: Icons.handshake_outlined),
-    (value: 'saillie', label: 'Saillie extérieure', icon: Icons.favorite_border),
-    (value: 'autre', label: 'Autre', icon: Icons.insert_drive_file_outlined),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(
-            width: 40, height: 4,
-            decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2))),
-        const SizedBox(height: 16),
-        const Text('Type de contrat',
-            style: TextStyle(
-                fontFamily: 'Galey',
-                fontWeight: FontWeight.w700,
-                fontSize: 16)),
-        const SizedBox(height: 16),
-        ..._types.map((t) => ListTile(
-              leading: Icon(t.icon, color: const Color(0xFF0C5C6C)),
-              title: Text(t.label,
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 15)),
-              onTap: () => Navigator.pop(context, t.value),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            )),
-      ]),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(32),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 6,
-              offset: const Offset(0, 2))
-        ],
-      ),
-      child: Column(children: [
-        Icon(Icons.folder_open_outlined,
-            size: 48, color: Colors.grey.shade300),
-        const SizedBox(height: 12),
-        const Text('Aucun document stocké',
-            style: TextStyle(
-                fontFamily: 'Galey',
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-                color: Color(0xFF1F2A2E))),
-        const SizedBox(height: 4),
-        Text('Utilisez le bouton + pour importer\nun contrat signé ou scanné.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                fontFamily: 'Galey',
-                fontSize: 12,
-                color: Colors.grey.shade400)),
-      ]),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Formulaire contrat de réservation (existant, accessible depuis le modèle)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ContratReservationFormPage extends StatefulWidget {
-  const _ContratReservationFormPage();
-
-  @override
-  State<_ContratReservationFormPage> createState() =>
-      _ContratReservationFormPageState();
-}
-
-class _ContratReservationFormPageState
-    extends State<_ContratReservationFormPage> {
-  final _formKey = GlobalKey<FormState>();
-
-  final nomElevageController = TextEditingController();
-  final adresseElevageController = TextEditingController();
-  final codeISOElevageController = TextEditingController(text: '+33');
-  final codeISOClientController = TextEditingController(text: '+33');
-  final telephoneElevageController = TextEditingController();
-  final siretController = TextEditingController();
-  final numeroTVAController = TextEditingController();
-  final nomClientController = TextEditingController();
-  final adresseClientController = TextEditingController();
-  final codePostalVilleController = TextEditingController();
-  final telephoneClientController = TextEditingController();
-  final emailClientController = TextEditingController();
-  final siretClientController = TextEditingController();
-  final numeroDossierController = TextEditingController();
-  final raceController = TextEditingController();
-  final apparenceRaceController = TextEditingController();
-  final dateController = TextEditingController();
-  final nomMediateurController = TextEditingController();
-  final couleurRobeController = TextEditingController();
-  final numeroPuceController = TextEditingController();
-  final infoComplementaireController = TextEditingController();
-  final prixHTController = TextEditingController();
-  final prixTTCController = TextEditingController();
-  final tvaController = TextEditingController(text: '20.0');
-  final arrhesController = TextEditingController();
-  final disponibiliteDebutController = TextEditingController();
-  final disponibiliteFinController = TextEditingController();
-  final nombreMoisController = TextEditingController();
-  final lieuSignatureController = TextEditingController();
-  final dateSignatureController = TextEditingController();
-  final chequeNumeroController = TextEditingController();
-  final chequeDateEncaissementController = TextEditingController();
-  final virementDateController = TextEditingController();
-
-  String? logoUrl;
-  bool isAnimalANaitre = false;
-  String? selectedAnimal;
-  DateTime? selectedDate;
-  bool isLOF = false;
-  bool isLOOF = false;
-  bool isNonInscritOrigine = false;
-  bool isNonRace = false;
-  bool isApparenceRace = false;
-  bool _isUpdatingHT = false;
-  bool _isUpdatingTTC = false;
-  String? selectedSexe;
-  bool isTvaApplicable = false;
-  String? selectedPaymentMethod;
-
-  static const _teal = Color(0xFF0C5C6C);
-  static const _green = Color(0xFF6E9E57);
-  static const _bg = Color(0xFFF8F8F6);
-
-  @override
-  void initState() {
-    super.initState();
-    prixHTController.addListener(_onHTChanged);
-    prixTTCController.addListener(_onTTCChanged);
-    _loadUserData();
-  }
-
-  @override
-  void dispose() {
-    for (final c in [
-      nomElevageController, adresseElevageController, codeISOElevageController,
-      codeISOClientController, telephoneElevageController, siretController,
-      numeroTVAController, nomClientController, adresseClientController,
-      codePostalVilleController, telephoneClientController, emailClientController,
-      siretClientController, numeroDossierController, raceController,
-      apparenceRaceController, dateController, nomMediateurController,
-      couleurRobeController, numeroPuceController, infoComplementaireController,
-      prixHTController, prixTTCController, tvaController, arrhesController,
-      disponibiliteDebutController, disponibiliteFinController,
-      nombreMoisController, lieuSignatureController, dateSignatureController,
-      chequeNumeroController, chequeDateEncaissementController,
-      virementDateController,
-    ]) c.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadUserData() async {
+  Future<void> _load() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-    final data = doc.data() ?? {};
+    final [docs, animaux, profil] = await Future.wait([
+      _supa.from('documents_animaux')
+          .select()
+          .eq('uid_eleveur', uid)
+          .order('created_at', ascending: false),
+      _supa.from('animaux')
+          .select('id, nom, espece, race, identification, date_naissance, sexe')
+          .eq('uid_eleveur', uid)
+          .not('statut', 'in', '(sorti,decede)')
+          .order('nom'),
+      _supa.from('users')
+          .select('firstname, lastname, name_elevage, is_elevage, adress_elevage, adress, rue, ville, code_postal, siret, email, numero_elevage, code_iso_elevage, phone_number, code_iso')
+          .eq('uid', uid)
+          .maybeSingle(),
+    ]);
+    if (!mounted) return;
     setState(() {
-      nomElevageController.text = data['nameElevage'] ?? '';
-      adresseElevageController.text = data['adressElevage'] ?? '';
-      codeISOElevageController.text = data['codeISOElevage'] ?? '+33';
-      telephoneElevageController.text = data['numeroElevage'] ?? '';
-      siretController.text = data['siret'] ?? '';
-      numeroTVAController.text = data['numeroTVA'] ?? '';
-      logoUrl = data['profilePictureUrlElevage'];
+      _docs    = List<Map<String, dynamic>>.from(docs as List);
+      _animaux = List<Map<String, dynamic>>.from(animaux as List);
+      _profil  = profil as Map<String, dynamic>?;
+      _loading = false;
     });
   }
 
-  void _onHTChanged() {
-    if (!_isUpdatingTTC && isTvaApplicable && prixHTController.text.isNotEmpty) {
-      _isUpdatingHT = true;
-      final ht = double.tryParse(prixHTController.text) ?? 0;
-      final tva = double.tryParse(tvaController.text) ?? 20;
-      prixTTCController.text = (ht * (1 + tva / 100)).toStringAsFixed(2);
-      _isUpdatingHT = false;
-    }
+  String get _eleveurNom {
+    if (_profil == null) return '';
+    final isElv = _profil!['is_elevage'] == true;
+    return isElv
+        ? (_profil!['name_elevage'] as String? ?? '${_profil!['firstname'] ?? ''} ${_profil!['lastname'] ?? ''}'.trim())
+        : '${_profil!['firstname'] ?? ''} ${_profil!['lastname'] ?? ''}'.trim();
   }
-
-  void _onTTCChanged() {
-    if (!_isUpdatingHT && isTvaApplicable && prixTTCController.text.isNotEmpty) {
-      _isUpdatingTTC = true;
-      final ttc = double.tryParse(prixTTCController.text) ?? 0;
-      final tva = double.tryParse(tvaController.text) ?? 20;
-      prixHTController.text = (ttc / (1 + tva / 100)).toStringAsFixed(2);
-      _isUpdatingTTC = false;
-    }
+  String get _eleveurAdresse {
+    if (_profil == null) return '';
+    final isElv = _profil!['is_elevage'] == true;
+    return isElv
+        ? (_profil!['adress_elevage'] as String? ?? [_profil!['rue'], _profil!['code_postal'], _profil!['ville']].whereType<String>().join(', '))
+        : (_profil!['adress'] as String? ?? [_profil!['rue'], _profil!['code_postal'], _profil!['ville']].whereType<String>().join(', '));
   }
-
-  Future<void> _selectDate(TextEditingController ctrl) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-      builder: (ctx, child) => Theme(
-        data: ThemeData.light().copyWith(
-            colorScheme: const ColorScheme.light(primary: _teal)),
-        child: child!,
-      ),
-    );
-    if (picked != null) {
-      ctrl.text = DateFormat('dd/MM/yyyy').format(picked);
-    }
-  }
-
-  Future<void> _generatePdf() async {
-    final pdf = pw.Document();
-    Uint8List? logoBytes;
-    if (logoUrl != null && logoUrl!.isNotEmpty) {
-      try {
-        final r = await http.get(Uri.parse(logoUrl!));
-        if (r.statusCode == 200) logoBytes = r.bodyBytes;
-      } catch (_) {}
-    }
-    final petsMatchLogo = pw.MemoryImage(
-        (await rootBundle.load('assets/Logo_petsmatch_fond_blanc.png')).buffer.asUint8List());
-    final font = await PdfGoogleFonts.robotoRegular();
-
-    pdf.addPage(pw.Page(
-      pageFormat: PdfPageFormat.a4,
-      build: (pw.Context ctx) => pw.Stack(children: [
-        pw.Center(child: pw.Opacity(opacity: 0.15,
-            child: pw.Image(petsMatchLogo, width: 400, height: 400))),
-        pw.Positioned(bottom: 0, left: 0, right: 0,
-          child: pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            children: [
-              pw.Image(petsMatchLogo, width: 40, height: 40),
-              pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-                pw.Text('Édité par PETSMATCH', style: pw.TextStyle(fontSize: 7, font: font, fontWeight: pw.FontWeight.bold)),
-                pw.Text('15 la ville marchand - 22210 PLUMIEUX - Tél 07 81 03 49 84', style: pw.TextStyle(fontSize: 6, font: font)),
-                pw.Text('petsmatch.contact@gmail.com - www.petsmatchapp.com', style: pw.TextStyle(fontSize: 6, font: font)),
-                pw.Text('N° SIRET 93134481600018 - NAF 7010Z', style: pw.TextStyle(fontSize: 6, font: font)),
-              ]),
-            ],
-          ),
-        ),
-        pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-          pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-            if (logoBytes != null) pw.Image(pw.MemoryImage(logoBytes), width: 60, height: 60),
-            pw.SizedBox(width: 16),
-            pw.Expanded(flex: 2, child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(nomElevageController.text, style: pw.TextStyle(font: font, fontSize: 9)),
-                pw.Text(adresseElevageController.text, style: pw.TextStyle(font: font, fontSize: 9)),
-                pw.Text('${codeISOElevageController.text} ${telephoneElevageController.text}', style: pw.TextStyle(font: font, fontSize: 9)),
-                if (siretController.text.isNotEmpty) pw.Text('SIRET: ${siretController.text}', style: pw.TextStyle(font: font, fontSize: 9)),
-              ],
-            )),
-            pw.Expanded(flex: 1, child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.center,
-              children: [
-                pw.Text('CONTRAT', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, font: font)),
-                pw.Text('DE', style: pw.TextStyle(fontSize: 14, font: font)),
-                pw.Text('RÉSERVATION', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, font: font)),
-              ],
-            )),
-          ]),
-          pw.SizedBox(height: 16),
-          pw.Text('Je soussigné(e) ${nomClientController.text}', style: pw.TextStyle(font: font, fontSize: 8)),
-          pw.Text('Adresse: ${adresseClientController.text}', style: pw.TextStyle(font: font, fontSize: 8)),
-          pw.Text('CP/Ville: ${codePostalVilleController.text}  Tél: ${codeISOClientController.text} ${telephoneClientController.text}  Email: ${emailClientController.text}', style: pw.TextStyle(font: font, fontSize: 8)),
-          pw.SizedBox(height: 10),
-          pw.Text('Soumet la réservation d\'un ${selectedAnimal ?? '........'} né(e) le ${isAnimalANaitre ? "À naître" : dateController.text}', style: pw.TextStyle(font: font, fontSize: 8, fontWeight: pw.FontWeight.bold)),
-          pw.Text('Race: ${raceController.text}  Sexe: ${selectedSexe ?? '—'}  Couleur: ${couleurRobeController.text}  Puce: ${numeroPuceController.text}', style: pw.TextStyle(font: font, fontSize: 8)),
-          pw.SizedBox(height: 10),
-          isTvaApplicable
-            ? pw.Text('Prix: ${prixHTController.text} € HT + TVA ${tvaController.text}% = ${prixTTCController.text} € TTC', style: pw.TextStyle(font: font, fontSize: 8))
-            : pw.Text('Prix: ${prixHTController.text} € NET (TVA non applicable, art. 293B CGI)', style: pw.TextStyle(font: font, fontSize: 8)),
-          pw.Text('Arrhes: ${arrhesController.text} €', style: pw.TextStyle(font: font, fontSize: 8)),
-          pw.Text('Disponibilité: du ${disponibiliteDebutController.text} au ${disponibiliteFinController.text}', style: pw.TextStyle(font: font, fontSize: 8)),
-          pw.SizedBox(height: 10),
-          pw.Container(
-            padding: pw.EdgeInsets.all(8),
-            decoration: pw.BoxDecoration(border: pw.Border.all(), color: PdfColors.grey200),
-            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-              pw.Text('CONDITIONS GÉNÉRALES DE RÉSERVATION', style: pw.TextStyle(font: font, fontSize: 7, fontWeight: pw.FontWeight.bold)),
-              pw.Text('Le droit de rétractation n\'est pas applicable. Les arrhes sont conservées en cas d\'annulation par l\'acquéreur.', style: pw.TextStyle(font: font, fontSize: 6)),
-              pw.Text('Report possible sur ${nombreMoisController.text.isNotEmpty ? nombreMoisController.text : "..."} mois. Validité : 8 jours après signature.', style: pw.TextStyle(font: font, fontSize: 6)),
-            ]),
-          ),
-          pw.SizedBox(height: 10),
-          pw.Text('Médiateur: ${nomMediateurController.text}', style: pw.TextStyle(font: font, fontSize: 8)),
-          pw.SizedBox(height: 20),
-          pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly, children: [
-            pw.Column(children: [
-              pw.Text('Signature du vendeur', style: pw.TextStyle(font: font, fontSize: 9, fontWeight: pw.FontWeight.bold)),
-              pw.SizedBox(height: 40),
-            ]),
-            pw.Column(children: [
-              pw.Text('Signature de l\'acquéreur', style: pw.TextStyle(font: font, fontSize: 9, fontWeight: pw.FontWeight.bold)),
-              pw.Text('Mention manuscrite : « Bon pour accord. Lu, approuvé et compris »', style: pw.TextStyle(font: font, fontSize: 6)),
-            ]),
-          ]),
-        ]),
-      ]),
-    ));
-
-    // Page 2 : texte légal
-    try {
-      final imgData = await rootBundle.load('assets/loi-contrat-reservation.png');
-      pdf.addPage(pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (ctx) => pw.FullPage(
-          ignoreMargins: true,
-          child: pw.Image(pw.MemoryImage(imgData.buffer.asUint8List()), fit: pw.BoxFit.cover),
-        ),
-      ));
-    } catch (_) {}
-
-    await Printing.layoutPdf(onLayout: (_) async => pdf.save());
-  }
+  String get _eleveurSiret  => _profil?['siret'] as String? ?? '';
+  String get _eleveurEmail  => _profil?['email']  as String? ?? '';
 
   @override
   Widget build(BuildContext context) {
@@ -990,208 +77,473 @@ class _ContratReservationFormPageState
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
-        title: const Text('Contrat de Réservation',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+        title: const Text('Contrats', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        elevation: 0,
       ),
-      body: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add),
+        label: const Text('Nouveau', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+        onPressed: _animaux.isEmpty ? null : () => _showCreateSheet(context),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: _teal))
+          : RefreshIndicator(
+              color: _teal,
+              onRefresh: _load,
+              child: _docs.isEmpty ? _emptyState(context) : _list(),
+            ),
+    );
+  }
 
-            _section('Informations éleveur', initiallyExpanded: true, children: [
-              _field('Nom de l\'élevage', nomElevageController),
-              _field('Adresse', adresseElevageController),
-              _field('Téléphone', telephoneElevageController),
-              _field('SIRET', siretController),
-              _field('Numéro de TVA', numeroTVAController),
+  Widget _emptyState(BuildContext context) => Center(
+    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      const Icon(Icons.description_outlined, size: 64, color: Color(0xFFCCCCCC)),
+      const SizedBox(height: 16),
+      const Text('Aucun contrat', style: TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF888888))),
+      const SizedBox(height: 6),
+      const Text('Créez votre premier contrat\nen sélectionnant un animal',
+          textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFAAAAAA))),
+      const SizedBox(height: 24),
+      if (_animaux.isNotEmpty)
+        ElevatedButton.icon(
+          onPressed: () => _showCreateSheet(context),
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Créer un contrat', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        ),
+    ]),
+  );
+
+  Widget _list() => ListView.separated(
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+    itemCount: _docs.length,
+    separatorBuilder: (_, __) => const SizedBox(height: 10),
+    itemBuilder: (_, i) => _DocCard(doc: _docs[i], onDelete: _deleteDoc),
+  );
+
+  Future<void> _deleteDoc(String id) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Supprimer ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('Ce contrat sera définitivement supprimé.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _supa.from('documents_animaux').delete().eq('id', id);
+    await _load();
+  }
+
+  Future<void> _showCreateSheet(BuildContext context) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _CreateContratSheet(
+        animaux: _animaux,
+        eleveurNom: _eleveurNom,
+        eleveurAdresse: _eleveurAdresse,
+        eleveurSiret: _eleveurSiret,
+        eleveurEmail: _eleveurEmail,
+        supa: _supa,
+        onSaved: _load,
+      ),
+    );
+  }
+}
+
+// ── Carte document ────────────────────────────────────────────────────────────
+
+class _DocCard extends StatelessWidget {
+  final Map<String, dynamic> doc;
+  final Future<void> Function(String) onDelete;
+
+  const _DocCard({required this.doc, required this.onDelete});
+
+  static const _typeLabel = {
+    'contrat_vente':       ('🤝', 'Vente'),
+    'contrat_reservation': ('🐾', 'Réservation'),
+    'certificat_cession':  ('📋', 'Cession'),
+  };
+  static const _statutColor = {
+    'brouillon': Color(0xFFEEEEEE),
+    'signe':     Color(0xFFDCF5E4),
+    'archive':   Color(0xFFFFF3CD),
+  };
+  static const _statutLabel = {
+    'brouillon': 'Brouillon',
+    'signe':     'Signé',
+    'archive':   'Archivé',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final type    = doc['type'] as String? ?? 'contrat_vente';
+    final statut  = doc['statut'] as String? ?? 'brouillon';
+    final meta    = _typeLabel[type] ?? ('📄', 'Contrat');
+    final metaMap = (doc['metadata'] as Map<String, dynamic>?) ?? {};
+    final acqNom  = (metaMap['acquereur_nom'] as String?) ?? '';
+    final titre   = doc['titre'] as String? ?? 'Contrat';
+    final date    = doc['created_at'] != null
+        ? DateTime.tryParse(doc['created_at'] as String)?.toLocal()
+        : null;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      child: Row(children: [
+        Container(
+          width: 42, height: 42,
+          decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(10)),
+          child: Center(child: Text(meta.$1, style: const TextStyle(fontSize: 20))),
+        ),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF1F2A2E)), maxLines: 1, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 4),
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(color: _statutColor[statut] ?? const Color(0xFFEEEEEE), borderRadius: BorderRadius.circular(20)),
+              child: Text(_statutLabel[statut] ?? statut, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600)),
+            ),
+            if (acqNom.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              Text('→ $acqNom', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF888888))),
+            ],
+            if (date != null) ...[
+              const SizedBox(width: 6),
+              Text('${date.day.toString().padLeft(2,'0')}/${date.month.toString().padLeft(2,'0')}/${date.year}',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xFFAAAAAA))),
+            ],
+          ]),
+        ])),
+        if (doc['url'] != null)
+          IconButton(
+            icon: const Icon(Icons.open_in_new, size: 18, color: Color(0xFF0C5C6C)),
+            onPressed: () {},
+            padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+          ),
+        IconButton(
+          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+          onPressed: () => onDelete(doc['id'] as String),
+          padding: const EdgeInsets.only(left: 8), constraints: const BoxConstraints(),
+        ),
+      ]),
+    );
+  }
+}
+
+// ── Bottom sheet création ─────────────────────────────────────────────────────
+
+class _CreateContratSheet extends StatefulWidget {
+  final List<Map<String, dynamic>> animaux;
+  final String eleveurNom, eleveurAdresse, eleveurSiret, eleveurEmail;
+  final dynamic supa;
+  final VoidCallback onSaved;
+
+  const _CreateContratSheet({
+    required this.animaux, required this.eleveurNom, required this.eleveurAdresse,
+    required this.eleveurSiret, required this.eleveurEmail,
+    required this.supa, required this.onSaved,
+  });
+
+  @override
+  State<_CreateContratSheet> createState() => _CreateContratSheetState();
+}
+
+class _CreateContratSheetState extends State<_CreateContratSheet> {
+  static const _teal  = Color(0xFF0C5C6C);
+  static const _green = Color(0xFF6E9E57);
+
+  String _type = 'contrat_vente';
+  Map<String, dynamic>? _selectedAnimal;
+
+  final _acqNomCtrl      = TextEditingController();
+  final _acqPrenomCtrl   = TextEditingController();
+  final _acqEmailCtrl    = TextEditingController();
+  final _acqTelCtrl      = TextEditingController();
+  final _acqAdresseCtrl  = TextEditingController();
+  final _prixCtrl        = TextEditingController();
+  final _notesCtrl       = TextEditingController();
+  final _searchCtrl      = TextEditingController();
+
+  DateTime _date = DateTime.now();
+  List<Map<String, dynamic>> _searchResults = [];
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    for (final c in [_acqNomCtrl, _acqPrenomCtrl, _acqEmailCtrl, _acqTelCtrl, _acqAdresseCtrl, _prixCtrl, _notesCtrl, _searchCtrl]) c.dispose();
+    super.dispose();
+  }
+
+  Future<void> _searchUser(String q) async {
+    if (q.length < 2) { setState(() => _searchResults = []); return; }
+    final isEmail = q.contains('@');
+    final supa = Supabase.instance.client;
+    final data = isEmail
+        ? await supa.from('users').select('uid, firstname, lastname, email, phone_number, rue, ville, code_postal').ilike('email', '%$q%').limit(5)
+        : await supa.from('users').select('uid, firstname, lastname, email, phone_number, rue, ville, code_postal').or('firstname.ilike.%$q%,lastname.ilike.%$q%').limit(8);
+    setState(() => _searchResults = List<Map<String, dynamic>>.from(data as List));
+  }
+
+  void _selectUser(Map<String, dynamic> u) {
+    _acqNomCtrl.text    = u['lastname'] as String? ?? '';
+    _acqPrenomCtrl.text = u['firstname'] as String? ?? '';
+    _acqEmailCtrl.text  = u['email'] as String? ?? '';
+    _acqTelCtrl.text    = u['phone_number'] as String? ?? '';
+    final parts = [u['rue'], u['code_postal'], u['ville']].whereType<String>().join(', ');
+    _acqAdresseCtrl.text = parts;
+    _searchCtrl.clear();
+    setState(() => _searchResults = []);
+  }
+
+  Future<void> _generer() async {
+    if (_selectedAnimal == null) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    setState(() => _saving = true);
+
+    // Générer PDF
+    await genererContratPDF(
+      context: context,
+      animal: _selectedAnimal!,
+      eleveur: {
+        'nom':     widget.eleveurNom,
+        'adresse': widget.eleveurAdresse,
+        'siret':   widget.eleveurSiret,
+      },
+      acquereurNom:     '${_acqPrenomCtrl.text.trim()} ${_acqNomCtrl.text.trim()}'.trim(),
+      acquereurAdresse: _acqAdresseCtrl.text.trim(),
+      acquereurEmail:   _acqEmailCtrl.text.trim(),
+      acquereurTel:     _acqTelCtrl.text.trim(),
+      prix:             _prixCtrl.text.isEmpty ? '0' : _prixCtrl.text.trim(),
+      dateCession:      _date,
+      notes:            _notesCtrl.text.trim(),
+    );
+
+    // Sauvegarder en brouillon dans documents_animaux
+    final typeLabel = _type == 'contrat_vente' ? 'Contrat de vente'
+        : _type == 'contrat_reservation' ? 'Contrat de réservation'
+        : 'Certificat de cession';
+    await widget.supa.from('documents_animaux').insert({
+      'animal_id':   _selectedAnimal!['id'],
+      'uid_eleveur': uid,
+      'type':        _type,
+      'titre':       '$typeLabel — ${_selectedAnimal!['nom'] ?? 'Animal'}',
+      'statut':      'brouillon',
+      'metadata': {
+        'acquereur_nom':     '${_acqPrenomCtrl.text.trim()} ${_acqNomCtrl.text.trim()}'.trim(),
+        'acquereur_email':   _acqEmailCtrl.text.trim(),
+        'acquereur_tel':     _acqTelCtrl.text.trim(),
+        'acquereur_adresse': _acqAdresseCtrl.text.trim(),
+        'prix':              double.tryParse(_prixCtrl.text.replaceAll(',', '.')) ?? 0,
+        'date_doc':          _date.toIso8601String().split('T').first,
+        'notes':             _notesCtrl.text.trim(),
+      },
+    });
+
+    widget.onSaved();
+    setState(() => _saving = false);
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.92,
+      maxChildSize: 0.97,
+      minChildSize: 0.5,
+      builder: (_, scroll) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(children: [
+          Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 12, bottom: 8),
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('Nouveau contrat', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFF1F2A2E))),
+              IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
             ]),
+          ),
+          Expanded(child: ListView(controller: scroll, padding: const EdgeInsets.fromLTRB(20, 8, 20, 32), children: [
 
-            _section('Informations client', children: [
-              _field('Nom et prénom', nomClientController),
-              _field('Adresse', adresseClientController),
-              _field('Code postal et ville', codePostalVilleController),
-              _field('Téléphone', telephoneClientController),
-              _field('Email', emailClientController),
-              _field('SIRET (si professionnel)', siretClientController),
+            // Type de contrat
+            const Text('Type de contrat', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 8),
+            Row(children: [
+              for (final t in [('contrat_vente', '🤝', 'Vente'), ('contrat_reservation', '🐾', 'Réservation'), ('certificat_cession', '📋', 'Cession')])
+                Expanded(child: Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _type = t.$1),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _type == t.$1 ? _teal : const Color(0xFFF5F5F0),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _type == t.$1 ? _teal : const Color(0xFFE0E0E0)),
+                      ),
+                      child: Column(children: [
+                        Text(t.$2, style: const TextStyle(fontSize: 18)),
+                        const SizedBox(height: 2),
+                        Text(t.$3, style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600, color: _type == t.$1 ? Colors.white : const Color(0xFF555555))),
+                      ]),
+                    ),
+                  ),
+                )),
             ]),
+            const SizedBox(height: 20),
 
-            _section('Animal & réservation', children: [
-              const SizedBox(height: 8),
-              // Type animal
-              Wrap(spacing: 8, children: ['chien', 'chiot', 'chat', 'chaton'].map((a) =>
-                ChoiceChip(
-                  label: Text(a[0].toUpperCase() + a.substring(1),
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                          color: selectedAnimal == a ? Colors.white : Colors.black87)),
-                  selected: selectedAnimal == a,
-                  selectedColor: _green,
-                  onSelected: (_) => setState(() => selectedAnimal = a),
+            // Sélecteur animal
+            const Text('Animal concerné *', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: const Color(0xFFE0E0E0)),
+                borderRadius: BorderRadius.circular(12),
+                color: Colors.white,
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  isExpanded: true,
+                  value: _selectedAnimal?['id'] as String?,
+                  hint: const Text('Sélectionner un animal', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
+                  onChanged: (v) => setState(() => _selectedAnimal = widget.animaux.firstWhere((a) => a['id'] == v)),
+                  items: widget.animaux.map((a) => DropdownMenuItem<String>(
+                    value: a['id'] as String,
+                    child: Text('${a['nom'] ?? '—'} (${a['espece'] ?? '—'}${a['race'] != null ? ' · ${a['race']}' : ''})',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                  )).toList(),
                 ),
-              ).toList()),
-              const SizedBox(height: 12),
-              Row(children: [
-                _checkBox('Né(e) le', !isAnimalANaitre, (v) => setState(() { isAnimalANaitre = !v!; })),
-                _checkBox('À naître', isAnimalANaitre, (v) => setState(() { isAnimalANaitre = v!; })),
-              ]),
-              if (!isAnimalANaitre) _dateField('Date de naissance', dateController),
-              Row(children: [
-                _checkBox('LOF', isLOF, (v) => setState(() => isLOF = v!)),
-                _checkBox('LOOF', isLOOF, (v) => setState(() => isLOOF = v!)),
-              ]),
-              _field('N° de dossier', numeroDossierController),
-              _field('Race', raceController),
-              Row(children: [
-                _checkBox('Mâle', selectedSexe == 'M', (v) => setState(() => selectedSexe = v! ? 'M' : null)),
-                _checkBox('Femelle', selectedSexe == 'F', (v) => setState(() => selectedSexe = v! ? 'F' : null)),
-              ]),
-              _field('Couleur de robe', couleurRobeController),
-              _field('Numéro de puce', numeroPuceController),
-              _field('Informations complémentaires', infoComplementaireController),
-            ]),
-
-            _section('Prix & arrhes', children: [
-              _field('Prix HT (€)', prixHTController, type: TextInputType.number),
-              Row(children: [
-                _checkBox('TVA applicable', isTvaApplicable, (v) {
-                  setState(() {
-                    isTvaApplicable = v!;
-                    if (!isTvaApplicable) { prixTTCController.clear(); tvaController.text = ''; }
-                    else { tvaController.text = '20.0'; _onHTChanged(); }
-                  });
-                }),
-              ]),
-              if (isTvaApplicable) ...[
-                _field('Taux TVA (%)', tvaController, type: TextInputType.number),
-                _field('Prix TTC (€)', prixTTCController, type: TextInputType.number),
-              ],
-              _field('Montant des arrhes (€)', arrhesController, type: TextInputType.number),
-            ]),
-
-            _section('Paiement & dates', children: [
-              Wrap(spacing: 8, runSpacing: 4, children: [
-                {'value': 'carte', 'label': 'Carte'},
-                {'value': 'espece', 'label': 'Espèces'},
-                {'value': 'cheque_reception', 'label': 'Chèque (réception)'},
-                {'value': 'cheque_delai', 'label': 'Chèque (différé)'},
-                {'value': 'virement', 'label': 'Virement'},
-              ].map((m) => ChoiceChip(
-                label: Text(m['label']!, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                    color: selectedPaymentMethod == m['value'] ? Colors.white : Colors.black87)),
-                selected: selectedPaymentMethod == m['value'],
-                selectedColor: _teal,
-                onSelected: (_) => setState(() => selectedPaymentMethod = m['value']),
-              )).toList()),
-              if (selectedPaymentMethod == 'cheque_reception' || selectedPaymentMethod == 'cheque_delai')
-                _field('Numéro de chèque', chequeNumeroController),
-              if (selectedPaymentMethod == 'cheque_delai')
-                _dateField('Date d\'encaissement', chequeDateEncaissementController),
-              if (selectedPaymentMethod == 'virement')
-                _dateField('Date limite virement', virementDateController),
-              const SizedBox(height: 8),
-              _dateField('Disponibilité début', disponibiliteDebutController),
-              _dateField('Date butoir', disponibiliteFinController),
-              _field('Report (mois max)', nombreMoisController, type: TextInputType.number),
-              _field('Médiateur', nomMediateurController),
-              _field('Lieu de signature', lieuSignatureController),
-              _dateField('Date de signature', dateSignatureController),
-            ]),
-
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _teal,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-                icon: const Icon(Icons.print_outlined, color: Colors.white),
-                label: const Text('Générer le contrat PDF',
-                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                        fontSize: 15, color: Colors.white)),
-                onPressed: _generatePdf,
               ),
             ),
-          ]),
-        ),
+            if (_selectedAnimal != null)
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(10)),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${_selectedAnimal!['nom'] ?? '—'} · ${_selectedAnimal!['espece'] ?? '—'}${_selectedAnimal!['race'] != null ? ' · ${_selectedAnimal!['race']}' : ''}',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
+                  if (_selectedAnimal!['identification'] != null)
+                    Text('Puce : ${_selectedAnimal!['identification']}', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF555555))),
+                ]),
+              ),
+            const SizedBox(height: 20),
+
+            // Recherche acquéreur
+            const Text('Rechercher l\'acquéreur (PetsMatch)', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _searchCtrl,
+              onChanged: _searchUser,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Nom, prénom ou email…',
+                prefixIcon: const Icon(Icons.search, size: 18),
+                hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE0E0E0))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE0E0E0))),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _teal, width: 1.5)),
+              ),
+            ),
+            if (_searchResults.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(top: 4),
+                decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE0E0E0)), borderRadius: BorderRadius.circular(10)),
+                child: Column(children: _searchResults.map((u) => ListTile(
+                  dense: true,
+                  title: Text('${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+                  subtitle: Text(u['email'] as String? ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
+                  onTap: () => _selectUser(u),
+                )).toList()),
+              ),
+            const SizedBox(height: 16),
+
+            // Infos acquéreur
+            _field('Prénom', _acqPrenomCtrl),
+            _field('Nom', _acqNomCtrl),
+            _field('Email', _acqEmailCtrl, type: TextInputType.emailAddress),
+            _field('Téléphone', _acqTelCtrl, type: TextInputType.phone),
+            _field('Adresse', _acqAdresseCtrl),
+            _field('Prix (€, 0 = gratuit)', _prixCtrl, type: TextInputType.number),
+            const SizedBox(height: 8),
+
+            // Date
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Date du contrat', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600)),
+              subtitle: Text('${_date.day.toString().padLeft(2,'0')}/${_date.month.toString().padLeft(2,'0')}/${_date.year}',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+              trailing: const Icon(Icons.calendar_today_outlined, size: 18),
+              onTap: () async {
+                final d = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime(2020), lastDate: DateTime(2030));
+                if (d != null) setState(() => _date = d);
+              },
+            ),
+            _field('Notes', _notesCtrl, maxLines: 2),
+            const SizedBox(height: 24),
+
+            // Boutons
+            Row(children: [
+              Expanded(child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              )),
+              const SizedBox(width: 12),
+              Expanded(child: ElevatedButton(
+                onPressed: (_selectedAnimal == null || _saving) ? null : _generer,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _teal, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: _saving
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('✍️ Générer & imprimer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              )),
+            ]),
+          ])),
+        ]),
       ),
     );
   }
 
-  Widget _section(String title, {bool initiallyExpanded = false, required List<Widget> children}) =>
-    Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
-      ),
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        clipBehavior: Clip.antiAlias,
-        child: Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            initiallyExpanded: initiallyExpanded,
-            title: Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0C5C6C))),
-            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            children: children,
-          ),
-        ),
-      ),
-    );
-
-  Widget _field(String label, TextEditingController ctrl, {TextInputType? type}) =>
-    Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: TextFormField(
+  Widget _field(String label, TextEditingController ctrl, {TextInputType? type, int maxLines = 1}) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 4),
+      TextField(
         controller: ctrl,
         keyboardType: type,
+        maxLines: maxLines,
         style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
         decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _green, width: 1.5)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE0E0E0))),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE0E0E0))),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF0C5C6C), width: 1.5)),
         ),
       ),
-    );
-
-  Widget _dateField(String label, TextEditingController ctrl) =>
-    Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: TextFormField(
-        controller: ctrl,
-        readOnly: true,
-        style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
-          suffixIcon: const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF6F767B)),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _green, width: 1.5)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          isDense: true,
-        ),
-        onTap: () => _selectDate(ctrl),
-      ),
-    );
-
-  Widget _checkBox(String label, bool value, ValueChanged<bool?> onChanged) =>
-    Expanded(child: Material(
-      color: Colors.transparent,
-      child: CheckboxListTile(
-        dense: true,
-        activeColor: _green,
-        title: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-        value: value,
-        onChanged: onChanged,
-        contentPadding: EdgeInsets.zero,
-      ),
-    ));
+    ]),
+  );
 }
