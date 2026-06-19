@@ -25,6 +25,10 @@ CREATE INDEX IF NOT EXISTS idx_docs_eleveur  ON documents_animaux(uid_eleveur);
 CREATE INDEX IF NOT EXISTS idx_docs_type     ON documents_animaux(type);
 
 ALTER TABLE documents_animaux ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "docs_select" ON documents_animaux;
+DROP POLICY IF EXISTS "docs_insert" ON documents_animaux;
+DROP POLICY IF EXISTS "docs_update" ON documents_animaux;
+DROP POLICY IF EXISTS "docs_delete" ON documents_animaux;
 CREATE POLICY "docs_select" ON documents_animaux FOR SELECT USING (true);
 CREATE POLICY "docs_insert" ON documents_animaux FOR INSERT WITH CHECK (true);
 CREATE POLICY "docs_update" ON documents_animaux FOR UPDATE USING (true);

@@ -30,6 +30,9 @@ CREATE INDEX IF NOT EXISTS idx_cessions_acquereur ON cessions(uid_acquereur);
 CREATE INDEX IF NOT EXISTS idx_cessions_eleveur   ON cessions(uid_eleveur);
 
 ALTER TABLE cessions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "cessions_select" ON cessions;
+DROP POLICY IF EXISTS "cessions_insert" ON cessions;
+DROP POLICY IF EXISTS "cessions_update" ON cessions;
 CREATE POLICY "cessions_select" ON cessions FOR SELECT USING (true);
 CREATE POLICY "cessions_insert" ON cessions FOR INSERT WITH CHECK (true);
 CREATE POLICY "cessions_update" ON cessions FOR UPDATE USING (true);
