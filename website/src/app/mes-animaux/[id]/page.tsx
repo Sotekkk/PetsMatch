@@ -32,6 +32,7 @@ interface Animal {
   uid_eleveur?: string | null; uid_proprietaire?: string | null; uid_acquereur?: string | null;
   cession_contrat_url?: string | null; cession_certificat_url?: string | null;
   cession_prix?: number | null; cession_notes?: string | null;
+  intervalle_chaleurs_jours?: number | null;
 }
 
 interface HealthRecord { id: string; [key: string]: unknown; }
@@ -93,8 +94,8 @@ const CHALEURS_INFO: Record<string, string> = {
   lapin:  'Réceptive quasi-permanente',
 };
 
-function nextHeatDate(chaleurs: HealthRecord[], espece: string): Date | null {
-  const interval = CHALEURS_INTERVAL[espece];
+function nextHeatDate(chaleurs: HealthRecord[], espece: string, customInterval?: number | null): Date | null {
+  const interval = customInterval ?? CHALEURS_INTERVAL[espece];
   if (!interval || chaleurs.length === 0) return null;
   const sorted = [...chaleurs].sort((a, b) =>
     new Date(String(b.date ?? 0)).getTime() - new Date(String(a.date ?? 0)).getTime()
@@ -570,9 +571,11 @@ interface SuiviReproTabProps {
   saveSaillie: (data: Record<string, string>) => Promise<void>;
   updateRepro: (table: string, id: string, data: Record<string, string>) => Promise<void>;
   deleteRepro: (table: string, id: string) => Promise<void>;
+  intervalleCustom: number | null;
+  onSaveIntervalleCustom: (val: number | null) => Promise<void>;
 }
 
-function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIdent, chaleurs, saillies, gestations, reproAdd, setReproAdd, savingRepro, saveRepro, saveSaillie, updateRepro, deleteRepro }: SuiviReproTabProps) {
+function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIdent, chaleurs, saillies, gestations, reproAdd, setReproAdd, savingRepro, saveRepro, saveSaillie, updateRepro, deleteRepro, intervalleCustom, onSaveIntervalleCustom }: SuiviReproTabProps) {
   const subtabs = isMale
     ? [{ key: 'saillies', label: 'Saillies' }]
     : [{ key: 'chaleurs', label: 'Chaleurs' }, { key: 'saillies', label: 'Saillies' }, { key: 'gestations', label: 'Gestations' }];
@@ -580,6 +583,9 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
   const [editId, setEditId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Record<string, string>>({});
   const [partners, setPartners] = useState<{ id: string; nom: string; identification: string }[]>([]);
+  const [showIntervalModal, setShowIntervalModal] = useState(false);
+  const [intervalInput, setIntervalInput] = useState('');
+  const [savingInterval, setSavingInterval] = useState(false);
 
   useEffect(() => {
     if (!userId || !animalId) return;
@@ -633,10 +639,61 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
         <div className="space-y-3">
           <div className="flex justify-between items-center">
             <h3 className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey,sans-serif' }}>Chaleurs</h3>
-            <button onClick={() => { setReproAdd(reproAdd === 'chaleurs' ? null : 'chaleurs'); setEditId(null); }}
-              className="text-sm bg-[#0C5C6C] text-white font-semibold px-3 py-1.5 rounded-full hover:bg-[#094F5D]">+ Ajouter</button>
+            <div className="flex gap-2">
+              <button onClick={() => { setIntervalInput(String(intervalleCustom ?? CHALEURS_INTERVAL[espece] ?? '')); setShowIntervalModal(true); }}
+                className="text-sm border border-[#0C5C6C] text-[#0C5C6C] font-semibold px-3 py-1.5 rounded-full hover:bg-[#0C5C6C]/10">
+                ⏱ Intervalle
+              </button>
+              <button onClick={() => { setReproAdd(reproAdd === 'chaleurs' ? null : 'chaleurs'); setEditId(null); }}
+                className="text-sm bg-[#0C5C6C] text-white font-semibold px-3 py-1.5 rounded-full hover:bg-[#094F5D]">+ Ajouter</button>
+            </div>
           </div>
-          {(() => { const next = nextHeatDate(chaleurs, espece); return next ? <NextHeatBanner nextHeat={next} espece={espece} /> : null; })()}
+          {intervalleCustom != null && (
+            <p className="text-xs text-[#0C5C6C] bg-[#0C5C6C]/10 rounded-lg px-3 py-1.5">
+              Intervalle personnalisé : <strong>{intervalleCustom} jours</strong>
+              <span className="text-gray-400"> (défaut espèce : {CHALEURS_INTERVAL[espece] ?? '?'} j)</span>
+            </p>
+          )}
+          {showIntervalModal && (
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 space-y-3">
+              <p className="font-semibold text-sm text-[#1F2A2E]">Espacement des chaleurs (jours)</p>
+              <input
+                type="number" min="1" value={intervalInput}
+                onChange={e => setIntervalInput(e.target.value)}
+                placeholder={String(CHALEURS_INTERVAL[espece] ?? '')}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30"
+              />
+              <div className="flex gap-2">
+                <button
+                  disabled={savingInterval}
+                  onClick={async () => {
+                    const val = parseInt(intervalInput, 10);
+                    if (!val || val < 1) return;
+                    setSavingInterval(true);
+                    await onSaveIntervalleCustom(val);
+                    setSavingInterval(false);
+                    setShowIntervalModal(false);
+                  }}
+                  className="flex-1 bg-[#0C5C6C] text-white text-sm font-semibold py-2 rounded-xl hover:bg-[#094F5D] disabled:opacity-50">
+                  {savingInterval ? 'Enregistrement…' : 'Enregistrer'}
+                </button>
+                <button
+                  disabled={savingInterval}
+                  onClick={async () => {
+                    setSavingInterval(true);
+                    await onSaveIntervalleCustom(null);
+                    setSavingInterval(false);
+                    setShowIntervalModal(false);
+                  }}
+                  className="flex-1 border border-gray-300 text-gray-600 text-sm font-semibold py-2 rounded-xl hover:bg-gray-50 disabled:opacity-50">
+                  Réinitialiser
+                </button>
+                <button onClick={() => setShowIntervalModal(false)}
+                  className="px-3 text-gray-400 hover:text-gray-600 text-xl">×</button>
+              </div>
+            </div>
+          )}
+          {(() => { const next = nextHeatDate(chaleurs, espece, intervalleCustom); return next ? <NextHeatBanner nextHeat={next} espece={espece} /> : null; })()}
           {reproAdd === 'chaleurs' && (
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <AddHealthForm saving={savingRepro} onCancel={() => setReproAdd(null)}
@@ -2172,6 +2229,11 @@ export default function AnimalFichePage() {
           saveSaillie={saveSaillie}
           updateRepro={updateRepro}
           deleteRepro={deleteRepro}
+          intervalleCustom={animal.intervalle_chaleurs_jours ?? null}
+          onSaveIntervalleCustom={async (val) => {
+            await supabase.from('animaux').update({ intervalle_chaleurs_jours: val }).eq('id', id ?? '');
+            setAnimal(prev => ({ ...prev, intervalle_chaleurs_jours: val }));
+          }}
         />
       )}
 

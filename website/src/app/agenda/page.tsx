@@ -37,10 +37,21 @@ interface Task {
   id: string;
   titre: string;
   date: string;
-  statut: 'a_faire' | 'fait';
+  statut: string;
   uid_eleveur: string;
   assigne_a: string | null;
   responsable_nom?: string;
+  _source: 'manuel' | 'protocole';
+  type_acte?: string;
+  animal_nom?: string;
+  etape_id?: string | null;
+}
+
+interface TaskGroupe {
+  key: string;
+  label: string;
+  typeActe?: string;
+  tasks: Task[];
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -413,19 +424,35 @@ export default function AgendaPage() {
       setEvents(list);
     }
 
-    // Charger les tâches du mois (employeur + employé)
+    // Charger les tâches du mois (manuel + protocole)
     const taskFrom = new Date(focusedMonth.year, focusedMonth.month - 1, 1).toISOString().slice(0, 10);
     const taskTo   = new Date(focusedMonth.year, focusedMonth.month + 2, 0).toISOString().slice(0, 10);
-    const { data: taskData } = await supabase
+
+    const { data: manuelData } = await supabase
       .from('taches_elevage')
       .select('id,titre,date,statut,uid_eleveur,assigne_a')
       .or(`uid_eleveur.eq.${uid},assigne_a.eq.${uid}`)
       .gte('date', taskFrom).lte('date', taskTo);
+    const manuelTasks: Task[] = ((manuelData ?? []) as { id: string; titre: string; date: string; statut: string; uid_eleveur: string; assigne_a: string | null }[]).map(t => ({ ...t, _source: 'manuel' as const, etape_id: null }));
+
+    const [p1Res, p2Res] = await Promise.all([
+      supabase.from('plan_taches').select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id').eq('uid_eleveur', uid).gte('date_prevue', taskFrom).lte('date_prevue', taskTo),
+      supabase.from('plan_taches').select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id').eq('assigned_to', uid).gte('date_prevue', taskFrom).lte('date_prevue', taskTo),
+    ]);
+    const seenProto = new Set<string>();
+    const protoTasks: Task[] = [];
+    for (const t of [...(p1Res.data ?? []), ...(p2Res.data ?? [])]) {
+      const pt = t as { id: string; label: string; date_prevue: string; statut: string; assigned_to: string | null; uid_eleveur: string; type_acte?: string; animal_nom?: string; etape_id?: string | null };
+      if (seenProto.has(pt.id)) continue;
+      seenProto.add(pt.id);
+      protoTasks.push({ id: pt.id, titre: pt.label, date: (pt.date_prevue ?? '').split('T')[0], statut: pt.statut, uid_eleveur: pt.uid_eleveur, assigne_a: pt.assigned_to, _source: 'protocole', type_acte: pt.type_acte, animal_nom: pt.animal_nom, etape_id: pt.etape_id ?? null });
+    }
+
+    const allTasks = [...manuelTasks, ...protoTasks];
 
     // Résoudre les noms des responsables
-    const rawTasks = (taskData ?? []) as Task[];
     const taskUids = new Set<string>();
-    for (const t of rawTasks) {
+    for (const t of allTasks) {
       if (t.assigne_a) taskUids.add(t.assigne_a);
       if (t.uid_eleveur) taskUids.add(t.uid_eleveur);
     }
@@ -441,12 +468,9 @@ export default function AgendaPage() {
           : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
         if (nom) nomMap[u.uid] = nom;
       }
-      setTasks(rawTasks.map(t => ({
-        ...t,
-        responsable_nom: nomMap[t.assigne_a ?? t.uid_eleveur ?? ''] ?? undefined,
-      })));
+      setTasks(allTasks.map(t => ({ ...t, responsable_nom: nomMap[t.assigne_a ?? t.uid_eleveur ?? ''] ?? undefined })));
     } else {
-      setTasks(rawTasks);
+      setTasks(allTasks);
     }
 
     setLoading(false);
@@ -479,9 +503,15 @@ export default function AgendaPage() {
   }
 
   async function toggleTask(t: Task) {
-    const newStatut = t.statut === 'fait' ? 'a_faire' : 'fait';
-    setTasks(prev => prev.map(x => x.id === t.id ? { ...x, statut: newStatut } : x));
-    await supabase.from('taches_elevage').update({ statut: newStatut }).eq('id', t.id);
+    if (t._source === 'protocole') {
+      const newStatut = t.statut === 'fait' ? 'en_attente' : 'fait';
+      setTasks(prev => prev.map(x => x.id === t.id ? { ...x, statut: newStatut } : x));
+      await supabase.from('plan_taches').update({ statut: newStatut }).eq('id', t.id);
+    } else {
+      const newStatut = t.statut === 'fait' ? 'a_faire' : 'fait';
+      setTasks(prev => prev.map(x => x.id === t.id ? { ...x, statut: newStatut } : x));
+      await supabase.from('taches_elevage').update({ statut: newStatut }).eq('id', t.id);
+    }
   }
 
   function navigateToAnimal(animalId: string | number | null | undefined) {
@@ -534,12 +564,11 @@ export default function AgendaPage() {
           <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>Mon Agenda</h1>
           <div className="flex items-center gap-2">
             <div className="flex rounded-lg bg-white/10 overflow-hidden text-xs font-semibold">
-              {(['calendar', 'day', 'list'] as const).map(v => (
+              {([['calendar', 'Mois'], ['day', 'Jour'], ['list', 'Liste']] as const).map(([v, label]) => (
                 <button key={v} onClick={() => { setView(v); if (v === 'day') setSelectedDate(new Date()); }}
-                  className="px-2.5 py-1.5 transition-colors"
-                  style={{ background: view === v ? 'rgba(255,255,255,0.25)' : 'transparent' }}
-                  title={v === 'calendar' ? 'Calendrier' : v === 'day' ? 'Jour' : 'Liste'}>
-                  {v === 'calendar' ? '📅' : v === 'day' ? '⏱' : '☰'}
+                  className="px-3 py-1.5 transition-colors"
+                  style={{ background: view === v ? 'rgba(255,255,255,0.25)' : 'transparent' }}>
+                  {label}
                 </button>
               ))}
             </div>
@@ -588,6 +617,8 @@ export default function AgendaPage() {
             onModifier={setModalModifier}
             onNavigateToAnimal={navigateToAnimal}
             onToggleTask={toggleTask}
+            uid={uid ?? ''}
+            onUpdated={load}
           />
         ) : view === 'day' ? (
           <DayView
@@ -595,12 +626,13 @@ export default function AgendaPage() {
             events={eventsForDate(selectedDate)}
             tasks={tasksForDate(selectedDate)}
             onNavigate={navigateDay}
-            onSelectDate={(d) => { setSelectedDate(d); setFocusedMonth({ year: d.getFullYear(), month: d.getMonth() }); }}
             onDelete={deleteEvent}
             onAnnuler={setModalAnnuler}
             onModifier={setModalModifier}
             onNavigateToAnimal={navigateToAnimal}
             onToggleTask={toggleTask}
+            uid={uid ?? ''}
+            onUpdated={load}
           />
         ) : (
           <ListView groups={grouped} keys={groupedKeys} onDelete={deleteEvent}
@@ -715,37 +747,290 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
   );
 }
 
-// ── CalendarView ───────────────────────────────────────────────────────────────
+// ── Helpers tâches ─────────────────────────────────────────────────────────────
 
-function TaskRow({ task, onToggle }: { task: Task; onToggle: (t: Task) => void }) {
-  const done = task.statut === 'fait';
+function protoEmoji(typeActe?: string) {
+  const m: Record<string, string> = { vermifuge: '💊', vaccination: '💉', antiparasitaire: '🛡️', traitement: '🩺', visite: '🏥', nettoyage: '🧹', promenade: '🦮', socialisation: '🐾' };
+  return m[typeActe ?? ''] ?? '📋';
+}
+
+function groupProtocole(tasks: Task[]): TaskGroupe[] {
+  const map = new Map<string, Task[]>();
+  for (const t of tasks) {
+    const key = t.etape_id ?? `solo_${t.id}`;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(t);
+  }
+  return [...map.entries()].map(([key, ts]) => ({ key, label: ts[0].titre, typeActe: ts[0].type_acte, tasks: ts }));
+}
+
+// ── ProtoDetailModal ────────────────────────────────────────────────────────────
+
+function ProtoDetailModal({ groupe, onClose, onUpdated }: { groupe: TaskGroupe; onClose: () => void; onUpdated: () => void }) {
+  const [items, setItems] = useState(groupe.tasks);
+  const total = items.length;
+  const done  = items.filter(t => t.statut === 'fait').length;
+  const pct   = total > 0 ? done / total : 0;
+
+  async function toggle(idx: number) {
+    const t = items[idx];
+    const newStatut = t.statut === 'fait' ? 'en_attente' : 'fait';
+    await supabase.from('plan_taches').update({ statut: newStatut }).eq('id', t.id);
+    setItems(prev => prev.map((x, i) => i === idx ? { ...x, statut: newStatut } : x));
+    onUpdated();
+  }
+
   return (
-    <button onClick={() => onToggle(task)}
-      className="flex items-center gap-2.5 w-full text-left py-1.5 group">
-      <span className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
-        done ? 'bg-[#6E9E57] border-[#6E9E57]' : 'border-gray-300 group-hover:border-[#6E9E57]'
-      }`}>
-        {done && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-        </svg>}
-      </span>
-      <div className="flex-1 min-w-0">
-        <span className={`block text-sm truncate transition-colors ${
-          done ? 'line-through text-gray-400' : 'text-[#1E2025] group-hover:text-[#0C5C6C]'
-        }`} style={{ fontFamily: 'Galey, sans-serif' }}>
-          {task.titre}
-        </span>
-        {task.responsable_nom && (
-          <span className="block text-[11px] text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
-            {done ? `Fait par : ${task.responsable_nom}` : `👤 ${task.responsable_nom}`}
-          </span>
-        )}
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center" onClick={onClose}>
+      <div className="bg-white rounded-t-3xl w-full max-w-md pb-8" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full bg-gray-300" /></div>
+        <div className="px-5 pt-2 pb-3">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xl">{protoEmoji(groupe.typeActe)}</span>
+            <p className="flex-1 font-bold text-[#0C5C6C] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>{groupe.label}</p>
+            <span className="text-sm font-bold text-[#0C5C6C]">{done}/{total}</span>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl ml-1">×</button>
+          </div>
+          <div className="h-1.5 rounded-full bg-[#0C5C6C]/12 overflow-hidden">
+            <div className="h-full rounded-full transition-all" style={{ width: `${pct * 100}%`, background: done === total ? '#d1d5db' : '#0C5C6C' }} />
+          </div>
+          <p className="text-[10px] text-right text-gray-400 mt-0.5">{Math.round(pct * 100)} %</p>
+        </div>
+        <div className="border-t border-gray-100" />
+        <div className="px-2 pt-2 space-y-0.5 max-h-72 overflow-y-auto">
+          {items.map((t, idx) => {
+            const isDone = t.statut === 'fait';
+            const nom = t.animal_nom || `Animal #${idx + 1}`;
+            return (
+              <button key={t.id} onClick={() => toggle(idx)}
+                className="w-full flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-gray-50 transition-colors text-left">
+                <span className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${isDone ? 'bg-[#0C5C6C] border-[#0C5C6C]' : 'border-gray-300'}`}>
+                  {isDone && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                </span>
+                <span className="text-sm">🐾</span>
+                <span className={`flex-1 text-sm ${isDone ? 'line-through text-gray-400' : 'text-[#1E2025] font-semibold'}`} style={{ fontFamily: 'Galey, sans-serif' }}>{nom}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
-    </button>
+    </div>
   );
 }
 
-function CalendarView({ year, month, events, tasks, selectedDay, onPrev, onNext, onSelectDay, eventsForDay, tasksForDay, onDelete, onAnnuler, onModifier, onNavigateToAnimal, onToggleTask }: {
+// ── ReporterModal ───────────────────────────────────────────────────────────────
+
+function ReporterModal({ task, onClose, onReport }: { task: Task; onClose: () => void; onReport: (date: string) => Promise<void> }) {
+  const [date, setDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); });
+  const [saving, setSaving] = useState(false);
+  const minDate = new Date().toISOString().slice(0, 10);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-xs p-5 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="font-bold text-sm text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>Reporter la tâche</p>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+        </div>
+        <p className="text-xs text-gray-500 truncate">{task.titre}</p>
+        <input type="date" value={date} min={minDate} onChange={e => setDate(e.target.value)}
+          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30" />
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 text-sm font-semibold py-2.5 rounded-xl hover:bg-gray-50">Annuler</button>
+          <button disabled={saving || !date} onClick={async () => { setSaving(true); await onReport(date); }}
+            className="flex-1 bg-[#0C5C6C] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#094F5D] disabled:opacity-50">
+            {saving ? '…' : 'Reporter'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── AssignerModal ───────────────────────────────────────────────────────────────
+
+function AssignerModal({ task, uid, onClose, onAssign }: { task: Task; uid: string; onClose: () => void; onAssign: (uid: string | null) => Promise<void> }) {
+  const [members, setMembers] = useState<{ uid: string; nom: string }[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      const { data: emps } = await supabase.from('employes').select('uid_employe').eq('uid_eleveur', uid).eq('actif', true);
+      if (!emps?.length) return;
+      const uids = (emps as { uid_employe: string }[]).map(e => e.uid_employe);
+      const { data: users } = await supabase.from('users').select('uid,firstname,lastname,name_elevage,is_elevage').in('uid', uids);
+      setMembers(((users ?? []) as { uid: string; firstname?: string; lastname?: string; name_elevage?: string; is_elevage?: boolean }[]).map(u => ({
+        uid: u.uid,
+        nom: (u.is_elevage && u.name_elevage) ? u.name_elevage : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim(),
+      })));
+    }
+    load();
+  }, [uid]);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-xs p-5 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="font-bold text-sm text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>Assigner à</p>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+        </div>
+        <p className="text-xs text-gray-500 truncate">{task.titre}</p>
+        {members.length === 0 ? (
+          <p className="text-xs text-gray-400 text-center py-4">Aucun employé dans votre équipe</p>
+        ) : (
+          <div className="space-y-1 max-h-48 overflow-y-auto">
+            <button disabled={saving} onClick={async () => { setSaving(true); await onAssign(null); }}
+              className="w-full text-left px-3 py-2.5 rounded-xl text-sm text-gray-500 hover:bg-gray-50 border border-gray-100 disabled:opacity-50">
+              — Retirer l&apos;assignation
+            </button>
+            {members.map(m => (
+              <button key={m.uid} disabled={saving} onClick={async () => { setSaving(true); await onAssign(m.uid); }}
+                className="w-full text-left px-3 py-2.5 rounded-xl text-sm font-semibold text-[#1E2025] hover:bg-[#EDF6F7] border border-gray-100 disabled:opacity-50"
+                style={{ fontFamily: 'Galey, sans-serif' }}>
+                👤 {m.nom}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── ProtoCard ───────────────────────────────────────────────────────────────────
+
+function ProtoCard({ groupe, effectuee = false, onOpenDetail, onReport }: {
+  groupe: TaskGroupe;
+  effectuee?: boolean;
+  onOpenDetail: (g: TaskGroupe) => void;
+  onReport: (t: Task) => void;
+}) {
+  const total = groupe.tasks.length;
+  const done  = groupe.tasks.filter(t => t.statut === 'fait').length;
+  const pct   = total > 0 ? done / total : 0;
+  const allDone = done === total;
+  return (
+    <div onClick={() => !effectuee && onOpenDetail(groupe)}
+      className={`mb-2 px-3 py-2.5 rounded-xl border transition-colors ${allDone ? 'bg-gray-50 border-gray-100' : 'bg-white border-[#0C5C6C]/25 cursor-pointer hover:border-[#0C5C6C]'}`}>
+      <div className="flex items-center gap-2">
+        <span className="text-sm">{protoEmoji(groupe.typeActe)}</span>
+        <span className={`flex-1 text-sm font-semibold truncate ${allDone ? 'line-through text-gray-400' : 'text-[#1E2025]'}`} style={{ fontFamily: 'Galey, sans-serif' }}>
+          {groupe.label}
+        </span>
+        {!effectuee && <>
+          <span className={`text-xs font-bold ${allDone ? 'text-gray-400' : 'text-[#0C5C6C]'}`}>{done}/{total}</span>
+          <button onClick={e => { e.stopPropagation(); onReport(groupe.tasks[0]); }}
+            title="Reporter" className="text-gray-300 hover:text-[#0C5C6C] px-1 py-0.5 rounded hover:bg-[#0C5C6C]/10 text-sm transition-colors ml-1">↷</button>
+          <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+        </>}
+      </div>
+      {total > 1 && !effectuee && (
+        <div className="mt-2 h-1.5 rounded-full bg-[#0C5C6C]/12 overflow-hidden">
+          <div className="h-full rounded-full transition-all" style={{ width: `${pct * 100}%`, background: allDone ? '#d1d5db' : '#0C5C6C' }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ManuelRow ───────────────────────────────────────────────────────────────────
+
+function ManuelRow({ t, onToggle, onReport, onAssign }: {
+  t: Task;
+  onToggle: (t: Task) => void;
+  onReport: (t: Task) => void;
+  onAssign: (t: Task) => void;
+}) {
+  const done = t.statut === 'fait';
+  return (
+    <div className="mb-1.5 flex items-center gap-2">
+      <button onClick={() => onToggle(t)}
+        className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${done ? 'bg-[#6E9E57] border-[#6E9E57]' : 'border-gray-300 hover:border-[#6E9E57]'}`}>
+        {done && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+      </button>
+      <div className="flex-1 min-w-0">
+        <span className={`block text-sm truncate ${done ? 'line-through text-gray-400' : 'text-[#1E2025]'}`} style={{ fontFamily: 'Galey, sans-serif' }}>{t.titre}</span>
+        {t.responsable_nom && <span className="block text-[11px] text-gray-400">{done ? `Fait par : ${t.responsable_nom}` : `👤 ${t.responsable_nom}`}</span>}
+      </div>
+      {!done && (
+        <div className="flex gap-0.5 flex-shrink-0">
+          <button onClick={() => onReport(t)} title="Reporter" className="text-[11px] text-gray-400 hover:text-[#0C5C6C] px-1.5 py-1 rounded hover:bg-[#0C5C6C]/10 transition-colors">↷</button>
+          <button onClick={() => onAssign(t)} title="Assigner" className="text-[11px] text-gray-400 hover:text-[#0C5C6C] px-1.5 py-1 rounded hover:bg-[#0C5C6C]/10 transition-colors">👤</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── DayTasksSection ─────────────────────────────────────────────────────────────
+
+function DayTasksSection({ tasks, uid, onToggle, onUpdated }: { tasks: Task[]; uid: string; onToggle: (t: Task) => void; onUpdated: () => void }) {
+  const [protoDetail, setProtoDetail] = useState<TaskGroupe | null>(null);
+  const [reportingTask, setReportingTask] = useState<Task | null>(null);
+  const [assigningTask, setAssigningTask] = useState<Task | null>(null);
+
+  const manuel = tasks.filter(t => t._source !== 'protocole');
+  const proto  = tasks.filter(t => t._source === 'protocole');
+  const protoGroups = groupProtocole(proto);
+
+  const manuelEnCours   = manuel.filter(t => t.statut !== 'fait');
+  const manuelEffectues = manuel.filter(t => t.statut === 'fait');
+  const protoEnCours    = protoGroups.filter(g => !g.tasks.every(t => t.statut === 'fait'));
+  const protoEffectues  = protoGroups.filter(g => g.tasks.every(t => t.statut === 'fait'));
+  const totalItems = manuel.length + protoGroups.length;
+  const doneItems  = manuelEffectues.length + protoEffectues.length;
+
+  async function doReport(task: Task, newDate: string) {
+    if (task._source === 'protocole') {
+      await supabase.from('plan_taches').update({ date_prevue: `${newDate}T00:00:00` }).eq('id', task.id);
+    } else {
+      await supabase.from('taches_elevage').update({ date: newDate }).eq('id', task.id);
+    }
+    onUpdated();
+  }
+
+  async function doAssign(task: Task, assigneeUid: string | null) {
+    if (task._source === 'protocole') {
+      await supabase.from('plan_taches').update({ assigned_to: assigneeUid }).eq('id', task.id);
+    } else {
+      await supabase.from('taches_elevage').update({ assigne_a: assigneeUid }).eq('id', task.id);
+    }
+    onUpdated();
+  }
+
+  return (
+    <>
+      <div className="bg-[#EDF6F7] rounded-xl border border-[#C8E4E8] px-3 py-3">
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="text-xs">✅</span>
+          <span className="text-xs font-bold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>Tâches du jour</span>
+          <span className="ml-auto text-[11px] text-gray-400">{doneItems}/{totalItems}</span>
+        </div>
+        {protoEnCours.map(g => <ProtoCard key={g.key} groupe={g} onOpenDetail={setProtoDetail} onReport={setReportingTask} />)}
+        {manuelEnCours.map(t => <ManuelRow key={t.id} t={t} onToggle={onToggle} onReport={setReportingTask} onAssign={setAssigningTask} />)}
+        {doneItems > 0 && (
+          <>
+            <div className="flex items-center gap-2 my-2">
+              <div className="flex-1 border-t border-gray-300/60" />
+              <span className="text-[10px] text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Effectuées ({doneItems})</span>
+              <div className="flex-1 border-t border-gray-300/60" />
+            </div>
+            {protoEffectues.map(g => <ProtoCard key={g.key} groupe={g} effectuee onOpenDetail={setProtoDetail} onReport={setReportingTask} />)}
+            {manuelEffectues.map(t => <ManuelRow key={t.id} t={t} onToggle={onToggle} onReport={setReportingTask} onAssign={setAssigningTask} />)}
+          </>
+        )}
+      </div>
+
+      {protoDetail && <ProtoDetailModal groupe={protoDetail} onClose={() => setProtoDetail(null)} onUpdated={() => { onUpdated(); setProtoDetail(null); }} />}
+      {reportingTask && <ReporterModal task={reportingTask} onClose={() => setReportingTask(null)} onReport={async (d) => { await doReport(reportingTask, d); setReportingTask(null); }} />}
+      {assigningTask && <AssignerModal task={assigningTask} uid={uid} onClose={() => setAssigningTask(null)} onAssign={async (u) => { await doAssign(assigningTask, u); setAssigningTask(null); }} />}
+    </>
+  );
+}
+
+// ── CalendarView ───────────────────────────────────────────────────────────────
+
+function CalendarView({ year, month, events, tasks, selectedDay, onPrev, onNext, onSelectDay, eventsForDay, tasksForDay, onDelete, onAnnuler, onModifier, onNavigateToAnimal, onToggleTask, uid, onUpdated }: {
   year: number; month: number; events: AgendaEvent[]; tasks: Task[];
   selectedDay: number | null;
   onPrev: () => void; onNext: () => void;
@@ -757,6 +1042,8 @@ function CalendarView({ year, month, events, tasks, selectedDay, onPrev, onNext,
   onModifier: (e: AgendaEvent) => void;
   onNavigateToAnimal: (id: string | number | null | undefined) => void;
   onToggleTask: (t: Task) => void;
+  uid: string;
+  onUpdated: () => void;
 }) {
   const WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
   const monthName = new Date(year, month, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
@@ -825,14 +1112,7 @@ function CalendarView({ year, month, events, tasks, selectedDay, onPrev, onNext,
 
           {/* Tâches du jour */}
           {dayTasks.length > 0 && (
-            <div className="bg-[#EDF6F7] rounded-xl p-3">
-              <p className="text-xs font-bold text-[#0C5C6C] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
-                ✅ Tâches — {dayTasks.filter(t => t.statut === 'fait').length}/{dayTasks.length}
-              </p>
-              <div className="space-y-0.5">
-                {dayTasks.map(t => <TaskRow key={t.id} task={t} onToggle={onToggleTask} />)}
-              </div>
-            </div>
+            <DayTasksSection tasks={dayTasks} uid={uid} onToggle={onToggleTask} onUpdated={onUpdated} />
           )}
 
           {/* Événements du jour */}
@@ -960,69 +1240,44 @@ function minutesFromTop(iso: string): number {
   return (d.getHours() - TIMELINE_START) * 60 + d.getMinutes();
 }
 
-function DayView({ date, events, tasks, onNavigate, onSelectDate, onDelete, onAnnuler, onModifier, onNavigateToAnimal, onToggleTask }: {
+function DayView({ date, events, tasks, onNavigate, onDelete, onAnnuler, onModifier, onNavigateToAnimal, onToggleTask, uid, onUpdated }: {
   date: Date;
   events: AgendaEvent[];
   tasks: Task[];
   onNavigate: (dir: 'prev' | 'next') => void;
-  onSelectDate: (d: Date) => void;
   onDelete: (id: number) => void;
   onAnnuler: (e: AgendaEvent) => void;
   onModifier: (e: AgendaEvent) => void;
   onNavigateToAnimal: (id: string | number | null | undefined) => void;
   onToggleTask: (t: Task) => void;
+  uid: string;
+  onUpdated: () => void;
 }) {
   const HOURS = Array.from({ length: TIMELINE_END - TIMELINE_START + 1 }, (_, i) => i + TIMELINE_START);
   const today = new Date();
-
-  // Week strip: 7 days centred on selected date
-  const weekDays = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(date);
-    d.setDate(d.getDate() - 3 + i);
-    return d;
-  });
+  const isToday = date.toDateString() === today.toDateString();
 
   return (
     <div className="space-y-4">
-      {/* Week strip */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-        <div className="flex items-center justify-between mb-3">
-          <button onClick={() => onNavigate('prev')} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-[#0C5C6C]">‹</button>
-          <span className="font-bold text-sm capitalize" style={{ fontFamily: 'Galey, sans-serif', color: '#1E2025' }}>
-            {date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </span>
-          <button onClick={() => onNavigate('next')} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-[#0C5C6C]">›</button>
-        </div>
-        <div className="flex gap-1">
-          {weekDays.map((d, i) => {
-            const isSel = d.toDateString() === date.toDateString();
-            const isT   = d.toDateString() === today.toDateString();
-            return (
-              <button key={i} onClick={() => onSelectDate(d)}
-                className="flex-1 flex flex-col items-center py-2 rounded-xl transition-colors"
-                style={{ background: isSel ? '#0C5C6C' : isT ? '#E0F2FE' : 'transparent' }}>
-                <span className="text-[10px] text-gray-400 capitalize">
-                  {d.toLocaleDateString('fr-FR', { weekday: 'short' }).slice(0, 3)}
-                </span>
-                <span className="text-sm font-bold" style={{ color: isSel ? 'white' : '#1E2025' }}>
-                  {d.getDate()}
-                </span>
-              </button>
-            );
-          })}
+      {/* Navigation jour */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <button onClick={() => onNavigate('prev')} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-[#0C5C6C] text-xl font-light">‹</button>
+          <div className="text-center">
+            <span className="font-bold text-sm capitalize" style={{ fontFamily: 'Galey, sans-serif', color: '#1E2025' }}>
+              {date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </span>
+            {isToday && (
+              <span className="ml-2 text-[10px] font-bold bg-[#0C5C6C] text-white px-2 py-0.5 rounded-full">Aujourd&apos;hui</span>
+            )}
+          </div>
+          <button onClick={() => onNavigate('next')} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-[#0C5C6C] text-xl font-light">›</button>
         </div>
       </div>
 
       {/* Tâches du jour */}
       {tasks.length > 0 && (
-        <div className="bg-[#EDF6F7] rounded-2xl border border-[#C8E4E8] p-4">
-          <p className="text-xs font-bold text-[#0C5C6C] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
-            ✅ Tâches — {tasks.filter(t => t.statut === 'fait').length}/{tasks.length}
-          </p>
-          <div className="space-y-0.5">
-            {tasks.map(t => <TaskRow key={t.id} task={t} onToggle={onToggleTask} />)}
-          </div>
-        </div>
+        <DayTasksSection tasks={tasks} uid={uid} onToggle={onToggleTask} onUpdated={onUpdated} />
       )}
 
       {/* Timeline */}

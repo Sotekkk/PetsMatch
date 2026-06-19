@@ -40,10 +40,25 @@ const ACTE_EMOJIS: Record<string, string> = {
   promenade: '🦮', socialisation: '🐾', toilettage: '✂️', autre: '📋',
 };
 
+const ACTE_COLOR: Record<string, string> = {
+  vaccination:     '#2196F3',
+  vermifuge:       '#FF9800',
+  antiparasitaire: '#4CAF50',
+  traitement:      '#E91E63',
+  visite:          '#9C27B0',
+  nettoyage:       '#00BCD4',
+  promenade:       '#8BC34A',
+  socialisation:   '#FF5722',
+  toilettage:      '#795548',
+  autre:           '#9E9E9E',
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function toISODate(d: Date) { return d.toISOString().split('T')[0]; }
 function addDays(d: Date, n: number) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function daysInMonthFn(year: number, month: number) { return new Date(year, month + 1, 0).getDate(); }
+function firstWeekdayFn(year: number, month: number) { return (new Date(year, month, 1).getDay() + 6) % 7; }
 
 function groupRoutines(routines: Routine[]): RoutineGroupe[] {
   const byKey = new Map<string, Routine[]>();
@@ -67,11 +82,14 @@ export default function AgendaElevagePage() {
   const router = useRouter();
   const { config: planConfig, loading: planLoading } = usePlan();
   const [selectedDate, setSelectedDate] = useState(toISODate(new Date()));
+  const [focusedYear, setFocusedYear]   = useState(new Date().getFullYear());
+  const [focusedMois, setFocusedMois]   = useState(new Date().getMonth());
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [tachesM, setTachesM] = useState<TacheManuelle[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [validateGroupe, setValidateGroupe] = useState<RoutineGroupe | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ label: string; onConfirm: () => void } | null>(null);
+  const [monthDates, setMonthDates] = useState<Map<string, string[]>>(new Map());
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
 
@@ -136,6 +154,34 @@ export default function AgendaElevagePage() {
     load();
   }, [load]);
 
+  const loadMonth = useCallback(async () => {
+    if (!user) return;
+    const mm   = String(focusedMois + 1).padStart(2, '0');
+    const from = `${focusedYear}-${mm}-01`;
+    const to   = `${focusedYear}-${mm}-${String(daysInMonthFn(focusedYear, focusedMois)).padStart(2, '0')}`;
+    const [r1, r2, tm] = await Promise.all([
+      supabase.from('plan_taches').select('date_prevue,type_acte').eq('uid_eleveur', user.uid)
+        .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`),
+      supabase.from('plan_taches').select('date_prevue,type_acte').eq('assigned_to', user.uid)
+        .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`),
+      supabase.from('taches_elevage').select('date').eq('uid_eleveur', user.uid)
+        .gte('date', from).lte('date', to),
+    ]);
+    const map = new Map<string, Set<string>>();
+    const addColor = (date: string, color: string) => {
+      if (!map.has(date)) map.set(date, new Set());
+      map.get(date)!.add(color);
+    };
+    [...(r1.data ?? []), ...(r2.data ?? [])].forEach((r: { date_prevue: string; type_acte?: string }) => {
+      const date = r.date_prevue.split('T')[0];
+      addColor(date, ACTE_COLOR[r.type_acte ?? ''] ?? '#9E9E9E');
+    });
+    ((tm.data ?? []) as { date: string }[]).forEach(t => addColor(t.date, '#6E9E57'));
+    setMonthDates(new Map([...map.entries()].map(([d, s]) => [d, [...s]])));
+  }, [user, focusedYear, focusedMois]);
+
+  useEffect(() => { if (user) loadMonth(); }, [user, loadMonth]);
+
   if (loading || !user) return (
     <div className="flex justify-center items-center h-64">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
@@ -149,8 +195,11 @@ export default function AgendaElevagePage() {
   const tachesMEffectuees = tachesM.filter(t => t.statut === 'fait');
 
   const today      = new Date();
-  const days       = Array.from({ length: 7 }, (_, i) => addDays(today, -3 + i));
   const totalItems = groupes.length + tachesM.length;
+  const totalDaysInMonth = daysInMonthFn(focusedYear, focusedMois);
+  const calOffset        = firstWeekdayFn(focusedYear, focusedMois);
+  const calCells: (number | null)[] = [...Array(calOffset).fill(null), ...Array.from({ length: totalDaysInMonth }, (_, i) => i + 1)];
+  while (calCells.length % 7 !== 0) calCells.push(null);
   const doneItems  = groupesEffectuees.length + tachesMEffectuees.length;
 
   const dateLabel = selectedDate === toISODate(new Date())
@@ -271,37 +320,78 @@ export default function AgendaElevagePage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Agenda</h1>
-        {totalItems > 0 && (
-          <span className="text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-3 py-1 rounded-full">
-            {doneItems}/{totalItems} fait{doneItems > 1 ? 's' : ''}
+      </div>
+
+      {/* Calendrier mois */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <button
+            onClick={() => { if (focusedMois === 0) { setFocusedYear(y => y - 1); setFocusedMois(11); } else setFocusedMois(m => m - 1); }}
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-teal-600 text-xl font-light">‹</button>
+          <span className="font-bold text-sm capitalize text-gray-800" style={{ fontFamily: 'Galey, sans-serif' }}>
+            {new Date(focusedYear, focusedMois, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
           </span>
-        )}
+          <button
+            onClick={() => { if (focusedMois === 11) { setFocusedYear(y => y + 1); setFocusedMois(0); } else setFocusedMois(m => m + 1); }}
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-teal-600 text-xl font-light">›</button>
+        </div>
+        <div className="grid grid-cols-7 mb-1">
+          {['L','M','M','J','V','S','D'].map((d, i) => (
+            <div key={i} className="text-center text-xs font-semibold text-gray-400 py-1">{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {calCells.map((day, i) => {
+            if (!day) return <div key={i} />;
+            const ds     = `${focusedYear}-${String(focusedMois + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const isT    = day === today.getDate() && focusedMois === today.getMonth() && focusedYear === today.getFullYear();
+            const isSel  = ds === selectedDate;
+            const colors = monthDates.get(ds) ?? [];
+            return (
+              <button key={i} onClick={() => setSelectedDate(ds)}
+                className="aspect-square rounded-xl flex flex-col items-center justify-center gap-0.5 transition-colors"
+                style={{
+                  background: isSel ? '#0d9488' : isT ? '#ccfbf1' : 'white',
+                  border: isT && !isSel ? '1.5px solid #0d9488' : '1.5px solid transparent',
+                }}>
+                <span className="text-sm font-bold" style={{ color: isSel ? 'white' : '#374151' }}>{day}</span>
+                {colors.length > 0 && (
+                  <div className="flex gap-0.5">
+                    {colors.slice(0, 3).map((c, ci) => (
+                      <div key={ci} className="w-1.5 h-1.5 rounded-full"
+                        style={{ background: isSel ? 'rgba(255,255,255,0.75)' : c }} />
+                    ))}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Sélecteur semaine */}
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
-        {days.map(d => {
-          const ds      = toISODate(d);
-          const isActive = ds === selectedDate;
-          const isToday  = ds === toISODate(new Date());
-          return (
-            <button key={ds} onClick={() => setSelectedDate(ds)}
-              className={`flex flex-col items-center p-3 rounded-xl min-w-[48px] transition-colors ${
-                isActive  ? 'bg-teal-600 text-white' :
-                isToday   ? 'border-2 border-teal-500 text-teal-700' :
-                            'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}>
-              <span className="text-xs font-semibold uppercase">
-                {d.toLocaleDateString('fr-FR', { weekday: 'short' }).slice(0, 2)}
+      {/* Vue jour — navigation + date */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-3 mb-4">
+        <div className="flex items-center justify-between">
+          <button onClick={() => {
+            const d = new Date(selectedDate + 'T12:00:00'); d.setDate(d.getDate() - 1);
+            setSelectedDate(toISODate(d)); setFocusedYear(d.getFullYear()); setFocusedMois(d.getMonth());
+          }} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-teal-600 text-xl font-light">‹</button>
+          <div className="text-center">
+            <span className="font-bold text-sm capitalize text-gray-800" style={{ fontFamily: 'Galey, sans-serif' }}>
+              {dateLabel}
+            </span>
+            {totalItems > 0 && (
+              <span className="ml-2 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
+                {doneItems}/{totalItems}
               </span>
-              <span className="text-lg font-bold">{d.getDate()}</span>
-            </button>
-          );
-        })}
+            )}
+          </div>
+          <button onClick={() => {
+            const d = new Date(selectedDate + 'T12:00:00'); d.setDate(d.getDate() + 1);
+            setSelectedDate(toISODate(d)); setFocusedYear(d.getFullYear()); setFocusedMois(d.getMonth());
+          }} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-teal-600 text-xl font-light">›</button>
+        </div>
       </div>
-
-      {/* Titre date */}
-      <h2 className="text-base font-bold text-gray-700 mb-4 capitalize">{dateLabel}</h2>
 
       {loadingData ? (
         <div className="flex justify-center py-12">

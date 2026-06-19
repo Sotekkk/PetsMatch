@@ -325,7 +325,14 @@ class _AgendaPageState extends State<AgendaPage> {
                 Text('$done/$total',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                       color: allDone ? Colors.grey : _kTeal, fontWeight: FontWeight.w700)),
-                const SizedBox(width: 4),
+                const SizedBox(width: 2),
+                GestureDetector(
+                  onTap: () => _showReporterDialog(groupe.first, isProtocole: true),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Icon(Icons.schedule_outlined, size: 15, color: Colors.grey.shade400),
+                  ),
+                ),
                 Icon(Icons.chevron_right, size: 16,
                     color: allDone ? Colors.grey.shade300 : Colors.grey.shade400),
               ],
@@ -383,10 +390,19 @@ class _AgendaPageState extends State<AgendaPage> {
                         color: isDone ? Colors.grey.shade400 : Colors.grey.shade500)),
             ],
           )),
+          if (!isDone) ...[
+            GestureDetector(
+              onTap: () => _showReporterDialog(t, isProtocole: false),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Icon(Icons.schedule_outlined, size: 16, color: Colors.grey.shade400),
+              ),
+            ),
+          ],
           GestureDetector(
             onTap: () => _deleteManualTask(t),
             child: Padding(
-              padding: const EdgeInsets.only(left: 6),
+              padding: const EdgeInsets.only(left: 4),
               child: Icon(Icons.delete_outline, size: 16, color: Colors.grey.shade400),
             ),
           ),
@@ -490,6 +506,40 @@ class _AgendaPageState extends State<AgendaPage> {
           .gte('date_prevue', '${dayDate}T00:00:00')
           .lte('date_prevue', '${dayDate}T23:59:59');
       _loadTasks();
+    }
+  }
+
+  Future<void> _showReporterDialog(Map<String, dynamic> t, {required bool isProtocole}) async {
+    final currentDateStr = isProtocole
+        ? (t['date_prevue'] as String? ?? t['date'] as String? ?? '')
+        : (t['date'] as String? ?? '');
+    final currentDate = DateTime.tryParse(currentDateStr) ?? DateTime.now();
+    final minDate = DateTime.now();
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: currentDate.isAfter(minDate) ? currentDate : minDate.add(const Duration(days: 1)),
+      firstDate: minDate,
+      lastDate: DateTime(2030),
+      locale: const Locale('fr'),
+    );
+    if (picked == null || !mounted) return;
+    final dateStr = '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+
+    if (isProtocole) {
+      await _supa.from('plan_taches').update({'date_prevue': '${dateStr}T00:00:00'}).eq('id', t['id']);
+    } else {
+      await _supa.from('taches_elevage').update({'date': dateStr}).eq('id', t['id']);
+    }
+    _loadTasks();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Tâche reportée au ${DateFormat('d MMMM yyyy', 'fr').format(picked)}',
+            style: const TextStyle(fontFamily: 'Galey')),
+        backgroundColor: _kTeal,
+        behavior: SnackBarBehavior.floating,
+      ));
     }
   }
 
