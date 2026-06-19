@@ -552,6 +552,129 @@ function GestationForm({ espece, initial, saving, onSave, onCancel }: {
   );
 }
 
+// ─── Documents Animal Tab ─────────────────────────────────────────────────────
+
+function DocumentsAnimalTab({ animalId }: { animalId: string }) {
+  const [docs, setDocs] = useState<Record<string,unknown>[]>([]);
+  const [certs, setCerts] = useState<Record<string,unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const [docsRes, certsRes] = await Promise.all([
+        supabase.from('documents_animaux').select('*').eq('animal_id', animalId).order('created_at', { ascending: false }),
+        supabase.from('certificats_engagement').select('id, nom_animal, acquereur_prenom, acquereur_nom, statut, date_remise, date_signature_acquereur, token_signature').eq('animal_id', animalId).order('date_remise', { ascending: false }),
+      ]);
+      setDocs(docsRes.data ?? []);
+      setCerts(certsRes.data ?? []);
+      setLoading(false);
+    }
+    load();
+  }, [animalId]);
+
+  const typeLabel: Record<string,string> = {
+    contrat_vente: 'Contrat de vente',
+    contrat_reservation: 'Contrat de réservation',
+    certificat_cession: 'Certificat de cession',
+  };
+  const typeIcon: Record<string,string> = {
+    contrat_vente: '🤝',
+    contrat_reservation: '🔖',
+    certificat_cession: '📋',
+  };
+  const statutBadge = (statut: string) => {
+    const cfg: Record<string,[string,string]> = {
+      signe: ['bg-green-100 text-green-800', 'Signé'],
+      archive: ['bg-gray-100 text-gray-600', 'Archivé'],
+    };
+    const [cls, label] = cfg[statut] ?? ['bg-yellow-100 text-yellow-800', 'Brouillon'];
+    return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;
+  };
+
+  if (loading) return <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
+
+  const empty = docs.length === 0 && certs.length === 0;
+  if (empty) return (
+    <div className="flex flex-col items-center py-16 text-gray-400 gap-2">
+      <span className="text-5xl">📂</span>
+      <p className="font-semibold">Aucun document lié à cet animal</p>
+      <p className="text-sm">Créez un contrat depuis <strong>Administratif → Contrats</strong></p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3 mt-4">
+      {docs.length > 0 && (
+        <>
+          <h3 className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide">Contrats &amp; Documents</h3>
+          {docs.map((doc) => {
+            const meta = (doc.metadata as Record<string,string>) ?? {};
+            const acq = [meta.acquereur_prenom, meta.acquereur_nom].filter(Boolean).join(' ');
+            const date = doc.created_at ? new Date(doc.created_at as string).toLocaleDateString('fr-FR') : '';
+            const type = doc.type as string ?? '';
+            return (
+              <div key={doc.id as string} className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
+                <span className="text-2xl">{typeIcon[type] ?? '📄'}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm text-gray-800">{typeLabel[type] ?? 'Document'}</div>
+                  {acq && <div className="text-xs text-gray-500">{acq}</div>}
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs text-gray-400">{date}</span>
+                    {statutBadge(doc.statut as string)}
+                  </div>
+                </div>
+                {!!doc.url && (
+                  <a href={String(doc.url)} target="_blank" rel="noreferrer"
+                    className="text-[#0C5C6C] hover:text-[#0a4a58] flex-shrink-0">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                  </a>
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {certs.length > 0 && (
+        <>
+          <h3 className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mt-4">Certificats d&apos;engagement</h3>
+          {certs.map((cert) => {
+            const acq = [cert.acquereur_prenom, cert.acquereur_nom].filter(Boolean).join(' ');
+            const date = cert.date_remise ? new Date(cert.date_remise as string).toLocaleDateString('fr-FR') : '';
+            const statut = cert.statut as string;
+            const token = cert.token_signature as string | null;
+            const sigLink = token ? `/certificat/${token}` : null;
+            const dateSig = cert.date_signature_acquereur
+              ? new Date(cert.date_signature_acquereur as string).toLocaleDateString('fr-FR') : null;
+            return (
+              <div key={cert.id as string} className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
+                <span className="text-2xl">✅</span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm text-gray-800">Certificat d&apos;engagement</div>
+                  {acq && <div className="text-xs text-gray-500">{acq}</div>}
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs text-gray-400">{date}</span>
+                    {statut === 'signe'
+                      ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-800">Signé{dateSig ? ` ${dateSig}` : ''}</span>
+                      : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800">En attente</span>}
+                  </div>
+                </div>
+                {sigLink && statut !== 'signe' && (
+                  <button onClick={() => { navigator.clipboard.writeText(window.location.origin + sigLink); }}
+                    title="Copier le lien de signature"
+                    className="text-[#0C5C6C] hover:text-[#0a4a58] flex-shrink-0">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Suivi Repro Tab (composant séparé pour respecter les règles des hooks) ───
 
 interface SuiviReproTabProps {
@@ -929,7 +1052,7 @@ export default function AnimalFichePage() {
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(isNew);
-  const [tab, setTab] = useState<'identite'|'sante'|'repro'|'alimentation'|'consultations'>('identite');
+  const [tab, setTab] = useState<'identite'|'sante'|'repro'|'alimentation'|'consultations'|'documents'>('identite');
 
   const [animal, setAnimal] = useState<Animal>({ id:'', espece:'chien', sexe:'male' });
   const [breeds, setBreeds] = useState<string[]>([]);
@@ -1415,9 +1538,9 @@ export default function AnimalFichePage() {
   const isAcquereur = user?.uid === animal.uid_acquereur;
   // Animal cédé vu par l'éleveur d'origine → lecture seule, juste Identité
   const tabs = (isCede && isOriginalBreeder && !isAcquereur)
-    ? [{ key:'identite', label:'Identité' }]
+    ? [{ key:'identite', label:'Identité' }, { key:'documents', label:'Documents' }]
     : isEleveur
-    ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet Santé' }, { key:'repro', label:'Suivi Repro' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }]
+    ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet Santé' }, { key:'repro', label:'Suivi Repro' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }, { key:'documents', label:'Documents' }]
     : [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet de santé' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }];
 
   const isMale = (animal.sexe ?? '').toLowerCase().startsWith('m');
@@ -2252,6 +2375,11 @@ export default function AnimalFichePage() {
           nom={animal.nom}
           userId={user?.uid ?? ''}
         />
+      )}
+
+      {/* ── TAB DOCUMENTS ───────────────────────────────────────────────── */}
+      {tab === 'documents' && !isNew && (
+        <DocumentsAnimalTab animalId={id ?? ''} />
       )}
 
       {showPerePicker && (

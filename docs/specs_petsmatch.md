@@ -1375,7 +1375,7 @@ CREATE TABLE documents_animaux (
 | DOC01 | Table `documents_animaux` + migration SQL | Backend | ✅ Livré 2026-06-19 |
 | DOC02 | Page Contrats dynamiques (sélecteur animal + génération PDF/web) | App + Web | ✅ Livré 2026-06-19 |
 | DOC03 | Certificat d'engagement avec signature électronique | App + Web | ✅ Existant (`certificats_engagement`) |
-| DOC04 | Fiche animal onglet Documents — affichage docs liés | App + Web | 🔜 V1.5 |
+| DOC04 | Fiche animal onglet Documents — affichage docs liés | App + Web | ✅ Livré 2026-06-19 |
 | DOC05 | Cession — attach auto du contrat de vente signé existant | App + Web | 🔜 V1.5 |
 | DOC06 | Certificat de cession (attestation de transfert) | App + Web | 🔜 V1.5 |
 

@@ -165,15 +165,14 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   int get _tabCount {
     if (widget.vetMode) return 5;
     if (widget.isAssociation) return 4;
-    // Animal cédé vu par l'éleveur d'origine → Identité seule
-    if (_statut == 'sorti' && !widget.vetMode && !widget.isAssociation) return 1;
-    return 5;
+    if (_statut == 'sorti' && !widget.vetMode && !widget.isAssociation) return 2; // Identité + Documents
+    return 6; // Identité, Repro, Santé, Alimentation, Consultations, Documents
   }
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 5, vsync: this); // 5 par défaut, réajusté après chargement
+    _tabs = TabController(length: 6, vsync: this); // réajusté après chargement via _tabCount
     if (widget.isAssociation && widget.animalId == null) _statut = 'en_soin';
     if (widget.initialTabIndex != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1079,8 +1078,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               : widget.isAssociation
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')]
                   : (_statut == 'sorti'
-                      ? const [Tab(text: 'Identité')]
-                      : const [Tab(text: 'Identité'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')]),
+                      ? const [Tab(text: 'Identité'), Tab(text: 'Documents')]
+                      : const [Tab(text: 'Identité'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Documents')]),
         ),
       ),
       body: TabBarView(
@@ -1100,13 +1099,19 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                     _AlimentationTab(this),
                     _ConsultationsOwnerTab(animalId: widget.animalId),
                   ]
-                : [
-                    _IdentiteTab(this),
-                    _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
-                    _CarnetSanteTab(animalId: widget.animalId),
-                    _AlimentationTab(this),
-                    _ConsultationsOwnerTab(animalId: widget.animalId),
-                  ],
+                : (_statut == 'sorti'
+                    ? [
+                        _IdentiteTab(this),
+                        _DocumentsTab(animalId: widget.animalId ?? ''),
+                      ]
+                    : [
+                        _IdentiteTab(this),
+                        _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
+                        _CarnetSanteTab(animalId: widget.animalId),
+                        _AlimentationTab(this),
+                        _ConsultationsOwnerTab(animalId: widget.animalId),
+                        _DocumentsTab(animalId: widget.animalId ?? ''),
+                      ]),
       ),
     );
   }
@@ -10140,6 +10145,242 @@ class _RdvLinkSectionState extends State<_RdvLinkSection> {
           style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
               color: Color(0xFF0C5C6C), fontWeight: FontWeight.w600))),
       ]),
+    );
+  }
+}
+
+// ─── Onglet Documents ────────────────────────────────────────────────────────
+
+class _DocumentsTab extends StatefulWidget {
+  final String animalId;
+  const _DocumentsTab({required this.animalId});
+
+  @override
+  State<_DocumentsTab> createState() => _DocumentsTabState();
+}
+
+class _DocumentsTabState extends State<_DocumentsTab> {
+  static final _supa = Supabase.instance.client;
+  static const _green = Color(0xFF0C5C6C);
+
+  List<Map<String, dynamic>> _docs = [];
+  List<Map<String, dynamic>> _certs = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final docs = await _supa
+          .from('documents_animaux')
+          .select('*')
+          .eq('animal_id', widget.animalId)
+          .order('created_at', ascending: false);
+      final certs = await _supa
+          .from('certificats_engagement')
+          .select('id, nom_animal, acquereur_prenom, acquereur_nom, statut, date_remise, date_signature_acquereur, token_signature')
+          .eq('animal_id', widget.animalId)
+          .order('date_remise', ascending: false);
+      if (mounted) {
+        setState(() {
+          _docs = List<Map<String, dynamic>>.from(docs);
+          _certs = List<Map<String, dynamic>>.from(certs);
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: _green));
+    final total = _docs.length + _certs.length;
+    if (total == 0) {
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.folder_open_outlined, size: 56, color: Colors.grey[300]),
+          const SizedBox(height: 12),
+          Text('Aucun document lié à cet animal',
+              style: TextStyle(color: Colors.grey[500], fontFamily: 'Galey', fontSize: 15)),
+          const SizedBox(height: 4),
+          Text('Créez un contrat depuis Administratif → Contrats',
+              style: TextStyle(color: Colors.grey[400], fontFamily: 'Galey', fontSize: 12)),
+        ]),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      color: _green,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        children: [
+          if (_docs.isNotEmpty) ...[
+            _sectionHeader('Contrats & Documents'),
+            ..._docs.map(_buildDocCard),
+          ],
+          if (_certs.isNotEmpty) ...[
+            if (_docs.isNotEmpty) const SizedBox(height: 16),
+            _sectionHeader('Certificats d\'engagement'),
+            ..._certs.map(_buildCertCard),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionHeader(String titre) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(titre,
+            style: const TextStyle(
+                fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                fontSize: 13, color: _green, letterSpacing: 0.3)),
+      );
+
+  Widget _buildDocCard(Map<String, dynamic> doc) {
+    final type = doc['type'] as String? ?? '';
+    final statut = doc['statut'] as String? ?? 'brouillon';
+    final meta = doc['metadata'] as Map? ?? {};
+    final acq = '${meta['acquereur_prenom'] ?? ''} ${meta['acquereur_nom'] ?? ''}'.trim();
+    final date = doc['created_at'] != null
+        ? DateFormat('dd/MM/yyyy').format(DateTime.parse(doc['created_at']).toLocal())
+        : '';
+    final url = doc['url'] as String?;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 0,
+      color: Colors.grey[50],
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        leading: CircleAvatar(
+          backgroundColor: _green.withOpacity(0.1),
+          child: Icon(_typeIcon(type), color: _green, size: 20),
+        ),
+        title: Text(_typeLabel(type),
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (acq.isNotEmpty)
+            Text(acq, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+          Row(children: [
+            Text(date, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey[500])),
+            const SizedBox(width: 8),
+            _statutBadge(statut),
+          ]),
+        ]),
+        trailing: url != null
+            ? IconButton(
+                icon: const Icon(Icons.open_in_new, size: 18, color: _green),
+                onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+              )
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildCertCard(Map<String, dynamic> cert) {
+    final statut = cert['statut'] as String? ?? 'en_attente';
+    final acq = '${cert['acquereur_prenom'] ?? ''} ${cert['acquereur_nom'] ?? ''}'.trim();
+    final dateRaw = cert['date_remise'] as String?;
+    final dateSig = cert['date_signature_acquereur'] as String?;
+    final date = dateRaw != null
+        ? DateFormat('dd/MM/yyyy').format(DateTime.parse(dateRaw).toLocal())
+        : '';
+    final token = cert['token_signature'] as String?;
+    final sigLink = token != null ? 'https://petsmatch.vercel.app/certificat/$token' : null;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 0,
+      color: Colors.grey[50],
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        leading: CircleAvatar(
+          backgroundColor: Colors.amber.withOpacity(0.15),
+          child: const Icon(Icons.verified_outlined, color: Colors.amber, size: 20),
+        ),
+        title: const Text('Certificat d\'engagement',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (acq.isNotEmpty)
+            Text(acq, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+          Row(children: [
+            Text(date, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey[500])),
+            const SizedBox(width: 8),
+            _statutBadgeCert(statut, dateSig),
+          ]),
+        ]),
+        trailing: sigLink != null && statut != 'signe'
+            ? IconButton(
+                icon: const Icon(Icons.link, size: 18, color: _green),
+                tooltip: 'Copier le lien de signature',
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: sigLink));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Lien copié'), duration: Duration(seconds: 2)),
+                  );
+                },
+              )
+            : null,
+      ),
+    );
+  }
+
+  IconData _typeIcon(String type) {
+    switch (type) {
+      case 'contrat_vente': return Icons.handshake_outlined;
+      case 'contrat_reservation': return Icons.bookmark_border;
+      case 'certificat_cession': return Icons.assignment_turned_in_outlined;
+      default: return Icons.description_outlined;
+    }
+  }
+
+  String _typeLabel(String type) {
+    switch (type) {
+      case 'contrat_vente': return 'Contrat de vente';
+      case 'contrat_reservation': return 'Contrat de réservation';
+      case 'certificat_cession': return 'Certificat de cession';
+      default: return 'Document';
+    }
+  }
+
+  Widget _statutBadge(String statut) {
+    Color bg; Color fg; String label;
+    switch (statut) {
+      case 'signe':   bg = const Color(0xFFDCFCE7); fg = const Color(0xFF166534); label = 'Signé'; break;
+      case 'archive': bg = const Color(0xFFE5E7EB); fg = const Color(0xFF374151); label = 'Archivé'; break;
+      default:        bg = const Color(0xFFFEF3C7); fg = const Color(0xFF92400E); label = 'Brouillon';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
+      child: Text(label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: fg, fontFamily: 'Galey')),
+    );
+  }
+
+  Widget _statutBadgeCert(String statut, String? dateSig) {
+    if (statut == 'signe') {
+      final ds = dateSig != null ? DateFormat('dd/MM/yy').format(DateTime.parse(dateSig).toLocal()) : '';
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(10)),
+        child: Text('Signé${ds.isNotEmpty ? ' $ds' : ''}',
+            style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF166534), fontFamily: 'Galey')),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(10)),
+      child: const Text('En attente',
+          style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF92400E), fontFamily: 'Galey')),
     );
   }
 }
