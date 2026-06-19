@@ -282,7 +282,7 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
-                        label: 'Entrées / Sorties',
+                        label: 'Entrée - Sortie',
                         icon: Icons.swap_horiz_outlined,
                         locked: _planCode == 'free',
                         onTap: () {

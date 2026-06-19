@@ -99,7 +99,7 @@ const MENU_ELEVEUR = [
       { href: '/elevage/registre-sanitaire',     label: 'Suivi sanitaire',    icon: '🏥', pro: true },
       { href: '/elevage/inventaire',              label: 'Inventaire',         icon: '📦' },
       { href: '/employes',                        label: 'Mes employés',       icon: '👥' },
-      { href: '/elevage/registre-entree-sortie', label: 'Entrées / Sorties',  icon: '📂', pro: true },
+      { href: '/elevage/registre-entree-sortie', label: 'Entrée - Sortie',  icon: '📂', pro: true },
       { href: '/mes-annonces',                   label: 'Mes Annonces',       icon: '📋' },
       { href: '/annonces/creer',                 label: 'Nouvelle annonce',   icon: '➕' },
       { href: '/abonnement',                     label: 'Mon abonnement',     icon: '⭐' },
@@ -230,7 +230,7 @@ const MENU_ASSOCIATION = [
       { href: '/association/annonces',                   label: 'Mes Annonces',          icon: '📣' },
       { href: '/association/certificat-engagement',      label: 'Certificats',           icon: '📋' },
       { href: '/association/registre-sanitaire',         label: 'Suivi sanitaire',       icon: '🏥' },
-      { href: '/association/registre-entree-sortie',     label: 'Entrées / Sorties',     icon: '↔️' },
+      { href: '/association/registre-entree-sortie',     label: 'Entrée - Sortie',     icon: '↔️' },
     ],
   },
   {
