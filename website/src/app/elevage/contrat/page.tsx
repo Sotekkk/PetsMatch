@@ -8,6 +8,8 @@ import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebas
 import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
+import { supabase } from '@/lib/supabase';
+import { generateContratVente } from '@/lib/contrat-vente';
 
 interface Contrat {
   id: string;
@@ -155,6 +157,19 @@ export default function ContratsPage() {
 
   const isCls = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white';
 
+  async function openContratVente(u: typeof user) {
+    if (!u) return;
+    const { data: profil } = await supabase.from('users').select('firstname, lastname, name_elevage, is_elevage, adress_elevage, adress, rue, ville, code_postal, siret, numero_elevage, code_iso_elevage, phone_number, code_iso, email').eq('uid', u.uid).maybeSingle();
+    const nom = profil?.is_elevage ? (profil.name_elevage || `${profil.firstname ?? ''} ${profil.lastname ?? ''}`.trim()) : `${profil?.firstname ?? ''} ${profil?.lastname ?? ''}`.trim();
+    const adresse = profil?.is_elevage ? (profil.adress_elevage || [profil.rue, profil.code_postal, profil.ville].filter(Boolean).join(', ')) : (profil?.adress || [profil?.rue, profil?.code_postal, profil?.ville].filter(Boolean).join(', '));
+    const tel = profil?.is_elevage ? `${profil.code_iso_elevage ?? '+33'} ${profil.numero_elevage ?? ''}`.trim() : `${profil?.code_iso ?? '+33'} ${profil?.phone_number ?? ''}`.trim();
+    const html = generateContratVente({ nom, adresse, tel, siret: profil?.siret ?? '', email: profil?.email ?? '' });
+    const win = window.open('', '_blank');
+    if (!win) { alert('Autorisez les popups'); return; }
+    win.document.write(html);
+    win.document.close();
+  }
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
       {/* Header */}
@@ -185,16 +200,25 @@ export default function ContratsPage() {
               <div className="text-2xl">{m.icon}</div>
               <p className="text-sm font-semibold text-[#1F2A2E]">{m.title}</p>
               <p className="text-xs text-gray-500 leading-relaxed">{m.desc}</p>
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="mt-2 text-xs font-semibold text-[#0C5C6C] hover:underline">
-                ⬆️ Importer votre modèle
-              </button>
+              <div className="flex gap-2 mt-2">
+                {m.type === 'vente' && (
+                  <button
+                    onClick={() => openContratVente(user)}
+                    className="text-xs font-semibold text-[#6E9E57] hover:underline">
+                    🖨️ Générer
+                  </button>
+                )}
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  className="text-xs font-semibold text-[#0C5C6C] hover:underline">
+                  ⬆️ Importer
+                </button>
+              </div>
             </div>
           ))}
         </div>
         <p className="text-xs text-gray-400 mt-2">
-          Importez vos propres modèles PDF ou images. La génération automatique de contrats pré-remplis sera disponible prochainement.
+          Importez vos propres modèles PDF ou images, ou générez un contrat de vente pré-rempli avec vos informations.
         </p>
       </div>
 

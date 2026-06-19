@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { uploadDocument } from '@/lib/upload-media';
+import { generateContratHTML as generateContratHTMLLib } from '@/lib/contrat-vente';
 
 interface Animal {
   id: string;
@@ -154,111 +155,10 @@ function generateCertificatHTML(animal: Animal, data: CessionData, eleveur: Elev
 </body></html>`;
 }
 
+
 function generateContratHTML(animal: Animal, data: CessionData, eleveur: EleveurInfo): string {
-  const today = new Date().toLocaleDateString('fr-FR');
-  const espece = animal.espece ? (animal.espece.charAt(0).toUpperCase() + animal.espece.slice(1)) : '—';
-  return `<!DOCTYPE html>
-<html lang="fr"><head><meta charset="UTF-8"><title>Contrat de vente</title>
-<style>
-  body{font-family:Arial,sans-serif;font-size:12px;margin:40px;color:#222}
-  h1{font-size:20px;text-align:center;margin-bottom:4px;color:#0C5C6C}
-  .sub{text-align:center;font-size:11px;color:#666;margin-bottom:28px}
-  .section{margin-bottom:18px}
-  .section-title{font-size:13px;font-weight:bold;color:#0C5C6C;border-bottom:1px solid #0C5C6C;padding-bottom:3px;margin-bottom:8px}
-  .row{display:flex;gap:24px;margin-bottom:6px}
-  .field{flex:1}
-  .label{font-size:10px;color:#666;margin-bottom:2px}
-  .value{font-size:12px;font-weight:600}
-  .article{margin-bottom:14px}
-  .art-title{font-size:11px;font-weight:bold;margin-bottom:4px}
-  .art-body{font-size:11px;line-height:1.6;color:#444}
-  .sign-row{display:flex;gap:48px;margin-top:40px}
-  .sign-block{flex:1}
-  .sign-line{border-bottom:1px solid #888;margin-top:40px;margin-bottom:4px}
-  .foot{margin-top:32px;font-size:9px;color:#aaa;text-align:center}
-  @media print{body{margin:20px}}
-</style></head><body>
-<h1>Contrat de vente d'animal</h1>
-<p class="sub">Entre les soussignés — Établi le ${fmtDate(data.dateCession)}</p>
-
-<div class="section">
-  <div class="section-title">Parties</div>
-  <div class="row">
-    <div class="field">
-      <div class="label">Vendeur</div>
-      <div class="value">${eleveur.nom}</div>
-      <div style="font-size:11px;color:#555">${eleveur.adresse ?? ''} · ${eleveur.email ?? ''} · ${eleveur.tel ?? ''}</div>
-      ${eleveur.siret ? `<div style="font-size:11px;color:#555">SIRET : ${eleveur.siret}</div>` : ''}
-    </div>
-    <div class="field">
-      <div class="label">Acheteur</div>
-      <div class="value">${data.nom || '—'} (${QUALITES.find(q => q.value === data.qualite)?.label ?? data.qualite})</div>
-      <div style="font-size:11px;color:#555">${data.adresse || ''} · ${data.email || ''} · ${data.tel || ''}</div>
-    </div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title">Animal vendu</div>
-  <div class="row">
-    <div class="field"><div class="label">Nom</div><div class="value">${animal.nom ?? '—'}</div></div>
-    <div class="field"><div class="label">Espèce / Race</div><div class="value">${espece} — ${animal.race ?? '—'}</div></div>
-    <div class="field"><div class="label">Sexe</div><div class="value">${animal.sexe ?? '—'}</div></div>
-  </div>
-  <div class="row">
-    <div class="field"><div class="label">Date de naissance</div><div class="value">${fmtDate(animal.date_naissance)}</div></div>
-    <div class="field"><div class="label">N° identification</div><div class="value">${animal.identification ?? '—'}</div></div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title">Conditions</div>
-  <div class="row">
-    <div class="field"><div class="label">Date de vente</div><div class="value">${fmtDate(data.dateCession)}</div></div>
-    <div class="field"><div class="label">Prix de vente TTC</div><div class="value">${data.prix ? data.prix + ' €' : '—'}</div></div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title">Clauses</div>
-  <div class="article">
-    <div class="art-title">Article 1 — Garanties légales</div>
-    <div class="art-body">Conformément aux articles L.217-1 et suivants du Code de la consommation, l'animal vendu est garanti contre les vices cachés pendant 30 jours à compter de la livraison. Le vendeur déclare l'animal en bonne santé à sa connaissance au jour de la vente.</div>
-  </div>
-  <div class="article">
-    <div class="art-title">Article 2 — État de santé</div>
-    <div class="art-body">L'acheteur déclare avoir pris connaissance du carnet de santé de l'animal et accepte l'animal dans l'état dans lequel il se trouve. L'animal a bénéficié des vaccinations et traitements prophylactiques appropriés à son âge.</div>
-  </div>
-  <div class="article">
-    <div class="art-title">Article 3 — Transfert de propriété</div>
-    <div class="art-body">Le transfert de propriété s'effectue à la date de remise de l'animal contre paiement du prix convenu. L'acheteur s'engage à déclarer le changement de propriétaire auprès de l'organisme d'identification compétent dans les délais légaux.</div>
-  </div>
-  <div class="article">
-    <div class="art-title">Article 4 — Bien-être animal</div>
-    <div class="art-body">L'acheteur s'engage à assurer les soins nécessaires à l'animal, à lui procurer des conditions de vie adaptées à son espèce et sa race, et à respecter la législation en vigueur relative à la détention d'animaux de compagnie.</div>
-  </div>
-  ${data.notes ? `<div class="article"><div class="art-title">Conditions particulières</div><div class="art-body">${data.notes}</div></div>` : ''}
-</div>
-
-<div class="sign-row">
-  <div class="sign-block">
-    <div style="font-size:11px;font-weight:bold">Vendeur — Lu et approuvé</div>
-    <div style="font-size:10px;color:#666;margin-bottom:2px">${eleveur.nom}</div>
-    <div class="sign-line"></div>
-    <div style="font-size:9px;color:#aaa">Date et signature</div>
-  </div>
-  <div class="sign-block">
-    <div style="font-size:11px;font-weight:bold">Acheteur — Lu et approuvé</div>
-    <div style="font-size:10px;color:#666;margin-bottom:2px">${data.nom || '...'}</div>
-    <div class="sign-line"></div>
-    <div style="font-size:9px;color:#aaa">Date et signature</div>
-  </div>
-</div>
-
-<p class="foot">Contrat établi en deux exemplaires originaux · ${today} · PetsMatch</p>
-</body></html>`;
+  return generateContratHTMLLib(animal, data, eleveur);
 }
-
 function openPrint(html: string) {
   const win = window.open('', '_blank');
   if (!win) { alert('Autorisez les popups pour imprimer'); return; }
