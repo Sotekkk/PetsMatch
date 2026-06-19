@@ -271,11 +271,16 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
   const [step, setStep] = useState<'acquéreur' | 'details' | 'documents'>('acquéreur');
 
   // Acquéreur
-  const [searchEmail, setSearchEmail]   = useState('');
+  const [searchQuery, setSearchQuery]   = useState('');
   const [searchResult, setSearchResult] = useState<{ uid: string; nom: string; photo?: string } | null>(null);
+  const [searchResults, setSearchResults] = useState<{ uid: string; nom: string; photo?: string }[]>([]);
   const [searchDone, setSearchDone]     = useState(false);
   const [searching, setSearching]       = useState(false);
   const [manual, setManual]             = useState(false);
+
+  // Autocomplétion adresse BAN
+  const [adressSuggestions, setAdressSuggestions] = useState<{ label: string; rue: string; ville: string; cp: string; pays: string }[]>([]);
+  const adressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Détails
   const [qualite, setQualite]       = useState('particulier');
@@ -298,26 +303,88 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
+  function fillFromUser(data: Record<string, unknown>) {
+    const isElv = data.is_elevage === true;
+    const n = isElv
+      ? ((data.name_elevage as string) || `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim())
+      : `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim();
+    const phone = isElv
+      ? `${data.code_iso_elevage ?? data.code_iso ?? '+33'} ${data.numero_elevage ?? ''}`.trim()
+      : `${data.code_iso ?? '+33'} ${data.phone_number ?? ''}`.trim();
+    const addr = isElv
+      ? ((data.adress_elevage as string) || [data.rue_elevage, data.code_postal_elevage, data.ville_elevage, data.pays_elevage].filter(Boolean).join(', '))
+      : ((data.adress as string) || [data.rue, data.code_postal, data.ville, data.pays].filter(Boolean).join(', '));
+    setNom(n || 'Utilisateur PetsMatch');
+    setEmail((data.email as string) ?? '');
+    setTel(phone.replace(/^\+33\s*$/, ''));
+    setAdresse(addr || '');
+    if (isElv) setQualite('eleveur');
+  }
+
   async function searchUser() {
-    if (!searchEmail.trim()) return;
+    const q = searchQuery.trim();
+    if (!q) return;
     setSearching(true);
     setSearchDone(false);
     setSearchResult(null);
-    const { data } = await supabase
-      .from('users')
-      .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url')
-      .eq('email', searchEmail.trim().toLowerCase())
-      .maybeSingle();
-    if (data) {
-      const n = data.is_elevage
-        ? (data.name_elevage ?? `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim())
-        : `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim();
-      setSearchResult({ uid: data.uid, nom: n || 'Utilisateur PetsMatch', photo: data.profile_picture_url });
-      setNom(n);
-      setEmail(searchEmail.trim());
+    setSearchResults([]);
+    const FIELDS = 'uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, email, phone_number, code_iso, rue, ville, code_postal, pays, adress, numero_elevage, code_iso_elevage, rue_elevage, ville_elevage, code_postal_elevage, pays_elevage, adress_elevage';
+    const isEmail = q.includes('@');
+    let rows: Record<string, unknown>[] = [];
+    if (isEmail) {
+      const { data } = await supabase.from('users').select(FIELDS).eq('email', q.toLowerCase()).maybeSingle();
+      if (data) rows = [data];
+    } else {
+      const { data } = await supabase.from('users').select(FIELDS)
+        .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,name_elevage.ilike.%${q}%`)
+        .limit(6);
+      rows = (data as Record<string, unknown>[]) ?? [];
+    }
+    if (rows.length === 1) {
+      const d = rows[0];
+      const n = (d.is_elevage ? (d.name_elevage as string) : '') || `${d.firstname ?? ''} ${d.lastname ?? ''}`.trim();
+      setSearchResult({ uid: d.uid as string, nom: n || 'Utilisateur PetsMatch', photo: d.profile_picture_url as string });
+      fillFromUser(d);
+    } else if (rows.length > 1) {
+      setSearchResults(rows.map(d => {
+        const n = (d.is_elevage ? (d.name_elevage as string) : '') || `${d.firstname ?? ''} ${d.lastname ?? ''}`.trim();
+        return { uid: d.uid as string, nom: n || 'Utilisateur PetsMatch', photo: d.profile_picture_url as string, _raw: d };
+      }) as { uid: string; nom: string; photo?: string }[]);
     }
     setSearchDone(true);
     setSearching(false);
+  }
+
+  function selectFromList(item: { uid: string; nom: string; photo?: string; _raw?: Record<string, unknown> }) {
+    setSearchResult({ uid: item.uid, nom: item.nom, photo: item.photo });
+    setSearchResults([]);
+    if (item._raw) fillFromUser(item._raw);
+  }
+
+  async function fetchAdressSuggestions(val: string) {
+    if (val.length < 3) { setAdressSuggestions([]); return; }
+    try {
+      const res = await fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(val)}&limit=5`);
+      const json = await res.json();
+      setAdressSuggestions((json.features ?? []).map((f: { properties: { label: string; housenumber?: string; street?: string; city?: string; postcode?: string; country?: string } }) => ({
+        label: f.properties.label,
+        rue: [f.properties.housenumber, f.properties.street].filter(Boolean).join(' '),
+        ville: f.properties.city ?? '',
+        cp: f.properties.postcode ?? '',
+        pays: 'France',
+      })));
+    } catch { setAdressSuggestions([]); }
+  }
+
+  function onAdresseChange(val: string) {
+    setAdresse(val);
+    if (adressTimer.current) clearTimeout(adressTimer.current);
+    adressTimer.current = setTimeout(() => fetchAdressSuggestions(val), 300);
+  }
+
+  function pickAdresse(s: { label: string; rue: string; ville: string; cp: string; pays: string }) {
+    setAdresse(s.label);
+    setAdressSuggestions([]);
   }
 
   async function uploadDoc(file: File, type: 'contrat' | 'certificat') {
@@ -401,8 +468,8 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
                 <label className="block text-xs font-semibold text-gray-500 mb-2">Rechercher un utilisateur PetsMatch</label>
                 <div className="flex gap-2">
                   <input
-                    type="email" placeholder="Email de l'acquéreur"
-                    value={searchEmail} onChange={e => setSearchEmail(e.target.value)}
+                    type="text" placeholder="Nom ou email de l'acquéreur…"
+                    value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') searchUser(); }}
                     className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]"
                   />
@@ -413,7 +480,21 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
                 </div>
               </div>
 
-              {searchDone && (
+              {searchDone && searchResults.length > 1 && (
+                <div className="rounded-xl border border-gray-200 overflow-hidden">
+                  {(searchResults as { uid: string; nom: string; photo?: string; _raw?: Record<string, unknown> }[]).map(r => (
+                    <button key={r.uid} onClick={() => selectFromList(r)}
+                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#0C5C6C]/5 border-b border-gray-100 last:border-0 transition-colors text-left">
+                      {r.photo
+                        ? <img src={r.photo} className="w-8 h-8 rounded-full object-cover flex-shrink-0" alt="" />
+                        : <div className="w-8 h-8 rounded-full bg-[#0C5C6C]/10 flex items-center justify-center text-sm flex-shrink-0">🐾</div>}
+                      <span className="text-sm font-semibold text-[#1F2A2E]">{r.nom}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {searchDone && searchResults.length === 0 && (
                 <div className={`rounded-xl p-3 border ${searchResult ? 'border-[#0C5C6C]/20 bg-[#0C5C6C]/5' : 'border-gray-200 bg-gray-50'}`}>
                   {searchResult ? (
                     <div className="flex items-center gap-3">
@@ -426,7 +507,7 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-500 text-center">Aucun utilisateur trouvé avec cet email.</p>
+                    <p className="text-sm text-gray-500 text-center">Aucun utilisateur trouvé.</p>
                   )}
                 </div>
               )}
@@ -507,10 +588,22 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
                 </div>
               </div>
 
-              <div>
+              <div className="relative">
                 <label className="block text-xs font-semibold text-gray-500 mb-1">Adresse</label>
-                <input type="text" placeholder="Adresse de l'acquéreur" value={adresse} onChange={e => setAdresse(e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                <input type="text" placeholder="Adresse de l'acquéreur" value={adresse}
+                  onChange={e => manual ? onAdresseChange(e.target.value) : setAdresse(e.target.value)}
+                  readOnly={!!searchResult && !manual}
+                  className={`w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] ${searchResult && !manual ? 'bg-gray-50' : ''}`} />
+                {manual && adressSuggestions.length > 0 && (
+                  <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                    {adressSuggestions.map((s, i) => (
+                      <button key={i} onClick={() => pickAdresse(s)}
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-[#0C5C6C]/5 border-b border-gray-100 last:border-0 transition-colors">
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>
