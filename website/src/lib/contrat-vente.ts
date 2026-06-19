@@ -415,3 +415,173 @@ ${hasSign ? `
 export function generateContratVente(eleveur: EleveurContrat): string {
   return generateContratHTML({}, {}, eleveur);
 }
+
+// ── Contrat de réservation ────────────────────────────────────────────────────
+
+export function generateContratReservationHTML(
+  animal: AnimalContrat,
+  data: DataContrat & { acompte?: string; tranche1?: string; nomPere?: string; nomMere?: string },
+  eleveur: EleveurContrat,
+  opts?: { animalId?: string; supabaseUrl?: string; supabaseKey?: string }
+): string {
+  const t = animalTerms(animal.espece);
+  const isMasculin = ['male','mâle','m'].includes((animal.sexe ?? '').toLowerCase());
+  const sterilDelaiM = 6; // mois stérilisation mâle
+  const sterilDelaiF = 8; // mois stérilisation femelle (selon template)
+  const jeune = t.jeune;
+  const today = new Date().toLocaleDateString('fr-FR');
+  const dn = animal.date_naissance ? new Date(animal.date_naissance).toLocaleDateString('fr-FR') : '';
+  const acqNom    = data.nom ?? '';
+  const prix      = data.prix ? `${parseFloat(data.prix).toLocaleString('fr-FR')} euros` : '';
+  const acompte   = data.acompte ? `${parseFloat(data.acompte).toLocaleString('fr-FR')} euros` : '';
+  const tranche1  = data.tranche1 ? `${parseFloat(data.tranche1).toLocaleString('fr-FR')} euros` : '';
+  const animalId  = opts?.animalId ?? '';
+  const sbUrl     = opts?.supabaseUrl ?? '';
+  const sbKey     = opts?.supabaseKey ?? '';
+  const hasSign   = !!animalId;
+
+  return `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><title>Contrat de réservation — ${animal.nom || jeune}</title>
+<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"><\/script>
+<style>${CSS}</style>
+<script>${buildScript(animalId, sbUrl, sbKey)}<\/script>
+</head><body>
+
+<div class="toolbar">
+  <span class="tip">✏️ Modifiez les champs soulignés · Signez dans le panneau en bas · Finalisez</span>
+  <button class="btn-outline" onclick="window.print()">🖨️ Imprimer</button>
+  ${hasSign ? `<button class="btn-green" onclick="finaliser()">✅ Finaliser et enregistrer</button>` : ''}
+  <button id="print-btn" class="btn-primary" onclick="imprimerFinalise()" style="display:none">🖨️ Imprimer le contrat signé</button>
+</div>
+
+<div class="page" style="margin-top:56px">
+
+<div id="sign-status" class="status-ok" style="display:none"></div>
+
+<h1>Contrat de réservation</h1>
+
+<div class="parties">
+<strong>ENTRE :</strong><br>
+${eleveur.nom}${eleveur.adresse ? `, demeurant ${eleveur.adresse}` : ''}${eleveur.siret ? `, SIRET ${eleveur.siret}` : ''}${eleveur.tel ? `, ${eleveur.tel}` : ''}<br>
+<em>Le Vendeur</em>
+</div>
+
+<div class="between">ET :</div>
+
+<div class="parties">
+<span class="cb" onclick="toggleCb(this)">☐</span> Monsieur &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> Madame<br>
+Nom : <span class="e wide" contenteditable="true" data-ph="Nom">${acqNom ? acqNom.split(' ').slice(-1)[0] : ''}</span> &nbsp;
+Prénom : <span class="e wide" contenteditable="true" data-ph="Prénom">${acqNom ? acqNom.split(' ').slice(0,-1).join(' ') : ''}</span><br>
+Demeurant à : <span class="e full" contenteditable="true" data-ph="Adresse">${data.adresse ?? ''}</span>
+Ville, code postal : <span class="e wide" contenteditable="true" data-ph="Ville, code postal"></span><br>
+Téléphone : <span class="e wide" contenteditable="true" data-ph="Téléphone">${data.tel ?? ''}</span> &nbsp;
+Mail : <span class="e wide" contenteditable="true" data-ph="Email">${data.email ?? ''}</span>
+</div>
+
+<p class="between" style="font-style:italic">Désignés séparément comme la « Partie »<br>et collectivement comme les « Parties »</p>
+<p class="between">Il a été convenu ce qui suit :</p>
+
+<div class="article">
+<div class="art-title">Article 1 – Objet du contrat</div>
+<div class="block">
+Le Futur Acheteur réserve auprès du Vendeur, pour en devenir le futur propriétaire, le ${jeune} désigné :<br>
+Nom : <span class="e wide" contenteditable="true" data-ph="Nom de l'animal">${animal.nom ?? ''}</span><br>
+Né le : <span class="e wide" contenteditable="true" data-ph="Date de naissance">${dn}</span><br>
+Père : <span class="e full" contenteditable="true" data-ph="Nom du père">${data.nomPere ?? ''}</span>
+Mère : <span class="e full" contenteditable="true" data-ph="Nom de la mère">${data.nomMere ?? ''}</span>
+${animal.identification ? `Puce / Tatouage : <span class="e wide" contenteditable="true">${animal.identification}</span><br>` : ''}
+${animal.race ? `Race : <span class="e wide" contenteditable="true">${animal.race}</span><br>` : ''}
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 2 – Réservation</div>
+<div class="block">
+Le présent contrat de réservation devient valide une fois complété, signé et retourné au Vendeur et accompagné du règlement de l'acompte à hauteur de <span class="e wide" contenteditable="true" data-ph="montant acompte">${acompte}</span>, qui viendra en déduction du prix final.
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 3 – Paiement</div>
+<div class="block">
+L'acompte sera versé par le Futur Acheteur par <span class="cb" onclick="toggleCb(this)">☐</span> VIREMENT ou <span class="cb" onclick="toggleCb(this)">☐</span> ESPÈCES.<br>
+Le solde du paiement total du ${jeune} sera réceptionné comme décrit à l'article 6.
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 4 – Annulation</div>
+<div class="block">
+En cas d'annulation du contrat de réservation par le Futur Acheteur avant la signature du contrat de vente final, l'acompte ne sera en aucun cas restitué.<br><br>
+${eleveur.nom} peut se prévaloir de mettre fin à une réservation dans un ou plusieurs des cas suivants : (i) problème de santé du ${jeune} découvert après le jour de la réservation, (ii) décès du ${jeune}, (iii) découverte d'une difficulté liée aux futures conditions d'accueil du ${jeune} qui pourrait mettre en péril sa santé ou son équilibre.<br><br>
+Dans ces cas-là, ${eleveur.nom} procèdera, au choix du Futur Acheteur, soit au remboursement total de l'acompte, soit proposera un autre ${jeune} suivant disponibilité.
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 4bis – Information</div>
+<div class="block">
+${eleveur.nom} s'engage à donner au Futur Acheteur des nouvelles régulières du ${jeune} tout au long du sevrage.
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 5 – Contrat de vente</div>
+<div class="block">
+Le Vendeur et le Futur Acheteur finaliseront la vente par la signature du contrat définitif de vente de l'animal, au maximum à ses <span class="e" contenteditable="true" data-ph="10">10</span> semaines sans quoi des frais de gardiennage seront facturés et la vente pourra être annulée au-delà des <span class="e" contenteditable="true" data-ph="12">12</span> semaines du ${jeune} si celui-ci n'a pas été récupéré par sa famille. Dans ce cas, aucun acompte ne sera restitué.
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 6 – Prix – Stérilisation</div>
+<div class="block">
+Le prix du ${jeune} est fixé à <span class="e wide" contenteditable="true" data-ph="prix total">${prix}</span>. Le prix est décomposé comme suit :<br><br>
+— Acompte : <span class="e wide" contenteditable="true" data-ph="montant acompte">${acompte}</span><br>
+— Tranche 1 (payable au départ effectif du ${jeune}) : <span class="e wide" contenteditable="true" data-ph="montant tranche 1">${tranche1}</span><br>
+— Tranche 2 (payable au terme du délai de stérilisation
+[<span class="e" contenteditable="true">${isMasculin ? sterilDelaiM : sterilDelaiF}</span> mois à compter de la date de naissance pour un ${jeune} ${isMasculin ? 'mâle' : 'femelle'}] en cas de non-présentation du certificat de stérilisation par un vétérinaire agréé) : <span class="e wide" contenteditable="true" data-ph="montant tranche 2">2.000 euros</span><br><br>
+La Tranche 2 n'est pas due par l'Acheteur si la stérilisation a été effectuée par le Vendeur avant la livraison effective de l'animal.
+</div>
+</div>
+
+<div class="article">
+<div class="block" style="font-size:10px;color:#555;margin-top:16px;border-top:1px solid #eee;padding-top:12px">
+Les signataires conviennent expressément de signer électroniquement le présent acte par le biais du service <strong>PetsMatch Signature</strong>, conformément aux termes des articles 1316-4, 1366, 1367 et 1375 du Code civil, les signataires s'accordant pour reconnaître à cette signature électronique la même valeur que celle de sa signature manuscrite.
+</div>
+</div>
+
+<div class="sign-section">
+  <div class="block" style="text-align:right;margin-bottom:8px">
+    Le <span class="e" contenteditable="true" data-ph="date">${today}</span>
+  </div>
+  <div class="copy-banner">📄 Contrat établi en DEUX exemplaires originaux — un pour chaque partie</div>
+  <div class="sign-row">
+    ${signBlock('vendeur', eleveur.nom)}
+    ${signBlock('acheteur', acqNom || 'L\'Acheteur')}
+  </div>
+</div>
+
+<p class="foot">Document établi en deux exemplaires originaux · ${today} · PetsMatch</p>
+</div>
+
+${hasSign ? `
+<div class="sig-panel">
+  <div class="sig-pad">
+    <div class="sig-pad-label">✍️ Vendeur — ${eleveur.nom}</div>
+    <canvas id="sigVendeur" class="sig-canvas" width="220" height="80"></canvas>
+    <button class="sig-clear" onclick="clearSig(0)">✕ Effacer</button>
+  </div>
+  <div class="sig-pad">
+    <div class="sig-pad-label">✍️ Acheteur — ${acqNom || '…'}</div>
+    <canvas id="sigAcheteur" class="sig-canvas" width="220" height="80"></canvas>
+    <button class="sig-clear" onclick="clearSig(1)">✕ Effacer</button>
+  </div>
+  <div style="text-align:center">
+    <button class="btn-green" onclick="finaliser()">✅ Finaliser et enregistrer</button>
+    <div style="font-size:9px;color:#888;margin-top:4px">Signatures intégrées au document et sauvegardées</div>
+  </div>
+</div>
+` : ''}
+
+</body></html>`;
+}

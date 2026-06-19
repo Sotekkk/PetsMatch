@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
-import { generateContratHTML, generateContratVente } from '@/lib/contrat-vente';
+import { generateContratHTML, generateContratVente, generateContratReservationHTML } from '@/lib/contrat-vente';
 
 interface DocAnimal {
   id: string;
@@ -134,21 +134,19 @@ export default function ContratsPage() {
   async function openAndSign() {
     if (!selectedAnimal || !user) return;
     const elv = eleveurInfo();
-    const data = {
-      eleveur: elv,
-      acquereur: { nom: `${acqPrenom} ${acqNom}`.trim(), adresse: acqAdresse, email: acqEmail, tel: acqTel },
-      prix: parseFloat(prix) || 0,
-      dateCession: dateDoc ? new Date(dateDoc) : new Date(),
-      notes,
-    };
-    const html = generateContratHTML(selectedAnimal, data, { nom: elv.nom, adresse: elv.adresse, email: elv.email, siret: elv.siret, tel: elv.tel },
-      { animalId: selectedAnimal.id, supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!, supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! }
-    );
+    const acqNomFull = `${acqPrenom} ${acqNom}`.trim();
+    const opts = { animalId: selectedAnimal.id, supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!, supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! };
+    const dataContrat = { nom: acqNomFull, adresse: acqAdresse, email: acqEmail, tel: acqTel, prix, dateCession: dateDoc, notes };
+    const elvInfo = { nom: elv.nom, adresse: elv.adresse, email: elv.email, siret: elv.siret, tel: elv.tel };
+
+    const html = formType === 'contrat_reservation'
+      ? generateContratReservationHTML(selectedAnimal, dataContrat, elvInfo, opts)
+      : generateContratHTML(selectedAnimal, dataContrat, elvInfo, opts);
+
     const win = window.open('', '_blank', 'width=900,height=700');
     if (!win) { alert('Autorisez les popups'); return; }
     popupRef.current = win;
     win.document.write(html); win.document.close();
-    // Sauvegarder le doc en brouillon dans documents_animaux
     await saveDraft();
   }
 
