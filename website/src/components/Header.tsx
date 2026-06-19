@@ -94,7 +94,7 @@ const MENU_ELEVEUR = [
     icon: '🐾',
     items: [
       { href: '/mes-animaux',                    label: 'Mes Animaux',        icon: '🐾' },
-      { href: '/elevage/agenda',                 label: 'Agenda du jour',     icon: '🗓️' },
+      { href: '/elevage/agenda',                 label: 'Agenda',     icon: '🗓️' },
       { href: '/elevage/planning',               label: 'Protocoles',         icon: '📅' },
       { href: '/elevage/registre-sanitaire',     label: 'Suivi sanitaire',    icon: '🏥', pro: true },
       { href: '/elevage/inventaire',              label: 'Inventaire',         icon: '📦' },

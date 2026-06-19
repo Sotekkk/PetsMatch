@@ -223,7 +223,7 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
-                        label: 'Mon Agenda',
+                        label: 'Agenda',
                         icon: Icons.calendar_month_outlined,
                         onTap: () {
                           Navigator.pop(context);
