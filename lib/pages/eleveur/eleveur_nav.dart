@@ -262,6 +262,16 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
+                        label: 'Inventaire',
+                        icon: Icons.inventory_2_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const InventairePage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
                         label: 'Facturation',
                         icon: Icons.receipt_long_outlined,
                         onTap: () {
@@ -334,16 +344,6 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => const EmployesPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Inventaire',
-                        icon: Icons.inventory_2_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const InventairePage(),
                           ));
                         },
                       ),
