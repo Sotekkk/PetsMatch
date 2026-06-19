@@ -623,7 +623,7 @@ class PlanningService {
       'cheptel'  => 'Tout le cheptel$e',
       'males'    => 'Mâles$e',
       'femelles' => 'Femelles$e',
-      _          => 'Routine',
+      _          => 'Protocole',
     };
   }
 

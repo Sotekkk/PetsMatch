@@ -563,7 +563,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployesPage()))),
         _QuickTile(
             icon: Icons.event_note_outlined,
-            label: 'Routines',
+            label: 'Protocoles',
             color: _planCode == 'premium' ? const Color(0xFFD97706) : Colors.grey,
             isLocked: _planCode != 'premium',
             onTap: () => Navigator.push(context, MaterialPageRoute(

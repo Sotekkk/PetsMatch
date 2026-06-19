@@ -488,7 +488,7 @@ class _AgendaPageState extends State<AgendaPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Supprimer la routine du jour ?',
+        title: const Text('Supprimer le protocole du jour ?',
           style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         content: Text(label, style: const TextStyle(fontFamily: 'Galey')),
         actions: [
@@ -2022,14 +2022,14 @@ class _AgendaProtoSheetState extends State<_AgendaProtoSheet> {
               if (widget.onDelete != null)
                 IconButton(
                   icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
-                  tooltip: 'Supprimer cette routine',
+                  tooltip: 'Supprimer ce protocole',
                   padding: EdgeInsets.zero,
                   visualDensity: VisualDensity.compact,
                   onPressed: () async {
                     final confirmed = await showDialog<bool>(
                       context: context,
                       builder: (_) => AlertDialog(
-                        title: const Text('Supprimer la routine ?',
+                        title: const Text('Supprimer le protocole ?',
                           style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
                         content: Text(widget.label,
                           style: const TextStyle(fontFamily: 'Galey')),

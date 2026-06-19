@@ -852,7 +852,7 @@ class _UserElevageFeedState extends State<UserElevageFeed>
             icon: Icons.event_note_outlined,
             color: isPremium ? const Color(0xFFFEF3C7) : const Color(0xFFF3F4F6),
             iconColor: isPremium ? const Color(0xFFD97706) : const Color(0xFF9CA3AF),
-            title: 'Routines${isPremium ? '' : ' 👑'}',
+            title: 'Protocoles${isPremium ? '' : ' 👑'}',
             subtitle: isPremium ? 'Protocoles, planning quotidien' : 'Réservé aux abonnements Premium',
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
                 isPremium ? const PlanningMoisPage() : const AbonnementPage())),
