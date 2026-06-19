@@ -206,6 +206,9 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
   const [error, setError]             = useState('');
   const [contratSigne, setContratSigne] = useState(false);
 
+  // Contrat existant dans documents_animaux (auto-attach DOC05)
+  const [existingContrat, setExistingContrat] = useState<{ type: string; statut: string; url: string } | null>(null);
+
   // Écoute le contrat signé depuis la popup
   useEffect(() => {
     const handler = (e: MessageEvent) => {
@@ -216,6 +219,18 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, []);
+
+  // Chargement du contrat existant lié à l'animal (DOC05)
+  useEffect(() => {
+    supabase.from('documents_animaux')
+      .select('type, statut, url')
+      .eq('animal_id', animal.id)
+      .in('type', ['contrat_vente', 'contrat_reservation'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => { if (data) setExistingContrat(data as { type: string; statut: string; url: string }); });
+  }, [animal.id]);
 
   function fillFromUser(data: Record<string, unknown>) {
     const isElv = data.is_elevage === true;
@@ -323,6 +338,9 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
     setSaving(true);
     setError('');
     try {
+      // Auto-attach contrat existant si aucun n'a été uploadé manuellement (DOC05)
+      const finalContratUrl = contratUrl || existingContrat?.url || null;
+
       await supabase.from('animaux').update({
         statut:                 'sorti',
         date_sortie:            dateCession,
@@ -330,7 +348,7 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
         destinataire_nom:       nom.trim(),
         destinataire_adresse:   adresse.trim() || null,
         uid_acquereur:          searchResult?.uid ?? null,
-        cession_contrat_url:    contratUrl || null,
+        cession_contrat_url:    finalContratUrl,
         cession_certificat_url: certificatUrl || null,
         cession_prix:           prix ? parseFloat(prix) : null,
         cession_notes:          notes.trim() || null,
@@ -543,6 +561,20 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
           {step === 'documents' && (
             <>
               <p className="text-xs text-gray-500">Générez les documents et/ou uploadez les versions signées.</p>
+
+              {/* Bannière contrat existant auto-attaché (DOC05) */}
+              {existingContrat && !contratUrl && (
+                <div className="flex items-start gap-2 bg-green-50 border border-green-200 rounded-xl p-3">
+                  <span className="text-green-600 mt-0.5">✅</span>
+                  <div>
+                    <p className="text-xs font-bold text-green-800">Contrat existant détecté</p>
+                    <p className="text-xs text-green-700">
+                      {existingContrat.type === 'contrat_reservation' ? 'Contrat de réservation' : 'Contrat de vente'}
+                      {' '}({existingContrat.statut === 'signe' ? 'signé ✓' : 'brouillon'}) — sera automatiquement attaché à cette cession.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Certificat de cession */}
               <div className="border border-gray-200 rounded-xl p-4 space-y-3">

@@ -58,6 +58,9 @@ class _CessionSheetState extends State<CessionSheet> {
   bool _uploadingContrat    = false;
   bool _uploadingCertificat = false;
 
+  // Contrat existant dans documents_animaux (auto-attach DOC05)
+  Map<String, dynamic>? _existingContrat;
+
   bool _saving = false;
   bool _generatingPdf = false;
   String? _error;
@@ -66,6 +69,23 @@ class _CessionSheetState extends State<CessionSheet> {
   void initState() {
     super.initState();
     _dateCession = DateTime.now();
+    _loadExistingContrat();
+  }
+
+  Future<void> _loadExistingContrat() async {
+    final animalId = widget.animal['id'] as String?;
+    if (animalId == null) return;
+    final res = await _supa
+        .from('documents_animaux')
+        .select('id, type, titre, url, statut, created_at')
+        .eq('animal_id', animalId)
+        .inFilter('type', ['contrat_vente', 'contrat_reservation'])
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    if (res != null && mounted) {
+      setState(() => _existingContrat = Map<String, dynamic>.from(res));
+    }
   }
 
   @override
@@ -192,6 +212,9 @@ class _CessionSheetState extends State<CessionSheet> {
     }
     setState(() { _saving = true; _error = null; });
     try {
+      // Auto-attach contrat existant si aucun n'a été uploadé manuellement (DOC05)
+      final contratUrl = _contratUrl ?? _existingContrat?['url'] as String?;
+
       // 1. Créer l'enregistrement de cession (sans transférer la fiche)
       final row = await _supa.from('cessions').insert({
         'animal_id':          widget.animal['id'],
@@ -206,7 +229,7 @@ class _CessionSheetState extends State<CessionSheet> {
         'notes':              _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         'date_cession':       _dateCession.toIso8601String().split('T').first,
         'statut':             'en_attente_acquereur',
-        'contrat_url':        _contratUrl,
+        'contrat_url':        contratUrl,
         'certificat_url':     _certificatUrl,
       }).select('token').single();
 
@@ -222,7 +245,7 @@ class _CessionSheetState extends State<CessionSheet> {
         'destinataire_adresse': _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),
         'cession_prix':         _prixCtrl.text.isEmpty ? null : double.tryParse(_prixCtrl.text.replaceAll(',', '.')),
         'cession_notes':        _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-        'cession_contrat_url':  _contratUrl,
+        'cession_contrat_url':  contratUrl,
         'cession_certificat_url': _certificatUrl,
       }).eq('id', widget.animal['id']);
 
@@ -481,6 +504,30 @@ class _CessionSheetState extends State<CessionSheet> {
 
           // ── Étape 2 : Documents ──────────────────────────────
           if (_step == 2) ...[
+            // Bannière contrat existant auto-attaché (DOC05)
+            if (_existingContrat != null && _contratUrl == null) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFECFDF5),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF6EE7B7)),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.check_circle_outline, color: Color(0xFF059669), size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('Contrat existant détecté',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF065F46))),
+                    Text(
+                      '${_existingContrat!['type'] == 'contrat_reservation' ? 'Contrat de réservation' : 'Contrat de vente'} — ${_existingContrat!['statut'] == 'signe' ? 'signé ✓' : 'brouillon'} — sera attaché à cette cession.',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF065F46)),
+                    ),
+                  ])),
+                ]),
+              ),
+              const SizedBox(height: 12),
+            ],
             // Bouton générer contrat PDF
             OutlinedButton.icon(
               onPressed: _generatingPdf ? null : _genererPdf,
