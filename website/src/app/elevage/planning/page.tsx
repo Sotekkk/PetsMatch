@@ -67,15 +67,21 @@ interface TacheGroupe {
 // ── Constantes ────────────────────────────────────────────────────────────────
 
 const TYPE_LABELS: Record<string, string> = {
-  sanitaire: 'Sanitaire', nettoyage: 'Nettoyage',
-  promenade: 'Promenade', socialisation: 'Socialisation',
+  sanitaire:    'Sanitaire',
+  nettoyage:    'Désinfection',
+  promenade:    'Promenade / Socialisation',
+  socialisation:'Promenade / Socialisation',
+  alimentaire:  'Alimentaire',
+  toilettage:   'Toilettage',
 };
 
 const TYPE_COLORS: Record<string, string> = {
-  sanitaire: 'bg-green-100 text-green-700',
-  nettoyage: 'bg-teal-100 text-teal-700',
-  promenade: 'bg-purple-100 text-purple-700',
-  socialisation: 'bg-orange-100 text-orange-700',
+  sanitaire:   'bg-green-100 text-green-700',
+  nettoyage:   'bg-teal-100 text-teal-700',
+  promenade:   'bg-purple-100 text-purple-700',
+  socialisation:'bg-purple-100 text-purple-700',
+  alimentaire: 'bg-yellow-100 text-yellow-700',
+  toilettage:  'bg-pink-100 text-pink-700',
 };
 
 const CIBLE_OPTIONS = [
@@ -101,9 +107,10 @@ const TYPES_ACTES = [
   { value: 'antiparasitaire', label: '🛡️ Antiparasitaire' },
   { value: 'traitement',      label: '🩺 Traitement' },
   { value: 'visite',          label: '🏥 Visite vétérinaire' },
-  { value: 'nettoyage',       label: '🧹 Nettoyage' },
-  { value: 'promenade',       label: '🦮 Promenade' },
-  { value: 'socialisation',   label: '🐾 Socialisation' },
+  { value: 'alimentaire',     label: '🍽️ Alimentaire' },
+  { value: 'toilettage',      label: '✂️ Toilettage' },
+  { value: 'nettoyage',       label: '🧴 Désinfection' },
+  { value: 'promenade',       label: '🦮 Promenade / Socialisation' },
   { value: 'autre',           label: '📋 Autre' },
 ];
 
@@ -123,8 +130,9 @@ const LIEUX_NETTOYAGE = [
 
 const ACTE_EMOJIS: Record<string, string> = {
   vermifuge: '💊', vaccination: '💉', antiparasitaire: '🛡️',
-  traitement: '🩺', visite: '🏥', nettoyage: '🧹',
-  promenade: '🦮', socialisation: '🐾', autre: '📋',
+  traitement: '🩺', visite: '🏥', alimentaire: '🍽️',
+  toilettage: '✂️', nettoyage: '🧴',
+  promenade: '🦮', socialisation: '🦮', autre: '📋',
 };
 
 const TRANCHES = [
@@ -462,9 +470,11 @@ const TYPE_DOT_COLORS: Record<string, string> = {
   ferrage:         '#795548',
   radiographie:    '#607D8B',
   chirurgie:       '#F44336',
+  alimentaire:     '#FF9800',
+  toilettage:      '#E91E63',
   nettoyage:       '#00BCD4',
   promenade:       '#673AB7',
-  socialisation:   '#FF5722',
+  socialisation:   '#673AB7',
   commande:        '#6E9E57',
 };
 
@@ -924,7 +934,7 @@ function TemplateFormModal({ existing, uid, onClose, onSaved }: {
             <div>
               <label className="block text-sm font-semibold text-teal-700 mb-2">Type de protocole</label>
               <div className="flex flex-wrap gap-2">
-                {Object.entries(TYPE_LABELS).map(([k, v]) => (
+                {Object.entries(TYPE_LABELS).filter(([k]) => k !== 'socialisation').map(([k, v]) => (
                   <button key={k} onClick={() => setType(k)}
                     className={`px-3 py-1.5 rounded-xl text-sm font-semibold transition-colors ${type === k ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                     {v}
@@ -936,8 +946,8 @@ function TemplateFormModal({ existing, uid, onClose, onSaved }: {
 
           {type === 'nettoyage' && (
             <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-              <label className="block text-sm font-bold text-teal-700">Lieu à nettoyer</label>
-              <p className="text-xs text-green-700 bg-green-50 p-2 rounded-lg">Indiquez le lieu concerné par ce protocole de nettoyage.</p>
+              <label className="block text-sm font-bold text-teal-700">Lieu à désinfecter</label>
+              <p className="text-xs text-green-700 bg-green-50 p-2 rounded-lg">Indiquez le lieu concerné par ce protocole de désinfection.</p>
               <div className="flex flex-wrap gap-2">
                 {LIEUX_NETTOYAGE.map(l => (
                   <button key={l} onClick={() => setLieuNett(l)}

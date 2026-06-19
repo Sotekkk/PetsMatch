@@ -750,7 +750,7 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
 // ── Helpers tâches ─────────────────────────────────────────────────────────────
 
 function protoEmoji(typeActe?: string) {
-  const m: Record<string, string> = { vermifuge: '💊', vaccination: '💉', antiparasitaire: '🛡️', traitement: '🩺', visite: '🏥', nettoyage: '🧹', promenade: '🦮', socialisation: '🐾' };
+  const m: Record<string, string> = { vermifuge: '💊', vaccination: '💉', antiparasitaire: '🛡️', traitement: '🩺', visite: '🏥', alimentaire: '🍽️', toilettage: '✂️', nettoyage: '🧴', promenade: '🦮', socialisation: '🦮' };
   return m[typeActe ?? ''] ?? '📋';
 }
 

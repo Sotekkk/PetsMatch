@@ -36,8 +36,9 @@ interface RoutineGroupe {
 
 const ACTE_EMOJIS: Record<string, string> = {
   vermifuge: '💊', vaccination: '💉', antiparasitaire: '🛡️',
-  traitement: '🩺', visite: '🏥', nettoyage: '🧹',
-  promenade: '🦮', socialisation: '🐾', toilettage: '✂️', autre: '📋',
+  traitement: '🩺', visite: '🏥', alimentaire: '🍽️',
+  toilettage: '✂️', nettoyage: '🧴',
+  promenade: '🦮', socialisation: '🦮', autre: '📋',
 };
 
 const ACTE_COLOR: Record<string, string> = {
@@ -46,10 +47,11 @@ const ACTE_COLOR: Record<string, string> = {
   antiparasitaire: '#4CAF50',
   traitement:      '#E91E63',
   visite:          '#9C27B0',
+  alimentaire:     '#FF9800',
+  toilettage:      '#E91E63',
   nettoyage:       '#00BCD4',
   promenade:       '#8BC34A',
-  socialisation:   '#FF5722',
-  toilettage:      '#795548',
+  socialisation:   '#8BC34A',
   autre:           '#9E9E9E',
 };
 

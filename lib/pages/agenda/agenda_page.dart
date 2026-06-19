@@ -241,9 +241,12 @@ class _AgendaPageState extends State<AgendaPage> {
     'antiparasitaire' => '🛡️',
     'traitement'      => '🩺',
     'visite'          => '🏥',
-    'nettoyage'       => '🧹',
+    'alimentaire'     => '🍽️',
+    'toilettage'      => '✂️',
+    'peignage'        => '🪮',
+    'nettoyage'       => '🧴',
     'promenade'       => '🦮',
-    'socialisation'   => '🐾',
+    'socialisation'   => '🦮',
     _                 => '📋',
   };
 

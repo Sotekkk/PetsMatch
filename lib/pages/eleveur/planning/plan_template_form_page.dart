@@ -36,10 +36,11 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   final List<_EtapeCtrl> _etapes = [];
 
   static const _types = [
-    ('sanitaire',     '💊', 'Sanitaire'),
-    ('nettoyage',     '🧹', 'Nettoyage'),
-    ('promenade',     '🦮', 'Promenade'),
-    ('socialisation', '🐾', 'Socialisation'),
+    ('sanitaire',   '💊', 'Sanitaire'),
+    ('alimentaire', '🍽️', 'Alimentaire'),
+    ('nettoyage',   '🧴', 'Désinfection'),
+    ('promenade',   '🦮', 'Promenade / Socialisation'),
+    ('toilettage',  '✂️', 'Toilettage'),
   ];
 
   static const _especes = ['', 'chien', 'chat', 'cheval', 'lapin', 'oiseau', 'nac', 'ovin', 'caprin', 'porcin'];
@@ -196,7 +197,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           if (_type == 'nettoyage') ...[
             _Card(children: [
               _SectionTitle('Lieu à nettoyer'),
-              const _InfoBox('Indiquez le lieu concerné par ce protocole de nettoyage.'),
+              const _InfoBox('Indiquez le lieu concerné par ce protocole de désinfection.'),
               const SizedBox(height: 8),
               // Chips raccourci
               Wrap(spacing: 6, runSpacing: 6, children: _lieuxNettoyage.map((l) {
@@ -353,11 +354,11 @@ class _EtapeCard extends StatelessWidget {
     ('antiparasitaire', '🛡️ Antiparasitaire'),
     ('traitement',      '🩺 Traitement'),
     ('visite',          '🏥 Visite vétérinaire'),
-    ('toilettage',      '🛁 Toilettage'),
+    ('alimentaire',     '🍽️ Alimentaire'),
+    ('toilettage',      '✂️ Toilettage'),
     ('peignage',        '🪮 Peignage'),
-    ('nettoyage',       '🧹 Nettoyage'),
-    ('promenade',       '🦮 Promenade'),
-    ('socialisation',   '🐾 Socialisation'),
+    ('nettoyage',       '🧴 Désinfection'),
+    ('promenade',       '🦮 Promenade / Socialisation'),
     ('autre',           '📋 Autre'),
   ];
 
