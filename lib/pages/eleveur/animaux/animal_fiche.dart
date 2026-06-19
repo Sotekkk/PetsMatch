@@ -15,6 +15,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/cession_sheet.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
@@ -994,6 +995,29 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               onPressed: () => showVetShareSheet(context, widget.animalId!),
             ),
           if (widget.animalId != null && !widget.vetMode && !widget.isAssociation
+              && _statut != 'decede')
+            IconButton(
+              icon: const Icon(Icons.description_outlined, size: 20),
+              tooltip: 'Générer contrat de vente',
+              onPressed: () => genererContratPDF(
+                context: context,
+                animal: {
+                  'id': widget.animalId,
+                  'nom': _nomCtrl.text.isNotEmpty ? _nomCtrl.text : null,
+                  'espece': _espece,
+                  'race': _raceCtrl.text.isNotEmpty ? _raceCtrl.text : null,
+                  'sexe': _sexe,
+                  'identification': _identCtrl.text.isNotEmpty ? _identCtrl.text : null,
+                  'date_naissance': _dateNaissance?.toIso8601String(),
+                },
+                eleveur: {
+                  'nom': _nomElevage ?? FirebaseAuth.instance.currentUser?.displayName ?? '',
+                  'adresse': '',
+                  'siret': '',
+                },
+              ),
+            ),
+          if (widget.animalId != null && !widget.vetMode && !widget.isAssociation
               && _statut != 'sorti' && _statut != 'decede' && _statut != 'cession_en_cours')
             IconButton(
               icon: const Icon(Icons.handshake_outlined, size: 20),
@@ -1133,6 +1157,39 @@ class _IdentiteTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (!s.widget.vetMode && !s.widget.isAssociation
+              && s.widget.animalId != null
+              && s._statut != 'sorti' && s._statut != 'decede')
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: OutlinedButton.icon(
+                onPressed: () => genererContratPDF(
+                  context: context,
+                  animal: {
+                    'id': s.widget.animalId,
+                    'nom': s._nomCtrl.text.isNotEmpty ? s._nomCtrl.text : null,
+                    'espece': s._espece,
+                    'race': s._raceCtrl.text.isNotEmpty ? s._raceCtrl.text : null,
+                    'sexe': s._sexe,
+                    'identification': s._identCtrl.text.isNotEmpty ? s._identCtrl.text : null,
+                    'date_naissance': s._dateNaissance?.toIso8601String(),
+                  },
+                  eleveur: {
+                    'nom': s._nomElevage ?? FirebaseAuth.instance.currentUser?.displayName ?? '',
+                    'adresse': '',
+                    'siret': '',
+                  },
+                ),
+                icon: const Icon(Icons.description_outlined, size: 16, color: Color(0xFF0C5C6C)),
+                label: const Text('Générer contrat de vente',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF0C5C6C))),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFF0C5C6C)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                ),
+              ),
+            ),
           if (s._statut == 'cession_en_cours' && s._cessionEnCours != null)
             _CessionEnCoursBanner(
               cession: s._cessionEnCours!,

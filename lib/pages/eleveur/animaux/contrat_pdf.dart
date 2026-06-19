@@ -82,18 +82,18 @@ Future<void> genererContratPDF({
   required BuildContext context,
   required Map<String, dynamic> animal,
   required Map<String, dynamic> eleveur,
-  required String acquereurNom,
-  required String acquereurAdresse,
-  required String acquereurEmail,
-  required String acquereurTel,
-  required String prix,
-  required DateTime dateCession,
-  required String notes,
+  String acquereurNom      = '',
+  String acquereurAdresse  = '',
+  String acquereurEmail    = '',
+  String acquereurTel      = '',
+  String prix              = '0',
+  DateTime? dateCession,
+  String notes             = '',
 }) async {
   final pdf = pw.Document();
   final t = _termes(animal['espece'] as String?);
   final today = _fmt(DateTime.now());
-  final dateVente = _fmt(dateCession);
+  final dateVente = dateCession != null ? _fmt(dateCession) : '___/___/______';
   final isMasculin = ['male', 'mâle', 'm'].contains((animal['sexe'] as String? ?? '').toLowerCase());
   final sterilDelai = isMasculin ? (t['sterilM'] ?? '') : (t['sterilF'] ?? '');
   final prixDouble = double.tryParse(prix.replaceAll(',', '.')) ?? 0;

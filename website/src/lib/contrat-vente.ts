@@ -113,19 +113,24 @@ function clearSig(i){ if(_pads[i]) _pads[i].clear(); }
 
 function injectSigs(imgs) {
   ['vendeur','acheteur'].forEach(function(role, i) {
+    var sig = imgs[i];
     document.querySelectorAll('[data-signer="'+role+'"] .sign-img').forEach(function(el) {
-      el.innerHTML = '<img src="'+imgs[i]+'" style="max-height:60px;max-width:100%;object-fit:contain">';
+      el.innerHTML = sig
+        ? '<img src="'+sig+'" style="max-height:60px;max-width:100%;object-fit:contain">'
+        : '<span style="font-size:9px;color:#aaa;font-style:italic">Signature manuscrite</span>';
     });
   });
 }
 
 async function finaliser() {
   if (!_pads[0] || !_pads[1]) { alert('Initialisation incomplète.'); return; }
-  if (_pads[0].isEmpty() || _pads[1].isEmpty()) {
-    alert('Les deux parties doivent signer avant de finaliser.');
-    return;
-  }
-  var imgs = [_pads[0].toDataURL('image/png'), _pads[1].toDataURL('image/png')];
+  var hasSig0 = !_pads[0].isEmpty();
+  var hasSig1 = !_pads[1].isEmpty();
+  // Permettre d'enregistrer sans signature (ex: imprimer + signer physiquement)
+  var imgs = [
+    hasSig0 ? _pads[0].toDataURL('image/png') : null,
+    hasSig1 ? _pads[1].toDataURL('image/png') : null,
+  ];
   injectSigs(imgs);
 
   // Masquer les éléments non imprimables
