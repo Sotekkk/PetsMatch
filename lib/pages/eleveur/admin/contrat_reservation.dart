@@ -171,6 +171,7 @@ class _DocCard extends StatelessWidget {
     'contrat_vente':       ('🤝', 'Vente'),
     'contrat_reservation': ('🐾', 'Réservation'),
     'certificat_cession':  ('📋', 'Cession'),
+    'contrat_saillie':     ('💞', 'Saillie'),
   };
   static const _statutColor = {
     'brouillon':          Color(0xFFEEEEEE),
@@ -389,6 +390,7 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
     try {
       final typeLabel = _type == 'contrat_vente' ? 'Contrat de vente'
           : _type == 'contrat_reservation' ? 'Contrat de réservation'
+          : _type == 'contrat_saillie' ? 'Contrat de saillie'
           : 'Certificat de cession';
 
       final result = await widget.supa
@@ -461,7 +463,7 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
             const Text('Type de contrat', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 8),
             Row(children: [
-              for (final t in [('contrat_vente', '🤝', 'Vente'), ('contrat_reservation', '🐾', 'Réservation'), ('certificat_cession', '📋', 'Cession')])
+              for (final t in [('contrat_vente', '🤝', 'Vente'), ('contrat_reservation', '🐾', 'Réservation'), ('certificat_cession', '📋', 'Cession'), ('contrat_saillie', '💞', 'Saillie')])
                 Expanded(child: Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: GestureDetector(

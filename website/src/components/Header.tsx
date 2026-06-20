@@ -107,9 +107,10 @@ const MENU_ELEVEUR = [
     section: 'Administratif',
     icon: '📁',
     items: [
-      { href: '/elevage/certificat-engagement', label: 'Certificats',  icon: '✍️', pro: true },
-      { href: '/elevage/contrat',               label: 'Contrats',     icon: '📄', premium: true },
-      { href: '/elevage/facturation',            label: 'Facturation',  icon: '🧾', premium: true },
+      { href: '/elevage/certificat-engagement', label: 'Certificats',       icon: '✍️', pro: true },
+      { href: '/elevage/contrat',               label: 'Mes Contrats',      icon: '📄', premium: true },
+      { href: '/mes-contrats',                  label: 'Mes Achats',         icon: '🛒' },
+      { href: '/elevage/facturation',            label: 'Facturation',        icon: '🧾', premium: true },
     ],
   },
   {

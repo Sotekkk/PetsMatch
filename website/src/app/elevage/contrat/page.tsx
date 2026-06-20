@@ -10,7 +10,7 @@ import { generateContratHTML, generateContratVente, generateContratReservationHT
 interface DocAnimal {
   id: string;
   animal_id: string;
-  type: 'contrat_vente' | 'contrat_reservation' | 'certificat_cession';
+  type: 'contrat_vente' | 'contrat_reservation' | 'certificat_cession' | 'contrat_saillie';
   titre: string;
   url: string | null;
   token: string | null;
@@ -34,10 +34,11 @@ interface AuditEntry {
 interface Animal { id: string; nom: string; espece: string; race: string; identification: string; date_naissance: string; sexe: string; couleur?: string; pedigree_numero?: string; pedigree_lof?: string; nom_pere?: string; puce_pere?: string; nom_mere?: string; puce_mere?: string; }
 interface UserProfile { firstname: string; lastname: string; name_elevage: string; is_elevage: boolean; adress_elevage: string; adress: string; rue: string; ville: string; ville_elevage: string; code_postal: string; siret: string; email: string; numero_elevage: string; code_iso_elevage: string; phone_number: string; code_iso: string; }
 
-const TYPE_META = {
+const TYPE_META: Record<string, { label: string; icon: string; color: string }> = {
   contrat_vente:       { label: 'Vente',        icon: '🤝', color: 'bg-green-50 text-green-700 border-green-200' },
   contrat_reservation: { label: 'Réservation',  icon: '🐾', color: 'bg-teal-50 text-teal-700 border-teal-200' },
   certificat_cession:  { label: 'Cession',      icon: '📋', color: 'bg-purple-50 text-purple-700 border-purple-200' },
+  contrat_saillie:     { label: 'Saillie',       icon: '💞', color: 'bg-pink-50 text-pink-700 border-pink-200' },
 };
 
 const ACTION_LABEL: Record<string, string> = {
@@ -205,7 +206,7 @@ export default function ContratsPage() {
 
   async function saveDraft(): Promise<string | null> {
     if (!user || !selectedAnimal) return null;
-    const titreLabel = formType === 'contrat_vente' ? 'Contrat de vente' : formType === 'contrat_reservation' ? 'Contrat de réservation' : 'Certificat de cession';
+    const titreLabel = formType === 'contrat_vente' ? 'Contrat de vente' : formType === 'contrat_reservation' ? 'Contrat de réservation' : formType === 'contrat_saillie' ? 'Contrat de saillie' : 'Certificat de cession';
     const { data } = await supabase.from('documents_animaux').insert({
       animal_id:   selectedAnimal.id,
       uid_eleveur: user.uid,
@@ -285,9 +286,10 @@ export default function ContratsPage() {
       {/* Types de contrats disponibles */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {([
-          { type: 'contrat_vente' as const, title: 'Contrat de vente', icon: '🤝', desc: 'Transfert de propriété, garanties légales, vices rédhibitoires.' },
-          { type: 'contrat_reservation' as const, title: 'Contrat de réservation', icon: '🐾', desc: 'Arrhes, conditions d\'annulation, engagement des deux parties.' },
-          { type: 'certificat_cession' as const, title: 'Certificat de cession', icon: '📋', desc: 'Attestation de transfert de propriété après la vente.' },
+          { type: 'contrat_vente' as const,       title: 'Contrat de vente',        icon: '🤝', desc: 'Transfert de propriété, garanties légales, vices rédhibitoires.' },
+          { type: 'contrat_reservation' as const,  title: 'Contrat de réservation',  icon: '🐾', desc: 'Arrhes, conditions d\'annulation, engagement des deux parties.' },
+          { type: 'certificat_cession' as const,   title: 'Certificat de cession',   icon: '📋', desc: 'Attestation de transfert de propriété après la vente.' },
+          { type: 'contrat_saillie' as const,      title: 'Contrat de saillie',       icon: '💞', desc: 'Conditions de saillie, tarif, garanties portée, droits sur les chiots/chatons.' },
         ] as const).map(m => (
           <div key={m.type} className="bg-white border border-gray-100 rounded-xl p-4 space-y-1.5 shadow-sm">
             <div className="text-2xl">{m.icon}</div>
@@ -415,7 +417,7 @@ export default function ContratsPage() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-[#1F2A2E] text-base font-galey">
-                {formType === 'contrat_vente' ? '🤝 Contrat de vente' : formType === 'contrat_reservation' ? '🐾 Contrat de réservation' : '📋 Certificat de cession'}
+                {formType === 'contrat_vente' ? '🤝 Contrat de vente' : formType === 'contrat_reservation' ? '🐾 Contrat de réservation' : formType === 'contrat_saillie' ? '💞 Contrat de saillie' : '📋 Certificat de cession'}
               </h3>
               <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
             </div>
