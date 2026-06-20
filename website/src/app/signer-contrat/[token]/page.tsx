@@ -12,7 +12,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-type DocStatut = 'brouillon' | 'en_attente' | 'signe' | 'archive';
+type DocStatut = 'brouillon' | 'en_attente' | 'signe' | 'archive' | 'partiellement_signe' | 'annule' | 'expire' | 'refuse';
 
 interface DocRow {
   id: string;
@@ -22,6 +22,8 @@ interface DocRow {
   titre: string;
   statut: DocStatut;
   signe_le: string | null;
+  pdf_signe_url: string | null;
+  rejection_reason: string | null;
   metadata: Record<string, string>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   animaux: any;
@@ -32,8 +34,11 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
   const [doc, setDoc]       = useState<DocRow | null>(null);
   const [html, setHtml]     = useState('');
   const [status, setStatus] = useState<'loading' | 'ready' | 'not_found'>('loading');
-  const [saving, setSaving] = useState<'eleveur' | 'acquereur' | null>(null);
-  const [saved, setSaved]   = useState<{ eleveur?: boolean; acquereur?: boolean }>({});
+  const [saving, setSaving]       = useState<'eleveur' | 'acquereur' | null>(null);
+  const [saved, setSaved]         = useState<{ eleveur?: boolean; acquereur?: boolean }>({});
+  const [refuseModal, setRefuseModal] = useState(false);
+  const [refuseReason, setRefuseReason] = useState('');
+  const [refusing, setRefusing]   = useState(false);
   const canvasElvRef        = useRef<HTMLCanvasElement>(null);
   const canvasAcqRef        = useRef<HTMLCanvasElement>(null);
   const drawingElv          = useRef(false);
@@ -206,6 +211,20 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     c.getContext('2d')?.clearRect(0, 0, c.width, c.height);
   }
 
+  async function refuser() {
+    if (!doc) return;
+    setRefusing(true);
+    await fetch(`/api/contracts/${doc.id}/refuse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: refuseReason.trim() || null, actorEmail: doc.metadata?.acquereur_email ?? null }),
+    });
+    setDoc(prev => prev ? { ...prev, statut: 'refuse', rejection_reason: refuseReason.trim() || null } : prev);
+    setRefusing(false);
+    setRefuseModal(false);
+    if (window.opener) window.opener.postMessage({ type: 'contract_refused' }, '*');
+  }
+
   if (status === 'loading') return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
       <div className="text-center">
@@ -225,28 +244,35 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     </div>
   );
 
-  const isSigned = doc?.statut === 'signe';
+  const isSigned    = doc?.statut === 'signe';
   const isEnAttente = doc?.statut === 'en_attente';
+  const isRefused   = doc?.statut === 'refuse';
+  const isCancelled = doc?.statut === 'annule';
+  const isExpired   = doc?.statut === 'expire';
+  const isFinal     = isSigned || isRefused || isCancelled || isExpired;
   const elvHandlers  = makeDrawHandlers(canvasElvRef,  drawingElv);
   const acqHandlers  = makeDrawHandlers(canvasAcqRef,  drawingAcq);
+
+  const bannerCls = isSigned    ? 'bg-green-600 text-white' :
+                    isRefused   ? 'bg-red-500 text-white' :
+                    isCancelled ? 'bg-gray-500 text-white' :
+                    isExpired   ? 'bg-orange-500 text-white' :
+                    isEnAttente ? 'bg-amber-500 text-white' :
+                                  'bg-[#0C5C6C] text-white';
+  const bannerMsg  = isSigned    ? '✅ Contrat signé par les deux parties' :
+                     isRefused   ? `❌ Contrat refusé${doc?.rejection_reason ? ` — ${doc.rejection_reason}` : ''}` :
+                     isCancelled ? '🚫 Contrat annulé' :
+                     isExpired   ? '⏰ Contrat expiré' :
+                     isEnAttente ? '⏳ En attente de la signature de l\'acquéreur' :
+                                   '📄 Contrat en cours de rédaction';
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
 
       {/* Bandeau statut + confidentialité */}
-      <div className={`w-full py-2.5 px-4 text-center text-sm font-medium flex flex-col sm:flex-row items-center justify-center gap-2 ${
-        isSigned ? 'bg-green-600 text-white' :
-        isEnAttente ? 'bg-amber-500 text-white' :
-        'bg-[#0C5C6C] text-white'
-      }`}>
-        <span>
-          {isSigned
-            ? '✅ Contrat signé par les deux parties'
-            : isEnAttente
-            ? '⏳ En attente de la signature de l\'acquéreur'
-            : '📄 Contrat en cours de rédaction'}
-        </span>
-        <span className="opacity-75 text-xs">🔒 Lien privé — partagez uniquement avec l&apos;acquéreur</span>
+      <div className={`w-full py-2.5 px-4 text-center text-sm font-medium flex flex-col sm:flex-row items-center justify-center gap-2 ${bannerCls}`}>
+        <span>{bannerMsg}</span>
+        {!isFinal && <span className="opacity-75 text-xs">🔒 Lien privé — partagez uniquement avec l&apos;acquéreur</span>}
       </div>
 
       {/* Iframe contrat */}
@@ -299,11 +325,66 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           </p>
         )}
 
+        {/* PREP07 — Télécharger / Imprimer */}
+        {isSigned && (
+          <div className="flex justify-center mt-4">
+            {doc?.pdf_signe_url ? (
+              <a href={doc.pdf_signe_url} download
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
+                📥 Télécharger le PDF signé
+              </a>
+            ) : (
+              <button onClick={() => window.print()}
+                className="flex items-center gap-2 border border-green-600 text-green-700 hover:bg-green-50 text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
+                🖨️ Imprimer / Sauvegarder en PDF
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* PREP08 — Refuser */}
+        {!isFinal && (
+          <div className="flex justify-center mt-4">
+            <button onClick={() => setRefuseModal(true)}
+              className="text-xs text-red-400 hover:text-red-600 underline underline-offset-2">
+              ❌ Refuser ce contrat
+            </button>
+          </div>
+        )}
+
         <p className="text-center text-xs text-gray-400 mt-4">
           Ce document est accessible uniquement via ce lien privé.
-          Conservez-le en lieu sûr ou imprimez-le une fois signé.
+          {isSigned ? ' Imprimez-le ou téléchargez-le pour le conserver.' : ' Conservez-le en lieu sûr ou imprimez-le une fois signé.'}
         </p>
       </div>
+
+      {/* Modal refus */}
+      {refuseModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 px-4"
+          onClick={e => { if (e.target === e.currentTarget) setRefuseModal(false); }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl space-y-4">
+            <h3 className="font-bold text-[#1F2A2E] text-base font-galey">❌ Refuser ce contrat</h3>
+            <p className="text-sm text-gray-500">Indiquez optionnellement la raison du refus. L&apos;éleveur en sera informé.</p>
+            <textarea
+              value={refuseReason}
+              onChange={e => setRefuseReason(e.target.value)}
+              placeholder="Motif du refus (facultatif)…"
+              rows={3}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-red-400 resize-none"
+            />
+            <div className="flex gap-2">
+              <button onClick={() => setRefuseModal(false)} disabled={refusing}
+                className="flex-1 border border-gray-200 text-gray-600 text-sm font-medium py-2.5 rounded-xl hover:bg-gray-50 disabled:opacity-40">
+                Annuler
+              </button>
+              <button onClick={refuser} disabled={refusing}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors disabled:opacity-60">
+                {refusing ? '…' : 'Confirmer le refus'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -173,31 +173,41 @@ class _DocCard extends StatelessWidget {
     'certificat_cession':  ('📋', 'Cession'),
   };
   static const _statutColor = {
-    'brouillon':  Color(0xFFEEEEEE),
-    'en_attente': Color(0xFFFEF3C7),
-    'signe':      Color(0xFFDCF5E4),
-    'archive':    Color(0xFFFFF3CD),
+    'brouillon':          Color(0xFFEEEEEE),
+    'en_attente':         Color(0xFFFEF3C7),
+    'partiellement_signe':Color(0xFFDBEAFE),
+    'signe':              Color(0xFFDCF5E4),
+    'archive':            Color(0xFFFFF3CD),
+    'annule':             Color(0xFFFEE2E2),
+    'expire':             Color(0xFFFFEDD5),
+    'refuse':             Color(0xFFFEE2E2),
   };
   static const _statutLabel = {
-    'brouillon':  'Brouillon',
-    'en_attente': '⏳ En attente',
-    'signe':      '✅ Signé',
-    'archive':    'Archivé',
+    'brouillon':          'Brouillon',
+    'en_attente':         '⏳ En attente',
+    'partiellement_signe':'✍️ Partiel',
+    'signe':              '✅ Signé',
+    'archive':            'Archivé',
+    'annule':             '🚫 Annulé',
+    'expire':             '⏰ Expiré',
+    'refuse':             '❌ Refusé',
   };
 
   @override
   Widget build(BuildContext context) {
-    final type   = doc['type'] as String? ?? 'contrat_vente';
-    final statut = doc['statut'] as String? ?? 'brouillon';
-    final meta   = _typeLabel[type] ?? ('📄', 'Contrat');
-    final metaMap = (doc['metadata'] as Map<String, dynamic>?) ?? {};
-    final acqNom = (metaMap['acquereur_nom'] as String?) ?? '';
-    final titre  = doc['titre'] as String? ?? 'Contrat';
-    final token  = doc['token'] as String?;
+    final type        = doc['type'] as String? ?? 'contrat_vente';
+    final statut      = doc['statut'] as String? ?? 'brouillon';
+    final meta        = _typeLabel[type] ?? ('📄', 'Contrat');
+    final metaMap     = (doc['metadata'] as Map<String, dynamic>?) ?? {};
+    final acqNom      = (metaMap['acquereur_nom'] as String?) ?? '';
+    final titre       = doc['titre'] as String? ?? 'Contrat';
+    final token       = doc['token'] as String?;
+    final pdfSigneUrl = doc['pdf_signe_url'] as String?;
     final date   = doc['created_at'] != null
         ? DateTime.tryParse(doc['created_at'] as String)?.toLocal()
         : null;
     final signingUrl = token != null ? '$kSiteBaseUrl/signer-contrat/$token' : null;
+    final isFinal    = ['signe', 'annule', 'expire', 'refuse'].contains(statut);
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -234,11 +244,6 @@ class _DocCard extends StatelessWidget {
               ],
             ]),
           ])),
-          IconButton(
-            icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
-            onPressed: () => onDelete(doc['id'] as String),
-            padding: const EdgeInsets.only(left: 8), constraints: const BoxConstraints(),
-          ),
         ]),
 
         if (signingUrl != null) ...[
@@ -258,21 +263,51 @@ class _DocCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            OutlinedButton(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: signingUrl));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Lien copié'), duration: Duration(seconds: 2)),
-                );
-              },
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _teal,
-                side: const BorderSide(color: _teal),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            // Copier lien
+            if (!isFinal) ...[
+              OutlinedButton(
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: signingUrl));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Lien copié'), duration: Duration(seconds: 2)),
+                  );
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _teal,
+                  side: const BorderSide(color: _teal),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+                child: const Icon(Icons.link, size: 16),
               ),
-              child: const Icon(Icons.link, size: 16),
-            ),
+              const SizedBox(width: 8),
+            ],
+            // PREP07 — Télécharger PDF signé
+            if (statut == 'signe' && pdfSigneUrl != null) ...[
+              OutlinedButton(
+                onPressed: () => launchUrl(Uri.parse(pdfSigneUrl), mode: LaunchMode.externalApplication),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF6E9E57),
+                  side: const BorderSide(color: Color(0xFF6E9E57)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+                child: const Icon(Icons.download_outlined, size: 16),
+              ),
+              const SizedBox(width: 8),
+            ],
+            // PREP08 — Annuler
+            if (!isFinal)
+              OutlinedButton(
+                onPressed: () => onDelete(doc['id'] as String),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red,
+                  side: const BorderSide(color: Colors.redAccent),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+                child: const Icon(Icons.delete_outline, size: 16),
+              ),
           ]),
         ],
       ]),
@@ -320,7 +355,7 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
 
   @override
   void dispose() {
-    for (final c in [_acqNomCtrl, _acqPrenomCtrl, _acqEmailCtrl, _acqTelCtrl, _acqAdresseCtrl, _prixCtrl, _notesCtrl, _searchCtrl]) c.dispose();
+    for (final c in [_acqNomCtrl, _acqPrenomCtrl, _acqEmailCtrl, _acqTelCtrl, _acqAdresseCtrl, _prixCtrl, _notesCtrl, _searchCtrl]) { c.dispose(); }
     super.dispose();
   }
 

@@ -14,9 +14,20 @@ interface DocAnimal {
   titre: string;
   url: string | null;
   token: string | null;
-  statut: 'brouillon' | 'en_attente' | 'signe' | 'archive';
+  statut: 'brouillon' | 'en_attente' | 'signe' | 'archive' | 'partiellement_signe' | 'annule' | 'expire' | 'refuse';
   signe_le: string | null;
+  pdf_signe_url: string | null;
+  rejection_reason: string | null;
   metadata: Record<string, string | number | null>;
+  created_at: string;
+}
+
+interface AuditEntry {
+  id: string;
+  action: string;
+  actor_email: string | null;
+  actor_role: string | null;
+  details: Record<string, unknown>;
   created_at: string;
 }
 
@@ -29,11 +40,26 @@ const TYPE_META = {
   certificat_cession:  { label: 'Cession',      icon: '📋', color: 'bg-purple-50 text-purple-700 border-purple-200' },
 };
 
-const STATUT_META = {
-  brouillon:   { label: 'Brouillon',              cls: 'bg-gray-100 text-gray-500' },
-  en_attente:  { label: '⏳ Attente acquéreur',   cls: 'bg-amber-100 text-amber-700' },
-  signe:       { label: '✅ Signé',               cls: 'bg-green-100 text-green-700' },
-  archive:     { label: 'Archivé',                cls: 'bg-gray-100 text-gray-400' },
+const ACTION_LABEL: Record<string, string> = {
+  created:           '📝 Créé',
+  opened:            '👁️ Ouvert',
+  signed:            '✅ Signé',
+  partially_signed:  '✍️ Signature partielle',
+  cancelled:         '🚫 Annulé',
+  refused:           '❌ Refusé',
+  expired:           '⏰ Expiré',
+  sent:              '📤 Envoyé (YouSign)',
+};
+
+const STATUT_META: Record<string, { label: string; cls: string }> = {
+  brouillon:          { label: 'Brouillon',             cls: 'bg-gray-100 text-gray-500' },
+  en_attente:         { label: '⏳ Attente acquéreur',  cls: 'bg-amber-100 text-amber-700' },
+  partiellement_signe:{ label: '✍️ Partiel',            cls: 'bg-blue-100 text-blue-700' },
+  signe:              { label: '✅ Signé',              cls: 'bg-green-100 text-green-700' },
+  archive:            { label: 'Archivé',               cls: 'bg-gray-100 text-gray-400' },
+  annule:             { label: '🚫 Annulé',             cls: 'bg-red-100 text-red-500' },
+  expire:             { label: '⏰ Expiré',             cls: 'bg-orange-100 text-orange-600' },
+  refuse:             { label: '❌ Refusé',             cls: 'bg-red-100 text-red-700' },
 };
 
 export default function ContratsPage() {
@@ -49,6 +75,9 @@ export default function ContratsPage() {
   const [formType, setFormType]   = useState<DocAnimal['type']>('contrat_vente');
   const [saving, setSaving]       = useState(false);
   const [deleting, setDeleting]   = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+  const [auditOpen, setAuditOpen] = useState<Record<string, boolean>>({});
+  const [auditCache, setAuditCache] = useState<Record<string, AuditEntry[]>>({});
 
   // Form
   const [animalId, setAnimalId]       = useState('');
@@ -206,6 +235,28 @@ export default function ContratsPage() {
     setDeleting(null);
   }
 
+  async function cancelDoc(id: string) {
+    if (!user || !confirm('Annuler ce contrat ? L\'acquéreur ne pourra plus le signer.')) return;
+    setCancelling(id);
+    await fetch(`/api/contracts/${id}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actorUid: user.uid }),
+    });
+    setDocs(prev => prev.map(d => d.id === id ? { ...d, statut: 'annule' as const } : d));
+    setCancelling(null);
+  }
+
+  async function toggleAudit(id: string) {
+    const next = !auditOpen[id];
+    setAuditOpen(prev => ({ ...prev, [id]: next }));
+    if (next && !auditCache[id]) {
+      const res = await fetch(`/api/contracts/${id}/audit`);
+      const data = await res.json();
+      setAuditCache(prev => ({ ...prev, [id]: data }));
+    }
+  }
+
   if (!planLoading && !planConfig.hasPremiumFeatures) return (
     <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 px-4 text-center">
       <span className="text-5xl">🔒</span>
@@ -269,7 +320,8 @@ export default function ContratsPage() {
               const date = new Date(d.created_at).toLocaleDateString('fr-FR');
               const acqNomMeta = (d.metadata?.acquereur_nom as string) ?? '';
               return (
-                <div key={d.id} className="flex items-center gap-3 p-3 border border-gray-100 rounded-xl bg-white hover:border-gray-200 transition-colors">
+                <div key={d.id} className="border border-gray-100 rounded-xl bg-white hover:border-gray-200 transition-colors overflow-hidden">
+                  <div className="flex items-center gap-3 p-3">
                   <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xl flex-shrink-0 bg-gray-50 border border-gray-100">
                     {tm.icon}
                   </div>
@@ -287,7 +339,7 @@ export default function ContratsPage() {
                       <a href={`/signer-contrat/${d.token}`} target="_blank" rel="noopener noreferrer"
                         className="text-xs text-[#0C5C6C] hover:underline font-medium">✏️ Ouvrir</a>
                     )}
-                    {d.token && (
+                    {d.token && d.statut !== 'annule' && d.statut !== 'refuse' && (
                       <button onClick={() => {
                         const link = `${window.location.origin}/signer-contrat/${d.token}`;
                         navigator.clipboard.writeText(link);
@@ -296,6 +348,23 @@ export default function ContratsPage() {
                         🔗 Partager
                       </button>
                     )}
+                    {/* PREP07 — Télécharger PDF signé */}
+                    {d.statut === 'signe' && d.pdf_signe_url && (
+                      <a href={d.pdf_signe_url} download target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-green-600 hover:underline font-medium">📥 PDF</a>
+                    )}
+                    {/* PREP08 — Annuler */}
+                    {!['signe','annule','expire','refuse'].includes(d.statut) && (
+                      <button onClick={() => cancelDoc(d.id)} disabled={cancelling === d.id}
+                        className="text-xs text-orange-400 hover:text-orange-600 font-medium disabled:opacity-40">
+                        {cancelling === d.id ? '…' : '🚫'}
+                      </button>
+                    )}
+                    {/* PREP09 — Historique */}
+                    <button onClick={() => toggleAudit(d.id)}
+                      className="text-xs text-gray-400 hover:text-gray-600 font-medium">
+                      {auditOpen[d.id] ? '▲' : '📋'}
+                    </button>
                     {d.url && !d.token && (
                       <a href={d.url} target="_blank" rel="noopener noreferrer"
                         className="text-xs text-[#0C5C6C] hover:underline font-medium">Voir</a>
@@ -305,6 +374,33 @@ export default function ContratsPage() {
                       {deleting === d.id ? '…' : 'Supprimer'}
                     </button>
                   </div>
+                  </div>
+
+                {/* PREP09 — Panneau audit */}
+                {auditOpen[d.id] && (
+                  <div className="px-3 pb-3 border-t border-gray-50">
+                    {!auditCache[d.id] ? (
+                      <p className="text-xs text-gray-400 mt-2">Chargement…</p>
+                    ) : auditCache[d.id].length === 0 ? (
+                      <p className="text-xs text-gray-400 mt-2">Aucune action enregistrée.</p>
+                    ) : (
+                      <div className="mt-2 border-l-2 border-gray-100 pl-3 space-y-1.5">
+                        {auditCache[d.id].map(e => (
+                          <div key={e.id} className="text-xs text-gray-500">
+                            <span className="font-medium text-gray-700">{ACTION_LABEL[e.action] ?? e.action}</span>
+                            {e.actor_email && <span className="text-gray-400 ml-1">— {e.actor_email}</span>}
+                            {typeof (e.details as Record<string, unknown>)?.reason === 'string' && (
+                              <span className="text-gray-400 italic ml-1">({(e.details as Record<string, string>).reason})</span>
+                            )}
+                            <span className="block text-gray-300 text-[10px]">
+                              {new Date(e.created_at).toLocaleString('fr-FR')}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 </div>
               );
             })}
