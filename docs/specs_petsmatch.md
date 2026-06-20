@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-06-17  
+> Dernière mise à jour : 2026-06-20  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -1378,11 +1378,22 @@ CREATE TABLE documents_animaux (
 | DOC04 | Fiche animal onglet Documents — affichage docs liés | App + Web | ✅ Livré 2026-06-19 |
 | DOC05 | Cession — attach auto du contrat de vente signé existant | App + Web | ✅ Livré 2026-06-19 |
 | DOC06 | Certificat de cession (attestation de transfert) | App + Web | ✅ Livré 2026-06-19 |
+| DOC07 | Contrats web depuis app + Mes Contrats particulier + clause stérilisation | App + Web | ✅ Livré 2026-06-20 |
 
 **Notes DOC01-DOC02 :**
 - Web `/elevage/contrat/page.tsx` : migré Firestore → Supabase `documents_animaux`, sélecteur animal, génération dynamique via `generateContratHTML`, types vente/reservation/cession
 - App `contrat_reservation.dart` : migré Firestore → Supabase `documents_animaux`, sélecteur animal, génération PDF via `genererContratPDF`, recherche acquéreur PetsMatch
 - **MIGRATION SQL À APPLIQUER dans Supabase** : `supabase/migration_documents_animaux.sql`
+
+**Notes DOC07 :**
+- App Administratif/Contrats : suppression PDF non-éditable → "Créer & ouvrir sur le web" (save Supabase + token + ouverture navigateur), boutons Ouvrir/Copier lien sur cartes existantes, clause stérilisation optionnelle (Tranche 2) pour contrats de vente
+- App fiche animal onglet Documents : boutons Ouvrir & Copier lien via `kSiteBaseUrl/signer-contrat/[token]`
+- App menu particulier : nouvelle section Administratif → Mes Contrats (`MesContratsParticulierPage`) — filtre `metadata->>acquereur_email`, affiche statuts, bouton "Consulter & signer"
+- Web `/mes-contrats` : page particulier, même logique filtre email, lien vers `/signer-contrat/[token]`
+- Web Header particulier : section Administratif → Mes Contrats
+- Web contrat de vente : checkbox clause stérilisation (Tranche 2) ; stockée en `metadata.avec_sterilisation` ; lue dans `/signer-contrat/[token]` pour affichage conditionnel Article 2
+- Web `proxy.ts` : renommage de `middleware.ts` → `proxy.ts` (convention Next.js 16) ; `turbopack.root` conservé pour résoudre conflit lockfiles Flutter/Next.js
+- Config app : `kSiteBaseUrl` dans `lib/config.dart` (IP locale tests → domaine production)
 
 ### 9bis.5 Intégration YouSign — Modèle économique & Quotas (SIGN01)
 
