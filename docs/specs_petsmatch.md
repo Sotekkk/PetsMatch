@@ -1475,6 +1475,223 @@ STRIPE_CONTRACT_PRICE_ID=... # price_id Stripe pour le 2€/contrat
 
 ---
 
+## 9ter. Préparation YouSign — Audit complet & Roadmap
+
+> **Objectif** : quand l'abonnement YouSign sera pris, il ne restera qu'à renseigner les clés API, implémenter `YouSignProvider`, configurer les webhooks et tester. Tout le reste doit déjà être en place.
+
+### 9ter.1 — Ce qui existe déjà ✅
+
+**Table `documents_animaux` (Supabase)**
+| Champ | Type | Usage |
+|-------|------|-------|
+| `id` | UUID | Clé primaire |
+| `animal_id` | TEXT FK | Lien vers l'animal |
+| `uid_eleveur` | TEXT | Propriétaire du contrat |
+| `type` | TEXT | contrat_vente / contrat_reservation / certificat_cession / certificat_engagement |
+| `titre` | TEXT | Titre lisible |
+| `token` | UUID unique | Lien de partage `/signer-contrat/[token]` |
+| `statut` | TEXT | brouillon / en_attente / signe / archive |
+| `url` | TEXT | URL Supabase Storage (PDF ou HTML signé uploadé) |
+| `signe_le` | TIMESTAMPTZ | Date signature complète |
+| `metadata` JSONB | — | acquereur_nom/email/tel/adresse, prix, date_cession, notes, signature_eleveur (base64), signature_acquereur (base64), signe_eleveur_le, signe_acquereur_le, avec_sterilisation |
+| `created_at` | TIMESTAMPTZ | — |
+
+**Génération de contrats**
+- ✅ `generateContratHTML()` — contrat de vente (8 articles, adapté par espèce, clause stérilisation optionnelle)
+- ✅ `generateContratReservationHTML()` — contrat de réservation
+- ✅ `generateCertificatCessionHTML()` — certificat de cession
+- ✅ `contrat_pdf.dart` — PDF Flutter pour impression (champs manuels)
+
+**Signature canvas (SIGN00)**
+- ✅ Page `/signer-contrat/[token]` — iframe contrat HTML + deux pads canvas (éleveur + acquéreur)
+- ✅ Signatures sauvegardées en base64 dans `metadata`
+- ✅ Horodatage par signataire (`signe_eleveur_le`, `signe_acquereur_le`)
+- ✅ Statut automatique `signe` + `signe_le` quand les deux ont signé
+
+**UI**
+- ✅ Page `/mes-contrats` web (particuliers) — filtre `metadata->acquereur_email`
+- ✅ `MesContratsParticulierPage` Flutter — même logique
+- ✅ Page `/elevage/contrat` web éleveur — création + liste
+- ✅ `contrat_reservation.dart` Flutter — création "Créer & ouvrir sur le web" + liste
+- ✅ Fiche animal onglet Documents — boutons Ouvrir/Copier lien via token
+- ✅ Statuts affichés : brouillon, en_attente, signe, archive
+- ✅ Bandeau statut sur page signature
+
+**Config**
+- ✅ `kSiteBaseUrl` dans `lib/config.dart` — URL de base pour les liens app → web
+
+---
+
+### 9ter.2 — Ce qui doit être ajouté AVANT YouSign 🔨
+
+#### A. Base de données
+
+**Colonnes manquantes dans `documents_animaux` :**
+```sql
+ALTER TABLE documents_animaux
+  ADD COLUMN IF NOT EXISTS expires_at        TIMESTAMPTZ,          -- expiration lien signature
+  ADD COLUMN IF NOT EXISTS cancelled_at      TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS rejection_reason  TEXT,
+  ADD COLUMN IF NOT EXISTS pdf_original_url  TEXT,                 -- PDF généré avant signatures
+  ADD COLUMN IF NOT EXISTS pdf_signe_url     TEXT,                 -- PDF final avec signatures injectées
+  ADD COLUMN IF NOT EXISTS yousign_id        TEXT;                 -- ID requête YouSign (future)
+```
+
+**Statuts manquants à supporter dans le code :**
+- `partiellement_signe` — au moins un signataire a signé, pas tous
+- `annule` — contrat annulé par l'éleveur
+- `expire` — lien de signature expiré (ex. 30 jours)
+- `refuse` — acquéreur a refusé
+
+**Nouvelle table `contract_signers` (multi-signataires) :**
+```sql
+CREATE TABLE contract_signers (
+  id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  document_id  UUID REFERENCES documents_animaux(id) ON DELETE CASCADE,
+  role         TEXT NOT NULL,    -- vendeur | acquereur | co_eleveur | temoin | veterinaire
+  nom          TEXT NOT NULL,
+  email        TEXT,
+  ordre        INTEGER DEFAULT 1, -- ordre de signature si séquentiel
+  statut       TEXT DEFAULT 'en_attente',  -- en_attente | signe | refuse
+  signe_le     TIMESTAMPTZ,
+  signature_b64 TEXT,            -- canvas base64 (SIGN00) ou null si YouSign
+  yousign_signer_id TEXT,        -- ID signataire YouSign (future)
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Nouvelle table `contract_audit` (historique) :**
+```sql
+CREATE TABLE contract_audit (
+  id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  document_id  UUID REFERENCES documents_animaux(id) ON DELETE CASCADE,
+  action       TEXT NOT NULL,    -- created | modified | sent | viewed | signed | refused | cancelled | downloaded | expired
+  actor_uid    TEXT,             -- uid Firebase de l'acteur (null si acquéreur non-inscrit)
+  actor_email  TEXT,
+  actor_role   TEXT,             -- eleveur | acquereur | admin
+  details      JSONB,            -- infos contextuelles (IP, user-agent, champ modifié...)
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX ON contract_audit(document_id, created_at DESC);
+```
+
+#### B. Architecture services (Web — TypeScript)
+
+**`website/src/lib/signature/SignatureProvider.ts`** — interface abstraite :
+```typescript
+export interface SignatureProvider {
+  createSignatureRequest(doc: ContractDoc): Promise<string>;   // returns requestId
+  addSigner(requestId: string, signer: Signer): Promise<void>;
+  sendSignatureRequest(requestId: string): Promise<void>;
+  getSignatureStatus(requestId: string): Promise<SignatureStatus>;
+  downloadSignedDocument(requestId: string): Promise<Blob>;
+  cancelSignatureRequest(requestId: string): Promise<void>;
+}
+
+export type SignatureStatus = 'pending' | 'partial' | 'signed' | 'refused' | 'cancelled' | 'expired';
+export interface Signer { nom: string; email: string; role: string; ordre?: number; }
+export interface ContractDoc { id: string; titre: string; htmlContent: string; }
+```
+
+**`website/src/lib/signature/CanvasSignatureProvider.ts`** — encapsule le canvas actuel (SIGN00).
+
+**`website/src/lib/signature/YouSignProvider.ts`** — stub vide prêt à implémenter :
+```typescript
+export class YouSignProvider implements SignatureProvider {
+  constructor(private apiKey: string) {}
+  async createSignatureRequest(_doc: ContractDoc): Promise<string> { throw new Error('YouSign non configuré'); }
+  async addSigner(_requestId: string, _signer: Signer): Promise<void> { throw new Error('YouSign non configuré'); }
+  async sendSignatureRequest(_requestId: string): Promise<void> { throw new Error('YouSign non configuré'); }
+  async getSignatureStatus(_requestId: string): Promise<SignatureStatus> { throw new Error('YouSign non configuré'); }
+  async downloadSignedDocument(_requestId: string): Promise<Blob> { throw new Error('YouSign non configuré'); }
+  async cancelSignatureRequest(_requestId: string): Promise<void> { throw new Error('YouSign non configuré'); }
+}
+```
+
+**`website/src/lib/ContractService.ts`** — logique métier centralisée (création, annulation, statut).
+
+**`website/src/lib/ContractStorageService.ts`** — upload/download Supabase Storage.
+
+#### C. API endpoints (stubs vides, à activer avec YouSign)
+
+| Endpoint | Méthode | Usage |
+|----------|---------|-------|
+| `/api/contracts/[id]/cancel` | POST | Annuler un contrat |
+| `/api/contracts/[id]/audit` | GET | Historique des actions |
+| `/api/contracts/[id]/download-pdf` | GET | Télécharger PDF signé |
+| `/api/yousign/create` | POST | **Stub vide** — créer requête YouSign |
+| `/api/yousign/webhook` | POST | **Stub vide** — recevoir événements YouSign |
+
+#### D. UI manquante
+
+**Page signature `/signer-contrat/[token]`**
+- [ ] Bouton "📥 Télécharger le contrat signé" (quand statut = `signe`)
+- [ ] Bouton "❌ Refuser ce contrat" pour l'acquéreur + saisie motif
+- [ ] Affichage de la date d'expiration du lien
+
+**Pages contrats (éleveur web + app)**
+- [ ] Statuts `partiellement_signe`, `annule`, `expire`, `refuse` dans les badges
+- [ ] Bouton "Annuler" sur un contrat (met statut `annule`)
+- [ ] Bouton "📥 Télécharger PDF signé" sur les contrats signés
+- [ ] Onglet/section "Historique" par contrat (audit trail)
+
+**Particulier — Mes Contrats (web + app)**
+- [ ] Bouton "❌ Refuser" avec motif
+- [ ] Affichage des contrats refusés/annulés/expirés
+
+**Multi-signataires (V2)**
+- [ ] Ajout co-éleveur ou témoin lors de la création
+- [ ] Statut `partiellement_signe` quand 1 signataire sur N a signé
+- [ ] Co-adoption pour associations (plusieurs acquéreurs)
+
+#### E. PDF signé téléchargeable
+
+Actuellement les signatures canvas sont stockées en base64 dans `metadata` mais il n'existe pas de PDF final téléchargeable avec les signatures injectées. À créer :
+- Soit côté web : générer un PDF via `@react-pdf/renderer` ou `puppeteer` avec les canvas injectés
+- Soit via un webhook : à l'activation YouSign, le PDF signé est retourné par YouSign directement
+
+---
+
+### 9ter.3 — Codes feature préparation YouSign
+
+| Code | Feature | Surface | Statut |
+|------|---------|---------|--------|
+| PREP01 | Migration SQL — colonnes expires_at, pdf_signe_url, yousign_id | Backend | 🔨 À faire |
+| PREP02 | Table `contract_signers` | Backend | 🔨 À faire |
+| PREP03 | Table `contract_audit` | Backend | 🔨 À faire |
+| PREP04 | `SignatureProvider` interface + `YouSignProvider` stub + `CanvasSignatureProvider` | Web | 🔨 À faire |
+| PREP05 | `ContractService` + `ContractStorageService` centralisés | Web | 🔨 À faire |
+| PREP06 | Endpoints stubs `/api/yousign/create` + `/api/yousign/webhook` | Web | 🔨 À faire |
+| PREP07 | Bouton télécharger PDF signé (UI web + app) | App + Web | 🔨 À faire |
+| PREP08 | Bouton Refuser + statuts annulé/expiré/refusé (UI) | App + Web | 🔨 À faire |
+| PREP09 | Historique/audit par contrat (UI) | Web | 🔨 À faire |
+| PREP10 | Multi-signataires (co-éleveur, témoin) dans le formulaire | App + Web | 🔜 V2 |
+
+---
+
+### 9ter.4 — Checklist d'activation YouSign (quand abonnement souscrit)
+
+Une fois l'abonnement YouSign actif, **dans cet ordre** :
+
+- [ ] **1.** Ajouter dans `.env.local` (et variables Netlify/Vercel) :
+  ```
+  YOUSIGN_API_KEY=ys_sandbox_...    # puis yp_prod_... en production
+  YOUSIGN_WEBHOOK_SECRET=...
+  STRIPE_CONTRACT_PRICE_ID=price_...
+  ```
+- [ ] **2.** Implémenter `YouSignProvider` (les méthodes sont déjà définies via PREP04)
+- [ ] **3.** Activer `/api/yousign/create` — appelle `YouSignProvider.createSignatureRequest()` + `addSigner()` + `sendSignatureRequest()`
+- [ ] **4.** Activer `/api/yousign/webhook` — valider signature HMAC, récupérer PDF signé, stocker dans Supabase Storage `pdf_signe_url`, mettre statut `signe`
+- [ ] **5.** Configurer le webhook dans l'interface YouSign : URL = `https://petsmatchapp.com/api/yousign/webhook`
+- [ ] **6.** Créer la table `contrats_yousign_usage` + activer le garde de quota dans `ContractService`
+- [ ] **7.** Tester en sandbox YouSign (les `ys_sandbox_` keys permettent des requêtes test sans facturation)
+- [ ] **8.** Passer en production YouSign (`yp_prod_` keys)
+- [ ] **9.** Activer la facturation Stripe 2€/contrat au-delà du quota
+
+> À ce stade, le canvas (SIGN00) peut rester comme fallback ou être retiré.
+
+---
+
 ## 10. Emails transactionnels — Abonnements & Relances
 
 > **Prérequis** : choisir l'hébergement + domaine (`petsmatchapp.com`) avant d'implémenter.  
