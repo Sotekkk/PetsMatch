@@ -4,6 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 
 const _teal  = Color(0xFF0C5C6C);
@@ -181,55 +183,62 @@ class _CessionSheetState extends State<CessionSheet> {
     }
   }
 
-  Future<void> _genererPdf() async {
-    setState(() { _generatingPdf = true; _error = null; });
+  // Crée un doc dans documents_animaux et ouvre le lien dans le navigateur
+  Future<void> _ouvrirContratWeb(String type) async {
+    final isCert = type == 'certificat_cession';
+    if (isCert) {
+      setState(() { _generatingCert = true; _error = null; });
+    } else {
+      setState(() { _generatingPdf = true; _error = null; });
+    }
     try {
-      final profil = await _supa.from('users').select(
-        'firstname, lastname, name_elevage, is_elevage, adress_elevage, adress, siret, numero_elevage, code_iso_elevage, email'
-      ).eq('uid', widget.uid).maybeSingle();
-      await genererContratPDF(
-        context: context,
-        animal: widget.animal,
-        eleveur: profil ?? {},
-        acquereurNom:     _nomCtrl.text.trim(),
-        acquereurAdresse: _adresseCtrl.text.trim(),
-        acquereurEmail:   _emailCtrl.text.trim(),
-        acquereurTel:     _telCtrl.text.trim(),
-        prix:             _prixCtrl.text.trim(),
-        dateCession:      _dateCession,
-        notes:            _notesCtrl.text.trim(),
-      );
+      final animalId = widget.animal['id'] as String;
+      final titreLabel = isCert ? 'Certificat de cession' : 'Contrat de vente';
+      final nomAnimal  = widget.animal['nom'] as String? ?? '';
+      final acqNom     = _nomCtrl.text.trim();
+
+      // Créer ou récupérer le doc dans documents_animaux
+      final res = await _supa.from('documents_animaux').insert({
+        'animal_id':   animalId,
+        'uid_eleveur': widget.uid,
+        'type':        type,
+        'titre':       '$titreLabel — $nomAnimal',
+        'statut':      'brouillon',
+        'metadata': {
+          'acquereur_nom':     acqNom,
+          'acquereur_email':   _emailCtrl.text.trim(),
+          'acquereur_tel':     _telCtrl.text.trim(),
+          'acquereur_adresse': _adresseCtrl.text.trim(),
+          'prix':              _prixCtrl.text.trim(),
+          'date_cession':      _dateCession.toIso8601String().split('T').first,
+          'notes':             _notesCtrl.text.trim(),
+        },
+      }).select('token').single();
+
+      final token = res['token'] as String;
+      const baseUrl = kSiteBaseUrl;
+      final url = Uri.parse('$baseUrl/signer-contrat/$token');
+
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        // Copier le lien dans le presse-papier si le navigateur ne s'ouvre pas
+        if (mounted) {
+          await Clipboard.setData(ClipboardData(text: url.toString()));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Lien copié — ouvrez-le dans votre navigateur')),
+          );
+        }
+      }
     } catch (e) {
-      setState(() => _error = 'Erreur génération PDF : $e');
+      setState(() => _error = 'Erreur : $e');
     } finally {
-      setState(() => _generatingPdf = false);
+      setState(() { _generatingPdf = false; _generatingCert = false; });
     }
   }
 
-  Future<void> _genererCertificat() async {
-    setState(() { _generatingCert = true; _error = null; });
-    try {
-      final profil = await _supa.from('users').select(
-        'firstname, lastname, name_elevage, is_elevage, adress_elevage, adress, siret, numero_elevage, code_iso_elevage, email'
-      ).eq('uid', widget.uid).maybeSingle();
-      await genererCertificatCessionPDF(
-        context: context,
-        animal: widget.animal,
-        eleveur: profil ?? {},
-        acquereurNom:     _nomCtrl.text.trim(),
-        acquereurAdresse: _adresseCtrl.text.trim(),
-        acquereurEmail:   _emailCtrl.text.trim(),
-        acquereurTel:     _telCtrl.text.trim(),
-        prix:             _prixCtrl.text.trim(),
-        dateCession:      _dateCession,
-        notes:            _notesCtrl.text.trim(),
-      );
-    } catch (e) {
-      setState(() => _error = 'Erreur génération certificat : $e');
-    } finally {
-      setState(() => _generatingCert = false);
-    }
-  }
+  Future<void> _genererPdf()       async => _ouvrirContratWeb('contrat_vente');
+  Future<void> _genererCertificat() async => _ouvrirContratWeb('certificat_cession');
 
   Future<void> _save() async {
     if (_nomCtrl.text.trim().isEmpty) {
@@ -260,7 +269,7 @@ class _CessionSheetState extends State<CessionSheet> {
       }).select('token').single();
 
       final token = row['token'] as String;
-      const baseUrl = 'https://petsmatchapp.com';
+      const baseUrl = kSiteBaseUrl;
       final signingUrl = '$baseUrl/signer-cession/$token';
 
       // 2. Passer l'animal en 'cession_en_cours' (pas encore sorti)
@@ -554,42 +563,6 @@ class _CessionSheetState extends State<CessionSheet> {
               ),
               const SizedBox(height: 12),
             ],
-            // Bouton générer certificat de cession PDF
-            OutlinedButton.icon(
-              onPressed: _generatingCert ? null : _genererCertificat,
-              icon: _generatingCert
-                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: _teal, strokeWidth: 2))
-                  : const Icon(Icons.assignment_turned_in_outlined, size: 16, color: _teal),
-              label: Text(_generatingCert ? 'Génération...' : '📜 Générer certificat de cession (PDF)',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: _teal)),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: _teal),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                minimumSize: const Size(double.infinity, 0),
-              ),
-            ),
-            const SizedBox(height: 8),
-            // Bouton générer contrat PDF
-            OutlinedButton.icon(
-              onPressed: _generatingPdf ? null : _genererPdf,
-              icon: _generatingPdf
-                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: _teal, strokeWidth: 2))
-                  : const Icon(Icons.picture_as_pdf_outlined, size: 16, color: _teal),
-              label: Text(_generatingPdf ? 'Génération...' : '📄 Générer contrat de vente (PDF)',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: _teal)),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: _teal),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                minimumSize: const Size(double.infinity, 0),
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 4),
-              child: Text('Imprimez en 2 exemplaires (un pour chaque partie), signez, puis uploadez le signé.',
-                  style: TextStyle(fontSize: 10, color: Colors.grey)),
-            ),
             const SizedBox(height: 8),
             _DocRow(
               title: '📜 Certificat de cession',

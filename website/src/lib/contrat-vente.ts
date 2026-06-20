@@ -17,6 +17,14 @@ export interface AnimalContrat {
   sexe?: string;
   identification?: string;
   date_naissance?: string;
+  couleur?: string;
+  pedigree_numero?: string;
+  pedigree_lof?: string;
+  nom_pere?: string;
+  puce_pere?: string;
+  nom_mere?: string;
+  puce_mere?: string;
+  ville_naissance?: string;  // ville_elevage du vendeur
 }
 
 export interface DataContrat {
@@ -280,7 +288,7 @@ export function generateContratHTML(
   animal: AnimalContrat,
   data: DataContrat,
   eleveur: EleveurContrat,
-  opts?: { animalId?: string; supabaseUrl?: string; supabaseKey?: string }
+  opts?: { animalId?: string; supabaseUrl?: string; supabaseKey?: string; avecSterilisation?: boolean }
 ): string {
   const today = new Date().toLocaleDateString('fr-FR');
   const t = animalTerms(animal.espece);
@@ -295,6 +303,14 @@ export function generateContratHTML(
   const sbUrl = opts?.supabaseUrl ?? '';
   const sbKey = opts?.supabaseKey ?? '';
   const hasSign = !!animalId;
+  const avecSteril = opts?.avecSterilisation !== false;
+  const couleur        = animal.couleur ?? '';
+  const pedigreeNum    = animal.pedigree_numero ?? '';
+  const nomPere        = animal.nom_pere ?? '';
+  const pucePere       = animal.puce_pere ? ` (puce ${animal.puce_pere})` : '';
+  const nomMere        = animal.nom_mere ?? '';
+  const puceMere       = animal.puce_mere ? ` (puce ${animal.puce_mere})` : '';
+  const villeNaissance = animal.ville_naissance ?? '';
 
   return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"><title>Contrat de vente — ${animal.nom || 'animal'}</title>
@@ -340,12 +356,12 @@ Mail : <span class="e wide" contenteditable="true" data-ph="Email">${data.email 
 <div class="block">
 Un ${t.jeune} du Nom <span class="e wide" contenteditable="true" data-ph="Nom">${animal.nom || ''}</span>
 De race <span class="e wide" contenteditable="true" data-ph="Race">${animal.race || ''}</span><br>
-Né le <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA">${dn}</span> à <span class="e" contenteditable="true" data-ph="Lieu">PLUMIEUX</span> &nbsp;
-Sexe <span class="e" contenteditable="true" data-ph="M/F">${animal.sexe || ''}</span> &nbsp;
-Couleur <span class="e wide" contenteditable="true" data-ph="Couleur/robe"></span><br>
+Né le <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA">${dn}</span> à <span class="e" contenteditable="true" data-ph="Ville de naissance">${villeNaissance}</span> &nbsp;
+Sexe <span class="e" contenteditable="true" data-ph="M/F">${isMasculin ? 'Mâle' : 'Femelle'}</span> &nbsp;
+Couleur <span class="e wide" contenteditable="true" data-ph="Couleur/robe">${couleur}</span><br>
 Puce n° <span class="e wide" contenteditable="true" data-ph="N° identification">${animal.identification || ''}</span><br>
-${t.pedigree} <span class="e wide" contenteditable="true" data-ph="N° pedigree"></span><br>
-Père <span class="e wide" contenteditable="true" data-ph="Nom du père"></span> &nbsp; Mère <span class="e wide" contenteditable="true" data-ph="Nom de la mère"></span><br>
+${t.pedigree} <span class="e wide" contenteditable="true" data-ph="N° pedigree">${pedigreeNum}</span><br>
+Père <span class="e wide" contenteditable="true" data-ph="Nom du père">${nomPere}${pucePere}</span> &nbsp; Mère <span class="e wide" contenteditable="true" data-ph="Nom de la mère">${nomMere}${puceMere}</span><br>
 Documents remis :
 <span class="cb" onclick="toggleCb(this)">☐</span> Certificat de bonne santé &nbsp;
 <span class="cb" onclick="toggleCb(this)">☐</span> Carnet/passeport &nbsp;
@@ -356,14 +372,14 @@ Documents remis :
 </div>
 
 <div class="article">
-<div class="art-title">Article 2 – Prix de vente – Stérilisation</div>
+<div class="art-title">Article 2 – Prix de vente${avecSteril ? ' – Stérilisation' : ''}</div>
 <div class="block">
 Acompte versé : <span class="e" contenteditable="true" data-ph="0">………</span> € &nbsp;
 Tranche 1 (au départ) : <span class="e wide" contenteditable="true" data-ph="Montant">${prixTTC}</span><br>
 TVA (si assujetti) : <span class="e" contenteditable="true" data-ph="0">………</span> € &nbsp;
-Paiement : <span class="cb" onclick="toggleCb(this)">☐</span> virement <span class="cb" onclick="toggleCb(this)">☐</span> espèces <span class="cb" onclick="toggleCb(this)">☐</span> Oney<br>
+Paiement : <span class="cb" onclick="toggleCb(this)">☐</span> virement <span class="cb" onclick="toggleCb(this)">☐</span> espèces <span class="cb" onclick="toggleCb(this)">☐</span> Oney${avecSteril ? `<br>
 Tranche 2 (si non-présentation certificat stérilisation sous ${sterilDelai}) : <span class="e" contenteditable="true" data-ph="Montant">2 000</span> €<br>
-La Tranche 2 n'est pas due si la stérilisation a été effectuée par le Vendeur avant la livraison.
+La Tranche 2 n'est pas due si la stérilisation a été effectuée par le Vendeur avant la livraison.` : ''}
 </div>
 </div>
 
@@ -669,6 +685,12 @@ export function generateContratReservationHTML(
   const sbUrl     = opts?.supabaseUrl ?? '';
   const sbKey     = opts?.supabaseKey ?? '';
   const hasSign   = !!animalId;
+  const nomPereR    = animal.nom_pere ?? data.nomPere ?? '';
+  const pucePereR   = animal.puce_pere ? ` (puce ${animal.puce_pere})` : '';
+  const nomMereR    = animal.nom_mere ?? data.nomMere ?? '';
+  const puceMereR   = animal.puce_mere ? ` (puce ${animal.puce_mere})` : '';
+  const couleurR    = animal.couleur ?? '';
+  const pedigreeNumR = animal.pedigree_numero ?? '';
 
   return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"><title>Contrat de réservation — ${animal.nom || jeune}</title>
@@ -717,8 +739,10 @@ Mail : <span class="e wide" contenteditable="true" data-ph="Email">${data.email 
 Le Futur Acheteur réserve auprès du Vendeur, pour en devenir le futur propriétaire, le ${jeune} désigné :<br>
 Nom : <span class="e wide" contenteditable="true" data-ph="Nom de l'animal">${animal.nom ?? ''}</span><br>
 Né le : <span class="e wide" contenteditable="true" data-ph="Date de naissance">${dn}</span><br>
-Père : <span class="e full" contenteditable="true" data-ph="Nom du père">${data.nomPere ?? ''}</span>
-Mère : <span class="e full" contenteditable="true" data-ph="Nom de la mère">${data.nomMere ?? ''}</span>
+Couleur / Robe : <span class="e wide" contenteditable="true" data-ph="Couleur">${couleurR}</span><br>
+${pedigreeNumR ? `${t.pedigree} <span class="e wide" contenteditable="true">${pedigreeNumR}</span><br>` : ''}
+Père : <span class="e full" contenteditable="true" data-ph="Nom du père">${nomPereR}${pucePereR}</span>
+Mère : <span class="e full" contenteditable="true" data-ph="Nom de la mère">${nomMereR}${puceMereR}</span>
 ${animal.identification ? `Puce / Tatouage : <span class="e wide" contenteditable="true">${animal.identification}</span><br>` : ''}
 ${animal.race ? `Race : <span class="e wide" contenteditable="true">${animal.race}</span><br>` : ''}
 </div>

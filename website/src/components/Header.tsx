@@ -268,6 +268,13 @@ const MENU_PARTICULIER = [
     ],
   },
   {
+    section: 'Administratif',
+    icon: '📄',
+    items: [
+      { href: '/mes-contrats', label: 'Mes Contrats', icon: '📄' },
+    ],
+  },
+  {
     section: 'Animaux perdus / trouvés',
     icon: '🔍',
     items: [

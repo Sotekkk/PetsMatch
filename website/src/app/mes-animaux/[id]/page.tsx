@@ -20,7 +20,7 @@ interface Animal {
   date_naissance?: string; couleur?: string; identification?: string;
   sterilise?: boolean; description?: string; notes?: string; photo_url?: string;
   statut?: string; passeport_europeen?: string; type_poil?: string; taille?: string; poids?: string;
-  pedigree?: boolean; pedigree_lof?: string; club_registre?: string; pedigree_url?: string;
+  pedigree?: boolean; pedigree_lof?: string; pedigree_numero?: string; club_registre?: string; pedigree_url?: string;
   nom_pere?: string; puce_pere?: string; race_pere?: string;
   nom_mere?: string; puce_mere?: string; race_mere?: string; date_naissance_mere?: string;
   importation_ref?: string;
@@ -1228,7 +1228,7 @@ export default function AnimalFichePage() {
         identification: animal.identification, sterilise: animal.sterilise,
         description: animal.description, notes: animal.notes,
         type_poil: animal.type_poil, taille: animal.taille, poids: animal.poids,
-        pedigree: animal.pedigree, pedigree_lof: animal.pedigree_lof,
+        pedigree: animal.pedigree, pedigree_lof: animal.pedigree_lof, pedigree_numero: animal.pedigree_numero,
         club_registre: animal.club_registre, pedigree_url: animal.pedigree_url,
         passeport_europeen: animal.passeport_europeen,
         nom_pere: animal.nom_pere, puce_pere: animal.puce_pere, race_pere: animal.race_pere,
@@ -1792,6 +1792,7 @@ export default function AnimalFichePage() {
               </div>
               {animal.pedigree_lof && !animal.pedigree_lof.toLowerCase().startsWith('non') && (
                 <>
+                  <Field label="N° de pedigree (LOF, LOOF, SIRE…)" value={animal.pedigree_numero ?? ''} onChange={v => set('pedigree_numero', v)} />
                   <Field label="Club / Registre" value={animal.club_registre ?? ''} onChange={v => set('club_registre', v)} />
                   <div>
                     <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Document pedigree</label>

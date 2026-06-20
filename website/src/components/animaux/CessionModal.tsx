@@ -3,8 +3,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { uploadDocument } from '@/lib/upload-media';
-import { generateContratHTML as generateContratHTMLLib, generateCertificatCessionHTML } from '@/lib/contrat-vente';
-
 interface Animal {
   id: string;
   nom?: string;
@@ -54,27 +52,6 @@ const QUALITES = [
 function fmtDate(s?: string) {
   if (!s) return '—';
   return new Date(s).toLocaleDateString('fr-FR');
-}
-
-
-
-function buildContratHTML(animal: Animal, data: CessionData, eleveur: EleveurInfo): string {
-  const sbUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
-  const sbKey  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
-  return generateContratHTMLLib(animal, data, eleveur, { animalId: animal.id, supabaseUrl: sbUrl, supabaseKey: sbKey });
-}
-
-function buildCertHTML(animal: Animal, data: CessionData, eleveur: EleveurInfo, eleveurUid: string): string {
-  const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
-  const sbKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
-  return generateCertificatCessionHTML(animal, data, eleveur, { animalId: animal.id, supabaseUrl: sbUrl, supabaseKey: sbKey, eleveurUid });
-}
-
-function openDoc(html: string) {
-  const win = window.open('', '_blank', 'width=900,height=700');
-  if (!win) { alert('Autorisez les popups'); return; }
-  win.document.write(html);
-  win.document.close();
 }
 
 export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCeded }: Props) {
@@ -491,16 +468,9 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
 
               {/* Certificat de cession */}
               <div className={`border rounded-xl p-4 space-y-3 ${certificatSigne ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-bold text-[#1F2A2E]">📜 Certificat de cession</p>
-                    <p className="text-xs text-gray-400">Document légal de transfert — champs modifiables + signature canvas</p>
-                  </div>
-                  <button
-                    onClick={() => openDoc(buildCertHTML(animal, cessionData, eleveurInfo, uid))}
-                    className="text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C]/30 px-3 py-1.5 rounded-lg hover:bg-[#0C5C6C]/5 transition-colors">
-                    ✍️ Générer &amp; signer
-                  </button>
+                <div>
+                  <p className="text-sm font-bold text-[#1F2A2E]">📜 Certificat de cession</p>
+                  <p className="text-xs text-gray-400">Uploadez le certificat signé</p>
                 </div>
                 {certificatSigne && (
                   <div className="flex items-center gap-2 text-xs text-green-700 font-semibold">
@@ -520,18 +490,11 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
                 )}
               </div>
 
-              {/* Contrat de vente numérique */}
+              {/* Contrat de vente */}
               <div className={`border rounded-xl p-4 space-y-3 ${contratSigne ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-bold text-[#1F2A2E]">🤝 Contrat de vente</p>
-                    <p className="text-xs text-gray-400">Signature numérique · Stocké pour les deux parties</p>
-                  </div>
-                  <button
-                    onClick={() => openDoc(buildContratHTML(animal, cessionData, eleveurInfo))}
-                    className="text-xs font-semibold text-[#6E9E57] border border-[#6E9E57]/40 px-3 py-1.5 rounded-lg hover:bg-[#6E9E57]/5 transition-colors">
-                    ✍️ Signer en ligne
-                  </button>
+                <div>
+                  <p className="text-sm font-bold text-[#1F2A2E]">🤝 Contrat de vente</p>
+                  <p className="text-xs text-gray-400">Uploadez le contrat signé (ou créez-en un depuis <strong>Administratif → Contrats</strong>)</p>
                 </div>
                 {contratSigne && (
                   <div className="flex items-center gap-2 text-xs text-green-700 font-semibold">

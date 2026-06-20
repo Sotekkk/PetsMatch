@@ -13,14 +13,15 @@ interface DocAnimal {
   type: 'contrat_vente' | 'contrat_reservation' | 'certificat_cession';
   titre: string;
   url: string | null;
-  statut: 'brouillon' | 'signe' | 'archive';
+  token: string | null;
+  statut: 'brouillon' | 'en_attente' | 'signe' | 'archive';
   signe_le: string | null;
   metadata: Record<string, string | number | null>;
   created_at: string;
 }
 
-interface Animal { id: string; nom: string; espece: string; race: string; identification: string; date_naissance: string; sexe: string; }
-interface UserProfile { firstname: string; lastname: string; name_elevage: string; is_elevage: boolean; adress_elevage: string; adress: string; rue: string; ville: string; code_postal: string; siret: string; email: string; numero_elevage: string; code_iso_elevage: string; phone_number: string; code_iso: string; }
+interface Animal { id: string; nom: string; espece: string; race: string; identification: string; date_naissance: string; sexe: string; couleur?: string; pedigree_numero?: string; pedigree_lof?: string; nom_pere?: string; puce_pere?: string; nom_mere?: string; puce_mere?: string; }
+interface UserProfile { firstname: string; lastname: string; name_elevage: string; is_elevage: boolean; adress_elevage: string; adress: string; rue: string; ville: string; ville_elevage: string; code_postal: string; siret: string; email: string; numero_elevage: string; code_iso_elevage: string; phone_number: string; code_iso: string; }
 
 const TYPE_META = {
   contrat_vente:       { label: 'Vente',        icon: '🤝', color: 'bg-green-50 text-green-700 border-green-200' },
@@ -29,9 +30,10 @@ const TYPE_META = {
 };
 
 const STATUT_META = {
-  brouillon: { label: 'Brouillon', cls: 'bg-gray-100 text-gray-500' },
-  signe:     { label: 'Signé',     cls: 'bg-green-100 text-green-700' },
-  archive:   { label: 'Archivé',   cls: 'bg-amber-100 text-amber-600' },
+  brouillon:   { label: 'Brouillon',              cls: 'bg-gray-100 text-gray-500' },
+  en_attente:  { label: '⏳ Attente acquéreur',   cls: 'bg-amber-100 text-amber-700' },
+  signe:       { label: '✅ Signé',               cls: 'bg-green-100 text-green-700' },
+  archive:     { label: 'Archivé',                cls: 'bg-gray-100 text-gray-400' },
 };
 
 export default function ContratsPage() {
@@ -59,6 +61,7 @@ export default function ContratsPage() {
   const [prix, setPrix]               = useState('');
   const [dateDoc, setDateDoc]         = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes]             = useState('');
+  const [avecSteril, setAvecSteril]   = useState(true);
   // Recherche acquéreur PetsMatch
   const [userSearch, setUserSearch]   = useState('');
   const [userResults, setUserResults] = useState<{uid:string;firstname:string;lastname:string;email:string;phone_number:string;rue:string;ville:string;code_postal:string}[]>([]);
@@ -85,8 +88,8 @@ export default function ContratsPage() {
     setFetching(true);
     const [docsRes, animauxRes, profileRes] = await Promise.all([
       supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).order('created_at', { ascending: false }),
-      supabase.from('animaux').select('id, nom, espece, race, identification, date_naissance, sexe').eq('uid_eleveur', user.uid).not('statut', 'in', '(sorti,decede)').order('nom'),
-      supabase.from('users').select('firstname,lastname,name_elevage,is_elevage,adress_elevage,adress,rue,ville,code_postal,siret,email,numero_elevage,code_iso_elevage,phone_number,code_iso').eq('uid', user.uid).maybeSingle(),
+      supabase.from('animaux').select('id, nom, espece, race, identification, date_naissance, sexe, couleur, pedigree_numero, pedigree_lof, nom_pere, puce_pere, nom_mere, puce_mere').eq('uid_eleveur', user.uid).not('statut', 'in', '(sorti,decede)').order('nom'),
+      supabase.from('users').select('firstname,lastname,name_elevage,is_elevage,adress_elevage,adress,rue,ville,ville_elevage,code_postal,siret,email,numero_elevage,code_iso_elevage,phone_number,code_iso').eq('uid', user.uid).maybeSingle(),
     ]);
     setDocs((docsRes.data ?? []) as DocAnimal[]);
     setAnimaux((animauxRes.data ?? []) as Animal[]);
@@ -120,6 +123,7 @@ export default function ContratsPage() {
     setAnimalId(''); setSelectedAnimal(null); setAcqNom(''); setAcqPrenom('');
     setAcqEmail(''); setAcqTel(''); setAcqAdresse(''); setPrix('');
     setDateDoc(new Date().toISOString().split('T')[0]); setNotes('');
+    setAvecSteril(true);
     setUserSearch(''); setUserResults([]);
   }
 
@@ -138,16 +142,28 @@ export default function ContratsPage() {
     const opts = { animalId: selectedAnimal.id, supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!, supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! };
     const dataContrat = { nom: acqNomFull, adresse: acqAdresse, email: acqEmail, tel: acqTel, prix, dateCession: dateDoc, notes };
     const elvInfo = { nom: elv.nom, adresse: elv.adresse, email: elv.email, siret: elv.siret, tel: elv.tel };
+    // Champs enrichis animal + ville naissance = ville_elevage du profil
+    const villeElevage = profile?.ville_elevage ?? profile?.ville ?? '';
+    const animalEnrichi = {
+      ...selectedAnimal,
+      ville_naissance: villeElevage,
+    };
 
-    const html = formType === 'contrat_reservation'
-      ? generateContratReservationHTML(selectedAnimal, dataContrat, elvInfo, opts)
-      : generateContratHTML(selectedAnimal, dataContrat, elvInfo, opts);
-
-    const win = window.open('', '_blank', 'width=900,height=700');
-    if (!win) { alert('Autorisez les popups'); return; }
-    popupRef.current = win;
-    win.document.write(html); win.document.close();
-    await saveDraft();
+    // Sauvegarder d'abord pour obtenir le token, puis ouvrir via /signer-contrat/[token]
+    const token = await saveDraft();
+    if (token) {
+      const win = window.open(`/signer-contrat/${token}`, '_blank', 'width=900,height=700');
+      popupRef.current = win;
+    } else {
+      // Fallback : HTML en mémoire si l'insert a échoué
+      const html = formType === 'contrat_reservation'
+        ? generateContratReservationHTML(animalEnrichi, dataContrat, elvInfo, opts)
+        : generateContratHTML(animalEnrichi, dataContrat, elvInfo, opts);
+      const win = window.open('', '_blank', 'width=900,height=700');
+      if (!win) { alert('Autorisez les popups'); return; }
+      popupRef.current = win;
+      win.document.write(html); win.document.close();
+    }
   }
 
   async function openBlankVente() {
@@ -158,26 +174,28 @@ export default function ContratsPage() {
     win.document.write(html); win.document.close();
   }
 
-  async function saveDraft() {
-    if (!user || !selectedAnimal) return;
+  async function saveDraft(): Promise<string | null> {
+    if (!user || !selectedAnimal) return null;
     const titreLabel = formType === 'contrat_vente' ? 'Contrat de vente' : formType === 'contrat_reservation' ? 'Contrat de réservation' : 'Certificat de cession';
-    await supabase.from('documents_animaux').insert({
+    const { data } = await supabase.from('documents_animaux').insert({
       animal_id:   selectedAnimal.id,
       uid_eleveur: user.uid,
       type:        formType,
       titre:       `${titreLabel} — ${selectedAnimal.nom ?? 'Animal'}`,
       statut:      'brouillon',
       metadata: {
-        acquereur_nom:     `${acqPrenom} ${acqNom}`.trim(),
-        acquereur_email:   acqEmail,
-        acquereur_tel:     acqTel,
-        acquereur_adresse: acqAdresse,
-        prix:              parseFloat(prix) || null,
-        date_doc:          dateDoc,
+        acquereur_nom:       `${acqPrenom} ${acqNom}`.trim(),
+        acquereur_email:     acqEmail,
+        acquereur_tel:       acqTel,
+        acquereur_adresse:   acqAdresse,
+        prix:                parseFloat(prix) || null,
+        date_cession:        dateDoc,
         notes,
+        avec_sterilisation:  avecSteril,
       },
-    });
+    }).select('token').single();
     await load();
+    return (data as { token: string } | null)?.token ?? null;
   }
 
   async function deleteDoc(id: string, titre: string) {
@@ -265,9 +283,22 @@ export default function ContratsPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {d.url && (
+                    {d.token && (
+                      <a href={`/signer-contrat/${d.token}`} target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-[#0C5C6C] hover:underline font-medium">✏️ Ouvrir</a>
+                    )}
+                    {d.token && (
+                      <button onClick={() => {
+                        const link = `${window.location.origin}/signer-contrat/${d.token}`;
+                        navigator.clipboard.writeText(link);
+                        alert('Lien copié ! Envoyez-le à l\'acquéreur pour signature.');
+                      }} className="text-xs text-[#6E9E57] hover:underline font-medium">
+                        🔗 Partager
+                      </button>
+                    )}
+                    {d.url && !d.token && (
                       <a href={d.url} target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-[#0C5C6C] hover:underline font-medium">Ouvrir</a>
+                        className="text-xs text-[#0C5C6C] hover:underline font-medium">Voir</a>
                     )}
                     <button onClick={() => deleteDoc(d.id, d.titre)} disabled={deleting === d.id}
                       className="text-xs text-red-400 hover:text-red-600 font-medium disabled:opacity-40">
@@ -342,6 +373,17 @@ export default function ContratsPage() {
               <div><label className="text-xs text-gray-500 mb-1 block">Date</label><input type="date" value={dateDoc} onChange={e => setDateDoc(e.target.value)} className={iCls} /></div>
             </div>
             <div><label className="text-xs text-gray-500 mb-1 block">Notes</label><textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={iCls} /></div>
+
+            {formType === 'contrat_vente' && (
+              <label className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl cursor-pointer">
+                <input type="checkbox" checked={avecSteril} onChange={e => setAvecSteril(e.target.checked)}
+                  className="mt-0.5 accent-[#0C5C6C]" />
+                <div>
+                  <p className="text-xs font-semibold text-amber-800">Clause de stérilisation (Tranche 2)</p>
+                  <p className="text-xs text-amber-700 mt-0.5">Inclure la pénalité financière si l&apos;acquéreur ne stérilise pas l&apos;animal dans le délai légal.</p>
+                </div>
+              </label>
+            )}
 
             <div className="flex gap-2 pt-2">
               <button onClick={() => setShowForm(false)}

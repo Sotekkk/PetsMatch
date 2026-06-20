@@ -8,7 +8,7 @@ const WHITELISTED_PATHS = [
 
 const STATIC_EXTENSIONS = /\.(ico|png|jpg|jpeg|svg|webp|woff|woff2|ttf|otf)$/;
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (

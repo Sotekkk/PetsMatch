@@ -23,6 +23,7 @@ import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
+import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 class ParticulierNav extends StatefulWidget {
@@ -301,6 +302,22 @@ class _ParticulierNavState extends State<ParticulierNav> {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const MarketplacePage()));
                   },
+                ),
+                _DrawerSection(
+                  icon: Icons.folder_outlined,
+                  label: 'Administratif',
+                  children: [
+                    _DrawerSubItem(
+                      label: 'Mes Contrats',
+                      icon: Icons.description_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MesContratsParticulierPage(),
+                        ));
+                      },
+                    ),
+                  ],
                 ),
                 const Divider(height: 24),
                 _DrawerItem(

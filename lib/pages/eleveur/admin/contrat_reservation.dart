@@ -2,7 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/config.dart';
 
 class ContratReservationPage extends StatefulWidget {
   const ContratReservationPage({super.key});
@@ -12,8 +13,6 @@ class ContratReservationPage extends StatefulWidget {
 
 class _ContratReservationPageState extends State<ContratReservationPage> {
   static const _teal  = Color(0xFF0C5C6C);
-  static const _green = Color(0xFF6E9E57);
-  static const _dark  = Color(0xFF1F2A2E);
   static const _bg    = Color(0xFFF5F5F0);
 
   final _supa = Supabase.instance.client;
@@ -166,33 +165,39 @@ class _DocCard extends StatelessWidget {
 
   const _DocCard({required this.doc, required this.onDelete});
 
+  static const _teal = Color(0xFF0C5C6C);
+
   static const _typeLabel = {
     'contrat_vente':       ('🤝', 'Vente'),
     'contrat_reservation': ('🐾', 'Réservation'),
     'certificat_cession':  ('📋', 'Cession'),
   };
   static const _statutColor = {
-    'brouillon': Color(0xFFEEEEEE),
-    'signe':     Color(0xFFDCF5E4),
-    'archive':   Color(0xFFFFF3CD),
+    'brouillon':  Color(0xFFEEEEEE),
+    'en_attente': Color(0xFFFEF3C7),
+    'signe':      Color(0xFFDCF5E4),
+    'archive':    Color(0xFFFFF3CD),
   };
   static const _statutLabel = {
-    'brouillon': 'Brouillon',
-    'signe':     'Signé',
-    'archive':   'Archivé',
+    'brouillon':  'Brouillon',
+    'en_attente': '⏳ En attente',
+    'signe':      '✅ Signé',
+    'archive':    'Archivé',
   };
 
   @override
   Widget build(BuildContext context) {
-    final type    = doc['type'] as String? ?? 'contrat_vente';
-    final statut  = doc['statut'] as String? ?? 'brouillon';
-    final meta    = _typeLabel[type] ?? ('📄', 'Contrat');
+    final type   = doc['type'] as String? ?? 'contrat_vente';
+    final statut = doc['statut'] as String? ?? 'brouillon';
+    final meta   = _typeLabel[type] ?? ('📄', 'Contrat');
     final metaMap = (doc['metadata'] as Map<String, dynamic>?) ?? {};
-    final acqNom  = (metaMap['acquereur_nom'] as String?) ?? '';
-    final titre   = doc['titre'] as String? ?? 'Contrat';
-    final date    = doc['created_at'] != null
+    final acqNom = (metaMap['acquereur_nom'] as String?) ?? '';
+    final titre  = doc['titre'] as String? ?? 'Contrat';
+    final token  = doc['token'] as String?;
+    final date   = doc['created_at'] != null
         ? DateTime.tryParse(doc['created_at'] as String)?.toLocal()
         : null;
+    final signingUrl = token != null ? '$kSiteBaseUrl/signer-contrat/$token' : null;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -201,44 +206,75 @@ class _DocCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
       ),
-      child: Row(children: [
-        Container(
-          width: 42, height: 42,
-          decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(10)),
-          child: Center(child: Text(meta.$1, style: const TextStyle(fontSize: 20))),
-        ),
-        const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF1F2A2E)), maxLines: 1, overflow: TextOverflow.ellipsis),
-          const SizedBox(height: 4),
-          Row(children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(color: _statutColor[statut] ?? const Color(0xFFEEEEEE), borderRadius: BorderRadius.circular(20)),
-              child: Text(_statutLabel[statut] ?? statut, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600)),
-            ),
-            if (acqNom.isNotEmpty) ...[
-              const SizedBox(width: 6),
-              Text('→ $acqNom', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF888888))),
-            ],
-            if (date != null) ...[
-              const SizedBox(width: 6),
-              Text('${date.day.toString().padLeft(2,'0')}/${date.month.toString().padLeft(2,'0')}/${date.year}',
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xFFAAAAAA))),
-            ],
-          ]),
-        ])),
-        if (doc['url'] != null)
-          IconButton(
-            icon: const Icon(Icons.open_in_new, size: 18, color: Color(0xFF0C5C6C)),
-            onPressed: () {},
-            padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 42, height: 42,
+            decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(10)),
+            child: Center(child: Text(meta.$1, style: const TextStyle(fontSize: 20))),
           ),
-        IconButton(
-          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
-          onPressed: () => onDelete(doc['id'] as String),
-          padding: const EdgeInsets.only(left: 8), constraints: const BoxConstraints(),
-        ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF1F2A2E)), maxLines: 1, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 4),
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(color: _statutColor[statut] ?? const Color(0xFFEEEEEE), borderRadius: BorderRadius.circular(20)),
+                child: Text(_statutLabel[statut] ?? statut, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600)),
+              ),
+              if (acqNom.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Flexible(child: Text('→ $acqNom', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF888888)), overflow: TextOverflow.ellipsis)),
+              ],
+              if (date != null) ...[
+                const SizedBox(width: 6),
+                Text('${date.day.toString().padLeft(2,'0')}/${date.month.toString().padLeft(2,'0')}/${date.year}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xFFAAAAAA))),
+              ],
+            ]),
+          ])),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+            onPressed: () => onDelete(doc['id'] as String),
+            padding: const EdgeInsets.only(left: 8), constraints: const BoxConstraints(),
+          ),
+        ]),
+
+        if (signingUrl != null) ...[
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => launchUrl(Uri.parse(signingUrl), mode: LaunchMode.externalApplication),
+                icon: const Icon(Icons.open_in_new, size: 15),
+                label: const Text('Ouvrir sur le web', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _teal,
+                  side: const BorderSide(color: _teal),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: signingUrl));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Lien copié'), duration: Duration(seconds: 2)),
+                );
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _teal,
+                side: const BorderSide(color: _teal),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+              child: const Icon(Icons.link, size: 16),
+            ),
+          ]),
+        ],
       ]),
     );
   }
@@ -264,10 +300,10 @@ class _CreateContratSheet extends StatefulWidget {
 
 class _CreateContratSheetState extends State<_CreateContratSheet> {
   static const _teal  = Color(0xFF0C5C6C);
-  static const _green = Color(0xFF6E9E57);
 
   String _type = 'contrat_vente';
   Map<String, dynamic>? _selectedAnimal;
+  bool _avecSteril = true;
 
   final _acqNomCtrl      = TextEditingController();
   final _acqPrenomCtrl   = TextEditingController();
@@ -309,54 +345,58 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
     setState(() => _searchResults = []);
   }
 
-  Future<void> _generer() async {
+  Future<void> _creer() async {
     if (_selectedAnimal == null) return;
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     setState(() => _saving = true);
 
-    // Générer PDF
-    await genererContratPDF(
-      context: context,
-      animal: _selectedAnimal!,
-      eleveur: {
-        'nom':     widget.eleveurNom,
-        'adresse': widget.eleveurAdresse,
-        'siret':   widget.eleveurSiret,
-      },
-      acquereurNom:     '${_acqPrenomCtrl.text.trim()} ${_acqNomCtrl.text.trim()}'.trim(),
-      acquereurAdresse: _acqAdresseCtrl.text.trim(),
-      acquereurEmail:   _acqEmailCtrl.text.trim(),
-      acquereurTel:     _acqTelCtrl.text.trim(),
-      prix:             _prixCtrl.text.isEmpty ? '0' : _prixCtrl.text.trim(),
-      dateCession:      _date,
-      notes:            _notesCtrl.text.trim(),
-    );
+    try {
+      final typeLabel = _type == 'contrat_vente' ? 'Contrat de vente'
+          : _type == 'contrat_reservation' ? 'Contrat de réservation'
+          : 'Certificat de cession';
 
-    // Sauvegarder en brouillon dans documents_animaux
-    final typeLabel = _type == 'contrat_vente' ? 'Contrat de vente'
-        : _type == 'contrat_reservation' ? 'Contrat de réservation'
-        : 'Certificat de cession';
-    await widget.supa.from('documents_animaux').insert({
-      'animal_id':   _selectedAnimal!['id'],
-      'uid_eleveur': uid,
-      'type':        _type,
-      'titre':       '$typeLabel — ${_selectedAnimal!['nom'] ?? 'Animal'}',
-      'statut':      'brouillon',
-      'metadata': {
-        'acquereur_nom':     '${_acqPrenomCtrl.text.trim()} ${_acqNomCtrl.text.trim()}'.trim(),
-        'acquereur_email':   _acqEmailCtrl.text.trim(),
-        'acquereur_tel':     _acqTelCtrl.text.trim(),
-        'acquereur_adresse': _acqAdresseCtrl.text.trim(),
-        'prix':              double.tryParse(_prixCtrl.text.replaceAll(',', '.')) ?? 0,
-        'date_doc':          _date.toIso8601String().split('T').first,
-        'notes':             _notesCtrl.text.trim(),
-      },
-    });
+      final result = await widget.supa
+          .from('documents_animaux')
+          .insert({
+            'animal_id':   _selectedAnimal!['id'],
+            'uid_eleveur': uid,
+            'type':        _type,
+            'titre':       '$typeLabel — ${_selectedAnimal!['nom'] ?? 'Animal'}',
+            'statut':      'en_attente',
+            'metadata': {
+              'acquereur_nom':      '${_acqPrenomCtrl.text.trim()} ${_acqNomCtrl.text.trim()}'.trim(),
+              'acquereur_email':    _acqEmailCtrl.text.trim(),
+              'acquereur_tel':      _acqTelCtrl.text.trim(),
+              'acquereur_adresse':  _acqAdresseCtrl.text.trim(),
+              'prix':               double.tryParse(_prixCtrl.text.replaceAll(',', '.')) ?? 0,
+              'date_doc':           _date.toIso8601String().split('T').first,
+              'notes':              _notesCtrl.text.trim(),
+              if (_type == 'contrat_vente') 'avec_sterilisation': _avecSteril,
+            },
+          })
+          .select('id, token')
+          .single();
 
-    widget.onSaved();
-    setState(() => _saving = false);
-    if (mounted) Navigator.pop(context);
+      final token = result['token'] as String?;
+
+      widget.onSaved();
+      setState(() => _saving = false);
+
+      if (mounted) Navigator.pop(context);
+
+      if (token != null) {
+        final url = '$kSiteBaseUrl/signer-contrat/$token';
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      setState(() => _saving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   @override
@@ -499,7 +539,39 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
               },
             ),
             _field('Notes', _notesCtrl, maxLines: 2),
-            const SizedBox(height: 24),
+            const SizedBox(height: 8),
+
+            // Clause stérilisation (contrat de vente uniquement)
+            if (_type == 'contrat_vente')
+              GestureDetector(
+                onTap: () => setState(() => _avecSteril = !_avecSteril),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFBEB),
+                    border: Border.all(color: const Color(0xFFFCD34D)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Checkbox(
+                      value: _avecSteril,
+                      onChanged: (v) => setState(() => _avecSteril = v ?? true),
+                      activeColor: _teal,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Clause de stérilisation (Tranche 2)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF92400E))),
+                      SizedBox(height: 2),
+                      Text('Inclure la pénalité si l\'acquéreur ne stérilise pas dans le délai légal.', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFB45309))),
+                    ])),
+                  ]),
+                ),
+              ),
+
+            const SizedBox(height: 16),
 
             // Boutons
             Row(children: [
@@ -510,7 +582,7 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
               )),
               const SizedBox(width: 12),
               Expanded(child: ElevatedButton(
-                onPressed: (_selectedAnimal == null || _saving) ? null : _generer,
+                onPressed: (_selectedAnimal == null || _saving) ? null : _creer,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _teal, foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
@@ -518,7 +590,7 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
                 ),
                 child: _saving
                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Text('✍️ Générer & imprimer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                    : const Text('Créer & ouvrir sur le web', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
               )),
             ]),
           ])),

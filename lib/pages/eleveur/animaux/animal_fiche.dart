@@ -21,6 +21,7 @@ import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/config.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
@@ -135,7 +136,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
   bool _pedigree = false;
   bool _isRetraite = false;
-  final _clubRegistreCtrl = TextEditingController();
+  final _clubRegistreCtrl   = TextEditingController();
+  final _pedigreeNumeroCtrl = TextEditingController();
   DateTime? _dateNaissance;
   String? _photoUrl;
   File? _photoFile;
@@ -368,6 +370,40 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     } catch (_) {}
   }
 
+  // Crée un doc dans documents_animaux et ouvre /signer-contrat/[token] dans le navigateur
+  Future<void> _ouvrirContratWeb(String type) async {
+    final uid  = FirebaseAuth.instance.currentUser?.uid;
+    final anId = widget.animalId;
+    if (uid == null || anId == null) return;
+    try {
+      final res = await _supa.from('documents_animaux').insert({
+        'animal_id':   anId,
+        'uid_eleveur': uid,
+        'type':        type,
+        'titre':       '${type == 'contrat_vente' ? 'Contrat de vente' : 'Contrat de réservation'} — ${_nomCtrl.text.trim()}',
+        'statut':      'brouillon',
+        'metadata':    <String, dynamic>{},
+      }).select('token').single();
+      final token = res['token'] as String;
+      const baseUrl = kSiteBaseUrl;
+      final url = Uri.parse('$baseUrl/signer-contrat/$token');
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else if (mounted) {
+        await Clipboard.setData(ClipboardData(text: url.toString()));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Lien copié — ouvrez-le dans votre navigateur')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _loadMesAnimaux() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -437,7 +473,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _isRetraite = d['is_retraite'] ?? false;
     _typePoil = d['type_poil'] as String?;
     _pedigree = d['pedigree'] ?? false;
-    _clubRegistreCtrl.text = d['club_registre'] ?? '';
+    _clubRegistreCtrl.text    = d['club_registre']    ?? '';
+    _pedigreeNumeroCtrl.text  = d['pedigree_numero']  ?? '';
     _pedigreeLof = d['pedigree_lof'] as String?;
     _photoUrl = d['photo_url'] as String?;
     _pedigreeUrl = d['pedigree_url'] as String?;
@@ -496,7 +533,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _tabs.dispose();
     for (final c in [_nomCtrl, _raceCtrl, _couleurCtrl, _identCtrl,
       _tailleCtrl, _poidsCtrl, _notesCtrl, _nomPereCtrl, _pucePereCtrl,
-      _nomMereCtrl, _puceMereCtrl, _passeportCtrl, _clubRegistreCtrl, _descriptionCtrl,
+      _nomMereCtrl, _puceMereCtrl, _passeportCtrl, _clubRegistreCtrl, _pedigreeNumeroCtrl, _descriptionCtrl,
       _provenanceNomCtrl, _provenanceAdresseCtrl, _importationRefCtrl,
       _raceMereCtrl, _destinataireNomCtrl, _destinataireAdresseCtrl]) { c.dispose(); }
     for (final c in _contactsUrgence) c.dispose();
@@ -542,6 +579,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'type_poil':           _typePoil,
         'pedigree':            _pedigree,
         'club_registre':       _clubRegistreCtrl.text.trim(),
+        'pedigree_numero':     _pedigreeNumeroCtrl.text.trim().isEmpty ? null : _pedigreeNumeroCtrl.text.trim(),
         'pedigree_lof':        _pedigreeLof,
         'passeport_europeen':  _passeportCtrl.text.trim(),
         'contacts_urgence':    _contactsUrgence
@@ -994,29 +1032,6 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               onPressed: () => showVetShareSheet(context, widget.animalId!),
             ),
           if (widget.animalId != null && !widget.vetMode && !widget.isAssociation
-              && _statut != 'decede')
-            IconButton(
-              icon: const Icon(Icons.description_outlined, size: 20),
-              tooltip: 'Générer contrat de vente',
-              onPressed: () => genererContratPDF(
-                context: context,
-                animal: {
-                  'id': widget.animalId,
-                  'nom': _nomCtrl.text.isNotEmpty ? _nomCtrl.text : null,
-                  'espece': _espece,
-                  'race': _raceCtrl.text.isNotEmpty ? _raceCtrl.text : null,
-                  'sexe': _sexe,
-                  'identification': _identCtrl.text.isNotEmpty ? _identCtrl.text : null,
-                  'date_naissance': _dateNaissance?.toIso8601String(),
-                },
-                eleveur: {
-                  'nom': _nomElevage ?? FirebaseAuth.instance.currentUser?.displayName ?? '',
-                  'adresse': '',
-                  'siret': '',
-                },
-              ),
-            ),
-          if (widget.animalId != null && !widget.vetMode && !widget.isAssociation
               && _statut != 'sorti' && _statut != 'decede' && _statut != 'cession_en_cours')
             IconButton(
               icon: const Icon(Icons.handshake_outlined, size: 20),
@@ -1079,7 +1094,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')]
                   : (_statut == 'sorti'
                       ? const [Tab(text: 'Identité'), Tab(text: 'Documents')]
-                      : const [Tab(text: 'Identité'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Documents')]),
+                      : const [Tab(text: 'Identité'), Tab(text: 'Documents'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')]),
         ),
       ),
       body: TabBarView(
@@ -1106,11 +1121,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                       ]
                     : [
                         _IdentiteTab(this),
+                        _DocumentsTab(animalId: widget.animalId ?? ''),
                         _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
                         _CarnetSanteTab(animalId: widget.animalId),
                         _AlimentationTab(this),
                         _ConsultationsOwnerTab(animalId: widget.animalId),
-                        _DocumentsTab(animalId: widget.animalId ?? ''),
                       ]),
       ),
     );
@@ -1162,39 +1177,6 @@ class _IdentiteTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (!s.widget.vetMode && !s.widget.isAssociation
-              && s.widget.animalId != null
-              && s._statut != 'sorti' && s._statut != 'decede')
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: OutlinedButton.icon(
-                onPressed: () => genererContratPDF(
-                  context: context,
-                  animal: {
-                    'id': s.widget.animalId,
-                    'nom': s._nomCtrl.text.isNotEmpty ? s._nomCtrl.text : null,
-                    'espece': s._espece,
-                    'race': s._raceCtrl.text.isNotEmpty ? s._raceCtrl.text : null,
-                    'sexe': s._sexe,
-                    'identification': s._identCtrl.text.isNotEmpty ? s._identCtrl.text : null,
-                    'date_naissance': s._dateNaissance?.toIso8601String(),
-                  },
-                  eleveur: {
-                    'nom': s._nomElevage ?? FirebaseAuth.instance.currentUser?.displayName ?? '',
-                    'adresse': '',
-                    'siret': '',
-                  },
-                ),
-                icon: const Icon(Icons.description_outlined, size: 16, color: Color(0xFF0C5C6C)),
-                label: const Text('Générer contrat de vente',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF0C5C6C))),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFF0C5C6C)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                ),
-              ),
-            ),
           if (s._statut == 'cession_en_cours' && s._cessionEnCours != null)
             _CessionEnCoursBanner(
               cession: s._cessionEnCours!,
@@ -2034,6 +2016,23 @@ class _IdentiteTab extends StatelessWidget {
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
                 decoration: InputDecoration(
                   labelText: cfg.clubLabel,
+                  labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFF6E9E57))),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: s._pedigreeNumeroCtrl,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                decoration: InputDecoration(
+                  labelText: 'N° de pedigree',
+                  hintText: 'LOF n°123456, LOOF, SIRE…',
                   labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                   enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
@@ -10247,11 +10246,13 @@ class _DocumentsTabState extends State<_DocumentsTab> {
     final type = doc['type'] as String? ?? '';
     final statut = doc['statut'] as String? ?? 'brouillon';
     final meta = doc['metadata'] as Map? ?? {};
-    final acq = '${meta['acquereur_prenom'] ?? ''} ${meta['acquereur_nom'] ?? ''}'.trim();
+    final acq = '${meta['acquereur_prenom'] ?? meta['acquereur_nom'] ?? ''}'.trim();
     final date = doc['created_at'] != null
         ? DateFormat('dd/MM/yyyy').format(DateTime.parse(doc['created_at']).toLocal())
         : '';
     final url = doc['url'] as String?;
+    final token = doc['token'] as String?;
+    final signingUrl = token != null ? '$kSiteBaseUrl/signer-contrat/$token' : null;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -10275,12 +10276,32 @@ class _DocumentsTabState extends State<_DocumentsTab> {
             _statutBadge(statut),
           ]),
         ]),
-        trailing: url != null
-            ? IconButton(
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (signingUrl != null) ...[
+              IconButton(
+                icon: const Icon(Icons.open_in_new, size: 18, color: _green),
+                tooltip: 'Ouvrir',
+                onPressed: () => launchUrl(Uri.parse(signingUrl), mode: LaunchMode.externalApplication),
+              ),
+              IconButton(
+                icon: const Icon(Icons.link, size: 18, color: _green),
+                tooltip: 'Copier le lien',
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: signingUrl));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Lien copié'), duration: Duration(seconds: 2)),
+                  );
+                },
+              ),
+            ] else if (url != null)
+              IconButton(
                 icon: const Icon(Icons.open_in_new, size: 18, color: _green),
                 onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
-              )
-            : null,
+              ),
+          ],
+        ),
       ),
     );
   }
