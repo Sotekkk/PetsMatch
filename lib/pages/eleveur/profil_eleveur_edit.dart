@@ -40,6 +40,9 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
   final _cpCtrl           = TextEditingController();
   final _villeCtrl        = TextEditingController();
   final _paysCtrl         = TextEditingController(text: 'France');
+  final _instagramCtrl    = TextEditingController();
+  final _facebookCtrl     = TextEditingController();
+  final _siteWebCtrl      = TextEditingController();
 
   // ── State ────────────────────────────────────────────────────────────────────
   bool _saving  = false;
@@ -87,7 +90,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
   void dispose() {
     for (final c in [_prenomCtrl, _nomCtrl, _dobCtrl, _nomElevageCtrl,
       _telCtrl, _descCtrl, _addressSearchCtrl, _rueCtrl, _cpCtrl, _villeCtrl, _paysCtrl,
-      _siretCtrl, _acacedCtrl]) {
+      _siretCtrl, _acacedCtrl, _instagramCtrl, _facebookCtrl, _siteWebCtrl]) {
       c.dispose();
     }
     _places.dispose();
@@ -129,10 +132,13 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           ? (d['paysElevage'] ?? User_Info.paysElevage) : 'France';
       _photoUrl   = d['profilePictureUrlElevage'] ?? User_Info.profilePictureUrlElevage;
       _bannerUrl  = bannerFromFirestore;
-      _siretCtrl.text  = d['siret']  ?? User_Info.siret;
-      _acacedCtrl.text = d['acaced'] ?? User_Info.acacedNumero;
-      _siretDocUrl  = d['kbisUrl']     ?? User_Info.kbisUrl;
-      _acacedDocUrl = d['acacedDocUrl'] ?? User_Info.acacedDocUrl;
+      _siretCtrl.text    = d['siret']     ?? User_Info.siret;
+      _acacedCtrl.text   = d['acaced']    ?? User_Info.acacedNumero;
+      _siretDocUrl       = d['kbisUrl']   ?? User_Info.kbisUrl;
+      _acacedDocUrl      = d['acacedDocUrl'] ?? User_Info.acacedDocUrl;
+      _instagramCtrl.text = (d['instagram'] as String?) ?? '';
+      _facebookCtrl.text  = (d['facebook']  as String?) ?? '';
+      _siteWebCtrl.text   = (d['siteWeb']   as String?) ?? '';
 
       if (d['acacedDateObtention'] != null) {
         try { _acacedDateObtention = DateFormat('dd/MM/yyyy').parse(d['acacedDateObtention']); } catch (_) {}
@@ -446,8 +452,11 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
         'catBreeds':          isCat ? _racesFor('chat')  : [],
         if (photoUrl != null) 'profilePictureUrlElevage': photoUrl,
         if (bannerUrl != null) 'bannerUrl': bannerUrl,
-        'siret': _siretCtrl.text.trim(),
-        'acaced': _acacedCtrl.text.trim(),
+        'siret':     _siretCtrl.text.trim(),
+        'acaced':    _acacedCtrl.text.trim(),
+        'instagram': _instagramCtrl.text.trim(),
+        'facebook':  _facebookCtrl.text.trim(),
+        'siteWeb':   _siteWebCtrl.text.trim(),
         if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbisUrl': siretDocUrl,
         if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acacedDocUrl': acacedDocUrl,
         if (_acacedDateObtention != null)
@@ -493,8 +502,11 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           if (_profileLng != null) 'lng': _profileLng,
           if (photoUrl != null) 'profile_picture_url_elevage': photoUrl,
           if (bannerUrl != null) 'banner_url': bannerUrl,
-          'siret': _siretCtrl.text.trim(),
-          'acaced': _acacedCtrl.text.trim(),
+          'siret':     _siretCtrl.text.trim(),
+          'acaced':    _acacedCtrl.text.trim(),
+          'instagram': _instagramCtrl.text.trim(),
+          'facebook':  _facebookCtrl.text.trim(),
+          'site_web':  _siteWebCtrl.text.trim(),
           if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
           if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acaced_doc_url': acacedDocUrl,
         }, onConflict: 'uid');
@@ -618,6 +630,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
                   _addressCard(),
                   const SizedBox(height: 12),
                   _especesCard(),
+                  const SizedBox(height: 12),
+                  _socialCard(),
                   const SizedBox(height: 12),
                   _administratifCard(),
                   const SizedBox(height: 80),
@@ -951,6 +965,15 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       final f = File(picked.path);
       setState(() { if (isSiret) _siretDocFile = f; else _acacedDocFile = f; });
     }
+  }
+
+  // ── Réseaux sociaux ───────────────────────────────────────────────────────────
+  Widget _socialCard() {
+    return _card('Réseaux sociaux', [
+      _field('Instagram (ex: @mon_elevage)', _instagramCtrl, inputType: TextInputType.url),
+      _field('Facebook (ex: facebook.com/…)', _facebookCtrl, inputType: TextInputType.url),
+      _field('Site web (ex: https://…)', _siteWebCtrl,      inputType: TextInputType.url),
+    ]);
   }
 
   // ── Administratif ─────────────────────────────────────────────────────────────

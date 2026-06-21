@@ -44,6 +44,9 @@ export default function ProfilEleveurPage() {
   const tel     = userData.numeroElevage ?? userData.phone ?? '';
   const siret   = userData.siret ?? '';
   const acaced  = userData.acaced ?? '';
+  const instagram = (userData.instagram as string | undefined) ?? '';
+  const facebook  = (userData.facebook  as string | undefined) ?? '';
+  const siteWeb   = (userData.siteWeb   as string | undefined) ?? '';
   const acacedDate = userData.acacedDateObtention ?? '';
   const isValidated = userData.isValidate === true;
 
@@ -133,6 +136,45 @@ export default function ProfilEleveurPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-3">
           <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Description</h3>
           <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{desc}</p>
+        </div>
+      )}
+
+      {/* Réseaux sociaux */}
+      {(instagram || facebook || siteWeb) && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-3">
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Réseaux sociaux</h3>
+          <div className="flex flex-wrap gap-2">
+            {instagram && (
+              <a
+                href={instagram.startsWith('http') ? instagram : `https://instagram.com/${instagram.replace('@', '')}`}
+                target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border"
+                style={{ color: '#E1306C', borderColor: '#E1306C33', background: '#E1306C12' }}
+              >
+                📸 {instagram.startsWith('@') ? instagram : `@${instagram.replace(/^https?:\/\/(www\.)?instagram\.com\//, '')}`}
+              </a>
+            )}
+            {facebook && (
+              <a
+                href={facebook.startsWith('http') ? facebook : `https://facebook.com/${facebook}`}
+                target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border"
+                style={{ color: '#1877F2', borderColor: '#1877F233', background: '#1877F212' }}
+              >
+                👥 Facebook
+              </a>
+            )}
+            {siteWeb && (
+              <a
+                href={siteWeb.startsWith('http') ? siteWeb : `https://${siteWeb}`}
+                target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border"
+                style={{ color: '#0C5C6C', borderColor: '#0C5C6C33', background: '#0C5C6C12' }}
+              >
+                🌐 Site web
+              </a>
+            )}
+          </div>
         </div>
       )}
 

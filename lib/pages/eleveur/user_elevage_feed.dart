@@ -64,6 +64,11 @@ class _UserElevageFeedState extends State<UserElevageFeed>
   List<Map<String, dynamic>> _annonces = [];
   bool _loadingAnnonces = false;
 
+  // Réseaux sociaux
+  String _instagram = '';
+  String _facebook  = '';
+  String _siteWeb   = '';
+
   static const _especeEmoji = {
     'chien': '🐕', 'chat': '🐈', 'cheval': '🐴', 'lapin': '🐰',
     'oiseau': '🦜', 'ovin': '🐑', 'caprin': '🐐', 'porcin': '🐷',
@@ -130,13 +135,16 @@ class _UserElevageFeedState extends State<UserElevageFeed>
     final planCode = await PlanService.getPlanCode(uid);
 
     if (mounted) setState(() {
-      addressElevage          = d['adressElevage'] as String?;
-      numeroElevage           = d['numeroElevage'] as String?;
+      addressElevage           = d['adressElevage'] as String?;
+      numeroElevage            = d['numeroElevage'] as String?;
       profilePictureUrlElevage = d['profilePictureUrlElevage'] as String?;
-      _bannerUrl              = banner;
-      _desc                   = (d['desc'] as String?) ?? '';
-      _especesElevees         = especes;
-      _planCode               = planCode;
+      _bannerUrl               = banner;
+      _desc                    = (d['desc'] as String?) ?? '';
+      _especesElevees          = especes;
+      _planCode                = planCode;
+      _instagram               = (d['instagram'] as String?) ?? '';
+      _facebook                = (d['facebook']  as String?) ?? '';
+      _siteWeb                 = (d['siteWeb']   as String?) ?? '';
     });
   }
 
@@ -653,6 +661,48 @@ class _UserElevageFeedState extends State<UserElevageFeed>
                   _InfoRow(icon: Icons.location_on_outlined, text: addressElevage!, onTap: () => _openMap(addressElevage!)),
                 if (numeroElevage != null && numeroElevage!.isNotEmpty)
                   _InfoRow(icon: Icons.phone_outlined, text: numeroElevage!, onTap: () => _callPhoneNumber(numeroElevage!)),
+
+                // Réseaux sociaux
+                if (_instagram.isNotEmpty || _facebook.isNotEmpty || _siteWeb.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      if (_instagram.isNotEmpty)
+                        _SocialIcon(
+                          label: _instagram.startsWith('@') ? _instagram : '@${_instagram.replaceAll(RegExp(r'^https?://(www\.)?instagram\.com/'), '')}',
+                          icon: Icons.camera_alt_outlined,
+                          color: const Color(0xFFE1306C),
+                          onTap: () {
+                            final raw = _instagram.trim();
+                            final url = raw.startsWith('http') ? raw : 'https://instagram.com/${raw.replaceAll('@', '')}';
+                            launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                          },
+                        ),
+                      if (_facebook.isNotEmpty)
+                        _SocialIcon(
+                          label: 'Facebook',
+                          icon: Icons.group_outlined,
+                          color: const Color(0xFF1877F2),
+                          onTap: () {
+                            final raw = _facebook.trim();
+                            final url = raw.startsWith('http') ? raw : 'https://facebook.com/$raw';
+                            launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                          },
+                        ),
+                      if (_siteWeb.isNotEmpty)
+                        _SocialIcon(
+                          label: 'Site web',
+                          icon: Icons.language_outlined,
+                          color: const Color(0xFF0C5C6C),
+                          onTap: () {
+                            final raw = _siteWeb.trim();
+                            final url = raw.startsWith('http') ? raw : 'https://$raw';
+                            launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                          },
+                        ),
+                    ],
+                  ),
+                ],
 
                 // Espèces élevées
                 if (_especesElevees.isNotEmpty) ...[
@@ -1456,4 +1506,37 @@ class _UpdateLocationSheetState extends State<_UpdateLocationSheet> {
           border: InputBorder.none),
     ),
   );
+}
+
+class _SocialIcon extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _SocialIcon({required this.label, required this.icon, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: color, fontWeight: FontWeight.w600),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+          ],
+        ),
+      ),
+    );
+  }
 }
