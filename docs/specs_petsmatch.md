@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-06-20  
+> Dernière mise à jour : 2026-06-21  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -2385,17 +2385,57 @@ Page dédiée dans l'espace de gestion élevage (même niveau que `/elevage/agen
 - Quick links dashboard (tuile "Mon profil élevage")
 
 **Contenu :**
-- Bannière + photo de profil + nom d'élevage + ville
-- Badge validation (Profil validé ✓ / En attente ⏳)
-- Espèces élevées + races
-- Description
-- Coordonnées (téléphone + adresse)
-- Certifications (SIRET ✓/✗, justificatif, ACACED ✓/✗, certificat)
-- Bouton "Modifier mon profil" → `/profil` (formulaire complet)
-- Bouton "Voir mon profil public" → `/elevages/[uid]` (si validé)
+- Bannière + photo de profil + nom d'élevage + ville ✅
+- Badge validation (Profil validé ✓ / En attente ⏳) ✅
+- Espèces élevées + races ✅
+- Description ✅
+- Coordonnées (téléphone + adresse) ✅
+- Certifications (SIRET ✓/✗, justificatif, ACACED ✓/✗, certificat) ✅
+- **Réseaux sociaux** (Instagram, Facebook, Site web) ✅ — *2026-06-21*
+- Bouton "Modifier mon profil" → `/profil` (formulaire complet) ✅
+- Bouton "Voir mon profil public" → `/elevages/[uid]` (si validé) ✅
 
-### 10.3 À faire
+### 10.2b Edit profil éleveur — `/profil` ✅
 
+**Fichier :** `website/src/app/profil/page.tsx` (2200+ lignes, gère aussi association + pro secondaire)
+
+Champs couverts :
+- Bannière (crop 16:9) + Avatar ✅ — *crop avatar 1:1 manquant, à ajouter*
+- Identité (prénom, nom, date de naissance) ✅
+- Élevage (nom, téléphone, description) ✅
+- Adresse élevage avec Google Places autocomplete ✅
+- Espèces élevées + races ✅
+- Réseaux sociaux (Instagram, Facebook, Site web) ✅ — *2026-06-21*
+- Administratif : SIRET, KBIS/attestation RNE, ACACED n°, date obtention, date renouvellement, certificat ✅
+- Sauvegarde vers Supabase ET Firestore (sync double) ✅
+
+**App Flutter :** `lib/pages/eleveur/profil_eleveur_edit.dart` — même champs ✅ (réseaux sociaux inclus *2026-06-21*)
+
+### 10.3 Agenda éleveur — `/elevage/agenda` ✅ *2026-06-21*
+
+**Vues :** Toggle Mois / Semaine / Jour (style Google Calendar)
+- **Vue Mois** : calendrier avec dots colorés par type d'acte, détail du jour en dessous
+- **Vue Semaine** : WeekStrip 7 jours (Lun→Dim), navigation sem. préc./suiv., dots par jour
+- **Vue Jour** : zone all-day (protocoles + tâches sans heure) + timeline horaire 6h-21h, ligne heure actuelle
+
+**Attribution employés :**
+- Tâches manuelles (`taches_elevage`) : modal multi-sélection → `assignes_a TEXT[]` ✅
+- Attribution globale protocole : assigner tous les animaux en un clic depuis la RoutineModal ✅ *2026-06-21*
+- Protocoles (`plan_taches`) : dropdown par animal → `assigned_to` ✅
+
+**Traçabilité :**
+- `fait_par` / `fait_a` sur `taches_elevage` (qui a coché + quand) ✅
+- `valide_par` / `valide_at` sur `plan_taches` ✅
+- Affichage "✓ Fait par [nom]" sur les tâches complétées ✅
+
+**Migration SQL à exécuter dans Supabase :**
+- `supabase/migration_social_links.sql` — colonnes `instagram`, `facebook`, `site_web` sur `users`
+- `supabase/migration_agenda_employes.sql` — colonnes `assignes_a`, `fait_par`, `fait_a` sur `taches_elevage`
+
+### 10.4 À faire — Profil éleveur
+
+- **PROF01** : Crop avatar 1:1 sur web `/profil` — la bannière a son modal crop 16:9, l'avatar est uploadé tel quel (à aligner avec `image_cropper` Flutter)
+- **PROF02** : Champ TVA dans l'édition profil — actuellement capturé seulement à l'onboarding (`document_elevage.dart`), non modifiable ensuite
 - **A40** : Onboarding pro (3-4 slides : profil pro, agenda/RDV, clients, documents)
 - **A41** : Onboarding particulier (2-3 slides : mes animaux, alertes perdus, annonces)
 - Onboarding web (animation côté web pour les mêmes profils au 1er login)
