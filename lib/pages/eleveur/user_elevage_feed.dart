@@ -12,6 +12,8 @@ import 'package:PetsMatch/pages/eleveur/elevage_gestion_select_menu.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
 import 'package:PetsMatch/pages/eleveur/postDetail.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
@@ -58,6 +60,10 @@ class _UserElevageFeedState extends State<UserElevageFeed>
   bool _loadingAlertes = false;
   List<Map<String, dynamic>> _eleveurAnimaux = [];
 
+  // Publications tab
+  List<Map<String, dynamic>> _annonces = [];
+  bool _loadingAnnonces = false;
+
   static const _especeEmoji = {
     'chien': '🐕', 'chat': '🐈', 'cheval': '🐴', 'lapin': '🐰',
     'oiseau': '🦜', 'ovin': '🐑', 'caprin': '🐐', 'porcin': '🐷',
@@ -82,7 +88,9 @@ class _UserElevageFeedState extends State<UserElevageFeed>
     _fetchElevageInfo();
     _fetchAlertes();
     _fetchEleveurAnimaux();
+    _loadAnnonces();
     _tabController.addListener(() {
+      if (_tabController.index == 1) _loadAnnonces();
       if (_tabController.index == 3) _fetchAlertes();
     });
   }
@@ -718,81 +726,199 @@ class _UserElevageFeedState extends State<UserElevageFeed>
     );
   }
 
+  Future<void> _loadAnnonces() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+    if (mounted) setState(() => _loadingAnnonces = true);
+    try {
+      final data = await _supa
+          .from('annonces')
+          .select()
+          .eq('uid_eleveur', uid)
+          .neq('statut', 'supprime')
+          .order('created_at', ascending: false);
+      if (!mounted) return;
+      setState(() {
+        _annonces = (data as List).map((r) => Map<String, dynamic>.from(r)).toList();
+        _loadingAnnonces = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingAnnonces = false);
+    }
+  }
+
+  Color _annonceStatutColor(String s) => switch (s) {
+    'disponible'         => const Color(0xFF6E9E57),
+    'reserve'            => const Color(0xFF1E88E5),
+    'vendu' || 'cede'    => const Color(0xFF6B7280),
+    'pause'              => const Color(0xFFD97706),
+    'expiree'            => const Color(0xFFEF4444),
+    _                    => const Color(0xFF6B7280),
+  };
+
+  String _annonceStatutLabel(String s) => switch (s) {
+    'disponible' => 'Disponible',
+    'reserve'    => 'Réservé',
+    'vendu'      => 'Vendu',
+    'cede'       => 'Cédé',
+    'pause'      => 'En pause',
+    'expiree'    => 'Expirée',
+    _            => s,
+  };
+
   Widget _buildPublicationsTab() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('post')
-          .where('uidEleveur', isEqualTo: _auth.currentUser?.uid)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final posts = snapshot.data!.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          data['id'] = doc.id;
-          return data;
-        }).toList();
+    if (_loadingAnnonces && _annonces.isEmpty) {
+      return const Center(child: CircularProgressIndicator(color: Color(0xFF0C5C6C)));
+    }
 
-        if (posts.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.photo_library_outlined,
-                    size: 64, color: Colors.grey.shade300),
-                const SizedBox(height: 16),
-                Text('Aucune publication',
-                    style: TextStyle(
-                        fontFamily: 'Galey',
-                        color: Colors.grey.shade500,
-                        fontSize: 16)),
-                const SizedBox(height: 8),
-                Text('Allez dans l\'onglet Élevage pour créer une annonce',
-                    style: TextStyle(
-                        fontFamily: 'Galey',
-                        color: Colors.grey.shade400,
-                        fontSize: 12)),
-              ],
-            ),
-          );
-        }
-
-        return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(2, 2, 2, 100),
-          itemCount: posts.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 2,
-            mainAxisSpacing: 2,
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${_annonces.length} annonce${_annonces.length != 1 ? 's' : ''}',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6B7280)),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const MesAnnoncesPage()))
+                    .then((_) => _loadAnnonces()),
+                icon: const Icon(Icons.tune, size: 16),
+                label: const Text('Gérer', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                style: TextButton.styleFrom(foregroundColor: const Color(0xFF0C5C6C)),
+              ),
+            ],
           ),
-          itemBuilder: (context, index) {
-            final post = posts[index];
-            return GestureDetector(
-              onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => PostDetailPage(post: post))),
-              onLongPress: () => _confirmDeletePost(post['id']),
-              child: post['mediaStockage'].length > 1
-                  ? CarouselSlider.builder(
-                      itemCount: post['mediaStockage'].length,
-                      itemBuilder: (_, i, __) => CachedNetworkImage(
-                        imageUrl: post['mediaStockage'][i]['path'],
-                        fit: BoxFit.cover,
+        ),
+        Expanded(
+          child: _annonces.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.campaign_outlined, size: 64, color: Colors.grey.shade300),
+                      const SizedBox(height: 12),
+                      Text('Aucune annonce',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 16, color: Colors.grey.shade500)),
+                      const SizedBox(height: 8),
+                      Text('Créez votre première annonce',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400)),
+                      const SizedBox(height: 20),
+                      ElevatedButton.icon(
+                        onPressed: () => Navigator.push(context,
+                            MaterialPageRoute(builder: (_) => ChoicePublicationType()))
+                            .then((_) => _loadAnnonces()),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Créer une annonce', style: TextStyle(fontFamily: 'Galey')),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0C5C6C),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
                       ),
-                      options: CarouselOptions(
-                        viewportFraction: 1,
-                        aspectRatio: 1,
-                        enableInfiniteScroll: false,
-                      ),
-                    )
-                  : CachedNetworkImage(
-                      imageUrl: post['mediaStockage'][0]['path'],
-                      fit: BoxFit.cover,
-                    ),
-            );
-          },
-        );
-      },
+                    ],
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadAnnonces,
+                  color: const Color(0xFF0C5C6C),
+                  child: ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+                    itemCount: _annonces.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, i) {
+                      final a = _annonces[i];
+                      final photos   = List<String>.from(a['photos'] ?? []);
+                      final statut   = (a['statut'] as String?) ?? 'disponible';
+                      final titre    = (a['titre']  as String?) ?? '';
+                      final espece   = (a['espece'] as String?) ?? '';
+                      final race     = (a['race']   as String?) ?? '';
+                      final displayTitle = titre.isNotEmpty ? titre
+                          : race.isNotEmpty ? race
+                          : (_especeLabel[espece] ?? espece);
+                      final sColor = _annonceStatutColor(statut);
+
+                      return GestureDetector(
+                        onTap: () => Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => AnnonceDetailPage(
+                            annonceId: a['id'] as String,
+                            initialData: {...a, 'uidEleveur': a['uid_eleveur']},
+                          ),
+                        )).then((_) => _loadAnnonces()),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 2))],
+                          ),
+                          child: Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+                                child: photos.isNotEmpty
+                                    ? CachedNetworkImage(
+                                        imageUrl: photos.first,
+                                        width: 80, height: 80, fit: BoxFit.cover,
+                                        errorWidget: (_, __, ___) => _annoncePhotoPlaceholder(espece),
+                                      )
+                                    : _annoncePhotoPlaceholder(espece),
+                              ),
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(displayTitle,
+                                          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF111827)),
+                                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                                      if (espece.isNotEmpty || race.isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          [if (espece.isNotEmpty) '${_especeEmoji[espece] ?? ''}  ${_especeLabel[espece] ?? espece}', if (race.isNotEmpty) race].join(' • '),
+                                          style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6B7280)),
+                                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                      const SizedBox(height: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: sColor.withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(20),
+                                        ),
+                                        child: Text(_annonceStatutLabel(statut),
+                                            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: sColor, fontWeight: FontWeight.w600)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right, color: Color(0xFFD1D5DB), size: 20),
+                              const SizedBox(width: 8),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _annoncePhotoPlaceholder(String espece) {
+    return Container(
+      width: 80, height: 80,
+      color: const Color(0xFFE8F5E9),
+      child: Center(
+        child: Text(_especeEmoji[espece] ?? '🐾', style: const TextStyle(fontSize: 28)),
+      ),
     );
   }
 
