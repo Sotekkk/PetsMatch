@@ -95,7 +95,8 @@ export default function ContratsPage() {
   const [avecSteril, setAvecSteril]   = useState(true);
   // Recherche acquéreur PetsMatch
   const [userSearch, setUserSearch]   = useState('');
-  const [userResults, setUserResults] = useState<{uid:string;firstname:string;lastname:string;email:string;phone_number:string;rue:string;ville:string;code_postal:string}[]>([]);
+  type UserResult = { uid:string; firstname:string; lastname:string; name_elevage?:string; is_elevage?:boolean; email:string; phone_number?:string; numero_elevage?:string; code_iso_elevage?:string; rue?:string; ville?:string; code_postal?:string; adress_elevage?:string; };
+  const [userResults, setUserResults] = useState<UserResult[]>([]);
 
   const popupRef = useRef<Window | null>(null);
 
@@ -132,16 +133,26 @@ export default function ContratsPage() {
     setUserSearch(q);
     if (q.length < 2) { setUserResults([]); return; }
     const isEmail = q.includes('@');
+    const fields = 'uid,firstname,lastname,name_elevage,is_elevage,email,phone_number,numero_elevage,code_iso_elevage,rue,ville,code_postal,adress_elevage';
     const { data } = isEmail
-      ? await supabase.from('users').select('uid,firstname,lastname,email,phone_number,rue,ville,code_postal').ilike('email', `%${q}%`).limit(5)
-      : await supabase.from('users').select('uid,firstname,lastname,email,phone_number,rue,ville,code_postal').or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%`).limit(8);
-    setUserResults(data ?? []);
+      ? await supabase.from('users').select(fields).ilike('email', `%${q}%`).limit(5)
+      : await supabase.from('users').select(fields).or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,name_elevage.ilike.%${q}%`).limit(8);
+    setUserResults((data ?? []) as UserResult[]);
   }
 
-  function selectUser(u: typeof userResults[0]) {
-    setAcqNom(u.lastname); setAcqPrenom(u.firstname); setAcqEmail(u.email);
-    setAcqTel(u.phone_number ?? '');
-    setAcqAdresse([u.rue, u.code_postal, u.ville].filter(Boolean).join(', '));
+  function selectUser(u: UserResult) {
+    const isElv = u.is_elevage && u.name_elevage;
+    setAcqPrenom(isElv ? '' : (u.firstname ?? ''));
+    setAcqNom(isElv ? u.name_elevage! : (u.lastname ?? ''));
+    setAcqEmail(u.email ?? '');
+    const tel = isElv && u.numero_elevage
+      ? `${u.code_iso_elevage ?? '+33'} ${u.numero_elevage}`.trim()
+      : (u.phone_number ?? '');
+    setAcqTel(tel);
+    const adresse = isElv && u.adress_elevage
+      ? u.adress_elevage
+      : [u.rue, u.code_postal, u.ville].filter(Boolean).join(', ');
+    setAcqAdresse(adresse);
     setUserResults([]); setUserSearch('');
   }
 
@@ -466,7 +477,10 @@ export default function ContratsPage() {
                   {userResults.map(u => (
                     <button key={u.uid} onClick={() => selectUser(u)}
                       className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm">
-                      <span className="font-medium">{u.firstname} {u.lastname}</span>
+                      <span className="font-medium">
+                        {u.is_elevage && u.name_elevage ? u.name_elevage : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim()}
+                      </span>
+                      {u.is_elevage && <span className="text-[10px] text-[#0C5C6C] font-semibold ml-1.5">🏠 Élevage</span>}
                       <span className="text-gray-400 text-xs ml-2">{u.email}</span>
                     </button>
                   ))}

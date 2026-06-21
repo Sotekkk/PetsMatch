@@ -364,19 +364,29 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
     if (q.length < 2) { setState(() => _searchResults = []); return; }
     final isEmail = q.contains('@');
     final supa = Supabase.instance.client;
+    const fields = 'uid, firstname, lastname, name_elevage, is_elevage, email, phone_number, numero_elevage, code_iso_elevage, rue, ville, code_postal, adress_elevage';
     final data = isEmail
-        ? await supa.from('users').select('uid, firstname, lastname, email, phone_number, rue, ville, code_postal').ilike('email', '%$q%').limit(5)
-        : await supa.from('users').select('uid, firstname, lastname, email, phone_number, rue, ville, code_postal').or('firstname.ilike.%$q%,lastname.ilike.%$q%').limit(8);
+        ? await supa.from('users').select(fields).ilike('email', '%$q%').limit(5)
+        : await supa.from('users').select(fields).or('firstname.ilike.%$q%,lastname.ilike.%$q%,name_elevage.ilike.%$q%').limit(8);
     setState(() => _searchResults = List<Map<String, dynamic>>.from(data as List));
   }
 
   void _selectUser(Map<String, dynamic> u) {
-    _acqNomCtrl.text    = u['lastname'] as String? ?? '';
-    _acqPrenomCtrl.text = u['firstname'] as String? ?? '';
+    final isElv = u['is_elevage'] == true && (u['name_elevage'] as String? ?? '').isNotEmpty;
+    _acqPrenomCtrl.text = isElv ? '' : (u['firstname'] as String? ?? '');
+    _acqNomCtrl.text    = isElv ? (u['name_elevage'] as String? ?? '') : (u['lastname'] as String? ?? '');
     _acqEmailCtrl.text  = u['email'] as String? ?? '';
-    _acqTelCtrl.text    = u['phone_number'] as String? ?? '';
-    final parts = [u['rue'], u['code_postal'], u['ville']].whereType<String>().join(', ');
-    _acqAdresseCtrl.text = parts;
+    if (isElv && (u['numero_elevage'] as String? ?? '').isNotEmpty) {
+      final iso = u['code_iso_elevage'] as String? ?? '+33';
+      _acqTelCtrl.text = '$iso ${u['numero_elevage']}'.trim();
+    } else {
+      _acqTelCtrl.text = u['phone_number'] as String? ?? '';
+    }
+    if (isElv && (u['adress_elevage'] as String? ?? '').isNotEmpty) {
+      _acqAdresseCtrl.text = u['adress_elevage'] as String? ?? '';
+    } else {
+      _acqAdresseCtrl.text = [u['rue'], u['code_postal'], u['ville']].whereType<String>().where((s) => s.isNotEmpty).join(', ');
+    }
     _searchCtrl.clear();
     setState(() => _searchResults = []);
   }
@@ -569,12 +579,19 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
               Container(
                 margin: const EdgeInsets.only(top: 4),
                 decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE0E0E0)), borderRadius: BorderRadius.circular(10)),
-                child: Column(children: _searchResults.map((u) => ListTile(
-                  dense: true,
-                  title: Text('${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
-                  subtitle: Text(u['email'] as String? ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
-                  onTap: () => _selectUser(u),
-                )).toList()),
+                child: Column(children: _searchResults.map((u) {
+                  final isElv = u['is_elevage'] == true && (u['name_elevage'] as String? ?? '').isNotEmpty;
+                  final displayName = isElv
+                      ? u['name_elevage'] as String
+                      : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+                  return ListTile(
+                    dense: true,
+                    leading: isElv ? const Text('🏠', style: TextStyle(fontSize: 16)) : null,
+                    title: Text(displayName, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+                    subtitle: Text(u['email'] as String? ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
+                    onTap: () => _selectUser(u),
+                  );
+                }).toList()),
               ),
             const SizedBox(height: 16),
 
