@@ -35,3 +35,26 @@ export async function PATCH(req: NextRequest) {
 
   return NextResponse.json({ success: true });
 }
+
+// POST /api/notifications — envoyer une notification (uid direct ou lookup par email)
+export async function POST(req: NextRequest) {
+  const { uid: directUid, email, type, title, body, data } =
+    await req.json().catch(() => ({})) as {
+      uid?: string; email?: string;
+      type: string; title: string; body: string;
+      data?: Record<string, unknown>;
+    };
+
+  let uid = directUid;
+  if (!uid && email) {
+    const { data: u } = await supabase.from('users').select('uid').eq('email', email).maybeSingle();
+    uid = u?.uid;
+  }
+  if (!uid || !type || !title) return NextResponse.json({ error: 'params manquants' }, { status: 400 });
+
+  await supabase.from('notifications').insert({
+    uid, type, title, body: body ?? '', data: data ?? {}, profile_type: '', read: false,
+  });
+
+  return NextResponse.json({ success: true });
+}

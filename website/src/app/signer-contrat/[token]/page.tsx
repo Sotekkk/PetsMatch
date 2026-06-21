@@ -236,16 +236,49 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
 
     setSaving(role);
     const now = new Date().toISOString();
-    const sigField    = role === 'eleveur' ? 'signature_eleveur'    : 'signature_acquereur';
-    const dateField   = role === 'eleveur' ? 'signe_eleveur_le'     : 'signe_acquereur_le';
-    const newSaved    = { ...saved, [role]: true };
-    const newStatut: DocStatut = newSaved.eleveur && newSaved.acquereur ? 'signe' : 'en_attente';
+    const sigField  = role === 'eleveur' ? 'signature_eleveur'  : 'signature_acquereur';
+    const dateField = role === 'eleveur' ? 'signe_eleveur_le'   : 'signe_acquereur_le';
+    const newSaved  = { ...saved, [role]: true };
+    const bothSigned = newSaved.eleveur && newSaved.acquereur;
+    const newStatut: DocStatut = bothSigned ? 'signe'
+      : (newSaved.eleveur || newSaved.acquereur) ? 'partiellement_signe'
+      : 'en_attente';
 
     await supabase.from('documents_animaux').update({
       metadata: { ...doc.metadata, [sigField]: dataUrl, [dateField]: now },
       statut:   newStatut,
-      ...(newStatut === 'signe' ? { signe_le: now } : {}),
+      ...(bothSigned ? { signe_le: now } : {}),
     }).eq('token', token);
+
+    // Notifications inter-parties
+    const acqEmail  = doc.metadata?.acquereur_email;
+    const acqNom    = doc.metadata?.acquereur_nom || 'L\'acquéreur';
+    const titre     = doc.titre ?? 'le contrat';
+    const signingUrl = `${window.location.origin}/signer-contrat/${token}`;
+
+    if (bothSigned) {
+      // Les deux ont signé → notifier les deux
+      fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: doc.uid_eleveur, type: 'contrat_signe_complet', title: '✅ Contrat signé !',
+          body: `${acqNom} a apposé sa signature — ${titre} est désormais signé par les deux parties.`,
+          data: { token } }) });
+      if (acqEmail) fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: acqEmail, type: 'contrat_signe_complet', title: '✅ Contrat signé !',
+          body: `L'éleveur a apposé sa signature — ${titre} est désormais signé par les deux parties.`,
+          data: { token, url: signingUrl } }) });
+    } else if (role === 'acquereur') {
+      // Acquéreur vient de signer → notifier l'éleveur
+      fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: doc.uid_eleveur, type: 'contrat_signe_acquereur', title: '✍️ Signature reçue',
+          body: `${acqNom} a signé ${titre} — à vous de signer pour finaliser.`,
+          data: { token } }) });
+    } else {
+      // Éleveur vient de signer → notifier l'acquéreur
+      if (acqEmail) fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: acqEmail, type: 'contrat_signe_eleveur', title: '✍️ L\'éleveur a signé',
+          body: `L'éleveur a signé ${titre} — à vous de signer pour finaliser.`,
+          data: { token, url: signingUrl } }) });
+    }
 
     setDoc(prev => prev ? { ...prev, statut: newStatut, metadata: { ...prev.metadata, [sigField]: dataUrl, [dateField]: now } } : prev);
     setSaved(newSaved);
@@ -296,12 +329,19 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
   async function refuser() {
     if (!doc) return;
     setRefusing(true);
+    const reason = refuseReason.trim() || null;
     await fetch(`/api/contracts/${doc.id}/refuse`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason: refuseReason.trim() || null, actorEmail: doc.metadata?.acquereur_email ?? null }),
+      body: JSON.stringify({ reason, actorEmail: doc.metadata?.acquereur_email ?? null }),
     });
-    setDoc(prev => prev ? { ...prev, statut: 'refuse', rejection_reason: refuseReason.trim() || null } : prev);
+    // Notifier l'éleveur du refus
+    const acqNom = doc.metadata?.acquereur_nom || 'L\'acquéreur';
+    fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid: doc.uid_eleveur, type: 'contrat_refuse', title: '❌ Contrat refusé',
+        body: `${acqNom} a refusé ${doc.titre ?? 'le contrat'}${reason ? ` — ${reason}` : ''}.`,
+        data: { token } }) });
+    setDoc(prev => prev ? { ...prev, statut: 'refuse', rejection_reason: reason } : prev);
     setRefusing(false);
     setRefuseModal(false);
     if (window.opener) window.opener.postMessage({ type: 'contract_refused' }, '*');
@@ -327,6 +367,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
   );
 
   const isSigned    = doc?.statut === 'signe';
+  const isPartial   = doc?.statut === 'partiellement_signe';
   const isEnAttente = doc?.statut === 'en_attente';
   const isRefused   = doc?.statut === 'refuse';
   const isCancelled = doc?.statut === 'annule';
@@ -339,13 +380,15 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
                     isRefused   ? 'bg-red-500 text-white' :
                     isCancelled ? 'bg-gray-500 text-white' :
                     isExpired   ? 'bg-orange-500 text-white' :
+                    isPartial   ? 'bg-blue-500 text-white' :
                     isEnAttente ? 'bg-amber-500 text-white' :
                                   'bg-[#0C5C6C] text-white';
   const bannerMsg  = isSigned    ? '✅ Contrat signé par les deux parties' :
                      isRefused   ? `❌ Contrat refusé${doc?.rejection_reason ? ` — ${doc.rejection_reason}` : ''}` :
                      isCancelled ? '🚫 Contrat annulé' :
                      isExpired   ? '⏰ Contrat expiré' :
-                     isEnAttente ? '⏳ En attente de la signature de l\'acquéreur' :
+                     isPartial   ? '✍️ Une signature reçue — en attente de la seconde partie' :
+                     isEnAttente ? '⏳ En attente des signatures' :
                                    '📄 Contrat en cours de rédaction';
 
   return (

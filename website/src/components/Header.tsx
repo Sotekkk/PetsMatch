@@ -693,6 +693,9 @@ export default function Header() {
                               : n.type === 'rappel_vaccin' ? '💉'
                               : n.type === 'pension_acces' ? '🏡'
                               : n.type === 'contrat_saillie_invite' ? '💞'
+                              : n.type === 'contrat_signe_complet' ? '✅'
+                              : n.type === 'contrat_signe_acquereur' || n.type === 'contrat_signe_eleveur' ? '✍️'
+                              : n.type === 'contrat_refuse' ? '❌'
                               : n.type?.startsWith('contrat') || n.type?.startsWith('certificat') ? '📄'
                               : '🔔'}
                           </div>
@@ -715,13 +718,22 @@ export default function Header() {
                                 className="mt-1 text-xs font-bold text-[#0C5C6C] underline cursor-pointer bg-none border-none p-0"
                               >Répondre →</button>
                             )}
-                            {n.type === 'contrat_saillie_invite' && (n as Notif & { data?: Record<string, string> }).data?.url && (
+                            {(['contrat_saillie_invite','contrat_signe_eleveur','contrat_signe_complet'].includes(n.type ?? '') &&
+                              (n as Notif & { data?: Record<string, string> }).data?.url) && (
                               <a
                                 href={(n as Notif & { data?: Record<string, string> }).data!.url}
                                 target="_blank" rel="noopener noreferrer"
                                 onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
                                 className="mt-1 text-xs font-bold text-purple-600 underline"
                               >Voir le contrat →</a>
+                            )}
+                            {(['contrat_signe_acquereur','contrat_refuse','contrat_signe_complet'].includes(n.type ?? '') &&
+                              !(n as Notif & { data?: Record<string, string> }).data?.url) && (
+                              <a
+                                href="/elevage/contrat"
+                                onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
+                                className="mt-1 text-xs font-bold text-[#0C5C6C] underline"
+                              >Voir mes contrats →</a>
                             )}
                           </div>
                         </div>
