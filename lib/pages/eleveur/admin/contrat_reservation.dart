@@ -411,6 +411,7 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
             'type':        _type,
             'titre':       '$typeLabel — ${_selectedAnimal!['nom'] ?? 'Animal'}',
             'statut':      'en_attente',
+            'expires_at':  DateTime.now().add(const Duration(days: 30)).toIso8601String(),
             'metadata': {
               'acquereur_nom':      '${_acqPrenomCtrl.text.trim()} ${_acqNomCtrl.text.trim()}'.trim(),
               'acquereur_email':    _acqEmailCtrl.text.trim(),

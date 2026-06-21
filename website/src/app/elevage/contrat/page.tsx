@@ -240,6 +240,7 @@ export default function ContratsPage() {
       type:        formType,
       titre:       `${titreLabel} — ${selectedAnimal.nom ?? 'Animal'}`,
       statut:      'brouillon',
+      expires_at:  new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       metadata: {
         acquereur_nom:       `${acqPrenom} ${acqNom}`.trim(),
         acquereur_email:     acqEmail,

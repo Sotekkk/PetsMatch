@@ -696,6 +696,7 @@ export default function Header() {
                               : n.type === 'contrat_signe_complet' ? '✅'
                               : n.type === 'contrat_signe_acquereur' || n.type === 'contrat_signe_eleveur' ? '✍️'
                               : n.type === 'contrat_refuse' ? '❌'
+                              : n.type === 'contrat_expire' ? '⏰'
                               : n.type?.startsWith('contrat') || n.type?.startsWith('certificat') ? '📄'
                               : '🔔'}
                           </div>
@@ -727,7 +728,7 @@ export default function Header() {
                                 className="mt-1 text-xs font-bold text-purple-600 underline"
                               >Voir le contrat →</a>
                             )}
-                            {(['contrat_signe_acquereur','contrat_refuse','contrat_signe_complet'].includes(n.type ?? '') &&
+                            {(['contrat_signe_acquereur','contrat_refuse','contrat_signe_complet','contrat_expire'].includes(n.type ?? '') &&
                               !(n as Notif & { data?: Record<string, string> }).data?.url) && (
                               <a
                                 href="/elevage/contrat"

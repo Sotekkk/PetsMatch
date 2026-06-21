@@ -222,7 +222,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       return;
     }
     // Notifications contrats côté éleveur — ouvre la page Mes Contrats dans l'app
-    if (type == 'contrat_signe_acquereur' || type == 'contrat_refuse') {
+    if (type == 'contrat_signe_acquereur' || type == 'contrat_refuse' || type == 'contrat_expire') {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => const ContratReservationPage(),
       ));
