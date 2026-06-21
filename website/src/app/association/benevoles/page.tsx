@@ -28,6 +28,7 @@ export default function BenevolesWebPage() {
       .from('employes')
       .select('*')
       .eq('uid_eleveur', user.uid)
+      .eq('type', 'benevole')
       .order('nom');
     setBenevoles(data ?? []);
     setLoading(false);

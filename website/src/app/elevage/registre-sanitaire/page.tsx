@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -38,6 +38,8 @@ export default function RegistreSanitairePage() {
   const { user, loading } = useAuth();
   const { config: planConfig, loading: planLoading } = usePlan();
   const router = useRouter();
+  const pathname = usePathname();
+  const profilSource = pathname.startsWith('/association') ? 'association' : 'eleveur';
   const [actes, setActes] = useState<Acte[]>([]);
   const [fetching, setFetching] = useState(true);
   const [filtreType, setFiltreType] = useState('tous');
@@ -74,11 +76,11 @@ export default function RegistreSanitairePage() {
     if (!user) return;
     (async () => {
       try {
-        const { data } = await supabase
-          .from('registre_sanitaire')
-          .select('*')
-          .eq('uid_eleveur', user.uid)
+        const q = supabase.from('registre_sanitaire').select('*').eq('uid_eleveur', user.uid)
           .order('date_acte', { ascending: false });
+        const { data } = await (profilSource === 'association'
+          ? q.eq('profil_source', 'association')
+          : q.or('profil_source.is.null,profil_source.eq.eleveur'));
         setActes((data as Acte[]) ?? []);
       } catch { /* ignore */ } finally {
         setFetching(false);
@@ -270,12 +272,12 @@ export default function RegistreSanitairePage() {
       )}
 
       {/* Formulaire nouvel acte */}
-      {showForm && <NouvelActeForm uid={user.uid} onClose={() => setShowForm(false)} onSaved={(acte) => { setActes((prev) => [acte, ...prev]); setShowForm(false); }} />}
+      {showForm && <NouvelActeForm uid={user.uid} profilSource={profilSource} onClose={() => setShowForm(false)} onSaved={(acte) => { setActes((prev) => [acte, ...prev]); setShowForm(false); }} />}
     </div>
   );
 }
 
-function NouvelActeForm({ uid, onClose, onSaved }: { uid: string; onClose: () => void; onSaved: (a: Acte) => void }) {
+function NouvelActeForm({ uid, profilSource = 'eleveur', onClose, onSaved }: { uid: string; profilSource?: string; onClose: () => void; onSaved: (a: Acte) => void }) {
   const [animaux, setAnimaux] = useState<{ id: string; nom: string; espece: string; sexe: string; identification: string; date_naissance: string }[]>([]);
   const [animalId, setAnimalId] = useState('');
   const [typeActe, setTypeActe] = useState('');
@@ -287,8 +289,9 @@ function NouvelActeForm({ uid, onClose, onSaved }: { uid: string; onClose: () =>
   const [error, setError] = useState('');
 
   useEffect(() => {
-    supabase.from('animaux').select('id, nom, espece, sexe, identification, date_naissance')
-      .eq('uid_eleveur', uid).order('nom').then(({ data }) => setAnimaux((data as typeof animaux) ?? []));
+    const q = supabase.from('animaux').select('id, nom, espece, sexe, identification, date_naissance').eq('uid_eleveur', uid).order('nom');
+    (profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false'))
+      .then(({ data }) => setAnimaux((data as typeof animaux) ?? []));
   }, [uid]);
 
   async function handleSave(e: React.FormEvent) {
@@ -308,6 +311,7 @@ function NouvelActeForm({ uid, onClose, onSaved }: { uid: string; onClose: () =>
       type_acte: typeActe,
       intervenant, description,
       ordonnance_num: ordonnance,
+      profil_source: profilSource,
     });
     if (err) { setError('Erreur : ' + err.message); setSaving(false); return; }
     onSaved({ id, animal_nom: animal?.nom, espece: animal?.espece, date_acte: dateActe, type_acte: typeActe, intervenant, description });

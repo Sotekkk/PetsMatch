@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 import { generateContratHTML, generateContratVente, generateContratReservationHTML } from '@/lib/contrat-vente';
 import { sendNotification } from '@/lib/notifications';
+import AddressAutocomplete from '@/components/AddressAutocomplete';
 
 interface DocAnimal {
   id: string;
@@ -119,8 +120,8 @@ export default function ContratsPage() {
     if (!user) return;
     setFetching(true);
     const [docsRes, animauxRes, profileRes] = await Promise.all([
-      supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).order('created_at', { ascending: false }),
-      supabase.from('animaux').select('id, nom, espece, race, identification, date_naissance, sexe, couleur, pedigree_numero, pedigree_lof, nom_pere, puce_pere, nom_mere, puce_mere').eq('uid_eleveur', user.uid).not('statut', 'in', '(sorti,decede)').order('nom'),
+      supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).neq('type', 'contrat_adoption').order('created_at', { ascending: false }),
+      supabase.from('animaux').select('id, nom, espece, race, identification, date_naissance, sexe, couleur, pedigree_numero, pedigree_lof, nom_pere, puce_pere, nom_mere, puce_mere').eq('uid_eleveur', user.uid).or('is_association.is.null,is_association.eq.false').not('statut', 'in', '(sorti,decede)').order('nom'),
       supabase.from('users').select('firstname,lastname,name_elevage,is_elevage,adress_elevage,adress,rue,ville,ville_elevage,code_postal,siret,email,numero_elevage,code_iso_elevage,phone_number,code_iso').eq('uid', user.uid).maybeSingle(),
     ]);
     setDocs((docsRes.data ?? []) as DocAnimal[]);
@@ -149,10 +150,9 @@ export default function ContratsPage() {
       ? `${u.code_iso_elevage ?? '+33'} ${u.numero_elevage}`.trim()
       : (u.phone_number ?? '');
     setAcqTel(tel);
-    const adresse = isElv && u.adress_elevage
-      ? u.adress_elevage
-      : [u.rue, u.code_postal, u.ville].filter(Boolean).join(', ');
-    setAcqAdresse(adresse);
+    // Préférer l'adresse personnelle même si c'est un éleveur (il peut acheter pour usage privé)
+    const personalAddr = [u.rue, u.code_postal, u.ville].filter(Boolean).join(', ');
+    setAcqAdresse(personalAddr || u.adress_elevage || '');
     setUserResults([]); setUserSearch('');
   }
 
@@ -496,7 +496,9 @@ export default function ContratsPage() {
             </div>
             <div><label className="text-xs text-gray-500 mb-1 block">Email</label><input type="email" value={acqEmail} onChange={e => setAcqEmail(e.target.value)} className={iCls} /></div>
             <div><label className="text-xs text-gray-500 mb-1 block">Téléphone</label><input value={acqTel} onChange={e => setAcqTel(e.target.value)} className={iCls} /></div>
-            <div><label className="text-xs text-gray-500 mb-1 block">Adresse</label><input value={acqAdresse} onChange={e => setAcqAdresse(e.target.value)} className={iCls} /></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Adresse</label>
+              <AddressAutocomplete value={acqAdresse} onChange={setAcqAdresse} className={iCls} placeholder="12 rue des Lilas, 75001 Paris" />
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="text-xs text-gray-500 mb-1 block">Prix (€)</label><input type="number" value={prix} onChange={e => setPrix(e.target.value)} placeholder="0 = gratuit" className={iCls} /></div>
               <div><label className="text-xs text-gray-500 mb-1 block">Date</label><input type="date" value={dateDoc} onChange={e => setDateDoc(e.target.value)} className={iCls} /></div>

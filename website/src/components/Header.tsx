@@ -81,7 +81,8 @@ const NAV_PARTICULIER = [
 const NAV_ASSOCIATION = [
   { href: '/association',              label: 'Mon Association' },
   { href: '/association/animaux',      label: 'Mes Animaux' },
-  { href: '/association/annonces',     label: 'Annonces' },
+  { href: '/association/annonces',     label: 'Mes Annonces' },
+  { href: '/association/planning',     label: 'Planning' },
   { href: '/animaux-perdus',           label: 'Animaux perdus' },
   { href: '/messages',                 label: 'Messages' },
 ];
@@ -230,17 +231,44 @@ const MENU_ASSOCIATION = [
       { href: '/association/animaux',                    label: 'Mes Animaux',           icon: '🐾' },
       { href: '/association/familles-accueil',           label: 'Familles d\'accueil',   icon: '🏡' },
       { href: '/association/chenil',                     label: 'Chenil / Planning',     icon: '🗓️' },
+      { href: '/association/planning',                   label: 'Protocoles',            icon: '📅' },
+      { href: '/association/registre-sanitaire',         label: 'Suivi sanitaire',       icon: '🏥' },
+      { href: '/association/inventaire',                 label: 'Inventaire',            icon: '📦' },
       { href: '/association/benevoles',                  label: 'Bénévoles',             icon: '🤝' },
       { href: '/employes',                               label: 'Mes employés',          icon: '👥' },
+      { href: '/association/registre-entree-sortie',     label: 'Entrée - Sortie',       icon: '📂' },
       { href: '/mes-taches',                             label: 'Mes tâches',            icon: '✅' },
-      { href: '/association/annonces',                   label: 'Mes Annonces',          icon: '📣' },
-      { href: '/association/certificat-engagement',      label: 'Certificats',           icon: '📋' },
-      { href: '/association/registre-sanitaire',         label: 'Suivi sanitaire',       icon: '🏥' },
-      { href: '/association/registre-entree-sortie',     label: 'Entrée - Sortie',     icon: '↔️' },
     ],
   },
   {
-    section: 'Perdus & Trouvés',
+    section: 'Agenda & RDV',
+    icon: '🗓️',
+    items: [
+      { href: '/association/agenda', label: 'Agenda',    icon: '🗓️' },
+      { href: '/mes-rdv',            label: 'Mes RDV',   icon: '📅' },
+      { href: '/mes-taches',         label: 'Mes tâches', icon: '✅' },
+    ],
+  },
+  {
+    section: 'Administratif',
+    icon: '📁',
+    items: [
+      { href: '/association/contrat',               label: 'Contrats d\'adoption', icon: '📋' },
+      { href: '/association/certificat-engagement', label: 'Certificats',           icon: '✍️' },
+      { href: '/association/facturation',           label: 'Facturation',           icon: '🧾' },
+    ],
+  },
+  {
+    section: 'Annonces',
+    icon: '📢',
+    items: [
+      { href: '/association/annonces',       label: 'Mes Annonces',         icon: '📣' },
+      { href: '/association/annonces/creer', label: 'Nouvelle annonce',     icon: '➕' },
+      { href: '/annonces',                   label: 'Trouver un compagnon', icon: '❤️' },
+    ],
+  },
+  {
+    section: 'Animaux perdus / trouvés',
     icon: '🔍',
     items: [
       { href: '/mes-alertes',    label: 'Gérer mes alertes',       icon: '🔔' },
@@ -251,8 +279,8 @@ const MENU_ASSOCIATION = [
     section: 'Services',
     icon: '🏥',
     items: [
-      { href: '/services', label: 'Annuaire des services', icon: '🔎' },
-      { href: '/marketplace', label: 'Marketplace', icon: '🛍️' },
+      { href: '/services',    label: 'Annuaire des services', icon: '🔎' },
+      { href: '/marketplace', label: 'Marketplace',           icon: '🛍️' },
     ],
   },
 ];

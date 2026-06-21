@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { collection, query, orderBy, getDocs, doc, updateDoc, addDoc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -30,6 +30,7 @@ interface Facture {
   totalTTC?: number;
   tvaEmetteur?: string;
   lignes?: Ligne[];
+  profilSource?: string;
 }
 
 const STATUT_STYLE: Record<string, string> = {
@@ -48,6 +49,8 @@ function addDays(n: number) {
 export default function FacturationPage() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const profilSource = pathname.startsWith('/association') ? 'association' : 'eleveur';
   const { config: planConfig, loading: planLoading } = usePlan();
   const [factures, setFactures] = useState<Facture[]>([]);
   const [fetching, setFetching] = useState(true);
@@ -63,7 +66,11 @@ export default function FacturationPage() {
     if (!user) return;
     getDocs(query(collection(db, 'users', user.uid, 'factures'), orderBy('numeroFacture', 'desc')))
       .then((snap) => {
-        setFactures(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Facture));
+        const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Facture);
+        const filtered = profilSource === 'association'
+          ? all.filter(f => f.profilSource === 'association')
+          : all.filter(f => f.profilSource !== 'association');
+        setFactures(filtered);
         setFetching(false);
       })
       .catch(() => setFetching(false));
@@ -232,6 +239,7 @@ export default function FacturationPage() {
 
       {showForm && (
         <NouvelleFactureForm uid={user.uid} userData={userData} nextNum={(factures[0]?.numeroFacture ?? 0) + 1}
+          profilSource={profilSource}
           onClose={() => setShowForm(false)}
           onSaved={(f) => { setFactures((prev) => [f, ...prev]); setShowForm(false); }} />
       )}
@@ -239,8 +247,8 @@ export default function FacturationPage() {
   );
 }
 
-function NouvelleFactureForm({ uid, userData, nextNum, onClose, onSaved }: {
-  uid: string; userData: unknown; nextNum: number;
+function NouvelleFactureForm({ uid, userData, nextNum, profilSource = 'eleveur', onClose, onSaved }: {
+  uid: string; userData: unknown; nextNum: number; profilSource?: string;
   onClose: () => void; onSaved: (f: Facture) => void;
 }) {
   const [nomClient, setNomClient] = useState('');
@@ -270,6 +278,7 @@ function NouvelleFactureForm({ uid, userData, nextNum, onClose, onSaved }: {
       dateFacture, datePrestation, dateEcheance,
       statut: 'emise', lignes, totalHT, totalTVA, totalTTC,
       createdAt: new Date().toISOString(),
+      profilSource,
     };
     const ref = await addDoc(collection(db, 'users', uid, 'factures'), data);
     onSaved({ id: ref.id, ...data });

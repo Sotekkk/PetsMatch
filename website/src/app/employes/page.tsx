@@ -134,7 +134,8 @@ function EquipeTab({ uid }: { uid: string }) {
     setLoading(true);
     try {
       const { data: rows } = await supabase
-        .from('employes').select('*').eq('uid_eleveur', uid).eq('actif', true).order('created_at');
+        .from('employes').select('*').eq('uid_eleveur', uid).eq('actif', true)
+        .or('type.is.null,type.neq.benevole').order('created_at');
 
       const result: Employee[] = [];
       for (const e of (rows ?? [])) {
@@ -407,7 +408,7 @@ function TachesTab({ uid }: { uid: string }) {
     try {
       const [{ data: tachesRaw }, { data: empsRaw }, { data: animauxRaw }] = await Promise.all([
         supabase.from('taches_elevage').select('*').eq('uid_eleveur', uid).order('date'),
-        supabase.from('employes').select('*').eq('uid_eleveur', uid).eq('actif', true),
+        supabase.from('employes').select('*').eq('uid_eleveur', uid).eq('actif', true).or('type.is.null,type.neq.benevole'),
         supabase.from('animaux').select('id, nom').eq('uid_eleveur', uid).order('nom'),
       ]);
 

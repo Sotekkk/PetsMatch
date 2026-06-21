@@ -31,6 +31,7 @@ export default function AnimauxAssoPage() {
       .from('animaux')
       .select('id, nom, espece, race, sexe, statut, date_naissance, photo_url, date_entree')
       .eq('uid_eleveur', user.uid)
+      .eq('is_association', true)
       .order('nom')
       .then(({ data }) => {
         setAnimaux(data ?? []);

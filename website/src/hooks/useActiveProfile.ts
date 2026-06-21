@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 
 export const ACTIVE_PROFILE_KEY = 'petsMatch_activeProfileId';
 export const PROFILE_CHANGE_EVENT = 'petsMatchProfileChanged';
@@ -32,4 +33,21 @@ export function useActiveProfileState(): ActiveProfileState {
 
 export function useActiveProfile(): string {
   return useActiveProfileState().id;
+}
+
+/** Retourne 'association' si le profil actif est une association, sinon 'eleveur'. */
+export function useProfileSource(): 'eleveur' | 'association' {
+  const { id, loaded } = useActiveProfileState();
+  const [profileSource, setProfileSource] = useState<'eleveur' | 'association'>('eleveur');
+
+  useEffect(() => {
+    if (!loaded) return;
+    if (!id) { setProfileSource('eleveur'); return; }
+    supabase.from('user_profiles').select('profile_type').eq('id', id).single()
+      .then(({ data }) => {
+        setProfileSource(data?.profile_type === 'association' ? 'association' : 'eleveur');
+      });
+  }, [id, loaded]);
+
+  return profileSource;
 }

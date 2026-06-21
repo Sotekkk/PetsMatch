@@ -7,6 +7,7 @@ import {
   generateContratSaillieHTML,
   AnimalContrat, DataContrat, EleveurContrat,
 } from '@/lib/contrat-vente';
+import { generateContratAdoptionHTML } from '@/lib/contrat-adoption';
 import { useAuth } from '@/lib/auth-context';
 
 const supabase = createClient(
@@ -129,7 +130,33 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       };
 
       let generatedHtml = '';
-      if (data.type === 'contrat_reservation') {
+      if (data.type === 'contrat_adoption') {
+        const assoInfo = {
+          nom: meta.asso_nom ?? elvNom,
+          adresse: meta.asso_adresse ?? profil?.adress_elevage ?? '',
+          tel: meta.asso_tel ?? elvTel,
+          email: meta.asso_email ?? profil?.email ?? '',
+          siret: meta.asso_siret ?? profil?.siret ?? '',
+        };
+        const adoptant = {
+          nom: meta.acquereur_nom ?? '',
+          prenom: meta.acquereur_prenom ?? '',
+          adresse: meta.acquereur_adresse ?? '',
+          tel: meta.acquereur_tel ?? '',
+          email: meta.acquereur_email ?? '',
+        };
+        const dataAdoption = {
+          participation: meta.participation ?? '',
+          dateContrat: meta.dateContrat ?? meta.date_cession ?? '',
+          avecSteril: meta.avecSteril === 'true',
+          notes: meta.notes ?? '',
+          acquereur_email: meta.acquereur_email ?? '',
+        };
+        generatedHtml = generateContratAdoptionHTML(assoInfo, animal, adoptant, dataAdoption, {
+          signatureEleveur: meta.signature_eleveur,
+          signatureAcquereur: meta.signature_acquereur,
+        });
+      } else if (data.type === 'contrat_reservation') {
         generatedHtml = generateContratReservationHTML(animal, dataContrat, eleveur, opts);
       } else if (data.type === 'certificat_cession') {
         generatedHtml = generateCertificatCessionHTML(animal, dataContrat, eleveur, { ...opts, eleveurUid: data.uid_eleveur });

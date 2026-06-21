@@ -32,10 +32,10 @@ export default function AssociationDashboard() {
   useEffect(() => {
     if (!user) return;
     Promise.all([
-      supabase.from('animaux').select('statut').eq('uid_eleveur', user.uid),
+      supabase.from('animaux').select('statut').eq('uid_eleveur', user.uid).eq('is_association', true),
       supabase.from('employes').select('id').eq('uid_eleveur', user.uid).eq('actif', true),
       supabase.from('animaux').select('id, nom, espece, photo_url, statut, date_entree')
-        .eq('uid_eleveur', user.uid).order('date_entree', { ascending: false }).limit(6),
+        .eq('uid_eleveur', user.uid).eq('is_association', true).order('date_entree', { ascending: false }).limit(6),
     ]).then(([{ data: animaux }, { data: benvl }, { data: recent }]) => {
       const list = animaux ?? [];
       setStats({

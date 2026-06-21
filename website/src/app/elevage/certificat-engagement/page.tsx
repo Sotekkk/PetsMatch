@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@supabase/supabase-js';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
+import AddressAutocomplete from '@/components/AddressAutocomplete';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -48,6 +49,8 @@ const ESPECES_DELAI = ['Chien', 'Chat'];
 export default function CertificatEngagementPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const profilSource = pathname.startsWith('/association') ? 'association' : 'eleveur';
   const { config: planConfig, loading: planLoading } = usePlan();
   const [certificats, setCertificats] = useState<Certificat[]>([]);
   const [fetching, setFetching] = useState(true);
@@ -73,7 +76,7 @@ export default function CertificatEngagementPage() {
 
   // Recherche acquéreur dans la base PetsMatch
   const [userSearch, setUserSearch] = useState('');
-  const [userResults, setUserResults] = useState<{uid:string;firstname:string;lastname:string;email:string;phone_number:string;rue:string;ville:string;code_postal:string}[]>([]);
+  const [userResults, setUserResults] = useState<{uid:string;firstname:string;lastname:string;name_elevage?:string;is_elevage?:boolean;email:string;phone_number?:string;rue?:string;ville?:string;code_postal?:string;rue_elevage?:string;ville_elevage?:string;code_postal_elevage?:string}[]>([]);
   const [userSearchLoading, setUserSearchLoading] = useState(false);
   const [editingCert, setEditingCert] = useState<Certificat | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -83,8 +86,10 @@ export default function CertificatEngagementPage() {
   useEffect(() => {
     if (!user) return;
     Promise.all([
-      supabaseAdmin.from('certificats_engagement').select('id,animal_id,nom_animal,espece,acquereur_nom,acquereur_prenom,acquereur_email,acquereur_telephone,acquereur_adresse,statut,date_remise,date_limite_signature,date_signature_acquereur,token_signature,modalite_cession,prix,notes').eq('cedant_uid', user.uid).order('created_at', { ascending: false }),
-      supabaseAdmin.from('animaux').select('id,nom,espece,race,date_naissance,identification').eq('uid_eleveur', user.uid).order('nom'),
+      (() => { const q = supabaseAdmin.from('certificats_engagement').select('id,animal_id,nom_animal,espece,acquereur_nom,acquereur_prenom,acquereur_email,acquereur_telephone,acquereur_adresse,statut,date_remise,date_limite_signature,date_signature_acquereur,token_signature,modalite_cession,prix,notes').eq('cedant_uid', user.uid).order('created_at', { ascending: false });
+        return profilSource === 'association' ? q.eq('profil_source', 'association') : q.or('profil_source.is.null,profil_source.eq.eleveur'); })(),
+      (() => { const q = supabaseAdmin.from('animaux').select('id,nom,espece,race,date_naissance,identification').eq('uid_eleveur', user.uid).order('nom');
+        return profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false'); })(),
       supabaseAdmin.from('users').select('name_elevage,siret,phone_number,rue_elevage,ville_elevage,code_postal_elevage,firstname,lastname').eq('uid', user.uid).maybeSingle(),
     ]).then(([certs, anim, prof]) => {
       setCertificats((certs.data ?? []) as Certificat[]);
@@ -100,7 +105,7 @@ export default function CertificatEngagementPage() {
     setUserSearchLoading(true);
     const { data } = await supabaseAdmin
       .from('users')
-      .select('uid,firstname,lastname,email,phone_number,rue,ville,code_postal')
+      .select('uid,firstname,lastname,name_elevage,is_elevage,email,phone_number,rue,ville,code_postal,rue_elevage,ville_elevage,code_postal_elevage')
       .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,email.ilike.%${q}%`)
       .neq('uid', user?.uid ?? '')
       .limit(6);
@@ -109,12 +114,15 @@ export default function CertificatEngagementPage() {
   }
 
   function prefillUser(u: typeof userResults[0]) {
-    setAcqNom(u.lastname ?? '');
-    setAcqPrenom(u.firstname ?? '');
+    // Nom : utiliser name_elevage uniquement si c'est un professionnel, sinon nom personnel
+    setAcqNom(u.is_elevage && u.name_elevage ? u.name_elevage : (u.lastname ?? ''));
+    setAcqPrenom(u.is_elevage && u.name_elevage ? '' : (u.firstname ?? ''));
     setAcqEmail(u.email ?? '');
     setAcqTel(u.phone_number ?? '');
-    const adresse = [u.rue, u.code_postal, u.ville].filter(Boolean).join(', ');
-    setAcqAdresse(adresse);
+    // Préférer l'adresse personnelle (un éleveur peut acheter pour usage privé)
+    const personalAddr = [u.rue, u.code_postal, u.ville].filter(Boolean).join(', ');
+    const elevageAddr = [u.rue_elevage, u.code_postal_elevage, u.ville_elevage].filter(Boolean).join(', ');
+    setAcqAdresse(personalAddr || elevageAddr || '');
     setUserSearch(`${u.firstname ?? ''} ${u.lastname ?? ''}`.trim());
     setUserResults([]);
   }
@@ -158,6 +166,7 @@ export default function CertificatEngagementPage() {
           date_remise: dateRemise.toISOString(),
           date_limite_signature: dateLimite?.toISOString() ?? null,
           notes: notes.trim(),
+          profil_source: profilSource,
         }),
       });
       const json = await res.json();
@@ -375,7 +384,7 @@ export default function CertificatEngagementPage() {
                   </div>
                   <div className="mt-3">
                     <label className="block text-xs text-gray-600 mb-1">Adresse complète</label>
-                    <input value={acqAdresse} onChange={e => setAcqAdresse(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="12 rue des Lilas, 75001 Paris" />
+                    <AddressAutocomplete value={acqAdresse} onChange={setAcqAdresse} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="12 rue des Lilas, 75001 Paris" />
                   </div>
                   {modalite === 'vente' && (
                     <div className="mt-3">

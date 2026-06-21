@@ -40,6 +40,7 @@ export default function AnnoncesAssoPage() {
       .from('annonces')
       .select('id, titre, type_annonce, espece, statut, prix, created_at, photo_url')
       .eq('uid_eleveur', user.uid)
+      .eq('profil_source', 'association')
       .order('created_at', { ascending: false })
       .then(({ data }) => {
         setAnnonces(data ?? []);
@@ -57,7 +58,7 @@ export default function AnnoncesAssoPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold font-galey text-teal-800">Mes Annonces</h1>
-        <Link href="/annonces/creer"
+        <Link href="/association/annonces/creer"
           className="bg-teal-700 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 transition-colors">
           + Déposer une annonce
         </Link>
@@ -71,7 +72,7 @@ export default function AnnoncesAssoPage() {
         <div className="text-center py-16 text-gray-400">
           <p className="text-4xl mb-3">📣</p>
           <p className="font-galey mb-4">Aucune annonce publiée</p>
-          <Link href="/annonces/creer"
+          <Link href="/association/annonces/creer"
             className="bg-teal-700 text-white px-6 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800">
             Déposer une annonce
           </Link>

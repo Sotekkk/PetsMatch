@@ -59,7 +59,7 @@ function fmtDate(s?: string) {
   return isNaN(d.getTime()) ? s : d.toLocaleDateString('fr-FR');
 }
 
-export default function RegistreEntreeSortiePage() {
+export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAssociation?: boolean }) {
   const { user, loading } = useAuth();
   const { config: planConfig, loading: planLoading } = usePlan();
   const router = useRouter();
@@ -97,11 +97,16 @@ export default function RegistreEntreeSortiePage() {
   async function loadData() {
     if (!user) return;
     try {
-      const { data } = await supabase
+      let q = supabase
         .from('animaux')
         .select('id, nom, espece, race, sexe, identification, date_naissance, photo_url, statut, date_entree, date_sortie, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, importation_ref, nom_mere, puce_mere')
-        .eq('uid_eleveur', user.uid)
-        .order('date_entree', { ascending: false });
+        .eq('uid_eleveur', user.uid);
+      if (isAssociation) {
+        q = q.eq('is_association', true);
+      } else {
+        q = q.or('is_association.is.null,is_association.eq.false');
+      }
+      const { data } = await q.order('date_entree', { ascending: false });
       setAnimaux((data as Animal[]) ?? []);
     } catch { /* ignore */ } finally {
       setFetching(false);
@@ -148,7 +153,7 @@ export default function RegistreEntreeSortiePage() {
     <div className="max-w-5xl mx-auto px-4 py-10 print:py-4 print:px-0">
       <div className="mb-6 flex items-center justify-between print:mb-4">
         <div>
-          <Link href="/mes-animaux" className="text-sm text-[#0C5C6C] hover:underline print:hidden">← Mes animaux</Link>
+          <Link href={isAssociation ? '/association/animaux' : '/mes-animaux'} className="text-sm text-[#0C5C6C] hover:underline print:hidden">← Mes animaux</Link>
           <h1 className="text-2xl font-bold text-[#1F2A2E] mt-1">Registre entrées / sorties</h1>
           <p className="text-gray-500 text-sm">{animaux.length} animal{animaux.length !== 1 ? 'x' : ''}</p>
         </div>
@@ -474,4 +479,8 @@ function EditRegistreForm({ animal, uid, onClose, onSaved }: {
       </div>
     </form>
   );
+}
+
+export default function RegistreEntreeSortiePage() {
+  return <RegistreEntreeSortieComponent />;
 }

@@ -5,21 +5,29 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 const NAV_ITEMS = [
-  { href: '/association', label: 'Tableau de bord', icon: '🏠', exact: true },
-  { href: '/association/animaux', label: 'Mes Animaux', icon: '🐾' },
-  { href: '/association/familles-accueil', label: 'Familles d\'accueil', icon: '🏡' },
-  { href: '/association/chenil', label: 'Chenil / Planning', icon: '🗓️' },
-  { href: '/association/benevoles', label: 'Bénévoles', icon: '🤝' },
-  { href: '/association/annonces', label: 'Mes Annonces', icon: '📣' },
-  { href: '/association/certificat-engagement', label: 'Certificats', icon: '📋' },
-  { href: '/association/registre-sanitaire', label: 'Suivi sanitaire', icon: '🏥' },
-  { href: '/association/registre-entree-sortie', label: 'Entrées / Sorties', icon: '↔️' },
+  { href: '/association',                            label: 'Tableau de bord',    icon: '🏠', exact: true },
+  { href: '/association/animaux',                    label: 'Mes Animaux',        icon: '🐾' },
+  { href: '/association/familles-accueil',           label: 'Familles d\'accueil',icon: '🏡' },
+  { href: '/association/chenil',                     label: 'Chenil / Planning',  icon: '🗓️' },
+  { href: '/association/planning',                   label: 'Protocoles',         icon: '📅' },
+  { href: '/association/registre-sanitaire',         label: 'Suivi sanitaire',    icon: '🏥' },
+  { href: '/association/inventaire',                 label: 'Inventaire',         icon: '📦' },
+  { href: '/association/benevoles',                  label: 'Bénévoles',          icon: '🤝' },
+  { href: '/association/registre-entree-sortie',     label: 'Entrées / Sorties',  icon: '📂' },
+  { href: '/association/agenda',                     label: 'Agenda',             icon: '🗓️' },
+  { href: '/mes-rdv',                               label: 'Mes RDV',            icon: '📅' },
+  { href: '/association/annonces',                   label: 'Mes Annonces',       icon: '📣' },
+  { href: '/association/contrat',                    label: 'Contrats adoption',  icon: '📋' },
+  { href: '/association/certificat-engagement',      label: 'Certificats',        icon: '✍️' },
+  { href: '/association/facturation',                label: 'Facturation',        icon: '🧾' },
 ];
 
 export default function AssociationLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const activeProfileId = useActiveProfile();
   const router = useRouter();
   const pathname = usePathname();
   const [isAssociation, setIsAssociation] = useState<boolean | null>(null);
@@ -30,20 +38,25 @@ export default function AssociationLayout({ children }: { children: React.ReactN
     if (loading) return;
     if (!user) { router.push('/connexion'); return; }
 
-    supabase
-      .from('users')
-      .select('is_association, name_elevage, firstname, lastname')
-      .eq('uid', user.uid)
-      .single()
-      .then(({ data }) => {
-        if (!data?.is_association) {
-          setIsAssociation(false);
-          return;
-        }
-        setIsAssociation(true);
-        setNomAsso(data.name_elevage || `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim());
-      });
-  }, [user, loading, router]);
+    Promise.all([
+      supabase.from('users').select('is_association, name_elevage, firstname, lastname').eq('uid', user.uid).single(),
+      activeProfileId
+        ? supabase.from('user_profiles').select('profile_type, profile_label, name_elevage').eq('id', activeProfileId).single()
+        : Promise.resolve({ data: null }),
+    ]).then(([{ data }, { data: secProfile }]) => {
+      // Accès autorisé si compte primaire association OU profil secondaire association actif
+      const secIsAsso = secProfile && (secProfile as { profile_type: string }).profile_type === 'association';
+      if (!data?.is_association && !secIsAsso) {
+        setIsAssociation(false);
+        return;
+      }
+      setIsAssociation(true);
+      const label = secIsAsso
+        ? ((secProfile as { profile_label?: string; name_elevage?: string }).profile_label ?? (secProfile as { name_elevage?: string }).name_elevage ?? '')
+        : '';
+      setNomAsso(label || (data as { name_elevage?: string; firstname?: string; lastname?: string } | null)?.name_elevage || `${(data as { firstname?: string } | null)?.firstname ?? ''} ${(data as { lastname?: string } | null)?.lastname ?? ''}`.trim());
+    });
+  }, [user, loading, router, activeProfileId]);
 
   if (loading || isAssociation === null) {
     return (

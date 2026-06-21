@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
@@ -681,6 +681,8 @@ function WeekStrip({ selectedDate, onSelectDay, monthDates }:
 export default function AgendaElevagePage() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const profilSource = pathname.startsWith('/association') ? 'association' : 'eleveur';
   const { config: planConfig, loading: planLoading } = usePlan();
 
   const [viewMode, setViewMode]         = useState<ViewMode>('mois');
@@ -727,15 +729,17 @@ export default function AgendaElevagePage() {
     if (!user) return;
     setLoadingData(true);
     const [r1, r2, tm] = await Promise.all([
-      supabase.from('plan_taches')
+      (() => { const q = supabase.from('plan_taches')
         .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_at')
-        .eq('uid_eleveur', user.uid).eq('date_prevue', selectedDate),
+        .eq('uid_eleveur', user.uid).eq('date_prevue', selectedDate);
+        return profilSource === 'association' ? q.eq('profil_source', 'association') : q.or('profil_source.is.null,profil_source.eq.eleveur'); })(),
       supabase.from('plan_taches')
         .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_at')
         .eq('assigned_to', user.uid).eq('date_prevue', selectedDate),
-      supabase.from('taches_elevage')
+      (() => { const q = supabase.from('taches_elevage')
         .select('id,titre,date,statut,heure,assigne_a,assignes_a,fait_par,notes')
-        .eq('uid_eleveur', user.uid).eq('date', selectedDate),
+        .eq('uid_eleveur', user.uid).eq('date', selectedDate);
+        return profilSource === 'association' ? q.eq('profil_source', 'association') : q.or('profil_source.is.null,profil_source.eq.eleveur'); })(),
     ]);
     const seen = new Set<string>();
     const allR = [...(r1.data ?? []), ...(r2.data ?? [])] as Routine[];
@@ -752,12 +756,14 @@ export default function AgendaElevagePage() {
     const from = `${focusedYear}-${mm}-01`;
     const to   = `${focusedYear}-${mm}-${String(daysInMonthFn(focusedYear, focusedMois)).padStart(2, '0')}`;
     const [r1, r2, tm] = await Promise.all([
-      supabase.from('plan_taches').select('date_prevue,type_acte').eq('uid_eleveur', user.uid)
-        .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`),
+      (() => { const q = supabase.from('plan_taches').select('date_prevue,type_acte').eq('uid_eleveur', user.uid)
+        .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`);
+        return profilSource === 'association' ? q.eq('profil_source', 'association') : q.or('profil_source.is.null,profil_source.eq.eleveur'); })(),
       supabase.from('plan_taches').select('date_prevue,type_acte').eq('assigned_to', user.uid)
         .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`),
-      supabase.from('taches_elevage').select('date').eq('uid_eleveur', user.uid)
-        .gte('date', from).lte('date', to),
+      (() => { const q = supabase.from('taches_elevage').select('date').eq('uid_eleveur', user.uid)
+        .gte('date', from).lte('date', to);
+        return profilSource === 'association' ? q.eq('profil_source', 'association') : q.or('profil_source.is.null,profil_source.eq.eleveur'); })(),
     ]);
     const map = new Map<string, Set<string>>();
     const addC = (date: string, c: string) => {

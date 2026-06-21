@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -125,6 +126,7 @@ function GuestHome() {
 export default function HomeDashboard() {
   const { user, userData, loading } = useAuth();
   const activeProfileId = useActiveProfile();
+  const router = useRouter();
   const [activeProfile, setActiveProfile] = useState<{
     id: string; profile_type: string; name_elevage: string; avatar_url: string | null; cat_pro: string;
   } | null>(null);
@@ -155,7 +157,17 @@ export default function HomeDashboard() {
 
   if (!user) return <GuestHome />;
 
-  // Profil secondaire actif → ProDashboard avec son ID
+  // Profil association (primaire ou secondaire) → espace association
+  if (activeProfile?.profile_type === 'association') {
+    router.replace('/association');
+    return <div className="flex items-center justify-center py-32"><div className="w-8 h-8 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" /></div>;
+  }
+  if (!activeProfile && userData?.isAssociation === true) {
+    router.replace('/association');
+    return <div className="flex items-center justify-center py-32"><div className="w-8 h-8 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" /></div>;
+  }
+
+  // Profil secondaire actif (pro) → ProDashboard avec son ID
   if (activeProfile) return <ProDashboard profile={activeProfile} profileId={activeProfileId} />;
 
   // Profil principal pro (vétérinaire, éducateur, pension, etc.) → ProDashboard sans profileId secondaire

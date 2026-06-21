@@ -1,3 +1,6 @@
 'use client';
-// Réutilise la page registre entrée/sortie de l'élevage — même composant, même base Supabase
-export { default } from '@/app/elevage/registre-entree-sortie/page';
+import { RegistreEntreeSortieComponent } from '@/app/elevage/registre-entree-sortie/page';
+
+export default function AssocRegistrePage() {
+  return <RegistreEntreeSortieComponent isAssociation={true} />;
+}
