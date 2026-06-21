@@ -1056,6 +1056,11 @@ export default function ProfilPage() {
   const [allBreeds, setAllBreeds] = useState<Record<string, string[]>>({});
   const [breedPickerEspece, setBreedPickerEspece] = useState<string | null>(null);
 
+  // Réseaux sociaux (éleveur)
+  const [instagram, setInstagram] = useState('');
+  const [facebook, setFacebook] = useState('');
+  const [siteWeb, setSiteWeb] = useState('');
+
   // Admin
   const [siret, setSiret] = useState('');
   const [acacedNum, setAcacedNum] = useState('');
@@ -1131,6 +1136,9 @@ export default function ProfilPage() {
       }
       setAcacedDateObtention(userData.acacedDateObtention ?? '');
       setAcacedDateRenewal(userData.acacedDateRenewal ?? '');
+      setInstagram(userData.instagram ?? '');
+      setFacebook(userData.facebook ?? '');
+      setSiteWeb(userData.siteWeb ?? '');
     }
   }, [userData, isEleveur]);
 
@@ -1384,6 +1392,9 @@ export default function ProfilPage() {
         payload.ville_elevage = villeElevage;
         payload.pays_elevage = pays;
         payload.adress_elevage = adresse;
+        payload.instagram = instagram.trim();
+        payload.facebook = facebook.trim();
+        payload.site_web = siteWeb.trim();
         payload.especes_elevees = especesElevees;
         payload.is_dog = isDog;
         payload.is_cat = isCat;
@@ -1428,6 +1439,9 @@ export default function ProfilPage() {
             isCat,
             dogBreeds: isDog ? (especesElevees.find(e => e.espece === 'chien')?.races ?? []) : [],
             catBreeds: isCat ? (especesElevees.find(e => e.espece === 'chat')?.races ?? []) : [],
+            instagram: instagram.trim(),
+            facebook: facebook.trim(),
+            siteWeb: siteWeb.trim(),
           });
         }
         if (payload.banner_url) firestoreUpdate.bannerUrl = payload.banner_url as string;
@@ -1932,6 +1946,27 @@ export default function ProfilPage() {
                 </div>
               );
             })}
+          </Card>
+        )}
+
+        {/* ── Réseaux sociaux (éleveur) ── */}
+        {isEleveur && (
+          <Card title="Réseaux sociaux">
+            <Field label="Instagram">
+              <input value={instagram} onChange={e => setInstagram(e.target.value)}
+                placeholder="@mon_elevage ou https://instagram.com/…"
+                className={inputCls} />
+            </Field>
+            <Field label="Facebook">
+              <input value={facebook} onChange={e => setFacebook(e.target.value)}
+                placeholder="facebook.com/mon-elevage"
+                className={inputCls} />
+            </Field>
+            <Field label="Site web">
+              <input value={siteWeb} onChange={e => setSiteWeb(e.target.value)}
+                placeholder="https://mon-elevage.fr"
+                className={inputCls} />
+            </Field>
           </Card>
         )}
 
