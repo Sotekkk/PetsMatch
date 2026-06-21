@@ -1397,6 +1397,10 @@ CREATE TABLE documents_animaux (
 
 ### 9bis.5 Intégration YouSign — Modèle économique & Quotas (SIGN01)
 
+> ⛔ **AUCUN ABONNEMENT YOUSIGN SOUSCRIT À CE JOUR (2026-06-21)**  
+> Ne pas souscrire pendant la phase de développement pour ne pas payer inutilement.  
+> **À souscrire juste avant la release production** — bloquer cette étape comme prérequis de la mise en ligne.
+
 > **Décision 2026-06-19** : intégrer YouSign pour les 3 contrats (vente, réservation, engagement). Accès conditionné au plan Premium, avec quota mensuel inclus et facturation à l'unité au-delà.
 
 #### Pricing YouSign (coût PetsMatch)

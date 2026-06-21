@@ -18,6 +18,7 @@ import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
+import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -226,6 +227,21 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => const ContratReservationPage(),
       ));
+      return;
+    }
+    if (type == 'annonce_expiration' && annonceId != null) {
+      // Charger les données de l'annonce depuis Supabase pour ouvrir directement l'édition
+      final supa = Supabase.instance.client;
+      final res = await supa.from('annonces').select().eq('id', annonceId).maybeSingle();
+      if (!mounted) return;
+      if (res != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => CreateAnnoncePage(
+            annonceId: annonceId,
+            initialData: Map<String, dynamic>.from(res),
+          ),
+        ));
+      }
       return;
     }
     if (type == 'alerte_perdu') {
