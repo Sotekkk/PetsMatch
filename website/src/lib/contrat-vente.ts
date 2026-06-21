@@ -273,6 +273,330 @@ function imprimerFinalise() { window.print(); }
 `;
 }
 
+function signBlockSaillie(role: 'proprietaire_male' | 'proprietaire_femelle', titre: string, nom: string) {
+  return `
+<div class="sign-block" data-signer="${role}">
+  <div class="sign-label">${titre}</div>
+  <div class="sign-name">${nom || '…'}</div>
+  <div class="sign-img"></div>
+  <div class="sign-note">« Lu et approuvé »</div>
+  <div style="margin-top:6px;font-size:9px"><span class="cb" onclick="toggleCb(this)">☐</span> J'ai reçu mon exemplaire original</div>
+</div>`;
+}
+
+function saillieTerms(espece?: string) {
+  switch ((espece ?? '').toLowerCase()) {
+    case 'chien': return {
+      male: 'l\'étalon', femelle: 'la chienne',
+      titreMale: 'Propriétaire de l\'étalon', titreFemelle: 'Propriétaire de la chienne',
+      pedigree: 'LOF',
+      labelPedigree: 'N° LOF ou pedigree FFP',
+      tests: [
+        ['brucellose', 'Test brucellose (Brucella canis)', 'Fortement recommandé avant toute saillie'],
+        ['herpes', 'Test herpèsvirus canin (CaHV-1)', 'Recommandé, surtout pour étalons actifs'],
+        ['bilan_venerien', 'Bilan vénérien complet', 'Infections bactériennes transmissibles'],
+        ['adn', 'Test ADN de filiation', 'Optionnel, exigé par certains clubs de race'],
+      ] as [string, string, string][],
+      reglement: 'Règlement international de la Fédération Cynologique Internationale (FCI)',
+      saillieNaturelleDesc: 'La saillie naturelle est réalisée sur le site convenu entre les parties. Elle est considérée comme effective dès le premier accouplement constaté par les deux parties.',
+      inseminationDesc: 'L\'insémination artificielle est réalisée par un vétérinaire habilité. Les frais vétérinaires sont à la charge du propriétaire de la chienne sauf accord contraire.',
+    };
+    case 'chat': return {
+      male: 'le reproducteur', femelle: 'la femelle',
+      titreMale: 'Propriétaire du mâle reproducteur', titreFemelle: 'Propriétaire de la femelle',
+      pedigree: 'LOOF',
+      labelPedigree: 'N° LOOF',
+      tests: [
+        ['fiv_felv', 'Test FIV / FeLV', 'Obligatoire recommandé avant tout contact'],
+        ['pif', 'Test PIF (Coronavirus)', 'Recommandé pour chats de race'],
+        ['pkd', 'Test PKD (Maine Coon, Persan)', 'Obligatoire selon la race'],
+        ['hypertrophie', 'Test HCM / PKD par écho', 'Recommandé annuellement pour reproducteurs'],
+      ] as [string, string, string][],
+      reglement: 'Règlement du Livre Officiel des Origines Félines (LOOF)',
+      saillieNaturelleDesc: 'La femelle est déposée chez le propriétaire du mâle pour la durée des chaleurs. Le séjour est limité à la période de réceptivité de la femelle.',
+      inseminationDesc: 'L\'insémination artificielle est réalisée par un vétérinaire habilité avec semence fraîche ou congelée. Les frais vétérinaires sont répartis selon accord des parties.',
+    };
+    case 'lapin': return {
+      male: 'le mâle reproducteur', femelle: 'la femelle',
+      titreMale: 'Propriétaire du mâle', titreFemelle: 'Propriétaire de la femelle',
+      pedigree: 'registre',
+      labelPedigree: 'N° de registre',
+      tests: [
+        ['myxomatose', 'Vaccination myxomatose à jour', 'Obligatoire'],
+        ['vhd', 'Vaccination VHD à jour', 'Obligatoire'],
+      ] as [string, string, string][],
+      reglement: 'Règlement de l\'élevage / Club de race',
+      saillieNaturelleDesc: 'La saillie est réalisée en présentant la femelle au mâle dans son environnement habituel. Deux accouplements à 24h d\'intervalle sont recommandés.',
+      inseminationDesc: 'L\'insémination artificielle est réalisée par un vétérinaire habilité.',
+    };
+    case 'cheval': return {
+      male: 'l\'étalon', femelle: 'la jument',
+      titreMale: 'Propriétaire de l\'étalon', titreFemelle: 'Propriétaire de la jument',
+      pedigree: 'SIRE',
+      labelPedigree: 'N° SIRE / Stud-book',
+      tests: [
+        ['herpes_equin', 'Test herpèsvirus équin (EHV-1)', 'Recommandé avant reproduction'],
+        ['aie', 'Test anémie infectieuse (AIE)', 'Obligatoire en France'],
+        ['bilan_venerien_etalon', 'Bilan vénérien étalon (annuel)', 'Obligatoire pour étalons agréés'],
+        ['arterite', 'Test artérite virale équine', 'Selon registre / stud-book'],
+      ] as [string, string, string][],
+      reglement: 'Règlement des Haras Nationaux (IFCE) et Stud-book concerné',
+      saillieNaturelleDesc: 'La saillie naturelle est réalisée sous surveillance des deux propriétaires ou de leurs représentants. Le lieu de saillie est convenu à l\'avance.',
+      inseminationDesc: 'L\'insémination artificielle est réalisée par un vétérinaire habilité. Semence fraîche collectée le jour J, réfrigérée ou congelée selon accord. Frais à la charge du propriétaire de la jument sauf convention contraire.',
+    };
+    default: return {
+      male: 'le mâle reproducteur', femelle: 'la femelle',
+      titreMale: 'Propriétaire du reproducteur', titreFemelle: 'Propriétaire de la femelle',
+      pedigree: 'registre',
+      labelPedigree: 'N° de registre / pedigree',
+      tests: [] as [string, string, string][],
+      reglement: 'Règlement du club de race concerné',
+      saillieNaturelleDesc: 'La saillie est réalisée dans les conditions convenues entre les parties.',
+      inseminationDesc: 'L\'insémination artificielle est réalisée par un vétérinaire habilité. Les modalités sont précisées dans les conditions particulières.',
+    };
+  }
+}
+
+export function generateContratSaillieHTML(
+  animalMale: AnimalContrat,
+  data: DataContrat,
+  eleveur: EleveurContrat,
+  opts?: { animalId?: string; supabaseUrl?: string; supabaseKey?: string }
+): string {
+  const today = new Date().toLocaleDateString('fr-FR');
+  const t = saillieTerms(animalMale.espece);
+  const dateContrat = data.dateCession ? new Date(data.dateCession).toLocaleDateString('fr-FR') : today;
+  const animalId = opts?.animalId ?? '';
+  const sbUrl = opts?.supabaseUrl ?? '';
+  const sbKey = opts?.supabaseKey ?? '';
+  const hasSign = !!animalId;
+  const proprietaireFemelle = data.nom || '';
+
+  return `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"><title>Contrat de saillie — ${animalMale.nom || 'animal'}</title>
+<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"><\/script>
+<style>${CSS}</style>
+<script>${buildScript(animalId, sbUrl, sbKey)}<\/script>
+</head><body>
+
+<div class="toolbar">
+  <span class="tip">✏️ Modifiez les champs soulignés · Cochez les cases · Signez en bas · Finalisez</span>
+  <button class="btn-outline" onclick="window.print()">🖨️ Imprimer</button>
+  ${hasSign ? `<button class="btn-green" onclick="finaliser()">✅ Finaliser et enregistrer</button>` : `<button class="btn-outline" onclick="window.print()">🖨️ Imprimer x2</button>`}
+  <button id="print-btn" class="btn-primary" onclick="imprimerFinalise()" style="display:none">🖨️ Imprimer le contrat signé</button>
+</div>
+
+<div class="page" style="margin-top:56px">
+<div id="sign-status" class="status-ok" style="display:none"></div>
+
+<h1>Contrat de saillie</h1>
+<h2>${animalMale.espece ? animalMale.espece.charAt(0).toUpperCase() + animalMale.espece.slice(1) : 'Animal'}</h2>
+
+<div class="parties">
+<strong>Entre, d'une part :</strong><br>
+<strong>${eleveur.nom}</strong>${eleveur.adresse ? `<br>${eleveur.adresse}` : ''}${eleveur.tel ? ` — Tél : ${eleveur.tel}` : ''}${eleveur.email ? `<br>Email : ${eleveur.email}` : ''}${eleveur.siret ? `<br>SIRET : ${eleveur.siret}` : ''}<br>
+<br>
+Nom ${t.male} : <strong>${animalMale.nom || ''}</strong>&nbsp; Race : <span class="e" contenteditable="true" data-ph="Race">${animalMale.race || ''}</span>&nbsp; Couleur : <span class="e" contenteditable="true" data-ph="Couleur">${animalMale.couleur || ''}</span><br>
+${t.labelPedigree} : <span class="e wide" contenteditable="true" data-ph="N° pedigree">${animalMale.pedigree_numero || animalMale.pedigree_lof || ''}</span><br>
+N° d'identification : <span class="e wide" contenteditable="true" data-ph="N° puce / tatouage">${animalMale.identification || ''}</span><br>
+Date de naissance : <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA">${animalMale.date_naissance ? new Date(animalMale.date_naissance).toLocaleDateString('fr-FR') : ''}</span><br>
+Date dernière vaccination : <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA"></span><br>
+<em>— ${t.titreMale}</em>
+</div>
+
+<div class="between">ET :</div>
+
+<div class="parties">
+<strong>D'autre part :</strong><br>
+<span class="cb" onclick="toggleCb(this)">☐</span> M. &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> Mme<br>
+Nom : <span class="e wide" contenteditable="true" data-ph="Nom">${proprietaireFemelle.split(' ').slice(-1)[0] || ''}</span> &nbsp;
+Prénom : <span class="e wide" contenteditable="true" data-ph="Prénom">${proprietaireFemelle.split(' ').slice(0,-1).join(' ') || ''}</span><br>
+Adresse : <span class="e wide" contenteditable="true" data-ph="Adresse complète">${data.adresse || ''}</span><br>
+Tél : <span class="e" contenteditable="true" data-ph="Téléphone">${data.tel || ''}</span> &nbsp;
+Email : <span class="e wide" contenteditable="true" data-ph="Email">${data.email || ''}</span><br>
+<br>
+Nom ${t.femelle} : <span class="e wide" contenteditable="true" data-ph="Nom de la femelle"></span>&nbsp;
+Race : <span class="e" contenteditable="true" data-ph="Race"></span>&nbsp;
+Couleur : <span class="e" contenteditable="true" data-ph="Couleur"></span><br>
+${t.labelPedigree} : <span class="e wide" contenteditable="true" data-ph="N° pedigree"></span><br>
+N° d'identification : <span class="e wide" contenteditable="true" data-ph="N° puce / tatouage"></span><br>
+Date de naissance : <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA"></span><br>
+Date dernière vaccination : <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA"></span><br>
+<em>— ${t.titreFemelle}</em>
+</div>
+
+<p style="text-align:center;margin:12px 0"><strong>Les parties conviennent de ce qui suit :</strong></p>
+<p>Les soussignés conviennent de procéder à la saillie de ${t.femelle} par ${t.male} susmentionné(e), conformément aux conditions du présent contrat.<br>
+La saillie aura lieu à : <span class="e wide" contenteditable="true" data-ph="Lieu et adresse"></span><br>
+Date du contrat et du premier contact : <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA">${dateContrat}</span></p>
+
+<div class="article">
+<div class="art-title">Article 1 — Conditions sanitaires</div>
+<div class="block">
+Les deux parties s'engagent à présenter des animaux en parfait état de santé, exempts de maladies et de parasites. Le lieu de saillie doit être indemne de toute maladie contagieuse.<br>
+Le carnet de vaccination à jour est exigé pour les deux animaux et doit être présenté avant le premier contact.<br><br>
+<strong>Tests préalables :</strong> (les parties cochent les tests convenus)<br>
+${t.tests.map(([id, label, detail]) => `
+<div style="margin:4px 0">
+  <span class="cb" onclick="toggleCb(this)" id="test_${id}">☐</span>
+  <strong>${label}</strong> — <em style="font-size:10px">${detail}</em><br>
+  &nbsp;&nbsp;&nbsp; Date du test : <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA"></span> &nbsp;
+  Résultat : <span class="e" contenteditable="true" data-ph="Négatif / Positif / N/A"></span>
+</div>`).join('')}
+${t.tests.length === 0 ? '<em>Aucun test spécifique requis pour cette espèce — à compléter selon accord.</em>' : ''}
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 2 — Conformité et informations des animaux</div>
+<div class="block">
+Le ${t.titreMale.toLowerCase()} atteste que ${t.male} est inscrit au ${t.pedigree} et en règle avec ${t.reglement}.<br>
+${animalMale.espece?.toLowerCase() === 'chien' ? 'L\'étalon est déclaré non monorchide ni cryptorchide. ' : ''}<br>
+${t.titreMale} déclare avoir informé ${t.titreFemelle.toLowerCase()} de tout vice de conformation, défaut de santé, problème de caractère ou de reproduction connu, susceptible de transmission héréditaire :<br>
+<span class="e full" contenteditable="true" data-ph="Néant, ou préciser les éventuels vices déclarés…"></span><br><br>
+${t.titreFemelle} déclare avoir informé ${t.titreMale.toLowerCase()} d'un éventuel comportement difficile lors de précédentes saillies :<br>
+<span class="e full" contenteditable="true" data-ph="Néant, ou préciser…"></span>
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 3 — Modalités de la saillie</div>
+<div class="block">
+<strong>Type de saillie convenu :</strong><br>
+<div style="margin:6px 0">
+  <span class="cb" onclick="toggleCb(this)">☐</span> <strong>Saillie naturelle</strong><br>
+  <span style="font-size:10px;margin-left:18px">${t.saillieNaturelleDesc}</span>
+</div>
+<div style="margin:6px 0">
+  <span class="cb" onclick="toggleCb(this)">☐</span> <strong>Insémination artificielle</strong><br>
+  <span style="font-size:10px;margin-left:18px">${t.inseminationDesc}</span><br>
+  <span style="font-size:10px;margin-left:18px">Type de semence : <span class="cb" onclick="toggleCb(this)">☐</span> Fraîche &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> Réfrigérée &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> Congelée</span>
+</div>
+<br>
+La durée de la période de saillie est fixée à <span class="e" contenteditable="true" data-ph="X">5</span> jours maximum.<br>
+En cas d'échec, les parties conviennent de <span class="e" contenteditable="true" data-ph="X">3</span> tentatives maximum, à intervalle de <span class="e" contenteditable="true" data-ph="durée"></span>.<br>
+Les éventuelles périodes d'indisponibilité de ${t.male} ne sont pas comptabilisées dans ce délai.<br>
+${animalMale.espece?.toLowerCase() === 'chien' ? 'Conformément au règlement FCI, la saillie est réalisée chez le propriétaire de l\'étalon, sauf accord écrit contraire des parties.' : ''}<br><br>
+Le présent contrat prend fin à l'amiable en cas de non-reproduction possible avérée de l'un des deux animaux.
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 4 — Garde et responsabilité</div>
+<div class="block">
+La partie chez laquelle se déroule la saillie s'engage à :<br>
+— maintenir les animaux dans des conditions sanitaires, alimentaires et de bien-être appropriées ;<br>
+— assurer qu'aucun autre animal n'ait accès à ${t.femelle} pendant la période de saillie et dans les <span class="e" contenteditable="true" data-ph="X">5</span> jours suivant la dernière saillie ;<br>
+— prendre toutes précautions pour éviter toute transmission de maladie à l'animal confié.<br><br>
+Les frais de garde s'élèveront à <span class="e" contenteditable="true" data-ph="X €">0</span> € par jour au-delà de la durée prévue.<br>
+Tout défaut de reprise de l'animal déposé au-delà de <span class="e" contenteditable="true" data-ph="X">2</span> mois après envoi de 3 mises en demeure recommandées sera constitutif d'abandon.<br>
+En cas de perte ou blessure de l'animal confié par faute de la partie gardienne, une indemnité de <span class="e" contenteditable="true" data-ph="X €"></span> € sera due au propriétaire.
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 5 — Répartition des frais</div>
+<div class="block">
+<table style="width:100%;font-size:11px;border-collapse:collapse">
+  <tr><td style="padding:3px 0;width:60%">Frais de transport de ${t.femelle}</td>
+      <td><span class="cb" onclick="toggleCb(this)">☐</span> ${t.titreFemelle} &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> ${t.titreMale} &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> Partagés</td></tr>
+  <tr><td style="padding:3px 0">Frais vétérinaires insémination</td>
+      <td><span class="cb" onclick="toggleCb(this)">☐</span> ${t.titreFemelle} &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> ${t.titreMale} &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> Partagés</td></tr>
+  <tr><td style="padding:3px 0">Frais de tests préalables</td>
+      <td><span class="cb" onclick="toggleCb(this)">☐</span> ${t.titreFemelle} &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> ${t.titreMale} &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> Chacun pour son animal</td></tr>
+  <tr><td style="padding:3px 0">Frais d'assurance et vétérinaires en cours de garde</td>
+      <td><span class="cb" onclick="toggleCb(this)">☐</span> ${t.titreFemelle} &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> ${t.titreMale}</td></tr>
+</table>
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 6 — Rétribution</div>
+<div class="block">
+Il incombe à ${t.titreFemelle.toLowerCase()} de rétribuer la saillie au profit de ${t.titreMale.toLowerCase()}.<br>
+La rétribution est :<br>
+<div style="margin:6px 0">
+  <span class="cb" onclick="toggleCb(this)">☐</span> <strong>En numéraire</strong> : montant fixé à <span class="e" contenteditable="true" data-ph="X €">${data.prix && parseFloat(data.prix) > 0 ? parseFloat(data.prix).toLocaleString('fr-FR') + ' €' : ''}</span><br>
+  <span style="font-size:10px;margin-left:18px">Acompte à la signature : <span class="e" contenteditable="true" data-ph="X €"></span> — Solde à l'issue de la dernière saillie : <span class="e" contenteditable="true" data-ph="X €"></span></span>
+</div>
+<div style="margin:6px 0">
+  <span class="cb" onclick="toggleCb(this)">☐</span> <strong>En nature (un/des jeune(s))</strong><br>
+  <span style="font-size:10px;margin-left:18px">Conditions précisées à l'article 8 (conditions particulières)</span>
+</div>
+<div style="margin:6px 0">
+  <span class="cb" onclick="toggleCb(this)">☐</span> <strong>Saillie offerte / sans frais</strong> — Motif : <span class="e wide" contenteditable="true" data-ph="Motif"></span>
+</div>
+<br>
+<strong>Exigibilité :</strong> La rétribution est due dès la réalisation de la dernière saillie, que le résultat soit positif ou négatif, sauf si les parties ont expressément convenu d'une clause de portée.<br>
+<div style="margin:6px 0">
+  <span class="cb" onclick="toggleCb(this)">☐</span> <strong>Clause portée :</strong> en cas d'absence de portée (0 naissance vivante), une saillie de remplacement sera proposée gratuitement dans les <span class="e" contenteditable="true" data-ph="X">12</span> mois. Si la saillie de remplacement échoue également, la rétribution est remboursée à hauteur de <span class="e" contenteditable="true" data-ph="X %">100</span> %.
+</div>
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 7 — Droit à l'image</div>
+<div class="block">
+${t.titreMale} s'engage à fournir des photos de ${t.male} pour la promotion de la portée et autorise leur diffusion à cet effet.<br>
+${t.titreFemelle} autorise la diffusion de photos de ${t.femelle} et de la portée pour promouvoir ${t.male}.<br>
+Ces droits sont limités à la promotion de la portée issue du présent contrat.
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 8 — Conditions particulières</div>
+<div class="block">
+<span class="e full" contenteditable="true" style="min-height:60px;display:block;padding:4px" data-ph="Préciser ici toute condition particulière : clause portée détaillée, rétribution en nature, conditions spécifiques de race, autres engagements…">${data.notes || ''}</span>
+</div>
+</div>
+
+<div class="article">
+<div class="art-title">Article 9 — Dispositions générales</div>
+<div class="block">
+Le présent contrat est soumis au droit français (articles 1101 et suivants du Code civil).<br>
+En cas de litige, les parties conviennent de rechercher une solution amiable avant tout recours judiciaire. À défaut, le tribunal compétent est celui du domicile du défendeur.<br>
+Le présent contrat est établi en deux exemplaires originaux, un pour chaque partie.<br>
+Toute modification doit faire l'objet d'un avenant signé par les deux parties.
+</div>
+</div>
+
+<div class="copy-banner">📄 Exemplaire original signé — à conserver par chaque partie</div>
+
+<div class="sign-section">
+<div class="sign-row">
+${signBlockSaillie('proprietaire_male', t.titreMale, eleveur.nom)}
+${signBlockSaillie('proprietaire_femelle', t.titreFemelle, proprietaireFemelle)}
+</div>
+<p style="text-align:center;font-size:10px;color:#888;margin-top:8px">
+  Fait à <span class="e" contenteditable="true" data-ph="Ville">${animalMale.ville_naissance || ''}</span>, le ${dateContrat} — en 2 exemplaires originaux
+</p>
+</div>
+
+<div class="foot">
+  Contrat établi via PetsMatch · Fondé sur le Code civil art. 1101 et suiv. · ${t.reglement}
+</div>
+
+</div>${hasSign ? `
+<div class="sig-panel">
+  <div class="sig-pad">
+    <div class="sig-pad-label">${t.titreMale}</div>
+    <canvas id="sigVendeur" class="sig-canvas" width="220" height="80"></canvas>
+    <button class="sig-clear" onclick="clearSig(0)">✕ Effacer</button>
+  </div>
+  <div class="sig-pad">
+    <div class="sig-pad-label">${t.titreFemelle}</div>
+    <canvas id="sigAcheteur" class="sig-canvas" width="220" height="80"></canvas>
+    <button class="sig-clear" onclick="clearSig(1)">✕ Effacer</button>
+  </div>
+  <div style="text-align:center">
+    <button class="btn-green" onclick="finaliser()">✅ Finaliser et enregistrer</button>
+    <div style="font-size:9px;color:#888;margin-top:4px">Signatures intégrées et sauvegardées</div>
+  </div>
+</div>` : ''}
+
+</body></html>`;
+}
+
 function signBlock(role: 'vendeur' | 'acheteur', nom: string) {
   return `
 <div class="sign-block" data-signer="${role}">

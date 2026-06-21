@@ -4,6 +4,7 @@ import { use, useEffect, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
   generateContratHTML, generateContratReservationHTML, generateCertificatCessionHTML,
+  generateContratSaillieHTML,
   AnimalContrat, DataContrat, EleveurContrat,
 } from '@/lib/contrat-vente';
 
@@ -109,6 +110,8 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         generatedHtml = generateContratReservationHTML(animal, dataContrat, eleveur, opts);
       } else if (data.type === 'certificat_cession') {
         generatedHtml = generateCertificatCessionHTML(animal, dataContrat, eleveur, { ...opts, eleveurUid: data.uid_eleveur });
+      } else if (data.type === 'contrat_saillie') {
+        generatedHtml = generateContratSaillieHTML(animal, dataContrat, eleveur, opts);
       } else {
         generatedHtml = generateContratHTML(animal, dataContrat, eleveur, opts);
       }
