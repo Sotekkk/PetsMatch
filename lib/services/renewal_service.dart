@@ -92,7 +92,7 @@ class RenewalService {
 
 Votre compte professionnel${nameElevage.isNotEmpty ? ' "$nameElevage"' : ''} sur PetsMatch expire dans $daysLeft jours.
 
-Pour continuer à bénéficier de toutes les fonctionnalités, merci de mettre à jour vos documents (SIRET, Kbis) avant la date d\'expiration.
+Pour continuer à bénéficier de toutes les fonctionnalités, merci de mettre à jour vos documents (SIRET, KBIS ou attestation RNE) avant la date d\'expiration.
 
 Connectez-vous à l\'application PetsMatch et accédez à votre profil pour soumettre votre dossier de renouvellement, ou contactez-nous à support@petsmatch.fr.
 

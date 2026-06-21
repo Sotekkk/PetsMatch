@@ -209,7 +209,7 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
             _card([
               _textField('Numéro SIRET', _siretCtrl, inputType: TextInputType.number),
               _uploadTile(
-                label: 'Joindre le justificatif SIRET',
+                label: 'Joindre le KBIS ou attestation RNE',
                 uploaded: _siretUploaded,
                 fileName: _siretDocName,
                 onTap: _pickSiret,

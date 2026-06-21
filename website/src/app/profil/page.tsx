@@ -472,7 +472,7 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
               <input value={siret} onChange={e => setSiret(e.target.value)} className={inputCls} placeholder="9 ou 14 chiffres" maxLength={14} />
             </Field>
             <div className="mb-3">
-              <p className="text-xs font-medium text-gray-500 mb-1">Justificatif SIRET (KBIS / extrait)</p>
+              <p className="text-xs font-medium text-gray-500 mb-1">Justificatif SIRET (KBIS ou attestation RNE)</p>
               {siretDocUrl && !siretDocFile && (
                 <a href={siretDocUrl} target="_blank" rel="noopener" className="text-xs text-[#0C5C6C] underline block mb-1">📄 Document actuel</a>
               )}
@@ -1325,7 +1325,7 @@ export default function ProfilPage() {
       if (!villeElevage.trim()) errs.push("Ville de l'élevage requise");
       if (!pays.trim()) errs.push("Pays de l'élevage requis");
       if (!siret.trim()) errs.push('SIRET requis');
-      if (!siretDocUrl && !siretDocFile) errs.push('Justificatif SIRET (KBIS) requis');
+      if (!siretDocUrl && !siretDocFile) errs.push('Justificatif SIRET (KBIS ou attestation RNE) requis');
       if (!acacedNum.trim()) errs.push('Numéro ACACED requis');
       if (!acacedDateObtention) errs.push("Date d'obtention ACACED requise");
       if (!acacedDocUrl && !acacedDocFile) errs.push('Certificat ACACED requis');
@@ -1985,7 +1985,7 @@ export default function ProfilPage() {
                 placeholder="14 chiffres" maxLength={14} />
             </Field>
             <div className="mb-4">
-              <p className="text-xs font-medium text-gray-500 mb-1">Justificatif SIRET / KBIS *</p>
+              <p className="text-xs font-medium text-gray-500 mb-1">Justificatif SIRET (KBIS ou attestation RNE) *</p>
               {(siretDocUrl || siretDocFile) ? (
                 <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
                   <span className="text-green-600 text-sm">✓</span>
@@ -1998,7 +1998,7 @@ export default function ProfilPage() {
               ) : (
                 <button type="button" onClick={() => siretDocRef.current?.click()}
                   className="w-full border-2 border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-xl py-3 text-sm text-gray-400 hover:text-[#0C5C6C] transition-colors">
-                  📎 Joindre le KBIS ou extrait SIRET (image ou PDF)
+                  📎 Joindre le KBIS ou attestation RNE (image ou PDF)
                 </button>
               )}
             </div>

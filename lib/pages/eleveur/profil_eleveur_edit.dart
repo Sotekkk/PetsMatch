@@ -1044,7 +1044,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
         _field('SIRET *', _siretCtrl, inputType: TextInputType.number),
         const SizedBox(height: 10),
         docRow(
-          label: 'Justificatif SIRET (KBIS)',
+          label: 'Justificatif SIRET (KBIS ou attestation RNE)',
           docFile: _siretDocFile,
           docUrl: _siretDocUrl,
           onPick: () => _pickDoc(true),
