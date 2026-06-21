@@ -428,6 +428,91 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
   );
 }
 
+function BabyPhotoCard({
+  baby: b, fallbackPhoto, annonceId, uidEleveur, bebeIndex, isLiked, likeCount, onToggleLike, currentUser,
+}: {
+  baby: RawBebe;
+  fallbackPhoto?: string;
+  annonceId: string;
+  uidEleveur?: string;
+  bebeIndex: number;
+  isLiked: boolean;
+  likeCount: number;
+  onToggleLike: (annonceId: string, bebeIndex: number | null, uidEleveur?: string) => void;
+  currentUser: { uid: string } | null;
+}) {
+  const [idx, setIdx] = useState(0);
+  const photos = b.photos ?? [];
+  const allPhotos = photos.length > 0 ? photos : (fallbackPhoto ? [fallbackPhoto] : []);
+  const current = allPhotos[idx] ?? null;
+  const total = allPhotos.length;
+
+  function prev(e: React.MouseEvent) {
+    e.preventDefault(); e.stopPropagation();
+    setIdx(i => (i - 1 + total) % total);
+  }
+  function next(e: React.MouseEvent) {
+    e.preventDefault(); e.stopPropagation();
+    setIdx(i => (i + 1) % total);
+  }
+
+  return (
+    <Link href={`/annonces/${annonceId}`} className="border border-gray-100 rounded-xl overflow-hidden bg-gray-50 block hover:shadow-sm transition-shadow">
+      <div className="aspect-square relative bg-[#F5F5F0] group">
+        {current ? (
+          <img src={current} alt={b.nom ?? ''} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-3xl">🐾</div>
+        )}
+
+        {/* Navigation flèches (si plusieurs photos) */}
+        {total > 1 && (
+          <>
+            <button
+              onClick={prev}
+              className="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black/50 flex items-center justify-center text-white text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
+              ‹
+            </button>
+            <button
+              onClick={next}
+              className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black/50 flex items-center justify-center text-white text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
+              ›
+            </button>
+            {/* Dots */}
+            <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex gap-0.5">
+              {allPhotos.map((_, j) => (
+                <div key={j} className={`w-1 h-1 rounded-full ${j === idx ? 'bg-white' : 'bg-white/40'}`} />
+              ))}
+            </div>
+          </>
+        )}
+
+        {b.statut === 'reserve' && (
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+            <span className="text-white text-[10px] font-bold bg-amber-500 px-2 py-0.5 rounded-full">Réservé</span>
+          </div>
+        )}
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleLike(annonceId, bebeIndex, uidEleveur); }}
+          disabled={!currentUser}
+          className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/40 flex items-center justify-center text-xs transition-transform hover:scale-110 active:scale-95 disabled:opacity-50">
+          {isLiked ? '❤️' : '🤍'}
+        </button>
+      </div>
+      <div className="p-2">
+        <p className="text-xs font-bold text-[#1F2A2E] truncate">
+          {b.nom ?? `Bébé ${bebeIndex + 1}`} {b.sexe === 'femelle' ? '♀' : '♂'}
+        </p>
+        {b.couleur && <p className="text-[10px] text-gray-400 truncate">{b.couleur}</p>}
+        <div className="flex items-center justify-between mt-1">
+          {b.prix != null ? <p className="text-xs font-bold text-[#0C5C6C]">{b.prix} €</p> : <span />}
+          {likeCount > 0 && <p className="text-[10px] text-gray-400">❤️ {likeCount}</p>}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 function AnnonceCard({
   annonce: a, verif, likedKeys, likeCounts, onToggleLike, currentUser,
 }: {
@@ -510,41 +595,19 @@ function AnnonceCard({
               <div className="grid grid-cols-2 gap-2 mt-3">
                 {bebes.map((b, i) => {
                   const bKey = `${a.id}_${i}`;
-                  const bLiked = likedKeys.has(bKey);
-                  const bCount = likeCounts[bKey] ?? 0;
-                  const bPhotos = b.photos ?? [];
-                  const bPhoto = bPhotos[0] ?? photo;
                   return (
-                    <Link key={i} href={`/annonces/${a.id}`} className="border border-gray-100 rounded-xl overflow-hidden bg-gray-50 block hover:shadow-sm transition-shadow">
-                      <div className="aspect-square relative bg-[#F5F5F0]">
-                        {bPhoto ? (
-                          <img src={bPhoto} alt={b.nom ?? ''} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-3xl">🐾</div>
-                        )}
-                        {b.statut === 'reserve' && (
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                            <span className="text-white text-[10px] font-bold bg-amber-500 px-2 py-0.5 rounded-full">Réservé</span>
-                          </div>
-                        )}
-                        <button
-                          onClick={() => onToggleLike(a.id, i, a.uid_eleveur)}
-                          disabled={!currentUser}
-                          className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/40 flex items-center justify-center text-xs transition-transform hover:scale-110 active:scale-95 disabled:opacity-50">
-                          {bLiked ? '❤️' : '🤍'}
-                        </button>
-                      </div>
-                      <div className="p-2">
-                        <p className="text-xs font-bold text-[#1F2A2E] truncate">
-                          {b.nom ?? `Bébé ${i + 1}`} {b.sexe === 'femelle' ? '♀' : '♂'}
-                        </p>
-                        {b.couleur && <p className="text-[10px] text-gray-400 truncate">{b.couleur}</p>}
-                        <div className="flex items-center justify-between mt-1">
-                          {b.prix != null ? <p className="text-xs font-bold text-[#0C5C6C]">{b.prix} €</p> : <span />}
-                          {bCount > 0 && <p className="text-[10px] text-gray-400">❤️ {bCount}</p>}
-                        </div>
-                      </div>
-                    </Link>
+                    <BabyPhotoCard
+                      key={i}
+                      baby={b}
+                      fallbackPhoto={photo}
+                      annonceId={a.id}
+                      uidEleveur={a.uid_eleveur}
+                      bebeIndex={i}
+                      isLiked={likedKeys.has(bKey)}
+                      likeCount={likeCounts[bKey] ?? 0}
+                      onToggleLike={onToggleLike}
+                      currentUser={currentUser}
+                    />
                   );
                 })}
               </div>
