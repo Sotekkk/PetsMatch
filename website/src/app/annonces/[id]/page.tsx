@@ -41,7 +41,9 @@ interface Annonce {
   date_naissance_animal?: string;
   saillie_conditions?: string;
   mere_nom?: string; mere_puce?: string; mere_race?: string;
+  mere_photo_url?: string; mere_couleur?: string; mere_description?: string; mere_registre?: string;
   pere_nom?: string; pere_puce?: string; pere_race?: string;
+  pere_photo_url?: string; pere_couleur?: string; pere_description?: string; pere_registre?: string;
   nb_attendu?: number; nb_nes?: number;
   statut?: string;
   sterilise?: boolean;
@@ -142,10 +144,11 @@ function BebeCard({ bebe: b, index }: { bebe: Bebe; index: number }) {
       <div className="p-2 space-y-0.5">
         <p className="font-['Galey'] font-bold text-sm text-[#1E2025] truncate">{b.nom || `Bébé ${index + 1}`}</p>
         {b.sexe && <p className="text-xs text-gray-500">{b.sexe === 'male' ? '♂ Mâle' : '♀ Femelle'}</p>}
-        {b.couleur && <p className="text-xs text-gray-400 truncate">{b.couleur}</p>}
+        {b.couleur && <p className="text-xs text-gray-400 truncate">🎨 {b.couleur}</p>}
         {b.prix != null && <p className="font-['Galey'] font-bold text-sm text-[#0C5C6C]">{b.prix} €</p>}
+        {b.description && <p className="text-xs text-gray-400 mt-1 leading-relaxed line-clamp-3">{b.description}</p>}
         {photos.length > 1 && (
-          <p className="text-[10px] text-gray-400">📷 {photos.length} photos</p>
+          <p className="text-[10px] text-gray-400 mt-0.5">📷 {photos.length} photos</p>
         )}
       </div>
     </div>
@@ -454,22 +457,61 @@ export default function AnnonceDetailPage() {
         )}
 
         {/* Parents */}
-        {!isSaillie && (annonce.pere_nom || annonce.mere_nom || annonce.pere_race || annonce.mere_race) && (
+        {!isSaillie && (annonce.pere_nom || annonce.mere_nom || annonce.pere_race || annonce.mere_race ||
+          annonce.pere_photo_url || annonce.mere_photo_url) && (
           <div className="bg-white rounded-2xl p-5 shadow-sm">
             <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide mb-3">Parents</h2>
             <div className="grid grid-cols-2 gap-3">
-              {(annonce.pere_nom || annonce.pere_race) && (
-                <div className="bg-[#F0F7FF] rounded-xl p-3">
-                  <p className="text-xs font-bold text-[#0C5C6C] uppercase mb-2">♂ Père</p>
-                  {annonce.pere_nom && <p className="font-['Galey'] font-semibold text-sm text-[#1E2025]">{annonce.pere_nom}</p>}
-                  {annonce.pere_race && <p className="text-xs text-gray-500 mt-0.5">{annonce.pere_race}</p>}
+              {/* Père */}
+              {(annonce.pere_nom || annonce.pere_race || annonce.pere_photo_url) && (
+                <div className="bg-[#F0F7FF] rounded-xl overflow-hidden">
+                  {annonce.pere_photo_url && (
+                    <div className="aspect-square relative bg-[#E8F0FF]">
+                      <Image src={annonce.pere_photo_url} alt="Père" fill className="object-cover"
+                        sizes="(max-width: 672px) 50vw, 300px" unoptimized />
+                    </div>
+                  )}
+                  <div className="p-3 space-y-0.5">
+                    <p className="text-xs font-bold text-[#0C5C6C] uppercase mb-1">♂ Père</p>
+                    {annonce.pere_nom && <p className="font-['Galey'] font-semibold text-sm text-[#1E2025]">{annonce.pere_nom}</p>}
+                    {annonce.pere_race && <p className="text-xs text-gray-500">{annonce.pere_race}</p>}
+                    {annonce.pere_couleur && <p className="text-xs text-gray-500">🎨 {annonce.pere_couleur}</p>}
+                    {annonce.pere_puce && (
+                      <p className="text-xs text-gray-400 font-mono break-all">🔖 {annonce.pere_puce}</p>
+                    )}
+                    {annonce.pere_registre && (
+                      <p className="text-xs text-[#6E9E57] font-semibold">📜 {annonce.pere_registre}</p>
+                    )}
+                    {annonce.pere_description && (
+                      <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{annonce.pere_description}</p>
+                    )}
+                  </div>
                 </div>
               )}
-              {(annonce.mere_nom || annonce.mere_race) && (
-                <div className="bg-[#FFF0F6] rounded-xl p-3">
-                  <p className="text-xs font-bold text-[#EC4899] uppercase mb-2">♀ Mère</p>
-                  {annonce.mere_nom && <p className="font-['Galey'] font-semibold text-sm text-[#1E2025]">{annonce.mere_nom}</p>}
-                  {annonce.mere_race && <p className="text-xs text-gray-500 mt-0.5">{annonce.mere_race}</p>}
+              {/* Mère */}
+              {(annonce.mere_nom || annonce.mere_race || annonce.mere_photo_url) && (
+                <div className="bg-[#FFF0F6] rounded-xl overflow-hidden">
+                  {annonce.mere_photo_url && (
+                    <div className="aspect-square relative bg-[#FFE8F2]">
+                      <Image src={annonce.mere_photo_url} alt="Mère" fill className="object-cover"
+                        sizes="(max-width: 672px) 50vw, 300px" unoptimized />
+                    </div>
+                  )}
+                  <div className="p-3 space-y-0.5">
+                    <p className="text-xs font-bold text-[#EC4899] uppercase mb-1">♀ Mère</p>
+                    {annonce.mere_nom && <p className="font-['Galey'] font-semibold text-sm text-[#1E2025]">{annonce.mere_nom}</p>}
+                    {annonce.mere_race && <p className="text-xs text-gray-500">{annonce.mere_race}</p>}
+                    {annonce.mere_couleur && <p className="text-xs text-gray-500">🎨 {annonce.mere_couleur}</p>}
+                    {annonce.mere_puce && (
+                      <p className="text-xs text-gray-400 font-mono break-all">🔖 {annonce.mere_puce}</p>
+                    )}
+                    {annonce.mere_registre && (
+                      <p className="text-xs text-[#6E9E57] font-semibold">📜 {annonce.mere_registre}</p>
+                    )}
+                    {annonce.mere_description && (
+                      <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{annonce.mere_description}</p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
