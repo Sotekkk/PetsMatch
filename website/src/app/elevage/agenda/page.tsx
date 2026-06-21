@@ -195,6 +195,8 @@ function RoutineModal({ groupe, selectedDate, employes, currentUid, onClose, onU
 }) {
   const [items, setItems] = useState<Routine[]>([...groupe.routines]);
   const [assigningIdx, setAssigningIdx] = useState<number | null>(null);
+  const [globalAssignOpen, setGlobalAssignOpen] = useState(false);
+  const [globalAssigning, setGlobalAssigning] = useState(false);
   const nomFor = (uid: string | null | undefined) => uid
     ? (employes.find(e => e.uid === uid)?.nom ?? uid.slice(0, 8))
     : null;
@@ -220,6 +222,15 @@ function RoutineModal({ groupe, selectedDate, employes, currentUid, onClose, onU
     await supabase.from('plan_taches').update({ assigned_to: empUid }).eq('id', items[idx].id);
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, assigned_to: empUid } : it));
     setAssigningIdx(null);
+  };
+
+  const assignAll = async (empUid: string | null) => {
+    setGlobalAssigning(true);
+    const ids = items.map(r => r.id);
+    await supabase.from('plan_taches').update({ assigned_to: empUid }).in('id', ids);
+    setItems(prev => prev.map(it => ({ ...it, assigned_to: empUid })));
+    setGlobalAssigning(false);
+    setGlobalAssignOpen(false);
   };
 
   const deleteItem = async (r: Routine, idx: number) => {
@@ -266,6 +277,48 @@ function RoutineModal({ groupe, selectedDate, employes, currentUid, onClose, onU
             </div>
             <p className="text-right text-xs text-gray-400 mt-1">{pct} %</p>
           </div>
+
+          {/* Attribution globale */}
+          {employes.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-gray-100 relative">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500 font-medium">👥 Attribuer tous les animaux à :</span>
+                <button
+                  onClick={() => setGlobalAssignOpen(o => !o)}
+                  disabled={globalAssigning}
+                  className="text-xs text-teal-600 border border-teal-200 rounded-full px-3 py-1 hover:bg-teal-50 font-semibold flex items-center gap-1 disabled:opacity-50">
+                  {globalAssigning ? 'En cours…' : (
+                    (() => {
+                      const uid = items[0]?.assigned_to;
+                      const allSame = uid && items.every(it => it.assigned_to === uid);
+                      return allSame ? nomFor(uid) ?? 'Choisir' : 'Choisir';
+                    })()
+                  )}
+                  <span className="text-gray-400">▾</span>
+                </button>
+              </div>
+              {globalAssignOpen && (
+                <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-lg w-48 py-1">
+                  <button onClick={() => assignAll(null)}
+                    className="w-full text-left px-4 py-2.5 text-xs text-gray-500 hover:bg-gray-50 border-b border-gray-100">
+                    Aucun (retirer l&apos;attribution)
+                  </button>
+                  {employes.map(e => (
+                    <button key={e.uid} onClick={() => assignAll(e.uid)}
+                      className="w-full text-left px-4 py-2.5 text-xs text-gray-800 hover:bg-teal-50 flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-teal-50 flex items-center justify-center text-teal-700 font-bold text-xs flex-shrink-0">
+                        {e.nom[0]?.toUpperCase()}
+                      </div>
+                      <span className="flex-1">{e.nom}</span>
+                      {e.uid === items[0]?.assigned_to && items.every(it => it.assigned_to === e.uid) && (
+                        <span className="text-teal-600 font-bold">✓</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Liste animaux */}
