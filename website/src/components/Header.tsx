@@ -462,19 +462,15 @@ export default function Header() {
     if (!user) return;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
+    // Via API route (service role) pour contourner les RLS avec Firebase Auth
     const fetchNotifs = async () => {
-      const { data } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('uid', user.uid)
-        .eq('read', false)
-        .order('created_at', { ascending: false })
-        .limit(20);
-      setNotifs((data ?? []) as Notif[]);
+      const res = await fetch(`/api/notifications?uid=${encodeURIComponent(user.uid)}`);
+      if (res.ok) setNotifs(await res.json() as Notif[]);
     };
 
     fetchNotifs();
 
+    // Realtime Supabase : déclenche un re-fetch via l'API à chaque changement
     channel = supabase
       .channel(`header_notifs_${user.uid}`)
       .on('postgres_changes', {
@@ -492,12 +488,12 @@ export default function Header() {
 
   async function markAllRead() {
     if (!user || notifs.length === 0) return;
-    await supabase
-      .from('notifications')
-      .update({ read: true })
-      .eq('uid', user.uid)
-      .eq('read', false);
-    setNotifs([]);
+    setNotifs([]); // optimistic
+    await fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid: user.uid }),
+    });
   }
 
   useEffect(() => {
@@ -647,7 +643,7 @@ export default function Header() {
             {/* ── Cloche notifications ── */}
             <div className="relative" ref={bellRef}>
               <button
-                onClick={() => { setBellOpen(!bellOpen); if (!bellOpen) markAllRead(); }}
+                onClick={() => setBellOpen(!bellOpen)}
                 className="relative w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors">
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
@@ -696,6 +692,8 @@ export default function Header() {
                               : n.type === 'chaleur' ? '🌸'
                               : n.type === 'rappel_vaccin' ? '💉'
                               : n.type === 'pension_acces' ? '🏡'
+                              : n.type === 'contrat_saillie_invite' ? '💞'
+                              : n.type?.startsWith('contrat') || n.type?.startsWith('certificat') ? '📄'
                               : '🔔'}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -716,6 +714,14 @@ export default function Header() {
                                 onClick={(e) => { e.stopPropagation(); setBellOpen(false); setPensionDialog(n); }}
                                 className="mt-1 text-xs font-bold text-[#0C5C6C] underline cursor-pointer bg-none border-none p-0"
                               >Répondre →</button>
+                            )}
+                            {n.type === 'contrat_saillie_invite' && (n as Notif & { data?: Record<string, string> }).data?.url && (
+                              <a
+                                href={(n as Notif & { data?: Record<string, string> }).data!.url}
+                                target="_blank" rel="noopener noreferrer"
+                                onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
+                                className="mt-1 text-xs font-bold text-purple-600 underline"
+                              >Voir le contrat →</a>
                             )}
                           </div>
                         </div>
