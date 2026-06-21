@@ -1070,6 +1070,7 @@ export default function ProfilPage() {
 
   // Admin
   const [siret, setSiret] = useState('');
+  const [tva, setTva]     = useState('');
   const [acacedNum, setAcacedNum] = useState('');
   const [acacedDateObtention, setAcacedDateObtention] = useState('');
   const [acacedDateRenewal, setAcacedDateRenewal] = useState('');
@@ -1130,6 +1131,7 @@ export default function ProfilPage() {
       setVilleElevage(userData.villeElevage ?? '');
       setPays(userData.paysElevage ?? 'France');
       setSiret(userData.siret ?? '');
+      setTva(userData.numeroTva ?? '');
       setAcacedNum(userData.acaced ?? '');
       setSiretDocUrl(userData.kbisUrl ?? null);
       setAcacedDocUrl(userData.acacedDocUrl ?? null);
@@ -1369,6 +1371,7 @@ export default function ProfilPage() {
         payload.name_elevage = nameElevage;
         payload.numero_elevage = phoneElevage;
         payload.siret = siret.trim();
+        payload.numero_tva = tva.trim();
         payload.acaced = acacedNum.trim();
         payload.desc_entreprise = description;
 
@@ -1449,6 +1452,7 @@ export default function ProfilPage() {
             instagram: instagram.trim(),
             facebook: facebook.trim(),
             siteWeb: siteWeb.trim(),
+            numeroTVA: tva.trim(),
           });
         }
         if (payload.banner_url) firestoreUpdate.bannerUrl = payload.banner_url as string;
@@ -2009,6 +2013,11 @@ export default function ProfilPage() {
                 </button>
               )}
             </div>
+
+            <Field label="N° TVA intracommunautaire (optionnel)">
+              <input value={tva} onChange={e => setTva(e.target.value)} className={inputCls}
+                placeholder="FR00000000000" />
+            </Field>
 
             <div className="border-t border-gray-100 pt-4 mt-2">
               {/* ACACED */}

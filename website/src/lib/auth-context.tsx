@@ -54,6 +54,7 @@ export interface UserData {
   instagram?: string;
   facebook?: string;
   siteWeb?: string;
+  numeroTva?: string;
 }
 
 // Supabase snake_case → web camelCase
@@ -117,9 +118,10 @@ function mapUser(d: Record<string, unknown>): UserData {
     isPremium:             d.is_premium as boolean | undefined,
     kbisUrl:               d.kbis_url as string | undefined,
     acacedDocUrl:          d.acaced_doc_url as string | undefined,
-    instagram:             d.instagram as string | undefined,
-    facebook:              d.facebook  as string | undefined,
-    siteWeb:               d.site_web  as string | undefined,
+    instagram:             d.instagram   as string | undefined,
+    facebook:              d.facebook    as string | undefined,
+    siteWeb:               d.site_web    as string | undefined,
+    numeroTva:             d.numero_tva  as string | undefined,
     especes,
     races,
   };

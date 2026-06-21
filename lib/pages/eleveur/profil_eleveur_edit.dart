@@ -56,6 +56,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
 
   // Docs admin (éditables)
   final _siretCtrl  = TextEditingController();
+  final _tvaCtrl    = TextEditingController();
   final _acacedCtrl = TextEditingController();
   File?   _siretDocFile;
   String? _siretDocUrl;
@@ -90,7 +91,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
   void dispose() {
     for (final c in [_prenomCtrl, _nomCtrl, _dobCtrl, _nomElevageCtrl,
       _telCtrl, _descCtrl, _addressSearchCtrl, _rueCtrl, _cpCtrl, _villeCtrl, _paysCtrl,
-      _siretCtrl, _acacedCtrl, _instagramCtrl, _facebookCtrl, _siteWebCtrl]) {
+      _siretCtrl, _tvaCtrl, _acacedCtrl, _instagramCtrl, _facebookCtrl, _siteWebCtrl]) {
       c.dispose();
     }
     _places.dispose();
@@ -132,7 +133,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           ? (d['paysElevage'] ?? User_Info.paysElevage) : 'France';
       _photoUrl   = d['profilePictureUrlElevage'] ?? User_Info.profilePictureUrlElevage;
       _bannerUrl  = bannerFromFirestore;
-      _siretCtrl.text    = d['siret']     ?? User_Info.siret;
+      _siretCtrl.text    = d['siret']      ?? User_Info.siret;
+      _tvaCtrl.text      = d['numeroTVA'] ?? User_Info.numeroTVA;
       _acacedCtrl.text   = d['acaced']    ?? User_Info.acacedNumero;
       _siretDocUrl       = d['kbisUrl']   ?? User_Info.kbisUrl;
       _acacedDocUrl      = d['acacedDocUrl'] ?? User_Info.acacedDocUrl;
@@ -453,6 +455,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
         if (photoUrl != null) 'profilePictureUrlElevage': photoUrl,
         if (bannerUrl != null) 'bannerUrl': bannerUrl,
         'siret':     _siretCtrl.text.trim(),
+        'numeroTVA': _tvaCtrl.text.trim(),
         'acaced':    _acacedCtrl.text.trim(),
         'instagram': _instagramCtrl.text.trim(),
         'facebook':  _facebookCtrl.text.trim(),
@@ -502,9 +505,10 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           if (_profileLng != null) 'lng': _profileLng,
           if (photoUrl != null) 'profile_picture_url_elevage': photoUrl,
           if (bannerUrl != null) 'banner_url': bannerUrl,
-          'siret':     _siretCtrl.text.trim(),
-          'acaced':    _acacedCtrl.text.trim(),
-          'instagram': _instagramCtrl.text.trim(),
+          'siret':      _siretCtrl.text.trim(),
+          'numero_tva': _tvaCtrl.text.trim(),
+          'acaced':     _acacedCtrl.text.trim(),
+          'instagram':  _instagramCtrl.text.trim(),
           'facebook':  _facebookCtrl.text.trim(),
           'site_web':  _siteWebCtrl.text.trim(),
           if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
@@ -1049,6 +1053,9 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           docUrl: _siretDocUrl,
           onPick: () => _pickDoc(true),
         ),
+        const SizedBox(height: 12),
+        _field('N° TVA intracommunautaire (optionnel)', _tvaCtrl,
+            hint: 'FR00000000000'),
         const SizedBox(height: 16),
         const Divider(height: 1),
         const SizedBox(height: 16),
@@ -1122,13 +1129,15 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
   }
 
   Widget _field(String label, TextEditingController ctrl,
-      {int maxLines = 1, TextInputType? inputType}) {
+      {int maxLines = 1, TextInputType? inputType, String? hint}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextFormField(
         controller: ctrl, maxLines: maxLines, keyboardType: inputType,
         style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
         decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: hint != null ? const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFAAAAAA)) : null,
           labelText: label,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
