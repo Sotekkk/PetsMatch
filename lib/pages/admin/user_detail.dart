@@ -207,19 +207,34 @@ class _UserDetailState extends State<UserDetail> {
     try {
       final adminUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-      // Appelle l'Edge Function Supabase (Firebase Auth + Supabase cascade)
+      // 1. Edge Function : Firebase Auth + Supabase (tables + storage)
       final res = await Supabase.instance.client.functions.invoke(
         'delete-user',
         body: {'uid': widget.uid, 'adminUid': adminUid},
       );
       final resData = res.data as Map<String, dynamic>?;
       if (res.status != 200 || resData?['success'] != true) {
-        final errs = (resData?['errors'] as List?)?.join(', ') ?? resData?['error'] ?? 'Erreur serveur';
-        throw Exception(errs);
+        final err = resData?['error'] ?? 'Erreur serveur';
+        throw Exception(err);
       }
 
-      // Supprime le document Firestore
-      await FirebaseFirestore.instance.collection('users').doc(widget.uid).delete();
+      // 2. Firestore : document utilisateur
+      final fs = FirebaseFirestore.instance;
+      await fs.collection('users').doc(widget.uid).delete();
+
+      // 3. Firestore : conversations où l'utilisateur est participant
+      final convSnap = await fs
+          .collection('conversations')
+          .where('participants', arrayContains: widget.uid)
+          .get();
+      for (final conv in convSnap.docs) {
+        // Supprimer les messages de la conversation
+        final msgs = await conv.reference.collection('messages').get();
+        for (final msg in msgs.docs) {
+          await msg.reference.delete();
+        }
+        await conv.reference.delete();
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
