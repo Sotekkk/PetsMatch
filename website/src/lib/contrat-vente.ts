@@ -361,7 +361,19 @@ export function generateContratSaillieHTML(
   animalMale: AnimalContrat,
   data: DataContrat,
   eleveur: EleveurContrat,
-  opts?: { animalId?: string; supabaseUrl?: string; supabaseKey?: string }
+  opts?: {
+    animalId?: string;
+    supabaseUrl?: string;
+    supabaseKey?: string;
+    femelleData?: {
+      nom?: string;
+      race?: string;
+      couleur?: string;
+      identification?: string;
+      pedigree?: string;
+      naissance?: string;
+    };
+  }
 ): string {
   const today = new Date().toLocaleDateString('fr-FR');
   const t = saillieTerms(animalMale.espece);
@@ -371,6 +383,7 @@ export function generateContratSaillieHTML(
   const sbKey = opts?.supabaseKey ?? '';
   const hasSign = !!animalId;
   const proprietaireFemelle = data.nom || '';
+  const fd = opts?.femelleData ?? {};
 
   return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"><title>Contrat de saillie — ${animalMale.nom || 'animal'}</title>
@@ -415,12 +428,12 @@ Adresse : <span class="e wide" contenteditable="true" data-ph="Adresse complète
 Tél : <span class="e" contenteditable="true" data-ph="Téléphone">${data.tel || ''}</span> &nbsp;
 Email : <span class="e wide" contenteditable="true" data-ph="Email">${data.email || ''}</span><br>
 <br>
-Nom ${t.femelle} : <span class="e wide" contenteditable="true" data-ph="Nom de la femelle"></span>&nbsp;
-Race : <span class="e" contenteditable="true" data-ph="Race"></span>&nbsp;
-Couleur : <span class="e" contenteditable="true" data-ph="Couleur"></span><br>
-${t.labelPedigree} : <span class="e wide" contenteditable="true" data-ph="N° pedigree"></span><br>
-N° d'identification : <span class="e wide" contenteditable="true" data-ph="N° puce / tatouage"></span><br>
-Date de naissance : <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA"></span><br>
+Nom ${t.femelle} : <span class="e wide" contenteditable="true" data-ph="Nom de la femelle">${fd.nom || ''}</span>&nbsp;
+Race : <span class="e" contenteditable="true" data-ph="Race">${fd.race || ''}</span>&nbsp;
+Couleur : <span class="e" contenteditable="true" data-ph="Couleur">${fd.couleur || ''}</span><br>
+${t.labelPedigree} : <span class="e wide" contenteditable="true" data-ph="N° pedigree">${fd.pedigree || ''}</span><br>
+N° d'identification : <span class="e wide" contenteditable="true" data-ph="N° puce / tatouage">${fd.identification || ''}</span><br>
+Date de naissance : <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA">${fd.naissance ? new Date(fd.naissance).toLocaleDateString('fr-FR') : ''}</span><br>
 Date dernière vaccination : <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA"></span><br>
 <em>— ${t.titreFemelle}</em>
 </div>

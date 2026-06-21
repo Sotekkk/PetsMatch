@@ -16,6 +16,7 @@ import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -206,6 +207,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
             animalNom: animalNom,
           ),
         ));
+      }
+      return;
+    }
+    if (type == 'contrat_saillie_invite') {
+      final url = data is Map ? data['url'] as String? : null;
+      if (url != null) {
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       }
       return;
     }

@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 import { generateContratHTML, generateContratVente, generateContratReservationHTML } from '@/lib/contrat-vente';
+import { sendNotification } from '@/lib/notifications';
 
 interface DocAnimal {
   id: string;
@@ -182,6 +183,21 @@ export default function ContratsPage() {
     // Sauvegarder d'abord pour obtenir le token, puis ouvrir via /signer-contrat/[token]
     const token = await saveDraft();
     if (token) {
+      // Notifier la contrepartie si c'est un contrat de saillie et qu'elle est sur PetsMatch
+      if (formType === 'contrat_saillie' && acqEmail.trim()) {
+        const { data: targetUser } = await supabase
+          .from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
+        if (targetUser?.uid) {
+          const elvNom = profile?.name_elevage || `${profile?.firstname ?? ''} ${profile?.lastname ?? ''}`.trim() || 'Un éleveur';
+          await sendNotification({
+            uid: targetUser.uid,
+            type: 'contrat_saillie_invite',
+            title: '💞 Contrat de saillie',
+            body: `${elvNom} vous propose un contrat de saillie pour ${selectedAnimal?.nom || 'un animal'} — complétez votre côté et signez`,
+            data: { token, url: `${window.location.origin}/signer-contrat/${token}` },
+          });
+        }
+      }
       const win = window.open(`/signer-contrat/${token}`, '_blank', 'width=900,height=700');
       popupRef.current = win;
     } else {

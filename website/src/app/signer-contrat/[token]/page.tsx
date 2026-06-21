@@ -7,11 +7,23 @@ import {
   generateContratSaillieHTML,
   AnimalContrat, DataContrat, EleveurContrat,
 } from '@/lib/contrat-vente';
+import { useAuth } from '@/lib/auth-context';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+
+type FemelleRow = {
+  id: string;
+  nom?: string;
+  race?: string;
+  couleur?: string;
+  identification?: string;
+  date_naissance?: string;
+  pedigree_numero?: string;
+  pedigree_lof?: string;
+};
 
 type DocStatut = 'brouillon' | 'en_attente' | 'signe' | 'archive' | 'partiellement_signe' | 'annule' | 'expire' | 'refuse';
 
@@ -32,6 +44,7 @@ interface DocRow {
 
 export default function SignerContratPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
+  const { user }  = useAuth();
   const [doc, setDoc]       = useState<DocRow | null>(null);
   const [html, setHtml]     = useState('');
   const [status, setStatus] = useState<'loading' | 'ready' | 'not_found'>('loading');
@@ -40,6 +53,16 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
   const [refuseModal, setRefuseModal] = useState(false);
   const [refuseReason, setRefuseReason] = useState('');
   const [refusing, setRefusing]   = useState(false);
+  // Données stockées pour re-générer le HTML saillie après sélection femelle
+  const [eleveurStored, setEleveurStored]         = useState<EleveurContrat | null>(null);
+  const [animalStored, setAnimalStored]           = useState<AnimalContrat | null>(null);
+  const [dataContratStored, setDataContratStored] = useState<DataContrat | null>(null);
+  // Sélecteur femelle (contrepartie connectée, contrat saillie)
+  const [femelles, setFemelles]           = useState<FemelleRow[]>([]);
+  const [selectedFemId, setSelectedFemId] = useState('');
+  const [loadingFemelles, setLoadingFemelles] = useState(false);
+  const [femelleSaved, setFemelleSaved]   = useState(false);
+  const [savingFemelle, setSavingFemelle] = useState(false);
   const canvasElvRef        = useRef<HTMLCanvasElement>(null);
   const canvasAcqRef        = useRef<HTMLCanvasElement>(null);
   const drawingElv          = useRef(false);
@@ -126,12 +149,33 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       if (sigElv) setTimeout(() => drawSavedSig(canvasElvRef, sigElv), 100);
       if (sigAcq) setTimeout(() => drawSavedSig(canvasAcqRef, sigAcq), 100);
 
+      setEleveurStored(eleveur);
+      setAnimalStored(animal);
+      setDataContratStored(dataContrat);
+      if (meta.femelle_animal_id) setFemelleSaved(true);
       setDoc(data as DocRow);
       setHtml(generatedHtml);
       setStatus('ready');
     }
     load();
   }, [token]);
+
+  // Charger les femelles de la contrepartie si elle est connectée et c'est un contrat de saillie
+  useEffect(() => {
+    if (!doc || !user || doc.type !== 'contrat_saillie') return;
+    if (user.email !== doc.metadata?.acquereur_email) return;
+    if (doc.metadata?.femelle_animal_id) return;
+    setLoadingFemelles(true);
+    supabase
+      .from('animaux')
+      .select('id, nom, race, couleur, identification, date_naissance, pedigree_numero, pedigree_lof')
+      .eq('uid_eleveur', user.uid)
+      .eq('espece', doc.animaux?.espece ?? '')
+      .then(({ data }) => {
+        setFemelles((data ?? []) as FemelleRow[]);
+        setLoadingFemelles(false);
+      });
+  }, [doc, user]);
 
   function drawSavedSig(ref: React.RefObject<HTMLCanvasElement | null>, dataUrl: string) {
     const canvas = ref.current;
@@ -214,6 +258,41 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     c.getContext('2d')?.clearRect(0, 0, c.width, c.height);
   }
 
+  async function saveFemelle() {
+    if (!doc || !selectedFemId || !animalStored || !eleveurStored || !dataContratStored) return;
+    const femelle = femelles.find(f => f.id === selectedFemId);
+    if (!femelle) return;
+    setSavingFemelle(true);
+    const femelleData = {
+      femelle_animal_id:      femelle.id,
+      femelle_nom:            femelle.nom ?? '',
+      femelle_race:           femelle.race ?? '',
+      femelle_couleur:        femelle.couleur ?? '',
+      femelle_identification: femelle.identification ?? '',
+      femelle_pedigree:       femelle.pedigree_numero ?? femelle.pedigree_lof ?? '',
+      femelle_naissance:      femelle.date_naissance ?? '',
+    };
+    await supabase.from('documents_animaux').update({
+      metadata: { ...doc.metadata, ...femelleData },
+    }).eq('token', token);
+
+    const newHtml = generateContratSaillieHTML(animalStored, dataContratStored, eleveurStored, {
+      animalId: doc.animal_id,
+      femelleData: {
+        nom:            femelle.nom,
+        race:           femelle.race,
+        couleur:        femelle.couleur,
+        identification: femelle.identification,
+        pedigree:       femelle.pedigree_numero ?? femelle.pedigree_lof,
+        naissance:      femelle.date_naissance,
+      },
+    });
+    setDoc(prev => prev ? { ...prev, metadata: { ...prev.metadata, ...femelleData } } : prev);
+    setHtml(newHtml);
+    setFemelleSaved(true);
+    setSavingFemelle(false);
+  }
+
   async function refuser() {
     if (!doc) return;
     setRefusing(true);
@@ -288,6 +367,41 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-modals"
         />
       </div>
+
+      {/* Sélecteur femelle — contrat de saillie, contrepartie connectée */}
+      {doc?.type === 'contrat_saillie' && user && user.email === doc.metadata?.acquereur_email && !isFinal && (
+        <div className="bg-purple-50 border-t border-purple-100 px-4 py-3">
+          {femelleSaved ? (
+            <p className="text-center text-sm text-purple-700 font-medium">
+              ✅ Votre femelle a été liée au contrat — le document a été mis à jour.
+            </p>
+          ) : (
+            <div className="max-w-xl mx-auto space-y-2">
+              <p className="text-sm font-semibold text-purple-800 text-center">🐾 Liez votre femelle au contrat</p>
+              <p className="text-xs text-center text-purple-600">Sélectionnez votre animal parmi ceux enregistrés dans votre compte PetsMatch.</p>
+              {loadingFemelles ? (
+                <p className="text-xs text-gray-500 text-center">Chargement de vos animaux…</p>
+              ) : femelles.length === 0 ? (
+                <p className="text-xs text-gray-500 text-center">Aucun animal de cette espèce dans votre compte — complétez le contrat manuellement.</p>
+              ) : (
+                <div className="flex gap-2 pt-1">
+                  <select value={selectedFemId} onChange={e => setSelectedFemId(e.target.value)}
+                    className="flex-1 border border-purple-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:border-purple-400">
+                    <option value="">Sélectionnez votre femelle…</option>
+                    {femelles.map(f => (
+                      <option key={f.id} value={f.id}>{f.nom}{f.race ? ` (${f.race})` : ''}</option>
+                    ))}
+                  </select>
+                  <button onClick={saveFemelle} disabled={!selectedFemId || savingFemelle}
+                    className="bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors disabled:opacity-40">
+                    {savingFemelle ? '…' : 'Confirmer'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Zone signatures */}
       <div className="bg-white border-t border-gray-200 p-4 sm:p-6">

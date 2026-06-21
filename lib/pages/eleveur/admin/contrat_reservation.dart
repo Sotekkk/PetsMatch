@@ -424,6 +424,30 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
 
       if (token != null) {
         final url = '$kSiteBaseUrl/signer-contrat/$token';
+
+        // Notifier la contrepartie si c'est un contrat de saillie
+        if (_type == 'contrat_saillie') {
+          final acqEmail = _acqEmailCtrl.text.trim();
+          if (acqEmail.isNotEmpty) {
+            try {
+              final targetRes = await widget.supa
+                  .from('users').select('uid').eq('email', acqEmail).maybeSingle();
+              final targetUid = targetRes?['uid'] as String?;
+              if (targetUid != null) {
+                await widget.supa.from('notifications').insert({
+                  'uid': targetUid,
+                  'type': 'contrat_saillie_invite',
+                  'title': '💞 Contrat de saillie',
+                  'body': 'Vous avez reçu un contrat de saillie à compléter et signer',
+                  'profile_type': '',
+                  'data': {'token': token, 'url': url},
+                  'read': false,
+                });
+              }
+            } catch (_) {}
+          }
+        }
+
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       }
     } catch (e) {
