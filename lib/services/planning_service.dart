@@ -1,13 +1,24 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
+import 'package:PetsMatch/main.dart';
 
 class PlanningService {
   static final _supa = Supabase.instance.client;
+
+  static String get _profilSource =>
+      (User_Info.activeType == 'association' || User_Info.isAssociation)
+          ? 'association'
+          : 'eleveur';
 
   // ── Charger les templates ────────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> loadTemplates(String uid, {String? type}) async {
     var q = _supa.from('plan_templates').select('*, plan_template_etapes(*)').eq('uid_eleveur', uid);
     if (type != null) q = q.eq('type', type);
+    if (_profilSource == 'association') {
+      q = q.eq('profil_source', 'association');
+    } else {
+      q = q.or('profil_source.is.null,profil_source.eq.eleveur');
+    }
     final rows = await q.order('created_at', ascending: false);
     return List<Map<String, dynamic>>.from(rows);
   }
@@ -31,6 +42,7 @@ class PlanningService {
       'type':            type,
       'cible_type':      cibleType,
       'reference_event': referenceEvent,
+      'profil_source':   _profilSource,
       if (declencheurAuto != null && declencheurAuto.isNotEmpty) 'declencheur_auto': declencheurAuto,
       if (espece != null && espece.isNotEmpty) 'espece': espece,
       if (description != null && description.isNotEmpty) 'description': description,
@@ -282,6 +294,7 @@ class PlanningService {
       'uid_eleveur':      uid,
       'type_declencheur': template['reference_event'] ?? 'manuel',
       'date_reference':   dateReference.toIso8601String().split('T').first,
+      'profil_source':    _profilSource,
       if (referenceId != null)    'reference_id':    referenceId,
       if (referenceLabel != null) 'reference_label': referenceLabel,
     }).select('id').single();
@@ -410,6 +423,7 @@ class PlanningService {
     'plan_id':         planId,
     'etape_id':        etape['id'],
     'uid_eleveur':     uid,
+    'profil_source':   _profilSource,
     if (animalId != null) 'animal_id': animalId,
     if (animalNom != null && animalNom.isNotEmpty) 'animal_nom': animalNom,
     'label':           label,
@@ -478,13 +492,15 @@ class PlanningService {
   // ── Tâches du jour ───────────────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> getTachesJour(String uid, DateTime date) async {
     final dateStr = date.toIso8601String().split('T').first;
-    final rows = await _supa
+    final q = _supa
         .from('plan_taches')
         .select('*, plans_actifs(reference_label, type_declencheur)')
         .eq('uid_eleveur', uid)
         .eq('date_prevue', dateStr)
-        .neq('statut', 'fait')
-        .order('date_prevue');
+        .neq('statut', 'fait');
+    final rows = _profilSource == 'association'
+        ? await q.eq('profil_source', 'association').order('date_prevue')
+        : await q.or('profil_source.is.null,profil_source.eq.eleveur').order('date_prevue');
     return List<Map<String, dynamic>>.from(rows);
   }
 

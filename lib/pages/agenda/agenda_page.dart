@@ -49,10 +49,12 @@ List<String> _typesForProfile() {
   if (User_Info.isPro) {
     return ['rdv', 'formation', 'reunion', 'absence', 'autre'];
   }
+  if (User_Info.activeType == 'association' || User_Info.isAssociation) {
+    return ['rdv', 'visite', 'reunion', 'formation', 'absence', 'autre'];
+  }
   if (User_Info.isElevage) {
     return ['rdv', 'mise_bas', 'medication', 'visite', 'autre'];
   }
-  // Particulier
   return ['rdv', 'visite', 'autre'];
 }
 
@@ -84,7 +86,8 @@ Color _colorFor(Map<String, dynamic> e) {
 
 class AgendaPage extends StatefulWidget {
   final VoidCallback? onBack;
-  const AgendaPage({super.key, this.onBack});
+  final bool isAssociation;
+  const AgendaPage({super.key, this.onBack, this.isAssociation = false});
   @override
   State<AgendaPage> createState() => _AgendaPageState();
 }
@@ -159,9 +162,15 @@ class _AgendaPageState extends State<AgendaPage> {
     final to   = '${toDate.year}-${toDate.month.toString().padLeft(2, '0')}-${toDate.day.toString().padLeft(2, '0')}';
     try {
       // ── Tâches manuelles ─────────────────────────────────────────────────
-      final d1 = await _supa.from('taches_elevage')
-          .select('id,titre,date,statut,assigne_a,uid_eleveur')
-          .eq('uid_eleveur', _uid).gte('date', from).lte('date', to);
+      final d1 = widget.isAssociation
+          ? await _supa.from('taches_elevage')
+              .select('id,titre,date,statut,assigne_a,uid_eleveur')
+              .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
+              .eq('profil_source', 'association')
+          : await _supa.from('taches_elevage')
+              .select('id,titre,date,statut,assigne_a,uid_eleveur')
+              .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
+              .or('profil_source.is.null,profil_source.eq.eleveur');
       final d2 = await _supa.from('taches_elevage')
           .select('id,titre,date,statut,assigne_a,uid_eleveur')
           .eq('assigne_a', _uid).gte('date', from).lte('date', to);
@@ -174,10 +183,17 @@ class _AgendaPageState extends State<AgendaPage> {
 
       // ── Tâches protocole (plan_taches) ───────────────────────────────────
       try {
-        final p1 = await _supa.from('plan_taches')
-            .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
-            .eq('uid_eleveur', _uid)
-            .gte('date_prevue', from).lte('date_prevue', to);
+        final p1 = widget.isAssociation
+            ? await _supa.from('plan_taches')
+                .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+                .eq('uid_eleveur', _uid)
+                .gte('date_prevue', from).lte('date_prevue', to)
+                .eq('profil_source', 'association')
+            : await _supa.from('plan_taches')
+                .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+                .eq('uid_eleveur', _uid)
+                .gte('date_prevue', from).lte('date_prevue', to)
+                .or('profil_source.is.null,profil_source.eq.eleveur');
         final p2 = await _supa.from('plan_taches')
             .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
             .eq('assigned_to', _uid)

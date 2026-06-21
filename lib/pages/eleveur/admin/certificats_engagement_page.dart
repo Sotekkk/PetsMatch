@@ -4,7 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CertificatsEngagementPage extends StatefulWidget {
-  const CertificatsEngagementPage({super.key});
+  final bool isAssociation;
+  const CertificatsEngagementPage({super.key, this.isAssociation = false});
   @override
   State<CertificatsEngagementPage> createState() => _CertificatsEngagementPageState();
 }
@@ -25,15 +26,20 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
   Future<void> _load() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    final ps = widget.isAssociation ? 'association' : 'eleveur';
+    final certsQ = _supa.from('certificats_engagement')
+        .select('id, nom_animal, espece, acquereur_prenom, acquereur_nom, acquereur_email, statut, token_signature, date_remise, date_signature_acquereur')
+        .eq('cedant_uid', uid);
+    final animauxQ = _supa.from('animaux')
+        .select('id, nom, espece, race, identification, date_naissance')
+        .eq('uid_eleveur', uid)
+        .eq('is_association', widget.isAssociation);
     final [certs, animaux] = await Future.wait([
-      _supa.from('certificats_engagement')
-          .select('id, nom_animal, espece, acquereur_prenom, acquereur_nom, acquereur_email, statut, token_signature, date_remise, date_signature_acquereur')
-          .eq('cedant_uid', uid)
+      (ps == 'association'
+          ? certsQ.eq('profil_source', 'association')
+          : certsQ.or('profil_source.is.null,profil_source.eq.eleveur'))
           .order('created_at', ascending: false),
-      _supa.from('animaux')
-          .select('id, nom, espece, race, identification, date_naissance')
-          .eq('uid_eleveur', uid)
-          .order('nom'),
+      animauxQ.order('nom'),
     ]);
     if (mounted) setState(() {
       _certs   = List<Map<String, dynamic>>.from(certs as List);
@@ -215,6 +221,7 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
                 'prix':                  modalite == 'vente' && prixCtrl.text.isNotEmpty ? double.tryParse(prixCtrl.text.replaceAll(',', '.')) : null,
                 'date_remise':           now.toIso8601String(),
                 'date_limite_signature': estDelai ? now.add(const Duration(days: 7)).toIso8601String() : null,
+                'profil_source':         widget.isAssociation ? 'association' : 'eleveur',
               };
               final res = await _supa.from('certificats_engagement').insert(payload).select('token_signature').single();
               setS(() { saving = false; tokenResult = res['token_signature'] as String?; });

@@ -28,7 +28,8 @@ Color _typeColor(String? type) =>
 // ── Page calendrier mensuel ───────────────────────────────────────────────────
 
 class PlanningMoisPage extends StatefulWidget {
-  const PlanningMoisPage({super.key});
+  final bool isAssociation;
+  const PlanningMoisPage({super.key, this.isAssociation = false});
 
   @override
   State<PlanningMoisPage> createState() => _PlanningMoisPageState();
@@ -69,13 +70,16 @@ class _PlanningMoisPageState extends State<PlanningMoisPage> {
       final firstStr = _key(first);
       final lastStr  = _key(last);
 
-      final rows = await Supabase.instance.client
+      final rowsQ = Supabase.instance.client
           .from('plan_taches')
           .select('date_prevue, type_acte, statut')
           .eq('uid_eleveur', _uid!)
           .gte('date_prevue', firstStr)
           .lte('date_prevue', lastStr)
           .not('statut', 'eq', 'fait');
+      final rows = widget.isAssociation
+          ? await rowsQ.eq('profil_source', 'association')
+          : await rowsQ.or('profil_source.is.null,profil_source.eq.eleveur');
 
       final Map<String, List<String?>> byDate = {};
       final Set<String> overdue = {};

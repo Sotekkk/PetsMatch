@@ -6,7 +6,8 @@ import 'package:PetsMatch/pages/eleveur/planning/plan_template_form_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/apply_plan_sheet.dart';
 
 class PlanTemplateListPage extends StatefulWidget {
-  const PlanTemplateListPage({super.key});
+  final bool isAssociation;
+  const PlanTemplateListPage({super.key, this.isAssociation = false});
   @override
   State<PlanTemplateListPage> createState() => _PlanTemplateListPageState();
 }

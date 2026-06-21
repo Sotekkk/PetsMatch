@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -91,7 +92,8 @@ const _dark = Color(0xFF1F2A2E);
 // 1. LIST PAGE
 // ─────────────────────────────────────────────────────────────
 class FacturationPage extends StatefulWidget {
-  const FacturationPage({super.key});
+  final bool isAssociation;
+  const FacturationPage({super.key, this.isAssociation = false});
   @override
   State<FacturationPage> createState() => _FacturationPageState();
 }
@@ -109,11 +111,10 @@ class _FacturationPageState extends State<FacturationPage> {
   Future<List<Map<String, dynamic>>> _load() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return [];
-    final rows = await _supa
-        .from('factures')
-        .select()
-        .eq('uid_eleveur', uid)
-        .order('created_at', ascending: false);
+    final q = _supa.from('factures').select().eq('uid_eleveur', uid);
+    final rows = widget.isAssociation
+        ? await q.eq('profil_source', 'association').order('created_at', ascending: false)
+        : await q.or('profil_source.is.null,profil_source.eq.eleveur').order('created_at', ascending: false);
     return rows.map(_supaToUi).toList();
   }
 
@@ -492,6 +493,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
       await Supabase.instance.client.from('factures').insert({
         'id':                  _uuid(),
         'uid_eleveur':         uid,
+        'profil_source':       (User_Info.activeType == 'association' || User_Info.isAssociation) ? 'association' : 'eleveur',
         'numero_facture':      d['numeroFacture'],
         'date_facture':        _frToIso(d['dateFacture']),
         'date_prestation':     _frToIso(d['datePrestation']),

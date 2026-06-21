@@ -1,3 +1,4 @@
+import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/services/plan_service.dart';
@@ -73,6 +74,7 @@ class RegistreHelper {
         'intervenant':    intervenant,
         'description':    description,
         'ordonnance_num': ordonnanceNum,
+        'profil_source':  (User_Info.activeType == 'association' || User_Info.isAssociation) ? 'association' : 'eleveur',
       });
     } catch (_) {}
   }
@@ -565,10 +567,12 @@ class _RegistreList extends StatelessWidget {
       builder: (ctx, snap) {
         if (!snap.hasData) return const Center(child: CircularProgressIndicator());
         var docs = snap.data ?? [];
-        if (isAssociation && assoAnimalIds.isNotEmpty) {
+        if (isAssociation) {
+          docs = docs.where((d) => d['profil_source'] == 'association').toList();
+        } else {
           docs = docs.where((d) {
-            final aid = d['animal_id']?.toString() ?? '';
-            return aid.isNotEmpty ? assoAnimalIds.contains(aid) : false;
+            final ps = d['profil_source'] as String?;
+            return ps == null || ps == 'eleveur';
           }).toList();
         }
         if (filterEspece != null) {
@@ -965,6 +969,7 @@ class _NouvelActePageState extends State<_NouvelActePage> {
         'intervenant':    _intervenantCtrl.text.trim(),
         'description':    _effectiveDescription,
         'ordonnance_num': _ordonnanceCtrl.text.trim(),
+        'profil_source':  (User_Info.activeType == 'association' || User_Info.isAssociation) ? 'association' : 'eleveur',
       });
       if (mounted) Navigator.pop(context);
     } catch (e) {

@@ -8,6 +8,11 @@ import 'package:PetsMatch/pages/association/familles_accueil/familles_accueil_pa
 import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
+import 'package:PetsMatch/pages/association/admin/contrat_adoption_page.dart';
+import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
+import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
+import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
 import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
@@ -44,7 +49,7 @@ class _AssociationNavState extends State<AssociationNav> {
   Widget _tabContent(int index) => switch (index) {
     1 => MessagePage(),
     2 => const NotificationsPage(),
-    3 => AgendaPage(onBack: () => setState(() => _selectedIndex = 0)),
+    3 => AgendaPage(onBack: () => setState(() => _selectedIndex = 0), isAssociation: true),
     _ => const AssociationHomePage(),
   };
 
@@ -175,12 +180,22 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
+                      label: 'Contrat d\'adoption',
+                      icon: Icons.handshake_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const ContratAdoptionPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
                       label: 'Certificats d\'engagement',
                       icon: Icons.edit_document,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const CertificatsEngagementPage(),
+                          builder: (_) => const CertificatsEngagementPage(isAssociation: true),
                         ));
                       },
                     ),
@@ -200,7 +215,7 @@ class _AssociationNavState extends State<AssociationNav> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const RegistreEntreeSortiePage(),
+                          builder: (_) => const RegistreEntreeSortiePage(isAssociation: true),
                         ));
                       },
                     ),
@@ -210,7 +225,7 @@ class _AssociationNavState extends State<AssociationNav> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const MesAnnoncesPage(),
+                          builder: (_) => const MesAnnoncesPage(isAssociation: true),
                         ));
                       },
                     ),
@@ -221,6 +236,48 @@ class _AssociationNavState extends State<AssociationNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const BenevolesPage(),
+                        ));
+                      },
+                    ),
+                  ],
+                ),
+                _DrawerSection(
+                  icon: Icons.event_note_outlined,
+                  label: 'Planning & Tâches',
+                  children: [
+                    _DrawerSubItem(
+                      label: 'Planning du mois',
+                      icon: Icons.calendar_month_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PlanningMoisPage(isAssociation: true),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Modèles de routines',
+                      icon: Icons.repeat_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PlanTemplateListPage(isAssociation: true),
+                        ));
+                      },
+                    ),
+                  ],
+                ),
+                _DrawerSection(
+                  icon: Icons.inventory_2_outlined,
+                  label: 'Inventaire',
+                  children: [
+                    _DrawerSubItem(
+                      label: 'Mon Inventaire',
+                      icon: Icons.inventory_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const InventairePage(),
                         ));
                       },
                     ),
@@ -313,7 +370,9 @@ class _AssociationNavState extends State<AssociationNav> {
                   label: 'Mon Agenda',
                   onTap: () {
                     Navigator.pop(context);
-                    setState(() => _selectedIndex = 3);
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => AgendaPage(isAssociation: true),
+                    ));
                   },
                 ),
                 _DrawerItem(
@@ -345,6 +404,32 @@ class _AssociationNavState extends State<AssociationNav> {
                       builder: (_) => const MarketplacePage(),
                     ));
                   },
+                ),
+                _DrawerSection(
+                  icon: Icons.admin_panel_settings_outlined,
+                  label: 'Administratif',
+                  children: [
+                    _DrawerSubItem(
+                      label: 'Facturation',
+                      icon: Icons.receipt_long_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const FacturationPage(isAssociation: true),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Documents',
+                      icon: Icons.folder_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const CertificatsEngagementPage(isAssociation: true),
+                        ));
+                      },
+                    ),
+                  ],
                 ),
                 const Divider(height: 24),
                 _DrawerItem(

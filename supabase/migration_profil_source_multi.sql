@@ -9,7 +9,10 @@ ALTER TABLE plan_taches            ADD COLUMN IF NOT EXISTS profil_source TEXT D
 ALTER TABLE certificats_engagement ADD COLUMN IF NOT EXISTS profil_source TEXT DEFAULT 'eleveur';
 ALTER TABLE registre_sanitaire     ADD COLUMN IF NOT EXISTS profil_source TEXT DEFAULT 'eleveur';
 
+ALTER TABLE factures ADD COLUMN IF NOT EXISTS profil_source TEXT DEFAULT 'eleveur';
+
 -- Index pour les requêtes filtrées par profil
 CREATE INDEX IF NOT EXISTS idx_taches_profil     ON taches_elevage(uid_eleveur, profil_source);
 CREATE INDEX IF NOT EXISTS idx_templates_profil  ON plan_templates(uid_eleveur, profil_source);
 CREATE INDEX IF NOT EXISTS idx_certifs_profil    ON certificats_engagement(cedant_uid, profil_source);
+CREATE INDEX IF NOT EXISTS idx_factures_profil   ON factures(uid_eleveur, profil_source);
