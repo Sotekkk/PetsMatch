@@ -1059,6 +1059,9 @@ export default function AnimalFichePage() {
 
   // ── Cession
   const [showCession, setShowCession] = useState(false);
+  const [cessionEnCours, setCessionEnCours] = useState<Record<string, unknown> | null>(null);
+  const [confirmingCession, setConfirmingCession] = useState(false);
+  const [revokingCession, setRevokingCession] = useState(false);
 
   // ── État enregistre entrée/sortie
   const [showRegistre, setShowRegistre] = useState(false);
@@ -1174,8 +1177,50 @@ export default function AnimalFichePage() {
     setVetAcces(grantRows.map(g => ({ ...g, vet_nom: names[g.vet_id] ?? 'Vétérinaire' })));
   }, [id, isNew]);
 
+  const loadCessionEnCours = useCallback(async () => {
+    if (!id || isNew || animal.statut !== 'cession_en_cours') return;
+    const { data } = await supabase
+      .from('cessions')
+      .select('*')
+      .eq('animal_id', id)
+      .neq('statut', 'revoquee')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    setCessionEnCours(data ?? null);
+  }, [id, isNew, animal.statut]);
+
+  async function confirmerCession() {
+    if (!cessionEnCours) return;
+    setConfirmingCession(true);
+    const now = new Date().toISOString();
+    await supabase.from('cessions').update({ statut: 'confirme', confirmed_at: now }).eq('id', cessionEnCours.id);
+    await supabase.from('animaux').update({
+      statut: 'sorti',
+      date_sortie: (cessionEnCours.date_cession as string) ?? now.split('T')[0],
+      destinataire_nom: cessionEnCours.nom_acquereur,
+      destinataire_adresse: cessionEnCours.adresse_acquereur ?? null,
+      destinataire_qualite: cessionEnCours.qualite ?? 'particulier',
+      uid_acquereur: cessionEnCours.uid_acquereur ?? null,
+    }).eq('id', id);
+    setAnimal(p => ({ ...p, statut: 'sorti', date_sortie: (cessionEnCours.date_cession as string) ?? now.split('T')[0], destinataire_nom: cessionEnCours.nom_acquereur as string }));
+    setCessionEnCours(null);
+    setConfirmingCession(false);
+  }
+
+  async function revoquerCession() {
+    if (!cessionEnCours || !confirm('Révoquer la cession ? L\'animal restera dans votre élevage.')) return;
+    setRevokingCession(true);
+    await supabase.from('cessions').update({ statut: 'revoquee' }).eq('id', cessionEnCours.id);
+    await supabase.from('animaux').update({ statut: 'present' }).eq('id', id);
+    setAnimal(p => ({ ...p, statut: 'present' }));
+    setCessionEnCours(null);
+    setRevokingCession(false);
+  }
+
   useEffect(() => { loadBreeds(animal.espece ?? 'chien').then(setBreeds); }, [animal.espece]);
   useEffect(() => { loadAnimal(); loadHealth(); loadRepro(); loadAlerte(); loadDocs(); }, [loadAnimal, loadHealth, loadRepro, loadAlerte, loadDocs]);
+  useEffect(() => { loadCessionEnCours(); }, [loadCessionEnCours]);
   useEffect(() => {
     if (!user || !isEleveur) return;
     supabase.from('users').select('name_elevage, rue_elevage, ville_elevage').eq('uid', user.uid).maybeSingle()
@@ -1572,13 +1617,13 @@ export default function AnimalFichePage() {
               className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 text-sm transition-colors">
               📊
             </button>
-            {isEleveur && !isCede && (
+            {isEleveur && !isCede && animal.statut !== 'cession_en_cours' && (
               <button onClick={() => setShowCession(true)}
                 className="text-sm text-amber-700 font-semibold border border-amber-300 rounded-full px-3 py-1.5 hover:bg-amber-50 transition-colors">
                 🤝 Céder
               </button>
             )}
-            {isEleveur && !isCede && (
+            {isEleveur && !isCede && animal.statut !== 'cession_en_cours' && (
               <button onClick={() => setEditing(true)}
                 className="text-sm text-[#0C5C6C] font-semibold border border-[#0C5C6C]/30 rounded-full px-3 py-1.5 hover:bg-[#0C5C6C]/5">
                 Modifier
@@ -1599,7 +1644,44 @@ export default function AnimalFichePage() {
         </div>
       )}
 
-      {/* Bannière cession */}
+      {/* Bannière cession EN COURS */}
+      {animal.statut === 'cession_en_cours' && (
+        <div className="mb-4 bg-amber-50 border border-amber-300 rounded-2xl p-4">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">⏳</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-amber-800" style={{ fontFamily:'Galey,sans-serif' }}>
+                Cession en attente de confirmation
+              </p>
+              {cessionEnCours && (
+                <p className="text-xs text-amber-700 mt-0.5">
+                  Acquéreur : <strong>{cessionEnCours.nom_acquereur as string}</strong>
+                  {cessionEnCours.email_acquereur ? ` · ${cessionEnCours.email_acquereur}` : ''}
+                  {cessionEnCours.statut === 'signe_acquereur'
+                    ? ' · ✍️ Signé par l\'acquéreur'
+                    : ' · En attente de signature acquéreur'}
+                </p>
+              )}
+              <div className="flex gap-2 mt-3 flex-wrap">
+                <button
+                  onClick={confirmerCession}
+                  disabled={confirmingCession || revokingCession}
+                  className="text-xs font-semibold bg-[#6E9E57] hover:bg-[#5a8a45] text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                  {confirmingCession ? '…' : '✅ Confirmer le transfert'}
+                </button>
+                <button
+                  onClick={revoquerCession}
+                  disabled={confirmingCession || revokingCession}
+                  className="text-xs font-semibold border border-red-300 text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                  {revokingCession ? '…' : '✕ Révoquer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bannière cession TERMINÉE */}
       {isCede && animal.date_sortie && (
         <div className="mb-4 bg-blue-50 border border-blue-200 rounded-2xl p-4">
           <div className="flex items-start gap-3">

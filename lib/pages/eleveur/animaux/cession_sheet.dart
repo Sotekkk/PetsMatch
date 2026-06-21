@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -284,8 +286,9 @@ class _CessionSheetState extends State<CessionSheet> {
         'cession_certificat_url': _certificatUrl,
       }).eq('id', widget.animal['id']);
 
-      // 3. Notifier l'acquéreur (si compte PetsMatch)
+      // 3. Notifier l'acquéreur
       if (_foundUser?['uid'] != null) {
+        // In-app si compte PetsMatch
         await _supa.from('notifications').insert({
           'uid':   _foundUser!['uid'],
           'type':  'cession_signature_demandee',
@@ -294,6 +297,24 @@ class _CessionSheetState extends State<CessionSheet> {
           'data':  {'animalId': widget.animal['id'], 'token': token, 'signingUrl': signingUrl},
           'read':  false,
         });
+      }
+      // Email si adresse fournie (avec ou sans compte)
+      if (_emailCtrl.text.trim().isNotEmpty) {
+        try {
+          await http.post(
+            Uri.parse('$kSiteBaseUrl/api/cession/notify-email'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'email':        _emailCtrl.text.trim(),
+              'nom_acquereur': _nomCtrl.text.trim(),
+              'animal_nom':   widget.animal['nom'] ?? 'Animal',
+              'eleveur_nom':  widget.nomElevage,
+              'signing_url':  signingUrl,
+              'prix':         _prixCtrl.text.trim().isEmpty ? null : _prixCtrl.text.trim(),
+              'date_cession': _dateCession.toIso8601String().split('T').first,
+            }),
+          );
+        } catch (_) {}
       }
 
       if (mounted) {
