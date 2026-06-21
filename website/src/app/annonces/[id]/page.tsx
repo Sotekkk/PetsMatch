@@ -158,16 +158,60 @@ function Lightbox({ photos, initialIdx, onClose }: {
 
 // ── Bébé card avec carousel ──────────────────────────────────────────────────
 
-function BebeCard({ bebe: b, index, onOpenLightbox }: {
+function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLightbox }: {
   bebe: Bebe;
   index: number;
+  annonceId: string;
+  uidEleveur?: string;
+  currentUser: { uid: string } | null;
   onOpenLightbox: (photos: string[], idx: number) => void;
 }) {
   const [idx, setIdx] = useState(0);
+  const [isLiked, setIsLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
+  const [likeLoading, setLikeLoading] = useState(false);
   const photos = (b.photos ?? []).filter(p => p?.startsWith('http'));
   const statut = b.statut ?? 'disponible';
   const statutColor = statut === 'disponible' ? '#6E9E57' : statut === 'reserve' ? '#F59E0B' : '#94A3B8';
   const statutLabel = statut === 'disponible' ? 'Dispo' : statut === 'reserve' ? 'Réservé' : 'Vendu';
+
+  useEffect(() => {
+    supabase.from('likes').select('user_uid').eq('annonce_id', annonceId).eq('bebe_index', index)
+      .then(({ data: rows }) => {
+        if (!rows) return;
+        setLikeCount(rows.length);
+        if (currentUser) setIsLiked(rows.some((r: { user_uid: string }) => r.user_uid === currentUser.uid));
+      });
+  }, [annonceId, index, currentUser]);
+
+  const toggleLike = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!currentUser) return;
+    if (likeLoading) return;
+    setLikeLoading(true);
+    const wasLiked = isLiked;
+    setIsLiked(!wasLiked);
+    setLikeCount(c => c + (wasLiked ? -1 : 1));
+    try {
+      if (wasLiked) {
+        await supabase.from('likes')
+          .delete()
+          .eq('user_uid', currentUser.uid)
+          .eq('annonce_id', annonceId)
+          .eq('bebe_index', index);
+      } else {
+        await supabase.from('likes')
+          .upsert({ user_uid: currentUser.uid, annonce_id: annonceId, bebe_index: index,
+            uid_eleveur: uidEleveur ?? null },
+            { onConflict: 'user_uid,annonce_id,bebe_key' });
+      }
+    } catch {
+      setIsLiked(wasLiked);
+      setLikeCount(c => c + (wasLiked ? 1 : -1));
+    } finally {
+      setLikeLoading(false);
+    }
+  };
 
   return (
     <div className="rounded-xl overflow-hidden border border-[#E8EDE6] bg-[#F8F8F6]">
@@ -199,10 +243,22 @@ function BebeCard({ bebe: b, index, onOpenLightbox }: {
             </div>
           </>
         )}
-        <span className="absolute top-2 right-2 text-xs font-bold px-2 py-0.5 rounded-full text-white"
+        <span className="absolute top-2 left-2 text-xs font-bold px-2 py-0.5 rounded-full text-white"
           style={{ background: statutColor }}>
           {statutLabel}
         </span>
+        {/* Bouton like */}
+        <button
+          onClick={toggleLike}
+          disabled={likeLoading || !currentUser}
+          className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold transition-all disabled:opacity-50"
+          style={{
+            background: isLiked ? 'rgba(239,68,68,0.85)' : 'rgba(0,0,0,0.35)',
+            color: 'white',
+            backdropFilter: 'blur(4px)',
+          }}>
+          {isLiked ? '❤️' : '🤍'}{likeCount > 0 && <span>{likeCount}</span>}
+        </button>
       </div>
       <div className="p-2 space-y-0.5">
         <p className="font-['Galey'] font-bold text-sm text-[#1E2025] truncate">{b.nom || `Bébé ${index + 1}`}</p>
@@ -520,6 +576,9 @@ export default function AnnonceDetailPage() {
             <div className="grid grid-cols-2 gap-3">
               {bebes.map((b, i) => (
                 <BebeCard key={i} bebe={b} index={i}
+                  annonceId={annonce.id}
+                  uidEleveur={annonce.uid_eleveur}
+                  currentUser={user}
                   onOpenLightbox={(p, pi) => setLightbox({ photos: p, idx: pi })} />
               ))}
             </div>
