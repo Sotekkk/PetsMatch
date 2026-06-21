@@ -33,9 +33,9 @@ const ESPECES_CONFIG = [
 
 interface EspeceEntry { espece: string; races: string[] }
 
-// ── Banner crop modal ─────────────────────────────────────────────────────────
+// ── Crop modal générique (bannière 16:9 + avatar 1:1) ─────────────────────────
 
-async function getCroppedFile(img: HTMLImageElement, crop: PixelCrop): Promise<File> {
+async function getCroppedFile(img: HTMLImageElement, crop: PixelCrop, filename = 'photo.jpg'): Promise<File> {
   const canvas = document.createElement('canvas');
   const scaleX = img.naturalWidth / img.width;
   const scaleY = img.naturalHeight / img.height;
@@ -43,13 +43,17 @@ async function getCroppedFile(img: HTMLImageElement, crop: PixelCrop): Promise<F
   canvas.height = Math.floor(crop.height * scaleY);
   const ctx = canvas.getContext('2d')!;
   ctx.drawImage(img, crop.x * scaleX, crop.y * scaleY, crop.width * scaleX, crop.height * scaleY, 0, 0, canvas.width, canvas.height);
-  return new Promise(res => canvas.toBlob(b => res(new File([b!], 'banner.jpg', { type: 'image/jpeg' })), 'image/jpeg', 0.92));
+  return new Promise(res => canvas.toBlob(b => res(new File([b!], filename, { type: 'image/jpeg' })), 'image/jpeg', 0.92));
 }
 
-function BannerCropModal({ src, onConfirm, onCancel }: {
+function CropModal({ src, onConfirm, onCancel, aspect = 16 / 9, title = 'Recadrer', hint, filename = 'photo.jpg' }: {
   src: string;
   onConfirm: (file: File, preview: string) => void;
   onCancel: () => void;
+  aspect?: number;
+  title?: string;
+  hint?: string;
+  filename?: string;
 }) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [crop, setCrop] = useState<Crop>();
@@ -57,12 +61,12 @@ function BannerCropModal({ src, onConfirm, onCancel }: {
 
   function onImageLoad(e: React.SyntheticEvent<HTMLImageElement>) {
     const { width, height } = e.currentTarget;
-    setCrop(centerCrop(makeAspectCrop({ unit: '%', width: 100 }, 16 / 9, width, height), width, height));
+    setCrop(centerCrop(makeAspectCrop({ unit: '%', width: aspect >= 1 ? 80 : 60 }, aspect, width, height), width, height));
   }
 
   async function handleConfirm() {
     if (!imgRef.current || !completedCrop) return;
-    const file = await getCroppedFile(imgRef.current, completedCrop);
+    const file = await getCroppedFile(imgRef.current, completedCrop, filename);
     onConfirm(file, URL.createObjectURL(file));
   }
 
@@ -70,9 +74,7 @@ function BannerCropModal({ src, onConfirm, onCancel }: {
     <div className="fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center p-4">
       <div className="bg-white rounded-2xl overflow-hidden w-full max-w-2xl shadow-2xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h3 className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-            Recadrer la bannière
-          </h3>
+          <h3 className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{title}</h3>
           <div className="flex gap-2">
             <button onClick={onCancel}
               className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
@@ -86,16 +88,21 @@ function BannerCropModal({ src, onConfirm, onCancel }: {
         </div>
         <div className="bg-gray-900 p-4 flex items-center justify-center">
           <ReactCrop crop={crop} onChange={(_, pct) => setCrop(pct)} onComplete={c => setCompletedCrop(c)}
-            aspect={16 / 9} className="max-h-[60vh]">
+            aspect={aspect} className="max-h-[60vh]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img ref={imgRef} src={src} alt="Aperçu bannière" onLoad={onImageLoad}
+            <img ref={imgRef} src={src} alt="Aperçu" onLoad={onImageLoad}
               className="max-w-full max-h-[60vh] object-contain" />
           </ReactCrop>
         </div>
-        <p className="text-center text-xs text-gray-400 py-2">Format 16:9 — déplacez et redimensionnez la sélection</p>
+        {hint && <p className="text-center text-xs text-gray-400 py-2">{hint}</p>}
       </div>
     </div>
   );
+}
+
+// Alias pour la bannière (conserve la lisibilité dans le JSX)
+function BannerCropModal(props: { src: string; onConfirm: (f: File, p: string) => void; onCancel: () => void }) {
+  return <CropModal {...props} aspect={16 / 9} title="Recadrer la bannière" hint="Format 16:9 — déplacez et redimensionnez la sélection" filename="banner.jpg" />;
 }
 
 // ── Breed picker modal ────────────────────────────────────────────────────────
@@ -1082,6 +1089,7 @@ export default function ProfilPage() {
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [cropAvatarSrc, setCropAvatarSrc] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
@@ -1308,8 +1316,7 @@ export default function ProfilPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
-    setAvatarFile(file);
-    setAvatarPreview(URL.createObjectURL(file));
+    setCropAvatarSrc(URL.createObjectURL(file));
   }
 
   function validateForm(): string[] {
@@ -2159,6 +2166,19 @@ export default function ProfilPage() {
           src={cropSrc}
           onConfirm={(file, preview) => { setBannerFile(file); setBannerPreview(preview); setCropSrc(null); }}
           onCancel={() => setCropSrc(null)}
+        />
+      )}
+
+      {/* Avatar crop modal — carré 1:1 */}
+      {cropAvatarSrc && (
+        <CropModal
+          src={cropAvatarSrc}
+          aspect={1}
+          title="Recadrer la photo de profil"
+          hint="Format carré — déplacez et redimensionnez la sélection"
+          filename="avatar.jpg"
+          onConfirm={(file, preview) => { setAvatarFile(file); setAvatarPreview(preview); setCropAvatarSrc(null); }}
+          onCancel={() => setCropAvatarSrc(null)}
         />
       )}
 
