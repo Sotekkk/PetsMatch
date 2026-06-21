@@ -99,9 +99,70 @@ function Chip({ icon, label, color = '#0C5C6C' }: { icon: string; label: string;
   );
 }
 
+// ── Lightbox ──────────────────────────────────────────────────────────────────
+
+function Lightbox({ photos, initialIdx, onClose }: {
+  photos: string[];
+  initialIdx: number;
+  onClose: () => void;
+}) {
+  const [idx, setIdx] = useState(initialIdx);
+  const closeRef = typeof onClose === 'function' ? onClose : () => {};
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeRef();
+      if (e.key === 'ArrowLeft')  setIdx(i => (i - 1 + photos.length) % photos.length);
+      if (e.key === 'ArrowRight') setIdx(i => (i + 1) % photos.length);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photos.length]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/92 flex items-center justify-center"
+      onClick={closeRef}>
+      <div className="relative w-full h-full flex items-center justify-center p-4"
+        onClick={e => e.stopPropagation()}>
+        {/* Image */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={photos[idx]} alt="" className="max-w-full max-h-full object-contain select-none" draggable={false} />
+
+        {/* Fermer */}
+        <button onClick={closeRef}
+          className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center text-lg hover:bg-white/30 transition-colors">
+          ✕
+        </button>
+
+        {/* Navigation */}
+        {photos.length > 1 && (
+          <>
+            <button onClick={() => setIdx(i => (i - 1 + photos.length) % photos.length)}
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center text-2xl hover:bg-white/30 transition-colors">
+              ‹
+            </button>
+            <button onClick={() => setIdx(i => (i + 1) % photos.length)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center text-2xl hover:bg-white/30 transition-colors">
+              ›
+            </button>
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 text-white/70 text-sm bg-black/30 px-3 py-1 rounded-full">
+              {idx + 1} / {photos.length}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Bébé card avec carousel ──────────────────────────────────────────────────
 
-function BebeCard({ bebe: b, index }: { bebe: Bebe; index: number }) {
+function BebeCard({ bebe: b, index, onOpenLightbox }: {
+  bebe: Bebe;
+  index: number;
+  onOpenLightbox: (photos: string[], idx: number) => void;
+}) {
   const [idx, setIdx] = useState(0);
   const photos = (b.photos ?? []).filter(p => p?.startsWith('http'));
   const statut = b.statut ?? 'disponible';
@@ -110,7 +171,9 @@ function BebeCard({ bebe: b, index }: { bebe: Bebe; index: number }) {
 
   return (
     <div className="rounded-xl overflow-hidden border border-[#E8EDE6] bg-[#F8F8F6]">
-      <div className="aspect-square relative bg-[#EEF5EA] group">
+      <div className="aspect-square relative bg-[#EEF5EA] group"
+        onClick={() => photos.length > 0 && onOpenLightbox(photos, idx)}
+        style={{ cursor: photos.length > 0 ? 'zoom-in' : 'default' }}>
         {photos.length > 0 ? (
           <Image src={photos[idx]} alt={b.nom || `Bébé ${index + 1}`} fill className="object-cover"
             sizes="(max-width: 672px) 50vw, 336px" />
@@ -120,17 +183,17 @@ function BebeCard({ bebe: b, index }: { bebe: Bebe; index: number }) {
         {/* Flèches navigation */}
         {photos.length > 1 && (
           <>
-            <button onClick={() => setIdx(i => (i - 1 + photos.length) % photos.length)}
+            <button onClick={e => { e.stopPropagation(); setIdx(i => (i - 1 + photos.length) % photos.length); }}
               className="absolute left-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-black/40 text-white flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity">
               ‹
             </button>
-            <button onClick={() => setIdx(i => (i + 1) % photos.length)}
+            <button onClick={e => { e.stopPropagation(); setIdx(i => (i + 1) % photos.length); }}
               className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-black/40 text-white flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity">
               ›
             </button>
             <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1">
               {photos.map((_, j) => (
-                <button key={j} onClick={() => setIdx(j)}
+                <button key={j} onClick={e => { e.stopPropagation(); setIdx(j); }}
                   className={`rounded-full transition-all ${j === idx ? 'w-3 h-1.5 bg-white' : 'w-1.5 h-1.5 bg-white/50'}`} />
               ))}
             </div>
@@ -174,6 +237,9 @@ export default function AnnonceDetailPage() {
   const [likers, setLikers] = useState<{ uid: string; firstname?: string; profile_picture_url?: string }[]>([]);
   const [likeLoading, setLikeLoading] = useState(false);
   const [showLikersModal, setShowLikersModal] = useState(false);
+
+  // Lightbox
+  const [lightbox, setLightbox] = useState<{ photos: string[]; idx: number } | null>(null);
 
   // Signalement
   const [showSigModal, setShowSigModal] = useState(false);
@@ -347,17 +413,18 @@ export default function AnnonceDetailPage() {
 
         {/* Carrousel photos */}
         {photos.length > 0 && (
-          <div className="rounded-2xl overflow-hidden bg-black relative aspect-square">
+          <div className="rounded-2xl overflow-hidden bg-black relative aspect-square group cursor-zoom-in"
+            onClick={() => setLightbox({ photos, idx: imgIdx })}>
             <Image src={photos[imgIdx]} alt={titre} fill className="object-contain" sizes="(max-width: 672px) 100vw, 672px" />
             {photos.length > 1 && (
               <>
-                <button onClick={() => setImgIdx(i => (i - 1 + photos.length) % photos.length)}
+                <button onClick={e => { e.stopPropagation(); setImgIdx(i => (i - 1 + photos.length) % photos.length); }}
                   className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/40 text-white rounded-full w-8 h-8 flex items-center justify-center">‹</button>
-                <button onClick={() => setImgIdx(i => (i + 1) % photos.length)}
+                <button onClick={e => { e.stopPropagation(); setImgIdx(i => (i + 1) % photos.length); }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/40 text-white rounded-full w-8 h-8 flex items-center justify-center">›</button>
                 <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
                   {photos.map((_, i) => (
-                    <button key={i} onClick={() => setImgIdx(i)}
+                    <button key={i} onClick={e => { e.stopPropagation(); setImgIdx(i); }}
                       className={`w-2 h-2 rounded-full transition-all ${i === imgIdx ? 'bg-white w-4' : 'bg-white/50'}`} />
                   ))}
                 </div>
@@ -451,7 +518,10 @@ export default function AnnonceDetailPage() {
               Bébés ({bebes.filter(b => b.statut === 'disponible').length} disponible{bebes.filter(b => b.statut === 'disponible').length > 1 ? 's' : ''})
             </h2>
             <div className="grid grid-cols-2 gap-3">
-              {bebes.map((b, i) => <BebeCard key={i} bebe={b} index={i} />)}
+              {bebes.map((b, i) => (
+                <BebeCard key={i} bebe={b} index={i}
+                  onOpenLightbox={(p, pi) => setLightbox({ photos: p, idx: pi })} />
+              ))}
             </div>
           </div>
         )}
@@ -466,7 +536,8 @@ export default function AnnonceDetailPage() {
               {(annonce.pere_nom || annonce.pere_race || annonce.pere_photo_url) && (
                 <div className="bg-[#F0F7FF] rounded-xl overflow-hidden">
                   {annonce.pere_photo_url && (
-                    <div className="aspect-square relative bg-[#E8F0FF]">
+                    <div className="aspect-square relative bg-[#E8F0FF] cursor-zoom-in"
+                      onClick={() => setLightbox({ photos: [annonce.pere_photo_url!], idx: 0 })}>
                       <Image src={annonce.pere_photo_url} alt="Père" fill className="object-cover"
                         sizes="(max-width: 672px) 50vw, 300px" unoptimized />
                     </div>
@@ -492,7 +563,8 @@ export default function AnnonceDetailPage() {
               {(annonce.mere_nom || annonce.mere_race || annonce.mere_photo_url) && (
                 <div className="bg-[#FFF0F6] rounded-xl overflow-hidden">
                   {annonce.mere_photo_url && (
-                    <div className="aspect-square relative bg-[#FFE8F2]">
+                    <div className="aspect-square relative bg-[#FFE8F2] cursor-zoom-in"
+                      onClick={() => setLightbox({ photos: [annonce.mere_photo_url!], idx: 0 })}>
                       <Image src={annonce.mere_photo_url} alt="Mère" fill className="object-cover"
                         sizes="(max-width: 672px) 50vw, 300px" unoptimized />
                     </div>
@@ -743,6 +815,12 @@ export default function AnnonceDetailPage() {
           </div>
         </div>
       </div>
+    )}
+
+    {/* Lightbox */}
+    {lightbox && (
+      <Lightbox photos={lightbox.photos} initialIdx={lightbox.idx}
+        onClose={() => setLightbox(null)} />
     )}
     </>
   );
