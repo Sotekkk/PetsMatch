@@ -97,6 +97,61 @@ function Chip({ icon, label, color = '#0C5C6C' }: { icon: string; label: string;
   );
 }
 
+// ── Bébé card avec carousel ──────────────────────────────────────────────────
+
+function BebeCard({ bebe: b, index }: { bebe: Bebe; index: number }) {
+  const [idx, setIdx] = useState(0);
+  const photos = (b.photos ?? []).filter(p => p?.startsWith('http'));
+  const statut = b.statut ?? 'disponible';
+  const statutColor = statut === 'disponible' ? '#6E9E57' : statut === 'reserve' ? '#F59E0B' : '#94A3B8';
+  const statutLabel = statut === 'disponible' ? 'Dispo' : statut === 'reserve' ? 'Réservé' : 'Vendu';
+
+  return (
+    <div className="rounded-xl overflow-hidden border border-[#E8EDE6] bg-[#F8F8F6]">
+      <div className="aspect-square relative bg-[#EEF5EA] group">
+        {photos.length > 0 ? (
+          <Image src={photos[idx]} alt={b.nom || `Bébé ${index + 1}`} fill className="object-cover"
+            sizes="(max-width: 672px) 50vw, 336px" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-3xl">🐾</div>
+        )}
+        {/* Flèches navigation */}
+        {photos.length > 1 && (
+          <>
+            <button onClick={() => setIdx(i => (i - 1 + photos.length) % photos.length)}
+              className="absolute left-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-black/40 text-white flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity">
+              ‹
+            </button>
+            <button onClick={() => setIdx(i => (i + 1) % photos.length)}
+              className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-black/40 text-white flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity">
+              ›
+            </button>
+            <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1">
+              {photos.map((_, j) => (
+                <button key={j} onClick={() => setIdx(j)}
+                  className={`rounded-full transition-all ${j === idx ? 'w-3 h-1.5 bg-white' : 'w-1.5 h-1.5 bg-white/50'}`} />
+              ))}
+            </div>
+          </>
+        )}
+        <span className="absolute top-2 right-2 text-xs font-bold px-2 py-0.5 rounded-full text-white"
+          style={{ background: statutColor }}>
+          {statutLabel}
+        </span>
+      </div>
+      <div className="p-2 space-y-0.5">
+        <p className="font-['Galey'] font-bold text-sm text-[#1E2025] truncate">{b.nom || `Bébé ${index + 1}`}</p>
+        {b.sexe && <p className="text-xs text-gray-500">{b.sexe === 'male' ? '♂ Mâle' : '♀ Femelle'}</p>}
+        {b.couleur && <p className="text-xs text-gray-400 truncate">{b.couleur}</p>}
+        {b.prix != null && <p className="font-['Galey'] font-bold text-sm text-[#0C5C6C]">{b.prix} €</p>}
+        {photos.length > 1 && (
+          <p className="text-[10px] text-gray-400">📷 {photos.length} photos</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AnnonceDetailPage() {
@@ -393,31 +448,7 @@ export default function AnnonceDetailPage() {
               Bébés ({bebes.filter(b => b.statut === 'disponible').length} disponible{bebes.filter(b => b.statut === 'disponible').length > 1 ? 's' : ''})
             </h2>
             <div className="grid grid-cols-2 gap-3">
-              {bebes.map((b, i) => {
-                const bPhotos = (b.photos ?? []).filter(p => p?.startsWith('http'));
-                const statut = b.statut ?? 'disponible';
-                const statutColor = statut === 'disponible' ? '#6E9E57' : statut === 'reserve' ? '#F59E0B' : '#94A3B8';
-                return (
-                  <div key={i} className="rounded-xl overflow-hidden border border-[#E8EDE6] bg-[#F8F8F6]">
-                    <div className="aspect-square relative bg-[#EEF5EA]">
-                      {bPhotos.length > 0 ? (
-                        <Image src={bPhotos[0]} alt={b.nom || `Bébé ${i+1}`} fill className="object-cover" sizes="(max-width: 672px) 50vw, 336px" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-3xl">🐾</div>
-                      )}
-                      <span className="absolute top-2 right-2 text-xs font-bold px-2 py-0.5 rounded-full text-white"
-                        style={{ background: statutColor }}>
-                        {statut === 'disponible' ? 'Dispo' : statut === 'reserve' ? 'Réservé' : 'Vendu'}
-                      </span>
-                    </div>
-                    <div className="p-2 space-y-0.5">
-                      <p className="font-['Galey'] font-bold text-sm text-[#1E2025] truncate">{b.nom || `Bébé ${i+1}`}</p>
-                      {b.sexe && <p className="text-xs text-gray-500">{b.sexe === 'male' ? '♂ Mâle' : '♀ Femelle'}</p>}
-                      {b.prix != null && <p className="font-['Galey'] font-bold text-sm text-[#0C5C6C]">{b.prix} €</p>}
-                    </div>
-                  </div>
-                );
-              })}
+              {bebes.map((b, i) => <BebeCard key={i} bebe={b} index={i} />)}
             </div>
           </div>
         )}
