@@ -515,7 +515,7 @@ function AnnonceCard({
                   const bPhotos = b.photos ?? [];
                   const bPhoto = bPhotos[0] ?? photo;
                   return (
-                    <div key={i} className="border border-gray-100 rounded-xl overflow-hidden bg-gray-50">
+                    <Link key={i} href={`/annonces/${a.id}`} className="border border-gray-100 rounded-xl overflow-hidden bg-gray-50 block hover:shadow-sm transition-shadow">
                       <div className="aspect-square relative bg-[#F5F5F0]">
                         {bPhoto ? (
                           <img src={bPhoto} alt={b.nom ?? ''} className="w-full h-full object-cover" />
@@ -544,7 +544,7 @@ function AnnonceCard({
                           {bCount > 0 && <p className="text-[10px] text-gray-400">❤️ {bCount}</p>}
                         </div>
                       </div>
-                    </div>
+                    </Link>
                   );
                 })}
               </div>
@@ -552,12 +552,10 @@ function AnnonceCard({
           </div>
         )}
 
-        {!isPortee && (
-          <Link href={`/annonces/${a.id}`}
-            className="mt-3 w-full block text-center text-sm bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-medium py-2 rounded-xl transition-colors">
-            Voir l'annonce
-          </Link>
-        )}
+        <Link href={`/annonces/${a.id}`}
+          className="mt-3 w-full block text-center text-sm bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-medium py-2 rounded-xl transition-colors">
+          Voir l'annonce
+        </Link>
       </div>
     </div>
   );

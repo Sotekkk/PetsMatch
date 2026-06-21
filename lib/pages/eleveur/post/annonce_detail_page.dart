@@ -821,6 +821,19 @@ class _BabyCardState extends State<_BabyCard> {
               borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
               child: Stack(fit: StackFit.expand, children: [
                 photo,
+                // Indicateur "Voir les photos" (tap sur la carte entière)
+                Positioned(bottom: 6, left: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(color: Colors.black45,
+                        borderRadius: BorderRadius.circular(8)),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.photo_library_outlined, color: Colors.white, size: 10),
+                      SizedBox(width: 3),
+                      Text('Voir', style: TextStyle(color: Colors.white,
+                          fontSize: 9, fontFamily: 'Galey')),
+                    ]))),
+                // Bouton like (intercepte le tap, n'ouvre pas le détail)
                 Positioned(top: 6, right: 6,
                   child: GestureDetector(
                     onTap: _toggleLike,
