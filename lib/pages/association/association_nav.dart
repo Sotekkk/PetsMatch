@@ -239,11 +239,21 @@ class _AssociationNavState extends State<AssociationNav> {
                         ));
                       },
                     ),
+                    _DrawerSubItem(
+                      label: 'Modèles de routines',
+                      icon: Icons.repeat_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PlanTemplateListPage(isAssociation: true),
+                        ));
+                      },
+                    ),
                   ],
                 ),
                 _DrawerSection(
                   icon: Icons.event_note_outlined,
-                  label: 'Planning & Tâches',
+                  label: 'Protocoles',
                   children: [
                     _DrawerSubItem(
                       label: 'Planning du mois',
@@ -256,8 +266,8 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Modèles de routines',
-                      icon: Icons.repeat_outlined,
+                      label: 'Mes protocoles',
+                      icon: Icons.playlist_add_check_outlined,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
@@ -416,6 +426,16 @@ class _AssociationNavState extends State<AssociationNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const FacturationPage(isAssociation: true),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Contrats d\'adoption',
+                      icon: Icons.handshake_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const ContratAdoptionPage(),
                         ));
                       },
                     ),
