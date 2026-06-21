@@ -4,8 +4,18 @@ import { useEffect, useState, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-context';
 import { PAYS_LIST, REGIONS_BY_PAYS, departmentsInRegion } from '@/lib/french-geo';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
+
+interface RawBebe {
+  nom?: string;
+  sexe?: string;
+  couleur?: string;
+  prix?: number;
+  statut?: string;
+  photos?: string[];
+}
 
 interface Annonce {
   id: string;
@@ -27,6 +37,7 @@ interface Annonce {
   created_at?: string;
   statut?: string;
   uid_eleveur?: string;
+  animaux_portee?: RawBebe[];
 }
 
 interface EleveurVerif {
@@ -53,6 +64,7 @@ const BREED_FILES: Record<string, string> = {
 };
 
 export default function AnnoncesPage() {
+  const { user } = useAuth();
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
   const [eleveurVerifs, setEleveurVerifs] = useState<Record<string, EleveurVerif>>({});
   const [loading, setLoading] = useState(true);
@@ -74,10 +86,14 @@ export default function AnnoncesPage() {
   const [showRaceSugg, setShowRaceSugg] = useState(false);
   const raceRef = useRef<HTMLDivElement>(null);
 
+  // Likes
+  const [likedKeys, setLikedKeys] = useState<Set<string>>(new Set());
+  const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
+
   useEffect(() => {
     supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at, uid_eleveur')
+      .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at, uid_eleveur, animaux_portee')
       .eq('statut', 'disponible')
       .order('created_at', { ascending: false })
       .then(async ({ data }) => {
@@ -91,8 +107,56 @@ export default function AnnoncesPage() {
           for (const u of (users ?? [])) map[u.uid] = { statut_pro: u.statut_pro, siret: u.siret, is_premium: u.is_premium };
           setEleveurVerifs(map);
         }
+        // Load like counts
+        const ids = rows.map(a => a.id);
+        if (ids.length > 0) {
+          const { data: lk } = await supabase.from('likes').select('annonce_id, bebe_index').in('annonce_id', ids);
+          const counts: Record<string, number> = {};
+          for (const l of (lk ?? [])) {
+            const k = `${l.annonce_id}_${l.bebe_index ?? 'null'}`;
+            counts[k] = (counts[k] ?? 0) + 1;
+          }
+          setLikeCounts(counts);
+        }
       });
   }, []);
+
+  // Load user's own likes
+  useEffect(() => {
+    if (!user) { setLikedKeys(new Set()); return; }
+    supabase.from('likes').select('annonce_id, bebe_index').eq('user_uid', user.uid)
+      .then(({ data }) => {
+        if (data) setLikedKeys(new Set(data.map((l: { annonce_id: string; bebe_index: number | null }) => `${l.annonce_id}_${l.bebe_index ?? 'null'}`)));
+      });
+  }, [user]);
+
+  async function toggleLike(annonceId: string, bebeIndex: number | null, uidEleveur?: string) {
+    if (!user) return;
+    const key = `${annonceId}_${bebeIndex ?? 'null'}`;
+    const wasLiked = likedKeys.has(key);
+    setLikedKeys(prev => { const n = new Set(prev); wasLiked ? n.delete(key) : n.add(key); return n; });
+    setLikeCounts(prev => ({ ...prev, [key]: Math.max(0, (prev[key] ?? 0) + (wasLiked ? -1 : 1)) }));
+    try {
+      if (wasLiked) {
+        const q = supabase.from('likes').delete().eq('user_uid', user.uid).eq('annonce_id', annonceId);
+        bebeIndex !== null ? await q.eq('bebe_index', bebeIndex) : await q.is('bebe_index', null);
+      } else {
+        await supabase.from('likes').upsert({ user_uid: user.uid, annonce_id: annonceId, bebe_index: bebeIndex });
+        if (uidEleveur && uidEleveur !== user.uid) {
+          supabase.from('notifications').insert({
+            uid: uidEleveur, type: 'like',
+            title: '❤️ Nouveau like sur votre annonce',
+            body: 'Quelqu\'un a aimé votre annonce',
+            data: { annonceId, bebeIndex },
+            read: false,
+          }).then(() => {});
+        }
+      }
+    } catch {
+      setLikedKeys(prev => { const n = new Set(prev); wasLiked ? n.add(key) : n.delete(key); return n; });
+      setLikeCounts(prev => ({ ...prev, [key]: Math.max(0, (prev[key] ?? 0) + (wasLiked ? 1 : -1)) }));
+    }
+  }
 
   // Load breeds when espece changes
   useEffect(() => {
@@ -338,7 +402,17 @@ export default function AnnoncesPage() {
         <div className="text-center py-20 text-gray-400">Aucune annonce trouvée</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {filtered.map((a) => <AnnonceCard key={a.id} annonce={a} verif={a.uid_eleveur ? eleveurVerifs[a.uid_eleveur] : undefined} />)}
+          {filtered.map((a) => (
+            <AnnonceCard
+              key={a.id}
+              annonce={a}
+              verif={a.uid_eleveur ? eleveurVerifs[a.uid_eleveur] : undefined}
+              likedKeys={likedKeys}
+              likeCounts={likeCounts}
+              onToggleLike={toggleLike}
+              currentUser={user}
+            />
+          ))}
         </div>
       )}
     </div>
@@ -354,11 +428,23 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
   );
 }
 
-function AnnonceCard({ annonce: a, verif }: { annonce: Annonce; verif?: EleveurVerif }) {
+function AnnonceCard({
+  annonce: a, verif, likedKeys, likeCounts, onToggleLike, currentUser,
+}: {
+  annonce: Annonce;
+  verif?: EleveurVerif;
+  likedKeys: Set<string>;
+  likeCounts: Record<string, number>;
+  onToggleLike: (annonceId: string, bebeIndex: number | null, uidEleveur?: string) => void;
+  currentUser: { uid: string; profileType?: string } | null;
+}) {
+  const [showBabies, setShowBabies] = useState(false);
   const photos = (a.photos as unknown as string[]) ?? [];
   const photo = photos[0];
   const isSaillie = a.type_vente === 'saillie';
   const isPortee = a.type === 'portee';
+  const bebes = (a.animaux_portee as RawBebe[] | undefined) ?? [];
+
   let prix: string | null = null;
   if (isSaillie) {
     const sp = a.saillie_prix != null ? Number(a.saillie_prix) : null;
@@ -371,6 +457,10 @@ function AnnonceCard({ annonce: a, verif }: { annonce: Annonce; verif?: EleveurV
     prix = a.prix != null ? `${a.prix} €` : null;
   }
 
+  const wholeKey = `${a.id}_null`;
+  const isLiked = likedKeys.has(wholeKey);
+  const likeCount = likeCounts[wholeKey] ?? 0;
+
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
       <div className="aspect-[4/3] bg-[#F5F5F0] relative">
@@ -382,6 +472,14 @@ function AnnonceCard({ annonce: a, verif }: { annonce: Annonce; verif?: EleveurV
         <span className={`absolute top-2 left-2 text-white text-xs font-semibold px-2 py-0.5 rounded-full ${isSaillie ? 'bg-purple-500' : isPortee ? 'bg-amber-500' : 'bg-[#6E9E57]'}`}>
           {isSaillie ? 'Saillie' : isPortee ? 'Portée' : 'Compagnon'}
         </span>
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleLike(a.id, null, a.uid_eleveur); }}
+          disabled={!currentUser}
+          className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center transition-transform hover:scale-110 active:scale-95 disabled:opacity-50"
+          title={currentUser ? (isLiked ? 'Retirer le like' : 'Aimer') : 'Connectez-vous pour liker'}
+        >
+          <span className="text-base leading-none">{isLiked ? '❤️' : '🤍'}</span>
+        </button>
       </div>
       <div className="p-4">
         <div className="flex items-start gap-1.5 mb-0.5">
@@ -396,10 +494,70 @@ function AnnonceCard({ annonce: a, verif }: { annonce: Annonce; verif?: EleveurV
         {isSaillie && a.nombre_bebes != null && (
           <p className="text-gray-400 text-xs">{a.nombre_bebes} bébé{a.nombre_bebes > 1 ? 's' : ''} disponible{a.nombre_bebes > 1 ? 's' : ''}</p>
         )}
-        <Link href={`/annonces/${a.id}`}
-          className="mt-3 w-full block text-center text-sm bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-medium py-2 rounded-xl transition-colors">
-          Voir l'annonce
-        </Link>
+        {likeCount > 0 && (
+          <p className="text-xs text-gray-400 mt-1">❤️ {likeCount} {likeCount > 1 ? 'personnes aiment' : 'personne aime'}</p>
+        )}
+
+        {/* Portée: grille des bébés avec like par bébé */}
+        {isPortee && bebes.length > 0 && (
+          <div className="mt-3">
+            <button
+              onClick={() => setShowBabies(v => !v)}
+              className="w-full text-xs text-[#0C5C6C] font-semibold py-2 border border-[#0C5C6C]/25 rounded-xl hover:bg-[#0C5C6C]/5 transition-colors">
+              {showBabies ? '▲ Masquer les bébés' : `▼ Voir les ${bebes.length} bébé${bebes.length > 1 ? 's' : ''}`}
+            </button>
+            {showBabies && (
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                {bebes.map((b, i) => {
+                  const bKey = `${a.id}_${i}`;
+                  const bLiked = likedKeys.has(bKey);
+                  const bCount = likeCounts[bKey] ?? 0;
+                  const bPhotos = b.photos ?? [];
+                  const bPhoto = bPhotos[0] ?? photo;
+                  return (
+                    <div key={i} className="border border-gray-100 rounded-xl overflow-hidden bg-gray-50">
+                      <div className="aspect-square relative bg-[#F5F5F0]">
+                        {bPhoto ? (
+                          <img src={bPhoto} alt={b.nom ?? ''} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-3xl">🐾</div>
+                        )}
+                        {b.statut === 'reserve' && (
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <span className="text-white text-[10px] font-bold bg-amber-500 px-2 py-0.5 rounded-full">Réservé</span>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => onToggleLike(a.id, i, a.uid_eleveur)}
+                          disabled={!currentUser}
+                          className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/40 flex items-center justify-center text-xs transition-transform hover:scale-110 active:scale-95 disabled:opacity-50">
+                          {bLiked ? '❤️' : '🤍'}
+                        </button>
+                      </div>
+                      <div className="p-2">
+                        <p className="text-xs font-bold text-[#1F2A2E] truncate">
+                          {b.nom ?? `Bébé ${i + 1}`} {b.sexe === 'femelle' ? '♀' : '♂'}
+                        </p>
+                        {b.couleur && <p className="text-[10px] text-gray-400 truncate">{b.couleur}</p>}
+                        <div className="flex items-center justify-between mt-1">
+                          {b.prix != null ? <p className="text-xs font-bold text-[#0C5C6C]">{b.prix} €</p> : <span />}
+                          {bCount > 0 && <p className="text-[10px] text-gray-400">❤️ {bCount}</p>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!isPortee && (
+          <Link href={`/annonces/${a.id}`}
+            className="mt-3 w-full block text-center text-sm bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-medium py-2 rounded-xl transition-colors">
+            Voir l'annonce
+          </Link>
+        )}
       </div>
     </div>
   );

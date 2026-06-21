@@ -385,7 +385,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                       if (desc.isNotEmpty)
                         ...[_DescCard(desc: desc), const SizedBox(height: 12)],
                       if (type == 'portee')
-                        ...[_PorteeCard(data: data), const SizedBox(height: 12)],
+                        ...[_PorteeCard(data: data, annonceId: widget.annonceId, uidEleveur: data['uidEleveur'] as String?), const SizedBox(height: 12)],
                       if (type != 'portee')
                         ...[_AnimalCard(data: data), const SizedBox(height: 12)],
                       if (typeVente == 'saillie')
@@ -636,7 +636,9 @@ class _DescCard extends StatelessWidget {
 
 class _PorteeCard extends StatelessWidget {
   final Map<String, dynamic> data;
-  const _PorteeCard({required this.data});
+  final String annonceId;
+  final String? uidEleveur;
+  const _PorteeCard({required this.data, required this.annonceId, this.uidEleveur});
 
   @override
   Widget build(BuildContext context) {
@@ -694,19 +696,89 @@ class _PorteeCard extends StatelessWidget {
             crossAxisCount: 2, crossAxisSpacing: 10,
             mainAxisSpacing: 10, childAspectRatio: 0.60),
           itemCount: animaux.length,
-          itemBuilder: (_, i) => _BabyCard(animal: animaux[i]),
+          itemBuilder: (_, i) => _BabyCard(animal: animaux[i], annonceId: annonceId, bebeIndex: i, uidEleveur: uidEleveur),
         ),
       ],
     ]);
   }
 }
 
-class _BabyCard extends StatelessWidget {
+class _BabyCard extends StatefulWidget {
   final Map<String, dynamic> animal;
-  const _BabyCard({required this.animal});
+  final String annonceId;
+  final int bebeIndex;
+  final String? uidEleveur;
+  const _BabyCard({required this.animal, required this.annonceId, required this.bebeIndex, this.uidEleveur});
+  @override
+  State<_BabyCard> createState() => _BabyCardState();
+}
+
+class _BabyCardState extends State<_BabyCard> {
+  bool _isLiked = false;
+  int _likeCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLike();
+  }
+
+  Future<void> _loadLike() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final rows = await Supabase.instance.client
+          .from('likes').select('user_uid')
+          .eq('annonce_id', widget.annonceId)
+          .eq('bebe_index', widget.bebeIndex);
+      final all = List<Map<String, dynamic>>.from(rows);
+      if (mounted) setState(() {
+        _likeCount = all.length;
+        _isLiked = all.any((r) => r['user_uid'] == uid);
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _toggleLike() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final was = _isLiked;
+    setState(() { _isLiked = !was; _likeCount = (_likeCount + (was ? -1 : 1)).clamp(0, 99999); });
+    try {
+      if (was) {
+        await Supabase.instance.client.from('likes').delete()
+            .eq('user_uid', uid)
+            .eq('annonce_id', widget.annonceId)
+            .eq('bebe_index', widget.bebeIndex);
+      } else {
+        await Supabase.instance.client.from('likes').upsert({
+          'user_uid': uid,
+          'annonce_id': widget.annonceId,
+          'bebe_index': widget.bebeIndex,
+          'profile_type': User_Info.activeType,
+        });
+        if (widget.uidEleveur != null && widget.uidEleveur != uid) {
+          await Supabase.instance.client.from('notifications').insert({
+            'uid': widget.uidEleveur,
+            'type': 'like',
+            'title': '❤️ Nouveau like sur votre portée',
+            'body': 'Quelqu\'un a aimé un bébé de votre portée',
+            'data': {'annonceId': widget.annonceId, 'bebeIndex': widget.bebeIndex},
+            'read': false,
+          });
+        }
+      }
+    } catch (_) {
+      if (mounted) setState(() {
+        _isLiked = was;
+        _likeCount = (_likeCount + (was ? 1 : -1)).clamp(0, 99999);
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final animal = widget.animal;
     final photos = List<String>.from(animal['photos'] ?? []);
     final statut = (animal['statut'] as String?) ?? 'disponible';
     final statusColor = statut == 'disponible' ? _green
@@ -750,16 +822,23 @@ class _BabyCard extends StatelessWidget {
               child: Stack(fit: StackFit.expand, children: [
                 photo,
                 Positioned(top: 6, right: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                    decoration: BoxDecoration(color: Colors.black45,
-                        borderRadius: BorderRadius.circular(8)),
-                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.photo_library_outlined, color: Colors.white, size: 10),
-                      SizedBox(width: 3),
-                      Text('Voir', style: TextStyle(color: Colors.white,
-                          fontSize: 9, fontFamily: 'Galey')),
-                    ]))),
+                  child: GestureDetector(
+                    onTap: _toggleLike,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      decoration: BoxDecoration(color: Colors.black45,
+                          borderRadius: BorderRadius.circular(8)),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(_isLiked ? Icons.favorite : Icons.favorite_border,
+                            color: _isLiked ? Colors.red : Colors.white, size: 11),
+                        if (_likeCount > 0) ...[
+                          const SizedBox(width: 3),
+                          Text('$_likeCount', style: const TextStyle(
+                              color: Colors.white, fontSize: 9, fontFamily: 'Galey')),
+                        ],
+                      ]),
+                    ),
+                  )),
               ])),
           ),
           Padding(padding: const EdgeInsets.all(8), child: Column(
