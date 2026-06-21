@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-06-21  
+> Dernière mise à jour : 2026-06-21 (commit b1e5ebd)  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -25,19 +25,28 @@
 
 Un profil Association est quasi-identique au profil Éleveur avec les différences suivantes :
 
-| Fonctionnalité | Éleveur | Association |
-|---|---|---|
-| Animaux (fiche complète) | ✅ | ✅ |
-| Généalogie / arbres | ✅ | ❌ (non pertinent) |
-| Suivi repro (saillie, gestation…) | ✅ | ❌ |
-| Portées | ✅ | ❌ |
-| Annonces vente | ✅ | ❌ → Annonces adoption (feed séparé) |
-| Certificat d'engagement | ✅ obligatoire | ✅ obligatoire |
-| Contrats de cession | ✅ | ✅ (adapté adoption) |
-| Gestion employés / bénévoles | ❌ | ✅ |
-| Planning chenil/hôtel | ❌ | ✅ (si hébergement) |
-| Registre entrées/sorties | ✅ | ✅ |
-| Familles d'accueil (FA) | ❌ | ✅ (voir §1.5) |
+| Fonctionnalité | Éleveur | Association | Statut Web |
+|---|---|---|---|
+| Animaux (fiche complète) | ✅ | ✅ | ✅ `/association/animaux` (filtre `is_association`) |
+| Généalogie / arbres | ✅ | ❌ | — |
+| Suivi repro (saillie, gestation…) | ✅ | ❌ | — |
+| Portées | ✅ | ❌ | — |
+| Annonces vente | ✅ | ❌ → Annonces adoption | ✅ `/association/annonces` (filtre `profil_source='association'`) |
+| Certificat d'engagement | ✅ obligatoire | ✅ obligatoire | ✅ `/association/certificat-engagement` (filtre `profil_source`) |
+| Contrats d'adoption | ❌ | ✅ par espèce | ✅ `/association/contrat` (type `contrat_adoption`, participation auto) |
+| Agenda | ✅ | ✅ | ✅ `/association/agenda` (filtre `profil_source`) |
+| Planning / Protocoles | ✅ | ✅ | ✅ `/association/planning` (filtre `profil_source`) |
+| Suivi sanitaire | ✅ | ✅ | ✅ `/association/registre-sanitaire` (filtre `profil_source`) |
+| Registre entrées/sorties | ✅ | ✅ | ✅ `/association/registre-entree-sortie` (filtre `is_association`) |
+| Gestion bénévoles | ❌ | ✅ | ✅ `/association/benevoles` (filtre `type='benevole'`) |
+| Gestion employés | ✅ | ❌ | ✅ `/employes` (exclut bénévoles) |
+| Chenil / Enclos | ❌ | ✅ | ✅ `/association/chenil` (table `enclos_chenil`) |
+| Planning chenil semaine | ❌ | ✅ | ✅ onglet dans chenil page |
+| Inventaire | ✅ | ✅ | ✅ `/association/inventaire` (re-export éleveur) |
+| Facturation | ✅ | ✅ | ✅ `/association/facturation` (filtre Firestore `profilSource`) |
+| RDV | ✅ | ✅ | ✅ `/mes-rdv` (filtre `pro_profile_id`) |
+| Tâches assignées | ✅ | ✅ | ✅ `/mes-taches` (filtre `profil_source` via `useProfileSource`) |
+| Familles d'accueil (FA) | ❌ | ✅ | ✅ `/association/familles-accueil` (page existante) |
 
 ### 1.2 Champs du profil
 
@@ -72,7 +81,88 @@ Documents légaux            (statuts PDF, arrêté préfectoral…)
 - Fiche animal : onglets Identité · Santé · Alimentation · Propriétaire (FA ou adoptant)
 - Identification obligatoire avant mise à l'adoption (puce ou tatouage)
 
-### 1.5 Familles d'accueil (FA)
+### 1.5 Contrat d'adoption (ADOP01 — ✅ Web implémenté)
+
+**Page :** `/association/contrat`
+
+Contrat spécifique aux associations, distinct du contrat de vente éleveur.
+
+**Participation aux frais par espèce (valeurs par défaut modifiables) :**
+
+| Espèce | Participation défaut |
+|---|---|
+| Chien | 150 € |
+| Chat | 100 € |
+| Cheval | 500 € |
+| Lapin | 50 € |
+| Oiseau | 30 € |
+| Ovin / Caprin / Porcin | 80 € |
+| Autre | 50 € |
+
+**Contenu du contrat (6 articles) :**
+1. Parties (association + adoptant)
+2. Identification de l'animal
+3. Participation aux frais (montant)
+4. Engagements de l'adoptant (bien-être, soins, non-revente…)
+5. Droits de l'association (visite de contrôle, reprise en cas de manquement)
+6. Retour de l'animal (procédure si l'adoptant ne peut plus garder l'animal)
+7. Clause stérilisation (optionnelle, affichée si animal non stérilisé)
+
+**Génération :** `src/lib/contrat-adoption.ts` → `generateContratAdoptionHTML()`  
+**Stockage :** table `documents_animaux` avec `type = 'contrat_adoption'`  
+**Signature :** via `/signer-contrat/[token]` (infrastructure commune)
+
+**Recherche acquéreur :** champ adresse avec **autocomplete adresse.data.gouv.fr** + mini-carte OSM (voir §1.7)
+
+### 1.6 Isolation multi-profil (MPRO01 — ✅ Web implémenté)
+
+Un utilisateur peut avoir simultanément un profil éleveur (compte principal) et un profil association (profil secondaire `user_profiles`). Ils partagent le même `uid` Firebase.
+
+**Mécanisme d'isolation :**
+
+| Table | Colonne de distinction | Valeurs |
+|---|---|---|
+| `animaux` | `is_association` | `true` = asso, `false`/NULL = éleveur |
+| `annonces` | `profil_source` | `'association'` ou absent |
+| `taches_elevage` | `profil_source` | `'eleveur'` (défaut) ou `'association'` |
+| `plan_templates` | `profil_source` | `'eleveur'` (défaut) ou `'association'` |
+| `plans_actifs` | `profil_source` | `'eleveur'` (défaut) ou `'association'` |
+| `plan_taches` | `profil_source` | `'eleveur'` (défaut) ou `'association'` |
+| `certificats_engagement` | `profil_source` | `'eleveur'` (défaut) ou `'association'` |
+| `registre_sanitaire` | `profil_source` | `'eleveur'` (défaut) ou `'association'` |
+| `employes` | `type` | NULL/absent = employé, `'benevole'` = bénévole asso |
+| Facturation (Firestore) | `profilSource` | `'eleveur'` ou `'association'` |
+| `enclos_chenil` | `is_association` | `true` = asso |
+| `documents_animaux` | `type` | `'contrat_adoption'` = asso, autres = éleveur |
+
+**Migration SQL :** `supabase/migration_profil_source_multi.sql`
+
+**Détection du contexte actif (web) :**
+- Pages sous `/association/*` → `usePathname().startsWith('/association')` → `profilSource = 'association'`
+- Page `/mes-taches` (globale) → hook `useProfileSource()` qui interroge `user_profiles` via `localStorage` (ID stocké par `useActiveProfile`)
+
+**Redirect HomeDashboard :** si `activeProfile.profile_type === 'association'` → `/association`
+
+### 1.7 Autocomplete adresse (ADDR01 — ✅ Web implémenté)
+
+**Composant :** `src/components/AddressAutocomplete.tsx`
+
+- API **adresse.data.gouv.fr** (gratuite, sans clé, France uniquement)
+- Autocomplete dès 3 caractères, debounce 350 ms
+- Mini-carte **OpenStreetMap** iframe inline après sélection (pin sur l'adresse)
+- Composant contrôlé : pas de re-recherche quand l'adresse est pré-remplie depuis PetsMatch
+
+**Utilisé dans :**
+- `/elevage/contrat` — adresse acquéreur (saisie manuelle)
+- `/elevage/certificat-engagement` — adresse acquéreur
+- `/association/contrat` — adresse adoptant
+
+**Auto-remplissage PetsMatch :** quand un utilisateur PetsMatch est sélectionné comme acquéreur :
+- Priorité à l'adresse personnelle (`rue`, `code_postal`, `ville`)
+- Fallback sur `rue_elevage` / `code_postal_elevage` / `ville_elevage` si champs personnels vides
+- Cas d'usage : un éleveur peut adopter un chien pour usage privé (garde) → adresse personnelle utilisée, pas l'adresse d'élevage
+
+### 1.8 Familles d'accueil (FA)
 
 - Réseau de FA lié à l'association (table `familles_accueil`)
 - FA = utilisateur PetsMatch avec profil FA rattaché à l'association
@@ -187,20 +277,24 @@ Le certificat généré par PetsMatch doit contenir :
 ### 2.4 Implémentation technique
 
 **Codes feature :**
-- **CERT01** ✅ En cours — Génération + envoi (web)
+- **CERT01** ✅ Implémenté web (éleveur + association)
 - **CERT02** 🔜 V2 — Signature numérique canvas (app + web)
 
 **V1 — CERT01 (implémenté)**
 
 *Web Next.js :*
-- Page `/elevage/certificat-engagement` : liste des certificats + création
+- Page `/elevage/certificat-engagement` : liste des certificats + création (éleveur)
+- Page `/association/certificat-engagement` : idem, filtrée `profil_source='association'` + animaux `is_association=true`
 - Formulaire pré-rempli (profil cédant + sélection animal depuis Supabase)
+- **Autocomplete adresse** acquéreur (api-adresse.data.gouv.fr + mini-carte OSM) — voir §1.7
+- **Auto-remplissage PetsMatch** : priorité adresse personnelle, fallback adresse élevage
 - PDF généré via `window.print()` + CSS print (pas de dépendance supplémentaire)
 - Token de signature unique (UUID) stocké en DB
-- Lien de signature `/certificat/[token]` partageable manuellement (email auto après HOST02)
-- Page acquéreur `/certificat/[token]` : lecture + bouton Signer / Refuser
+- Lien de signature `/signer-contrat/[token]` (page commune à tous les types de documents)
+- Page acquéreur : lecture + canvas signature double (cédant + acquéreur)
 - Statuts : `envoye` → `lu` → `signe` / `refuse`
 - Gating : Pro + Premium uniquement (éleveurs)
+- **Isolation multi-profil** : colonne `profil_source` sur `certificats_engagement`
 
 *App Flutter :*
 - Bouton "Certificat d'engagement" dans fiche animal (statut disponible) — CERT01 app à faire
@@ -618,6 +712,9 @@ CREATE TABLE employee_plannings (
 
 ## 6. Schéma BDD — nouvelles tables Supabase
 
+> **Migrations exécutées :** `migration_chenil_enclos.sql`, `migration_profil_source_multi.sql`, `migration_annonces_profil_source.sql`  
+> **Migrations en attente d'exécution dans Supabase Dashboard** : voir dossier `supabase/`
+
 Récapitulatif de toutes les migrations à exécuter :
 
 ```sql
@@ -733,7 +830,35 @@ CREATE TABLE IF NOT EXISTS reservations_chenil (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 9. Employés / bénévoles
+-- 9. Enclos / Chenil association (✅ migration_chenil_enclos.sql)
+CREATE TABLE IF NOT EXISTS enclos_chenil (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  uid_eleveur TEXT NOT NULL,
+  is_association BOOLEAN DEFAULT false,
+  nom TEXT NOT NULL,
+  type TEXT DEFAULT 'box',     -- box / enclos / chatterie / cage
+  capacite INTEGER DEFAULT 1,
+  dernier_nettoyage DATE,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+-- Lien animal → enclos
+ALTER TABLE animaux ADD COLUMN IF NOT EXISTS enclos_id UUID REFERENCES enclos_chenil(id) ON DELETE SET NULL;
+
+-- 10. Colonnes isolation multi-profil (✅ migration_profil_source_multi.sql)
+ALTER TABLE taches_elevage         ADD COLUMN IF NOT EXISTS profil_source TEXT DEFAULT 'eleveur';
+ALTER TABLE plan_templates         ADD COLUMN IF NOT EXISTS profil_source TEXT DEFAULT 'eleveur';
+ALTER TABLE plans_actifs           ADD COLUMN IF NOT EXISTS profil_source TEXT DEFAULT 'eleveur';
+ALTER TABLE plan_taches            ADD COLUMN IF NOT EXISTS profil_source TEXT DEFAULT 'eleveur';
+ALTER TABLE certificats_engagement ADD COLUMN IF NOT EXISTS profil_source TEXT DEFAULT 'eleveur';
+ALTER TABLE registre_sanitaire     ADD COLUMN IF NOT EXISTS profil_source TEXT DEFAULT 'eleveur';
+-- Facturation : champ Firestore `profilSource` (pas de migration SQL)
+-- Bénévoles : champ existant `type = 'benevole'` dans table `employes`
+
+-- 11. Employés / bénévoles (table existante)
+-- Employés éleveur : type IS NULL ou absent
+-- Bénévoles asso  : type = 'benevole'
 CREATE TABLE IF NOT EXISTS structure_employees (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   pro_uid TEXT NOT NULL,
@@ -791,22 +916,27 @@ Phase 4 — Améliorations
 
 ### Surfaces à implémenter pour chaque feature
 
-| Code | App Flutter | Site Web | Admin |
-|---|---|---|---|
-| ASSO01 | ✅ inscription + profil | ✅ `/association/profil` | ✅ validation |
-| ASSO02 | ✅ fiche animal asso | ✅ `/mes-animaux` (asso) | ✅ |
-| ASSO03 | ✅ feed + annonce | ✅ `/annonces-association` | ✅ modération |
-| ASSO04 | ✅ candidature | ✅ formulaire web | ✅ suivi |
-| ASSO05 | ✅ gestion FA | ✅ | ❌ (non critique) |
-| CERT01 | ✅ génération + envoi | ✅ génération + lien | ✅ |
-| CERT02 | ✅ signature canvas | ✅ lien email token | ❌ |
-| PLAN01 | ✅ config chambres | ✅ `/pension/chambres` | ✅ |
-| PLAN02 | ✅ planning vue semaine | ✅ vue hôtel | ✅ stats |
-| PLAN03 | ✅ auto RDV→chambre | ✅ | ❌ |
-| PLAN04 | ✅ stats basiques | ✅ rapports complets | ✅ |
-| EMP01 | ✅ invitation + accès | ✅ `/equipe` | ✅ |
-| EMP02 | ✅ planning soigneurs | ✅ | ❌ |
-| EMP03 | ✅ affectation | ✅ | ❌ |
+| Code | Description | App Flutter | Site Web | Admin |
+|---|---|---|---|---|
+| ASSO01 | Profil association | ✅ inscription + profil | ✅ `/association` (dashboard, layout) | 🔜 validation |
+| ASSO02 | Animaux association | ✅ fiche animal asso | ✅ `/association/animaux` (filtre `is_association`) | 🔜 |
+| ASSO03 | Annonces adoption | ✅ feed + annonce | ✅ `/association/annonces` (filtre `profil_source`) | 🔜 modération |
+| ASSO04 | Candidatures adoption | 🔜 | 🔜 formulaire web | 🔜 |
+| ASSO05 | Familles d'accueil | 🔜 | ✅ `/association/familles-accueil` | ❌ |
+| ADOP01 | Contrat d'adoption | 🔜 | ✅ `/association/contrat` (6 articles, participation/espèce) | ❌ |
+| CHEL01 | Gestion enclos/chenil | 🔜 | ✅ `/association/chenil` (table `enclos_chenil`) | ❌ |
+| MPRO01 | Isolation multi-profil | 🔜 | ✅ colonne `profil_source` sur 6 tables | ❌ |
+| ADDR01 | Autocomplete adresse | 🔜 | ✅ composant `AddressAutocomplete` (adresse.gouv.fr + OSM) | ❌ |
+| CERT01 | Certificat engagement | 🔜 | ✅ éleveur + association (`profil_source`) | 🔜 |
+| CERT02 | Signature numérique canvas | ✅ canvas app | ✅ `/signer-contrat/[token]` (canvas double) | ❌ |
+| PLAN01 | Config enclos / lieux | 🔜 | ✅ via chenil page | 🔜 |
+| PLAN02 | Planning chenil semaine | 🔜 | ✅ onglet chenil | 🔜 |
+| PLAN03 | Auto RDV → chambre | 🔜 | 🔜 | ❌ |
+| PLAN04 | Stats occupation | 🔜 | 🔜 | 🔜 |
+| EMP01 | Invitation employés | 🔜 | ✅ `/employes` (exclut bénévoles) | 🔜 |
+| BEN01 | Gestion bénévoles | 🔜 | ✅ `/association/benevoles` (type=benevole) | ❌ |
+| EMP02 | Planning soigneurs | 🔜 | 🔜 | ❌ |
+| EMP03 | Affectation soigneurs | 🔜 | 🔜 | ❌ |
 
 ---
 
