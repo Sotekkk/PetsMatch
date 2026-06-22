@@ -2,8 +2,8 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/association/admin/chenil_planning_page.dart';
 import 'package:PetsMatch/pages/association/admin/contrat_adoption_page.dart';
 import 'package:PetsMatch/pages/association/animaux/mes_animaux_asso.dart';
-import 'package:PetsMatch/pages/association/benevoles/benevoles_page.dart';
 import 'package:PetsMatch/pages/association/familles_accueil/familles_accueil_page.dart';
+import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -274,8 +274,8 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
                           Navigator.push(context, MaterialPageRoute(builder: (_) => const ChenilPlanningPage()))),
                       _QuickAction('Contrat d\'adoption', Icons.handshake_outlined, const Color(0xFF00695C), onTap: () =>
                           Navigator.push(context, MaterialPageRoute(builder: (_) => const ContratAdoptionPage()))),
-                      _QuickAction('Bénévoles', Icons.volunteer_activism_outlined, Colors.purple, onTap: () =>
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const BenevolesPage()))),
+                      _QuickAction('Employés & Bénévoles', Icons.badge_outlined, Colors.purple, onTap: () =>
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployesPage()))),
                     ],
                   ),
                   const SizedBox(height: 24),

@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: '/association/planning',                   label: 'Protocoles',         icon: '📅' },
   { href: '/association/registre-sanitaire',         label: 'Suivi sanitaire',    icon: '🏥' },
   { href: '/association/inventaire',                 label: 'Inventaire',         icon: '📦' },
+  { href: '/employes',                               label: 'Employés',           icon: '👔' },
   { href: '/association/benevoles',                  label: 'Bénévoles',          icon: '🤝' },
   { href: '/association/registre-entree-sortie',     label: 'Entrées / Sorties',  icon: '📂' },
   { href: '/association/agenda',                     label: 'Agenda',             icon: '🗓️' },

@@ -30,6 +30,7 @@ import 'package:PetsMatch/pages/association/profil_association_edit.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -230,12 +231,22 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
+                      label: 'Employés',
+                      icon: Icons.badge_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const EmployesPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
                       label: 'Bénévoles',
                       icon: Icons.volunteer_activism_outlined,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const BenevolesPage(),
+                          builder: (_) => const EmployesPage(),
                         ));
                       },
                     ),

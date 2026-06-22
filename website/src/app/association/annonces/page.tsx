@@ -44,9 +44,20 @@ export default function AnnoncesAssoPage() {
       .eq('uid_eleveur', user.uid)
       .eq('profil_source', 'association')
       .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setAnnonces(data ?? []);
-        setLoading(false);
+      .then(({ data, error }) => {
+        if (error) {
+          // profil_source colonne absente → afficher toutes les annonces de l'uid en fallback
+          supabase
+            .from('annonces')
+            .select('id, titre, type_vente, espece, statut, prix, created_at, photos')
+            .eq('uid_eleveur', user.uid)
+            .eq('type_vente', 'adoption')
+            .order('created_at', { ascending: false })
+            .then(({ data: d2 }) => { setAnnonces(d2 ?? []); setLoading(false); });
+        } else {
+          setAnnonces(data ?? []);
+          setLoading(false);
+        }
       });
   }, [user]);
 
