@@ -190,6 +190,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
         'pays_eleveur':        userRow['pays_elevage'] ?? 'France',
         'type':                'animal',
         'type_vente':          'adoption',
+        'profil_source':       'association',
         'espece':              _espece,
         'race':                _raceCtrl.text.trim(),
         'titre':               _titreCtrl.text.trim(),
@@ -211,7 +212,6 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
       if (widget.annonceId != null) {
         await Supabase.instance.client.from('annonces').update(data).eq('id', widget.annonceId!);
       } else {
-        data['id']         = '${DateTime.now().millisecondsSinceEpoch}';
         data['created_at'] = now;
         data['expires_at'] = DateTime.now().add(const Duration(days: 60)).toIso8601String();
         data['vues']       = 0;

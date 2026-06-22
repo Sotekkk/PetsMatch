@@ -730,7 +730,6 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         await Supabase.instance.client
             .from('annonces').update(supaData).eq('id', widget.annonceId!);
       } else {
-        supaData['id']         = '${DateTime.now().millisecondsSinceEpoch}';
         supaData['created_at'] = now;
         supaData['expires_at'] =
             DateTime.now().add(Duration(days: _dureeAnnonce)).toIso8601String();
