@@ -8,12 +8,12 @@ import { useAuth } from '@/lib/auth-context';
 interface Annonce {
   id: string;
   titre?: string;
-  type_annonce?: string;
+  type_vente?: string;
   espece?: string;
   statut?: string;
   prix?: number;
   created_at?: string;
-  photo_url?: string;
+  photos?: string[];
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -24,9 +24,11 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const STATUT_STYLE: Record<string, string> = {
-  active: 'bg-green-100 text-green-700',
-  expirée: 'bg-gray-100 text-gray-500',
-  vendue: 'bg-teal-100 text-teal-700',
+  disponible:  'bg-green-100 text-green-700',
+  vendu:       'bg-teal-100 text-teal-700',
+  cede:        'bg-teal-100 text-teal-700',
+  expire:      'bg-gray-100 text-gray-500',
+  en_pause:    'bg-yellow-100 text-yellow-700',
 };
 
 export default function AnnoncesAssoPage() {
@@ -38,7 +40,7 @@ export default function AnnoncesAssoPage() {
     if (!user) return;
     supabase
       .from('annonces')
-      .select('id, titre, type_annonce, espece, statut, prix, created_at, photo_url')
+      .select('id, titre, type_vente, espece, statut, prix, created_at, photos')
       .eq('uid_eleveur', user.uid)
       .eq('profil_source', 'association')
       .order('created_at', { ascending: false })
@@ -83,8 +85,8 @@ export default function AnnoncesAssoPage() {
             <div key={a.id} className="bg-white rounded-2xl shadow-sm p-4 flex gap-4 border border-gray-100 hover:border-teal-200 transition-all">
               {/* Photo */}
               <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
-                {a.photo_url ? (
-                  <img src={a.photo_url} alt={a.titre} className="w-full h-full object-cover" />
+                {a.photos?.[0] ? (
+                  <img src={a.photos[0]} alt={a.titre} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-2xl text-gray-300">🐾</div>
                 )}
@@ -94,11 +96,11 @@ export default function AnnoncesAssoPage() {
                 <div className="flex items-start justify-between gap-2">
                   <p className="font-bold font-galey text-gray-900 truncate">{a.titre ?? 'Sans titre'}</p>
                   <span className={`text-xs font-galey font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${STATUT_STYLE[a.statut ?? ''] ?? 'bg-gray-100 text-gray-500'}`}>
-                    {a.statut ?? 'active'}
+                    {a.statut ?? 'disponible'}
                   </span>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-gray-500 font-galey mt-1">
-                  {a.type_annonce && <span>{TYPE_LABELS[a.type_annonce] ?? a.type_annonce}</span>}
+                  {a.type_vente && <span>{TYPE_LABELS[a.type_vente] ?? a.type_vente}</span>}
                   {a.espece && <span>• {a.espece}</span>}
                   {a.prix != null && a.prix > 0 && <span>• {a.prix}€</span>}
                   {a.created_at && <span>• {new Date(a.created_at).toLocaleDateString('fr-FR')}</span>}
@@ -106,7 +108,7 @@ export default function AnnoncesAssoPage() {
               </div>
               {/* Actions */}
               <div className="flex items-center gap-2 flex-shrink-0">
-                <Link href={`/annonces/${a.id}/modifier`}
+                <Link href={`/association/annonces/creer?edit=${a.id}`}
                   className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 px-3 py-1 rounded-full font-galey hover:bg-teal-50">
                   Modifier
                 </Link>

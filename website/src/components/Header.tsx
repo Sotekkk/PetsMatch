@@ -43,39 +43,43 @@ const NAV_GUEST = [
 ];
 
 const NAV_ELEVEUR = [
-  { href: '/',               label: 'Accueil' },
-  { href: '/mes-animaux',    label: 'Mes Animaux' },
-  { href: '/mes-annonces',   label: 'Mes Annonces' },
-  { href: '/abonnement',     label: 'Abonnement' },
-  { href: '/animaux-perdus', label: 'Animaux perdus' },
-  { href: '/services',       label: 'Services' },
-  { href: '/marketplace',    label: 'Marketplace' },
-  { href: '/messages',       label: 'Messages' },
+  { href: '/',                        label: 'Accueil' },
+  { href: '/mes-animaux',             label: 'Mes Animaux' },
+  { href: '/mes-annonces',            label: 'Mes Annonces' },
+  { href: '/adoptions',    label: '💚 Adoptions' },
+  { href: '/abonnement',              label: 'Abonnement' },
+  { href: '/animaux-perdus',          label: 'Animaux perdus' },
+  { href: '/services',                label: 'Services' },
+  { href: '/marketplace',             label: 'Marketplace' },
+  { href: '/messages',                label: 'Messages' },
 ];
 
 // NAV spécifique profils pro secondaires (pas d'élevage)
 const NAV_PRO = [
-  { href: '/',          label: 'Accueil' },
-  { href: '/agenda',    label: 'Agenda' },
-  { href: '/services',  label: 'Services' },
-  { href: '/messages',  label: 'Messages' },
+  { href: '/',                     label: 'Accueil' },
+  { href: '/adoptions', label: '💚 Adoptions' },
+  { href: '/agenda',               label: 'Agenda' },
+  { href: '/services',             label: 'Services' },
+  { href: '/messages',             label: 'Messages' },
 ];
 
 const NAV_VET = [
-  { href: '/',              label: 'Accueil' },
-  { href: '/agenda',        label: 'Agenda' },
-  { href: '/mes-patients',  label: 'Patients' },
-  { href: '/messages',      label: 'Messages' },
+  { href: '/',                     label: 'Accueil' },
+  { href: '/adoptions', label: '💚 Adoptions' },
+  { href: '/agenda',               label: 'Agenda' },
+  { href: '/mes-patients',         label: 'Patients' },
+  { href: '/messages',             label: 'Messages' },
 ];
 
 const NAV_PARTICULIER = [
-  { href: '/',               label: 'Accueil' },
-  { href: '/mes-animaux',    label: 'Mes Animaux' },
-  { href: '/annonces',       label: 'Annonces' },
-  { href: '/animaux-perdus', label: 'Animaux perdus' },
-  { href: '/services',       label: 'Services' },
-  { href: '/marketplace',    label: 'Marketplace' },
-  { href: '/messages',       label: 'Messages' },
+  { href: '/',                     label: 'Accueil' },
+  { href: '/mes-animaux',          label: 'Mes Animaux' },
+  { href: '/annonces',             label: 'Annonces' },
+  { href: '/adoptions', label: '💚 Adoptions' },
+  { href: '/animaux-perdus',       label: 'Animaux perdus' },
+  { href: '/services',             label: 'Services' },
+  { href: '/marketplace',          label: 'Marketplace' },
+  { href: '/messages',             label: 'Messages' },
 ];
 
 const NAV_ASSOCIATION = [

@@ -20,7 +20,7 @@ const NAV_ITEMS = [
   { href: '/association/agenda',                     label: 'Agenda',             icon: '🗓️' },
   { href: '/mes-rdv',                               label: 'Mes RDV',            icon: '📅' },
   { href: '/association/annonces',                   label: 'Mes Annonces',       icon: '📣' },
-  { href: '/association/adoption',                   label: 'Fil d\'adoption',    icon: '💚' },
+  { href: '/adoptions',                               label: 'Fil d\'adoption',    icon: '💚' },
   { href: '/association/contrat',                    label: 'Contrats adoption',  icon: '📋' },
   { href: '/association/certificat-engagement',      label: 'Certificats',        icon: '✍️' },
   { href: '/association/facturation',                label: 'Facturation',        icon: '🧾' },
