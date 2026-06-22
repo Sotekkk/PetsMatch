@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { loadBreeds } from '@/lib/breeds';
 
 const ESPECES = ['chien', 'chat', 'lapin', 'oiseau', 'cheval', 'nac', 'autre'];
 const ESPECE_LABEL: Record<string, string> = {
@@ -24,11 +25,13 @@ export default function CreerAnnonceAssoPage() {
   const { user } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
-  const animalId = params.get('animalId');
+  const animalIdParam = params.get('animalId');
 
   const [titre, setTitre] = useState('');
   const [espece, setEspece] = useState('');
   const [race, setRace] = useState('');
+  const [raceQuery, setRaceQuery] = useState('');
+  const [breeds, setBreeds] = useState<string[]>([]);
   const [sexe, setSexe] = useState('');
   const [description, setDescription] = useState('');
   const [vaccines, setVaccines] = useState(false);
@@ -36,31 +39,66 @@ export default function CreerAnnonceAssoPage() {
   const [identification, setIdentification] = useState(false);
   const [sterilise, setSterilise] = useState(false);
   const [contratAdoption, setContratAdoption] = useState(true);
-  const [linkedAnimalId, setLinkedAnimalId] = useState<string | null>(animalId);
+  const [linkedAnimalId, setLinkedAnimalId] = useState<string | null>(animalIdParam);
+  const [linkedAnimalNom, setLinkedAnimalNom] = useState<string | null>(null);
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
+  const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Pré-remplir depuis l'animal si animalId fourni
+  // Picker d'animal
+  const [mesAnimaux, setMesAnimaux] = useState<any[]>([]);
+  const [showPicker, setShowPicker] = useState(false);
+
+  // Charger les animaux disponibles de l'association
   useEffect(() => {
-    if (!animalId || !user) return;
+    if (!user) return;
     supabase.from('animaux')
-      .select('nom, espece, race, sexe, vaccins, vermifuge, identification, sterilise, photo_url')
-      .eq('id', animalId).single()
-      .then(({ data }) => {
-        if (!data) return;
-        if (data.nom) setTitre(`${data.nom} cherche une famille`);
-        if (data.espece) setEspece(data.espece);
-        if (data.race) setRace(data.race);
-        if (data.sexe) setSexe(data.sexe);
-        if (data.vaccins != null) setVaccines(!!data.vaccins);
-        if (data.vermifuge != null) setVermifuge(!!data.vermifuge);
-        if (data.identification != null) setIdentification(!!data.identification);
-        if (data.sterilise != null) setSterilise(!!data.sterilise);
-      });
-  }, [animalId, user]);
+      .select('id, nom, espece, race, sexe, statut, photo_url, vaccins, vaccines, vermifuge, identification, sterilise')
+      .eq('uid_eleveur', user.uid)
+      .eq('is_association', true)
+      .in('statut', ['disponible', 'en_soin'])
+      .order('nom')
+      .then(({ data }) => setMesAnimaux(data ?? []));
+  }, [user]);
+
+  // Pré-remplir depuis l'animal si animalId fourni en param URL
+  useEffect(() => {
+    if (!animalIdParam || !user) return;
+    supabase.from('animaux')
+      .select('nom, espece, race, sexe, vaccins, vaccines, vermifuge, identification, sterilise, photo_url')
+      .eq('id', animalIdParam).single()
+      .then(({ data }) => { if (data) prefillAnimal(data, animalIdParam); });
+  }, [animalIdParam, user]);
+
+  // Charger races quand l'espèce change
+  useEffect(() => {
+    if (!espece) return;
+    loadBreeds(espece).then(setBreeds);
+    setRace(''); setRaceQuery('');
+  }, [espece]);
+
+  function prefillAnimal(data: any, id: string) {
+    setLinkedAnimalId(id);
+    setLinkedAnimalNom(data.nom ?? null);
+    if (data.nom) setTitre(`${data.nom} cherche une famille`);
+    if (data.espece) setEspece(data.espece);
+    if (data.race) { setRace(data.race); setRaceQuery(data.race); }
+    if (data.sexe) setSexe(data.sexe);
+    if (data.vaccins != null || data.vaccines != null) setVaccines(!!(data.vaccins ?? data.vaccines));
+    if (data.vermifuge != null) setVermifuge(!!data.vermifuge);
+    if (data.identification != null) setIdentification(!!data.identification);
+    if (data.sterilise != null) setSterilise(!!data.sterilise);
+    if (data.photo_url) setExistingPhotoUrl(data.photo_url);
+    else setExistingPhotoUrl(null);
+  }
+
+  function selectAnimal(a: any) {
+    prefillAnimal(a, a.id);
+    setShowPicker(false);
+  }
 
   const handleFiles = (files: FileList | null) => {
     if (!files) return;
@@ -78,28 +116,32 @@ export default function CreerAnnonceAssoPage() {
     setPreviews(prev => prev.filter((_, idx) => idx !== i));
   };
 
+  const filteredBreeds = breeds.filter(b =>
+    b.toLowerCase().includes(raceQuery.toLowerCase())
+  ).slice(0, 8);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
     if (!espece) { setError('Veuillez choisir une espèce.'); return; }
-    if (photos.length === 0) { setError('Ajoutez au moins une photo.'); return; }
+    if (photos.length === 0 && !existingPhotoUrl) { setError('Ajoutez au moins une photo.'); return; }
     setLoading(true);
     setError('');
     try {
-      // Upload photos
-      const photoUrls = await Promise.all(photos.map(f => uploadPhoto(f, user.uid)));
+      const photoUrls: string[] = [];
+      if (existingPhotoUrl && photos.length === 0) photoUrls.push(existingPhotoUrl);
+      const uploaded = await Promise.all(photos.map(f => uploadPhoto(f, user.uid)));
+      photoUrls.push(...uploaded);
 
-      // Récupérer infos utilisateur
       const { data: userData } = await supabase.from('users')
-        .select('name_elevage, firstname, lastname, ville_elevage, code_postal_elevage')
+        .select('name_elevage, firstname, lastname, ville_elevage')
         .eq('uid', user.uid).single();
       const nomAsso = userData?.name_elevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim();
-      const ville = userData?.ville_elevage ?? '';
 
       await supabase.from('annonces').insert({
         uid_eleveur: user.uid,
         nom_eleveur: nomAsso,
-        ville_eleveur: ville,
+        ville_eleveur: userData?.ville_elevage ?? '',
         titre: titre || `${ESPECE_LABEL[espece] ?? espece} cherche une famille`,
         espece,
         race: race || null,
@@ -146,11 +188,54 @@ export default function CreerAnnonceAssoPage() {
       <div className="flex items-center gap-3">
         <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-600 text-xl">←</button>
         <h1 className="text-2xl font-bold font-galey text-teal-800">
-          {linkedAnimalId ? 'Mettre en adoption' : 'Nouvelle annonce d\'adoption'}
+          {linkedAnimalNom ? `Adoption — ${linkedAnimalNom}` : 'Nouvelle annonce d\'adoption'}
         </h1>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
+
+        {/* Sélecteur d'animal */}
+        <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4">
+          <p className="text-sm font-galey font-semibold text-teal-800 mb-2">Lier à un animal</p>
+          {linkedAnimalId ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {existingPhotoUrl && (
+                  <img src={existingPhotoUrl} alt="" className="w-10 h-10 rounded-lg object-cover" />
+                )}
+                <span className="text-sm font-galey font-semibold text-teal-800">{linkedAnimalNom ?? linkedAnimalId}</span>
+              </div>
+              <button type="button" onClick={() => { setLinkedAnimalId(null); setLinkedAnimalNom(null); setExistingPhotoUrl(null); }}
+                className="text-xs text-gray-400 hover:text-gray-600">Retirer</button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setShowPicker(!showPicker)}
+              className="w-full text-sm text-teal-700 border border-teal-300 bg-white rounded-xl py-2 font-galey hover:bg-teal-50 transition-colors">
+              🐾 Sélectionner un animal disponible
+            </button>
+          )}
+          {showPicker && (
+            <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
+              {mesAnimaux.length === 0 && (
+                <p className="text-xs text-gray-400 text-center py-4">Aucun animal disponible</p>
+              )}
+              {mesAnimaux.map(a => (
+                <button key={a.id} type="button" onClick={() => selectAnimal(a)}
+                  className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-teal-100 text-left transition-colors">
+                  {a.photo_url ? (
+                    <img src={a.photo_url} alt={a.nom} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-lg flex-shrink-0">🐾</div>
+                  )}
+                  <div>
+                    <p className="text-sm font-galey font-semibold text-gray-800">{a.nom}</p>
+                    <p className="text-xs text-gray-500">{a.race || a.espece}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Titre */}
         <div>
@@ -174,12 +259,25 @@ export default function CreerAnnonceAssoPage() {
           </div>
         </div>
 
-        {/* Race / Sexe */}
+        {/* Race avec autocomplete */}
         <div className="grid grid-cols-2 gap-3">
-          <div>
+          <div className="relative">
             <label className="block text-sm font-galey font-semibold text-gray-700 mb-1">Race</label>
-            <input value={race} onChange={e => setRace(e.target.value)} placeholder="Race ou croisé"
-              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-teal-400" />
+            <input value={raceQuery}
+              onChange={e => { setRaceQuery(e.target.value); setRace(e.target.value); }}
+              placeholder={espece ? 'Rechercher…' : 'Choisir une espèce d\'abord'}
+              disabled={!espece}
+              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-teal-400 disabled:bg-gray-50" />
+            {raceQuery.length >= 1 && filteredBreeds.length > 0 && (
+              <div className="absolute z-10 mt-1 w-full bg-white rounded-xl border border-gray-200 shadow-lg max-h-48 overflow-y-auto">
+                {filteredBreeds.map(b => (
+                  <button key={b} type="button" onClick={() => { setRace(b); setRaceQuery(b); }}
+                    className="w-full text-left px-3 py-2 text-sm font-galey hover:bg-teal-50 transition-colors">
+                    {b}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-galey font-semibold text-gray-700 mb-1">Sexe</label>
@@ -204,6 +302,13 @@ export default function CreerAnnonceAssoPage() {
         <div>
           <label className="block text-sm font-galey font-semibold text-gray-700 mb-2">Photos * (max 6)</label>
           <div className="flex flex-wrap gap-2">
+            {/* Photo existante depuis l'animal */}
+            {existingPhotoUrl && photos.length === 0 && (
+              <div className="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-teal-200">
+                <img src={existingPhotoUrl} alt="" className="w-full h-full object-cover" />
+                <span className="absolute bottom-0 left-0 right-0 bg-teal-700/80 text-white text-[9px] text-center py-0.5 font-galey">Photo animal</span>
+              </div>
+            )}
             {previews.map((src, i) => (
               <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-200">
                 <img src={src} alt="" className="w-full h-full object-cover" />
@@ -225,13 +330,13 @@ export default function CreerAnnonceAssoPage() {
         {/* Santé */}
         <div className="bg-white rounded-2xl border border-gray-100 p-4">
           <p className="text-sm font-galey font-semibold text-gray-700 mb-3">Santé</p>
-          <Toggle label="Vacciné" value={vaccines} onChange={setVaccines} />
-          <Toggle label="Vermifugé" value={vermifuge} onChange={setVermifuge} />
-          <Toggle label="Identifié (puce/tatouage)" value={identification} onChange={setIdentification} />
-          <Toggle label="Stérilisé" value={sterilise} onChange={setSterilise} />
+          <Toggle label="Vacciné(e)" value={vaccines} onChange={setVaccines} />
+          <Toggle label="Vermifugé(e)" value={vermifuge} onChange={setVermifuge} />
+          <Toggle label="Identifié(e) (puce/tatouage)" value={identification} onChange={setIdentification} />
+          <Toggle label="Stérilisé(e)" value={sterilise} onChange={setSterilise} />
         </div>
 
-        {/* Conditions adoption */}
+        {/* Conditions */}
         <div className="bg-white rounded-2xl border border-gray-100 p-4">
           <p className="text-sm font-galey font-semibold text-gray-700 mb-3">Conditions d'adoption</p>
           <Toggle label="Contrat d'adoption obligatoire" value={contratAdoption} onChange={setContratAdoption} />

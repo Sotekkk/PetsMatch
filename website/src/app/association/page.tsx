@@ -34,21 +34,21 @@ export default function AssociationDashboard() {
     Promise.all([
       supabase.from('animaux').select('statut').eq('uid_eleveur', user.uid).eq('is_association', true),
       supabase.from('employes').select('id').eq('uid_eleveur', user.uid).eq('actif', true).eq('type', 'benevole'),
-      supabase.from('animaux').select('id, nom, espece, photo_url, statut, date_entree')
-        .eq('uid_eleveur', user.uid).eq('is_association', true).order('date_entree', { ascending: false }).limit(6),
+      supabase.from('animaux').select('id, nom, espece, photo_url, statut')
+        .eq('uid_eleveur', user.uid).eq('is_association', true).order('created_at', { ascending: false }).limit(6),
     ]).then(([{ data: animaux }, { data: benvl }, { data: recent }]) => {
       const list = animaux ?? [];
       setStats({
         total: list.length,
-        enSoin: list.filter(a => a.statut === 'en_soin').length,
-        disponible: list.filter(a => a.statut === 'disponible').length,
-        enFa: list.filter(a => a.statut === 'en_fa').length,
-        adopte: list.filter(a => a.statut === 'adopte').length,
+        enSoin: list.filter((a: { statut: string }) => a.statut === 'en_soin').length,
+        disponible: list.filter((a: { statut: string }) => a.statut === 'disponible').length,
+        enFa: list.filter((a: { statut: string }) => a.statut === 'en_fa').length,
+        adopte: list.filter((a: { statut: string }) => a.statut === 'adopte').length,
         benevoles: (benvl ?? []).length,
       });
       setRecentAnimaux(recent ?? []);
       setLoading(false);
-    });
+    }).catch(() => setLoading(false));
   }, [user]);
 
   if (loading) {
