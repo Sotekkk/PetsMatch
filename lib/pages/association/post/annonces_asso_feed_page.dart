@@ -32,6 +32,7 @@ class _AnnoncesAssoFeedPageState extends State<AnnoncesAssoFeedPage> {
   ];
 
   bool _matches(Map<String, dynamic> d) {
+    if ((d['profil_source'] as String?) != 'association') return false;
     if ((d['type_vente'] as String?) != 'adoption') return false;
     final s = (d['statut'] as String?) ?? '';
     if (s == 'vendu' || s == 'cede' || s == 'expire') return false;

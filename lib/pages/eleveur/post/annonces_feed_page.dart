@@ -264,7 +264,8 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
       var q = Supabase.instance.client
           .from('annonces')
           .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur, uid_eleveur, description, registre_type, date_naissance, date_naissance_animal')
-          .eq('statut', 'disponible');
+          .eq('statut', 'disponible')
+          .or('profil_source.is.null,profil_source.neq.association');
       if (_espece != 'tous')       q = q.eq('espece', _espece);
       if (_race   != null)         q = q.eq('race', _race!);
       if (_typeVente == 'saillie') q = q.eq('type_vente', 'saillie');
