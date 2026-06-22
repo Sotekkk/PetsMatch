@@ -18,7 +18,7 @@ import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
-import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
@@ -423,7 +423,7 @@ class _EleveurNavState extends State<EleveurNav> {
                         onTap: () {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const AnnoncesAssoFeedPage(),
+                            builder: (_) => const AnnoncesFeedPage(isAssociationFeed: true),
                           ));
                         },
                       ),

@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-06-21 (commit b1e5ebd)  
+> Dernière mise à jour : 2026-06-22 (commit en cours)  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -27,7 +27,7 @@ Un profil Association est quasi-identique au profil Éleveur avec les différenc
 
 | Fonctionnalité | Éleveur | Association | Statut Web |
 |---|---|---|---|
-| Animaux (fiche complète) | ✅ | ✅ | ✅ `/association/animaux` (filtre `is_association`) |
+| Animaux (fiche complète) | ✅ | ✅ | ✅ `/association/animaux` (filtre `is_association`) — scanner puce intégré (filtre asso strict) |
 | Généalogie / arbres | ✅ | ❌ | — |
 | Suivi repro (saillie, gestation…) | ✅ | ❌ | — |
 | Portées | ✅ | ❌ | — |
@@ -38,20 +38,20 @@ Un profil Association est quasi-identique au profil Éleveur avec les différenc
 | Planning / Protocoles | ✅ | ✅ | ✅ `/association/planning` (filtre `profil_source`) |
 | Suivi sanitaire | ✅ | ✅ | ✅ `/association/registre-sanitaire` (filtre `profil_source`) |
 | Registre entrées/sorties | ✅ | ✅ | ✅ `/association/registre-entree-sortie` (filtre `is_association`) |
-| Gestion bénévoles | ❌ | ✅ | ✅ `/association/benevoles` (filtre `type='benevole'`) |
-| Gestion employés | ✅ | ❌ | ✅ `/employes` (exclut bénévoles) |
+| Gestion bénévoles + employés | ❌ | ✅ | ✅ `/association/equipe` — liste unifiée, badges 👔 Employé / 🤝 Bénévole, recherche PetsMatch, affectation tâches |
+| Gestion employés | ✅ | ❌ | ✅ `/employes` (profil éleveur) |
 | Chenil / Enclos | ❌ | ✅ | ✅ `/association/chenil` (table `enclos_chenil`) |
 | Planning chenil semaine | ❌ | ✅ | ✅ onglet dans chenil page |
 | Inventaire | ✅ | ✅ | ✅ `/association/inventaire` (re-export éleveur) |
 | Facturation | ✅ | ✅ | ✅ `/association/facturation` (filtre Firestore `profilSource`) |
 | RDV | ✅ | ✅ | ✅ `/mes-rdv` (filtre `pro_profile_id`) |
 | Tâches assignées | ✅ | ✅ | ✅ `/mes-taches` (filtre `profil_source` via `useProfileSource`) |
-| Familles d'accueil (FA) | ❌ | ✅ | ✅ `/association/familles-accueil` (page existante) |
+| Familles d'accueil (FA) | ❌ | ✅ | ✅ `/association/familles-accueil` — recherche utilisateur PetsMatch, `fa_uid` lié, badge 🐾 PetsMatch |
 
 ### 1.2 Champs du profil
 
 ```
-Nom de l'association        (obligatoire)
+Nom de l'association        (obligatoire)    ← ✅ App + Web
 Numéro RNA                  (Répertoire National des Associations, ex: W751234567)
 SIRET                       (si l'asso a une activité économique)
 Numéro agrément préfectoral (si applicable — établissements pour animaux)
@@ -62,7 +62,7 @@ Site web / réseaux
 Espèces accueillies         (liste multiple)
 Capacité d'accueil          (nombre d'animaux max en simultané)
 Description / présentation
-Photo de l'association + bannière
+Photo de l'association + bannière  ← ✅ App (profil_association_edit) + migration_user_profiles_banner.sql
 Documents légaux            (statuts PDF, arrêté préfectoral…)
 ```
 
@@ -162,14 +162,23 @@ Un utilisateur peut avoir simultanément un profil éleveur (compte principal) e
 - Fallback sur `rue_elevage` / `code_postal_elevage` / `ville_elevage` si champs personnels vides
 - Cas d'usage : un éleveur peut adopter un chien pour usage privé (garde) → adresse personnelle utilisée, pas l'adresse d'élevage
 
-### 1.8 Familles d'accueil (FA)
+### 1.8 Familles d'accueil (FA) — ✅ App + Web implémenté
 
-- Réseau de FA lié à l'association (table `familles_accueil`)
-- FA = utilisateur PetsMatch avec profil FA rattaché à l'association
-- L'association peut affecter un animal à une FA
-- La FA voit les fiches des animaux qui lui sont confiés
+**Table :** `familles_accueil` — colonnes : `association_uid`, `fa_uid` (nullable, UID PetsMatch), `prenom`, `nom`, `email`, `telephone`, `adresse`, `ville`, `code_postal`, `capacite_max`, `notes`, `actif`
+
+**App Flutter :** `familles_accueil_page.dart` — liste FA avec animaux en cours, sheet ajout avec recherche PetsMatch (`fa_uid` auto-rempli + infos contact)  
+**Web Next.js :** `/association/familles-accueil` — même logique, recherche dropdown PetsMatch, badge 🐾 sur les FA liées, compteur animaux/capacité
+
+- Réseau de FA lié à l'association
+- FA optionnellement liée à un utilisateur PetsMatch existant (`fa_uid`)
+- L'association peut affecter un animal à une FA (champ `fa_id` sur `animaux`)
 - Suivi de l'animal pendant le placement (bilans, photos)
 - L'animal reste propriété de l'association côté BDD jusqu'à l'adoption définitive
+
+**À faire (v2) :**
+- Vue FA : interface dédiée pour que la FA voie les fiches des animaux qui lui sont confiés
+- Bilans/photos depuis l'app de la FA
+- Notifications FA lors des changements de statut
 
 ---
 
@@ -320,9 +329,11 @@ Le certificat généré par PetsMatch doit contenir :
 
 ## 3. Annonces Association (feed séparé)
 
-### 3.1 Principe
+### 3.1 Principe — ✅ Isolation implémentée
 
 Les annonces d'associations **ne sont pas mélangées** aux annonces éleveurs/particuliers. Elles ont :
+
+> **Fix 2026-06-22 :** "Fil éleveurs" retiré du drawer association — les annonces d'élevage ne s'affichent plus dans le contexte association. Filtre `profil_source = 'association'` appliqué côté client dans `annonces_asso_feed_page.dart`.
 - Leur propre feed (`/annonces-association`)
 - Leur propre section dans l'app (onglet dédié ou section dans Annonces)
 - Badge "🏠 Association" visible sur chaque carte

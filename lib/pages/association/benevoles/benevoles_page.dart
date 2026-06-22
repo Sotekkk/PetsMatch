@@ -75,6 +75,7 @@ class _BenevolesPageState extends State<BenevolesPage> {
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         'actif': true,
         'type': 'benevole',
+        'profil_source': 'association',
       });
       _prenomCtrl.clear();
       _nomCtrl.clear();
@@ -119,6 +120,61 @@ class _BenevolesPageState extends State<BenevolesPage> {
   void _showAddSheet() {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Ajouter un bénévole',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+            const SizedBox(height: 20),
+            // Recherche PetsMatch
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.search, color: _teal),
+                label: const Text('Chercher sur PetsMatch',
+                    style: TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: _teal),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _showSearchSheet();
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Saisie manuelle
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.edit_outlined, color: Colors.white),
+                label: const Text('Saisir manuellement',
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: _teal,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _showManualSheet();
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showManualSheet() {
+    showModalBottomSheet(
+      context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
@@ -129,16 +185,14 @@ class _BenevolesPageState extends State<BenevolesPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Ajouter un bénévole',
+            const Text('Saisir un bénévole',
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
             const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(child: _field(_prenomCtrl, 'Prénom *')),
-                const SizedBox(width: 10),
-                Expanded(child: _field(_nomCtrl, 'Nom *')),
-              ],
-            ),
+            Row(children: [
+              Expanded(child: _field(_prenomCtrl, 'Prénom *')),
+              const SizedBox(width: 10),
+              Expanded(child: _field(_nomCtrl, 'Nom *')),
+            ]),
             const SizedBox(height: 10),
             _field(_emailCtrl, 'Email', keyboard: TextInputType.emailAddress),
             const SizedBox(height: 10),
@@ -157,6 +211,16 @@ class _BenevolesPageState extends State<BenevolesPage> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showSearchSheet() {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _SearchBenevoleSheet(uid: uid, onAdded: _load),
     );
   }
 
@@ -310,6 +374,183 @@ class _BenevoleTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Sheet recherche bénévole PetsMatch ─────────────────────────────────────
+
+class _SearchBenevoleSheet extends StatefulWidget {
+  final String uid;
+  final VoidCallback onAdded;
+  const _SearchBenevoleSheet({required this.uid, required this.onAdded});
+  @override
+  State<_SearchBenevoleSheet> createState() => _SearchBenevoleSheetState();
+}
+
+class _SearchBenevoleSheetState extends State<_SearchBenevoleSheet> {
+  final _supa = Supabase.instance.client;
+  final _ctrl = TextEditingController();
+  static const _teal = Color(0xFF0C5C6C);
+
+  List<Map<String, dynamic>> _allUsers = [];
+  List<Map<String, dynamic>> _results  = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUsers();
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  Future<void> _loadUsers() async {
+    try {
+      final rows = await _supa.from('users')
+          .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, profile_picture_url_elevage')
+          .neq('uid', widget.uid).limit(500);
+      if (mounted) setState(() {
+        _allUsers = List<Map<String, dynamic>>.from(rows as List);
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _search(String q) {
+    final query = q.toLowerCase().trim();
+    if (query.length < 2) { setState(() => _results = []); return; }
+    setState(() {
+      _results = _allUsers.where((u) {
+        final nom = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''} ${u['name_elevage'] ?? ''}'.toLowerCase();
+        return nom.contains(query);
+      }).take(15).toList();
+    });
+  }
+
+  String _nomUser(Map<String, dynamic> u) {
+    if (u['is_elevage'] == true) return (u['name_elevage'] as String? ?? 'Élevage').trim();
+    return '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+  }
+
+  String? _photoUser(Map<String, dynamic> u) {
+    if (u['is_elevage'] == true) return u['profile_picture_url_elevage'] as String?;
+    return u['profile_picture_url'] as String?;
+  }
+
+  Future<void> _ajouter(Map<String, dynamic> user) async {
+    final uid = user['uid'] as String;
+    // Cherche uniquement dans les bénévoles de l'association
+    final existing = await _supa.from('employes').select()
+        .eq('uid_eleveur', widget.uid).eq('uid_employe', uid)
+        .eq('profil_source', 'association').eq('type', 'benevole').maybeSingle();
+
+    if (existing != null) {
+      if (existing['actif'] == true) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cette personne est déjà bénévole dans votre équipe.')));
+        return;
+      }
+      await _supa.from('employes').update({'actif': true}).eq('id', existing['id']);
+    } else {
+      await _supa.from('employes').insert({
+        'uid_employe': uid,
+        'uid_eleveur': widget.uid,
+        'actif': true,
+        'type': 'benevole',
+        'profil_source': 'association',
+      });
+    }
+    widget.onAdded();
+    if (mounted) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${_nomUser(user)} ajouté comme bénévole ✓')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      minChildSize: 0.4,
+      builder: (_, sc) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Column(children: [
+          const SizedBox(height: 8),
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          const Text('Ajouter un bénévole PetsMatch',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: TextField(
+              controller: _ctrl,
+              autofocus: true,
+              style: const TextStyle(fontFamily: 'Galey'),
+              decoration: InputDecoration(
+                hintText: 'Rechercher par prénom ou nom…',
+                hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _loading
+                    ? const Padding(padding: EdgeInsets.all(12),
+                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
+                    : null,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                filled: true, fillColor: const Color(0xFFF3F4F6),
+              ),
+              onChanged: _search,
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (!_loading && _ctrl.text.length < 2)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Text('Tapez au moins 2 lettres pour rechercher.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+            ),
+          if (!_loading && _ctrl.text.length >= 2 && _results.isEmpty)
+            const Padding(padding: EdgeInsets.all(20),
+                child: Text('Aucun utilisateur trouvé',
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.grey))),
+          Expanded(
+            child: ListView.builder(
+              controller: sc,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: _results.length,
+              itemBuilder: (_, i) {
+                final u = _results[i];
+                final nom   = _nomUser(u);
+                final photo = _photoUser(u);
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: _teal.withValues(alpha: 0.12),
+                    backgroundImage: photo != null
+                        ? NetworkImage(photo) as ImageProvider : null,
+                    child: photo == null ? Icon(Icons.person, color: _teal) : null,
+                  ),
+                  title: Text(nom.isEmpty ? 'Utilisateur' : nom,
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Bénévole',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _teal)),
+                  trailing: Icon(Icons.add_circle_outline, color: _teal),
+                  onTap: () => _ajouter(u),
+                );
+              },
+            ),
+          ),
+        ]),
       ),
     );
   }

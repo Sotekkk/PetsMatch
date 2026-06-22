@@ -140,6 +140,7 @@ export default function EleveurProfilePage() {
       .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, statut')
       .eq('uid_eleveur', id)
       .eq('statut', 'disponible')
+      .or('profil_source.is.null,profil_source.neq.association')
       .order('created_at', { ascending: false })
       .then(({ data }) => setAnnonces((data ?? []) as Annonce[]));
 

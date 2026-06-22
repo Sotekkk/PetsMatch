@@ -3,7 +3,7 @@ import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/association/admin/chenil_planning_page.dart';
 import 'package:PetsMatch/pages/association/animaux/mes_animaux_asso.dart';
 import 'package:PetsMatch/pages/association/association_home.dart';
-import 'package:PetsMatch/pages/association/benevoles/benevoles_page.dart';
+import 'package:PetsMatch/pages/association/equipe/equipe_page.dart';
 import 'package:PetsMatch/pages/association/familles_accueil/familles_accueil_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
@@ -16,8 +16,8 @@ import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
@@ -231,22 +231,12 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Employés',
-                      icon: Icons.badge_outlined,
+                      label: 'Équipe',
+                      icon: Icons.groups_outlined,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const EmployesPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Bénévoles',
-                      icon: Icons.volunteer_activism_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const EmployesPage(),
+                          builder: (_) => const EquipePage(),
                         ));
                       },
                     ),
@@ -319,17 +309,17 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Trouver un compagnon',
+                      label: 'Annonces d\'adoption',
                       icon: Icons.pets_outlined,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const TrouverCompagnonPage(),
+                          builder: (_) => const AnnoncesPublicPage(isAssociation: true),
                         ));
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Fil d\'adoption',
+                      label: 'Fil adoption associations',
                       icon: Icons.favorite_border,
                       onTap: () {
                         Navigator.pop(context);

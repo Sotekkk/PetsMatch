@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:PetsMatch/services/planning_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ════════════════════════════════════════════════════════════════════════════════
 // PAGE FORMULAIRE TEMPLATE
@@ -28,7 +29,10 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   String _declencheurAuto = '';
   bool   _saving          = false;
 
-  static const _lieuxNettoyage = [
+  static const _lieuxBase = [
+    'Cuisine', 'Salle de soins', 'Salle de quarantaine', 'Jardin', 'Couloir',
+  ];
+  List<String> _lieuxNettoyage = [
     'Chatterie n°1', 'Chatterie n°2', 'Chenil', 'Chenil n°1', 'Chenil n°2',
     'Cuisine', 'Salle de soins', 'Salle de quarantaine', 'Box', 'Jardin', 'Couloir',
   ];
@@ -86,6 +90,25 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
       }
     }
     if (_etapes.isEmpty) _addEtape();
+    _loadBoxes();
+  }
+
+  Future<void> _loadBoxes() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final rows = await Supabase.instance.client
+          .from('chenil_boxes')
+          .select('nom')
+          .eq('association_uid', uid)
+          .order('nom');
+      final boxNames = (rows as List).map((r) => r['nom']?.toString() ?? '').where((n) => n.isNotEmpty).toList();
+      if (mounted && boxNames.isNotEmpty) {
+        setState(() {
+          _lieuxNettoyage = [...boxNames, ..._lieuxBase];
+        });
+      }
+    } catch (_) {}
   }
 
   @override

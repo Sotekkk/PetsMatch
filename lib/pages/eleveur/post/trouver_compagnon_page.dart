@@ -32,6 +32,7 @@ class _TrouverCompagnonPageState extends State<TrouverCompagnonPage> {
           .from('annonces')
           .select('id, titre, espece, race, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, type, type_vente, ville_eleveur')
           .eq('statut', 'disponible')
+          .or('profil_source.is.null,profil_source.neq.association')
           .order('created_at', ascending: false)
           .limit(8);
       if (mounted) {

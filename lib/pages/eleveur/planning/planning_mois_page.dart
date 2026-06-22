@@ -125,7 +125,7 @@ class _PlanningMoisPageState extends State<PlanningMoisPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PlanningJourPage(initialDate: date),
+        builder: (_) => PlanningJourPage(initialDate: date, isAssociation: widget.isAssociation),
       ),
     );
   }
@@ -147,7 +147,7 @@ class _PlanningMoisPageState extends State<PlanningMoisPage> {
             icon: const Icon(Icons.view_day_outlined),
             tooltip: 'Vue journalière',
             onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const PlanningJourPage())),
+                MaterialPageRoute(builder: (_) => PlanningJourPage(isAssociation: widget.isAssociation))),
           ),
           IconButton(
             icon: const Icon(Icons.playlist_add_check_outlined),

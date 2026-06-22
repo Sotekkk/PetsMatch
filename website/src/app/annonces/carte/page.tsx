@@ -84,6 +84,7 @@ function AnnoncesCartePage() {
   const [items, setItems] = useState<(AnnonceMapItem & { espece?: string; race?: string; pays_eleveur?: string; region_eleveur?: string; departement_eleveur?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState('');
+  const [filtreSource] = useState(() => (searchParams.get('source') ?? 'eleveurs') as 'eleveurs' | 'associations' | 'tous');
   const [filtreType, setFiltreType] = useState(() => searchParams.get('type') ?? 'tous');
   const [filtreEspece, setFiltreEspece] = useState(() => searchParams.get('espece') ?? 'tous');
   const [showAdvanced, setShowAdvanced] = useState(() =>
@@ -105,11 +106,18 @@ function AnnoncesCartePage() {
 
   useEffect(() => {
     abortRef.current = false;
-    supabase
+    const baseQuery = supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, photos, prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nom_eleveur, lat, lng')
-      .eq('statut', 'disponible')
-      .then(async ({ data }) => {
+      .select('id, titre, espece, race, type, type_vente, photos, prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nom_eleveur, lat, lng, profil_source')
+      .eq('statut', 'disponible');
+
+    const q = filtreSource === 'associations'
+      ? baseQuery.eq('profil_source', 'association')
+      : filtreSource === 'eleveurs'
+      ? baseQuery.or('profil_source.is.null,profil_source.neq.association')
+      : baseQuery;
+
+    q.then(async ({ data }) => {
         const rows = (data ?? []) as RawAnnonce[];
         setLoading(false);
 

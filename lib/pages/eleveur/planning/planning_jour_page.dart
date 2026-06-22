@@ -8,7 +8,8 @@ import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 
 class PlanningJourPage extends StatefulWidget {
   final DateTime? initialDate;
-  const PlanningJourPage({super.key, this.initialDate});
+  final bool isAssociation;
+  const PlanningJourPage({super.key, this.initialDate, this.isAssociation = false});
   @override
   State<PlanningJourPage> createState() => _PlanningJourPageState();
 }
@@ -65,7 +66,7 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
     if (_uid == null) return;
     setState(() => _loading = true);
     try {
-      final rows = await PlanningService.getTachesJour(_uid!, _selectedDate);
+      final rows = await PlanningService.getTachesJour(_uid!, _selectedDate, isAssociation: widget.isAssociation);
       if (mounted) setState(() { _taches = rows; _loading = false; });
     } catch (_) {
       if (mounted) setState(() { _taches = []; _loading = false; });

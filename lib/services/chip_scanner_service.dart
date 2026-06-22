@@ -27,7 +27,14 @@ class ChipScannerService {
   static Future<void> scanFromElevage(BuildContext context, String uid) async {
     final chip = await showScanner(context);
     if (chip == null || chip.isEmpty || !context.mounted) return;
-    await _searchAndNavigate(context, chip, eleveurUid: uid);
+    await _searchAndNavigate(context, chip, eleveurUid: uid, isAssociation: false);
+  }
+
+  // Contexte association : scan → cherche uniquement dans animaux is_association=true.
+  static Future<void> scanFromAssociation(BuildContext context, String uid) async {
+    final chip = await showScanner(context);
+    if (chip == null || chip.isEmpty || !context.mounted) return;
+    await _searchAndNavigate(context, chip, eleveurUid: uid, isAssociation: true);
   }
 
   // Contexte formulaire : scan → retourne le numéro pour pré-remplir un champ.
@@ -133,6 +140,7 @@ class ChipScannerService {
     BuildContext context,
     String chip, {
     String? eleveurUid,
+    bool isAssociation = false,
   }) async {
     // Normalise (supprime espaces/tirets)
     final normalized = chip.replaceAll(RegExp(r'[\s\-]'), '');
@@ -145,14 +153,12 @@ class ChipScannerService {
     Map<String, dynamic>? trouve;
 
     try {
-      // 1. Animaux de l'éleveur (Supabase)
+      // 1. Animaux de l'éleveur/association (Supabase)
       if (eleveurUid != null) {
-        final rows = await _supa
-            .from('animaux')
-            .select()
-            .eq('uid_eleveur', eleveurUid)
-            .limit(50);
-        for (final row in rows as List) {
+        final List rows = isAssociation
+            ? await _supa.from('animaux').select().eq('uid_eleveur', eleveurUid).eq('is_association', true).limit(50)
+            : await _supa.from('animaux').select().eq('uid_eleveur', eleveurUid).limit(50);
+        for (final row in rows) {
           final id = ((row as Map)['identification'] ?? '').toString()
               .replaceAll(RegExp(r'[\s\-]'), '');
           if (id.isNotEmpty && id == normalized) {

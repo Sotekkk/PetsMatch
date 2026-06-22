@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useActiveProfileState } from '@/hooks/useActiveProfile';
 
 const NAV_ITEMS = [
   { href: '/association',                            label: 'Tableau de bord',    icon: '🏠', exact: true },
@@ -15,8 +15,7 @@ const NAV_ITEMS = [
   { href: '/association/planning',                   label: 'Protocoles',         icon: '📅' },
   { href: '/association/registre-sanitaire',         label: 'Suivi sanitaire',    icon: '🏥' },
   { href: '/association/inventaire',                 label: 'Inventaire',         icon: '📦' },
-  { href: '/employes',                               label: 'Employés',           icon: '👔' },
-  { href: '/association/benevoles',                  label: 'Bénévoles',          icon: '🤝' },
+  { href: '/association/equipe',                      label: 'Équipe',             icon: '👥' },
   { href: '/association/registre-entree-sortie',     label: 'Entrées / Sorties',  icon: '📂' },
   { href: '/association/agenda',                     label: 'Agenda',             icon: '🗓️' },
   { href: '/mes-rdv',                               label: 'Mes RDV',            icon: '📅' },
@@ -29,7 +28,7 @@ const NAV_ITEMS = [
 
 export default function AssociationLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  const activeProfileId = useActiveProfile();
+  const { id: activeProfileId, loaded: profileLoaded } = useActiveProfileState();
   const router = useRouter();
   const pathname = usePathname();
   const [isAssociation, setIsAssociation] = useState<boolean | null>(null);
@@ -37,7 +36,7 @@ export default function AssociationLayout({ children }: { children: React.ReactN
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || !profileLoaded) return; // attendre que localStorage soit lu
     if (!user) { router.push('/connexion'); return; }
 
     Promise.all([
@@ -58,9 +57,9 @@ export default function AssociationLayout({ children }: { children: React.ReactN
         : '';
       setNomAsso(label || (data as { name_elevage?: string; firstname?: string; lastname?: string } | null)?.name_elevage || `${(data as { firstname?: string } | null)?.firstname ?? ''} ${(data as { lastname?: string } | null)?.lastname ?? ''}`.trim());
     });
-  }, [user, loading, router, activeProfileId]);
+  }, [user, loading, router, activeProfileId, profileLoaded]);
 
-  if (loading || isAssociation === null) {
+  if (loading || !profileLoaded || isAssociation === null) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" />

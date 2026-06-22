@@ -180,11 +180,16 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
       try {
         final profiles = await Supabase.instance.client
             .from('user_profiles')
-            .select('profile_label')
+            .select('name_elevage, profile_label')
             .eq('uid', uid)
             .eq('profile_type', 'association');
         final list = profiles as List;
-        if (list.isNotEmpty) assoLabel = list.first['profile_label'] as String?;
+        if (list.isNotEmpty) {
+          final p = list.first as Map<String, dynamic>;
+          final nameEl = (p['name_elevage'] as String?)?.trim();
+          final label  = (p['profile_label'] as String?)?.trim();
+          assoLabel = (nameEl?.isNotEmpty == true) ? nameEl : label;
+        }
       } catch (_) {}
 
       final nomAsso = (assoLabel?.isNotEmpty == true) ? assoLabel!

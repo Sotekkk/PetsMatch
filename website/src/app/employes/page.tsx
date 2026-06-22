@@ -135,7 +135,9 @@ function EquipeTab({ uid }: { uid: string }) {
     try {
       const { data: rows } = await supabase
         .from('employes').select('*').eq('uid_eleveur', uid).eq('actif', true)
-        .or('type.is.null,type.neq.benevole').order('created_at');
+        .or('type.is.null,type.neq.benevole')
+        .or('profil_source.is.null,profil_source.eq.eleveur')
+        .order('created_at');
 
       const result: Employee[] = [];
       for (const e of (rows ?? [])) {
@@ -267,13 +269,17 @@ function AddEmployeModal({ uid, onClose }: { uid: string; onClose: () => void })
   async function ajouter(u: UserProfile) {
     setAdding(u.uid);
     try {
+      // Cherche uniquement dans le profil élevage (pas association)
       const { data: existing } = await supabase.from('employes')
-        .select().eq('uid_eleveur', uid).eq('uid_employe', u.uid).maybeSingle();
+        .select().eq('uid_eleveur', uid).eq('uid_employe', u.uid)
+        .or('profil_source.is.null,profil_source.eq.eleveur').maybeSingle();
       if (existing) {
         if (existing.actif) { alert('Cette personne est déjà dans votre équipe.'); return; }
         await supabase.from('employes').update({ actif: true }).eq('id', existing.id);
       } else {
-        await supabase.from('employes').insert({ uid_employe: u.uid, uid_eleveur: uid, actif: true });
+        await supabase.from('employes').insert({
+          uid_employe: u.uid, uid_eleveur: uid, actif: true, profil_source: 'eleveur',
+        });
       }
       // Notification in-app
       await supabase.from('notifications').insert({

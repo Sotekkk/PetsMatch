@@ -1,5 +1,7 @@
+import 'package:PetsMatch/pages/association/association_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
@@ -16,9 +18,15 @@ class _AnnoncesAssoFeedPageState extends State<AnnoncesAssoFeedPage> {
   static const _green = Color(0xFF6E9E57);
 
   String _espece     = 'tous';
+  String _race       = 'toutes';
   String _searchText = '';
 
   final _searchCtrl = TextEditingController();
+
+  // Likes
+  final _likedKeys  = <String>{};
+  final _likeCounts = <String, int>{};
+  bool _likesLoaded = false;
 
   static const _especeOptions = [
     ('tous',   'Tous'),
@@ -31,12 +39,86 @@ class _AnnoncesAssoFeedPageState extends State<AnnoncesAssoFeedPage> {
     ('autre',  'Autres'),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _loadLikes();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadLikes() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) { setState(() => _likesLoaded = true); return; }
+    try {
+      final liked = await Supabase.instance.client
+          .from('likes')
+          .select('annonce_id')
+          .eq('user_uid', uid);
+      final counts = await Supabase.instance.client
+          .from('likes')
+          .select('annonce_id');
+      final countMap = <String, int>{};
+      for (final row in counts as List) {
+        final id = row['annonce_id']?.toString() ?? '';
+        if (id.isNotEmpty) countMap[id] = (countMap[id] ?? 0) + 1;
+      }
+      if (mounted) {
+        setState(() {
+          _likedKeys.addAll((liked as List).map((r) => r['annonce_id']?.toString() ?? ''));
+          _likeCounts.addAll(countMap);
+          _likesLoaded = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _likesLoaded = true);
+    }
+  }
+
+  Future<void> _toggleLike(String annonceId) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final wasLiked = _likedKeys.contains(annonceId);
+    setState(() {
+      if (wasLiked) {
+        _likedKeys.remove(annonceId);
+        _likeCounts[annonceId] = (_likeCounts[annonceId] ?? 1) - 1;
+      } else {
+        _likedKeys.add(annonceId);
+        _likeCounts[annonceId] = (_likeCounts[annonceId] ?? 0) + 1;
+      }
+    });
+    try {
+      if (wasLiked) {
+        await Supabase.instance.client
+            .from('likes')
+            .delete()
+            .eq('annonce_id', annonceId)
+            .eq('user_uid', uid);
+      } else {
+        await Supabase.instance.client
+            .from('likes')
+            .insert({'annonce_id': annonceId, 'user_uid': uid, 'bebe_index': -1});
+      }
+    } catch (_) {
+      // rollback
+      setState(() {
+        if (wasLiked) { _likedKeys.add(annonceId); _likeCounts[annonceId] = (_likeCounts[annonceId] ?? 0) + 1; }
+        else { _likedKeys.remove(annonceId); _likeCounts[annonceId] = (_likeCounts[annonceId] ?? 1) - 1; }
+      });
+    }
+  }
+
   bool _matches(Map<String, dynamic> d) {
     if ((d['profil_source'] as String?) != 'association') return false;
-    if ((d['type_vente'] as String?) != 'adoption') return false;
     final s = (d['statut'] as String?) ?? '';
     if (s == 'vendu' || s == 'cede' || s == 'expire') return false;
     if (_espece != 'tous' && d['espece'] != _espece) return false;
+    if (_race != 'toutes' && (d['race'] as String?) != _race) return false;
     if (_searchText.isNotEmpty) {
       final q     = _searchText.toLowerCase();
       final race  = ((d['race'] as String?) ?? '').toLowerCase();
@@ -45,12 +127,6 @@ class _AnnoncesAssoFeedPageState extends State<AnnoncesAssoFeedPage> {
       if (!race.contains(q) && !titre.contains(q) && !nom.contains(q)) return false;
     }
     return true;
-  }
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
   }
 
   @override
@@ -89,95 +165,157 @@ class _AnnoncesAssoFeedPageState extends State<AnnoncesAssoFeedPage> {
           ),
         ),
       ),
-      body: Column(children: [
-        // Filtre espèce
-        SizedBox(
-          height: 44,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            children: _especeOptions.map((e) {
-              final active = _espece == e.$1;
-              return GestureDetector(
-                onTap: () => setState(() => _espece = e.$1),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  margin: const EdgeInsets.only(right: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    color: active ? _teal : Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: active ? _teal : Colors.grey.shade300),
-                  ),
-                  child: Center(child: Text(e.$2,
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                          fontWeight: active ? FontWeight.w700 : FontWeight.normal,
-                          color: active ? Colors.white : Colors.grey.shade700))),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
+      body: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: Supabase.instance.client
+            .from('annonces')
+            .stream(primaryKey: ['id'])
+            .eq('statut', 'disponible')
+            .order('created_at', ascending: false),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final all = snap.data ?? [];
+          final assoc = all.where((d) => d['profil_source'] == 'association').toList();
 
-        // Liste
-        Expanded(
-          child: StreamBuilder<List<Map<String, dynamic>>>(
-            stream: Supabase.instance.client
-                .from('annonces')
-                .stream(primaryKey: ['id'])
-                .eq('statut', 'disponible')
-                .order('created_at', ascending: false),
-            builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (snap.hasError) {
-                return Center(child: Text('Erreur : ${snap.error}',
-                    style: const TextStyle(fontFamily: 'Galey', color: Colors.grey)));
-              }
-              final all = snap.data ?? [];
-              final filtered = all.where(_matches).toList();
-              if (filtered.isEmpty) {
-                return const Center(
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.favorite_border, size: 60, color: Colors.grey),
-                    SizedBox(height: 12),
-                    Text('Aucune annonce d\'adoption pour le moment',
-                        style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
-                  ]),
-                );
-              }
-              return GridView.builder(
-                padding: const EdgeInsets.all(12),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                  childAspectRatio: 0.72,
+          // Races disponibles pour filtre dynamique
+          final races = {'toutes', ...assoc.map((d) => (d['race'] as String?) ?? '').where((r) => r.isNotEmpty)};
+
+          final filtered = assoc.where(_matches).toList();
+
+          return Column(children: [
+            // Filtre espèce
+            SizedBox(
+              height: 44,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                children: _especeOptions.map((e) {
+                  final active = _espece == e.$1;
+                  return GestureDetector(
+                    onTap: () => setState(() { _espece = e.$1; _race = 'toutes'; }),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: active ? _teal : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: active ? _teal : Colors.grey.shade300),
+                      ),
+                      child: Center(child: Text(e.$2,
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                              fontWeight: active ? FontWeight.w700 : FontWeight.normal,
+                              color: active ? Colors.white : Colors.grey.shade700))),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+
+            // Filtre race (si espèce sélectionnée avec des races)
+            if (races.length > 1)
+              SizedBox(
+                height: 36,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  children: races.toList().map((r) {
+                    final active = _race == r;
+                    final label = r == 'toutes' ? 'Toutes races' : r;
+                    return GestureDetector(
+                      onTap: () => setState(() => _race = r),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: active ? _green.withValues(alpha: 0.12) : Colors.transparent,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: active ? _green : Colors.grey.shade200),
+                        ),
+                        child: Center(child: Text(label,
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                                color: active ? _green : Colors.grey.shade600,
+                                fontWeight: active ? FontWeight.w700 : FontWeight.normal))),
+                      ),
+                    );
+                  }).toList(),
                 ),
-                itemCount: filtered.length,
-                itemBuilder: (_, i) => _AdoptionCard(
-                  annonce: filtered[i],
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => AnnonceDetailPage(annonceId: filtered[i]['id']?.toString() ?? ''))),
-                ),
-              );
-            },
-          ),
-        ),
-      ]),
+              ),
+
+            // Grille
+            Expanded(
+              child: filtered.isEmpty
+                  ? const Center(
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.favorite_border, size: 60, color: Colors.grey),
+                        SizedBox(height: 12),
+                        Text('Aucune annonce d\'adoption pour le moment',
+                            style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+                      ]),
+                    )
+                  : GridView.builder(
+                      padding: const EdgeInsets.all(12),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        childAspectRatio: 0.68,
+                      ),
+                      itemCount: filtered.length,
+                      itemBuilder: (_, i) {
+                        final a = filtered[i];
+                        final id = a['id']?.toString() ?? '';
+                        return _AdoptionCard(
+                          annonce: a,
+                          isLiked: _likedKeys.contains(id),
+                          likeCount: _likeCounts[id] ?? 0,
+                          onTap: () => Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => AnnonceDetailPage(annonceId: id))),
+                          onLike: () => _toggleLike(id),
+                          onAssoProfil: () {
+                            final assoUid = a['uid_eleveur']?.toString() ?? '';
+                            final assoNom = a['nom_eleveur']?.toString() ?? '';
+                            final assoVille = a['ville_eleveur']?.toString() ?? '';
+                            if (assoUid.isNotEmpty) {
+                              Navigator.push(context, MaterialPageRoute(
+                                builder: (_) => AssociationDetailPage(
+                                  uid: assoUid, name: assoNom, avatar: '', ville: assoVille,
+                                ),
+                              ));
+                            }
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ]);
+        },
+      ),
     );
   }
 }
 
 class _AdoptionCard extends StatelessWidget {
   final Map<String, dynamic> annonce;
+  final bool isLiked;
+  final int likeCount;
   final VoidCallback onTap;
+  final VoidCallback onLike;
+  final VoidCallback onAssoProfil;
 
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
 
-  const _AdoptionCard({required this.annonce, required this.onTap});
+  const _AdoptionCard({
+    required this.annonce,
+    required this.isLiked,
+    required this.likeCount,
+    required this.onTap,
+    required this.onLike,
+    required this.onAssoProfil,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -217,7 +355,6 @@ class _AdoptionCard extends StatelessWidget {
                     ? CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover,
                         errorWidget: (_, __, ___) => _placeholder())
                     : _placeholder(),
-                // Badge adoption
                 Positioned(
                   top: 8, left: 8,
                   child: Container(
@@ -228,17 +365,36 @@ class _AdoptionCard extends StatelessWidget {
                 ),
                 if (sexe == 'male' || sexe == 'femelle')
                   Positioned(
-                    top: 8, right: 8,
+                    top: 8, right: 36,
                     child: Container(
                       padding: const EdgeInsets.all(4),
                       decoration: const BoxDecoration(color: Colors.white70, shape: BoxShape.circle),
                       child: Icon(
                         sexe == 'male' ? Icons.male : Icons.female,
-                        color: sexe == 'male' ? Colors.blue : Colors.pink,
-                        size: 14,
+                        color: sexe == 'male' ? Colors.blue : Colors.pink, size: 14,
                       ),
                     ),
                   ),
+                // Bouton like
+                Positioned(
+                  top: 6, right: 6,
+                  child: GestureDetector(
+                    onTap: onLike,
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(8)),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(isLiked ? Icons.favorite : Icons.favorite_border,
+                            color: isLiked ? Colors.red : Colors.white, size: 11),
+                        if (likeCount > 0) ...[
+                          const SizedBox(width: 3),
+                          Text('$likeCount', style: const TextStyle(color: Colors.white, fontSize: 9, fontFamily: 'Galey')),
+                        ],
+                      ]),
+                    ),
+                  ),
+                ),
               ]),
             ),
           ),
@@ -254,13 +410,16 @@ class _AdoptionCard extends StatelessWidget {
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey),
                     maxLines: 1, overflow: TextOverflow.ellipsis),
               if (nomAsso.isNotEmpty)
-                Row(children: [
-                  const Icon(Icons.favorite_border, size: 11, color: Color(0xFF0C5C6C)),
-                  const SizedBox(width: 3),
-                  Expanded(child: Text(nomAsso,
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF0C5C6C)),
-                      maxLines: 1, overflow: TextOverflow.ellipsis)),
-                ]),
+                GestureDetector(
+                  onTap: onAssoProfil,
+                  child: Row(children: [
+                    const Icon(Icons.favorite_border, size: 11, color: Color(0xFF0C5C6C)),
+                    const SizedBox(width: 3),
+                    Expanded(child: Text(nomAsso,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF0C5C6C), decoration: TextDecoration.underline),
+                        maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  ]),
+                ),
               if (ville.isNotEmpty)
                 Row(children: [
                   const Icon(Icons.location_on_outlined, size: 11, color: Colors.grey),

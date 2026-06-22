@@ -1,5 +1,6 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -31,7 +32,11 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
   final _supa = Supabase.instance.client;
 
   String _description = '';
-  List<Map<String, dynamic>> _animaux = [];
+  String _loadedName  = '';
+  String _loadedAvatar = '';
+  String _loadedVille  = '';
+  List<Map<String, dynamic>> _animaux   = [];
+  List<Map<String, dynamic>> _annonces  = [];
   bool _loading = true;
   bool _loadingChat = false;
 
@@ -44,31 +49,62 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
   Future<void> _load() async {
     try {
       final results = await Future.wait([
-        _supa
-            .from('users')
-            .select('description_elevage')
-            .eq('uid', widget.uid)
-            .maybeSingle(),
-        _supa
-            .from('animaux')
+        _supa.from('users').select('description_elevage').eq('uid', widget.uid).maybeSingle(),
+        // Animaux : filtre is_association si possible, sinon tous les animaux statut disponible
+        _supa.from('animaux')
             .select('id,nom,espece,race,sexe,statut,date_naissance,photo_url')
             .eq('uid_eleveur', widget.uid)
-            .eq('is_association', true)
             .eq('statut', 'disponible')
             .order('nom'),
+        _supa.from('annonces')
+            .select('id,titre,espece,race,sexe,photos,statut,ville_eleveur,nom_eleveur,date_naissance_animal,profil_source')
+            .eq('uid_eleveur', widget.uid)
+            .eq('profil_source', 'association')
+            .eq('statut', 'disponible')
+            .order('created_at', ascending: false),
+        // Profil association : nom + description + avatar + ville
+        _supa.from('user_profiles')
+            .select('name_elevage, profile_label, description, avatar_url, ville')
+            .eq('uid', widget.uid)
+            .eq('profile_type', 'association')
+            .maybeSingle(),
       ]);
 
-      final userRow = results[0] as Map<String, dynamic>?;
-      final animaux = results[1] as List;
+      final userRow    = results[0] as Map<String, dynamic>?;
+      final animaux    = results[1] as List;
+      final annonces   = results[2] as List;
+      final assoProfile = results[3] as Map<String, dynamic>?;
+
+      // Nom réel de l'association (priorité : user_profiles.name_elevage)
+      final nameEl = (assoProfile?['name_elevage'] as String?)?.trim();
+      final label  = (assoProfile?['profile_label'] as String?)?.trim();
+      final freshName = (nameEl?.isNotEmpty == true) ? nameEl!
+          : (label?.isNotEmpty == true) ? label!
+          : widget.name;
+
+      // Description
+      String desc = (assoProfile?['description'] as String?)?.trim() ?? '';
+      if (desc.isEmpty) desc = userRow?['description_elevage']?.toString() ?? '';
+
+      // Filtre is_association sur les animaux si possible
+      final allAnimaux = List<Map<String, dynamic>>.from(animaux);
+      final hasIsAssociation = allAnimaux.any((a) => a.containsKey('is_association'));
+      final filteredAnimaux = hasIsAssociation
+          ? allAnimaux.where((a) => a['is_association'] == true).toList()
+          : allAnimaux;
 
       if (mounted) {
         setState(() {
-          _description = userRow?['description_elevage']?.toString() ?? '';
-          _animaux = List<Map<String, dynamic>>.from(animaux);
-          _loading = false;
+          _loadedName   = freshName;
+          _loadedAvatar = (assoProfile?['avatar_url'] as String?)?.trim() ?? widget.avatar;
+          _loadedVille  = (assoProfile?['ville'] as String?)?.trim() ?? widget.ville;
+          _description  = desc;
+          _animaux  = filteredAnimaux;
+          _annonces = List<Map<String, dynamic>>.from(annonces);
+          _loading  = false;
         });
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -167,12 +203,11 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
                         CircleAvatar(
                           radius: 34,
                           backgroundColor: Colors.white24,
-                          backgroundImage: widget.avatar.isNotEmpty
-                              ? CachedNetworkImageProvider(widget.avatar) as ImageProvider
-                              : null,
-                          child: widget.avatar.isEmpty
-                              ? const Icon(Icons.favorite, color: Colors.white, size: 30)
-                              : null,
+                          backgroundImage: _loadedAvatar.isNotEmpty
+                              ? CachedNetworkImageProvider(_loadedAvatar) as ImageProvider
+                              : (widget.avatar.isNotEmpty ? CachedNetworkImageProvider(widget.avatar) as ImageProvider : null),
+                          child: (_loadedAvatar.isEmpty && widget.avatar.isEmpty)
+                              ? const Icon(Icons.favorite, color: Colors.white, size: 30) : null,
                         ),
                         const SizedBox(width: 14),
                         Expanded(
@@ -180,16 +215,16 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(widget.name,
+                              Text(_loadedName.isNotEmpty ? _loadedName : widget.name,
                                   style: const TextStyle(
                                       fontFamily: 'Galey', fontWeight: FontWeight.w700,
                                       fontSize: 18, color: Colors.white),
                                   maxLines: 2, overflow: TextOverflow.ellipsis),
-                              if (widget.ville.isNotEmpty)
+                              if ((_loadedVille.isNotEmpty ? _loadedVille : widget.ville).isNotEmpty)
                                 Row(children: [
                                   const Icon(Icons.location_on_outlined, size: 13, color: Colors.white70),
                                   const SizedBox(width: 3),
-                                  Text(widget.ville,
+                                  Text(_loadedVille.isNotEmpty ? _loadedVille : widget.ville,
                                       style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white70)),
                                 ]),
                               const SizedBox(height: 4),
@@ -251,6 +286,64 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
                           Text(_description,
                               style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF444444), height: 1.5)),
                         ],
+                        // Annonces association
+                        if (_annonces.isNotEmpty) ...[
+                          const SizedBox(height: 24),
+                          Text('Annonces d\'adoption',
+                              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                                  fontSize: 16, color: _teal)),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 200,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _annonces.length,
+                              itemBuilder: (_, i) {
+                                final a = _annonces[i];
+                                final photos = List<String>.from(a['photos'] ?? []);
+                                final photo = photos.isNotEmpty ? photos.first : '';
+                                return GestureDetector(
+                                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                                      builder: (_) => AnnonceDetailPage(annonceId: a['id']?.toString() ?? ''))),
+                                  child: Container(
+                                    width: 140,
+                                    margin: const EdgeInsets.only(right: 10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(14),
+                                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 6)],
+                                    ),
+                                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                      ClipRRect(
+                                        borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+                                        child: SizedBox(
+                                          height: 120,
+                                          width: double.infinity,
+                                          child: photo.isNotEmpty
+                                              ? CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover)
+                                              : Container(color: const Color(0xFFF0F0EC),
+                                                  child: const Icon(Icons.favorite_border, color: Colors.grey, size: 36)),
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.all(8),
+                                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                          Text(a['titre']?.toString() ?? '',
+                                              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12),
+                                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                                          Text((a['race'] as String?)?.isNotEmpty == true ? a['race'] as String : (a['espece'] as String? ?? ''),
+                                              style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey),
+                                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                                        ]),
+                                      ),
+                                    ]),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+
                         // Animaux disponibles
                         const SizedBox(height: 24),
                         Row(

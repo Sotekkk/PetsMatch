@@ -50,11 +50,13 @@ class AnnoncesPublicPage extends StatefulWidget {
   final String  typeFilter;    // 'compagnon' | 'saillie'
   final String  initialEspece;
   final String? initialRace;
+  final bool    isAssociation;
   const AnnoncesPublicPage({
     super.key,
     this.typeFilter = 'compagnon',
     this.initialEspece = 'tous',
     this.initialRace,
+    this.isAssociation = false,
   });
 
   @override
@@ -89,7 +91,8 @@ class _AnnoncesPublicPageState extends State<AnnoncesPublicPage> {
   final _prixMinCtrl = TextEditingController();
   final _prixMaxCtrl = TextEditingController();
 
-  bool get _isSaillie => widget.typeFilter == 'saillie';
+  bool get _isSaillie    => widget.typeFilter == 'saillie';
+  bool get _isAssociation => widget.isAssociation;
 
   int get _activeFilterCount {
     int n = 0;
@@ -105,6 +108,13 @@ class _AnnoncesPublicPageState extends State<AnnoncesPublicPage> {
   }
 
   bool _matches(Map<String, dynamic> d) {
+    // Filtre profil_source
+    final ps = (d['profilSource'] as String?) ?? (d['profil_source'] as String?);
+    if (_isAssociation) {
+      if (ps != 'association') return false;
+    } else {
+      if (ps == 'association') return false;
+    }
     if (_isSaillie) {
       if ((d['typeVente'] as String?) != 'saillie') return false;
     } else {
@@ -187,7 +197,7 @@ class _AnnoncesPublicPageState extends State<AnnoncesPublicPage> {
         backgroundColor: _teal,
         foregroundColor: Colors.white,
         title: Text(
-          _isSaillie ? 'Saillies' : 'Trouver un compagnon',
+          _isAssociation ? 'Adoptions' : _isSaillie ? 'Saillies' : 'Trouver un compagnon',
           style: const TextStyle(fontFamily: 'Galey',
               fontWeight: FontWeight.w700, fontSize: 18)),
         elevation: 0,
@@ -196,7 +206,7 @@ class _AnnoncesPublicPageState extends State<AnnoncesPublicPage> {
             icon: const Icon(Icons.play_circle_outline_rounded),
             tooltip: 'Fil d\'actualité',
             onPressed: () => Navigator.push(context, MaterialPageRoute(
-                builder: (_) => const AnnoncesFeedPage())),
+                builder: (_) => AnnoncesFeedPage(isAssociationFeed: _isAssociation))),
           ),
           IconButton(
             icon: const Icon(Icons.map_outlined),
@@ -890,6 +900,7 @@ class _AnnoncesList extends StatelessWidget {
     'nombreBebes':        row['nombre_bebes'],
     'animauxPortee':      row['animaux_portee'] ?? [],
     'createdAt':          _ts(row['created_at']),
+    'profilSource':       row['profil_source'],
   };
 
   @override

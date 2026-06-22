@@ -12,7 +12,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class MesAnnoncesPage extends StatefulWidget {
-  const MesAnnoncesPage({super.key});
+  final bool isAssociation;
+  const MesAnnoncesPage({super.key, this.isAssociation = false});
   @override
   State<MesAnnoncesPage> createState() => _MesAnnoncesPageState();
 }
@@ -195,10 +196,10 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
           child: TabBarView(
             controller: _tabController,
             children: [
-              _AnnoncesList(uid: _uid, filter: 'all',      refreshKey: _refreshKey),
-              _AnnoncesList(uid: _uid, filter: 'actives',  refreshKey: _refreshKey),
-              _AnnoncesList(uid: _uid, filter: 'pause',    refreshKey: _refreshKey),
-              _AnnoncesList(uid: _uid, filter: 'terminees',refreshKey: _refreshKey),
+              _AnnoncesList(uid: _uid, filter: 'all',      refreshKey: _refreshKey, isAssociation: widget.isAssociation),
+              _AnnoncesList(uid: _uid, filter: 'actives',  refreshKey: _refreshKey, isAssociation: widget.isAssociation),
+              _AnnoncesList(uid: _uid, filter: 'pause',    refreshKey: _refreshKey, isAssociation: widget.isAssociation),
+              _AnnoncesList(uid: _uid, filter: 'terminees',refreshKey: _refreshKey, isAssociation: widget.isAssociation),
             ],
           ),
         ),
@@ -296,7 +297,8 @@ class _AnnoncesList extends StatefulWidget {
   final String? uid;
   final String filter;
   final int refreshKey;
-  const _AnnoncesList({required this.uid, required this.filter, required this.refreshKey});
+  final bool isAssociation;
+  const _AnnoncesList({required this.uid, required this.filter, required this.refreshKey, this.isAssociation = false});
 
   @override
   State<_AnnoncesList> createState() => _AnnoncesListState();
@@ -342,11 +344,16 @@ class _AnnoncesListState extends State<_AnnoncesList> {
     if (widget.uid == null) return;
     if (mounted) setState(() => _loading = true);
     try {
-      final data = await Supabase.instance.client
+      var query = Supabase.instance.client
           .from('annonces')
           .select()
-          .eq('uid_eleveur', widget.uid!)
-          .order('created_at', ascending: false);
+          .eq('uid_eleveur', widget.uid!);
+      if (widget.isAssociation) {
+        query = query.eq('profil_source', 'association');
+      } else {
+        query = query.neq('profil_source', 'association');
+      }
+      final data = await query.order('created_at', ascending: false);
       if (!mounted) return;
       var rows = (data as List).map((r) => _norm(Map<String, dynamic>.from(r))).toList();
       rows = rows.where((d) {

@@ -16,7 +16,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 class RegistreEntreeSortiePage extends StatefulWidget {
-  const RegistreEntreeSortiePage({super.key});
+  final bool isAssociation;
+  const RegistreEntreeSortiePage({super.key, this.isAssociation = false});
 
   @override
   State<RegistreEntreeSortiePage> createState() =>
@@ -329,6 +330,13 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
           .eq('uid_eleveur', _uid),
       builder: (ctx, snap) {
         var allDocs = snap.data ?? [];
+        // Isolation multi-profil : filtre is_association pour ne pas mélanger
+        allDocs = allDocs.where((d) {
+          final flag = d['is_association'];
+          return widget.isAssociation
+              ? flag == true
+              : flag == false || flag == null;
+        }).toList();
         allDocs = List.from(allDocs)..sort((a, b) {
           final ta = DateTime.tryParse(a['date_entree'] as String? ?? '')?.millisecondsSinceEpoch ?? 0;
           final tb = DateTime.tryParse(b['date_entree'] as String? ?? '')?.millisecondsSinceEpoch ?? 0;

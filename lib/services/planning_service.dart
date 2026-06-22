@@ -6,9 +6,7 @@ class PlanningService {
   static final _supa = Supabase.instance.client;
 
   static String get _profilSource =>
-      (User_Info.activeType == 'association' || User_Info.isAssociation)
-          ? 'association'
-          : 'eleveur';
+      User_Info.activeType == 'association' ? 'association' : 'eleveur';
 
   // ── Charger les templates ────────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> loadTemplates(String uid, {String? type}) async {
@@ -490,15 +488,16 @@ class PlanningService {
   }
 
   // ── Tâches du jour ───────────────────────────────────────────────────────────
-  static Future<List<Map<String, dynamic>>> getTachesJour(String uid, DateTime date) async {
+  static Future<List<Map<String, dynamic>>> getTachesJour(String uid, DateTime date, {bool? isAssociation}) async {
     final dateStr = date.toIso8601String().split('T').first;
+    final profil  = (isAssociation ?? (_profilSource == 'association')) ? 'association' : 'eleveur';
     final q = _supa
         .from('plan_taches')
         .select('*, plans_actifs(reference_label, type_declencheur)')
         .eq('uid_eleveur', uid)
         .eq('date_prevue', dateStr)
         .neq('statut', 'fait');
-    final rows = _profilSource == 'association'
+    final rows = profil == 'association'
         ? await q.eq('profil_source', 'association').order('date_prevue')
         : await q.or('profil_source.is.null,profil_source.eq.eleveur').order('date_prevue');
     return List<Map<String, dynamic>>.from(rows);

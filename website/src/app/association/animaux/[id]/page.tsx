@@ -110,7 +110,7 @@ function RecordRow({ record, mainKey, dateKey, onDelete }:
       <div className="flex items-center gap-2 cursor-pointer" onClick={() => setOpen(!open)}>
         <div className="flex-1">
           <p className="text-sm font-medium text-[#1F2A2E]">{String(record[mainKey] ?? '—')}</p>
-          {dateKey && record[dateKey] && <p className="text-xs text-gray-400">{fmtDateShort(record[dateKey] as string)}</p>}
+          {dateKey && !!record[dateKey] && <p className="text-xs text-gray-400">{fmtDateShort(record[dateKey] as string)}</p>}
         </div>
         <svg className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -218,7 +218,7 @@ function ConsultationsTab({ animalId }: { animalId: string }) {
               <div key={r.id} className="px-4 py-3 border-t border-gray-50">
                 {date && <p className="text-sm font-medium text-[#1F2A2E]">{fmtDateShort(date)}</p>}
                 {notes && <p className="text-xs text-gray-500 mt-0.5">{notes}</p>}
-                {r.doc_url && (
+                {!!r.doc_url && (
                   <a href={String(r.doc_url)} target="_blank" rel="noopener noreferrer"
                     className="text-xs text-[#0C5C6C] font-semibold hover:underline mt-1 inline-flex items-center gap-1">
                     📎 Voir le document
@@ -238,7 +238,7 @@ function ConsultationsTab({ animalId }: { animalId: string }) {
               <div key={r.id} className="px-4 py-3 border-t border-gray-50">
                 {date && <p className="text-sm font-medium text-[#1F2A2E]">{fmtDateShort(date)}</p>}
                 {notes && <p className="text-xs text-gray-500 mt-0.5">{notes}</p>}
-                {r.doc_url && (
+                {!!r.doc_url && (
                   <a href={String(r.doc_url)} target="_blank" rel="noopener noreferrer"
                     className="text-xs text-[#0C5C6C] font-semibold hover:underline mt-1 inline-flex items-center gap-1">
                     📎 Voir l'ordonnance
@@ -438,7 +438,7 @@ export default function AnimalAssoFichePage() {
 
       {/* ─── Alimentation ─────────────────────────────────────────────── */}
       {tab === 'alimentation' && (
-        <AlimentationTab animalId={id} espece={animal.espece ?? ''} poids={parseFloat(String(animal.poids ?? '0')) || undefined} />
+        <AlimentationTab animalId={id} espece={animal.espece ?? ''} sexe={animal.sexe ?? ''} sterilise={animal.sterilise ?? false} dateNaissance={animal.date_naissance} nom={animal.nom} userId={''} />
       )}
 
       {/* ─── Consultations ────────────────────────────────────────────── */}

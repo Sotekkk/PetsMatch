@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
+import 'package:PetsMatch/pages/association/association_detail_page.dart';
 import 'package:PetsMatch/pages/main_feed.dart' show UserSelected;
 import 'package:PetsMatch/pages/user_detail_page_feed.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
@@ -279,16 +280,42 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
             .update({'vues': currentVues + 1})
             .eq('id', widget.annonceId).catchError((_) {});
       }
-      if (!_eleveurLoaded && uid != null) { _eleveurLoaded = true; _loadEleveur(uid); }
+      if (!_eleveurLoaded && uid != null) { _eleveurLoaded = true; _loadEleveur(uid, profilSource: row['profil_source']?.toString()); }
       if (mounted) setState(() => _annonceData = data);
     } catch (_) {}
   }
 
-  Future<void> _loadEleveur(String uid) async {
+  Future<void> _loadEleveur(String uid, {String? profilSource}) async {
     try {
       final row = await Supabase.instance.client
           .from('users').select().eq('uid', uid).single();
-      if (mounted) setState(() => _eleveurData = _normalizeUser(row));
+      Map<String, dynamic> normalized = _normalizeUser(row);
+
+      final src = profilSource
+          ?? _annonceData?['profil_source'] as String?
+          ?? widget.initialData?['profil_source'] as String?;
+
+      if (src == 'association') {
+        try {
+          final profiles = await Supabase.instance.client
+              .from('user_profiles')
+              .select('name_elevage, profile_label, avatar_url, ville')
+              .eq('uid', uid)
+              .eq('profile_type', 'association');
+          final list = profiles as List;
+          if (list.isNotEmpty) {
+            final p = list.first as Map<String, dynamic>;
+            final n = (p['name_elevage'] as String?)?.trim();
+            final label = (p['profile_label'] as String?)?.trim();
+            final assoName = (n?.isNotEmpty == true) ? n! : (label?.isNotEmpty == true ? label! : null);
+            if (assoName != null) normalized['nameElevage'] = assoName;
+            if ((p['avatar_url'] as String?)?.isNotEmpty == true) normalized['profilePictureUrlElevage'] = p['avatar_url'];
+            if ((p['ville'] as String?)?.isNotEmpty == true) normalized['villeElevage'] = p['ville'];
+          }
+        } catch (_) {}
+      }
+
+      if (mounted) setState(() => _eleveurData = normalized);
     } catch (_) {}
   }
 
@@ -399,6 +426,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                       _EleveurCard(
                         eleveurData: _eleveurData,
                         uidEleveur: (data['uidEleveur'] as String?) ?? '',
+                        isAssociation: data['profil_source'] == 'association',
                       ),
                     ],
                   ),
@@ -1462,7 +1490,8 @@ class _PedigreeCard extends StatelessWidget {
 class _EleveurCard extends StatelessWidget {
   final Map<String, dynamic>? eleveurData;
   final String uidEleveur;
-  const _EleveurCard({this.eleveurData, required this.uidEleveur});
+  final bool isAssociation;
+  const _EleveurCard({this.eleveurData, required this.uidEleveur, this.isAssociation = false});
 
   @override
   Widget build(BuildContext context) {
@@ -1472,10 +1501,21 @@ class _EleveurCard extends StatelessWidget {
     final ville    = (eleveurData!['villeElevage'] ?? eleveurData!['ville'] ?? '') as String;
 
     void goToProfile() {
-      Navigator.push(context, MaterialPageRoute(
-        builder: (_) => UserDetailPageFeed(
-          user: UserSelected.fromMap(eleveurData!, uidEleveur)),
-      ));
+      if (isAssociation) {
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AssociationDetailPage(
+            uid: uidEleveur,
+            name: name,
+            avatar: photoUrl ?? '',
+            ville: ville,
+          ),
+        ));
+      } else {
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => UserDetailPageFeed(
+            user: UserSelected.fromMap(eleveurData!, uidEleveur)),
+        ));
+      }
     }
 
     return Container(
@@ -1502,10 +1542,11 @@ class _EleveurCard extends StatelessWidget {
                     maxLines: 1, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 3),
                 Row(children: [
-                  const Icon(Icons.verified, color: _green, size: 13),
+                  Icon(isAssociation ? Icons.favorite : Icons.verified, color: _green, size: 13),
                   const SizedBox(width: 4),
-                  const Text('Éleveur vérifié', style: TextStyle(fontFamily: 'Galey',
-                      fontSize: 12, color: _green, fontWeight: FontWeight.w500)),
+                  Text(isAssociation ? 'Association / Refuge' : 'Éleveur vérifié',
+                      style: const TextStyle(fontFamily: 'Galey',
+                          fontSize: 12, color: _green, fontWeight: FontWeight.w500)),
                 ]),
                 if (ville.isNotEmpty) ...[
                   const SizedBox(height: 2),

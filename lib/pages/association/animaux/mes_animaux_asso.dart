@@ -1,6 +1,8 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart' show speciesIcon, speciesColor, speciesLabel;
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
+import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -105,6 +107,14 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
+            icon: const Icon(Icons.sensors_rounded),
+            tooltip: 'Scanner une puce',
+            onPressed: () {
+              final uid = FirebaseAuth.instance.currentUser?.uid;
+              if (uid != null) ChipScannerService.scanFromAssociation(context, uid);
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.add),
             onPressed: () async {
               await Navigator.push(context, MaterialPageRoute(
@@ -186,9 +196,9 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
                         padding: const EdgeInsets.all(12),
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 2,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
-                          childAspectRatio: 0.82,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 0.68,
                         ),
                         itemCount: _filtered.length,
                         itemBuilder: (_, i) => _AnimalCard(
@@ -232,35 +242,37 @@ class _AnimalCard extends StatelessWidget {
     required this.onAddAnnonce,
   });
 
-  static const _statutColors = {
-    'en_soin': Colors.orange,
+  static const _statutColors = <String, Color>{
+    'en_soin':   Colors.orange,
     'disponible': Color(0xFF6E9E57),
-    'en_fa': Colors.purple,
-    'adopte': Color(0xFF0C5C6C),
+    'en_fa':     Colors.purple,
+    'adopte':    Color(0xFF0C5C6C),
     'transfere': Colors.blue,
-    'decede': Colors.red,
-    'present': Color(0xFF6E9E57),
+    'decede':    Colors.red,
+    'present':   Color(0xFF6E9E57),
   };
 
-  static const _statutLabels = {
-    'en_soin': 'En soin',
+  static const _statutLabels = <String, String>{
+    'en_soin':   'En soin',
     'disponible': 'Disponible',
-    'en_fa': 'En FA',
-    'adopte': 'Adopté',
+    'en_fa':     'En FA',
+    'adopte':    'Adopté',
     'transfere': 'Transféré',
-    'decede': 'Décédé',
-    'present': 'Présent',
+    'decede':    'Décédé',
+    'present':   'Présent',
   };
 
   @override
   Widget build(BuildContext context) {
-    final photo = animal['photo_url']?.toString() ?? '';
-    final nom = animal['nom']?.toString() ?? 'Sans nom';
+    final photo  = animal['photo_url']?.toString() ?? '';
+    final nom    = animal['nom']?.toString()    ?? 'Sans nom';
     final espece = animal['espece']?.toString() ?? '';
-    final race = animal['race']?.toString() ?? '';
+    final race   = animal['race']?.toString()   ?? '';
+    final sexe   = animal['sexe']?.toString()   ?? '';
     final statut = animal['statut']?.toString() ?? 'en_soin';
-    final color = _statutColors[statut] ?? Colors.grey;
-    final label = _statutLabels[statut] ?? statut;
+    final statutColor = _statutColors[statut] ?? Colors.grey;
+    final statutLabel = _statutLabels[statut] ?? statut;
+    final specColor   = speciesColor(espece);
 
     return GestureDetector(
       onTap: onTap,
@@ -268,32 +280,37 @@ class _AnimalCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 3))],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Photo
-            Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            // Photo carrée
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              child: AspectRatio(
+                aspectRatio: 1.0,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
                     photo.isNotEmpty
                         ? CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) => _placeholder())
-                        : _placeholder(),
+                            errorWidget: (_, __, ___) => Container(
+                              color: specColor.withValues(alpha: 0.12),
+                              child: Center(child: speciesIcon(espece, 44, specColor))))
+                        : Container(
+                            color: specColor.withValues(alpha: 0.12),
+                            child: Center(child: speciesIcon(espece, 44, specColor))),
                     // Statut badge
                     Positioned(
-                      top: 8, right: 8,
+                      top: 6, right: 6,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                         decoration: BoxDecoration(
-                          color: color,
-                          borderRadius: BorderRadius.circular(10),
+                          color: statutColor,
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Text(label,
+                        child: Text(statutLabel,
                             style: const TextStyle(fontFamily: 'Galey', fontSize: 9,
                                 fontWeight: FontWeight.w700, color: Colors.white)),
                       ),
@@ -304,58 +321,63 @@ class _AnimalCard extends StatelessWidget {
             ),
             // Infos
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(nom,
-                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                                fontSize: 13, color: Color(0xFF1F2A2E)),
-                            maxLines: 1, overflow: TextOverflow.ellipsis),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(nom,
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 14, color: Color(0xFF1F2A2E)),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                if (race.isNotEmpty)
+                  Text(race,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B)),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 5),
+                Row(children: [
+                  _Chip(speciesLabel(espece), specColor),
+                  if (sexe.isNotEmpty) ...[
+                    const SizedBox(width: 4),
+                    _Chip(sexe == 'male' ? '♂' : '♀', const Color(0xFF5F9EAA)),
+                  ],
+                  if (statut == 'disponible') ...[
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: onAddAnnonce,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6E9E57).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF6E9E57), width: 0.7),
+                        ),
+                        child: const Text('+ Adopter',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 9,
+                                fontWeight: FontWeight.w700, color: Color(0xFF6E9E57))),
                       ),
-                      if (age.isNotEmpty)
-                        Text(age,
-                            style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
-                    ],
-                  ),
-                  if (race.isNotEmpty || espece.isNotEmpty)
-                    Text(race.isNotEmpty ? race : espece,
-                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                ],
-              ),
-            ),
-            // Actions
-            if (statut == 'disponible')
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 28,
-                  child: OutlinedButton.icon(
-                    onPressed: onAddAnnonce,
-                    icon: const Icon(Icons.campaign_outlined, size: 12),
-                    label: const Text('Mettre en adoption', style: TextStyle(fontSize: 10)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF6E9E57),
-                      side: const BorderSide(color: Color(0xFF6E9E57)),
-                      padding: EdgeInsets.zero,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
-                  ),
-                ),
-              ),
+                  ],
+                ]),
+              ]),
+            ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _placeholder() => Container(
-    color: const Color(0xFFF0F0EC),
-    child: const Icon(Icons.pets, color: Color(0xFFCCCCCC), size: 40),
+class _Chip extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _Chip(this.label, this.color);
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.15),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Text(label,
+        style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+            fontWeight: FontWeight.w600, color: color)),
   );
 }

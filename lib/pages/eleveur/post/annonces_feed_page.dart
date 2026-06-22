@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/pages/association/association_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/user_detail_page_feed.dart';
@@ -41,6 +42,7 @@ class _FeedItem {
   final String? typeVente;
   final bool eleveurVerifie;
   final bool eleveurPremium;
+  final bool isAssociation;
 
   const _FeedItem({
     required this.annonceId, required this.bebeIndex,
@@ -51,6 +53,7 @@ class _FeedItem {
     this.pedigree = false, this.dateNaissance,
     this.typeVente,
     this.eleveurVerifie = false, this.eleveurPremium = false,
+    this.isAssociation = false,
   });
 
   _FeedItem withPhoto(String? p) => _FeedItem(
@@ -60,6 +63,7 @@ class _FeedItem {
     nomEleveur: nomEleveur, photoEleveur: p, pedigree: pedigree,
     dateNaissance: dateNaissance, typeVente: typeVente,
     eleveurVerifie: eleveurVerifie, eleveurPremium: eleveurPremium,
+    isAssociation: isAssociation,
   );
 
   _FeedItem withVerification({required bool verifie, required bool premium}) => _FeedItem(
@@ -69,6 +73,7 @@ class _FeedItem {
     nomEleveur: nomEleveur, photoEleveur: photoEleveur, pedigree: pedigree,
     dateNaissance: dateNaissance, typeVente: typeVente,
     eleveurVerifie: verifie, eleveurPremium: premium,
+    isAssociation: isAssociation,
   );
 }
 
@@ -107,6 +112,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
     final bebes      = List<Map<String, dynamic>>.from(a['animaux_portee'] ?? []);
     final uid        = a['uid_eleveur'] as String?;
     final nomEleveur = a['nom_eleveur'] as String?;
+    final isAsso     = a['profil_source'] == 'association';
 
     final dateNaissancePortee = a['date_naissance'] is String
         ? DateTime.tryParse(a['date_naissance'] as String) : null;
@@ -133,6 +139,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
           pedigree: b['pedigree'] == true,
           dateNaissance: dateNaissancePortee,
           typeVente: a['type_vente'] as String?,
+          isAssociation: isAsso,
         ));
       }
     } else if (aPhotos.isNotEmpty) {
@@ -153,6 +160,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
         uidEleveur: uid, nomEleveur: nomEleveur,
         dateNaissance: dateNaissanceAnimal,
         typeVente: a['type_vente'] as String?,
+        isAssociation: isAsso,
       ));
     }
   }
@@ -265,7 +273,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
     try {
       var q = Supabase.instance.client
           .from('annonces')
-          .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur, uid_eleveur, description, registre_type, date_naissance, date_naissance_animal')
+          .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur, uid_eleveur, description, registre_type, date_naissance, date_naissance_animal, profil_source')
           .eq('statut', 'disponible');
       if (widget.isAssociationFeed) {
         q = q.eq('profil_source', 'association');
@@ -311,6 +319,49 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
                 premium: uid != null && (premiumMap[uid] ?? false),
               );
           }).toList();
+
+          // Pour les annonces association, remplace photo/nom par user_profiles
+          final assoUids = items
+              .where((i) => i.isAssociation && i.uidEleveur != null)
+              .map((i) => i.uidEleveur!)
+              .toSet().toList();
+          if (assoUids.isNotEmpty) {
+            try {
+              final profiles = await Supabase.instance.client
+                  .from('user_profiles')
+                  .select('uid, name_elevage, profile_label, avatar_url')
+                  .inFilter('uid', assoUids)
+                  .eq('profile_type', 'association');
+              final assoPhotoMap = <String, String>{};
+              final assoNameMap  = <String, String>{};
+              for (final p in List<Map<String, dynamic>>.from(profiles)) {
+                final id = p['uid'] as String?; if (id == null) continue;
+                final avatar = (p['avatar_url'] as String?) ?? '';
+                if (avatar.isNotEmpty) assoPhotoMap[id] = avatar;
+                final n = (p['name_elevage'] as String?)?.trim();
+                final lb = (p['profile_label'] as String?)?.trim();
+                final name = (n?.isNotEmpty == true) ? n! : (lb?.isNotEmpty == true ? lb! : null);
+                if (name != null) assoNameMap[id] = name;
+              }
+              items = items.map((i) {
+                if (!i.isAssociation || i.uidEleveur == null) return i;
+                final uid = i.uidEleveur!;
+                final photo = assoPhotoMap[uid] ?? i.photoEleveur;
+                final name  = assoNameMap[uid]  ?? i.nomEleveur;
+                return _FeedItem(
+                  annonceId: i.annonceId, bebeIndex: i.bebeIndex,
+                  photos: i.photos, nom: i.nom, race: i.race, espece: i.espece,
+                  sexe: i.sexe, prix: i.prix, statut: i.statut,
+                  description: i.description, ville: i.ville,
+                  uidEleveur: i.uidEleveur, nomEleveur: name,
+                  photoEleveur: photo, pedigree: i.pedigree,
+                  dateNaissance: i.dateNaissance, typeVente: i.typeVente,
+                  eleveurVerifie: i.eleveurVerifie, eleveurPremium: i.eleveurPremium,
+                  isAssociation: true,
+                );
+              }).toList();
+            } catch (_) {}
+          }
         } catch (_) {}
       }
 
@@ -486,6 +537,17 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
             builder: (_) => UserDetailPageFeed(user: user)));
       }
     } catch (_) {}
+  }
+
+  void _navigateToAssoProfile(_FeedItem item) {
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => AssociationDetailPage(
+        uid:    item.uidEleveur ?? '',
+        name:   item.nomEleveur ?? 'Association',
+        avatar: item.photoEleveur ?? '',
+        ville:  item.ville ?? '',
+      ),
+    ));
   }
 
   // ── Chat ────────────────────────────────────────────────────────────────────
@@ -752,7 +814,9 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
               onFavorite:  () => _toggleFavori(item),
               onMessage:   () => _openChat(item),
               onEleveurTap: item.uidEleveur != null
-                  ? () => _navigateToEleveurProfile(item.uidEleveur!)
+                  ? () => item.isAssociation
+                      ? _navigateToAssoProfile(item)
+                      : _navigateToEleveurProfile(item.uidEleveur!)
                   : null,
               onShare: () => _shareItem(item),
               onBack:   () => setState(() => _feedStarted = false),
@@ -1141,14 +1205,15 @@ class _FeedCardState extends State<_FeedCard> with SingleTickerProviderStateMixi
                   const SizedBox(height: 10),
                   // Ligne 2 : Badges
                   Wrap(spacing: 6, runSpacing: 6, children: [
-                    VerificationBadge(
-                      level: item.eleveurPremium
-                          ? VerificationLevel.premium
-                          : item.eleveurVerifie
-                              ? VerificationLevel.verifie
-                              : VerificationLevel.none,
-                      fontSize: 10,
-                    ),
+                    if (!item.isAssociation)
+                      VerificationBadge(
+                        level: item.eleveurPremium
+                            ? VerificationLevel.premium
+                            : item.eleveurVerifie
+                                ? VerificationLevel.verifie
+                                : VerificationLevel.none,
+                        fontSize: 10,
+                      ),
                     if (item.typeVente == 'saillie')
                       _FeedBadge(
                         label: '💜 Saillie',

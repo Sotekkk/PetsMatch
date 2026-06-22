@@ -49,7 +49,7 @@ List<String> _typesForProfile() {
   if (User_Info.isPro) {
     return ['rdv', 'formation', 'reunion', 'absence', 'autre'];
   }
-  if (User_Info.activeType == 'association' || User_Info.isAssociation) {
+  if (User_Info.activeType == 'association') {
     return ['rdv', 'visite', 'reunion', 'formation', 'absence', 'autre'];
   }
   if (User_Info.isElevage) {
@@ -194,10 +194,13 @@ class _AgendaPageState extends State<AgendaPage> {
                 .eq('uid_eleveur', _uid)
                 .gte('date_prevue', from).lte('date_prevue', to)
                 .or('profil_source.is.null,profil_source.eq.eleveur');
-        final p2 = await _supa.from('plan_taches')
+        final p2q = _supa.from('plan_taches')
             .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
             .eq('assigned_to', _uid)
             .gte('date_prevue', from).lte('date_prevue', to);
+        final p2 = widget.isAssociation
+            ? await p2q.eq('profil_source', 'association')
+            : await p2q.or('profil_source.is.null,profil_source.eq.eleveur');
         final seenPlan = <dynamic>{};
         for (final t in [...(p1 as List), ...(p2 as List)]) {
           final m = Map<String, dynamic>.from(t);

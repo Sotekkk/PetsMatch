@@ -47,7 +47,8 @@ import 'package:PetsMatch/services/planning_service.dart';
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 class EmployesPage extends StatefulWidget {
-  const EmployesPage({super.key});
+  final bool isAssociation;
+  const EmployesPage({super.key, this.isAssociation = false});
   @override
   State<EmployesPage> createState() => _EmployesPageState();
 }
@@ -75,6 +76,7 @@ class _EmployesPageState extends State<EmployesPage> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
+    final title = widget.isAssociation ? 'Employés & Bénévoles' : 'Employés';
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
@@ -84,8 +86,8 @@ class _EmployesPageState extends State<EmployesPage> with SingleTickerProviderSt
           icon: const Icon(Icons.arrow_back_ios_new, color: _dark, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Employés',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+        title: Text(title,
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                 fontSize: 18, color: _dark)),
         bottom: TabBar(
           controller: _tab,
@@ -93,17 +95,19 @@ class _EmployesPageState extends State<EmployesPage> with SingleTickerProviderSt
           unselectedLabelColor: Colors.grey,
           indicatorColor: _teal,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
-          tabs: const [
-            Tab(text: 'Employés'),
-            Tab(text: 'Tâches'),
+          tabs: [
+            Tab(text: widget.isAssociation ? 'Équipe' : 'Employés'),
+            const Tab(text: 'Tâches'),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tab,
         children: [
-          _EmployesTab(green: _green, teal: _teal, dark: _dark, bg: _bg),
-          _TachesTab(green: _green, teal: _teal, dark: _dark, bg: _bg),
+          _EmployesTab(green: _green, teal: _teal, dark: _dark, bg: _bg,
+              isAssociation: widget.isAssociation),
+          _TachesTab(green: _green, teal: _teal, dark: _dark, bg: _bg,
+              isAssociation: widget.isAssociation),
         ],
       ),
     );
@@ -114,7 +118,9 @@ class _EmployesPageState extends State<EmployesPage> with SingleTickerProviderSt
 
 class _EmployesTab extends StatefulWidget {
   final Color green, teal, dark, bg;
-  const _EmployesTab({required this.green, required this.teal, required this.dark, required this.bg});
+  final bool isAssociation;
+  const _EmployesTab({required this.green, required this.teal, required this.dark, required this.bg,
+      this.isAssociation = false});
   @override
   State<_EmployesTab> createState() => _EmployesTabState();
 }
@@ -145,12 +151,13 @@ class _EmployesTabState extends State<_EmployesTab> {
           ? profile!['name_elevage'] as String
           : '${profile?['firstname'] ?? ''} ${profile?['lastname'] ?? ''}'.trim();
 
-      final rows = await _supa
-          .from('employes')
-          .select()
-          .eq('uid_eleveur', _uid)
-          .eq('actif', true)
-          .order('created_at');
+      var q = _supa.from('employes').select().eq('uid_eleveur', _uid).eq('actif', true);
+      if (widget.isAssociation) {
+        q = q.eq('profil_source', 'association');
+      } else {
+        q = q.or('profil_source.is.null,profil_source.eq.eleveur');
+      }
+      final rows = await q.order('created_at');
 
       final List<Map<String, dynamic>> result = [];
       for (final e in rows) {
@@ -203,7 +210,8 @@ class _EmployesTabState extends State<_EmployesTab> {
             context: context,
             isScrollControlled: true,
             backgroundColor: Colors.transparent,
-            builder: (_) => _AddEmployeSheet(uid: _uid, nomElevage: _nomElevage, teal: widget.teal, dark: widget.dark),
+            builder: (_) => _AddEmployeSheet(uid: _uid, nomElevage: _nomElevage, teal: widget.teal, dark: widget.dark,
+                isAssociation: widget.isAssociation),
           );
           _load();
         },
@@ -420,7 +428,9 @@ class _AddEmployeSheet extends StatefulWidget {
   final String uid;
   final String nomElevage;
   final Color teal, dark;
-  const _AddEmployeSheet({required this.uid, required this.nomElevage, required this.teal, required this.dark});
+  final bool isAssociation;
+  const _AddEmployeSheet({required this.uid, required this.nomElevage, required this.teal, required this.dark,
+      this.isAssociation = false});
   @override
   State<_AddEmployeSheet> createState() => _AddEmployeSheetState();
 }
@@ -490,12 +500,18 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
 
   Future<void> _ajouter(Map<String, dynamic> user) async {
     final uid = user['uid'] as String;
-    final existing = await _supa
-        .from('employes')
-        .select()
+    final profilSource = widget.isAssociation ? 'association' : 'eleveur';
+
+    // Cherche uniquement dans le profil courant (élevage OU association, pas les deux)
+    var q = _supa.from('employes').select()
         .eq('uid_eleveur', widget.uid)
-        .eq('uid_employe', uid)
-        .maybeSingle();
+        .eq('uid_employe', uid);
+    if (widget.isAssociation) {
+      q = q.eq('profil_source', 'association');
+    } else {
+      q = q.or('profil_source.is.null,profil_source.eq.eleveur');
+    }
+    final existing = await q.maybeSingle();
 
     if (existing != null) {
       if (existing['actif'] == true) {
@@ -505,7 +521,10 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
       }
       await _supa.from('employes').update({'actif': true}).eq('id', existing['id']);
     } else {
-      await _supa.from('employes').insert({'uid_employe': uid, 'uid_eleveur': widget.uid, 'actif': true});
+      await _supa.from('employes').insert({
+        'uid_employe': uid, 'uid_eleveur': widget.uid, 'actif': true,
+        'profil_source': profilSource,
+      });
     }
 
     // Notification in-app (cloche)
@@ -620,7 +639,9 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
 
 class _TachesTab extends StatefulWidget {
   final Color green, teal, dark, bg;
-  const _TachesTab({required this.green, required this.teal, required this.dark, required this.bg});
+  final bool isAssociation;
+  const _TachesTab({required this.green, required this.teal, required this.dark, required this.bg,
+      this.isAssociation = false});
   @override
   State<_TachesTab> createState() => _TachesTabState();
 }
@@ -691,17 +712,21 @@ class _TachesTabState extends State<_TachesTab> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      final tachesRaw = await _supa
-          .from('taches_elevage')
-          .select()
-          .eq('uid_eleveur', _uid)
-          .order('date');
+      var tachesQ = _supa.from('taches_elevage').select().eq('uid_eleveur', _uid);
+      if (widget.isAssociation) {
+        tachesQ = tachesQ.eq('profil_source', 'association');
+      } else {
+        tachesQ = tachesQ.or('profil_source.is.null,profil_source.eq.eleveur');
+      }
+      final tachesRaw = await tachesQ.order('date');
 
-      final empsRaw = await _supa
-          .from('employes')
-          .select()
-          .eq('uid_eleveur', _uid)
-          .eq('actif', true);
+      var empsQ = _supa.from('employes').select().eq('uid_eleveur', _uid).eq('actif', true);
+      if (widget.isAssociation) {
+        empsQ = empsQ.eq('profil_source', 'association');
+      } else {
+        empsQ = empsQ.or('profil_source.is.null,profil_source.eq.eleveur');
+      }
+      final empsRaw = await empsQ;
 
       final animauxRaw = await _supa
           .from('animaux')
@@ -756,12 +781,14 @@ class _TachesTabState extends State<_TachesTab> {
             .toIso8601String()
             .substring(0, 10);
 
+        final profilFilter = widget.isAssociation ? 'association' : 'eleveur';
         final results = await Future.wait([
           // À faire : fenêtre [J-7 ; J+90], non-faites — évite le plafond 1000 lignes
           _supa
               .from('plan_taches')
               .select('id, label, date_prevue, statut, assigned_to, uid_eleveur, type_acte, animal_id, etape_id, portee_id, plan_id')
               .eq('uid_eleveur', _uid)
+              .eq('profil_source', profilFilter)
               .not('statut', 'eq', 'fait')
               .gte('date_prevue', pastStr)
               .lte('date_prevue', futureStr)
@@ -772,6 +799,7 @@ class _TachesTabState extends State<_TachesTab> {
               .from('plan_taches')
               .select('id, label, date_prevue, statut, assigned_to, uid_eleveur, type_acte, animal_id, etape_id, portee_id, plan_id')
               .eq('uid_eleveur', _uid)
+              .eq('profil_source', profilFilter)
               .eq('statut', 'fait')
               .gte('date_prevue', pastStr)
               .order('date_prevue', ascending: false)

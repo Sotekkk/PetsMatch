@@ -38,6 +38,7 @@ interface Annonce {
   statut?: string;
   uid_eleveur?: string;
   animaux_portee?: RawBebe[];
+  profil_source?: string;
 }
 
 interface EleveurVerif {
@@ -87,15 +88,17 @@ export default function AnnoncesPage() {
   const raceRef = useRef<HTMLDivElement>(null);
 
   // Likes
+  const [source, setSource] = useState<'eleveurs' | 'associations'>('eleveurs');
+
+  // Likes
   const [likedKeys, setLikedKeys] = useState<Set<string>>(new Set());
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at, uid_eleveur, animaux_portee')
+      .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at, uid_eleveur, animaux_portee, profil_source')
       .eq('statut', 'disponible')
-      .or('profil_source.is.null,profil_source.neq.association')
       .order('created_at', { ascending: false })
       .then(async ({ data }) => {
         const rows = (data ?? []) as Annonce[];
@@ -185,6 +188,9 @@ export default function AnnoncesPage() {
   ].filter(Boolean).length;
 
   const filtered = annonces.filter((a) => {
+    const isAsso = a.profil_source === 'association';
+    if (source === 'eleveurs' && isAsso) return false;
+    if (source === 'associations' && !isAsso) return false;
     if (filtreEspece !== 'tous' && a.espece?.toLowerCase() !== filtreEspece) return false;
     if (filtreType === 'saillie' && a.type_vente !== 'saillie') return false;
     if (filtreType === 'vente' && a.type_vente === 'saillie') return false;
@@ -217,19 +223,39 @@ export default function AnnoncesPage() {
         <div>
           <h1 className="text-3xl font-bold text-[#1F2A2E] mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>Annonces</h1>
           <p className="text-gray-500 text-sm">
-            {filtered.length} annonce{filtered.length !== 1 ? 's' : ''} · Éleveurs certifiés
+            {filtered.length} annonce{filtered.length !== 1 ? 's' : ''} · {source === 'associations' ? 'Associations & refuges' : 'Éleveurs certifiés'}
           </p>
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          <Link href={`/annonces/carte?${new URLSearchParams(Object.fromEntries(Object.entries({espece:filtreEspece,type:filtreType,race:filtreRace,pays:filtrePays,region:filtreRegion,dept:filtreDept,ville:filtreVille}).filter(([,v])=>v&&v!=='tous'))).toString()}`}
+          <Link href={`/annonces/carte?${new URLSearchParams(Object.fromEntries(Object.entries({source,espece:filtreEspece,type:filtreType,race:filtreRace,pays:filtrePays,region:filtreRegion,dept:filtreDept,ville:filtreVille}).filter(([,v])=>v&&v!=='tous'))).toString()}`}
             className="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-200 text-[#1F2A2E] text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors">
             <span className="text-base">🗺️</span> Carte
           </Link>
-          <Link href="/annonces/feed"
+          <Link href={`/annonces/feed?source=${source}`}
             className="flex items-center gap-2 bg-[#1F2A2E] hover:bg-[#0C5C6C] text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors">
             <span className="text-base">▶</span> Feed
           </Link>
         </div>
+      </div>
+
+      {/* Onglets Éleveurs / Associations */}
+      <div className="flex gap-2 mb-6">
+        <button onClick={() => setSource('eleveurs')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-galey font-semibold border transition-all ${
+            source === 'eleveurs'
+              ? 'bg-[#1F2A2E] text-white border-[#1F2A2E]'
+              : 'bg-white text-gray-600 border-gray-200 hover:border-[#1F2A2E]'
+          }`}>
+          🏠 Éleveurs
+        </button>
+        <button onClick={() => setSource('associations')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-galey font-semibold border transition-all ${
+            source === 'associations'
+              ? 'bg-teal-700 text-white border-teal-700'
+              : 'bg-white text-gray-600 border-gray-200 hover:border-teal-700'
+          }`}>
+          💚 Associations (Adoption)
+        </button>
       </div>
 
       {/* Filtres */}
@@ -262,17 +288,19 @@ export default function AnnoncesPage() {
           </button>
         </div>
 
-        {/* Type chips */}
-        <div className="flex gap-2 flex-wrap">
-          {TYPES.map((t) => (
-            <button key={t.value} onClick={() => setFiltreType(t.value)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${
-                filtreType === t.value ? 'bg-[#6E9E57] text-white border-[#6E9E57]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#6E9E57]'
-              }`}>
-              {t.label}
-            </button>
-          ))}
-        </div>
+        {/* Type chips — uniquement pour les éleveurs */}
+        {source === 'eleveurs' && (
+          <div className="flex gap-2 flex-wrap">
+            {TYPES.map((t) => (
+              <button key={t.value} onClick={() => setFiltreType(t.value)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+                  filtreType === t.value ? 'bg-[#6E9E57] text-white border-[#6E9E57]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#6E9E57]'
+                }`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Espèce chips */}
         <div className="flex gap-2 flex-wrap">
@@ -529,6 +557,7 @@ function AnnonceCard({
   const photo = photos[0];
   const isSaillie = a.type_vente === 'saillie';
   const isPortee = a.type === 'portee';
+  const isAsso = a.profil_source === 'association';
   const bebes = (a.animaux_portee as RawBebe[] | undefined) ?? [];
 
   let prix: string | null = null;
@@ -555,8 +584,8 @@ function AnnonceCard({
         ) : (
           <div className="w-full h-full flex items-center justify-center text-5xl">🐾</div>
         )}
-        <span className={`absolute top-2 left-2 text-white text-xs font-semibold px-2 py-0.5 rounded-full ${isSaillie ? 'bg-purple-500' : isPortee ? 'bg-amber-500' : 'bg-[#6E9E57]'}`}>
-          {isSaillie ? 'Saillie' : isPortee ? 'Portée' : 'Compagnon'}
+        <span className={`absolute top-2 left-2 text-white text-xs font-semibold px-2 py-0.5 rounded-full ${isAsso ? 'bg-teal-600' : isSaillie ? 'bg-purple-500' : isPortee ? 'bg-amber-500' : 'bg-[#6E9E57]'}`}>
+          {isAsso ? '💚 Adoption' : isSaillie ? 'Saillie' : isPortee ? 'Portée' : 'Compagnon'}
         </span>
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleLike(a.id, null, a.uid_eleveur); }}

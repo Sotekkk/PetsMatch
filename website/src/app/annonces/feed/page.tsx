@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
@@ -45,6 +45,7 @@ interface RawAnnonce {
   registre_type?: string;
   date_naissance?: string;
   date_naissance_animal?: string;
+  profil_source?: string;
 }
 
 interface FeedItem {
@@ -66,6 +67,7 @@ interface FeedItem {
   dateNaissance?: string;
   pedigree?: boolean;
   registreType?: string;
+  profilSource?: string;
 }
 
 function especeLabel(espece: string): string {
@@ -125,6 +127,7 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
             uidEleveur: a.uid_eleveur, isSaillie: false,
             dateNaissance: a.date_naissance,
             pedigree: b.pedigree ?? false,
+            profilSource: a.profil_source,
           });
         }
       });
@@ -141,6 +144,7 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
         uidEleveur: a.uid_eleveur, isSaillie,
         dateNaissance: a.date_naissance_animal,
         registreType: a.registre_type,
+        profilSource: a.profil_source,
       });
     }
   }
@@ -162,6 +166,7 @@ const ESPECE_LABEL: Record<string, string> = {
 export default function FeedPage() {
   const { user, userData } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const activeProfileId = useActiveProfile();
   const [profileType, setProfileType] = useState('particulier');
 
@@ -181,6 +186,8 @@ export default function FeedPage() {
   const [step, setStep] = useState<'filters' | 'feed'>('filters');
   const [filtreEspece, setFiltreEspece] = useState('tous');
   const [filtreType, setFiltreType] = useState('tous');
+  const initialSource = (searchParams.get('source') ?? 'eleveurs') as 'eleveurs' | 'associations' | 'tous';
+  const [filtreSource, setFiltreSource] = useState<'eleveurs' | 'associations' | 'tous'>(initialSource);
 
   const pendingIndex = useRef<number | null>(null);
   const pendingJump  = useRef<{ annonceId: string; bebeIndex: number | null } | null>(null);
@@ -214,10 +221,12 @@ export default function FeedPage() {
     setLoading(true);
     let q = supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, sexe, nom_eleveur, uid_eleveur, description, registre_type, date_naissance, date_naissance_animal')
+      .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, sexe, nom_eleveur, uid_eleveur, description, registre_type, date_naissance, date_naissance_animal, profil_source')
       .eq('statut', 'disponible')
-      .or('profil_source.is.null,profil_source.neq.association')
       .order('created_at', { ascending: false });
+
+    if (filtreSource === 'associations') q = q.eq('profil_source', 'association');
+    else if (filtreSource === 'eleveurs') q = q.or('profil_source.is.null,profil_source.neq.association');
 
     if (espece !== 'tous') q = q.eq('espece', espece);
     if (type === 'saillie') q = q.eq('type_vente', 'saillie');
@@ -287,7 +296,7 @@ export default function FeedPage() {
 
     setLoading(false);
     setStep('feed');
-  }, [filtreEspece, filtreType, user]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filtreEspece, filtreType, filtreSource, user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Restaurer depuis messages ────────────────────────────────────────────────
 
@@ -513,6 +522,27 @@ export default function FeedPage() {
             <p className="text-gray-500 text-sm mt-1">Personnalise ton feed puis défile les bébés.</p>
           </div>
 
+          {/* Source */}
+          <div className="mb-6">
+            <p className="text-sm font-semibold text-gray-700 mb-3">Source</p>
+            <div className="flex gap-2">
+              {([
+                { value: 'eleveurs', label: '🏠 Éleveurs' },
+                { value: 'associations', label: '💚 Adoption' },
+                { value: 'tous', label: '🐾 Tous' },
+              ] as const).map((s) => (
+                <button key={s.value} onClick={() => setFiltreSource(s.value)}
+                  className={`flex-1 py-2.5 rounded-2xl border-2 text-sm font-medium transition-colors ${
+                    filtreSource === s.value
+                      ? 'border-[#0C5C6C] bg-[#E8F4F6] text-[#0C5C6C]'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                  }`}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="mb-6">
             <p className="text-sm font-semibold text-gray-700 mb-3">Espèce</p>
             <div className="grid grid-cols-4 gap-2">
@@ -530,7 +560,7 @@ export default function FeedPage() {
             </div>
           </div>
 
-          <div className="mb-8">
+          {filtreSource !== 'associations' && (<div className="mb-8">
             <p className="text-sm font-semibold text-gray-700 mb-3">Type d&apos;annonce</p>
             <div className="flex gap-3">
               {[
@@ -548,7 +578,7 @@ export default function FeedPage() {
                 </button>
               ))}
             </div>
-          </div>
+          </div>)}
 
           <button onClick={() => loadFeed()} disabled={loading}
             className="w-full bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white font-bold py-4 rounded-2xl text-base transition-colors">
@@ -632,12 +662,18 @@ export default function FeedPage() {
               </svg>
             </button>
             {item.uidEleveur ? (
-              <Link href={`/elevages/${item.uidEleveur}`} onClick={(e) => e.stopPropagation()}
+              <Link
+                href={item.profilSource === 'association'
+                  ? `/associations/${item.uidEleveur}`
+                  : `/elevages/${item.uidEleveur}`}
+                onClick={(e) => e.stopPropagation()}
                 className="w-10 h-10 rounded-full border-2 border-white/70 overflow-hidden flex-shrink-0">
                 {item.photoEleveur ? (
                   <Image src={item.photoEleveur} alt={item.nomEleveur ?? ''} width={40} height={40} className="object-cover w-full h-full" />
                 ) : (
-                  <div className="w-full h-full bg-[#0C5C6C] flex items-center justify-center text-sm">🏡</div>
+                  <div className="w-full h-full bg-[#0C5C6C] flex items-center justify-center text-sm">
+                    {item.profilSource === 'association' ? '💚' : '🏡'}
+                  </div>
                 )}
               </Link>
             ) : (

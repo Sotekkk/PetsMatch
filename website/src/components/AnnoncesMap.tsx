@@ -68,7 +68,7 @@ export default function AnnoncesMap({ annonces }: { annonces: AnnonceMapItem[] }
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <FitBounds items={annonces} />
-      {annonces.map(a => {
+      {annonces.map((a, idx) => {
         const isSaillie = a.type_vente === 'saillie';
         const isPortee  = a.type === 'portee';
         const titre = a.titre || `${a.espece ?? ''} ${a.race ?? ''}`.trim();
@@ -80,7 +80,7 @@ export default function AnnoncesMap({ annonces }: { annonces: AnnonceMapItem[] }
         const photo = a.photos?.[0];
 
         return (
-          <Marker key={a.id} position={[a.lat, a.lng]} icon={makeIcon(a.type_vente, a.espece)}>
+          <Marker key={`${a.id}_${idx}`} position={[a.lat, a.lng]} icon={makeIcon(a.type_vente, a.espece)}>
             <Popup>
               <div style={{ minWidth: 170, fontFamily: 'sans-serif' }}>
                 {photo && (

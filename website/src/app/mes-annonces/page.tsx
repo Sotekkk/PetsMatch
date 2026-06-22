@@ -62,6 +62,7 @@ export default function MesAnnoncesPage() {
       .from('annonces')
       .select(SELECT)
       .eq('uid_eleveur', user.uid)
+      .or('profil_source.is.null,profil_source.neq.association')
       .order('created_at', { ascending: false })
       .then(({ data }) => {
         setAnnonces((data ?? []) as Annonce[]);
