@@ -166,7 +166,7 @@ export default function CreerAnnonceAssoPage() {
         identification,
         sterilise,
         contrat_adoption: contratAdoption,
-        animal_id: linkedAnimalId ?? null,
+        animal_id: linkedAnimalId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(linkedAnimalId) ? linkedAnimalId : null,
         prix: null,
         created_at: new Date().toISOString(),
         expires_at: new Date(Date.now() + 60 * 86400000).toISOString(),

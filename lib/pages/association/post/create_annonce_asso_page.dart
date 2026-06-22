@@ -34,6 +34,10 @@ String _genUuid() {
   return '${h(8)}-${h(4)}-4${h(3)}-${(8 + r.nextInt(4)).toRadixString(16)}${h(3)}-${h(12)}';
 }
 
+final _uuidRe = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+String? _toUuidOrNull(String? s) => (s != null && _uuidRe.hasMatch(s)) ? s : null;
+
 class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
@@ -226,7 +230,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
         'identification':      _identification,
         'sterilise':           _sterilise,
         'contrat_adoption':    _contratAdoption,
-        'animal_id':           _linkedAnimalId,
+        'animal_id':           _toUuidOrNull(_linkedAnimalId),
         'updated_at':          now,
       };
 
