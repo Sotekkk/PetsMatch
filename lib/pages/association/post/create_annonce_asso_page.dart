@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
@@ -25,6 +26,12 @@ class CreateAnnonceAssoPage extends StatefulWidget {
 
   @override
   State<CreateAnnonceAssoPage> createState() => _CreateAnnonceAssoPageState();
+}
+
+String _genUuid() {
+  final r = Random.secure();
+  String h(int n) => List.generate(n, (_) => r.nextInt(16).toRadixString(16)).join();
+  return '${h(8)}-${h(4)}-4${h(3)}-${(8 + r.nextInt(4)).toRadixString(16)}${h(3)}-${h(12)}';
 }
 
 class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
@@ -182,8 +189,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
       }();
 
       final now = DateTime.now().toIso8601String();
-      // Insertion minimale d'abord — seulement les colonnes du schéma original
-      final baseData = <String, dynamic>{
+      final data = <String, dynamic>{
         'uid_eleveur':         uid,
         'nom_eleveur':         nomAsso,
         'ville_eleveur':       ville,
@@ -192,6 +198,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
         'pays_eleveur':        userRow['pays_elevage'] ?? 'France',
         'type':                'animal',
         'type_vente':          'adoption',
+        'profil_source':       'association',
         'espece':              _espece,
         'race':                _raceCtrl.text.trim(),
         'titre':               _titreCtrl.text.trim(),
@@ -205,32 +212,21 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
         'vermifuge':           _vermifuge,
         'identification':      _identification,
         'sterilise':           _sterilise,
+        'contrat_adoption':    _contratAdoption,
+        'animal_id':           _linkedAnimalId,
         'updated_at':          now,
       };
 
-      // Colonnes ajoutées par migration — ajoutées séparément pour isoler les erreurs
-      final extraData = <String, dynamic>{
-        'profil_source':    'association',
-        'contrat_adoption': _contratAdoption,
-        'animal_id':        _linkedAnimalId,
-      };
-
       if (widget.annonceId != null) {
-        debugPrint('[ASSO] step=update id=${widget.annonceId}');
         await Supabase.instance.client.from('annonces')
-            .update({...baseData, ...extraData}).eq('id', widget.annonceId!);
+            .update(data).eq('id', widget.annonceId!);
       } else {
-        baseData['created_at'] = now;
-        baseData['expires_at'] = DateTime.now().add(const Duration(days: 60)).toIso8601String();
-        baseData['vues']       = 0;
-        baseData['contacts']   = 0;
-        debugPrint('[ASSO] step=insert base only');
-        final res = await Supabase.instance.client.from('annonces')
-            .insert(baseData).select('id').single();
-        final newId = res['id'] as String;
-        debugPrint('[ASSO] step=update extra newId=$newId');
-        await Supabase.instance.client.from('annonces')
-            .update(extraData).eq('id', newId);
+        data['id']         = _genUuid();
+        data['created_at'] = now;
+        data['expires_at'] = DateTime.now().add(const Duration(days: 60)).toIso8601String();
+        data['vues']       = 0;
+        data['contacts']   = 0;
+        await Supabase.instance.client.from('annonces').insert(data);
       }
 
       if (mounted) {
