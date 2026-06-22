@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 
@@ -19,6 +20,7 @@ const STATUT_MAP = Object.fromEntries(STATUTS.map(s => [s.key, s]));
 
 export default function AnimauxAssoPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [animaux, setAnimaux] = useState<any[]>([]);
   const [filtered, setFiltered] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,7 +135,7 @@ export default function AnimauxAssoPage() {
                   </div>
                 </Link>
                 {/* Changer statut */}
-                <div className="px-3 pb-3">
+                <div className="px-3 pb-3 space-y-2">
                   <select
                     value={a.statut}
                     onChange={e => handleChangeStatut(a.id, e.target.value)}
@@ -143,6 +145,14 @@ export default function AnimauxAssoPage() {
                       <option key={s.key} value={s.key}>{s.label}</option>
                     ))}
                   </select>
+                  {a.statut === 'disponible' && (
+                    <button
+                      onClick={() => router.push(`/association/annonces/creer?animalId=${a.id}`)}
+                      className="w-full text-xs bg-teal-50 text-teal-700 border border-teal-200 rounded-lg px-2 py-1.5 font-galey font-semibold hover:bg-teal-100 transition-colors"
+                    >
+                      💚 Mettre en adoption
+                    </button>
+                  )}
                 </div>
               </div>
             );
