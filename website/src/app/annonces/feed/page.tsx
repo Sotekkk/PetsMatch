@@ -216,6 +216,7 @@ export default function FeedPage() {
       .from('annonces')
       .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, sexe, nom_eleveur, uid_eleveur, description, registre_type, date_naissance, date_naissance_animal')
       .eq('statut', 'disponible')
+      .or('profil_source.is.null,profil_source.neq.association')
       .order('created_at', { ascending: false });
 
     if (espece !== 'tous') q = q.eq('espece', espece);

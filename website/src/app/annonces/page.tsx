@@ -95,6 +95,7 @@ export default function AnnoncesPage() {
       .from('annonces')
       .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at, uid_eleveur, animaux_portee')
       .eq('statut', 'disponible')
+      .or('profil_source.is.null,profil_source.neq.association')
       .order('created_at', { ascending: false })
       .then(async ({ data }) => {
         const rows = (data ?? []) as Annonce[];
