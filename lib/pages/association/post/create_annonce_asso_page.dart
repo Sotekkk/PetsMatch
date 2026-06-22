@@ -160,6 +160,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
       final allPhotos = [..._photosUrls, ...newUrls];
 
       final uid = FirebaseAuth.instance.currentUser!.uid;
+      debugPrint('[ASSO] uid=$uid step=userRow');
       final userRow = await Supabase.instance.client
           .from('users').select().eq('uid', uid).single();
 
@@ -181,7 +182,8 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
       }();
 
       final now = DateTime.now().toIso8601String();
-      final data = <String, dynamic>{
+      // Insertion minimale d'abord — seulement les colonnes du schéma original
+      final baseData = <String, dynamic>{
         'uid_eleveur':         uid,
         'nom_eleveur':         nomAsso,
         'ville_eleveur':       ville,
@@ -190,7 +192,6 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
         'pays_eleveur':        userRow['pays_elevage'] ?? 'France',
         'type':                'animal',
         'type_vente':          'adoption',
-        'profil_source':       'association',
         'espece':              _espece,
         'race':                _raceCtrl.text.trim(),
         'titre':               _titreCtrl.text.trim(),
@@ -204,19 +205,32 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
         'vermifuge':           _vermifuge,
         'identification':      _identification,
         'sterilise':           _sterilise,
-        'contrat_adoption':    _contratAdoption,
-        'animal_id':           _linkedAnimalId,
         'updated_at':          now,
       };
 
+      // Colonnes ajoutées par migration — ajoutées séparément pour isoler les erreurs
+      final extraData = <String, dynamic>{
+        'profil_source':    'association',
+        'contrat_adoption': _contratAdoption,
+        'animal_id':        _linkedAnimalId,
+      };
+
       if (widget.annonceId != null) {
-        await Supabase.instance.client.from('annonces').update(data).eq('id', widget.annonceId!);
+        debugPrint('[ASSO] step=update id=${widget.annonceId}');
+        await Supabase.instance.client.from('annonces')
+            .update({...baseData, ...extraData}).eq('id', widget.annonceId!);
       } else {
-        data['created_at'] = now;
-        data['expires_at'] = DateTime.now().add(const Duration(days: 60)).toIso8601String();
-        data['vues']       = 0;
-        data['contacts']   = 0;
-        await Supabase.instance.client.from('annonces').insert(data);
+        baseData['created_at'] = now;
+        baseData['expires_at'] = DateTime.now().add(const Duration(days: 60)).toIso8601String();
+        baseData['vues']       = 0;
+        baseData['contacts']   = 0;
+        debugPrint('[ASSO] step=insert base only');
+        final res = await Supabase.instance.client.from('annonces')
+            .insert(baseData).select('id').single();
+        final newId = res['id'] as String;
+        debugPrint('[ASSO] step=update extra newId=$newId');
+        await Supabase.instance.client.from('annonces')
+            .update(extraData).eq('id', newId);
       }
 
       if (mounted) {
@@ -227,11 +241,17 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
     } catch (e, st) {
       if (mounted) {
         final msg = e is PostgrestException
-            ? 'code=${e.code} msg=${e.message} details=${e.details}'
+            ? '[${e.code}] ${e.message}\n${e.details ?? ''}'
             : e.toString();
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(msg), duration: const Duration(seconds: 8)));
         debugPrint('CreateAnnonceAsso error: $e\n$st');
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Erreur publication'),
+            content: SingleChildScrollView(child: Text(msg)),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _saving = false);

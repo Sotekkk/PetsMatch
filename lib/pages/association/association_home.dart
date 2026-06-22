@@ -41,33 +41,47 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
   Future<void> _loadStats() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+
+    // Queries indépendantes — une erreur n'annule pas les autres
+    final animauxRes = await _supa
+        .from('animaux')
+        .select('statut')
+        .eq('uid_eleveur', uid)
+        .eq('is_association', true)
+        .catchError((_) => <dynamic>[]);
+
+    final recentRes = await _supa
+        .from('animaux')
+        .select('id, nom, espece, photo_url, statut')
+        .eq('uid_eleveur', uid)
+        .eq('is_association', true)
+        .order('created_at', ascending: false)
+        .limit(6)
+        .catchError((_) => <dynamic>[]);
+
+    // Bénévoles : la colonne 'type' peut ne pas exister — protection silencieuse
+    List<dynamic> benevoles = [];
     try {
-      final results = await Future.wait([
-        _supa.from('animaux').select('statut').eq('uid_eleveur', uid).eq('is_association', true),
-        _supa.from('employes').select('id').eq('uid_eleveur', uid).eq('actif', true).eq('type', 'benevole'),
-        _supa.from('animaux')
-            .select('id, nom, espece, photo_url, statut')
-            .eq('uid_eleveur', uid)
-            .eq('is_association', true)
-            .order('created_at', ascending: false)
-            .limit(6),
-      ]);
-      final list = results[0] as List;
-      final recent = results[2] as List;
-      if (mounted) {
-        setState(() {
-          _nbAnimaux = list.length;
-          _nbDisponibles = list.where((a) => a['statut'] == 'disponible').length;
-          _nbEnSoin = list.where((a) => a['statut'] == 'en_soin').length;
-          _nbEnFa = list.where((a) => a['statut'] == 'en_fa').length;
-          _nbAdoptes = list.where((a) => a['statut'] == 'adopte').length;
-          _nbBenevoles = (results[1] as List).length;
-          _recentAnimaux = List<Map<String, dynamic>>.from(recent);
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      benevoles = await _supa
+          .from('employes')
+          .select('id')
+          .eq('uid_eleveur', uid)
+          .eq('actif', true)
+          .eq('type', 'benevole');
+    } catch (_) {}
+
+    final list = animauxRes as List;
+    if (mounted) {
+      setState(() {
+        _nbAnimaux    = list.length;
+        _nbDisponibles = list.where((a) => a['statut'] == 'disponible').length;
+        _nbEnSoin     = list.where((a) => a['statut'] == 'en_soin').length;
+        _nbEnFa       = list.where((a) => a['statut'] == 'en_fa').length;
+        _nbAdoptes    = list.where((a) => a['statut'] == 'adopte').length;
+        _nbBenevoles  = benevoles.length;
+        _recentAnimaux = List<Map<String, dynamic>>.from(recentRes as List);
+        _loading = false;
+      });
     }
   }
 
