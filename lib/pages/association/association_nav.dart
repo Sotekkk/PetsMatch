@@ -15,7 +15,7 @@ import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
-import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
@@ -318,12 +318,12 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Annonces associations',
+                      label: 'Fil d\'adoption',
                       icon: Icons.favorite_border,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnnoncesAssoFeedPage(),
+                          builder: (_) => const AnnoncesFeedPage(isAssociationFeed: true),
                         ));
                       },
                     ),

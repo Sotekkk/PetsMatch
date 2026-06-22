@@ -167,6 +167,7 @@ class AnnoncesFeedPage extends StatefulWidget {
   final String? initialRace;
   final String? initialAnnonceId;
   final int?    initialBebeIndex;
+  final bool    isAssociationFeed;
 
   const AnnoncesFeedPage({
     super.key,
@@ -175,6 +176,7 @@ class AnnoncesFeedPage extends StatefulWidget {
     this.initialRace,
     this.initialAnnonceId,
     this.initialBebeIndex,
+    this.isAssociationFeed = false,
   });
 
   @override
@@ -264,8 +266,12 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
       var q = Supabase.instance.client
           .from('annonces')
           .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur, uid_eleveur, description, registre_type, date_naissance, date_naissance_animal')
-          .eq('statut', 'disponible')
-          .or('profil_source.is.null,profil_source.neq.association');
+          .eq('statut', 'disponible');
+      if (widget.isAssociationFeed) {
+        q = q.eq('profil_source', 'association');
+      } else {
+        q = q.or('profil_source.is.null,profil_source.neq.association');
+      }
       if (_espece != 'tous')       q = q.eq('espece', _espece);
       if (_race   != null)         q = q.eq('race', _race!);
       if (_typeVente == 'saillie') q = q.eq('type_vente', 'saillie');
@@ -553,8 +559,8 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFFF5F5F0), elevation: 0,
         foregroundColor: const Color(0xFF1F2A2E),
-        title: const Text('Fil d\'actualité',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20)),
+        title: Text(widget.isAssociationFeed ? 'Adoptions associations' : 'Fil d\'actualité',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20)),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -661,30 +667,33 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
             ),
           ],
           const SizedBox(height: 24),
-          const Text('Type', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-          const SizedBox(height: 10),
-          Row(children: [
-            for (final t in [('tous', 'Tous'), ('vente', '🐾 Compagnon'), ('saillie', '💜 Saillie')])
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _typeVente = t.$1),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: _typeVente == t.$1 ? const Color(0xFFE8F4F6) : Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: _typeVente == t.$1 ? _teal : const Color(0xFFE5E7EB), width: 2),
+          if (!widget.isAssociationFeed) ...[
+            const Text('Type', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+            const SizedBox(height: 10),
+            Row(children: [
+              for (final t in [('tous', 'Tous'), ('vente', '🐾 Compagnon'), ('saillie', '💜 Saillie')])
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _typeVente = t.$1),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _typeVente == t.$1 ? const Color(0xFFE8F4F6) : Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: _typeVente == t.$1 ? _teal : const Color(0xFFE5E7EB), width: 2),
+                      ),
+                      child: Text(t.$2, textAlign: TextAlign.center,
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                              color: _typeVente == t.$1 ? _teal : const Color(0xFF6F767B))),
                     ),
-                    child: Text(t.$2, textAlign: TextAlign.center,
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-                            color: _typeVente == t.$1 ? _teal : const Color(0xFF6F767B))),
                   ),
                 ),
-              ),
-          ]),
-          const SizedBox(height: 40),
+            ]),
+            const SizedBox(height: 24),
+          ],
+          const SizedBox(height: 16),
           SizedBox(width: double.infinity,
             child: ElevatedButton(
               onPressed: _loading ? null : _loadFeed,
