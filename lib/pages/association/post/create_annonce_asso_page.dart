@@ -171,9 +171,22 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
       final userRow = await Supabase.instance.client
           .from('users').select().eq('uid', uid).single();
 
-      final nomAsso = (userRow['name_elevage'] as String?)?.isNotEmpty == true
-          ? userRow['name_elevage'] as String
-          : '${userRow['firstname'] ?? ''} ${userRow['lastname'] ?? ''}'.trim();
+      // Profil secondaire association — son nom > name_elevage > nom/prénom
+      String? assoLabel;
+      try {
+        final profiles = await Supabase.instance.client
+            .from('user_profiles')
+            .select('profile_label')
+            .eq('uid', uid)
+            .eq('profile_type', 'association');
+        final list = profiles as List;
+        if (list.isNotEmpty) assoLabel = list.first['profile_label'] as String?;
+      } catch (_) {}
+
+      final nomAsso = (assoLabel?.isNotEmpty == true) ? assoLabel!
+          : (userRow['name_elevage'] as String?)?.isNotEmpty == true
+              ? userRow['name_elevage'] as String
+              : '${userRow['firstname'] ?? ''} ${userRow['lastname'] ?? ''}'.trim();
       final ville  = (userRow['ville_elevage'] as String?) ?? (userRow['ville'] as String?) ?? '';
       final dep    = () {
         final d = userRow['departement_elevage'] as String?;

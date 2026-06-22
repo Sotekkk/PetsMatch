@@ -129,15 +129,28 @@ export default function CreerAnnonceAssoPage() {
       const uploaded = await Promise.all(photos.map(f => uploadPhoto(f, user.uid)));
       photoUrls.push(...uploaded);
 
-      const { data: userData } = await supabase.from('users')
-        .select('name_elevage, firstname, lastname, ville_elevage')
-        .eq('uid', user.uid).single();
-      const nomAsso = userData?.name_elevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim();
+      const [{ data: userData }, { data: assoProfile }] = await Promise.all([
+        supabase.from('users')
+          .select('name_elevage, firstname, lastname, ville_elevage, departement_elevage, region_elevage, pays_elevage, is_association')
+          .eq('uid', user.uid).single(),
+        supabase.from('user_profiles')
+          .select('profile_label')
+          .eq('uid', user.uid)
+          .eq('profile_type', 'association')
+          .maybeSingle(),
+      ]);
+      // Profil secondaire association > name_elevage > nom/prénom
+      const nomAsso = assoProfile?.profile_label
+        || userData?.name_elevage
+        || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim();
 
       await supabase.from('annonces').insert({
         uid_eleveur: user.uid,
         nom_eleveur: nomAsso,
         ville_eleveur: userData?.ville_elevage ?? '',
+        departement_eleveur: userData?.departement_elevage ?? '',
+        region_eleveur: userData?.region_elevage ?? '',
+        pays_eleveur: userData?.pays_elevage ?? 'France',
         titre: titre || `${ESPECE_LABEL[espece] ?? espece} cherche une famille`,
         espece,
         race: race || null,
