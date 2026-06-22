@@ -224,10 +224,14 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
             const SnackBar(content: Text('Annonce publiée !')));
         Navigator.pop(context, true);
       }
-    } catch (e) {
+    } catch (e, st) {
       if (mounted) {
+        final msg = e is PostgrestException
+            ? 'code=${e.code} msg=${e.message} details=${e.details}'
+            : e.toString();
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Erreur : $e')));
+            SnackBar(content: Text(msg), duration: const Duration(seconds: 8)));
+        debugPrint('CreateAnnonceAsso error: $e\n$st');
       }
     } finally {
       if (mounted) setState(() => _saving = false);

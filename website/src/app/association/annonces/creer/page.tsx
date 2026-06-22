@@ -56,7 +56,7 @@ export default function CreerAnnonceAssoPage() {
   useEffect(() => {
     if (!user) return;
     supabase.from('animaux')
-      .select('id, nom, espece, race, sexe, statut, photo_url, vaccins, vaccines, vermifuge, identification, sterilise')
+      .select('id, nom, espece, race, sexe, statut, photo_url')
       .eq('uid_eleveur', user.uid)
       .eq('is_association', true)
       .in('statut', ['disponible', 'en_soin'])
@@ -68,7 +68,7 @@ export default function CreerAnnonceAssoPage() {
   useEffect(() => {
     if (!animalIdParam || !user) return;
     supabase.from('animaux')
-      .select('nom, espece, race, sexe, vaccins, vaccines, vermifuge, identification, sterilise, photo_url')
+      .select('nom, espece, race, sexe, photo_url')
       .eq('id', animalIdParam).single()
       .then(({ data }) => { if (data) prefillAnimal(data, animalIdParam); });
   }, [animalIdParam, user]);
@@ -87,10 +87,6 @@ export default function CreerAnnonceAssoPage() {
     if (data.espece) setEspece(data.espece);
     if (data.race) { setRace(data.race); setRaceQuery(data.race); }
     if (data.sexe) setSexe(data.sexe);
-    if (data.vaccins != null || data.vaccines != null) setVaccines(!!(data.vaccins ?? data.vaccines));
-    if (data.vermifuge != null) setVermifuge(!!data.vermifuge);
-    if (data.identification != null) setIdentification(!!data.identification);
-    if (data.sterilise != null) setSterilise(!!data.sterilise);
     if (data.photo_url) setExistingPhotoUrl(data.photo_url);
     else setExistingPhotoUrl(null);
   }
