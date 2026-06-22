@@ -47,6 +47,7 @@ class _BenevolesPageState extends State<BenevolesPage> {
           .from('employes')
           .select()
           .eq('uid_eleveur', uid)
+          .eq('type', 'benevole')
           .order('nom');
       if (mounted) {
         setState(() {

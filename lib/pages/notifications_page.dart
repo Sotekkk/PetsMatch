@@ -332,9 +332,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
   );
 
   String get _currentProfileType {
-    if (User_Info.activeProfileId.isEmpty) return User_Info.primaryType;
-    return User_Info.catPro.isNotEmpty ? User_Info.catPro
-        : (User_Info.isElevage ? 'eleveur' : 'particulier');
+    if (User_Info.catPro.isNotEmpty) return User_Info.catPro;
+    if (User_Info.isAssociation) return 'association';
+    if (User_Info.isElevage) return 'eleveur';
+    return 'particulier';
   }
 
   Future<void> _switchToProfileType(String profileType) async {

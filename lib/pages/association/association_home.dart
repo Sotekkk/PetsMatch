@@ -44,7 +44,7 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
     try {
       final results = await Future.wait([
         _supa.from('animaux').select('statut').eq('uid_eleveur', uid).eq('is_association', true),
-        _supa.from('employes').select('id').eq('uid_eleveur', uid).eq('actif', true),
+        _supa.from('employes').select('id').eq('uid_eleveur', uid).eq('actif', true).eq('type', 'benevole'),
         _supa.from('animaux')
             .select('id, nom, espece, photo_url, statut')
             .eq('uid_eleveur', uid)
