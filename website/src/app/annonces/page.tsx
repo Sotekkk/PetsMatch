@@ -601,7 +601,7 @@ function AnnonceCard({
           <h3 className="font-bold text-[#1F2A2E] text-sm truncate capitalize flex-1">
             {a.titre ?? `${a.espece ?? ''} ${a.race ?? ''}`}
           </h3>
-          {verif && <VerificationBadge level={getBadgeLevel({ statutPro: verif.statut_pro, siret: verif.siret, isPremium: verif.is_premium })} size="sm" />}
+          {verif && a.profil_source !== 'association' && <VerificationBadge level={getBadgeLevel({ statutPro: verif.statut_pro, siret: verif.siret, isPremium: verif.is_premium })} size="sm" />}
         </div>
         <p className="text-gray-500 text-xs capitalize">{a.espece}{a.race ? ` · ${a.race}` : ''}</p>
         {a.ville_eleveur && <p className="text-gray-400 text-xs mt-0.5">📍 {a.ville_eleveur}</p>}

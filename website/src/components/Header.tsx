@@ -36,7 +36,9 @@ interface UserProfile {
 
 const NAV_GUEST = [
   { href: '/annonces',       label: 'Annonces' },
+  { href: '/adoptions',      label: '💚 Adoptions' },
   { href: '/elevages',       label: 'Élevages' },
+  { href: '/associations',   label: 'Associations' },
   { href: '/animaux-perdus', label: 'Animaux perdus' },
   { href: '/services',       label: 'Services' },
   { href: '/marketplace',    label: 'Marketplace' },
@@ -319,8 +321,10 @@ const MENU_PARTICULIER = [
     section: 'Annonces',
     icon: '📢',
     items: [
-      { href: '/annonces', label: 'Trouver un compagnon', icon: '❤️' },
-      { href: '/elevages', label: 'Élevages',             icon: '🏡' },
+      { href: '/annonces',      label: 'Trouver un compagnon', icon: '❤️' },
+      { href: '/adoptions',     label: 'Adoptions',            icon: '💚' },
+      { href: '/elevages',      label: 'Élevages',             icon: '🏡' },
+      { href: '/associations',  label: 'Associations',         icon: '🏠' },
     ],
   },
   {
@@ -383,6 +387,7 @@ export default function Header() {
   const [pensionDialog, setPensionDialog] = useState<Notif | null>(null);
   // Profile switching
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [isFa, setIsFa] = useState(false);
   const [activeProfileId, setActiveProfileId] = useState<string>('');
   const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -438,11 +443,23 @@ export default function Header() {
     : effectiveIsAssociation ? NAV_ASSOCIATION
     : effectiveIsEleveur ? NAV_ELEVEUR
     : NAV_PARTICULIER;
+  const baseMenuParticulier = isFa
+    ? MENU_PARTICULIER.map(sec => sec.section === 'Mon Profil'
+        ? { ...sec, items: [...sec.items, { href: '/mes-animaux-accueil', label: 'Animaux en accueil', icon: '🏡' }] }
+        : sec)
+    : MENU_PARTICULIER;
   const menuSections = isEffectivelyPro
     ? (effectiveIsPension ? MENU_PENSION : effectiveIsVet ? MENU_VET : MENU_PRO)
     : effectiveIsAssociation ? MENU_ASSOCIATION
     : effectiveIsEleveur ? MENU_ELEVEUR
-    : MENU_PARTICULIER;
+    : baseMenuParticulier;
+
+  // ── Détection famille d'accueil ───────────────────────────────────────────
+  useEffect(() => {
+    if (!user) { setIsFa(false); return; }
+    supabase.from('familles_accueil').select('id').eq('fa_uid', user.uid).eq('actif', true).limit(1)
+      .then(({ data }) => setIsFa((data ?? []).length > 0));
+  }, [user]);
 
   // ── Chargement des profils secondaires ────────────────────────────────────
   useEffect(() => {

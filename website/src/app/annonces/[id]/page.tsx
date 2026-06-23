@@ -760,10 +760,20 @@ export default function AnnonceDetailPage() {
                   )}
                 </div>
                 {annonce.uid_eleveur && (
-                  <Link href={`/associations/${annonce.uid_eleveur}`}
-                    className="flex-shrink-0 text-xs font-semibold text-teal-700 border border-teal-600 px-3 py-1.5 rounded-xl hover:bg-teal-700 hover:text-white transition-colors">
-                    Voir le profil
-                  </Link>
+                  <div className="flex flex-col gap-2 flex-shrink-0">
+                    <Link href={`/associations/${annonce.uid_eleveur}`}
+                      className="text-xs font-semibold text-teal-700 border border-teal-600 px-3 py-1.5 rounded-xl hover:bg-teal-700 hover:text-white transition-colors text-center">
+                      Voir le profil
+                    </Link>
+                    {user && user.uid !== annonce.uid_eleveur && (
+                      <button
+                        onClick={handleContact}
+                        disabled={sending}
+                        className="text-xs font-semibold bg-[#0C5C6C] text-white px-3 py-1.5 rounded-xl hover:bg-[#094F5D] transition-colors disabled:opacity-60">
+                        💬 Contacter
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -820,7 +830,7 @@ export default function AnnonceDetailPage() {
             disabled={sending || sent}
             className="w-full py-4 rounded-2xl font-['Galey'] font-bold text-white text-base transition-opacity disabled:opacity-60"
             style={{ background: '#0C5C6C' }}>
-            {sent ? '✓ Message envoyé' : sending ? 'Envoi...' : '💬 Contacter l\'éleveur'}
+            {sent ? '✓ Message envoyé' : sending ? 'Envoi...' : annonce.profil_source === 'association' ? '💬 Contacter l\'association' : '💬 Contacter l\'éleveur'}
           </button>
         )}
 
