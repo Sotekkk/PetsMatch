@@ -52,7 +52,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
       final animaux = await _supa
           .from('animaux')
           .select()
-          .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid');
+          .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid,uid_acquereur.eq.$uid');
       final alertesMes = await _supa
           .from('alertes_perdus')
           .select()

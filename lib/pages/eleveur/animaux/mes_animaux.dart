@@ -1371,9 +1371,11 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
     var docs = _animauxData.where((data) {
       final statut = data['statut'] as String? ?? '';
-      // Animaux reçus par cession → côté acquéreur = "présents", pas "anciens"
-      if (data['uid_acquereur'] == _uid) return false;
-      if (statut != 'sorti' && statut != 'decede') return false;
+      final uidAcq = data['uid_acquereur'] as String?;
+      // Animaux reçus par cession par moi → côté acquéreur = "présents", pas "anciens"
+      if (uidAcq == _uid) return false;
+      // Anciens : soit sorti/décédé, soit cédé à quelqu'un d'autre (peu importe le statut actuel)
+      if (uidAcq == null && statut != 'sorti' && statut != 'decede') return false;
       if (_anciensEspece != 'tous' && data['espece'] != _anciensEspece) return false;
       if (_anciensStatut != 'tous' && statut != _anciensStatut) return false;
       if (_anciensDtDebut != null || _anciensDtFin != null) {

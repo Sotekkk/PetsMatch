@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
@@ -58,7 +59,10 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
     if (atLimit) {
       _showQuotaSheet();
     } else {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateAnnoncePage()))
+      final page = widget.isAssociation
+          ? const CreateAnnonceAssoPage()
+          : const CreateAnnoncePage();
+      Navigator.push(context, MaterialPageRoute(builder: (_) => page))
           .then((_) {
         if (mounted) {
           setState(() => _refreshKey++);
@@ -402,7 +406,7 @@ class _AnnoncesListState extends State<_AnnoncesList> {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
         itemCount: _rows.length,
         itemBuilder: (context, i) => _AnnonceCard(
-            id: _rows[i]['id'] as String, data: _rows[i], onRefresh: _load),
+            id: _rows[i]['id'] as String, data: _rows[i], onRefresh: _load, isAssociation: widget.isAssociation),
       ),
     );
   }
@@ -414,7 +418,8 @@ class _AnnonceCard extends StatefulWidget {
   final String id;
   final Map<String, dynamic> data;
   final VoidCallback onRefresh;
-  const _AnnonceCard({required this.id, required this.data, required this.onRefresh});
+  final bool isAssociation;
+  const _AnnonceCard({required this.id, required this.data, required this.onRefresh, this.isAssociation = false});
   @override
   State<_AnnonceCard> createState() => _AnnonceCardState();
 }
@@ -673,8 +678,16 @@ class _AnnonceCardState extends State<_AnnonceCard> {
                   icon: Icons.edit_outlined,
                   label: 'Modifier',
                   color: _teal,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => CreateAnnoncePage(annonceId: widget.id, initialData: widget.data))),
+                  onTap: () {
+                    if (widget.isAssociation) {
+                      Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => CreateAnnonceAssoPage(annonceId: widget.id, initialData: widget.data)))
+                          .then((_) { if (mounted) widget.onRefresh(); });
+                    } else {
+                      Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => CreateAnnoncePage(annonceId: widget.id, initialData: widget.data)));
+                    }
+                  },
                 ),
                 const Spacer(),
                 // Supprimer

@@ -26,6 +26,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_en_accueil_page.dart';
+import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 class ParticulierNav extends StatefulWidget {
@@ -181,6 +182,16 @@ class _ParticulierNavState extends State<ParticulierNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const UserParticulierFeed(initialTab: 1),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Mes Animaux Acquis',
+                      icon: Icons.handshake_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AnimauxAcquisPage(),
                         ));
                       },
                     ),

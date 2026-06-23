@@ -14,8 +14,8 @@ class FamillesAccueilPage extends StatefulWidget {
 class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
   final _supa = Supabase.instance.client;
 
-  static const _teal   = Color(0xFF0C5C6C);
-  static const _green  = Color(0xFF6E9E57);
+  static const _teal  = Color(0xFF0C5C6C);
+  static const _green = Color(0xFF6E9E57);
 
   List<Map<String, dynamic>> _fa = [];
   bool _loading = true;
@@ -51,6 +51,7 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Supprimer la FA', style: TextStyle(fontFamily: 'Galey')),
         content: const Text('Cette action est irréversible.', style: TextStyle(fontFamily: 'Galey')),
         actions: [
@@ -75,10 +76,58 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _AddFaSheet(
-        onSaved: () { _load(); },
+      builder: (_) => _FaSheet(onSaved: _load),
+    );
+  }
+
+  void _showEditSheet(Map<String, dynamic> fa) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _FaSheet(onSaved: _load, faData: fa),
+    );
+  }
+
+  void _showPlaceAnimalSheet(Map<String, dynamic> fa) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _PlaceAnimalSheet(fa: fa, onPlaced: _load),
+    );
+  }
+
+  Future<void> _retirerAnimal(Map<String, dynamic> animal) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Retirer ${animal['nom']}',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('Retirer cet animal de la famille d\'accueil ?',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Retirer', style: TextStyle(color: Colors.orange)),
+          ),
+        ],
       ),
     );
+    if (ok == true) {
+      await _supa.from('animaux').update({
+        'fa_id': null,
+        'statut': 'en_soin',
+        'date_sortie': DateTime.now().toIso8601String().split('T').first,
+      }).eq('id', animal['id']);
+      _load();
+    }
   }
 
   @override
@@ -111,7 +160,8 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
                       onPressed: _showAddSheet,
                       icon: const Icon(Icons.add),
                       label: const Text('Ajouter une FA', style: TextStyle(fontFamily: 'Galey')),
-                      style: ElevatedButton.styleFrom(backgroundColor: _teal),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: _teal, foregroundColor: Colors.white),
                     ),
                   ]),
                 )
@@ -128,7 +178,8 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6)],
+                        boxShadow: [BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05), blurRadius: 6)],
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(14),
@@ -138,16 +189,34 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
                               backgroundColor: _teal,
                               child: Text(
                                 (f['prenom']?.toString() ?? '?')[0].toUpperCase(),
-                                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white),
+                                style: const TextStyle(fontFamily: 'Galey',
+                                    fontWeight: FontWeight.w700, color: Colors.white),
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Text('${f['prenom'] ?? ''} ${f['nom'] ?? ''}',
-                                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                                Row(children: [
+                                  Text('${f['prenom'] ?? ''} ${f['nom'] ?? ''}',
+                                      style: const TextStyle(fontFamily: 'Galey',
+                                          fontWeight: FontWeight.w700, fontSize: 15)),
+                                  if (f['fa_uid'] != null) ...[
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: Colors.purple.shade50,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: const Text('🐾 PetsMatch',
+                                          style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                                              color: Colors.purple)),
+                                    ),
+                                  ],
+                                ]),
                                 if (f['ville'] != null)
-                                  Text(f['ville'], style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                                  Text(f['ville'], style: const TextStyle(
+                                      fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
                               ]),
                             ),
                             Container(
@@ -157,52 +226,101 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text('${animaux.length}/$capacite',
-                                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12,
-                                      color: dispo > 0 ? _green : Colors.orange)),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                              onPressed: () => _delete(f['id']),
+                                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                                      fontSize: 12, color: dispo > 0 ? _green : Colors.orange)),
                             ),
                           ]),
+
                           if (f['email'] != null || f['telephone'] != null) ...[
                             const SizedBox(height: 8),
                             Row(children: [
                               if (f['email'] != null) ...[
                                 const Icon(Icons.email_outlined, size: 14, color: Colors.grey),
                                 const SizedBox(width: 4),
-                                Text(f['email'], style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                                Expanded(child: Text(f['email'],
+                                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey),
+                                    overflow: TextOverflow.ellipsis)),
                                 const SizedBox(width: 12),
                               ],
                               if (f['telephone'] != null) ...[
                                 const Icon(Icons.phone_outlined, size: 14, color: Colors.grey),
                                 const SizedBox(width: 4),
-                                Text(f['telephone'], style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                                Text(f['telephone'],
+                                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
                               ],
                             ]),
                           ],
+
                           if (animaux.isNotEmpty) ...[
                             const SizedBox(height: 10),
                             const Text('Animaux en accueil :',
-                                style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
+                                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                    fontWeight: FontWeight.w600, color: _teal)),
                             const SizedBox(height: 6),
                             Wrap(
                               spacing: 6,
-                              children: animaux.map((a) => Chip(
-                                label: Text(a['nom'] ?? '?',
-                                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
-                                padding: EdgeInsets.zero,
-                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                backgroundColor: const Color(0xFF0C5C6C).withValues(alpha: 0.08),
+                              runSpacing: 4,
+                              children: animaux.map((a) => GestureDetector(
+                                onTap: () => _retirerAnimal(a),
+                                child: Chip(
+                                  label: Text('${a['nom'] ?? '?'} ✕',
+                                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
+                                  padding: EdgeInsets.zero,
+                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  backgroundColor: _teal.withValues(alpha: 0.08),
+                                  deleteIcon: null,
+                                ),
                               )).toList(),
                             ),
                           ],
+
                           if (f['notes'] != null) ...[
                             const SizedBox(height: 8),
                             Text(f['notes'],
                                 style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey),
                                 maxLines: 2, overflow: TextOverflow.ellipsis),
                           ],
+
+                          // Actions
+                          const SizedBox(height: 10),
+                          Divider(height: 1, color: Colors.grey.shade100),
+                          const SizedBox(height: 8),
+                          Row(children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: dispo > 0 ? () => _showPlaceAnimalSheet(f) : null,
+                                icon: const Icon(Icons.pets, size: 14),
+                                label: const Text('Placer un animal',
+                                    style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: _green,
+                                  side: BorderSide(color: _green.withValues(alpha: 0.5)),
+                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: () => _showEditSheet(f),
+                              icon: const Icon(Icons.edit_outlined, size: 14),
+                              label: const Text('Modifier',
+                                  style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _teal,
+                                side: BorderSide(color: _teal.withValues(alpha: 0.4)),
+                                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                              onPressed: () => _delete(f['id']),
+                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                              padding: EdgeInsets.zero,
+                            ),
+                          ]),
                         ]),
                       ),
                     );
@@ -212,30 +330,31 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
   }
 }
 
-// ── Sheet d'ajout FA ─────────────────────────────────────────────────────────
+// ── Sheet ajout/modification FA ──────────────────────────────────────────────
 
-class _AddFaSheet extends StatefulWidget {
+class _FaSheet extends StatefulWidget {
   final VoidCallback onSaved;
-  const _AddFaSheet({required this.onSaved});
+  final Map<String, dynamic>? faData; // null = création, non-null = édition
+  const _FaSheet({required this.onSaved, this.faData});
   @override
-  State<_AddFaSheet> createState() => _AddFaSheetState();
+  State<_FaSheet> createState() => _FaSheetState();
 }
 
-class _AddFaSheetState extends State<_AddFaSheet> {
+class _FaSheetState extends State<_FaSheet> {
   final _supa = Supabase.instance.client;
   late final GoogleMapsPlaces _places;
 
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
 
-  // Recherche profil
-  final _searchCtrl = TextEditingController();
-  List<Map<String, dynamic>> _allUsers  = [];
+  bool get _isEdit => widget.faData != null;
+
+  final _searchCtrl  = TextEditingController();
+  List<Map<String, dynamic>> _allUsers    = [];
   List<Map<String, dynamic>> _userResults = [];
   bool _loadingUsers = false;
   String? _linkedUid;
 
-  // Champs FA
   final _prenomCtrl  = TextEditingController();
   final _nomCtrl     = TextEditingController();
   final _emailCtrl   = TextEditingController();
@@ -246,7 +365,6 @@ class _AddFaSheetState extends State<_AddFaSheet> {
   final _notesCtrl   = TextEditingController();
   int _capaciteMax = 1;
 
-  // Places autocomplete
   List<Prediction> _suggestions = [];
   bool _showSuggestions = false;
   Timer? _debounce;
@@ -256,6 +374,23 @@ class _AddFaSheetState extends State<_AddFaSheet> {
     super.initState();
     _places = GoogleMapsPlaces(apiKey: getApiKey());
     _loadUsers();
+    if (_isEdit) _prefill(widget.faData!);
+  }
+
+  void _prefill(Map<String, dynamic> d) {
+    _prenomCtrl.text  = d['prenom'] ?? '';
+    _nomCtrl.text     = d['nom'] ?? '';
+    _emailCtrl.text   = d['email'] ?? '';
+    _telCtrl.text     = d['telephone'] ?? '';
+    _adresseCtrl.text = d['adresse'] ?? '';
+    _villeCtrl.text   = d['ville'] ?? '';
+    _cpCtrl.text      = d['code_postal'] ?? '';
+    _notesCtrl.text   = d['notes'] ?? '';
+    _capaciteMax      = d['capacite_max'] ?? 1;
+    _linkedUid        = d['fa_uid'] as String?;
+    if (_linkedUid != null) {
+      _searchCtrl.text = '${d['prenom'] ?? ''} ${d['nom'] ?? ''}'.trim();
+    }
   }
 
   @override
@@ -281,7 +416,7 @@ class _AddFaSheetState extends State<_AddFaSheet> {
     try {
       final rows = await _supa
           .from('users')
-          .select('uid, firstname, lastname, email, phone, profile_picture_url')
+          .select('uid, firstname, lastname, email, phone_number, ville_elevage, code_postal_elevage, rue, profile_picture_url')
           .neq('uid', myUid)
           .limit(500);
       if (mounted) setState(() {
@@ -306,11 +441,14 @@ class _AddFaSheetState extends State<_AddFaSheet> {
   void _selectUser(Map<String, dynamic> u) {
     setState(() {
       _linkedUid = u['uid'] as String?;
-      _prenomCtrl.text = u['firstname'] as String? ?? '';
-      _nomCtrl.text    = u['lastname']  as String? ?? '';
-      _emailCtrl.text  = u['email']     as String? ?? '';
-      _telCtrl.text    = u['phone']     as String? ?? '';
-      _searchCtrl.text = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+      _prenomCtrl.text  = u['firstname']  as String? ?? '';
+      _nomCtrl.text     = u['lastname']   as String? ?? '';
+      _emailCtrl.text   = u['email']      as String? ?? '';
+      _telCtrl.text     = u['phone_number'] as String? ?? '';
+      _adresseCtrl.text = u['rue']        as String? ?? '';
+      _villeCtrl.text   = u['ville_elevage']  as String? ?? '';
+      _cpCtrl.text      = u['code_postal_elevage'] as String? ?? '';
+      _searchCtrl.text  = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
       _userResults = [];
     });
   }
@@ -336,15 +474,15 @@ class _AddFaSheetState extends State<_AddFaSheet> {
     String streetNum = '', route = '', cp = '', ville = '';
     for (final comp in det.result!.addressComponents) {
       if (comp.types.contains('street_number')) streetNum = comp.longName;
-      if (comp.types.contains('route'))         route = comp.longName;
-      if (comp.types.contains('postal_code'))   cp = comp.longName;
-      if (comp.types.contains('locality'))      ville = comp.longName;
+      if (comp.types.contains('route'))         route     = comp.longName;
+      if (comp.types.contains('postal_code'))   cp        = comp.longName;
+      if (comp.types.contains('locality'))      ville     = comp.longName;
     }
     setState(() {
       _adresseCtrl.text = [streetNum, route].where((s) => s.isNotEmpty).join(' ');
       _cpCtrl.text    = cp;
       _villeCtrl.text = ville;
-      _suggestions = [];
+      _suggestions    = [];
       _showSuggestions = false;
     });
   }
@@ -354,8 +492,7 @@ class _AddFaSheetState extends State<_AddFaSheet> {
     if (uid == null) return;
     if (_prenomCtrl.text.trim().isEmpty || _nomCtrl.text.trim().isEmpty) return;
     try {
-      await _supa.from('familles_accueil').insert({
-        'association_uid': uid,
+      final payload = {
         'fa_uid':      _linkedUid,
         'prenom':      _prenomCtrl.text.trim(),
         'nom':         _nomCtrl.text.trim(),
@@ -366,8 +503,17 @@ class _AddFaSheetState extends State<_AddFaSheet> {
         'code_postal': _cpCtrl.text.trim().isEmpty      ? null : _cpCtrl.text.trim(),
         'capacite_max': _capaciteMax,
         'notes':       _notesCtrl.text.trim().isEmpty   ? null : _notesCtrl.text.trim(),
-        'actif': true,
-      });
+        'updated_at':  DateTime.now().toIso8601String(),
+      };
+      if (_isEdit) {
+        await _supa.from('familles_accueil').update(payload).eq('id', widget.faData!['id']);
+      } else {
+        await _supa.from('familles_accueil').insert({
+          ...payload,
+          'association_uid': uid,
+          'actif': true,
+        });
+      }
       if (mounted) Navigator.pop(context);
       widget.onSaved();
     } catch (e) {
@@ -384,15 +530,15 @@ class _AddFaSheetState extends State<_AddFaSheet> {
       child: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            const Expanded(
-              child: Text('Ajouter une famille d\'accueil',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
-            ),
+            Expanded(child: Text(
+              _isEdit ? 'Modifier la famille d\'accueil' : 'Ajouter une famille d\'accueil',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18),
+            )),
             IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
           ]),
           const SizedBox(height: 12),
 
-          // ── Recherche profil existant ──────────────────────────────────
+          // ── Recherche utilisateur PetsMatch ──────────────────────────
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -404,23 +550,25 @@ class _AddFaSheetState extends State<_AddFaSheet> {
               Row(children: [
                 Icon(Icons.person_search_outlined, color: _teal, size: 18),
                 const SizedBox(width: 6),
-                const Text('Chercher un utilisateur PetsMatch',
-                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF0C5C6C))),
+                const Text('Lier un utilisateur PetsMatch',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                        fontSize: 13, color: Color(0xFF0C5C6C))),
               ]),
               const SizedBox(height: 8),
               TextField(
                 controller: _searchCtrl,
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
                 decoration: InputDecoration(
-                  hintText: 'Nom, prénom…',
+                  hintText: 'Nom, prénom ou email…',
                   hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
                   isDense: true,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  suffixIcon: _loadingUsers ? const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                  ) : null,
+                  suffixIcon: _loadingUsers
+                      ? const Padding(padding: EdgeInsets.all(8),
+                          child: SizedBox(width: 16, height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2)))
+                      : null,
                 ),
                 onChanged: _searchUsers,
               ),
@@ -473,11 +621,9 @@ class _AddFaSheetState extends State<_AddFaSheet> {
                         style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green)),
                     const Spacer(),
                     GestureDetector(
-                      onTap: () => setState(() {
-                        _linkedUid = null;
-                        _searchCtrl.clear();
-                      }),
-                      child: const Text('Délier', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+                      onTap: () => setState(() { _linkedUid = null; _searchCtrl.clear(); }),
+                      child: const Text('Délier',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
                     ),
                   ]),
                 ),
@@ -485,8 +631,9 @@ class _AddFaSheetState extends State<_AddFaSheet> {
           ),
           const SizedBox(height: 14),
 
-          // ── Champs identité ───────────────────────────────────────────
-          const Text('Informations', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey)),
+          // ── Identité ─────────────────────────────────────────────────
+          const Text('Informations',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey)),
           const SizedBox(height: 8),
           Row(children: [
             Expanded(child: _field(_prenomCtrl, 'Prénom *')),
@@ -499,8 +646,9 @@ class _AddFaSheetState extends State<_AddFaSheet> {
           _field(_telCtrl, 'Téléphone', keyboard: TextInputType.phone),
           const SizedBox(height: 14),
 
-          // ── Adresse avec autocomplete ─────────────────────────────────
-          const Text('Adresse', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey)),
+          // ── Adresse ──────────────────────────────────────────────────
+          const Text('Adresse',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey)),
           const SizedBox(height: 8),
           TextField(
             controller: _adresseCtrl,
@@ -541,7 +689,7 @@ class _AddFaSheetState extends State<_AddFaSheet> {
           ]),
           const SizedBox(height: 10),
 
-          // ── Capacité ──────────────────────────────────────────────────
+          // ── Capacité ─────────────────────────────────────────────────
           StatefulBuilder(
             builder: (_, setInner) => Row(children: [
               const Text('Capacité max :', style: TextStyle(fontFamily: 'Galey')),
@@ -550,7 +698,8 @@ class _AddFaSheetState extends State<_AddFaSheet> {
                 icon: const Icon(Icons.remove_circle_outline),
                 onPressed: () => setInner(() { if (_capaciteMax > 1) _capaciteMax--; }),
               ),
-              Text('$_capaciteMax', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+              Text('$_capaciteMax',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
               IconButton(
                 icon: const Icon(Icons.add_circle_outline),
                 onPressed: () => setInner(() => _capaciteMax++),
@@ -560,6 +709,7 @@ class _AddFaSheetState extends State<_AddFaSheet> {
           const SizedBox(height: 10),
           _field(_notesCtrl, 'Notes (espèces, contraintes…)', maxLines: 2),
           const SizedBox(height: 16),
+
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -569,7 +719,8 @@ class _AddFaSheetState extends State<_AddFaSheet> {
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              child: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              child: Text(_isEdit ? 'Enregistrer' : 'Ajouter',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
             ),
           ),
         ]),
@@ -591,4 +742,173 @@ class _AddFaSheetState extends State<_AddFaSheet> {
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         ),
       );
+}
+
+// ── Sheet placement animal ────────────────────────────────────────────────────
+
+class _PlaceAnimalSheet extends StatefulWidget {
+  final Map<String, dynamic> fa;
+  final VoidCallback onPlaced;
+  const _PlaceAnimalSheet({required this.fa, required this.onPlaced});
+  @override
+  State<_PlaceAnimalSheet> createState() => _PlaceAnimalSheetState();
+}
+
+class _PlaceAnimalSheetState extends State<_PlaceAnimalSheet> {
+  final _supa = Supabase.instance.client;
+  static const _teal  = Color(0xFF0C5C6C);
+  static const _green = Color(0xFF6E9E57);
+
+  List<Map<String, dynamic>> _animaux = [];
+  bool _loading = true;
+  String? _placing;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final data = await _supa
+          .from('animaux')
+          .select('id, nom, espece, race, photo_url')
+          .eq('uid_eleveur', uid)
+          .eq('is_association', true)
+          .inFilter('statut', ['disponible', 'en_soin'])
+          .isFilter('fa_id', null)
+          .order('nom');
+      if (mounted) setState(() {
+        _animaux = List<Map<String, dynamic>>.from(data as List);
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _place(Map<String, dynamic> animal) async {
+    setState(() => _placing = animal['id']);
+    try {
+      await _supa.from('animaux').update({
+        'fa_id': widget.fa['id'],
+        'statut': 'en_fa',
+        'date_entree': DateTime.now().toIso8601String().split('T').first,
+      }).eq('id', animal['id']);
+
+      // Notification si la FA est un utilisateur PetsMatch
+      final faUid = widget.fa['fa_uid'] as String?;
+      if (faUid != null) {
+        final faName = '${widget.fa['prenom'] ?? ''} ${widget.fa['nom'] ?? ''}'.trim();
+        await _supa.from('notifications').insert({
+          'uid':   faUid,
+          'type':  'animal_en_accueil',
+          'title': 'Un animal vous a été confié',
+          'body':  '${animal['nom'] ?? 'Un animal'} a été placé dans votre famille d\'accueil',
+          'data':  {'animal_id': animal['id'], 'fa_id': widget.fa['id']},
+          'read':  false,
+        });
+      }
+
+      if (mounted) Navigator.pop(context);
+      widget.onPlaced();
+    } catch (e) {
+      setState(() => _placing = null);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final faName = '${widget.fa['prenom'] ?? ''} ${widget.fa['nom'] ?? ''}'.trim();
+    final capacite = widget.fa['capacite_max'] ?? 1;
+    final animauxActuels = (widget.fa['animaux'] as List?)?.length ?? 0;
+    final dispo = capacite - animauxActuels;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: Text(
+            'Placer un animal chez $faName',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16),
+          )),
+          IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+        ]),
+        Text('Place disponible : $dispo/$capacite',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                color: dispo > 0 ? _green : Colors.orange)),
+        const SizedBox(height: 12),
+
+        if (_loading)
+          const Center(child: Padding(
+            padding: EdgeInsets.all(24),
+            child: CircularProgressIndicator(),
+          ))
+        else if (_animaux.isEmpty)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(children: [
+                Icon(Icons.pets_outlined, size: 40, color: Colors.grey.shade300),
+                const SizedBox(height: 8),
+                const Text('Aucun animal disponible à placer',
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.grey),
+                    textAlign: TextAlign.center),
+              ]),
+            ),
+          )
+        else
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 320),
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: _animaux.length,
+              separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade100),
+              itemBuilder: (_, i) {
+                final a = _animaux[i];
+                final isPlacing = _placing == a['id'];
+                return ListTile(
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: a['photo_url'] != null
+                        ? Image.network(a['photo_url'] as String,
+                            width: 40, height: 40, fit: BoxFit.cover)
+                        : Container(
+                            width: 40, height: 40,
+                            color: _teal.withValues(alpha: 0.08),
+                            child: const Icon(Icons.pets, size: 20, color: _teal)),
+                  ),
+                  title: Text(a['nom'] ?? '?',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                    '${a['race'] ?? ''} ${a['espece'] ?? ''}'.trim(),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey),
+                  ),
+                  trailing: isPlacing
+                      ? const SizedBox(width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : ElevatedButton(
+                          onPressed: () => _place(a),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: const Text('Placer',
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                        ),
+                );
+              },
+            ),
+          ),
+      ]),
+    );
+  }
 }

@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AssociationDetailPage extends StatefulWidget {
   final String uid;
@@ -31,10 +32,12 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
 
   final _supa = Supabase.instance.client;
 
-  String _description = '';
-  String _loadedName  = '';
+  String _description  = '';
+  String _loadedName   = '';
   String _loadedAvatar = '';
   String _loadedVille  = '';
+  String _phone        = '';
+  String _siteWeb      = '';
   List<Map<String, dynamic>> _animaux   = [];
   List<Map<String, dynamic>> _annonces  = [];
   bool _loading = true;
@@ -62,9 +65,9 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
             .eq('profil_source', 'association')
             .eq('statut', 'disponible')
             .order('created_at', ascending: false),
-        // Profil association : nom + description + avatar + ville
+        // Profil association : nom + description + avatar + ville + téléphone
         _supa.from('user_profiles')
-            .select('name_elevage, profile_label, description, avatar_url, ville')
+            .select('name_elevage, profile_label, description, desc_entreprise, avatar_url, ville, phone, telephone, site_web')
             .eq('uid', widget.uid)
             .eq('profile_type', 'association')
             .maybeSingle(),
@@ -83,8 +86,11 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
           : widget.name;
 
       // Description
-      String desc = (assoProfile?['description'] as String?)?.trim() ?? '';
+      String desc = ((assoProfile?['desc_entreprise'] ?? assoProfile?['description']) as String?)?.trim() ?? '';
       if (desc.isEmpty) desc = userRow?['description_elevage']?.toString() ?? '';
+
+      final phone = (assoProfile?['phone'] ?? assoProfile?['telephone'])?.toString().trim() ?? '';
+      final siteWeb = assoProfile?['site_web']?.toString().trim() ?? '';
 
       // Filtre is_association sur les animaux si possible
       final allAnimaux = List<Map<String, dynamic>>.from(animaux);
@@ -99,6 +105,8 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
           _loadedAvatar = (assoProfile?['avatar_url'] as String?)?.trim() ?? widget.avatar;
           _loadedVille  = (assoProfile?['ville'] as String?)?.trim() ?? widget.ville;
           _description  = desc;
+          _phone   = phone;
+          _siteWeb = siteWeb;
           _animaux  = filteredAnimaux;
           _annonces = List<Map<String, dynamic>>.from(annonces);
           _loading  = false;
@@ -258,24 +266,46 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Contact button
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _loadingChat ? null : _openChat,
-                            icon: _loadingChat
-                                ? const SizedBox(width: 16, height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                : const Icon(Icons.message_outlined),
-                            label: const Text('Contacter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _teal,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        // Boutons de contact
+                        Row(children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _loadingChat ? null : _openChat,
+                              icon: _loadingChat
+                                  ? const SizedBox(width: 16, height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  : const Icon(Icons.message_outlined),
+                              label: const Text('Message', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _teal,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              ),
                             ),
                           ),
-                        ),
+                          if (_phone.isNotEmpty) ...[
+                            const SizedBox(width: 10),
+                            ElevatedButton.icon(
+                              onPressed: () => launchUrl(Uri(scheme: 'tel', path: _phone)),
+                              icon: const Icon(Icons.phone_outlined),
+                              label: const Text('Appeler', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _green,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              ),
+                            ),
+                          ],
+                        ]),
+                        if (_phone.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Center(
+                            child: Text(_phone,
+                                style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                          ),
+                        ],
                         // Description
                         if (_description.isNotEmpty) ...[
                           const SizedBox(height: 20),

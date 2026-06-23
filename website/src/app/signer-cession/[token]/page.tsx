@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 
 interface Cession {
   id: string;
+  animal_id: string;
   token: string;
   statut: string;
   nom_acquereur: string;
@@ -88,6 +89,7 @@ export default function SignerCessionPage({ params }: { params: { token: string 
 
       setCession({
         id:              data.id,
+        animal_id:       data.animal_id,
         token:           data.token,
         statut:          data.statut,
         nom_acquereur:   data.nom_acquereur || '',
@@ -131,7 +133,7 @@ export default function SignerCessionPage({ params }: { params: { token: string 
           type:  'cession_signee_acquereur',
           title: `✍️ ${cession.nom_acquereur} a signé — ${cession.animal.nom ?? 'Animal'}`,
           body:  `L'acquéreur a signé le contrat de cession. Vous pouvez maintenant confirmer le transfert.`,
-          data:  { animalId: cession.id, token: cession.token },
+          data:  { animalId: cession.animal_id, token: cession.token },
           read:  false,
         });
       }

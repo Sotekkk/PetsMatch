@@ -20,11 +20,21 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
 
   final _supa = Supabase.instance.client;
 
-  final _nomCtrl   = TextEditingController();
-  final _villeCtrl = TextEditingController();
-  final _descCtrl  = TextEditingController();
-  final _telCtrl   = TextEditingController();
-  final _siteCtrl  = TextEditingController();
+  // Champs principaux
+  final _nomCtrl         = TextEditingController();
+  final _responsableCtrl = TextEditingController();
+  final _rnaCtrl         = TextEditingController();
+  final _siretCtrl       = TextEditingController();
+  final _acacedCtrl      = TextEditingController();
+  final _acacedDateCtrl  = TextEditingController();
+  final _descCtrl        = TextEditingController();
+  final _telCtrl         = TextEditingController();
+  final _rueCtrl         = TextEditingController();
+  final _villeCtrl       = TextEditingController();
+  final _cpCtrl          = TextEditingController();
+  final _siteCtrl        = TextEditingController();
+  final _instaCtrl       = TextEditingController();
+  final _fbCtrl          = TextEditingController();
 
   bool   _loading = true;
   bool   _saving  = false;
@@ -42,11 +52,11 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
 
   @override
   void dispose() {
-    _nomCtrl.dispose();
-    _villeCtrl.dispose();
-    _descCtrl.dispose();
-    _telCtrl.dispose();
-    _siteCtrl.dispose();
+    _nomCtrl.dispose(); _responsableCtrl.dispose(); _rnaCtrl.dispose();
+    _siretCtrl.dispose(); _acacedCtrl.dispose(); _acacedDateCtrl.dispose();
+    _descCtrl.dispose(); _telCtrl.dispose(); _rueCtrl.dispose();
+    _villeCtrl.dispose(); _cpCtrl.dispose(); _siteCtrl.dispose();
+    _instaCtrl.dispose(); _fbCtrl.dispose();
     super.dispose();
   }
 
@@ -55,35 +65,45 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
     if (uid == null) { setState(() => _loading = false); return; }
 
     try {
-      // Charge le profil secondaire association depuis user_profiles
       final profiles = await _supa
           .from('user_profiles')
-          .select('id, profile_label, name_elevage, avatar_url, ville, description, telephone, site_web')
+          .select('*')
           .eq('uid', uid)
           .eq('profile_type', 'association');
 
       final list = profiles as List;
-      final assoProfile = list.isNotEmpty ? list.first as Map<String, dynamic> : null;
+      final p = list.isNotEmpty ? list.first as Map<String, dynamic> : null;
 
-      if (assoProfile != null) {
-        // Profil secondaire existant → utilise ses données
-        // Priorité : name_elevage (nom réel de l'asso) > profile_label (label générique)
-        final nomElevage = (assoProfile['name_elevage'] as String?)?.trim() ?? '';
-        final label      = (assoProfile['profile_label'] as String?)?.trim() ?? '';
-        final nom = nomElevage.isNotEmpty ? nomElevage : label;
+      if (p != null) {
+        final nomElevage = (p['name_elevage'] as String?)?.trim() ?? '';
+        final label      = (p['profile_label'] as String?)?.trim() ?? '';
+
+        // ACACED extrait du JSONB certifications
+        final certs = (p['certifications'] as List?) ?? [];
+        final acaCert = certs.cast<Map<String, dynamic>>().where((c) => c['nom'] == 'ACACED').firstOrNull;
+
         setState(() {
-          _secondaryProfileId = assoProfile['id']?.toString();
-          _nomCtrl.text   = nom;
-          _villeCtrl.text = assoProfile['ville']?.toString() ?? '';
-          _descCtrl.text  = assoProfile['description']?.toString() ?? '';
-          _telCtrl.text   = assoProfile['telephone']?.toString() ?? '';
-          _siteCtrl.text  = assoProfile['site_web']?.toString() ?? '';
-          _photoUrl       = assoProfile['avatar_url']?.toString();
-          _bannerUrl      = assoProfile['banner_url']?.toString();
+          _secondaryProfileId = p['id']?.toString();
+          _nomCtrl.text         = nomElevage.isNotEmpty ? nomElevage : label;
+          _responsableCtrl.text = p['profession_pro']?.toString() ?? '';
+          _rnaCtrl.text         = p['ordre_veterinaire']?.toString() ?? '';
+          _siretCtrl.text       = p['siret']?.toString() ?? '';
+          _acacedCtrl.text      = acaCert?['numero']?.toString() ?? '';
+          _acacedDateCtrl.text  = acaCert?['date_obtention']?.toString() ?? '';
+          _descCtrl.text        = (p['desc_entreprise'] ?? p['description'])?.toString() ?? '';
+          _telCtrl.text         = (p['phone'] ?? p['telephone'])?.toString() ?? '';
+          _rueCtrl.text         = p['rue']?.toString() ?? '';
+          _villeCtrl.text       = p['ville']?.toString() ?? '';
+          _cpCtrl.text          = p['code_postal']?.toString() ?? '';
+          _siteCtrl.text        = p['site_web']?.toString() ?? '';
+          _instaCtrl.text       = p['instagram']?.toString() ?? '';
+          _fbCtrl.text          = p['facebook']?.toString() ?? '';
+          _photoUrl             = p['avatar_url']?.toString();
+          _bannerUrl            = p['banner_url']?.toString();
           _loading = false;
         });
       } else {
-        // Pas encore de profil secondaire → cherche dans users (profil principal association)
+        // Pas encore de profil secondaire → fallback sur users
         final userRow = await _supa
             .from('users')
             .select('name_elevage, ville_elevage, description_elevage, phone, profile_picture_url_elevage')
@@ -103,15 +123,8 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
     }
   }
 
-  Future<void> _pickPhoto() async {
-    final f = await pickAndCropSquare();
-    if (f != null) setState(() => _photoFile = f);
-  }
-
-  Future<void> _pickBanner() async {
-    final f = await pickAndCropBanner();
-    if (f != null) setState(() => _bannerFile = f);
-  }
+  Future<void> _pickPhoto()   async { final f = await pickAndCropSquare();  if (f != null) setState(() => _photoFile = f); }
+  Future<void> _pickBanner()  async { final f = await pickAndCropBanner();  if (f != null) setState(() => _bannerFile = f); }
 
   Future<void> _save() async {
     final nom = _nomCtrl.text.trim();
@@ -130,34 +143,55 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
       if (_photoFile != null) {
         photoUrl = await uploadPhoto(_photoFile!, 'profiles/$uid/asso_photo.jpg');
       }
-
       String? bannerUrl = _bannerUrl;
       if (_bannerFile != null) {
         bannerUrl = await uploadPhoto(_bannerFile!, 'profiles/$uid/asso_banner.jpg');
       }
 
+      final certs = <Map<String, dynamic>>[];
+      if (_acacedCtrl.text.trim().isNotEmpty) {
+        certs.add({
+          'nom': 'ACACED',
+          'numero': _acacedCtrl.text.trim(),
+          'date_obtention': _acacedDateCtrl.text.trim().isEmpty ? null : _acacedDateCtrl.text.trim(),
+        });
+      }
+
       final data = <String, dynamic>{
-        'uid':           uid,
-        'profile_type':  'association',
-        'name_elevage':  nom,
-        'profile_label': nom,
-        'ville':         _villeCtrl.text.trim().isEmpty ? null : _villeCtrl.text.trim(),
-        'description':   _descCtrl.text.trim().isEmpty  ? null : _descCtrl.text.trim(),
-        'telephone':     _telCtrl.text.trim().isEmpty   ? null : _telCtrl.text.trim(),
-        'site_web':      _siteCtrl.text.trim().isEmpty  ? null : _siteCtrl.text.trim(),
-        if (photoUrl != null) 'avatar_url': photoUrl,
+        'uid':              uid,
+        'profile_type':     'association',
+        'name_elevage':     nom,
+        'profile_label':    nom,
+        'profession_pro':   _responsableCtrl.text.trim().isEmpty ? null : _responsableCtrl.text.trim(),
+        'ordre_veterinaire': _rnaCtrl.text.trim().isEmpty ? null : _rnaCtrl.text.trim(),
+        'siret':            _siretCtrl.text.trim().isEmpty ? null : _siretCtrl.text.trim(),
+        'certifications':   certs,
+        'desc_entreprise':  _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+        'description':      _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+        'phone':            _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
+        'telephone':        _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
+        'rue':              _rueCtrl.text.trim().isEmpty ? null : _rueCtrl.text.trim(),
+        'ville':            _villeCtrl.text.trim().isEmpty ? null : _villeCtrl.text.trim(),
+        'code_postal':      _cpCtrl.text.trim().isEmpty ? null : _cpCtrl.text.trim(),
+        'site_web':         _siteCtrl.text.trim().isEmpty ? null : _siteCtrl.text.trim(),
+        'instagram':        _instaCtrl.text.trim().isEmpty ? null : _instaCtrl.text.trim(),
+        'facebook':         _fbCtrl.text.trim().isEmpty ? null : _fbCtrl.text.trim(),
+        if (photoUrl != null)  'avatar_url': photoUrl,
         if (bannerUrl != null) 'banner_url': bannerUrl,
       };
 
       if (_secondaryProfileId != null) {
         await _supa.from('user_profiles').update(data).eq('id', _secondaryProfileId!);
       } else {
-        // Crée le profil secondaire
         final inserted = await _supa.from('user_profiles').insert(data).select().single();
         if (mounted) setState(() => _secondaryProfileId = inserted['id']?.toString());
       }
 
-      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Profil enregistré'), backgroundColor: Color(0xFF0C5C6C)));
+        Navigator.pop(context);
+      }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
     } finally {
@@ -193,7 +227,8 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Bannière
+
+                  // ── Bannière + photo ──────────────────────────────────────
                   GestureDetector(
                     onTap: _pickBanner,
                     child: Stack(clipBehavior: Clip.none, children: [
@@ -227,7 +262,6 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
                               style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white)),
                         ),
                       ),
-                      // Photo de profil chevauchant la bannière
                       Positioned(
                         bottom: -28, left: 16,
                         child: GestureDetector(
@@ -264,35 +298,73 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
                   ),
                   const SizedBox(height: 40),
 
+                  // ── Informations générales ────────────────────────────────
+                  _section('Informations générales'),
                   _label('Nom de l\'association *'),
-                  const SizedBox(height: 6),
                   _field(controller: _nomCtrl, hint: 'Ex : SPA de Lyon, Refuge du Soleil…'),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 14),
+                  _label('Responsable'),
+                  _field(controller: _responsableCtrl, hint: 'Nom du responsable / président(e)'),
+                  const SizedBox(height: 14),
+                  _label('Description'),
+                  _field(controller: _descCtrl, hint: 'Présentez votre association…', maxLines: 4),
+                  const SizedBox(height: 20),
 
-                  _label('Ville'),
-                  const SizedBox(height: 6),
-                  _field(controller: _villeCtrl, hint: 'Ville ou commune'),
-                  const SizedBox(height: 18),
+                  // ── Identification légale ─────────────────────────────────
+                  _section('Identification légale'),
+                  _label('Numéro RNA'),
+                  _field(controller: _rnaCtrl, hint: 'W123456789'),
+                  const SizedBox(height: 14),
+                  _label('SIRET / SIREN'),
+                  _field(controller: _siretCtrl, hint: '12345678900010', keyboard: TextInputType.number),
+                  const SizedBox(height: 14),
+                  Row(children: [
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      _label('N° ACACED'),
+                      _field(controller: _acacedCtrl, hint: 'N° certificat'),
+                    ])),
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      _label('Date d\'obtention'),
+                      _field(controller: _acacedDateCtrl, hint: 'JJ/MM/AAAA', keyboard: TextInputType.datetime),
+                    ])),
+                  ]),
+                  const SizedBox(height: 20),
 
+                  // ── Coordonnées ───────────────────────────────────────────
+                  _section('Coordonnées'),
+                  _label('Adresse'),
+                  _field(controller: _rueCtrl, hint: '1 rue de la Paix'),
+                  const SizedBox(height: 14),
+                  Row(children: [
+                    Expanded(flex: 2, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      _label('Ville'),
+                      _field(controller: _villeCtrl, hint: 'Paris'),
+                    ])),
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      _label('Code postal'),
+                      _field(controller: _cpCtrl, hint: '75001', keyboard: TextInputType.number),
+                    ])),
+                  ]),
+                  const SizedBox(height: 14),
                   _label('Téléphone'),
-                  const SizedBox(height: 6),
                   _field(controller: _telCtrl, hint: '+33 6 12 34 56 78', keyboard: TextInputType.phone),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
 
+                  // ── Web & Réseaux sociaux ─────────────────────────────────
+                  _section('Web & Réseaux sociaux'),
                   _label('Site web'),
-                  const SizedBox(height: 6),
                   _field(controller: _siteCtrl, hint: 'https://…', keyboard: TextInputType.url),
-                  const SizedBox(height: 18),
-
-                  _label('Présentation'),
-                  const SizedBox(height: 6),
-                  _field(
-                    controller: _descCtrl,
-                    hint: 'Décrivez votre association, vos missions…',
-                    maxLines: 5,
-                  ),
-
+                  const SizedBox(height: 14),
+                  _label('Instagram'),
+                  _field(controller: _instaCtrl, hint: '@votreasso'),
+                  const SizedBox(height: 14),
+                  _label('Facebook'),
+                  _field(controller: _fbCtrl, hint: 'facebook.com/votreasso'),
                   const SizedBox(height: 24),
+
+                  // ── Bénévoles / Employés ──────────────────────────────────
                   GestureDetector(
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const EmployesPage(isAssociation: true))),
@@ -342,15 +414,26 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
                               style: TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w700)),
                     ),
                   ),
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
     );
   }
 
-  Widget _label(String text) => Text(text,
-      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
-          fontSize: 14, color: Color(0xFF333333)));
+  Widget _section(String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Text(text, style: const TextStyle(
+        fontFamily: 'Galey', fontWeight: FontWeight.w700,
+        fontSize: 15, color: Color(0xFF0C5C6C))),
+  );
+
+  Widget _label(String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Text(text, style: const TextStyle(
+        fontFamily: 'Galey', fontWeight: FontWeight.w600,
+        fontSize: 13, color: Color(0xFF333333))),
+  );
 
   Widget _field({required TextEditingController controller, String? hint,
       int maxLines = 1, TextInputType? keyboard}) {

@@ -22,6 +22,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
 
   List<Map<String, dynamic>> _animaux = [];
   List<Map<String, dynamic>> _filtered = [];
+  List<Map<String, dynamic>> _animauxRecus = [];
   bool _loading = true;
   String _filterStatut = 'tous';
   String _search = '';
@@ -54,15 +55,21 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final data = await _supa
-          .from('animaux')
-          .select('id,nom,espece,race,sexe,statut,date_naissance,photo_url,date_entree')
-          .eq('uid_eleveur', uid)
-          .eq('is_association', true)
-          .order('nom');
+      final results = await Future.wait([
+        _supa.from('animaux')
+            .select('id,nom,espece,race,sexe,statut,date_naissance,photo_url,date_entree')
+            .eq('uid_eleveur', uid)
+            .eq('is_association', true)
+            .order('nom'),
+        _supa.from('animaux')
+            .select('id,nom,espece,race,sexe,statut,date_naissance,photo_url,date_sortie,uid_eleveur')
+            .eq('uid_acquereur', uid)
+            .order('date_sortie', ascending: false),
+      ]);
       if (mounted) {
         setState(() {
-          _animaux = List<Map<String, dynamic>>.from(data as List);
+          _animaux = List<Map<String, dynamic>>.from(results[0] as List);
+          _animauxRecus = List<Map<String, dynamic>>.from(results[1] as List);
           _applyFilters();
           _loading = false;
         });
@@ -180,7 +187,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : _filtered.isEmpty
+                : (_filtered.isEmpty && _animauxRecus.isEmpty)
                     ? Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -192,35 +199,103 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
                           ],
                         ),
                       )
-                    : GridView.builder(
-                        padding: const EdgeInsets.all(12),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 0.68,
-                        ),
-                        itemCount: _filtered.length,
-                        itemBuilder: (_, i) => _AnimalCard(
-                          animal: _filtered[i],
-                          age: _age(_filtered[i]['date_naissance']),
-                          onTap: () async {
-                            await Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => AnimalFichePage(
-                                animalId: _filtered[i]['id'],
-                                initialData: _filtered[i],
-                                isAssociation: true,
+                    : CustomScrollView(
+                        slivers: [
+                          if (_filtered.isNotEmpty)
+                            SliverPadding(
+                              padding: const EdgeInsets.all(12),
+                              sliver: SliverGrid(
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                  childAspectRatio: 0.68,
+                                ),
+                                delegate: SliverChildBuilderDelegate(
+                                  (_, i) => _AnimalCard(
+                                    animal: _filtered[i],
+                                    age: _age(_filtered[i]['date_naissance']),
+                                    onTap: () async {
+                                      await Navigator.push(context, MaterialPageRoute(
+                                        builder: (_) => AnimalFichePage(
+                                          animalId: _filtered[i]['id'],
+                                          initialData: _filtered[i],
+                                          isAssociation: true,
+                                        ),
+                                      ));
+                                      _load();
+                                    },
+                                    onAddAnnonce: () => Navigator.push(context, MaterialPageRoute(
+                                      builder: (_) => CreateAnnonceAssoPage(
+                                        animalId: _filtered[i]['id']?.toString(),
+                                        initialAnimal: _filtered[i],
+                                      ),
+                                    )),
+                                  ),
+                                  childCount: _filtered.length,
+                                ),
                               ),
-                            ));
-                            _load();
-                          },
-                          onAddAnnonce: () => Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => CreateAnnonceAssoPage(
-                              animalId: _filtered[i]['id']?.toString(),
-                              initialAnimal: _filtered[i],
                             ),
-                          )),
-                        ),
+                          if (_filtered.isEmpty && _animauxRecus.isNotEmpty)
+                            const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                          if (_animauxRecus.isNotEmpty) ...[
+                            SliverToBoxAdapter(
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                                child: Row(children: [
+                                  const Icon(Icons.handshake_outlined, size: 16, color: Color(0xFF0C5C6C)),
+                                  const SizedBox(width: 6),
+                                  Text('Reçus par cession (${_animauxRecus.length})',
+                                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                                          fontSize: 13, color: Color(0xFF0C5C6C))),
+                                ]),
+                              ),
+                            ),
+                            SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (_, i) {
+                                  final a = _animauxRecus[i];
+                                  final nom = a['nom'] as String? ?? '—';
+                                  final espece = a['espece'] as String? ?? '';
+                                  final dateStr = a['date_sortie'] as String?;
+                                  final dt = dateStr != null ? DateTime.tryParse(dateStr) : null;
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                    leading: CircleAvatar(
+                                      backgroundColor: const Color(0xFF0C5C6C).withOpacity(0.08),
+                                      backgroundImage: a['photo_url'] != null
+                                          ? NetworkImage(a['photo_url'] as String) : null,
+                                      child: a['photo_url'] == null
+                                          ? Text(speciesLabel(espece).isNotEmpty
+                                              ? speciesLabel(espece)[0].toUpperCase() : '🐾',
+                                              style: const TextStyle(fontSize: 16))
+                                          : null,
+                                    ),
+                                    title: Text(nom, style: const TextStyle(
+                                        fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                                    subtitle: Text(
+                                      '$espece${dt != null ? ' · Reçu le ${dt.day}/${dt.month}/${dt.year}' : ''}',
+                                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                    ),
+                                    trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                                    onTap: () async {
+                                      await Navigator.push(context, MaterialPageRoute(
+                                        builder: (_) => AnimalFichePage(
+                                          animalId: a['id'] as String,
+                                          readOnly: false,
+                                          isAssociation: true,
+                                          eleveurUidOverride: a['uid_eleveur'] as String?,
+                                        ),
+                                      ));
+                                      _load();
+                                    },
+                                  );
+                                },
+                                childCount: _animauxRecus.length,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
           ),
         ],

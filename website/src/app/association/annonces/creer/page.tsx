@@ -26,6 +26,7 @@ export default function CreerAnnonceAssoPage() {
   const router = useRouter();
   const params = useSearchParams();
   const animalIdParam = params.get('animalId');
+  const editId = params.get('edit'); // ID annonce à modifier
 
   const [titre, setTitre] = useState('');
   const [espece, setEspece] = useState('');
@@ -43,16 +44,16 @@ export default function CreerAnnonceAssoPage() {
   const [linkedAnimalNom, setLinkedAnimalNom] = useState<string | null>(null);
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
-  const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
+  const [existingPhotoUrls, setExistingPhotoUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(!!editId);
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Picker d'animal
   const [mesAnimaux, setMesAnimaux] = useState<any[]>([]);
   const [showPicker, setShowPicker] = useState(false);
 
-  // Charger les animaux disponibles de l'association
+  // Charger les animaux de l'association
   useEffect(() => {
     if (!user) return;
     supabase.from('animaux')
@@ -64,31 +65,60 @@ export default function CreerAnnonceAssoPage() {
       .then(({ data }) => setMesAnimaux(data ?? []));
   }, [user]);
 
-  // Pré-remplir depuis l'animal si animalId fourni en param URL
+  // Charger l'annonce existante pour édition
   useEffect(() => {
-    if (!animalIdParam || !user) return;
+    if (!editId || !user) return;
+    setLoadingEdit(true);
+    supabase.from('annonces')
+      .select('*')
+      .eq('id', editId)
+      .eq('uid_eleveur', user.uid)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setTitre(data.titre ?? '');
+          setEspece(data.espece ?? '');
+          setRace(data.race ?? '');
+          setRaceQuery(data.race ?? '');
+          setSexe(data.sexe ?? '');
+          setDescription(data.description ?? '');
+          setVaccines(data.vaccines ?? false);
+          setVermifuge(data.vermifuge ?? false);
+          setIdentification(data.identification ?? false);
+          setSterilise(data.sterilise ?? false);
+          setContratAdoption(data.contrat_adoption ?? true);
+          if (data.animal_id) setLinkedAnimalId(data.animal_id);
+          const existingPhotos = (data.photos as string[]) ?? [];
+          setExistingPhotoUrls(existingPhotos);
+        }
+        setLoadingEdit(false);
+      });
+  }, [editId, user]);
+
+  // Pré-remplir depuis un animal si animalId en param
+  useEffect(() => {
+    if (!animalIdParam || !user || editId) return;
     supabase.from('animaux')
       .select('nom, espece, race, sexe, photo_url')
       .eq('id', animalIdParam).single()
       .then(({ data }) => { if (data) prefillAnimal(data, animalIdParam); });
   }, [animalIdParam, user]);
 
-  // Charger races quand l'espèce change
+  // Charger les races quand l'espèce change
   useEffect(() => {
     if (!espece) return;
     loadBreeds(espece).then(setBreeds);
-    setRace(''); setRaceQuery('');
+    if (!editId) { setRace(''); setRaceQuery(''); }
   }, [espece]);
 
   function prefillAnimal(data: any, id: string) {
     setLinkedAnimalId(id);
     setLinkedAnimalNom(data.nom ?? null);
-    if (data.nom) setTitre(`${data.nom} cherche une famille`);
+    if (data.nom && !editId) setTitre(`${data.nom} cherche une famille`);
     if (data.espece) setEspece(data.espece);
     if (data.race) { setRace(data.race); setRaceQuery(data.race); }
     if (data.sexe) setSexe(data.sexe);
-    if (data.photo_url) setExistingPhotoUrl(data.photo_url);
-    else setExistingPhotoUrl(null);
+    if (data.photo_url && !editId) setExistingPhotoUrls([data.photo_url]);
   }
 
   function selectAnimal(a: any) {
@@ -112,6 +142,10 @@ export default function CreerAnnonceAssoPage() {
     setPreviews(prev => prev.filter((_, idx) => idx !== i));
   };
 
+  const removeExistingPhoto = (url: string) => {
+    setExistingPhotoUrls(prev => prev.filter(u => u !== url));
+  };
+
   const filteredBreeds = breeds.filter(b =>
     b.toLowerCase().includes(raceQuery.toLowerCase())
   ).slice(0, 8);
@@ -120,63 +154,77 @@ export default function CreerAnnonceAssoPage() {
     e.preventDefault();
     if (!user) return;
     if (!espece) { setError('Veuillez choisir une espèce.'); return; }
-    if (photos.length === 0 && !existingPhotoUrl) { setError('Ajoutez au moins une photo.'); return; }
+    if (photos.length === 0 && existingPhotoUrls.length === 0) { setError('Ajoutez au moins une photo.'); return; }
     setLoading(true);
     setError('');
     try {
-      const photoUrls: string[] = [];
-      if (existingPhotoUrl && photos.length === 0) photoUrls.push(existingPhotoUrl);
       const uploaded = await Promise.all(photos.map(f => uploadPhoto(f, user.uid)));
-      photoUrls.push(...uploaded);
+      const finalPhotos = [...existingPhotoUrls, ...uploaded];
 
-      const [{ data: userData }, { data: assoProfile }] = await Promise.all([
-        supabase.from('users')
-          .select('name_elevage, firstname, lastname, ville_elevage, departement_elevage, region_elevage, pays_elevage, is_association')
-          .eq('uid', user.uid).single(),
-        supabase.from('user_profiles')
-          .select('profile_label')
-          .eq('uid', user.uid)
-          .eq('profile_type', 'association')
-          .maybeSingle(),
-      ]);
-      // Profil secondaire association > name_elevage > nom/prénom
-      const nomAsso = assoProfile?.profile_label
-        || userData?.name_elevage
-        || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim();
+      if (editId) {
+        // Mode édition — UPDATE
+        await supabase.from('annonces').update({
+          titre: titre || `${ESPECE_LABEL[espece] ?? espece} cherche une famille`,
+          espece,
+          race: race || null,
+          sexe: sexe || null,
+          description: description || null,
+          photos: finalPhotos,
+          vaccines,
+          vermifuge,
+          identification,
+          sterilise,
+          contrat_adoption: contratAdoption,
+          animal_id: linkedAnimalId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(linkedAnimalId) ? linkedAnimalId : null,
+        }).eq('id', editId).eq('uid_eleveur', user.uid);
+      } else {
+        // Mode création — INSERT
+        const [{ data: userData }, { data: assoProfile }] = await Promise.all([
+          supabase.from('users')
+            .select('name_elevage, firstname, lastname, ville_elevage, departement_elevage, region_elevage, pays_elevage')
+            .eq('uid', user.uid).single(),
+          supabase.from('user_profiles')
+            .select('profile_label')
+            .eq('uid', user.uid).eq('profile_type', 'association').maybeSingle(),
+        ]);
+        const nomAsso = assoProfile?.profile_label
+          || userData?.name_elevage
+          || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim();
 
-      await supabase.from('annonces').insert({
-        uid_eleveur: user.uid,
-        nom_eleveur: nomAsso,
-        ville_eleveur: userData?.ville_elevage ?? '',
-        departement_eleveur: userData?.departement_elevage ?? '',
-        region_eleveur: userData?.region_elevage ?? '',
-        pays_eleveur: userData?.pays_elevage ?? 'France',
-        titre: titre || `${ESPECE_LABEL[espece] ?? espece} cherche une famille`,
-        espece,
-        race: race || null,
-        sexe: sexe || null,
-        type: 'animal',
-        type_vente: 'adoption',
-        profil_source: 'association',
-        photos: photoUrls,
-        description: description || null,
-        statut: 'disponible',
-        vaccines,
-        vermifuge,
-        identification,
-        sterilise,
-        contrat_adoption: contratAdoption,
-        animal_id: linkedAnimalId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(linkedAnimalId) ? linkedAnimalId : null,
-        prix: null,
-        created_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 60 * 86400000).toISOString(),
-        vues: 0,
-        contacts: 0,
-      });
+        await supabase.from('annonces').insert({
+          uid_eleveur: user.uid,
+          nom_eleveur: nomAsso,
+          ville_eleveur: userData?.ville_elevage ?? '',
+          departement_eleveur: userData?.departement_elevage ?? '',
+          region_eleveur: userData?.region_elevage ?? '',
+          pays_eleveur: userData?.pays_elevage ?? 'France',
+          titre: titre || `${ESPECE_LABEL[espece] ?? espece} cherche une famille`,
+          espece,
+          race: race || null,
+          sexe: sexe || null,
+          type: 'animal',
+          type_vente: 'adoption',
+          profil_source: 'association',
+          photos: finalPhotos,
+          description: description || null,
+          statut: 'disponible',
+          vaccines,
+          vermifuge,
+          identification,
+          sterilise,
+          contrat_adoption: contratAdoption,
+          animal_id: linkedAnimalId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(linkedAnimalId) ? linkedAnimalId : null,
+          prix: null,
+          created_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 60 * 86400000).toISOString(),
+          vues: 0,
+          contacts: 0,
+        });
+      }
 
       router.push('/association/annonces');
     } catch (err: any) {
-      setError(err.message ?? 'Erreur lors de la publication.');
+      setError(err.message ?? 'Erreur lors de la sauvegarde.');
     } finally {
       setLoading(false);
     }
@@ -192,12 +240,20 @@ export default function CreerAnnonceAssoPage() {
     </label>
   );
 
+  if (loadingEdit) {
+    return (
+      <div className="flex justify-center py-24">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-xl">
       <div className="flex items-center gap-3">
         <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-600 text-xl">←</button>
         <h1 className="text-2xl font-bold font-galey text-teal-800">
-          {linkedAnimalNom ? `Adoption — ${linkedAnimalNom}` : 'Nouvelle annonce d\'adoption'}
+          {editId ? 'Modifier l\'annonce' : linkedAnimalNom ? `Adoption — ${linkedAnimalNom}` : 'Nouvelle annonce d\'adoption'}
         </h1>
       </div>
 
@@ -209,12 +265,11 @@ export default function CreerAnnonceAssoPage() {
           {linkedAnimalId ? (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                {existingPhotoUrl && (
-                  <img src={existingPhotoUrl} alt="" className="w-10 h-10 rounded-lg object-cover" />
-                )}
-                <span className="text-sm font-galey font-semibold text-teal-800">{linkedAnimalNom ?? linkedAnimalId}</span>
+                <span className="text-sm font-galey font-semibold text-teal-800">
+                  {linkedAnimalNom ?? linkedAnimalId}
+                </span>
               </div>
-              <button type="button" onClick={() => { setLinkedAnimalId(null); setLinkedAnimalNom(null); setExistingPhotoUrl(null); }}
+              <button type="button" onClick={() => { setLinkedAnimalId(null); setLinkedAnimalNom(null); }}
                 className="text-xs text-gray-400 hover:text-gray-600">Retirer</button>
             </div>
           ) : (
@@ -268,7 +323,7 @@ export default function CreerAnnonceAssoPage() {
           </div>
         </div>
 
-        {/* Race avec autocomplete */}
+        {/* Race / Sexe */}
         <div className="grid grid-cols-2 gap-3">
           <div className="relative">
             <label className="block text-sm font-galey font-semibold text-gray-700 mb-1">Race</label>
@@ -311,21 +366,21 @@ export default function CreerAnnonceAssoPage() {
         <div>
           <label className="block text-sm font-galey font-semibold text-gray-700 mb-2">Photos * (max 6)</label>
           <div className="flex flex-wrap gap-2">
-            {/* Photo existante depuis l'animal */}
-            {existingPhotoUrl && photos.length === 0 && (
-              <div className="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-teal-200">
-                <img src={existingPhotoUrl} alt="" className="w-full h-full object-cover" />
-                <span className="absolute bottom-0 left-0 right-0 bg-teal-700/80 text-white text-[9px] text-center py-0.5 font-galey">Photo animal</span>
+            {existingPhotoUrls.map((url, i) => (
+              <div key={`existing-${i}`} className="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-teal-200">
+                <img src={url} alt="" className="w-full h-full object-cover" />
+                <button type="button" onClick={() => removeExistingPhoto(url)}
+                  className="absolute top-0.5 right-0.5 bg-black/50 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">✕</button>
               </div>
-            )}
+            ))}
             {previews.map((src, i) => (
-              <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-200">
+              <div key={`new-${i}`} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-200">
                 <img src={src} alt="" className="w-full h-full object-cover" />
                 <button type="button" onClick={() => removePhoto(i)}
                   className="absolute top-0.5 right-0.5 bg-black/50 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">✕</button>
               </div>
             ))}
-            {photos.length < 6 && (
+            {(existingPhotoUrls.length + photos.length) < 6 && (
               <button type="button" onClick={() => fileRef.current?.click()}
                 className="w-20 h-20 rounded-xl border-2 border-dashed border-teal-300 flex items-center justify-center text-teal-400 hover:bg-teal-50 transition-colors">
                 <span className="text-2xl">+</span>
@@ -355,7 +410,7 @@ export default function CreerAnnonceAssoPage() {
 
         <button type="submit" disabled={loading}
           className="w-full bg-teal-700 text-white py-3.5 rounded-xl font-galey font-bold text-base hover:bg-teal-800 transition-colors disabled:opacity-50">
-          {loading ? 'Publication en cours…' : 'Publier l\'annonce'}
+          {loading ? (editId ? 'Sauvegarde…' : 'Publication…') : (editId ? 'Sauvegarder les modifications' : 'Publier l\'annonce')}
         </button>
       </form>
     </div>

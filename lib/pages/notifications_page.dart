@@ -16,6 +16,7 @@ import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
@@ -240,12 +241,30 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
       return;
     }
-    // Cession confirmée côté acquéreur → voir dans Mes Animaux
+    // Cession confirmée côté acquéreur → ouvrir la fiche de l'animal reçu
     if (type == 'cession_confirmee') {
+      final animalId = data is Map ? data['animalId'] as String? : null;
       if (!mounted) return;
-      await Navigator.push(context, MaterialPageRoute(
-        builder: (_) => const MesAnimauxPage(),
-      ));
+      if (animalId != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AnimalFichePage(animalId: animalId, readOnly: true),
+        ));
+      } else {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const AnimauxAcquisPage(),
+        ));
+      }
+      return;
+    }
+    // Cession signée par l'acquéreur → le cédant doit confirmer → ouvrir la fiche
+    if (type == 'cession_signee_acquereur') {
+      final animalId = data is Map ? data['animalId'] as String? : null;
+      if (!mounted) return;
+      if (animalId != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AnimalFichePage(animalId: animalId, readOnly: false),
+        ));
+      }
       return;
     }
     // Cession révoquée → juste marquer lue (déjà fait)

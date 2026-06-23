@@ -200,7 +200,11 @@ export default function ContratsAdoptionPage() {
       const url = `${window.location.origin}/signer-contrat/${token}`;
       if (acqEmail.trim()) {
         try {
-          await sendNotification({ uid: user.uid, type: 'contrat_saillie_invite', title: '✍️ Contrat d\'adoption à signer', body: `Contrat d'adoption pour ${selectedAnimal.nom} envoyé à ${acqEmail}`, data: { url } });
+          const { data: adoptantUser } = await supabase
+            .from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
+          if (adoptantUser?.uid) {
+            await sendNotification({ uid: adoptantUser.uid, type: 'contrat_invite', title: '🏡 Contrat d\'adoption à signer', body: `Un contrat d'adoption pour ${selectedAnimal.nom} vous a été envoyé — vérifiez et signez`, data: { url } });
+          }
         } catch { /* ignore */ }
       }
       popupRef.current = window.open(url, '_blank', 'width=900,height=700,scrollbars=yes');

@@ -1033,7 +1033,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             ),
           if (widget.animalId != null && !widget.vetMode
               && !widget.readOnly
-              && _statut != 'sorti' && _statut != 'decede' && _statut != 'cession_en_cours')
+              && _statut != 'decede' && _statut != 'cession_en_cours'
+              && (_statut != 'sorti' || _uidAcquereur == FirebaseAuth.instance.currentUser?.uid))
             IconButton(
               icon: const Icon(Icons.handshake_outlined, size: 20),
               tooltip: widget.isAssociation ? 'Proposer à l\'adoption' : 'Céder cet animal',

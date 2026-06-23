@@ -296,9 +296,10 @@ const MENU_PARTICULIER = [
     section: 'Mon Profil',
     icon: '👤',
     items: [
-      { href: '/profil',          label: 'Mon Profil',      icon: '👤' },
-      { href: '/mes-animaux',     label: 'Mes Animaux',     icon: '🐾' },
-      { href: '/mes-taches',      label: 'Mes tâches',      icon: '✅' },
+      { href: '/profil',              label: 'Mon Profil',         icon: '👤' },
+      { href: '/mes-animaux',         label: 'Mes Animaux',        icon: '🐾' },
+      { href: '/mes-animaux-acquis',  label: 'Mes Animaux Acquis', icon: '🤝' },
+      { href: '/mes-taches',          label: 'Mes tâches',         icon: '✅' },
     ],
   },
   {
@@ -815,20 +816,30 @@ export default function Header() {
                                 </a>
                               ) : null;
                             })()}
-                            {n.type === 'cession_confirmee' && (
-                              <a href="/mes-animaux"
-                                onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
-                                className="mt-1 text-xs font-bold text-[#6E9E57] underline">
-                                🐾 Voir dans Mes Animaux →
-                              </a>
-                            )}
-                            {(n.type === 'contrat_signe_acquereur' || n.type === 'cession_signe_acquereur') && (
-                              <a href="/mes-animaux"
-                                onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
-                                className="mt-1 text-xs font-bold text-[#0C5C6C] underline">
-                                🔔 Confirmer la cession →
-                              </a>
-                            )}
+                            {n.type === 'cession_confirmee' && (() => {
+                              const d = (n as Notif & { data?: Record<string, string> }).data;
+                              const animalId = d?.animalId;
+                              const href = animalId ? `/mes-animaux/${animalId}?readOnly=1` : '/mes-animaux-acquis';
+                              return (
+                                <a href={href}
+                                  onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
+                                  className="mt-1 text-xs font-bold text-[#6E9E57] underline">
+                                  🐾 Voir l&#39;animal →
+                                </a>
+                              );
+                            })()}
+                            {(n.type === 'cession_signee_acquereur' || n.type === 'cession_signe_acquereur') && (() => {
+                              const d = (n as Notif & { data?: Record<string, string> }).data;
+                              const animalId = d?.animalId;
+                              const href = animalId ? `/mes-animaux/${animalId}` : '/mes-animaux';
+                              return (
+                                <a href={href}
+                                  onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
+                                  className="mt-1 text-xs font-bold text-[#0C5C6C] underline">
+                                  🔔 Confirmer la cession →
+                                </a>
+                              );
+                            })()}
                           </div>
                         </div>
                       );

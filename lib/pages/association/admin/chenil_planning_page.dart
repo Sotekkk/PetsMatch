@@ -8,7 +8,6 @@ extension _Capitalize on String {
   String capitalize() => isEmpty ? this : '${this[0].toUpperCase()}${substring(1)}';
 }
 
-/// Planning chenil : vue boxes + calendrier semaine.
 class ChenilPlanningPage extends StatefulWidget {
   const ChenilPlanningPage({super.key});
   @override
@@ -25,15 +24,10 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
   late TabController _tabs;
   bool _loading = true;
 
-  // Animaux au chenil (statuts présents)
   List<Map<String, dynamic>> _animaux = [];
-
-  // Boxes gérées par l'association (stockées en Supabase si dispo)
-  List<_Box> _boxes = [];
+  List<_Enclos> _enclos = [];
 
   DateTime _weekStart = _mondayOf(DateTime.now());
-
-  static const _assoStatuts = ['en_soin', 'disponible', 'en_fa'];
 
   @override
   void initState() {
@@ -43,10 +37,7 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
   }
 
   @override
-  void dispose() {
-    _tabs.dispose();
-    super.dispose();
-  }
+  void dispose() { _tabs.dispose(); super.dispose(); }
 
   static DateTime _mondayOf(DateTime d) =>
       d.subtract(Duration(days: d.weekday - 1));
@@ -56,128 +47,90 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
     if (uid == null) return;
     setState(() => _loading = true);
     try {
-      final allAnimaux = await _supa
-          .from('animaux')
-          .select('id,nom,espece,photo_url,statut,date_entree,date_sortie,box_id')
-          .eq('uid_eleveur', uid)
-          .eq('is_association', true)
-          .order('nom');
-      final list = List<Map<String, dynamic>>.from(allAnimaux as List);
+      final results = await Future.wait([
+        _supa
+            .from('enclos_chenil')
+            .select('id, nom, type, capacite, dernier_nettoyage, notes')
+            .eq('uid_eleveur', uid)
+            .eq('is_association', true)
+            .order('nom'),
+        _supa
+            .from('animaux')
+            .select('id, nom, espece, photo_url, statut, date_entree, date_sortie, enclos_id')
+            .eq('uid_eleveur', uid)
+            .eq('is_association', true)
+            .order('nom'),
+      ]);
 
-      // Charge les boxes si la table existe
-      List<_Box> boxes = [];
-      try {
-        final boxRows = await _supa
-            .from('chenil_boxes')
-            .select()
-            .eq('association_uid', uid)
-            .order('nom');
-        boxes = (boxRows as List).map((r) => _Box.fromMap(r as Map<String, dynamic>)).toList();
-      } catch (_) {
-        // Table pas encore créée — génère des boxes virtuelles par espèce
-        boxes = _generateVirtualBoxes(list);
+      final enclosList = (results[0] as List)
+          .map((r) => _Enclos.fromMap(r as Map<String, dynamic>))
+          .toList();
+      final animauxList = List<Map<String, dynamic>>.from(results[1] as List);
+
+      if (mounted) setState(() {
+        _enclos  = enclosList;
+        _animaux = animauxList;
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur chargement : $e'), backgroundColor: Colors.red));
       }
-
-      if (mounted) setState(() { _animaux = list; _boxes = boxes; _loading = false; });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
     }
   }
 
-  List<_Box> _generateVirtualBoxes(List<Map<String, dynamic>> animaux) {
-    final speciesCounts = <String, int>{};
-    for (final a in animaux) {
-      final esp = a['espece']?.toString() ?? 'autre';
-      speciesCounts[esp] = (speciesCounts[esp] ?? 0) + 1;
-    }
-    final boxes = <_Box>[];
-    for (final entry in speciesCounts.entries) {
-      final cap = entry.value > 4 ? (entry.value + 1) : 4;
-      boxes.add(_Box(id: 'virtual_${entry.key}', nom: _especeLabel(entry.key), espece: entry.key, capacite: cap));
-    }
-    return boxes;
-  }
-
-  Future<void> _addBox() async {
+  Future<void> _addEnclos() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
-    String espece = 'chien';
-    int capacite = 2;
-    final nomCtrl = TextEditingController();
-
-    final result = await showModalBottomSheet<bool>(
+    final data = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
-        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Nouvelle box', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: nomCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Nom de la box',
-                hintText: 'Ex : Box 1, Chatterie, Quarantaine…',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: espece,
-              decoration: const InputDecoration(labelText: 'Espèce', border: OutlineInputBorder()),
-              items: const [
-                DropdownMenuItem(value: 'chien',  child: Text('Chien')),
-                DropdownMenuItem(value: 'chat',   child: Text('Chat')),
-                DropdownMenuItem(value: 'lapin',  child: Text('Lapin')),
-                DropdownMenuItem(value: 'nac',    child: Text('NAC')),
-                DropdownMenuItem(value: 'oiseau', child: Text('Oiseau')),
-                DropdownMenuItem(value: 'autre',  child: Text('Autre')),
-              ],
-              onChanged: (v) => setSheet(() => espece = v ?? 'chien'),
-            ),
-            const SizedBox(height: 12),
-            Row(children: [
-              const Text('Capacité :', style: TextStyle(fontFamily: 'Galey')),
-              const SizedBox(width: 12),
-              IconButton(icon: const Icon(Icons.remove_circle_outline), onPressed: () => setSheet(() { if (capacite > 1) capacite--; })),
-              Text('$capacite', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
-              IconButton(icon: const Icon(Icons.add_circle_outline), onPressed: () => setSheet(() => capacite++)),
-            ]),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                onPressed: () async {
-                  final nom = nomCtrl.text.trim();
-                  if (nom.isEmpty) return;
-                  try {
-                    await _supa.from('chenil_boxes').insert({
-                      'association_uid': uid, 'nom': nom, 'espece': espece, 'capacite': capacite,
-                    });
-                  } catch (_) {}
-                  if (ctx.mounted) Navigator.pop(ctx, true);
-                },
-                child: const Text('Créer la box', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-              ),
-            ),
-          ],
-        ),
-      )),
+      builder: (_) => const _AddEnclosSheet(),
     );
-    if (result == true) _load();
+
+    if (data == null || !mounted) return;
+
+    try {
+      await _supa.from('enclos_chenil').insert({
+        'uid_eleveur':   uid,
+        'is_association': true,
+        'nom':           data['nom'],
+        'type':          data['type'],
+        'capacite':      data['capacite'],
+        'notes':         data['notes']?.isNotEmpty == true ? data['notes'] : null,
+      }).select();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Enclos créé !'), backgroundColor: Colors.green));
+        _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red,
+                duration: const Duration(seconds: 8)));
+      }
+    }
   }
 
-  Future<void> _assignBox(Map<String, dynamic> animal) async {
-    if (_boxes.isEmpty) return;
+  Future<void> _markClean(String enclosId) async {
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    await _supa.from('enclos_chenil').update({
+      'dernier_nettoyage': today,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', enclosId);
+    setState(() {
+      _enclos = _enclos.map((e) => e.id == enclosId ? e.copyWith(dernierNettoyage: today) : e).toList();
+    });
+  }
+
+  Future<void> _assignEnclos(Map<String, dynamic> animal) async {
+    if (_enclos.isEmpty) return;
     await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -188,39 +141,41 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Assigner ${animal['nom']} à une box',
+            Text('Assigner ${animal['nom']} à un enclos',
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
             const SizedBox(height: 12),
-            ..._boxes.where((b) => b.espece == animal['espece'] || b.espece == 'autre').map((b) {
-              final count = _animaux.where((a) => a['box_id'] == b.id).length;
-              final full  = count >= b.capacite;
+            ..._enclos.map((enc) {
+              final count = _animaux.where((a) => a['enclos_id'] == enc.id).length;
+              final full  = count >= enc.capacite;
               return ListTile(
                 leading: CircleAvatar(
                   backgroundColor: full ? Colors.red.shade100 : _green.withValues(alpha: 0.15),
-                  child: Text('${count}/${b.capacite}', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                      color: full ? Colors.red : _teal, fontWeight: FontWeight.w700)),
+                  child: Text('$count/${enc.capacite}',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                          color: full ? Colors.red : _teal, fontWeight: FontWeight.w700)),
                 ),
-                title: Text(b.nom, style: const TextStyle(fontFamily: 'Galey')),
-                subtitle: Text(full ? 'Box pleine' : 'Place disponible',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                        color: full ? Colors.red : Colors.grey)),
+                title: Text(enc.nom, style: const TextStyle(fontFamily: 'Galey')),
+                subtitle: Text(
+                  full ? 'Complet' : '${enc.typeLabel} · ${enc.capacite - count} place(s)',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                      color: full ? Colors.red : Colors.grey)),
                 enabled: !full,
                 onTap: full ? null : () async {
                   Navigator.pop(context);
-                  if (!b.id.startsWith('virtual_')) {
-                    await _supa.from('animaux').update({'box_id': b.id}).eq('id', animal['id']);
-                    _load();
-                  }
+                  await _supa.from('animaux').update({'enclos_id': enc.id}).eq('id', animal['id']);
+                  _load();
                 },
               );
-            }).toList(),
+            }),
             ListTile(
-              leading: const CircleAvatar(backgroundColor: Colors.grey, child: Icon(Icons.close, color: Colors.white, size: 16)),
-              title: const Text('Retirer de la box', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+              leading: const CircleAvatar(
+                  backgroundColor: Colors.grey,
+                  child: Icon(Icons.close, color: Colors.white, size: 16)),
+              title: const Text('Retirer de l\'enclos', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
               onTap: () async {
                 Navigator.pop(context);
-                if (animal['box_id'] != null) {
-                  await _supa.from('animaux').update({'box_id': null}).eq('id', animal['id']);
+                if (animal['enclos_id'] != null) {
+                  await _supa.from('animaux').update({'enclos_id': null}).eq('id', animal['id']);
                   _load();
                 }
               },
@@ -265,8 +220,8 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
         actions: [
           IconButton(
             icon: const Icon(Icons.add_box_outlined),
-            tooltip: 'Nouvelle box',
-            onPressed: _addBox,
+            tooltip: 'Nouvel enclos',
+            onPressed: _addEnclos,
           ),
         ],
         bottom: TabBar(
@@ -275,83 +230,100 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white60,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600),
-          tabs: const [Tab(text: 'Boxes'), Tab(text: 'Vue semaine')],
+          tabs: const [Tab(text: 'Enclos'), Tab(text: 'Vue semaine')],
         ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : TabBarView(controller: _tabs, children: [
-              _buildBoxesView(),
+              _buildEnclosView(),
               _buildWeekView(),
             ]),
     );
   }
 
-  // ── Vue boxes ─────────────────────────────────────────────────────────────
+  Widget _buildEnclosView() {
+    // Stats globales
+    final totalPlaces = _enclos.fold(0, (s, e) => s + e.capacite);
+    final occupes = _animaux.where((a) => a['enclos_id'] != null).length;
+    final sansEnclos = _animaux.where((a) =>
+        a['enclos_id'] == null &&
+        ['present', 'en_soin', 'disponible'].contains(a['statut'])).length;
 
-  Widget _buildBoxesView() {
-    if (_animaux.isEmpty && _boxes.isEmpty) {
-      return const Center(
+    if (_animaux.isEmpty && _enclos.isEmpty) {
+      return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.home_work_outlined, size: 60, color: Colors.grey),
-          SizedBox(height: 12),
-          Text('Aucun animal au chenil', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
-          SizedBox(height: 8),
-          Text('Appuyez sur + pour créer une box', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+          const Icon(Icons.home_work_outlined, size: 60, color: Colors.grey),
+          const SizedBox(height: 12),
+          const Text('Aucun enclos configuré', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+          const SizedBox(height: 8),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white),
+            onPressed: _addEnclos,
+            child: const Text('Créer un enclos', style: TextStyle(fontFamily: 'Galey')),
+          ),
         ]),
       );
     }
-
-    // Animaux sans box assignée
-    final sansBox = _animaux.where((a) {
-      final bid = a['box_id']?.toString() ?? '';
-      return bid.isEmpty;
-    }).toList();
 
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
         padding: const EdgeInsets.all(12),
         children: [
-          ..._boxes.map((box) {
-            final inBox = _animaux.where((a) => a['box_id'] == box.id).toList();
-            return _BoxCard(
-              box: box,
-              animals: inBox,
+          // Résumé
+          if (_enclos.isNotEmpty) ...[
+            Row(children: [
+              _StatChip(label: '$occupes/$totalPlaces', sub: 'Occupés', color: _teal),
+              const SizedBox(width: 8),
+              _StatChip(label: '${totalPlaces - occupes}', sub: 'Libres', color: _green),
+              const SizedBox(width: 8),
+              _StatChip(label: '$sansEnclos', sub: 'Sans enclos',
+                  color: sansEnclos > 0 ? Colors.orange : Colors.grey),
+            ]),
+            const SizedBox(height: 12),
+          ],
+          // Cartes enclos
+          ..._enclos.map((enc) {
+            final inEnclos = _animaux.where((a) => a['enclos_id'] == enc.id).toList();
+            return _EnclosCard(
+              enclos: enc,
+              animals: inEnclos,
               allAnimaux: _animaux,
-              onAssign: (a) => _assignBox(a),
-              onAnimalTap: (a) => _showAnimalSheet(a),
+              onAssign: (a) => _assignEnclos(a),
+              onAnimalTap: _showAnimalSheet,
+              onClean: () => _markClean(enc.id),
             );
           }),
-          // Animaux non assignés
-          if (sansBox.isNotEmpty) ...[
+          // Sans enclos
+          if (sansEnclos > 0) ...[
             const SizedBox(height: 8),
             Container(
-              margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Colors.orange.shade50,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey.shade200),
+                border: Border.all(color: Colors.orange.shade200),
               ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  const Icon(Icons.inbox_outlined, color: Colors.grey, size: 18),
+                  const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 18),
                   const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text('Non assignés', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Colors.grey)),
-                  ),
-                  Text('${sansBox.length} animal(s)',
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                  Text('$sansEnclos animal(s) sans enclos',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                          fontSize: 13, color: Colors.orange)),
                 ]),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8, runSpacing: 8,
-                  children: sansBox.map((a) => _AnimalChip(
-                    animal: a,
-                    onTap: () => _showAnimalSheet(a),
-                    onAssign: _boxes.isNotEmpty ? () => _assignBox(a) : null,
-                  )).toList(),
+                  children: _animaux
+                      .where((a) => a['enclos_id'] == null &&
+                          ['present', 'en_soin', 'disponible'].contains(a['statut']))
+                      .map((a) => _AnimalChip(
+                        animal: a,
+                        onTap: () => _showAnimalSheet(a),
+                        onAssign: _enclos.isNotEmpty ? () => _assignEnclos(a) : null,
+                      )).toList(),
                 ),
               ]),
             ),
@@ -380,13 +352,15 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
             _photoWidget(a['photo_url']?.toString() ?? '', radius: 24),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(a['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+              Text(a['nom']?.toString() ?? '',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
               Text('${a['espece'] ?? ''} · ${a['statut'] ?? ''}',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
             ])),
           ]),
           const Divider(height: 20),
-          const Text('Changer statut', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+          const Text('Changer statut',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
           const SizedBox(height: 8),
           Wrap(spacing: 8, runSpacing: 8, children: statuts.map((s) {
             final active = a['statut'] == s.$1;
@@ -410,11 +384,13 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
             Expanded(
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.calendar_today_outlined, size: 14),
-                label: Text(a['date_entree'] != null ? 'Entrée : ${_fmtDate(a['date_entree'])}' : 'Date d\'entrée',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                label: Text(
+                  a['date_entree'] != null ? 'Entrée : ${_fmtDate(a['date_entree'])}' : "Date d'entrée",
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
                 onPressed: () async {
-                  final d = await _pickDate(initial: a['date_entree'] != null ? DateTime.tryParse(a['date_entree']) : null);
-                  if (d != null) { Navigator.pop(context); _updateDates(a['id'], entree: d); }
+                  final d = await _pickDate(
+                      initial: a['date_entree'] != null ? DateTime.tryParse(a['date_entree']) : null);
+                  if (d != null) { if(context.mounted) Navigator.pop(context); _updateDates(a['id'], entree: d); }
                 },
               ),
             ),
@@ -422,11 +398,13 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
             Expanded(
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.exit_to_app_outlined, size: 14),
-                label: Text(a['date_sortie'] != null ? 'Sortie : ${_fmtDate(a['date_sortie'])}' : 'Date de sortie',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                label: Text(
+                  a['date_sortie'] != null ? 'Sortie : ${_fmtDate(a['date_sortie'])}' : 'Date de sortie',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
                 onPressed: () async {
-                  final d = await _pickDate(initial: a['date_sortie'] != null ? DateTime.tryParse(a['date_sortie']) : null);
-                  if (d != null) { Navigator.pop(context); _updateDates(a['id'], sortie: d); }
+                  final d = await _pickDate(
+                      initial: a['date_sortie'] != null ? DateTime.tryParse(a['date_sortie']) : null);
+                  if (d != null) { if(context.mounted) Navigator.pop(context); _updateDates(a['id'], sortie: d); }
                 },
               ),
             ),
@@ -435,8 +413,6 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
       ),
     );
   }
-
-  // ── Vue semaine ───────────────────────────────────────────────────────────
 
   Widget _buildWeekView() {
     final days = List.generate(7, (i) => _weekStart.add(Duration(days: i)));
@@ -463,7 +439,6 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
           ),
         ]),
       ),
-      // En-têtes
       Container(
         color: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 6),
@@ -506,11 +481,6 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
     ]);
   }
 
-  static String _especeLabel(String e) => const {
-    'chien': 'Chiens', 'chat': 'Chats', 'lapin': 'Lapins',
-    'oiseau': 'Oiseaux', 'nac': 'NAC', 'cheval': 'Chevaux', 'autre': 'Autres',
-  }[e] ?? e;
-
   static String _fmtDate(dynamic d) {
     if (d == null) return '';
     try { return DateFormat('dd/MM/yy').format(DateTime.parse(d.toString())); } catch (_) { return d.toString(); }
@@ -526,46 +496,95 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
   }
 }
 
-// ── Modèle Box ─────────────────────────────────────────────────────────────
+// ── Modèle Enclos ──────────────────────────────────────────────────────────
 
-class _Box {
-  final String id;
-  final String nom;
-  final String espece;
-  final int    capacite;
+class _Enclos {
+  final String  id;
+  final String  nom;
+  final String  type;
+  final int     capacite;
+  final String? dernierNettoyage;
+  final String? notes;
 
-  const _Box({required this.id, required this.nom, required this.espece, required this.capacite});
+  static const _typeLabels = {'box': 'Box', 'enclos': 'Enclos', 'chatterie': 'Chatterie', 'cage': 'Cage'};
+  static const _typeIcons  = {'box': Icons.home_work_outlined, 'enclos': Icons.grass, 'chatterie': Icons.pets, 'cage': Icons.grid_view};
 
-  factory _Box.fromMap(Map<String, dynamic> m) => _Box(
-    id:       m['id']?.toString() ?? '',
-    nom:      m['nom']?.toString() ?? '',
-    espece:   m['espece']?.toString() ?? 'autre',
-    capacite: (m['capacite'] as num?)?.toInt() ?? 2,
+  const _Enclos({required this.id, required this.nom, required this.type,
+      required this.capacite, this.dernierNettoyage, this.notes});
+
+  factory _Enclos.fromMap(Map<String, dynamic> m) => _Enclos(
+    id:               m['id']?.toString() ?? '',
+    nom:              m['nom']?.toString() ?? '',
+    type:             m['type']?.toString() ?? 'box',
+    capacite:         (m['capacite'] as num?)?.toInt() ?? 1,
+    dernierNettoyage: m['dernier_nettoyage']?.toString(),
+    notes:            m['notes']?.toString(),
   );
+
+  _Enclos copyWith({String? dernierNettoyage}) => _Enclos(
+    id: id, nom: nom, type: type, capacite: capacite,
+    dernierNettoyage: dernierNettoyage ?? this.dernierNettoyage,
+    notes: notes,
+  );
+
+  String get typeLabel => _typeLabels[type] ?? type;
+  IconData get typeIcon => _typeIcons[type] ?? Icons.home_work_outlined;
+
+  int? get joursSansNettoyage {
+    if (dernierNettoyage == null) return null;
+    final d = DateTime.tryParse(dernierNettoyage!);
+    if (d == null) return null;
+    return DateTime.now().difference(d).inDays;
+  }
 }
 
-// ── Card Box ───────────────────────────────────────────────────────────────
+// ── Widget stat ────────────────────────────────────────────────────────────
 
-class _BoxCard extends StatelessWidget {
-  final _Box box;
+class _StatChip extends StatelessWidget {
+  final String label, sub;
+  final Color color;
+  const _StatChip({required this.label, required this.sub, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.25)),
+        ),
+        child: Column(children: [
+          Text(label, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+              fontSize: 20, color: color)),
+          Text(sub, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey)),
+        ]),
+      ),
+    );
+  }
+}
+
+// ── Card Enclos ────────────────────────────────────────────────────────────
+
+class _EnclosCard extends StatelessWidget {
+  final _Enclos enclos;
   final List<Map<String, dynamic>> animals;
   final List<Map<String, dynamic>> allAnimaux;
   final void Function(Map<String, dynamic>) onAssign;
   final void Function(Map<String, dynamic>) onAnimalTap;
+  final VoidCallback onClean;
 
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
 
-  const _BoxCard({
-    required this.box,
-    required this.animals,
-    required this.allAnimaux,
-    required this.onAssign,
-    required this.onAnimalTap,
+  const _EnclosCard({
+    required this.enclos, required this.animals, required this.allAnimaux,
+    required this.onAssign, required this.onAnimalTap, required this.onClean,
   });
 
-  Color get _statusColor {
-    final ratio = animals.length / box.capacite;
+  Color get _barColor {
+    final ratio = animals.length / enclos.capacite;
     if (ratio >= 1) return Colors.red.shade400;
     if (ratio >= 0.75) return Colors.orange;
     return _green;
@@ -573,74 +592,129 @@ class _BoxCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pct = (animals.length / box.capacite).clamp(0.0, 1.0);
+    final pct    = (animals.length / enclos.capacite).clamp(0.0, 1.0);
+    final jours  = enclos.joursSansNettoyage;
+    final dispo  = enclos.capacite - animals.length;
+
+    String cleanLabel;
+    Color  cleanColor;
+    if (jours == null)       { cleanLabel = 'Jamais nettoyé'; cleanColor = Colors.red; }
+    else if (jours == 0)     { cleanLabel = "Nettoyé aujourd'hui"; cleanColor = _green; }
+    else if (jours <= 2)     { cleanLabel = 'Il y a ${jours}j'; cleanColor = _green; }
+    else if (jours <= 7)     { cleanLabel = 'Il y a ${jours}j'; cleanColor = Colors.orange; }
+    else                     { cleanLabel = 'Il y a ${jours}j'; cleanColor = Colors.red; }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))],
-        border: Border.all(color: _statusColor.withValues(alpha: 0.3)),
+        border: Border.all(color: Colors.teal.shade50),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // En-tête box
-        Row(children: [
-          Container(
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              color: _teal.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.home_work_outlined, color: _teal, size: 18),
+        // En-tête
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.teal.shade50,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(box.nom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-              Text('${animals.length} / ${box.capacite} · ${box.espece}',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _statusColor)),
-            ]),
-          ),
-          // Indicateurs capacité
-          Row(children: List.generate(box.capacite, (i) => Container(
-            width: 10, height: 10,
-            margin: const EdgeInsets.only(left: 3),
-            decoration: BoxDecoration(
-              color: i < animals.length ? _statusColor : Colors.grey.shade200,
-              shape: BoxShape.circle,
-            ),
-          ))),
-        ]),
-
-        // Barre de remplissage
-        const SizedBox(height: 10),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: pct,
-            backgroundColor: Colors.grey.shade100,
-            valueColor: AlwaysStoppedAnimation(_statusColor),
-            minHeight: 4,
-          ),
+          child: Row(children: [
+            Icon(enclos.typeIcon, color: _teal, size: 18),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(enclos.nom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              Text(enclos.typeLabel, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.teal)),
+            ])),
+            Text('${animals.length}/${enclos.capacite}',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: pct >= 1 ? Colors.red : _teal)),
+          ]),
         ),
 
-        // Animaux dans la box
-        if (animals.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8, runSpacing: 8,
-            children: animals.map((a) => _AnimalChip(
-              animal: a,
-              onTap: () => onAnimalTap(a),
-              showBox: false,
-            )).toList(),
-          ),
-        ] else ...[
-          const SizedBox(height: 10),
-          const Text('Aucun animal', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-        ],
+        Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // Barre capacité
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: pct, minHeight: 5,
+                backgroundColor: Colors.grey.shade100,
+                valueColor: AlwaysStoppedAnimation(_barColor),
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Nettoyage
+            Row(children: [
+              const Text('🧹', style: TextStyle(fontSize: 13)),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: cleanColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(cleanLabel,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: cleanColor, fontWeight: FontWeight.w600)),
+              ),
+              const Spacer(),
+              TextButton(
+                style: TextButton.styleFrom(
+                    minimumSize: Size.zero, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20),
+                        side: BorderSide(color: _teal.withValues(alpha: 0.4))),
+                    foregroundColor: _teal),
+                onPressed: onClean,
+                child: const Text('Marquer propre', style: TextStyle(fontFamily: 'Galey', fontSize: 11)),
+              ),
+            ]),
+
+            if (enclos.notes?.isNotEmpty == true) ...[
+              const SizedBox(height: 8),
+              Text(enclos.notes!,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey,
+                      fontStyle: FontStyle.italic)),
+            ],
+
+            // Animaux
+            if (animals.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(spacing: 8, runSpacing: 8, children: animals.map((a) =>
+                  _AnimalChip(animal: a, onTap: () => onAnimalTap(a), showBox: false)).toList()),
+            ] else ...[
+              const SizedBox(height: 10),
+              const Text('Aucun animal', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+            ],
+
+            // Bouton ajouter
+            if (dispo > 0) ...[
+              const SizedBox(height: 10),
+              GestureDetector(
+                onTap: () {
+                  final available = allAnimaux.where((a) => a['enclos_id'] == null).toList();
+                  if (available.isEmpty) return;
+                  // Ouvre le sheet avec filtre pour cet enclos
+                  onAssign(available.first);
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade200, style: BorderStyle.solid),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text('+ Ajouter un animal',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                ),
+              ),
+            ],
+          ]),
+        ),
       ]),
     );
   }
@@ -716,7 +790,7 @@ class _AnimalChip extends StatelessWidget {
   }
 }
 
-// ── Planning row (vue semaine) ─────────────────────────────────────────────
+// ── Planning row ───────────────────────────────────────────────────────────
 
 class _PlanningRow extends StatelessWidget {
   final Map<String, dynamic> animal;
@@ -737,9 +811,7 @@ class _PlanningRow extends StatelessWidget {
 
     return Container(
       height: 44,
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE))),
-      ),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE)))),
       child: Row(children: [
         SizedBox(
           width: 90,
@@ -772,7 +844,7 @@ class _PlanningRow extends StatelessWidget {
               decoration: BoxDecoration(
                 color: inRange ? _teal.withValues(alpha: 0.18) : Colors.transparent,
                 borderRadius: BorderRadius.horizontal(
-                  left: isFirst ? const Radius.circular(6) : Radius.zero,
+                  left:  isFirst ? const Radius.circular(6) : Radius.zero,
                   right: isLast  ? const Radius.circular(6) : Radius.zero,
                 ),
               ),
@@ -780,6 +852,111 @@ class _PlanningRow extends StatelessWidget {
           );
         }),
       ]),
+    );
+  }
+}
+
+// ── Sheet création enclos ──────────────────────────────────────────────────
+
+class _AddEnclosSheet extends StatefulWidget {
+  const _AddEnclosSheet();
+  @override
+  State<_AddEnclosSheet> createState() => _AddEnclosSheetState();
+}
+
+class _AddEnclosSheetState extends State<_AddEnclosSheet> {
+  static const _teal = Color(0xFF0C5C6C);
+
+  final _nomCtrl   = TextEditingController();
+  final _notesCtrl = TextEditingController();
+  String _type     = 'box';
+  int    _capacite = 2;
+
+  @override
+  void dispose() { _nomCtrl.dispose(); _notesCtrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Nouvel enclos',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _nomCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Nom *',
+                hintText: 'Ex : Box 1, Chatterie A, Quarantaine…',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _type,
+              decoration: const InputDecoration(labelText: 'Type', border: OutlineInputBorder()),
+              items: const [
+                DropdownMenuItem(value: 'box',       child: Text('🏠 Box')),
+                DropdownMenuItem(value: 'enclos',    child: Text('🌿 Enclos')),
+                DropdownMenuItem(value: 'chatterie', child: Text('🐈 Chatterie')),
+                DropdownMenuItem(value: 'cage',      child: Text('🔲 Cage')),
+              ],
+              onChanged: (v) => setState(() => _type = v ?? 'box'),
+            ),
+            const SizedBox(height: 12),
+            Row(children: [
+              const Text('Capacité :', style: TextStyle(fontFamily: 'Galey')),
+              const SizedBox(width: 12),
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline),
+                onPressed: () => setState(() { if (_capacite > 1) _capacite--; }),
+              ),
+              Text('$_capacite',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: () => setState(() => _capacite++),
+              ),
+            ]),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _notesCtrl,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Notes (optionnel)',
+                hintText: 'Infos utiles…',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: _teal, foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                onPressed: () {
+                  final nom = _nomCtrl.text.trim();
+                  if (nom.isEmpty) return;
+                  Navigator.pop(context, {
+                    'nom':      nom,
+                    'type':     _type,
+                    'capacite': _capacite,
+                    'notes':    _notesCtrl.text.trim(),
+                  });
+                },
+                child: const Text('Créer l\'enclos',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
