@@ -20,6 +20,7 @@ interface Asso {
   uid: string;
   name: string;
   avatar?: string;
+  banner?: string;
   ville?: string;
   description?: string;
   lat?: number;
@@ -35,11 +36,11 @@ export default function AssociationsPage() {
   useEffect(() => {
     Promise.all([
       supabase.from('user_profiles')
-        .select('uid, name_elevage, profile_label, avatar_url, ville, description, latitude, longitude')
+        .select('uid, name_elevage, profile_label, avatar_url, banner_url, ville, description, latitude, longitude')
         .eq('profile_type', 'association')
         .order('name_elevage'),
       supabase.from('users')
-        .select('uid, name_elevage, firstname, lastname, photo_profil_elevage, photo_url, ville_elevage, ville, description_elevage, latitude, longitude')
+        .select('uid, name_elevage, firstname, lastname, photo_profil_elevage, photo_url, banner_url, ville_elevage, ville, description_elevage, latitude, longitude')
         .eq('is_association', true)
         .then(r => r), // primary accounts
     ]).then(([{ data: profiles }, { data: primary }]) => {
@@ -55,6 +56,7 @@ export default function AssociationsPage() {
           uid,
           name:        nameEl || label || 'Association',
           avatar:      (p['avatar_url'] as string | undefined) ?? undefined,
+          banner:      (p['banner_url'] as string | undefined) ?? undefined,
           ville:       (p['ville'] as string | undefined)?.trim() ?? undefined,
           description: (p['description'] as string | undefined)?.trim() ?? undefined,
           lat:         (p['latitude'] as number | undefined) ?? undefined,
@@ -70,8 +72,9 @@ export default function AssociationsPage() {
           || 'Association';
         const ville = ((u['ville_elevage'] as string | undefined)?.trim() || (u['ville'] as string | undefined)?.trim()) ?? undefined;
         const avatar = ((u['photo_profil_elevage'] as string | undefined) || (u['photo_url'] as string | undefined)) ?? undefined;
+        const banner = (u['banner_url'] as string | undefined) ?? undefined;
         list.push({
-          uid, name, avatar, ville,
+          uid, name, avatar, banner, ville,
           description: (u['description_elevage'] as string | undefined)?.trim() ?? undefined,
           lat: (u['latitude'] as number | undefined) ?? undefined,
           lng: (u['longitude'] as number | undefined) ?? undefined,
@@ -162,34 +165,33 @@ export default function AssociationsPage() {
 function AssoCard({ asso: a }: { asso: Asso }) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-      {/* Banner / avatar */}
-      <div className="relative h-32 bg-gradient-to-r from-teal-700 to-green-600 flex items-center justify-center">
-        {a.avatar ? (
-          <div className="absolute inset-0">
-            <Image src={a.avatar} alt={a.name} fill className="object-cover opacity-40" unoptimized />
-          </div>
-        ) : null}
-        <div className="relative z-10 w-16 h-16 rounded-full bg-white/20 border-2 border-white flex items-center justify-center overflow-hidden">
-          {a.avatar ? (
-            <Image src={a.avatar} alt={a.name} width={64} height={64} className="object-cover" unoptimized />
-          ) : (
-            <span className="text-3xl">🏠</span>
-          )}
-        </div>
+      <div className="relative h-36 bg-[#EEF5EA]">
+        {a.banner ? (
+          <>
+            <Image src={a.banner} alt={a.name} fill className="object-cover" unoptimized />
+            {a.avatar && (
+              <div className="absolute bottom-2 left-3 w-10 h-10 rounded-full border-2 border-white overflow-hidden shadow-sm bg-[#EEF5EA]">
+                <Image src={a.avatar} alt={a.name} fill className="object-cover" unoptimized />
+              </div>
+            )}
+          </>
+        ) : a.avatar ? (
+          <Image src={a.avatar} alt={a.name} fill className="object-cover" unoptimized />
+        ) : (
+          <span className="absolute inset-0 flex items-center justify-center text-5xl">🏠</span>
+        )}
       </div>
       <div className="p-4">
-        <h3 className="font-bold text-[#1F2A2E] text-base truncate font-galey mb-0.5">{a.name}</h3>
-        <div className="flex items-center gap-1 mb-1">
-          <span className="text-xs bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full font-galey font-medium">
-            Association / Refuge
-          </span>
+        <div className="flex items-start gap-2 mb-0.5">
+          <h3 className="font-bold text-[#1F2A2E] text-base truncate flex-1 font-galey">{a.name}</h3>
+          <span className="text-xs bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full font-galey font-medium flex-shrink-0">Asso</span>
         </div>
         {a.ville && <p className="text-gray-400 text-sm font-galey">📍 {a.ville}</p>}
         {a.description && (
           <p className="text-gray-500 text-xs mt-2 line-clamp-2 font-galey">{a.description}</p>
         )}
         <Link href={`/associations/${a.uid}`}
-          className="mt-3 w-full block text-center text-sm bg-teal-700 hover:bg-teal-800 text-white font-medium py-2 rounded-xl transition-colors font-galey">
+          className="mt-3 w-full block text-center text-sm bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-medium py-2 rounded-xl transition-colors font-galey">
           Voir le profil
         </Link>
       </div>
