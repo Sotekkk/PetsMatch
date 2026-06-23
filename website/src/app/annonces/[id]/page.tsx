@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
@@ -163,15 +163,98 @@ function Lightbox({ photos, initialIdx, onClose }: {
   );
 }
 
+// ── Modal likers / favoris ────────────────────────────────────────────────────
+
+function LikersModal({ annonceId, bebeIndex, mode, onClose }: {
+  annonceId: string;
+  bebeIndex?: number;
+  mode: 'likes' | 'favoris';
+  onClose: () => void;
+}) {
+  const [users, setUsers] = useState<{ uid: string; firstname?: string; lastname?: string; profile_picture_url?: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const table = mode === 'likes' ? 'likes' : 'favoris';
+    const base = supabase.from(table).select('user_uid').eq('annonce_id', annonceId);
+    const filtered = bebeIndex != null
+      ? base.eq('bebe_index', bebeIndex)
+      : base.is('bebe_index', null);
+    filtered.order('created_at', { ascending: false }).then(async ({ data: rows }) => {
+      if (!rows?.length) { setLoading(false); return; }
+      const uids = (rows as { user_uid: string }[]).map(r => r.user_uid);
+      const { data: u } = await supabase.from('users')
+        .select('uid, firstname, lastname, profile_picture_url').in('uid', uids);
+      setUsers((u ?? []) as typeof users);
+      setLoading(false);
+    });
+  }, [annonceId, bebeIndex, mode]);
+
+  const icon = mode === 'likes' ? '❤️' : '🔖';
+  const label = mode === 'likes' ? `j'aime${users.length > 1 ? 's' : ''}` : `favori${users.length > 1 ? 's' : ''}`;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center sm:items-center"
+      onClick={onClose}>
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-sm max-h-[70vh] flex flex-col"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <span>{icon}</span>
+            <span className="font-['Galey'] font-bold text-[#1F2A2E]">
+              {loading ? '…' : `${users.length} ${label}`}
+              {bebeIndex != null && <span className="font-normal text-gray-400 text-xs ml-2">— bébé {bebeIndex + 1}</span>}
+            </span>
+          </div>
+          <button onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors w-7 h-7 flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : users.length === 0 ? (
+            <p className="text-center text-gray-400 py-10 text-sm font-['Galey']">
+              {mode === 'likes' ? "Aucun j'aime pour le moment" : 'Aucun favori pour le moment'}
+            </p>
+          ) : (
+            users.map(u => (
+              <div key={u.uid} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors">
+                <div className="w-10 h-10 rounded-full bg-[#0C5C6C] flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {u.profile_picture_url ? (
+                    <Image src={u.profile_picture_url} alt="" width={40} height={40} className="object-cover" unoptimized />
+                  ) : (
+                    <span className="text-white text-xs font-bold">{(u.firstname?.[0] ?? '?').toUpperCase()}</span>
+                  )}
+                </div>
+                <span className="font-['Galey'] font-semibold text-sm text-[#1F2A2E] flex-1">
+                  {[u.firstname, u.lastname].filter(Boolean).join(' ') || 'Utilisateur'}
+                </span>
+                <span className="text-sm">{icon}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Bébé card avec carousel ──────────────────────────────────────────────────
 
-function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLightbox }: {
+function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLightbox, onShowLikers }: {
   bebe: Bebe;
   index: number;
   annonceId: string;
   uidEleveur?: string;
   currentUser: { uid: string } | null;
   onOpenLightbox: (photos: string[], idx: number) => void;
+  onShowLikers?: () => void;
 }) {
   const [idx, setIdx] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
@@ -276,6 +359,12 @@ function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLi
         {photos.length > 1 && (
           <p className="text-[10px] text-gray-400 mt-0.5">📷 {photos.length} photos</p>
         )}
+        {likeCount > 0 && (
+          <button onClick={e => { e.stopPropagation(); onShowLikers?.(); }}
+            className="text-[10px] text-gray-400 hover:text-red-400 transition-colors mt-0.5">
+            ❤️ {likeCount} j&apos;aime{likeCount > 1 ? 's' : ''}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -286,6 +375,8 @@ function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLi
 export default function AnnonceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const selectedBebe = searchParams.get('bebe');
   const { user } = useAuth();
   const [annonce, setAnnonce] = useState<Annonce | null>(null);
   const [pro, setPro] = useState<ProData | null>(null);
@@ -295,12 +386,13 @@ export default function AnnonceDetailPage() {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
 
-  // Likes
+  // Likes / favoris
   const [likeCount, setLikeCount] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
-  const [likers, setLikers] = useState<{ uid: string; firstname?: string; profile_picture_url?: string }[]>([]);
   const [likeLoading, setLikeLoading] = useState(false);
-  const [showLikersModal, setShowLikersModal] = useState(false);
+  const [favoriCount, setFavoriCount] = useState(0);
+  const [activeModal, setActiveModal] = useState<{ mode: 'likes' | 'favoris'; bebeIndex?: number } | null>(null);
+  const bebeRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   // Lightbox
   const [lightbox, setLightbox] = useState<{ photos: string[]; idx: number } | null>(null);
@@ -356,12 +448,25 @@ export default function AnnonceDetailPage() {
         setLikeCount(rows.length);
         if (!user) return;
         setIsLiked(rows.some(r => r.user_uid === user.uid));
-        if (rows.length === 0) return;
-        const uids = rows.slice(0, 20).map(r => r.user_uid);
-        supabase.from('users').select('uid, firstname, profile_picture_url').in('uid', uids)
-          .then(({ data: u }) => { if (u) setLikers(u as typeof likers); });
       });
+    // Charge le nombre de favoris (pour le propriétaire seulement)
+    if (user) {
+      supabase.from('favoris').select('user_uid', { count: 'exact', head: true })
+        .eq('annonce_id', id).is('bebe_index', null)
+        .then(({ count }) => { if (count != null) setFavoriCount(count); });
+    }
   }, [id, user]);
+
+  // Scroll vers le bébé ciblé (navigation depuis une notification like)
+  useEffect(() => {
+    if (!annonce || !selectedBebe) return;
+    const idx = parseInt(selectedBebe, 10);
+    if (isNaN(idx)) return;
+    const timer = setTimeout(() => {
+      bebeRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [annonce, selectedBebe]);
 
   const handleContact = async () => {
     if (!user || !annonce?.uid_eleveur) { router.push('/connexion'); return; }
@@ -444,13 +549,6 @@ export default function AnnonceDetailPage() {
       if (rows) {
         setLikeCount(rows.length);
         setIsLiked(rows.some((r: { user_uid: string }) => r.user_uid === user.uid));
-        const uids = rows.slice(0, 20).map((r: { user_uid: string }) => r.user_uid);
-        if (uids.length > 0) {
-          const { data: u } = await supabase.from('users').select('uid, firstname, profile_picture_url').in('uid', uids);
-          if (u) setLikers(u as typeof likers);
-        } else {
-          setLikers([]);
-        }
       }
     } catch {
       setIsLiked(wasLiked);
@@ -605,11 +703,16 @@ export default function AnnonceDetailPage() {
             </h2>
             <div className="grid grid-cols-2 gap-3">
               {bebes.map((b, i) => (
-                <BebeCard key={i} bebe={b} index={i}
-                  annonceId={annonce.id}
-                  uidEleveur={annonce.uid_eleveur}
-                  currentUser={user}
-                  onOpenLightbox={(p, pi) => setLightbox({ photos: p, idx: pi })} />
+                <div key={i} ref={el => { bebeRefs.current[i] = el; }}
+                  className={selectedBebe != null && parseInt(selectedBebe, 10) === i
+                    ? 'ring-2 ring-[#0C5C6C] rounded-xl' : ''}>
+                  <BebeCard bebe={b} index={i}
+                    annonceId={annonce.id}
+                    uidEleveur={annonce.uid_eleveur}
+                    currentUser={user}
+                    onOpenLightbox={(p, pi) => setLightbox({ photos: p, idx: pi })}
+                    onShowLikers={() => setActiveModal({ mode: 'likes', bebeIndex: i })} />
+                </div>
               ))}
             </div>
           </div>
@@ -679,7 +782,7 @@ export default function AnnonceDetailPage() {
           </div>
         )}
 
-        {/* Likes */}
+        {/* Likes / Favoris */}
         <div className="bg-white rounded-2xl p-4 shadow-sm flex items-center gap-3 flex-wrap">
           <button
             onClick={toggleLike}
@@ -693,40 +796,28 @@ export default function AnnonceDetailPage() {
           >
             <span className="text-base">{isLiked ? '❤️' : '🤍'}</span>
             <span className="font-['Galey'] font-semibold text-sm">
-              {likeCount > 0 ? likeCount : "J’aime"}
+              {likeCount > 0 ? likeCount : "J'aime"}
             </span>
           </button>
-          {user && likers.length > 0 && (
+          {user && likeCount > 0 && (
             <button
-              onClick={() => setShowLikersModal(true)}
-              className="flex items-center gap-2 hover:opacity-70 transition-opacity"
-            >
-              <div className="flex">
-                {likers.slice(0, 3).map((l, i) => (
-                  <div key={l.uid} className="w-7 h-7 rounded-full border-2 border-white overflow-hidden bg-[#0C5C6C] flex items-center justify-center flex-shrink-0"
-                    style={{ marginLeft: i > 0 ? '-8px' : '0', zIndex: 3 - i }}>
-                    {l.profile_picture_url ? (
-                      <Image src={l.profile_picture_url} alt="" width={28} height={28} className="object-cover w-7 h-7" unoptimized />
-                    ) : (
-                      <span className="text-white text-xs">👤</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <span className="font-['Galey'] text-xs text-gray-500">
-                {likeCount === 1
-                  ? `${likers[0]?.firstname ?? ''} a aimé`
-                  : likeCount <= likers.length
-                    ? `${likers[0]?.firstname ?? ''} et ${likeCount - 1} autre${likeCount > 2 ? 's' : ''}`
-                    : `Voir les ${likeCount} j’aimes`
-                }
-              </span>
+              onClick={() => setActiveModal({ mode: 'likes' })}
+              className="font-['Galey'] text-xs text-gray-500 hover:text-red-400 transition-colors">
+              Voir les {likeCount} j&apos;aime{likeCount > 1 ? 's' : ''}
             </button>
           )}
           {!user && likeCount > 0 && (
             <span className="font-['Galey'] text-xs text-gray-400">
               {likeCount} j&apos;aime{likeCount > 1 ? 's' : ''}
             </span>
+          )}
+          {user?.uid === annonce.uid_eleveur && favoriCount > 0 && (
+            <button
+              onClick={() => setActiveModal({ mode: 'favoris' })}
+              className="flex items-center gap-2 px-4 py-2 rounded-full border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-all">
+              <span className="text-base">🔖</span>
+              <span className="font-['Galey'] font-semibold text-sm">{favoriCount} en favoris</span>
+            </button>
           )}
         </div>
 
@@ -855,47 +946,14 @@ export default function AnnonceDetailPage() {
       </div>
     </div>
 
-    {/* Modal likers */}
-    {showLikersModal && user && likers.length > 0 && (
-      <div className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center sm:items-center" onClick={() => setShowLikersModal(false)}>
-        <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-sm max-h-[60vh] flex flex-col" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-            <div className="flex items-center gap-2">
-              <span className="text-red-400">❤️</span>
-              <span className="font-['Galey'] font-bold text-[#1F2A2E]">
-                {likeCount} j&apos;aime{likeCount > 1 ? 's' : ''}
-              </span>
-            </div>
-            <button onClick={() => setShowLikersModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 6L6 18M6 6l12 12"/>
-              </svg>
-            </button>
-          </div>
-          <div className="overflow-y-auto flex-1">
-            {likers.map(l => (
-              <div key={l.uid} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors">
-                <div className="w-10 h-10 rounded-full bg-[#0C5C6C] flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {l.profile_picture_url ? (
-                    <Image src={l.profile_picture_url} alt="" width={40} height={40} className="object-cover" unoptimized />
-                  ) : (
-                    <span className="text-white text-lg">👤</span>
-                  )}
-                </div>
-                <span className="font-['Galey'] font-semibold text-sm text-[#1F2A2E] flex-1">
-                  {l.firstname ?? 'Utilisateur'}
-                </span>
-                <span className="text-red-300 text-sm">❤️</span>
-              </div>
-            ))}
-            {likeCount > likers.length && (
-              <p className="text-center text-xs text-gray-400 py-3 font-['Galey']">
-                ... et {likeCount - likers.length} autre{likeCount - likers.length > 1 ? 's' : ''}
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
+    {/* Modal likers / favoris */}
+    {activeModal && (
+      <LikersModal
+        annonceId={annonce!.id}
+        bebeIndex={activeModal.bebeIndex}
+        mode={activeModal.mode}
+        onClose={() => setActiveModal(null)}
+      />
     )}
 
     {/* Modal signalement */}

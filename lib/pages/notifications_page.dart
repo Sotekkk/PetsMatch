@@ -221,6 +221,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final url = data is Map ? data['url'] as String? : null;
       if (url != null) {
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      } else {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const ContratReservationPage(),
+        ));
       }
       return;
     }
@@ -269,6 +273,29 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
     // Cession révoquée → juste marquer lue (déjà fait)
     if (type == 'cession_revoquee') return;
+    // Animal reçu par l'acquéreur (cession simple sans signature)
+    if (type == 'cession_animal') {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => const AnimauxAcquisPage(),
+      ));
+      return;
+    }
+    // Rappel vaccin → fiche santé de l'animal
+    if (type == 'rappel_vaccin') {
+      final animalId = data is Map ? data['animalId'] as String? : null;
+      if (animalId != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AnimalFichePage(animalId: animalId, readOnly: false, initialTabIndex: 2),
+        ));
+      } else {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const MesAnimauxPage(),
+        ));
+      }
+      return;
+    }
+    // Profil validé / en attente → rester sur BottomNav (pas de page profil dédiée)
+    if (type == 'profil_en_attente' || type == 'profil_valide') return;
     if (type == 'annonce_expiration' && annonceId != null) {
       // Charger les données de l'annonce depuis Supabase pour ouvrir directement l'édition
       final supa = Supabase.instance.client;
@@ -452,18 +479,35 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'message':       return Icons.chat_bubble_outline;
       case 'like':          return Icons.favorite;
       case 'chaleur':       return Icons.spa;
+      case 'rappel_vaccin': return Icons.vaccines_outlined;
       case 'tache':         return Icons.task_alt;
       case 'employee_invite': return Icons.handshake_outlined;
-      case 'vet_access_demande':       return Icons.medical_services_outlined;
-      case 'vet_access_reponse':       return Icons.check_circle_outline;
-      case 'pension_acces':          return Icons.home_work_outlined;
-      case 'pension_acces_reponse':  return Icons.check_circle_outline;
+      case 'annonce_expiration': return Icons.warning_amber_outlined;
+      case 'vet_access_demande':  return Icons.medical_services_outlined;
+      case 'vet_access_reponse':  return Icons.check_circle_outline;
+      case 'sante_vet':           return Icons.medical_services_outlined;
+      case 'pension_acces':         return Icons.home_work_outlined;
+      case 'pension_acces_reponse': return Icons.check_circle_outline;
       case 'rdv_demande':            return Icons.event_note_outlined;
       case 'rdv_confirme':           return Icons.event_available_outlined;
       case 'rdv_refuse':             return Icons.event_busy_outlined;
       case 'rdv_annule':
       case 'rdv_annule_client':      return Icons.cancel_outlined;
       case 'rdv_contre_proposition': return Icons.edit_calendar_outlined;
+      case 'contrat_saillie_invite':
+      case 'contrat_signe_acquereur':
+      case 'contrat_signe_eleveur':
+      case 'contrat_signe_complet':
+      case 'contrat_refuse':
+      case 'contrat_expire':         return Icons.description_outlined;
+      case 'cession_animal':
+      case 'cession_confirmee':      return Icons.pets;
+      case 'cession_signee_acquereur':
+      case 'cession_signe_acquereur': return Icons.pets;
+      case 'cession_signature_demandee': return Icons.draw_outlined;
+      case 'cession_revoquee':       return Icons.cancel_outlined;
+      case 'profil_en_attente':      return Icons.hourglass_empty_outlined;
+      case 'profil_valide':          return Icons.verified_outlined;
       default:                       return Icons.notifications_outlined;
     }
   }
@@ -474,18 +518,35 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'message':       return _teal;
       case 'like':          return Colors.redAccent;
       case 'chaleur':       return const Color(0xFFE91E8C);
+      case 'rappel_vaccin': return const Color(0xFF26A69A);
       case 'tache':         return const Color(0xFF6E9E57);
       case 'employee_invite': return const Color(0xFF0C5C6C);
-      case 'vet_access_demande':       return const Color(0xFF26A69A);
-      case 'vet_access_reponse':       return const Color(0xFF6E9E57);
-      case 'pension_acces':          return const Color(0xFF7B5EA7);
-      case 'pension_acces_reponse':  return const Color(0xFF6E9E57);
+      case 'annonce_expiration': return Colors.orange;
+      case 'vet_access_demande':  return const Color(0xFF26A69A);
+      case 'vet_access_reponse':  return const Color(0xFF6E9E57);
+      case 'sante_vet':           return const Color(0xFF26A69A);
+      case 'pension_acces':         return const Color(0xFF7B5EA7);
+      case 'pension_acces_reponse': return const Color(0xFF6E9E57);
       case 'rdv_demande':
       case 'rdv_contre_proposition': return _teal;
       case 'rdv_confirme':           return const Color(0xFF6E9E57);
       case 'rdv_refuse':
       case 'rdv_annule':
       case 'rdv_annule_client':      return Colors.redAccent;
+      case 'contrat_saillie_invite':
+      case 'contrat_signe_acquereur':
+      case 'contrat_signe_eleveur':
+      case 'contrat_signe_complet':
+      case 'contrat_refuse':
+      case 'contrat_expire':         return const Color(0xFF7B5EA7);
+      case 'cession_animal':
+      case 'cession_confirmee':      return const Color(0xFF6E9E57);
+      case 'cession_signee_acquereur':
+      case 'cession_signe_acquereur':
+      case 'cession_signature_demandee': return Color(0xFFB45309);
+      case 'cession_revoquee':       return Colors.redAccent;
+      case 'profil_en_attente':      return Colors.orange;
+      case 'profil_valide':          return const Color(0xFF6E9E57);
       default:                       return Colors.grey;
     }
   }

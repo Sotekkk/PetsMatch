@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-06-23  
+> Dernière mise à jour : 2026-06-23 — ajout §16 Lieux Pet-Friendly  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -16,6 +16,7 @@
 7. [Priorités et dépendances](#7-priorités-et-dépendances)
 8. [Modèle économique — Abonnements, Boosts & Marketplace](#8-modèle-économique--abonnements-boosts--marketplace)
 9. [Validation automatique & Badges de confiance](#9-validation-automatique--badges-de-confiance)
+16. [Lieux Pet-Friendly — Hôtels, Hébergements & Restaurants](#16-lieux-pet-friendly--hôtels-hébergements--restaurants)
 
 ---
 
@@ -1172,7 +1173,7 @@ Règle éditoriale : tous les partenaires sont vérifiés manuellement avant act
 -- Plans tarifaires (éditables depuis l'admin sans déploiement)
 CREATE TABLE plans_tarifaires (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  profil_type TEXT NOT NULL,       -- eleveur/veterinaire/pension/education/petsitter/promeneur/photographe/para_medical
+  profil_type TEXT NOT NULL,       -- eleveur/veterinaire/pension/education/petsitter/promeneur/photographe/para_medical/petfriendly
   plan_code TEXT NOT NULL,         -- free/essentiel/pro/premium/avance/clinique
   label TEXT NOT NULL,
   prix_mensuel NUMERIC DEFAULT 0,
@@ -2741,6 +2742,501 @@ Page `/profil/bloques` : liste des utilisateurs bloqués avec bouton de débloca
 | Paramètres — confidentialité | SET04 | ✅ | ✅ (lien CGU) | — |
 | Paramètres — à propos | SET05 | ✅ | ✅ (`/a-propos`) | — |
 | Export données RGPD | SET06 | ✅ | ❌ à faire | JSON via share_plus |
+
+---
+
+---
+
+## 16. Lieux Pet-Friendly — Hôtels, Hébergements & Restaurants
+
+> **Ajouté le 2026-06-23**  
+> Module dédié aux établissements acceptant les animaux de compagnie. Les professionnels (hôtels, hébergements insolites, cafés, restaurants) créent un profil vérifié qui apparaît sur une carte interactive et dans un feed filtrable. Les utilisateurs (particuliers, éleveurs, associations) peuvent liker, mettre en favori et laisser des avis.
+
+---
+
+### 16.1 Vision & objectif
+
+**Problème** : les propriétaires d'animaux manquent d'un outil centralisé et fiable pour trouver des établissements vraiment pet-friendly. Les mentions "animaux acceptés" sur les OTAs (Booking, TripAdvisor) sont génériques et ne précisent pas les conditions réelles.
+
+**Solution PetsMatch** : un annuaire/feed communautaire de lieux certifiés pet-friendly, intégré à l'écosystème (profil animal, espèces, taille), alimenté par les professionnels eux-mêmes et validé par la communauté via les avis.
+
+**Différenciation** :
+- Filtres spécifiques animaux (espèce, poids, nombre d'animaux)
+- Avis vérifiés par des utilisateurs PetsMatch (profil + animaux connus)
+- Intégration directe GPS → Waze / Google Maps
+- Feed avec photos au format Instagram (optimisé mobile)
+- Contestation d'avis transparente (visible admin)
+
+---
+
+### 16.2 Types d'établissements & catégories
+
+#### Catégorie A — Hôtels & Hébergements
+Sous-catégories :
+- `hotel` — Hôtel classique (1 à 5 étoiles)
+- `hebergement_insolite` — Cabane, yourte, glamping, tiny house
+- `gite` — Gîte rural, chambre d'hôtes
+- `camping` — Camping, aire naturelle
+- `villa_location` — Location saisonnière privée
+
+#### Catégorie B — Cafés & Restaurants
+Sous-catégories :
+- `cafe` — Café, salon de thé
+- `restaurant` — Restaurant toutes cuisines
+- `bar` — Bar, brasserie
+- `fast_food` — Restauration rapide avec espace outdoor
+- `boulangerie` — Boulangerie/pâtisserie avec terrasse
+
+#### Champs spécifiques par catégorie
+
+**Hébergements** (en plus des champs communs) :
+| Champ | Type | Obligatoire | Description |
+|---|---|---|---|
+| `animaux_dans_chambre` | boolean | ✅ | Animaux autorisés dans la chambre |
+| `frais_animal` | integer | ❌ | Supplément par nuit (€) |
+| `poids_max_kg` | integer | ❌ | Poids max de l'animal (0 = illimité) |
+| `nb_animaux_max` | integer | ❌ | Nombre max d'animaux par séjour |
+| `races_exclues` | text[] | ❌ | Races non acceptées |
+| `equipements_fournis` | text[] | ❌ | Ex: gamelle, coussin, parc, litière |
+| `espace_detente_animaux` | boolean | ❌ | Zone dédiée (parc, jardin clôturé) |
+
+**Restaurants/Cafés** (en plus des champs communs) :
+| Champ | Type | Obligatoire | Description |
+|---|---|---|---|
+| `terrasse` | boolean | ✅ | Terrasse disponible |
+| `animaux_en_salle` | boolean | ✅ | Animaux acceptés en salle |
+| `eau_fournie` | boolean | ❌ | Gamelle d'eau fournie |
+| `friandises` | boolean | ❌ | Friandises proposées aux animaux |
+| `pet_menu` | boolean | ❌ | Menu dédié aux animaux |
+| `attache_velo_animaux` | boolean | ❌ | Anneau d'attache devant l'établissement |
+
+---
+
+### 16.3 Onboarding — Inscription & données obligatoires
+
+#### Données d'identification (toutes catégories)
+Ces données sont requises pour la **validation du profil** par l'admin avant publication.
+
+| Champ | Obligatoire | Validation |
+|---|---|---|
+| Nom commercial de l'établissement | ✅ | Non vide, max 80 chars |
+| SIRET | ✅ | 14 chiffres, vérification API INSEE |
+| Adresse complète (rue, CP, ville) | ✅ | Geocodage via API (Google Maps / Nominatim) |
+| Coordonnées GPS (lat, lng) | ✅ | Générées automatiquement à la validation adresse |
+| Catégorie principale | ✅ | Sélection parmi les catégories §16.2 |
+| Sous-catégorie | ✅ | Sélection filtrée selon catégorie |
+| Téléphone professionnel | ✅ | Format international |
+| Email professionnel | ✅ | Différent de l'email de connexion |
+| Site web | ❌ | URL valide |
+| Espèces acceptées | ✅ | Multi-sélection (chien, chat, lapin, NAC…) |
+| Horaires d'ouverture | ✅ | Par jour de la semaine (HH:MM–HH:MM ou fermé) |
+| Photo de profil (logo) | ✅ | Min 400×400px, max 5 Mo |
+| Photo bannière | ✅ | Min 1200×400px, max 8 Mo |
+| Description | ✅ | Min 50 chars, max 1000 chars |
+| 5 photos du lieu | ✅ | Format 4:5 (feed), max 5 Mo chacune |
+| Champs spécifiques catégorie | ✅ | Voir §16.2 |
+
+#### Processus de validation
+1. Pro remplit le formulaire d'inscription (app ou web)
+2. Compte créé avec statut `en_attente_validation`
+3. Admin reçoit notification → vérifie SIRET (API INSEE), cohérence adresse, photos acceptables
+4. Admin valide → profil publié (`statut = 'actif'`) + email de confirmation au pro
+5. Admin peut rejeter avec motif (email + notification in-app)
+6. Pro peut republier après correction
+
+**Durée cible de validation : 48h ouvrables**
+
+---
+
+### 16.4 Tarification
+
+> Les plans sont configurables via la table `plans_tarifaires` (admin sans déploiement).
+
+| Plan | Mensuel | Annuel | Fonctionnalités clés |
+|---|---|---|---|
+| **Découverte** | Gratuit | Gratuit | Profil basique, 1 photo, non affiché dans le feed, contact via messagerie uniquement. Validité 30j puis expiration. |
+| **Essentiel** | **5 €/mois** | **50 €/an** | Profil complet, 5 photos, apparition dans le feed, likes & favoris, avis clients, navigation GPS, stats basiques (vues, clics) |
+| **Premium** | **15 €/mois** | **150 €/an** | Tout Essentiel + mise en avant dans le feed (épinglage 3j/mois), badge "Recommandé", réponse aux avis, stats avancées (provenance, pic horaire), 1 story/semaine (V2) |
+
+> **Note tarifaire** : tarification d'acquisition pour le lancement. L'objectif V1 est de recruter rapidement 50+ établissements pour rendre le feed utile aux utilisateurs. Les tarifs sont conçus pour être quasi-incontestables (5€ = "presque gratuit" pour un professionnel) puis pourront être relevés en V2 sur la base des témoignages ROI. À titre de comparaison : PagesJaunes débute à ~30€/mois, TripAdvisor Business à ~100€/mois — la marge de hausse future est réelle.
+
+> **Note** : le plan Découverte permet de tester le formulaire et la validation sans engagement. Il disparaît du feed au bout de 30 jours mais le profil reste accessible via lien direct tant que le pro ne supprime pas son compte.
+
+**TVA** : 20 % sur tous les plans (B2B, auto-facturation).  
+**Paiement** : Stripe (même intégration que §10). Prélèvement mensuel ou annuel.  
+**Essai** : 30 jours gratuits sur le plan Essentiel (1 essai par SIRET).
+
+---
+
+### 16.5 Profil établissement
+
+#### Composants de la page profil (`/lieux/{id}`)
+```
+┌─────────────────────────────────────────────────────────┐
+│  BANNIÈRE (1200×400) — photo immersive                  │
+│  ┌──────┐  Nom de l'établissement   ⭐⭐⭐⭐½  (47 avis)  │
+│  │ LOGO │  Catégorie · Ville · Ouvert maintenant       │
+│  └──────┘  [⭐ Avis]  [❤️ J'aime]  [🔖 Favori]         │
+├─────────────────────────────────────────────────────────┤
+│  📍 Adresse  🕐 Horaires  📞 Téléphone  🌐 Site web      │
+│  [🗺️ Obtenir l'itinéraire]  ← bouton principal GPS      │
+├─────────────────────────────────────────────────────────┤
+│  🐾 Animaux acceptés : 🐕 🐈 🐇                          │
+│  Pet-friendly : animaux en chambre ✅ · Frais : 10€/nuit │
+├─────────────────────────────────────────────────────────┤
+│  📖 Description du lieu (max 1000 chars)                │
+├─────────────────────────────────────────────────────────┤
+│  📸 Photos (carrousel 5 photos, format 4:5)             │
+├─────────────────────────────────────────────────────────┤
+│  ⭐ Avis clients (liste, pagination, filtre note)        │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### Comportement du bouton "Obtenir l'itinéraire"
+1. Détecte Waze installé → ouvre `waze://ul?ll={lat},{lng}&navigate=yes`
+2. Fallback : Google Maps → `https://maps.google.com/?daddr={lat},{lng}`
+3. Web : ouvre Google Maps dans un nouvel onglet
+
+#### Statut "Ouvert maintenant"
+Calculé côté client à partir des horaires stockés. Affiche :
+- 🟢 **Ouvert** jusqu'à 22h00
+- 🔴 **Fermé** · Ouvre lundi à 08h30
+- 🟡 **Ferme bientôt** (moins de 30 min)
+
+---
+
+### 16.6 Feed des lieux pet-friendly
+
+#### Accès
+- App Flutter : onglet dédié dans la section "Services & Sorties" (entre Hebergements et Cafés dans le menu existant)
+- Web : `/lieux-pet-friendly`
+- Accessible à tous (connecté ou non)
+
+#### Format des cartes dans le feed
+```
+┌──────────────────────────────┐
+│  Photo 4:5  (ratio Instagram) │  ← tap → profil
+│  🟢 Ouvert  [❤️ 24] [🔖]     │  ← like + favori inline
+├──────────────────────────────┤
+│  Nom établissement           │
+│  📍 Ville · 2.3 km           │
+│  ⭐ 4.5 (32 avis)  · 🐕🐈     │
+└──────────────────────────────┘
+```
+
+#### Filtres disponibles
+| Filtre | Type | Options |
+|---|---|---|
+| Catégorie | chips multi | Hébergements / Cafés & Restos / Tout |
+| Espèce | chips multi | Chien / Chat / Lapin / NAC / Chevaux |
+| Distance | slider | < 5 km / < 20 km / < 50 km / Tout |
+| Note minimale | stars | ⭐⭐⭐+ / ⭐⭐⭐⭐+ |
+| Animaux en chambre | toggle | (Hébergements uniquement) |
+| Terrasse | toggle | (Restaurants uniquement) |
+| Animaux en salle | toggle | (Restaurants uniquement) |
+| Ouvert maintenant | toggle | Filtre en temps réel |
+
+#### Tri disponible
+- Par distance (défaut si géolocalisation autorisée)
+- Par note (décroissant)
+- Par récence (derniers ajoutés)
+- Mis en avant (Recommandé en premier, plan Premium)
+
+#### Pagination
+Infinite scroll, 12 cartes par page. Skeleton loading pendant le chargement.
+
+---
+
+### 16.7 Système d'avis & contestation
+
+#### Qui peut laisser un avis ?
+Tout utilisateur PetsMatch connecté (particulier, éleveur, association) ayant au moins **un animal déclaré** dans son profil.  
+→ Limite anti-spam : 1 avis par établissement et par compte.
+
+#### Structure d'un avis
+| Champ | Obligatoire | Contrainte |
+|---|---|---|
+| Note globale | ✅ | 1 à 5 étoiles (pas de demi-étoile en saisie) |
+| Accueil des animaux | ✅ | 1 à 5 étoiles |
+| Commentaire | ✅ | Min 20 chars, max 1000 chars |
+| Photo(s) | ❌ | Max 3 photos, 5 Mo chacune |
+| Animal concerné | ❌ | Sélection depuis profil (espèce + nom) |
+| Date de visite | ✅ | Mois + année (pas au-delà de M en cours) |
+
+#### Cycle de vie d'un avis
+```
+Avis soumis → Publié immédiatement (modération a posteriori)
+                    ↓
+             Pro conteste l'avis
+                    ↓
+          Admin reçoit contestation
+         ↓                    ↓
+  Admin supprime        Admin laisse l'avis
+  (email auteur)        (email pro + note visible)
+```
+
+#### Contestation par le professionnel
+- Bouton "Contester" visible uniquement par le pro connecté sur son profil
+- Formulaire : motif (liste) + explication libre (max 500 chars)
+- Motifs prédéfinis : `faux_sejour`, `contenu_diffamatoire`, `hors_sujet`, `spam`, `autre`
+- La contestation est visible sur l'avis côté admin : `🚩 Contesté — Motif : faux_sejour`
+- L'auteur de l'avis est notifié de la contestation (sans détails du motif)
+- Délai de décision admin : 7 jours ouvrables
+
+#### Réponse du pro à un avis (plan Premium)
+Le pro peut répondre publiquement à un avis (200 chars max). La réponse apparaît sous l'avis avec le logo de l'établissement.
+
+#### Calcul de la note globale
+- Moyenne pondérée : 60% note globale + 40% accueil des animaux
+- Affichée avec 1 décimale (ex : 4.3)
+- Mise à jour en temps réel à chaque nouvel avis
+
+---
+
+### 16.8 Likes & Favoris
+
+Réutilise la logique existante (tables `likes` / `favoris`) avec `place_id` comme identifiant cible.
+
+| Action | Accessible à | Stockage |
+|---|---|---|
+| ❤️ J'aime | Utilisateurs connectés | `place_likes (user_uid, place_id, created_at)` |
+| 🔖 Favori | Utilisateurs connectés | `place_favoris (user_uid, place_id, created_at)` |
+| Voir qui a liké | Propriétaire seulement | Modal bottom sheet (comme §Annonces) |
+| Voir qui a mis en favori | Propriétaire seulement | Modal bottom sheet |
+
+Les lieux favoris sont accessibles dans le profil utilisateur sous un nouvel onglet "Mes lieux" (app + web).
+
+---
+
+### 16.9 Schéma BDD
+
+```sql
+-- Établissements pet-friendly
+CREATE TABLE petfriendly_places (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  uid_pro               TEXT NOT NULL,         -- Firebase UID du pro
+  nom                   TEXT NOT NULL,
+  categorie             TEXT NOT NULL,         -- 'hebergement' | 'restauration'
+  sous_categorie        TEXT NOT NULL,         -- hotel, gite, restaurant, cafe...
+  description           TEXT,
+  siret                 TEXT NOT NULL,
+  adresse               TEXT NOT NULL,
+  code_postal           TEXT NOT NULL,
+  ville                 TEXT NOT NULL,
+  pays                  TEXT DEFAULT 'FR',
+  lat                   DOUBLE PRECISION NOT NULL,
+  lng                   DOUBLE PRECISION NOT NULL,
+  telephone             TEXT,
+  email_contact         TEXT,
+  site_web              TEXT,
+  especes_acceptees     TEXT[] DEFAULT '{}',
+  horaires              JSONB DEFAULT '{}',    -- { "lundi": "08:00-22:00", "dimanche": "fermé" }
+  photo_profil_url      TEXT,
+  banniere_url          TEXT,
+  photos                TEXT[] DEFAULT '{}',   -- max 5 URLs
+  -- Champs hébergement
+  animaux_dans_chambre  BOOLEAN,
+  frais_animal_nuit     INTEGER,               -- en €
+  poids_max_kg          INTEGER,               -- 0 = illimité
+  nb_animaux_max        INTEGER,
+  races_exclues         TEXT[] DEFAULT '{}',
+  equipements_fournis   TEXT[] DEFAULT '{}',
+  espace_detente        BOOLEAN,
+  -- Champs restauration
+  terrasse              BOOLEAN,
+  animaux_en_salle      BOOLEAN,
+  eau_fournie           BOOLEAN,
+  friandises            BOOLEAN,
+  pet_menu              BOOLEAN,
+  -- Gestion
+  statut                TEXT DEFAULT 'en_attente_validation',  -- en_attente_validation | actif | suspendu | expire
+  plan                  TEXT DEFAULT 'decouverte',             -- decouverte | essentiel | premium
+  plan_expire_at        TIMESTAMPTZ,
+  note_moyenne          NUMERIC(3,1) DEFAULT 0,
+  nb_avis               INTEGER DEFAULT 0,
+  nb_likes              INTEGER DEFAULT 0,
+  nb_favoris            INTEGER DEFAULT 0,
+  valide_par            TEXT,                  -- uid admin
+  valide_at             TIMESTAMPTZ,
+  created_at            TIMESTAMPTZ DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index géographique pour les requêtes "near me"
+CREATE EXTENSION IF NOT EXISTS postgis;
+ALTER TABLE petfriendly_places ADD COLUMN geom GEOMETRY(POINT, 4326)
+  GENERATED ALWAYS AS (ST_SetSRID(ST_MakePoint(lng, lat), 4326)) STORED;
+CREATE INDEX idx_pfp_geom ON petfriendly_places USING GIST (geom);
+CREATE INDEX idx_pfp_statut ON petfriendly_places (statut);
+CREATE INDEX idx_pfp_categorie ON petfriendly_places (categorie, sous_categorie);
+CREATE INDEX idx_pfp_uid_pro ON petfriendly_places (uid_pro);
+
+-- Avis
+CREATE TABLE petfriendly_reviews (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  place_id        UUID NOT NULL REFERENCES petfriendly_places(id) ON DELETE CASCADE,
+  user_uid        TEXT NOT NULL,
+  note            INTEGER NOT NULL CHECK (note BETWEEN 1 AND 5),
+  note_accueil    INTEGER NOT NULL CHECK (note_accueil BETWEEN 1 AND 5),
+  commentaire     TEXT NOT NULL,
+  photos          TEXT[] DEFAULT '{}',
+  animal_espece   TEXT,
+  animal_nom      TEXT,
+  date_visite     TEXT,                        -- "2026-04"
+  statut          TEXT DEFAULT 'actif',        -- actif | supprime_admin | masque
+  reponse_pro     TEXT,                        -- réponse du pro (plan Premium)
+  reponse_pro_at  TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(place_id, user_uid)
+);
+
+-- Contestations d'avis
+CREATE TABLE petfriendly_review_contests (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  review_id       UUID NOT NULL REFERENCES petfriendly_reviews(id) ON DELETE CASCADE,
+  place_id        UUID NOT NULL,
+  uid_pro         TEXT NOT NULL,
+  motif           TEXT NOT NULL,               -- faux_sejour | contenu_diffamatoire | hors_sujet | spam | autre
+  explication     TEXT,
+  decision_admin  TEXT,                        -- null | 'supprime' | 'maintenu'
+  decide_par      TEXT,                        -- uid admin
+  decide_at       TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Likes sur les lieux
+CREATE TABLE place_likes (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  place_id    UUID NOT NULL REFERENCES petfriendly_places(id) ON DELETE CASCADE,
+  user_uid    TEXT NOT NULL,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(place_id, user_uid)
+);
+
+-- Favoris sur les lieux
+CREATE TABLE place_favoris (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  place_id    UUID NOT NULL REFERENCES petfriendly_places(id) ON DELETE CASCADE,
+  user_uid    TEXT NOT NULL,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(place_id, user_uid)
+);
+```
+
+> **Note PostGIS** : si Supabase n'a pas l'extension `postgis` activée, utiliser la colonne `lat/lng` DOUBLE PRECISION avec un tri côté application (Haversine) pour la V1. Activer PostGIS pour la V2 avec les requêtes géographiques avancées.
+
+> **Note plans tarifaires** : les plans lieux pet-friendly s'appuient sur la table `plans_tarifaires` existante (§8.4) avec `profil_type = 'petfriendly'`. Seed initial à insérer via migration SQL (PFP38). Les prix sont lus dynamiquement depuis la BDD — jamais hardcodés dans le code (PFP40).
+
+---
+
+### 16.10 Tickets (PFP01–PFP35)
+
+#### BDD & Backend
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFP01** | Migrations SQL — tables `petfriendly_places`, `petfriendly_reviews`, `petfriendly_review_contests`, `place_likes`, `place_favoris` | Backend Supabase | V1 |
+| **PFP02** | RLS policies — SELECT public, INSERT/UPDATE/DELETE owner only, service role admin | Backend | V1 |
+| **PFP03** | API geocoding — validation adresse + conversion lat/lng (Google Maps Geocoding API ou Nominatim) | Backend | V1 |
+| **PFP04** | API nearest places — endpoint `/api/places?lat=&lng=&radius=&categorie=&espece=` retournant les lieux triés par distance | Backend | V1 |
+| **PFP05** | Trigger Supabase — recalcul `note_moyenne` et `nb_avis` sur INSERT/UPDATE/DELETE dans `petfriendly_reviews` | Backend | V1 |
+
+#### Onboarding & Profil Pro
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFP06** | Formulaire d'inscription pro — étapes 1/3 (identité: nom, SIRET, catégorie, adresse + geocoding auto) | App + Web | V1 |
+| **PFP07** | Formulaire d'inscription pro — étapes 2/3 (profil: logo, bannière, description, 5 photos, horaires) | App + Web | V1 |
+| **PFP08** | Formulaire d'inscription pro — étapes 3/3 (champs spécifiques catégorie + espèces acceptées + contact) | App + Web | V1 |
+| **PFP09** | Choix du plan tarifaire lors de l'inscription + intégration Stripe (essai 14j Essentiel) | App + Web | V1 |
+| **PFP10** | Notification admin à la soumission d'un profil + interface admin de validation (approuver / rejeter avec motif) | Admin | V1 |
+| **PFP11** | Email de confirmation de validation (ou rejet) envoyé au pro | Backend | V1 |
+| **PFP12** | Page "Mon établissement" — édition du profil pro après validation (tous champs sauf SIRET) | App + Web | V1 |
+
+#### Page Profil Établissement (vue publique)
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFP13** | Page `/lieux/{id}` — bannière, logo, nom, catégorie, note, horaires, statut ouvert/fermé | Web | V1 |
+| **PFP14** | Page profil Flutter — même contenu, bottom sheet horaires détaillés | App | V1 |
+| **PFP15** | Bouton "Obtenir l'itinéraire" — deep link Waze + fallback Google Maps | App + Web | V1 |
+| **PFP16** | Carrousel 5 photos (format 4:5) — tap → lightbox plein écran | App + Web | V1 |
+| **PFP17** | Section infos pet-friendly — chips espèces, champs catégorie-spécifiques (animaux chambre, terrasse…) | App + Web | V1 |
+
+#### Feed & Découverte
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFP18** | Feed `/lieux-pet-friendly` — cartes format 4:5 avec photo principale, note, ville, espèces | Web | V1 |
+| **PFP19** | Feed Flutter — onglet "Lieux" dans Services & Sorties, infinite scroll, skeleton loading | App | V1 |
+| **PFP20** | Filtres feed — catégorie, espèce, distance, note min, ouvert maintenant, animaux en salle / en chambre | App + Web | V1 |
+| **PFP21** | Tri feed — par distance (géolocalisation), par note, par récence, mis en avant (Premium en premier) | App + Web | V1 |
+| **PFP22** | Carte interactive — marqueurs des lieux sur Google Maps / Mapbox, tap sur marqueur → carte profil | App + Web | V2 |
+
+#### Likes & Favoris
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFP23** | Like d'un lieu — bouton ❤️ sur card feed + page profil, table `place_likes` | App + Web | V1 |
+| **PFP24** | Favori d'un lieu — bouton 🔖, table `place_favoris`, onglet "Mes lieux" dans profil utilisateur | App + Web | V1 |
+| **PFP25** | Vue "Qui a liké / qui a mis en favori" — owner only, bottom sheet / modal (réutilise LikersModal §12) | App + Web | V1 |
+
+#### Avis
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFP26** | Formulaire de soumission d'avis — note, note accueil, commentaire, photos, animal, date visite | App + Web | V1 |
+| **PFP27** | Affichage des avis sur la page profil — liste, pagination, tri (récent / note), note globale + étoiles | App + Web | V1 |
+| **PFP28** | Réponse du pro à un avis (plan Premium uniquement) — formulaire 200 chars, affiché sous l'avis | App + Web | V1 |
+| **PFP29** | Contestation d'avis — formulaire pro, table `petfriendly_review_contests`, notification admin | App + Web | V1 |
+| **PFP30** | Interface admin — liste des contestations en attente, décision suppression/maintien, notification auteur + pro | Admin | V1 |
+
+#### Navigation GPS
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFP31** | Deep link Waze (`waze://ul?ll=…`) avec détection installation + fallback Google Maps | App | V1 |
+| **PFP32** | Bouton "Itinéraire" web — ouvre Google Maps dans nouvel onglet avec coordonnées | Web | V1 |
+
+#### Paiement & Abonnement Pro
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFP33** | Intégration Stripe — création abonnement Essentiel/Premium pour les lieux pet-friendly (produit distinct des éleveurs) | Backend + Web | V1 |
+| **PFP34** | Gestion plan — page "Mon abonnement" pour le pro, downgrade/upgrade, annulation | App + Web | V1 |
+| **PFP35** | Expiration automatique — cron job Supabase ou Vercel cron → passe `statut = 'expire'` si `plan_expire_at < NOW()` + email pro | Backend | V1 |
+
+#### Tableau de bord Pro (stats)
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFP36** | Dashboard pro "Mon établissement" — vues profil (7j/30j), clics navigation, likes, favoris, note évolution | App + Web | V2 |
+| **PFP37** | Notifications pro — nouveau like, nouveau avis, contestation résolue, renouvellement abonnement proche | App + Web | V1 |
+
+#### Gestion tarifaire via l'admin
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFP38** | Seed SQL initial — insérer les 3 plans (`decouverte`, `essentiel`, `premium`) dans `plans_tarifaires` avec `profil_type = 'petfriendly'` et les valeurs initiales (0€ / 5€ / 15€ mensuel, 0€ / 50€ / 150€ annuel) + champ `features` JSONB décrivant les fonctionnalités incluses dans chaque plan | Backend | V1 |
+| **PFP39** | Vue admin "Tarifs lieux pet-friendly" — tableau des 3 plans avec édition inline prix mensuel/annuel, toggle `actif`, édition liste `features` (comme la vue existante pour les éleveurs). Modification persiste dans `plans_tarifaires`, propagation immédiate sans déploiement. | Admin web | V1 |
+| **PFP40** | Lecture des tarifs côté pro depuis `plans_tarifaires` — la page de souscription (`/lieux/abonnement`) et l'écran Flutter affichent les prix depuis la base (pas hardcodés), se mettent à jour si l'admin change un tarif | App + Web | V1 |
+
+---
+
+### 16.11 Dépendances & ordre d'implémentation
+
+```
+Phase 1 — Infrastructure (sem 1)
+  PFP01 → PFP02 → PFP03 → PFP04 → PFP05
+
+Phase 2 — Onboarding pro (sem 2)
+  PFP06 → PFP07 → PFP08 → PFP09 → PFP10 → PFP11
+
+Phase 3 — Profil public + feed (sem 3)
+  PFP12 → PFP13 → PFP14 → PFP15 → PFP16 → PFP17
+  PFP18 → PFP19 → PFP20 → PFP21
+
+Phase 4 — Social + avis (sem 4)
+  PFP23 → PFP24 → PFP25
+  PFP26 → PFP27 → PFP28 → PFP29 → PFP30
+
+Phase 5 — GPS + Paiement + Notifs
+  PFP31 → PFP32 → PFP33 → PFP34 → PFP35 → PFP37
+
+Phase 6 — V2
+  PFP22 (carte interactive)
+  PFP36 (dashboard stats avancées)
+```
 
 ---
 

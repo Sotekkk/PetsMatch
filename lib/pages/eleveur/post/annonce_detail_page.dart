@@ -42,6 +42,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
 
   bool _isLiked = false;
   int  _likeCount = 0;
+  int  _favoriCount = 0;
   List<Map<String, dynamic>> _likers = [];
 
   static const _sigRaisons = [
@@ -202,6 +203,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     super.initState();
     _loadAnnonce();
     _loadLikeState();
+    _loadFavoriState();
     final uid = widget.initialData?['uidEleveur'] as String?
         ?? widget.initialData?['uid_eleveur'] as String?;
     if (uid != null) { _eleveurLoaded = true; _loadEleveur(uid); }
@@ -233,6 +235,17 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
         _isLiked   = liked;
         _likers    = likers;
       });
+    } catch (_) {}
+  }
+
+  Future<void> _loadFavoriState() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('favoris')
+          .select('user_uid')
+          .eq('annonce_id', widget.annonceId)
+          .isFilter('bebe_index', null);
+      if (mounted) setState(() => _favoriCount = (rows as List).length);
     } catch (_) {}
   }
 
@@ -408,6 +421,38 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                                 builder: (_) => _LikersSheet(annonceId: widget.annonceId))
                             : null,
                       ),
+                      if (isOwner && _favoriCount > 0) ...[
+                        const SizedBox(height: 8),
+                        GestureDetector(
+                          onTap: () => showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: Colors.transparent,
+                            builder: (_) => _FavorisSheet(annonceId: widget.annonceId),
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.shade50,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.amber.shade200),
+                            ),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(Icons.bookmark_outline, color: Colors.amber.shade700, size: 16),
+                              const SizedBox(width: 6),
+                              Text(
+                                '$_favoriCount en favoris',
+                                style: TextStyle(
+                                  fontFamily: 'Galey',
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                  color: Colors.amber.shade700,
+                                ),
+                              ),
+                            ]),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 4),
                       if (desc.isNotEmpty)
                         ...[_DescCard(desc: desc), const SizedBox(height: 12)],
@@ -911,6 +956,28 @@ class _BabyCardState extends State<_BabyCard> {
                     fontSize: 12, color: _dark)),
               ],
             ]),
+            if (_likeCount > 0 && FirebaseAuth.instance.currentUser != null) ...[
+              const SizedBox(height: 4),
+              GestureDetector(
+                onTap: () => showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => _LikersSheet(
+                    annonceId: widget.annonceId,
+                    bebeIndex: widget.bebeIndex,
+                  ),
+                ),
+                child: Text(
+                  '❤️ $_likeCount j\'aime${_likeCount > 1 ? 's' : ''}',
+                  style: const TextStyle(
+                    fontFamily: 'Galey',
+                    fontSize: 10,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ),
+              ),
+            ],
           ])),
         ]),
       ),
@@ -2006,7 +2073,8 @@ class _LikesRow extends StatelessWidget {
 
 class _LikersSheet extends StatefulWidget {
   final String annonceId;
-  const _LikersSheet({required this.annonceId});
+  final int? bebeIndex;
+  const _LikersSheet({required this.annonceId, this.bebeIndex});
   @override
   State<_LikersSheet> createState() => _LikersSheetState();
 }
@@ -2023,8 +2091,138 @@ class _LikersSheetState extends State<_LikersSheet> {
 
   Future<void> _load() async {
     try {
-      final rows = await Supabase.instance.client
+      final q = Supabase.instance.client
           .from('likes')
+          .select('user_uid')
+          .eq('annonce_id', widget.annonceId);
+      final rows = widget.bebeIndex != null
+          ? await q.eq('bebe_index', widget.bebeIndex!).order('created_at', ascending: false)
+          : await q.isFilter('bebe_index', null).order('created_at', ascending: false);
+      final uids = List<Map<String, dynamic>>.from(rows)
+          .map((r) => r['user_uid'] as String)
+          .toList();
+      if (uids.isEmpty) {
+        if (mounted) setState(() { _list = []; _loading = false; });
+        return;
+      }
+      final users = await Supabase.instance.client
+          .from('users')
+          .select('uid, firstname, lastname, profile_picture_url')
+          .inFilter('uid', uids);
+      final userMap = <String, Map<String, dynamic>>{
+        for (final u in List<Map<String, dynamic>>.from(users))
+          u['uid'] as String: u,
+      };
+      final ordered = uids.map((id) => userMap[id]).whereType<Map<String, dynamic>>().toList();
+      if (mounted) setState(() { _list = ordered; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final safe = MediaQuery.of(context).padding;
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.fromLTRB(0, 12, 0, safe.bottom + 16),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 40, height: 4,
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2))),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(children: [
+            const Icon(Icons.favorite, color: Colors.redAccent, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _loading
+                    ? "J'aimes"
+                    : widget.bebeIndex != null
+                        ? '${_list.length} j\'aime${_list.length > 1 ? 's' : ''} · bébé ${widget.bebeIndex! + 1}'
+                        : '${_list.length} j\'aime${_list.length > 1 ? 's' : ''}',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 15, color: _dark),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 12),
+        if (_loading)
+          const Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator())
+        else if (_list.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text("Sois le premier à aimer cette annonce !",
+                style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500,
+                    fontSize: 13),
+                textAlign: TextAlign.center),
+          )
+        else
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 320),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: _list.length,
+              itemBuilder: (_, i) {
+                final u = _list[i];
+                final photo = u['profile_picture_url'] as String?;
+                final name = [u['firstname'], u['lastname']]
+                    .where((s) => s?.toString().isNotEmpty == true)
+                    .join(' ');
+                return ListTile(
+                  leading: CircleAvatar(
+                    radius: 20,
+                    backgroundColor: _teal,
+                    backgroundImage: photo?.isNotEmpty == true
+                        ? CachedNetworkImageProvider(photo!) : null,
+                    child: photo?.isNotEmpty != true
+                        ? const Icon(Icons.person, color: Colors.white, size: 18) : null,
+                  ),
+                  title: Text(name.isNotEmpty ? name : 'Utilisateur',
+                      style: const TextStyle(fontFamily: 'Galey',
+                          fontWeight: FontWeight.w600, fontSize: 14)),
+                  trailing: const Icon(Icons.favorite, color: Colors.redAccent, size: 16),
+                );
+              },
+            ),
+          ),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bottom sheet : liste des utilisateurs ayant mis en favori
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FavorisSheet extends StatefulWidget {
+  final String annonceId;
+  const _FavorisSheet({required this.annonceId});
+  @override
+  State<_FavorisSheet> createState() => _FavorisSheetState();
+}
+
+class _FavorisSheetState extends State<_FavorisSheet> {
+  bool _loading = true;
+  List<Map<String, dynamic>> _list = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('favoris')
           .select('user_uid')
           .eq('annonce_id', widget.annonceId)
           .isFilter('bebe_index', null)
@@ -2068,10 +2266,10 @@ class _LikersSheetState extends State<_LikersSheet> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Row(children: [
-            const Icon(Icons.favorite, color: Colors.redAccent, size: 18),
+            Icon(Icons.bookmark_outline, color: Colors.amber.shade700, size: 18),
             const SizedBox(width: 8),
             Text(
-              _loading ? "J'aimes" : '${_list.length} j\'aime${_list.length > 1 ? 's' : ''}',
+              _loading ? 'Favoris' : '${_list.length} favori${_list.length > 1 ? 's' : ''}',
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                   fontSize: 15, color: _dark),
             ),
@@ -2083,7 +2281,7 @@ class _LikersSheetState extends State<_LikersSheet> {
         else if (_list.isEmpty)
           Padding(
             padding: const EdgeInsets.all(24),
-            child: Text("Sois le premier à aimer cette annonce !",
+            child: Text('Aucun favori pour le moment.',
                 style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500,
                     fontSize: 13),
                 textAlign: TextAlign.center),
@@ -2112,7 +2310,7 @@ class _LikersSheetState extends State<_LikersSheet> {
                   title: Text(name.isNotEmpty ? name : 'Utilisateur',
                       style: const TextStyle(fontFamily: 'Galey',
                           fontWeight: FontWeight.w600, fontSize: 14)),
-                  trailing: const Icon(Icons.favorite, color: Colors.redAccent, size: 16),
+                  trailing: Icon(Icons.bookmark_outline, color: Colors.amber.shade700, size: 16),
                 );
               },
             ),

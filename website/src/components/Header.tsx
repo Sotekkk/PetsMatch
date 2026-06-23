@@ -374,6 +374,67 @@ function typeEmoji(type: string): string {
 
 // ACTIVE_PROFILE_KEY et PROFILE_CHANGE_EVENT importés depuis useActiveProfile
 
+// ── Navigation par type de notification ──────────────────────────────────────
+function getNotifUrl(n: Notif): string | null {
+  const d = n.data ?? {};
+  switch (n.type) {
+    case 'like':
+      return d.annonceId
+        ? `/annonces/${d.annonceId}${d.bebeIndex != null && d.bebeIndex !== '' ? `?bebe=${d.bebeIndex}` : ''}`
+        : '/mes-annonces';
+    case 'alerte_perdu':
+      return '/animaux-perdus';
+    case 'chaleur':
+      return '/mes-animaux';
+    case 'rappel_vaccin':
+      return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
+    case 'annonce_expiration':
+      return '/mes-annonces';
+    case 'cession_signature_demandee':
+      return d.signingUrl ?? (d.token ? `/signer-cession/${d.token}` : null);
+    case 'cession_confirmee':
+    case 'cession_animal':
+      return d.animalId ? `/mes-animaux/${d.animalId}?readOnly=1` : '/mes-animaux-acquis';
+    case 'cession_signee_acquereur':
+    case 'cession_signe_acquereur':
+      return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
+    case 'cession_revoquee':
+      return null;
+    case 'contrat_saillie_invite':
+    case 'contrat_signe_eleveur':
+    case 'contrat_signe_complet':
+      return d.url ?? '/elevage/contrat';
+    case 'contrat_signe_acquereur':
+    case 'contrat_refuse':
+    case 'contrat_expire':
+      return '/elevage/contrat';
+    case 'pension_acces':
+      return null; // géré par dialog
+    case 'pension_acces_reponse':
+      return d.approved === 'true' && d.animalId ? `/mes-animaux/${d.animalId}` : null;
+    case 'rdv_demande':
+    case 'rdv_contre_proposition':
+    case 'rdv_annule_client':
+      return '/mes-rdv';
+    case 'rdv_confirme':
+    case 'rdv_refuse':
+    case 'rdv_annule':
+      return '/agenda';
+    case 'employee_invite':
+    case 'tache':
+      return '/mes-employeurs';
+    case 'sante_vet':
+      return d.animalId ? `/mes-animaux/${d.animalId}` : null;
+    case 'vet_access_reponse':
+      return '/mes-patients';
+    case 'profil_en_attente':
+    case 'profil_valide':
+      return '/profil';
+    default:
+      return null;
+  }
+}
+
 // ── Composant Header ──────────────────────────────────────────────────────────
 
 export default function Header() {
@@ -746,100 +807,71 @@ export default function Header() {
                     {notifs.map(n => {
                       const notifProfileType = (n as Notif & { profile_type?: string }).profile_type;
                       const isDifferentProfile = notifProfileType && notifProfileType !== effectiveType;
+                      const dest = getNotifUrl(n);
+                      const isExternal = dest?.startsWith('http') ?? false;
+                      const isActionable = isDifferentProfile || n.type === 'pension_acces' || !!dest;
+
+                      const handleClick = async () => {
+                        if (isDifferentProfile) {
+                          setBellOpen(false);
+                          const matchedProfile = profiles.find(p => p.profile_type === notifProfileType);
+                          switchProfile(matchedProfile?.id ?? null);
+                          return;
+                        }
+                        // Marquer comme lu + retirer de la liste
+                        setNotifs(prev => prev.filter(x => x.id !== n.id));
+                        supabase.from('notifications').update({ read: true }).eq('id', n.id).then(() => {});
+                        setBellOpen(false);
+                        if (n.type === 'pension_acces') { setPensionDialog(n); return; }
+                        if (!dest) return;
+                        if (isExternal) window.open(dest, '_blank', 'noopener noreferrer');
+                        else router.push(dest);
+                      };
+
                       return (
-                        <div key={n.id} className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 border-b border-gray-50 cursor-pointer"
-                          onClick={() => {
-                            if (isDifferentProfile) {
-                              setBellOpen(false);
-                              const matchedProfile = profiles.find(p => p.profile_type === notifProfileType);
-                              switchProfile(matchedProfile?.id ?? null);
-                            }
-                          }}>
+                        <div key={n.id}
+                          className={`flex items-start gap-3 px-4 py-3 hover:bg-gray-50 border-b border-gray-50 ${isActionable ? 'cursor-pointer' : ''}`}
+                          onClick={handleClick}>
                           <div className="w-9 h-9 rounded-full bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">
                             {n.type === 'alerte_perdu' ? '🔍'
                               : n.type === 'like' ? '❤️'
                               : n.type === 'chaleur' ? '🌸'
                               : n.type === 'rappel_vaccin' ? '💉'
-                              : n.type === 'pension_acces' ? '🏡'
+                              : n.type === 'pension_acces' || n.type === 'pension_acces_reponse' ? '🏡'
                               : n.type === 'contrat_saillie_invite' ? '💞'
                               : n.type === 'contrat_signe_complet' ? '✅'
                               : n.type === 'contrat_signe_acquereur' || n.type === 'contrat_signe_eleveur' ? '✍️'
                               : n.type === 'contrat_refuse' ? '❌'
                               : n.type === 'contrat_expire' ? '⏰'
                               : n.type?.startsWith('contrat') || n.type?.startsWith('certificat') ? '📄'
+                              : n.type === 'cession_signature_demandee' ? '✍️'
+                              : n.type === 'cession_confirmee' || n.type === 'cession_animal' ? '🐾'
+                              : n.type === 'cession_signee_acquereur' || n.type === 'cession_signe_acquereur' ? '🔔'
+                              : n.type?.startsWith('cession') ? '🤝'
+                              : n.type === 'rdv_confirme' ? '✅'
+                              : n.type === 'rdv_refuse' || n.type?.includes('annule') ? '❌'
+                              : n.type?.startsWith('rdv') ? '📅'
+                              : n.type === 'employee_invite' ? '🤝'
+                              : n.type === 'tache' ? '✅'
+                              : n.type === 'profil_valide' ? '✅'
+                              : n.type === 'profil_en_attente' ? '⏳'
+                              : n.type === 'sante_vet' ? '🏥'
+                              : n.type === 'annonce_expiration' ? '⚠️'
                               : '🔔'}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold text-[#1F2A2E]">{n.title}</p>
-                            <p className="text-xs text-gray-500 truncate">{n.body}</p>
+                            <p className="text-xs text-gray-500 line-clamp-2">{n.body}</p>
                             <div className="flex items-center gap-2 mt-1">
                               {notifProfileType && (
                                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDifferentProfile ? 'bg-[#0C5C6C]/10 text-[#0C5C6C]' : 'bg-gray-100 text-gray-500'}`}>
                                   {typeEmoji(notifProfileType)} {typeLabel(notifProfileType)}
                                 </span>
                               )}
-                              {isDifferentProfile && (
-                                <span className="text-[10px] text-[#0C5C6C] font-medium">↗ Basculer</span>
-                              )}
+                              {isDifferentProfile
+                                ? <span className="text-[10px] text-[#0C5C6C] font-medium">↗ Basculer</span>
+                                : isActionable && <span className="text-[10px] text-gray-400 ml-auto">→</span>}
                             </div>
-                            {n.type === 'pension_acces' && !isDifferentProfile && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setBellOpen(false); setPensionDialog(n); }}
-                                className="mt-1 text-xs font-bold text-[#0C5C6C] underline cursor-pointer bg-none border-none p-0"
-                              >Répondre →</button>
-                            )}
-                            {(['contrat_saillie_invite','contrat_signe_eleveur','contrat_signe_complet'].includes(n.type ?? '') &&
-                              (n as Notif & { data?: Record<string, string> }).data?.url) && (
-                              <a
-                                href={(n as Notif & { data?: Record<string, string> }).data!.url}
-                                target="_blank" rel="noopener noreferrer"
-                                onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
-                                className="mt-1 text-xs font-bold text-purple-600 underline"
-                              >Voir le contrat →</a>
-                            )}
-                            {(['contrat_signe_acquereur','contrat_refuse','contrat_signe_complet','contrat_expire'].includes(n.type ?? '') &&
-                              !(n as Notif & { data?: Record<string, string> }).data?.url) && (
-                              <a
-                                href="/elevage/contrat"
-                                onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
-                                className="mt-1 text-xs font-bold text-[#0C5C6C] underline"
-                              >Voir mes contrats →</a>
-                            )}
-                            {n.type === 'cession_signature_demandee' && (() => {
-                              const d = (n as Notif & { data?: Record<string, string> }).data;
-                              const url = d?.signingUrl ?? (d?.token ? `/signer-contrat/${d.token}` : null);
-                              return url ? (
-                                <a href={url} target="_blank" rel="noopener noreferrer"
-                                  onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
-                                  className="mt-1 text-xs font-bold text-amber-700 underline">
-                                  ✍️ Signer le contrat →
-                                </a>
-                              ) : null;
-                            })()}
-                            {n.type === 'cession_confirmee' && (() => {
-                              const d = (n as Notif & { data?: Record<string, string> }).data;
-                              const animalId = d?.animalId;
-                              const href = animalId ? `/mes-animaux/${animalId}?readOnly=1` : '/mes-animaux-acquis';
-                              return (
-                                <a href={href}
-                                  onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
-                                  className="mt-1 text-xs font-bold text-[#6E9E57] underline">
-                                  🐾 Voir l&#39;animal →
-                                </a>
-                              );
-                            })()}
-                            {(n.type === 'cession_signee_acquereur' || n.type === 'cession_signe_acquereur') && (() => {
-                              const d = (n as Notif & { data?: Record<string, string> }).data;
-                              const animalId = d?.animalId;
-                              const href = animalId ? `/mes-animaux/${animalId}` : '/mes-animaux';
-                              return (
-                                <a href={href}
-                                  onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
-                                  className="mt-1 text-xs font-bold text-[#0C5C6C] underline">
-                                  🔔 Confirmer la cession →
-                                </a>
-                              );
-                            })()}
                           </div>
                         </div>
                       );
