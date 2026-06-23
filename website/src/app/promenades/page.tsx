@@ -42,7 +42,10 @@ function fmtDate(iso: string) {
 }
 
 function openNav(lat: number, lng: number) {
-  window.open(`https://maps.google.com/?daddr=${lat},${lng}`, '_blank');
+  const latS = lat.toFixed(6);
+  const lngS = lng.toFixed(6);
+  // Waze universal link — ouvre l'app si installée, sinon le site web
+  window.open(`https://waze.com/ul?ll=${latS},${lngS}&navigate=yes`, '_blank');
 }
 
 // ── Carte promenade ────────────────────────────────────────────────────────────

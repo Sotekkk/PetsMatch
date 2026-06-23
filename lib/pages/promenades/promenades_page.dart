@@ -203,10 +203,12 @@ class _PromenadesCard extends StatelessWidget {
   }
 
   static Future<void> _openNavigation(double lat, double lng) async {
-    final wazeUrl = Uri.parse('waze://ul?ll=$lat,$lng&navigate=yes');
-    final mapsUrl = Uri.parse('https://maps.google.com/?daddr=$lat,$lng');
+    final latStr = lat.toStringAsFixed(6);
+    final lngStr = lng.toStringAsFixed(6);
+    final wazeUrl = Uri.parse('waze://?ll=$latStr,$lngStr&navigate=yes');
+    final mapsUrl = Uri.parse('https://maps.google.com/?daddr=$latStr,$lngStr');
     if (await canLaunchUrl(wazeUrl)) {
-      await launchUrl(wazeUrl);
+      await launchUrl(wazeUrl, mode: LaunchMode.externalApplication);
     } else {
       await launchUrl(mapsUrl, mode: LaunchMode.externalApplication);
     }
