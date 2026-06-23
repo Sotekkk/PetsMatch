@@ -399,11 +399,12 @@ export default function PromenadePage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const cutoff = new Date(Date.now() - 86400000).toISOString();
       const { data: promData } = await supabase
         .from('promenades')
         .select('*, promenades_participants(count)')
         .eq('statut', 'ouvert')
-        .gte('date_heure', new Date().toISOString())
+        .gte('date_heure', cutoff)
         .order('date_heure');
 
       setPromenades((promData ?? []) as Promenade[]);

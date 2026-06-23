@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:PetsMatch/main.dart' show getApiKey;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:google_maps_webservice/places.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -202,6 +204,102 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
     _load();
   }
 
+  Future<void> _confirmDelete() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Supprimer la promenade',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text(
+            'Tous les participants seront notifiés de l\'annulation. Cette action est irréversible.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 14)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annuler')),
+          FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Supprimer',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+        ],
+      ),
+    );
+    if (ok == true && mounted) _delete();
+  }
+
+  Future<void> _delete() async {
+    setState(() => _saving = true);
+    try {
+      final titre = _promenade!['titre']?.toString() ?? 'la promenade';
+      final dateStr = _promenade!['date_heure'] != null
+          ? DateFormat('dd/MM/yyyy à HH:mm')
+              .format(DateTime.parse(_promenade!['date_heure'].toString()).toLocal())
+          : '';
+
+      // Notifier tous les participants actifs
+      final toNotify = _participants
+          .where((p) => p['statut'] == 'accepte' || p['statut'] == 'en_attente')
+          .toList();
+      for (final part in toNotify) {
+        final uid = part['user_uid'].toString();
+        if (uid == _uid) continue;
+        try {
+          await _supa.from('notifications').insert({
+            'user_uid': uid,
+            'type': 'promenade_annulee',
+            'title': 'Promenade annulée',
+            'body': 'La promenade "$titre"${dateStr.isNotEmpty ? ' du $dateStr' : ''} a été annulée par l\'organisateur.',
+            'data': {'promenadeId': widget.promenadeId},
+            'read': false,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+        } catch (_) {}
+      }
+
+      await _supa.from('promenades').delete().eq('id', widget.promenadeId);
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      }
+    }
+  }
+
+  Future<void> _openEdit() async {
+    final updated = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: true,
+      enableDrag: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _EditSheet(
+        promenade: _promenade!,
+        onNotifyParticipants: (body) async {
+          for (final part in _participants) {
+            final uid = part['user_uid'].toString();
+            if (uid == _uid) continue;
+            try {
+              await _supa.from('notifications').insert({
+                'user_uid': uid,
+                'type': 'promenade_modifiee',
+                'title': 'Promenade modifiée',
+                'body': body,
+                'data': {'promenadeId': widget.promenadeId},
+                'read': false,
+                'created_at': DateTime.now().toIso8601String(),
+              });
+            } catch (_) {}
+          }
+        },
+      ),
+    );
+    if (updated == true) _load();
+  }
+
   static Future<void> _openNavigation(double lat, double lng) async {
     final latStr = lat.toStringAsFixed(6);
     final lngStr = lng.toStringAsFixed(6);
@@ -285,6 +383,20 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
             style: const TextStyle(
                 fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16),
             overflow: TextOverflow.ellipsis),
+        actions: _isOrganizer
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 20),
+                  onPressed: _saving ? null : _openEdit,
+                  tooltip: 'Modifier',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  onPressed: _saving ? null : _confirmDelete,
+                  tooltip: 'Supprimer',
+                ),
+              ]
+            : null,
       ),
       body: RefreshIndicator(
         onRefresh: _load,
@@ -340,7 +452,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
                   Expanded(
                     child: Text(lieu,
                         style: const TextStyle(
-                            fontFamily: 'Galey', fontSize: 13, color: Color(0xFF444))),
+                            fontFamily: 'Galey', fontSize: 13, color: Color(0xFF444444))),
                   ),
                   if (lat != null && lng != null)
                     GestureDetector(
@@ -387,7 +499,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
                     style: const TextStyle(
                         fontFamily: 'Galey',
                         fontSize: 13,
-                        color: Color(0xFF555))),
+                        color: Color(0xFF555555))),
               ],
             ])),
             const SizedBox(height: 10),
@@ -638,4 +750,316 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
           : null,
     );
   }
+}
+
+// ── Sheet modification ─────────────────────────────────────────────────────────
+
+class _EditSheet extends StatefulWidget {
+  final Map<String, dynamic> promenade;
+  final Future<void> Function(String notifBody) onNotifyParticipants;
+  const _EditSheet({required this.promenade, required this.onNotifyParticipants});
+
+  @override
+  State<_EditSheet> createState() => _EditSheetState();
+}
+
+class _EditSheetState extends State<_EditSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _supa = Supabase.instance.client;
+
+  late final TextEditingController _titreCtrl;
+  late final TextEditingController _descCtrl;
+  late final TextEditingController _lieuCtrl;
+  String _niveau = 'facile';
+  late DateTime _dateHeure;
+  late int _dureeMinutes;
+  int? _participantsMax;
+  double? _lat;
+  double? _lng;
+  bool _saving = false;
+
+  // Google Places
+  late final GoogleMapsPlaces _places;
+  List<Prediction> _predictions = [];
+  Timer? _debounce;
+  bool _loadingPred = false;
+
+  static const _kNiveaux = ['facile', 'moyen', 'difficile'];
+
+  @override
+  void initState() {
+    super.initState();
+    final p = widget.promenade;
+    _titreCtrl = TextEditingController(text: p['titre']?.toString() ?? '');
+    _descCtrl = TextEditingController(text: p['description']?.toString() ?? '');
+    _lieuCtrl = TextEditingController(text: p['lieu_rdv']?.toString() ?? '');
+    _niveau = p['niveau']?.toString() ?? 'facile';
+    _dateHeure = p['date_heure'] != null
+        ? DateTime.parse(p['date_heure'].toString()).toLocal()
+        : DateTime.now().add(const Duration(days: 1));
+    _dureeMinutes = (p['duree_minutes'] as num?)?.toInt() ?? 60;
+    _participantsMax = (p['participants_max'] as num?)?.toInt();
+    _lat = (p['lat'] as num?)?.toDouble();
+    _lng = (p['lng'] as num?)?.toDouble();
+    _places = GoogleMapsPlaces(apiKey: getApiKey());
+  }
+
+  @override
+  void dispose() {
+    _titreCtrl.dispose();
+    _descCtrl.dispose();
+    _lieuCtrl.dispose();
+    _places.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onLieuChanged(String val) {
+    _debounce?.cancel();
+    setState(() { _lat = null; _lng = null; });
+    if (val.trim().length < 3) { setState(() { _predictions = []; _loadingPred = false; }); return; }
+    setState(() => _loadingPred = true);
+    _debounce = Timer(const Duration(milliseconds: 400), () async {
+      final res = await _places.autocomplete(val,
+          components: [Component(Component.country, 'fr')], language: 'fr');
+      if (!mounted) return;
+      setState(() { _predictions = res.isOkay ? res.predictions : []; _loadingPred = false; });
+    });
+  }
+
+  Future<void> _selectPrediction(Prediction p) async {
+    _debounce?.cancel();
+    setState(() { _predictions = []; _lieuCtrl.text = p.description ?? ''; });
+    if (p.placeId == null) return;
+    final det = await _places.getDetailsByPlaceId(p.placeId!);
+    if (!mounted || !det.isOkay) return;
+    final loc = det.result.geometry?.location;
+    if (loc != null) setState(() { _lat = loc.lat; _lng = loc.lng; });
+  }
+
+  Future<void> _pickDate() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _dateHeure,
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2030),
+      builder: (ctx, child) => Theme(
+          data: ThemeData.light()
+              .copyWith(colorScheme: const ColorScheme.light(primary: _orange)),
+          child: child!),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+        context: context, initialTime: TimeOfDay.fromDateTime(_dateHeure));
+    if (time == null || !mounted) return;
+    setState(() => _dateHeure =
+        DateTime(date.year, date.month, date.day, time.hour, time.minute));
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    _formKey.currentState!.save();
+    setState(() => _saving = true);
+    try {
+      final updates = <String, dynamic>{
+        'titre': _titreCtrl.text.trim(),
+        'lieu_rdv': _lieuCtrl.text.trim(),
+        'description': _descCtrl.text.trim(),
+        'niveau': _niveau,
+        'date_heure': _dateHeure.toIso8601String(),
+        'duree_minutes': _dureeMinutes,
+        if (_lat != null) 'lat': _lat,
+        if (_lng != null) 'lng': _lng,
+        'participants_max': _participantsMax,
+      };
+      await _supa.from('promenades')
+          .update(updates)
+          .eq('id', widget.promenade['id'].toString());
+
+      // Notifier les participants
+      final titre = _titreCtrl.text.trim();
+      final dateStr = DateFormat('dd/MM à HH:mm').format(_dateHeure);
+      await widget.onNotifyParticipants(
+          'La promenade "$titre" a été modifiée. Nouvelles infos : ${_lieuCtrl.text.trim()}, $dateStr.');
+
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      padding: EdgeInsets.only(
+          left: 20, right: 20, top: 12,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 28),
+      child: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 16),
+            Row(children: [
+              const Expanded(child: Text('Modifier la promenade',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18))),
+              IconButton(icon: const Icon(Icons.close, size: 22, color: Colors.grey),
+                  onPressed: () => Navigator.pop(context),
+                  padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+            ]),
+            const SizedBox(height: 20),
+
+            _lbl('Titre *'),
+            TextFormField(
+              controller: _titreCtrl,
+              decoration: _dec('Titre de la promenade'),
+              validator: (v) => (v?.trim().isEmpty ?? true) ? 'Obligatoire' : null,
+            ),
+            const SizedBox(height: 12),
+
+            _lbl('Lieu de rendez-vous *'),
+            TextFormField(
+              controller: _lieuCtrl,
+              onChanged: _onLieuChanged,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              validator: (v) => (v?.trim().isEmpty ?? true) ? 'Obligatoire' : null,
+              decoration: _dec('Rechercher une adresse…').copyWith(
+                prefixIcon: const Icon(Icons.search, size: 18, color: _green),
+                suffixIcon: _loadingPred
+                    ? const Padding(padding: EdgeInsets.all(12),
+                        child: SizedBox(width: 16, height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: _green)))
+                    : (_lat != null
+                        ? const Icon(Icons.check_circle_outline, size: 18, color: _green)
+                        : null),
+              ),
+            ),
+            if (_predictions.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(top: 4),
+                decoration: BoxDecoration(color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 8, offset: const Offset(0, 4))]),
+                child: ListView.separated(
+                  shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _predictions.length > 5 ? 5 : _predictions.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1, indent: 40),
+                  itemBuilder: (_, i) {
+                    final p = _predictions[i];
+                    return ListTile(dense: true,
+                        leading: const Icon(Icons.location_on_outlined, size: 18, color: _green),
+                        title: Text(p.description ?? '',
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                        onTap: () => _selectPrediction(p));
+                  },
+                ),
+              ),
+            const SizedBox(height: 12),
+
+            _lbl('Date et heure *'),
+            GestureDetector(
+              onTap: _pickDate,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                decoration: BoxDecoration(color: const Color(0xFFF8F8F8),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade300)),
+                child: Row(children: [
+                  const Icon(Icons.calendar_today_outlined, size: 16, color: _orange),
+                  const SizedBox(width: 10),
+                  Text(DateFormat('dd/MM/yyyy · HH:mm').format(_dateHeure),
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _lbl('Niveau'),
+                InputDecorator(decoration: _dec(''),
+                  child: DropdownButton<String>(value: _niveau, isExpanded: true, underline: const SizedBox(),
+                    items: _kNiveaux.map((n) => DropdownMenuItem(value: n,
+                        child: Text(n, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)))).toList(),
+                    onChanged: (v) => setState(() => _niveau = v ?? 'facile')),
+                ),
+              ])),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _lbl('Durée (min)'),
+                TextFormField(
+                  initialValue: '$_dureeMinutes',
+                  decoration: _dec('60'),
+                  keyboardType: TextInputType.number,
+                  onSaved: (v) => _dureeMinutes = int.tryParse(v?.trim() ?? '') ?? 60,
+                ),
+              ])),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _lbl('Max participants'),
+                TextFormField(
+                  initialValue: _participantsMax?.toString() ?? '',
+                  decoration: _dec('Illimité'),
+                  keyboardType: TextInputType.number,
+                  onSaved: (v) {
+                    final n = int.tryParse(v?.trim() ?? '');
+                    _participantsMax = (n != null && n >= 2) ? n : null;
+                  },
+                ),
+              ])),
+            ]),
+            const SizedBox(height: 12),
+
+            _lbl('Description'),
+            TextFormField(
+              controller: _descCtrl,
+              decoration: _dec('Parcours, espèces bienvenues, équipement…'),
+              maxLines: 3,
+            ),
+            const SizedBox(height: 24),
+
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _saving ? null : _save,
+                style: FilledButton.styleFrom(backgroundColor: _orange,
+                    padding: const EdgeInsets.symmetric(vertical: 14)),
+                child: _saving
+                    ? const SizedBox(width: 20, height: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('Enregistrer les modifications',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _lbl(String t) => Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(t, style: const TextStyle(
+          fontFamily: 'Galey', fontWeight: FontWeight.w600,
+          fontSize: 13, color: Color(0xFF6F767B))));
+
+  InputDecoration _dec(String hint) => InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: Colors.grey.shade300)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: Colors.grey.shade300)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12));
 }

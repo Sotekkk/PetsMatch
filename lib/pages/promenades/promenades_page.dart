@@ -37,11 +37,14 @@ class _PromenadesPageState extends State<PromenadePage> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
+      final cutoff = DateTime.now()
+          .subtract(const Duration(days: 1))
+          .toIso8601String();
       final promData = await _supa
           .from('promenades')
           .select('*, promenades_participants(count)')
           .eq('statut', 'ouvert')
-          .gte('date_heure', DateTime.now().toIso8601String())
+          .gte('date_heure', cutoff)
           .order('date_heure');
 
       Map<String, String> participations = {};

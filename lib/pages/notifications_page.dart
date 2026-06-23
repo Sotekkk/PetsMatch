@@ -327,7 +327,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => const MesAnimauxPage(),
       ));
-    } else if (type == 'promenade_join' || type == 'promenade_accepte' || type == 'promenade_refuse') {
+    } else if (type == 'promenade_join' || type == 'promenade_accepte' || type == 'promenade_refuse'
+        || type == 'promenade_annulee' || type == 'promenade_modifiee') {
       final promenadeId = data is Map ? data['promenadeId'] as String? : null;
       if (promenadeId != null) {
         await Navigator.push(context, MaterialPageRoute(

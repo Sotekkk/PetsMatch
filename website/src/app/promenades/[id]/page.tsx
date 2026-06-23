@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 
@@ -72,6 +73,187 @@ function Avatar({ url, name, size = 40 }: { url?: string; name?: string; size?: 
   );
 }
 
+// ── Modal édition ─────────────────────────────────────────────────────────────
+
+function EditModal({ promenade, participants, currentUid, onClose, onSaved }: {
+  promenade: Promenade;
+  participants: Participant[];
+  currentUid: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [titre, setTitre] = useState(promenade.titre);
+  const [lieu, setLieu] = useState(promenade.lieu_rdv);
+  const [lat, setLat] = useState<number | null>(promenade.lat ?? null);
+  const [lng, setLng] = useState<number | null>(promenade.lng ?? null);
+  const [niveau, setNiveau] = useState(promenade.niveau);
+  const [duree, setDuree] = useState(String(promenade.duree_minutes ?? 60));
+  const [maxP, setMaxP] = useState(promenade.participants_max ? String(promenade.participants_max) : '');
+  const [desc, setDesc] = useState(promenade.description ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  // Places
+  const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
+  const placesService = useRef<google.maps.places.PlacesService | null>(null);
+  const [predictions, setPredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
+  const [loadingPred, setLoadingPred] = useState(false);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [dateVal, setDateVal] = useState(() => {
+    const d = new Date(promenade.date_heure);
+    return d.toISOString().slice(0, 16);
+  });
+
+  useEffect(() => {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return;
+    setOptions({ key: apiKey, v: 'weekly', language: 'fr' });
+    importLibrary('places').then(() => {
+      autocompleteService.current = new window.google.maps.places.AutocompleteService();
+      const dummyDiv = document.createElement('div');
+      placesService.current = new window.google.maps.places.PlacesService(dummyDiv);
+    }).catch(() => {});
+  }, []);
+
+  function onLieuChange(val: string) {
+    setLieu(val); setLat(null); setLng(null);
+    if (debounce.current) clearTimeout(debounce.current);
+    if (val.trim().length < 3) { setPredictions([]); setLoadingPred(false); return; }
+    setLoadingPred(true);
+    debounce.current = setTimeout(() => {
+      autocompleteService.current?.getPlacePredictions(
+        { input: val, componentRestrictions: { country: ['fr', 'be', 'ch', 'lu'] }, language: 'fr' } as google.maps.places.AutocompletionRequest,
+        (preds, status) => {
+          setLoadingPred(false);
+          setPredictions(status === window.google.maps.places.PlacesServiceStatus.OK && preds ? preds : []);
+        }
+      );
+    }, 400);
+  }
+
+  function selectPrediction(pred: google.maps.places.AutocompletePrediction) {
+    setLieu(pred.description); setPredictions([]);
+    placesService.current?.getDetails(
+      { placeId: pred.place_id, fields: ['geometry'] },
+      (place, status) => {
+        if (status !== window.google.maps.places.PlacesServiceStatus.OK || !place?.geometry?.location) return;
+        setLat(place.geometry.location.lat());
+        setLng(place.geometry.location.lng());
+      }
+    );
+  }
+
+  async function handleSave() {
+    if (!titre.trim() || !lieu.trim() || !dateVal) { setError('Titre, lieu et date sont obligatoires.'); return; }
+    setSaving(true); setError('');
+    try {
+      const updates: Record<string, unknown> = {
+        titre: titre.trim(), lieu_rdv: lieu.trim(), description: desc.trim() || null,
+        niveau, date_heure: new Date(dateVal).toISOString(),
+        duree_minutes: parseInt(duree) || 60,
+        participants_max: parseInt(maxP) >= 2 ? parseInt(maxP) : null,
+      };
+      if (lat !== null) updates.lat = lat;
+      if (lng !== null) updates.lng = lng;
+
+      await supabase.from('promenades').update(updates).eq('id', promenade.id);
+
+      // Notifier participants
+      const toNotify = participants.filter(p => (p.statut === 'accepte' || p.statut === 'en_attente') && p.user_uid !== currentUid);
+      const dateStr = new Date(dateVal).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      for (const part of toNotify) {
+        await supabase.from('notifications').insert({
+          user_uid: part.user_uid, type: 'promenade_modifiee',
+          title: 'Promenade modifiée',
+          body: `La promenade "${titre.trim()}" a été modifiée. Nouvelles infos : ${lieu.trim()}, ${dateStr}.`,
+          data: { promenadeId: promenade.id }, read: false, created_at: new Date().toISOString(),
+        });
+      }
+      onSaved();
+    } catch (e: unknown) {
+      setError((e as Error).message ?? 'Erreur');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <h2 className="font-bold text-lg">Modifier la promenade</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+        </div>
+        <div className="p-5 flex flex-col gap-4">
+          <div>
+            <label className="block text-[12px] font-semibold text-gray-500 mb-1">Titre *</label>
+            <input value={titre} onChange={e => setTitre(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[14px] focus:outline-none focus:border-[#2E7D5E]" />
+          </div>
+          <div className="relative">
+            <label className="block text-[12px] font-semibold text-gray-500 mb-1">Lieu de rendez-vous *</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#2E7D5E]">🔍</span>
+              <input value={lieu} onChange={e => onLieuChange(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl pl-8 pr-8 py-2.5 text-[14px] focus:outline-none focus:border-[#2E7D5E]" />
+              {loadingPred && <span className="absolute right-3 top-1/2 -translate-y-1/2"><span className="w-4 h-4 border-2 border-[#2E7D5E] border-t-transparent rounded-full animate-spin inline-block" /></span>}
+              {!loadingPred && lat !== null && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#2E7D5E]">✓</span>}
+            </div>
+            {predictions.length > 0 && (
+              <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                {predictions.slice(0, 5).map(pred => (
+                  <button key={pred.place_id} onClick={() => selectPrediction(pred)}
+                    className="w-full text-left px-4 py-2.5 text-[13px] hover:bg-gray-50 border-b border-gray-50 last:border-0 flex items-center gap-2">
+                    <span className="text-[#2E7D5E]">📍</span><span className="truncate">{pred.description}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <label className="block text-[12px] font-semibold text-gray-500 mb-1">Date et heure *</label>
+            <input type="datetime-local" value={dateVal} onChange={e => setDateVal(e.target.value)}
+              min={new Date().toISOString().slice(0, 16)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[14px] focus:outline-none focus:border-[#2E7D5E]" />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-[12px] font-semibold text-gray-500 mb-1">Niveau</label>
+              <select value={niveau} onChange={e => setNiveau(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[14px] focus:outline-none focus:border-[#2E7D5E] bg-white">
+                <option value="facile">Facile</option><option value="moyen">Moyen</option><option value="difficile">Difficile</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[12px] font-semibold text-gray-500 mb-1">Durée (min)</label>
+              <input type="number" min="10" value={duree} onChange={e => setDuree(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[14px] focus:outline-none focus:border-[#2E7D5E]" />
+            </div>
+            <div>
+              <label className="block text-[12px] font-semibold text-gray-500 mb-1">Max participants</label>
+              <input type="number" min="2" value={maxP} onChange={e => setMaxP(e.target.value)}
+                placeholder="Illimité"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[14px] focus:outline-none focus:border-[#2E7D5E]" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-[12px] font-semibold text-gray-500 mb-1">Description</label>
+            <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={3}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[14px] focus:outline-none focus:border-[#2E7D5E] resize-none" />
+          </div>
+          {error && <p className="text-red-500 text-[13px]">{error}</p>}
+          <button onClick={handleSave} disabled={saving}
+            className="w-full py-3 rounded-xl font-bold text-white text-[15px]"
+            style={{ backgroundColor: '#EF6C00', opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'Enregistrement…' : 'Enregistrer les modifications'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PromenadeDetailPage() {
@@ -84,6 +266,8 @@ export default function PromenadeDetailPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const isOrganizer = promenade?.organisateur_uid === user?.uid;
   const myParticipation = participants.find(p => p.user_uid === user?.uid);
@@ -190,6 +374,33 @@ export default function PromenadeDetailPage() {
     load();
   }
 
+  async function deleteProm() {
+    if (!user || !promenade) return;
+    setSaving(true);
+    try {
+      const dateStr = new Date(promenade.date_heure).toLocaleString('fr-FR', {
+        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+      });
+      const toNotify = participants.filter(p => p.statut === 'accepte' || p.statut === 'en_attente');
+      for (const part of toNotify) {
+        if (part.user_uid === user.uid) continue;
+        await supabase.from('notifications').insert({
+          user_uid: part.user_uid,
+          type: 'promenade_annulee',
+          title: 'Promenade annulée',
+          body: `La promenade "${promenade.titre}" du ${dateStr} a été annulée par l'organisateur.`,
+          data: { promenadeId: id },
+          read: false, created_at: new Date().toISOString(),
+        });
+      }
+      await supabase.from('promenades').delete().eq('id', id);
+      router.push('/promenades');
+    } finally {
+      setSaving(false);
+      setConfirmDelete(false);
+    }
+  }
+
   async function refuse(userUid: string) {
     await supabase.from('promenades_participants').delete()
       .eq('promenade_id', id).eq('user_uid', userUid);
@@ -224,9 +435,17 @@ export default function PromenadeDetailPage() {
       {/* Header */}
       <div className="sticky top-0 z-10 bg-[#2E7D5E] text-white px-4 py-4 flex items-center gap-3 shadow-sm">
         <button onClick={() => router.back()} className="text-white/80 hover:text-white shrink-0">←</button>
-        <h1 className="font-bold text-base truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+        <h1 className="font-bold text-base truncate flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>
           {promenade.titre}
         </h1>
+        {isOrganizer && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => setShowEdit(true)}
+              className="text-white/80 hover:text-white text-xl" title="Modifier">✏️</button>
+            <button onClick={() => setConfirmDelete(true)}
+              className="text-white/80 hover:text-white text-xl" title="Supprimer">🗑</button>
+          </div>
+        )}
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-5 flex flex-col gap-4 pb-28">
@@ -351,6 +570,40 @@ export default function PromenadeDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Confirmation suppression */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <h3 className="font-bold text-[16px] mb-2">Supprimer la promenade</h3>
+            <p className="text-[13px] text-gray-500 mb-5">
+              Tous les participants seront notifiés de l&apos;annulation. Cette action est irréversible.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmDelete(false)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-[14px] font-semibold text-gray-600">
+                Annuler
+              </button>
+              <button onClick={deleteProm} disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-[14px] font-bold text-white"
+                style={{ backgroundColor: '#E53935', opacity: saving ? 0.6 : 1 }}>
+                {saving ? '…' : 'Supprimer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal édition */}
+      {showEdit && (
+        <EditModal
+          promenade={promenade}
+          participants={participants}
+          currentUid={user?.uid ?? ''}
+          onClose={() => setShowEdit(false)}
+          onSaved={() => { setShowEdit(false); load(); }}
+        />
+      )}
 
       {/* Bouton bas de page (non-organisateur connecté) */}
       {!isOrganizer && user && (
