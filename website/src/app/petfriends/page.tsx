@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
@@ -48,12 +48,12 @@ export default function PetFriendsPage() {
   const [sent, setSent] = useState<FriendRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Search
+  // Search — tous les users chargés une fois
+  const [allUsers, setAllUsers] = useState<SearchUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
   const [searchVal, setSearchVal] = useState('');
   const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
   const [searchStatuts, setSearchStatuts] = useState<Record<string, string | null>>({});
-  const [searching, setSearching] = useState(false);
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function load() {
     if (!myUid) return;
@@ -98,27 +98,28 @@ export default function PetFriendsPage() {
 
   useEffect(() => { load(); }, [myUid]);
 
+  useEffect(() => {
+    if (!myUid) return;
+    supabase.from('users').select('uid, firstname, lastname, profile_picture_url, city')
+      .neq('uid', myUid).limit(500)
+      .then(({ data }) => { setAllUsers((data ?? []) as SearchUser[]); setLoadingUsers(false); });
+  }, [myUid]);
+
   function onSearchChange(val: string) {
     setSearchVal(val);
-    if (debounce.current) clearTimeout(debounce.current);
-    if (val.trim().length < 2) { setSearchResults([]); setSearching(false); return; }
-    setSearching(true);
-    debounce.current = setTimeout(async () => {
-      const { data } = await supabase.from('users')
-        .select('uid, firstname, lastname, profile_picture_url, city')
-        .or(`firstname.ilike.%${val.trim()}%,lastname.ilike.%${val.trim()}%`)
-        .neq('uid', myUid).limit(20);
-      const results = (data ?? []) as SearchUser[];
-      const uids = results.map(u => u.uid);
-      const statuts: Record<string, string | null> = Object.fromEntries(uids.map(u => [u, null]));
-      if (uids.length > 0) {
-        const { data: sr } = await supabase.from('petfriends').select('uid_recepteur, statut').eq('uid_demandeur', myUid).in('uid_recepteur', uids);
-        for (const r of sr ?? []) statuts[r.uid_recepteur] = r.statut;
-        const { data: rr } = await supabase.from('petfriends').select('uid_demandeur, statut').eq('uid_recepteur', myUid).in('uid_demandeur', uids);
-        for (const r of rr ?? []) if (!statuts[r.uid_demandeur]) statuts[r.uid_demandeur] = r.statut;
-      }
-      setSearchResults(results); setSearchStatuts(statuts); setSearching(false);
-    }, 400);
+    const q = val.toLowerCase().trim();
+    if (q.length < 2) { setSearchResults([]); return; }
+    const filtered = allUsers.filter(u =>
+      `${u.firstname ?? ''} ${u.lastname ?? ''}`.toLowerCase().includes(q)
+    ).slice(0, 20);
+    // Statuts depuis les relations déjà chargées
+    const statuts: Record<string, string | null> = {};
+    for (const u of filtered) {
+      const isFriend = friends.some(f => f.uid === u.uid);
+      const isPending = received.some(f => f.uid === u.uid) || sent.some(f => f.uid === u.uid);
+      statuts[u.uid] = isFriend ? 'accepte' : isPending ? 'en_attente' : null;
+    }
+    setSearchResults(filtered); setSearchStatuts(statuts);
   }
 
   async function sendRequest(targetUid: string) {
@@ -208,7 +209,7 @@ export default function PetFriendsPage() {
             </div>
 
             {searchVal.trim().length >= 2 ? (
-              searching ? (
+              loadingUsers ? (
                 <div className="flex justify-center py-8">
                   <div className="w-6 h-6 border-2 border-[#2E7D5E] border-t-transparent rounded-full animate-spin" />
                 </div>

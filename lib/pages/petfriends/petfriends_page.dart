@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -29,26 +27,42 @@ class _PetFriendsPageState extends State<PetFriendsPage>
   List<_FriendRow> _sent = [];
   bool _loading = true;
 
-  // Recherche
+  // Recherche — chargement initial de tous les users
+  List<Map<String, dynamic>> _allUsers = [];
   final _searchCtrl = TextEditingController();
   List<Map<String, dynamic>> _searchResults = [];
   Map<String, String?> _searchStatuts = {}; // uid → statut (null = aucun)
-  bool _searching = false;
-  Timer? _debounce;
+  bool _loadingUsers = true;
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
     _load();
+    _loadAllUsers();
   }
 
   @override
   void dispose() {
     _tabs.dispose();
     _searchCtrl.dispose();
-    _debounce?.cancel();
     super.dispose();
+  }
+
+  Future<void> _loadAllUsers() async {
+    try {
+      final rows = await _supa
+          .from('users')
+          .select('uid, firstname, lastname, profile_picture_url, city')
+          .neq('uid', _myUid)
+          .limit(500);
+      if (mounted) setState(() {
+        _allUsers = List<Map<String, dynamic>>.from(rows as List);
+        _loadingUsers = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingUsers = false);
+    }
   }
 
   Future<void> _load() async {
@@ -128,46 +142,28 @@ class _PetFriendsPageState extends State<PetFriendsPage>
   }
 
   void _onSearchChanged(String val) {
-    _debounce?.cancel();
-    if (val.trim().length < 2) {
-      setState(() { _searchResults = []; _searching = false; });
+    final q = val.toLowerCase().trim();
+    if (q.length < 2) {
+      setState(() { _searchResults = []; });
       return;
     }
-    setState(() => _searching = true);
-    _debounce = Timer(const Duration(milliseconds: 400), () async {
-      try {
-        final res = await _supa
-            .from('users')
-            .select('uid, firstname, lastname, profile_picture_url, city')
-            .or('firstname.ilike.%${val.trim()}%,lastname.ilike.%${val.trim()}%')
-            .neq('uid', _myUid)
-            .limit(20);
-        final results = List<Map<String, dynamic>>.from(res as List);
-        // Récupérer statuts actuels pour chaque uid trouvé
-        final uids = results.map((u) => u['uid'].toString()).toList();
-        Map<String, String?> statuts = { for (final u in uids) u: null };
-        if (uids.isNotEmpty) {
-          final sentR = await _supa
-              .from('petfriends')
-              .select('uid_recepteur, statut')
-              .eq('uid_demandeur', _myUid)
-              .inFilter('uid_recepteur', uids);
-          for (final r in (sentR as List)) statuts[r['uid_recepteur'].toString()] = r['statut'].toString();
-          final recvR = await _supa
-              .from('petfriends')
-              .select('uid_demandeur, statut')
-              .eq('uid_recepteur', _myUid)
-              .inFilter('uid_demandeur', uids);
-          for (final r in (recvR as List)) {
-            final uid = r['uid_demandeur'].toString();
-            statuts[uid] ??= r['statut'].toString();
-          }
-        }
-        if (mounted) setState(() { _searchResults = results; _searchStatuts = statuts; _searching = false; });
-      } catch (_) {
-        if (mounted) setState(() => _searching = false);
-      }
-    });
+    final filtered = _allUsers.where((u) {
+      final nom = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.toLowerCase();
+      return nom.contains(q);
+    }).take(20).toList();
+
+    // Enrichir avec statuts depuis les relations déjà chargées
+    final Map<String, String?> statuts = {};
+    for (final u in filtered) {
+      final uid = u['uid'].toString();
+      final friend = _friends.where((f) => f.uid == uid).firstOrNull;
+      final recv = _received.where((f) => f.uid == uid).firstOrNull;
+      final snt = _sent.where((f) => f.uid == uid).firstOrNull;
+      if (friend != null) statuts[uid] = 'accepte';
+      else if (recv != null || snt != null) statuts[uid] = 'en_attente';
+      else statuts[uid] = null;
+    }
+    setState(() { _searchResults = filtered; _searchStatuts = statuts; });
   }
 
   Future<void> _sendRequest(String targetUid) async {
@@ -307,7 +303,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
   }
 
   Widget _buildSearchResults() {
-    if (_searching) return const Center(child: CircularProgressIndicator(color: _green));
+    if (_loadingUsers) return const Center(child: CircularProgressIndicator(color: _green));
     if (_searchResults.isEmpty) {
       return const Center(child: Text('Aucun résultat',
           style: TextStyle(fontFamily: 'Galey', color: Colors.grey)));
