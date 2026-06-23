@@ -164,11 +164,17 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     return list;
   }
 
+  bool get _isNewOwner =>
+      _uidAcquereur != null &&
+      _uidAcquereur == FirebaseAuth.instance.currentUser?.uid;
+
   int get _tabCount {
     if (widget.vetMode) return 5;
     if (widget.isAssociation) return 4;
-    if (_statut == 'sorti' && !widget.vetMode && !widget.isAssociation) return 2; // Identité + Documents
-    return 6; // Identité, Repro, Santé, Alimentation, Consultations, Documents
+    if (_statut == 'sorti' && !_isNewOwner) return 2; // ancien proprio : Identité + Documents
+    // Acquéreur ou animal présent : onglets selon le rôle
+    if (!User_Info.isElevage && !User_Info.isAssociation) return 5; // particulier : sans Repro
+    return 6; // éleveur : tous les onglets
   }
 
   @override
@@ -1094,9 +1100,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations')]
               : widget.isAssociation
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')]
-                  : (_statut == 'sorti'
+                  : (_statut == 'sorti' && !_isNewOwner
                       ? const [Tab(text: 'Identité'), Tab(text: 'Documents')]
-                      : const [Tab(text: 'Identité'), Tab(text: 'Documents'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')]),
+                      : (!User_Info.isElevage && !User_Info.isAssociation
+                          ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Documents')]
+                          : const [Tab(text: 'Identité'), Tab(text: 'Documents'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')])),
         ),
       ),
       body: TabBarView(
@@ -1116,19 +1124,27 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                     _AlimentationTab(this),
                     _ConsultationsOwnerTab(animalId: widget.animalId),
                   ]
-                : (_statut == 'sorti'
+                : (_statut == 'sorti' && !_isNewOwner
                     ? [
                         _IdentiteTab(this),
                         _DocumentsTab(animalId: widget.animalId ?? ''),
                       ]
-                    : [
-                        _IdentiteTab(this),
-                        _DocumentsTab(animalId: widget.animalId ?? ''),
-                        _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
-                        _CarnetSanteTab(animalId: widget.animalId),
-                        _AlimentationTab(this),
-                        _ConsultationsOwnerTab(animalId: widget.animalId),
-                      ]),
+                    : (!User_Info.isElevage && !User_Info.isAssociation
+                        ? [
+                            _IdentiteTab(this),
+                            _CarnetSanteTab(animalId: widget.animalId),
+                            _AlimentationTab(this),
+                            _ConsultationsOwnerTab(animalId: widget.animalId),
+                            _DocumentsTab(animalId: widget.animalId ?? ''),
+                          ]
+                        : [
+                            _IdentiteTab(this),
+                            _DocumentsTab(animalId: widget.animalId ?? ''),
+                            _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
+                            _CarnetSanteTab(animalId: widget.animalId),
+                            _AlimentationTab(this),
+                            _ConsultationsOwnerTab(animalId: widget.animalId),
+                          ])),
       ),
     );
   }

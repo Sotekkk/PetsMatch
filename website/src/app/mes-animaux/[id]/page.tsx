@@ -1595,7 +1595,7 @@ export default function AnimalFichePage() {
     ? [{ key:'identite', label:'Identité' }, { key:'documents', label:'Documents' }]
     : isEleveur
     ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet Santé' }, { key:'repro', label:'Suivi Repro' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }, { key:'documents', label:'Documents' }]
-    : [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet de santé' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }];
+    : [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet de santé' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }, { key:'documents', label:'Documents' }];
 
   const isMale = (animal.sexe ?? '').toLowerCase().startsWith('m');
   const showPoil = ['chien','chat'].includes(animal.espece ?? '');

@@ -13,6 +13,7 @@ import 'package:google_maps_webservice/places.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -62,6 +63,7 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
   // Animaux tab
   List<Map<String, dynamic>> _animaux = [];
   bool _loadingAnimaux = false;
+  Map<String, String> _cedantNames = {};
 
   // Perdus tab
   List<Map<String, dynamic>> _alertes = [];
@@ -259,10 +261,32 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
       final data = await _supa
           .from('animaux')
           .select()
-          .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid')
+          .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid,uid_acquereur.eq.$uid')
           .order('created_at', ascending: false);
+      final list = List<Map<String, dynamic>>.from(data);
+
+      // Batch-fetch noms des cédants pour les animaux acquis
+      final cedantUids = list
+          .where((a) => a['uid_acquereur'] == uid)
+          .map((a) => a['uid_eleveur'] as String?)
+          .where((u) => u != null && u != uid)
+          .toSet()
+          .cast<String>()
+          .toList();
+      final Map<String, String> names = {};
+      if (cedantUids.isNotEmpty) {
+        final users = await _supa.from('users')
+            .select('uid, firstname, lastname, name_elevage')
+            .inFilter('uid', cedantUids);
+        for (final u in (users as List)) {
+          final elevage = u['name_elevage'] as String?;
+          final nom = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+          names[u['uid'] as String] = (elevage?.isNotEmpty == true) ? elevage! : nom;
+        }
+      }
       setState(() {
-        _animaux = List<Map<String, dynamic>>.from(data);
+        _animaux = list;
+        _cedantNames = names;
         _loadingAnimaux = false;
       });
     } catch (_) {
@@ -833,23 +857,39 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
                         mainAxisSpacing: 12,
                       ),
                       itemCount: _animaux.length,
-                      itemBuilder: (_, i) => _AnimalCard(
-                        data: _animaux[i],
-                        onTap: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AnimalFicheParticulierPage(
-                                animalId: _animaux[i]['id'],
-                                initialData: _animaux[i],
-                              ),
-                            ),
-                          );
-                          _fetchAnimaux();
-                        },
-                        onDelete: () => _deleteAnimal(
-                            _animaux[i]['id'], _animaux[i]['nom'] ?? 'cet animal'),
-                      ),
+                      itemBuilder: (_, i) {
+                        final animal = _animaux[i];
+                        final uid = User_Info.uid;
+                        final isAcquis = animal['uid_acquereur'] == uid;
+                        final cedantNom = isAcquis
+                            ? _cedantNames[animal['uid_eleveur'] as String?]
+                            : null;
+                        return _AnimalCard(
+                          data: animal,
+                          cedantNom: cedantNom,
+                          onTap: () async {
+                            if (isAcquis) {
+                              await Navigator.push(context, MaterialPageRoute(
+                                builder: (_) => AnimalFichePage(
+                                  animalId: animal['id'] as String,
+                                  readOnly: false,
+                                  eleveurUidOverride: animal['uid_eleveur'] as String?,
+                                ),
+                              ));
+                            } else {
+                              await Navigator.push(context, MaterialPageRoute(
+                                builder: (_) => AnimalFicheParticulierPage(
+                                  animalId: animal['id'],
+                                  initialData: animal,
+                                ),
+                              ));
+                            }
+                            _fetchAnimaux();
+                          },
+                          onDelete: () => _deleteAnimal(
+                              animal['id'], animal['nom'] ?? 'cet animal'),
+                        );
+                      },
                     ),
                   ),
         Positioned(
@@ -1036,8 +1076,9 @@ class _AnimalCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final String? cedantNom;
 
-  const _AnimalCard({required this.data, required this.onTap, required this.onDelete});
+  const _AnimalCard({required this.data, required this.onTap, required this.onDelete, this.cedantNom});
 
   String _emoji(String? espece) => switch (espece) {
         'chien' => '🐕',
@@ -1155,6 +1196,15 @@ class _AnimalCard extends StatelessWidget {
                           style: const TextStyle(fontFamily: 'Galey', fontSize: 10,
                               fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
                     ),
+                  if (cedantNom != null) ...[
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      const Icon(Icons.handshake_outlined, size: 10, color: Color(0xFF6E9E57)),
+                      const SizedBox(width: 3),
+                      Expanded(child: Text(cedantNom!, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 9, color: Color(0xFF6E9E57)))),
+                    ]),
+                  ],
                 ],
               ),
             ),
