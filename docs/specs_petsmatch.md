@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-06-22 (commit en cours)  
+> Dernière mise à jour : 2026-06-23  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -175,10 +175,17 @@ Un utilisateur peut avoir simultanément un profil éleveur (compte principal) e
 - Suivi de l'animal pendant le placement (bilans, photos)
 - L'animal reste propriété de l'association côté BDD jusqu'à l'adoption définitive
 
+**Implémenté (2026-06-20 → 2026-06-23) :**
+- ✅ Vue FA : page dédiée `AnimauxEnAccueilPage` (Flutter) et `/mes-animaux-accueil` (Web) — visible uniquement si l'utilisateur est FA actif, bandeau + cartes animaux en accueil
+- ✅ Menu "Animaux en accueil" conditionnel dans le drawer app et header web (vérifié via `familles_accueil.fa_uid`)
+- ✅ Notification in-app (`animal_en_accueil`) envoyée lors du placement d'un animal dans une FA
+- ✅ Modifier + Placer un animal : boutons sur les cartes FA (app + web)
+- ✅ Retirer un animal d'une FA : chip cliquable → statut repasse en `en_soin`, `date_sortie` renseignée
+- ✅ Adresse auto-remplie depuis le profil PetsMatch lors de la sélection d'un utilisateur (`rue`, `ville_elevage`, `code_postal_elevage`)
+
 **À faire (v2) :**
-- Vue FA : interface dédiée pour que la FA voie les fiches des animaux qui lui sont confiés
 - Bilans/photos depuis l'app de la FA
-- Notifications FA lors des changements de statut
+- Notifications FA lors des changements de statut de l'animal (retour, adoption)
 
 ---
 
@@ -678,19 +685,20 @@ CREATE TABLE historique_lieux_hebergement (
 | `soigneur` | Ses animaux | Fiches animaux | Son planning | ❌ | ❌ | ❌ |
 | `benevole` | Ses animaux | Rapports basiques | Ses créneaux | ❌ | ❌ | ❌ |
 
-### 5.3 Invitation et onboarding
+### 5.3 Invitation et onboarding — ✅ Implémenté (in-app)
 
-- L'admin envoie une **invitation par email**
-- L'employé crée son compte PetsMatch ou lie son compte existant
-- Il est rattaché au profil de la structure avec son rôle
-- Il voit un dashboard adapté à son rôle
+- ✅ **Ajout via recherche PetsMatch** : éleveur et association invitent un utilisateur existant (app + web)
+- ✅ **Notification in-app** (`employee_invite`) envoyée immédiatement à l'ajout
+- ✅ **Révocation** : désactivation `actif = false` + notification `employee_revoked` à l'employé/bénévole
+- ✅ **Bénévole manuel** : saisie sans compte PetsMatch (pas de notification, pas de `uid_employe`)
+- Invitation par email (HOST02 — bloqué en attendant hébergement prod)
 
-### 5.4 Planning employés
+### 5.4 Planning employés — ✅ Partiellement implémenté
 
 - Chaque employé a ses **créneaux de travail** (type créneaux_pro mais pour les salariés)
 - Vue planning hebdomadaire : qui est présent quel jour/heure
 - Affectation : quel soigneur s'occupe de quel animal / quelle chambre
-- Notifications aux soigneurs pour leurs tâches du jour
+- ✅ **Notifications aux soigneurs** pour les tâches assignées : notification `tache` envoyée à l'assigné (app + web éleveur + web association)
 
 ### 5.5 Schéma BDD
 
