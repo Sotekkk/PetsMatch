@@ -63,7 +63,7 @@ const SECTIONS: ServiceSection[] = [
       { id: 'restau',     label: 'Restaurants & Cafés',   icon: '🍽️', href: '/animal-friendly' },
       { id: 'parcs',      label: 'Parcs & Espaces verts', icon: '🌳', href: '/animal-friendly' },
       { id: 'evenements', label: 'Événements',            icon: '📅', soon: true },
-      { id: 'promenades', label: 'Promenades collectives',icon: '🦮', soon: true },
+      { id: 'promenades', label: 'Promenades collectives',icon: '🦮', href: '/promenades' },
     ],
   },
   {
