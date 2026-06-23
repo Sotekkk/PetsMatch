@@ -43,7 +43,7 @@ const STATUT_COLOR: Record<string, string> = {
 type FilterKey = 'toutes' | 'disponible' | 'archivee' | 'pause';
 
 export default function MesAnnoncesPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, userData } = useAuth();
   const { plan, config: planConfig, activeAnnonces: activeCount } = usePlan();
   const router = useRouter();
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
@@ -52,8 +52,10 @@ export default function MesAnnoncesPage() {
   const [filter, setFilter] = useState<FilterKey>('toutes');
 
   useEffect(() => {
-    if (!loading && !user) router.push('/connexion');
-  }, [loading, user, router]);
+    if (loading) return;
+    if (!user) { router.push('/connexion'); return; }
+    if (!userData?.isElevage) router.push('/');
+  }, [loading, user, userData, router]);
 
   useEffect(() => {
     if (!user) return;

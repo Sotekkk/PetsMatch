@@ -388,6 +388,7 @@ export default function Header() {
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [isFa, setIsFa] = useState(false);
   const [isEmploye, setIsEmploye] = useState(false);
+  const [isBenevole, setIsBenevole] = useState(false);
   const [activeProfileId, setActiveProfileId] = useState<string>('');
   const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -453,9 +454,16 @@ export default function Header() {
     : effectiveIsAssociation ? MENU_ASSOCIATION
     : effectiveIsEleveur ? MENU_ELEVEUR
     : baseMenuParticulier;
-  const menuSections = isEmploye
+  const menuSections = (isEmploye || isBenevole)
     ? baseMenuSections.map((sec, i) => i === 0
-        ? { ...sec, items: [...sec.items, { href: '/mes-employeurs', label: 'Mes employeurs', icon: '🏡' }] }
+        ? {
+            ...sec,
+            items: [
+              ...sec.items,
+              ...(isEmploye ? [{ href: '/mes-employeurs', label: 'Mes employeurs', icon: '🏡' }] : []),
+              ...(isBenevole ? [{ href: '/mes-associations', label: 'Mes associations', icon: '🏠' }] : []),
+            ],
+          }
         : sec)
     : baseMenuSections;
 
@@ -464,8 +472,12 @@ export default function Header() {
     if (!user) { setIsFa(false); setIsEmploye(false); return; }
     supabase.from('familles_accueil').select('id').eq('fa_uid', user.uid).eq('actif', true).limit(1)
       .then(({ data }) => setIsFa((data ?? []).length > 0));
-    supabase.from('employes').select('id').eq('uid_employe', user.uid).eq('actif', true).limit(1)
-      .then(({ data }) => setIsEmploye((data ?? []).length > 0));
+    supabase.from('employes').select('id, type').eq('uid_employe', user.uid).eq('actif', true)
+      .then(({ data }) => {
+        const rows = data ?? [];
+        setIsEmploye(rows.some((r: { type: string | null }) => r.type !== 'benevole'));
+        setIsBenevole(rows.some((r: { type: string | null }) => r.type === 'benevole'));
+      });
   }, [user]);
 
   // ── Chargement des profils secondaires ────────────────────────────────────

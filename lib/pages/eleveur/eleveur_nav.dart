@@ -6,6 +6,7 @@ import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
+import 'package:PetsMatch/pages/particulier/mes_associations_benevole.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/pages/eleveur/eleveur_home.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
@@ -62,6 +63,7 @@ class _EleveurNavState extends State<EleveurNav> {
   int _selectedIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _isEmploye    = false;
+  bool _isBenevole   = false;
   String _planCode   = 'free';
 
   static const _green = Color(0xFF6E9E57);
@@ -94,11 +96,13 @@ class _EleveurNavState extends State<EleveurNav> {
     if (uid == null) return;
     final rows = await Supabase.instance.client
         .from('employes')
-        .select('id')
+        .select('id, type')
         .eq('uid_employe', uid)
-        .eq('actif', true)
-        .limit(1);
-    if (mounted) setState(() => _isEmploye = (rows as List).isNotEmpty);
+        .eq('actif', true);
+    if (mounted) setState(() {
+      _isEmploye  = (rows as List).any((e) => e['type'] != 'benevole');
+      _isBenevole = rows.any((e) => e['type'] == 'benevole');
+    });
   }
 
   Future<void> _loadPlan() async {
@@ -303,6 +307,17 @@ class _EleveurNavState extends State<EleveurNav> {
                             Navigator.pop(context);
                             Navigator.push(context, MaterialPageRoute(
                               builder: (_) => const MesEmployeursPage(),
+                            ));
+                          },
+                        ),
+                      if (_isBenevole)
+                        _DrawerSubItem(
+                          label: 'Mes Associations',
+                          icon: Icons.volunteer_activism_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const MesAssociationsBenevole(),
                             ));
                           },
                         ),

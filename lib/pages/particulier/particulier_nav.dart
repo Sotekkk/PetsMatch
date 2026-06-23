@@ -20,10 +20,12 @@ import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
+import 'package:PetsMatch/pages/particulier/mes_associations_benevole.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
+import 'package:PetsMatch/pages/particulier/animaux_en_accueil_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 class ParticulierNav extends StatefulWidget {
@@ -37,6 +39,8 @@ class _ParticulierNavState extends State<ParticulierNav> {
   int _selectedIndex = 0;
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _isEmploye = false;
+  bool _isBenevole = false;
+  bool _isFa = false;
 
   static const _teal = Color(0xFF0C5C6C);
   static const _dark = Color(0xFF1F2A2E);
@@ -44,19 +48,23 @@ class _ParticulierNavState extends State<ParticulierNav> {
   @override
   void initState() {
     super.initState();
-    _checkIsEmploye();
+    _checkRoles();
   }
 
-  Future<void> _checkIsEmploye() async {
+  Future<void> _checkRoles() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final rows = await Supabase.instance.client
-        .from('employes')
-        .select('id')
-        .eq('uid_employe', uid)
-        .eq('actif', true)
-        .limit(1);
-    if (mounted) setState(() => _isEmploye = (rows as List).isNotEmpty);
+    final supa = Supabase.instance.client;
+    final results = await Future.wait([
+      supa.from('employes').select('id, type').eq('uid_employe', uid).eq('actif', true),
+      supa.from('familles_accueil').select('id').eq('fa_uid', uid).eq('actif', true).limit(1),
+    ]);
+    final employes = results[0] as List;
+    if (mounted) setState(() {
+      _isEmploye  = employes.any((e) => e['type'] != 'benevole');
+      _isBenevole = employes.any((e) => e['type'] == 'benevole');
+      _isFa       = (results[1] as List).isNotEmpty;
+    });
   }
 
   Widget _tabContent(int index) => switch (index) {
@@ -176,6 +184,17 @@ class _ParticulierNavState extends State<ParticulierNav> {
                         ));
                       },
                     ),
+                    if (_isFa)
+                      _DrawerSubItem(
+                        label: 'Animaux en accueil',
+                        icon: Icons.house_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const AnimauxEnAccueilPage(),
+                          ));
+                        },
+                      ),
                   ],
                 ),
                 _DrawerSection(
@@ -268,6 +287,17 @@ class _ParticulierNavState extends State<ParticulierNav> {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(
                         builder: (_) => const MesEmployeursPage(),
+                      ));
+                    },
+                  ),
+                if (_isBenevole)
+                  _DrawerItem(
+                    icon: Icons.volunteer_activism_outlined,
+                    label: 'Mes Associations',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const MesAssociationsBenevole(),
                       ));
                     },
                   ),
