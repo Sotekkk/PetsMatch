@@ -1,6 +1,9 @@
+import 'dart:async';
+
+import 'package:PetsMatch/main.dart' show getApiKey;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:geocoding/geocoding.dart';
+import 'package:google_maps_webservice/places.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -426,7 +429,6 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   String _titre = '';
-  String _lieuRdv = '';
   String _description = '';
   String _niveau = 'facile';
   DateTime _dateHeure = DateTime.now().add(const Duration(days: 3));
@@ -435,28 +437,58 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
   double? _lat;
   double? _lng;
   bool _saving = false;
-  bool _geocoding = false;
 
-  Future<void> _geocodeAddress() async {
-    if (_lieuRdv.trim().isEmpty) return;
-    setState(() => _geocoding = true);
-    try {
-      final locations = await locationFromAddress(_lieuRdv.trim());
-      if (locations.isNotEmpty && mounted) {
-        setState(() {
-          _lat = locations.first.latitude;
-          _lng = locations.first.longitude;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() { _lat = null; _lng = null; });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Adresse non trouvée — itinéraire indisponible')));
-      }
-    } finally {
-      if (mounted) setState(() => _geocoding = false);
+  late final GoogleMapsPlaces _places;
+  final _lieuCtrl = TextEditingController();
+  List<Prediction> _predictions = [];
+  Timer? _debounce;
+  bool _loadingPredictions = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _places = GoogleMapsPlaces(apiKey: getApiKey());
+  }
+
+  @override
+  void dispose() {
+    _places.dispose();
+    _debounce?.cancel();
+    _lieuCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onLieuChanged(String val) {
+    _debounce?.cancel();
+    if (val.length < 3) {
+      setState(() { _predictions = []; _loadingPredictions = false; _lat = null; _lng = null; });
+      return;
     }
+    setState(() => _loadingPredictions = true);
+    _debounce = Timer(const Duration(milliseconds: 400), () => _fetchPredictions(val));
+  }
+
+  Future<void> _fetchPredictions(String input) async {
+    final res = await _places.autocomplete(
+      input,
+      components: [Component(Component.country, 'fr')],
+      language: 'fr',
+    );
+    if (!mounted) return;
+    setState(() {
+      _predictions = res.isOkay ? res.predictions : [];
+      _loadingPredictions = false;
+    });
+  }
+
+  Future<void> _selectPrediction(Prediction p) async {
+    _debounce?.cancel();
+    setState(() { _predictions = []; _lieuCtrl.text = p.description ?? ''; });
+    if (p.placeId == null) return;
+    final det = await _places.getDetailsByPlaceId(p.placeId!);
+    if (!mounted || !det.isOkay) return;
+    final loc = det.result.geometry?.location;
+    if (loc != null) setState(() { _lat = loc.lat; _lng = loc.lng; });
   }
 
   Future<void> _pickDate() async {
@@ -488,7 +520,7 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
       await _supa.from('promenades').insert({
         'organisateur_uid': _uid,
         'titre': _titre,
-        'lieu_rdv': _lieuRdv,
+        'lieu_rdv': _lieuCtrl.text.trim(),
         'description': _description,
         'niveau': _niveau,
         'date_heure': _dateHeure.toIso8601String(),
@@ -560,45 +592,74 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
 
                 _lbl('Lieu de rendez-vous *'),
                 TextFormField(
-                  decoration: _dec('Adresse, parking, point de repère…'),
+                  controller: _lieuCtrl,
+                  onChanged: _onLieuChanged,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
                   validator: (v) => (v?.trim().isEmpty ?? true) ? 'Obligatoire' : null,
-                  onChanged: (v) {
-                    _lieuRdv = v.trim();
-                    if (_lat != null) setState(() { _lat = null; _lng = null; });
-                  },
-                  onSaved: (v) => _lieuRdv = v?.trim() ?? '',
+                  decoration: InputDecoration(
+                    hintText: 'Rechercher une adresse…',
+                    hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+                    prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF2E7D5E)),
+                    suffixIcon: _loadingPredictions
+                        ? const Padding(padding: EdgeInsets.all(12),
+                            child: SizedBox(width: 16, height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2E7D5E))))
+                        : (_lat != null
+                            ? const Icon(Icons.check_circle_outline, size: 18, color: Color(0xFF2E7D5E))
+                            : (_predictions.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 16),
+                                    onPressed: () => setState(() {
+                                      _predictions = []; _lieuCtrl.clear(); _lat = null; _lng = null;
+                                    }))
+                                : null)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.grey.shade300)),
+                    focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Color(0xFF2E7D5E), width: 1.5)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+                  ),
                 ),
-                const SizedBox(height: 6),
-                Row(children: [
-                  GestureDetector(
-                    onTap: _geocoding ? null : _geocodeAddress,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2E7D5E).withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        if (_geocoding)
-                          const SizedBox(width: 12, height: 12,
-                              child: CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFF2E7D5E)))
-                        else
-                          const Icon(Icons.my_location_outlined, size: 13, color: Color(0xFF2E7D5E)),
-                        const SizedBox(width: 5),
-                        const Text('Géolocaliser',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                                fontWeight: FontWeight.w600, color: Color(0xFF2E7D5E))),
-                      ]),
+                if (_predictions.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 8, offset: const Offset(0, 4))],
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _predictions.length > 5 ? 5 : _predictions.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1, indent: 40),
+                      itemBuilder: (_, i) {
+                        final p = _predictions[i];
+                        return ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.location_on_outlined,
+                              size: 18, color: Color(0xFF2E7D5E)),
+                          title: Text(p.description ?? '',
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                          onTap: () => _selectPrediction(p),
+                        );
+                      },
                     ),
                   ),
-                  if (_lat != null) ...[
-                    const SizedBox(width: 8),
-                    const Icon(Icons.check_circle_outline, size: 14, color: Color(0xFF2E7D5E)),
+                if (_lat != null) ...[
+                  const SizedBox(height: 4),
+                  Row(children: [
+                    const Icon(Icons.navigation_outlined, size: 12, color: Color(0xFF2E7D5E)),
                     const SizedBox(width: 4),
-                    const Text('Position trouvée',
+                    const Text('Position géolocalisée — bouton Y aller disponible',
                         style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF2E7D5E))),
-                  ],
-                ]),
+                  ]),
+                ],
                 const SizedBox(height: 12),
 
                 _lbl('Date et heure *'),
