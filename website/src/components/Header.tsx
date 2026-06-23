@@ -298,7 +298,6 @@ const MENU_PARTICULIER = [
     items: [
       { href: '/profil',          label: 'Mon Profil',      icon: '👤' },
       { href: '/mes-animaux',     label: 'Mes Animaux',     icon: '🐾' },
-      { href: '/mes-employeurs',  label: 'Mes employeurs',  icon: '🏡' },
       { href: '/mes-taches',      label: 'Mes tâches',      icon: '✅' },
     ],
   },
@@ -388,6 +387,7 @@ export default function Header() {
   // Profile switching
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [isFa, setIsFa] = useState(false);
+  const [isEmploye, setIsEmploye] = useState(false);
   const [activeProfileId, setActiveProfileId] = useState<string>('');
   const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -448,17 +448,24 @@ export default function Header() {
         ? { ...sec, items: [...sec.items, { href: '/mes-animaux-accueil', label: 'Animaux en accueil', icon: '🏡' }] }
         : sec)
     : MENU_PARTICULIER;
-  const menuSections = isEffectivelyPro
+  const baseMenuSections = isEffectivelyPro
     ? (effectiveIsPension ? MENU_PENSION : effectiveIsVet ? MENU_VET : MENU_PRO)
     : effectiveIsAssociation ? MENU_ASSOCIATION
     : effectiveIsEleveur ? MENU_ELEVEUR
     : baseMenuParticulier;
+  const menuSections = isEmploye
+    ? baseMenuSections.map((sec, i) => i === 0
+        ? { ...sec, items: [...sec.items, { href: '/mes-employeurs', label: 'Mes employeurs', icon: '🏡' }] }
+        : sec)
+    : baseMenuSections;
 
-  // ── Détection famille d'accueil ───────────────────────────────────────────
+  // ── Détection famille d'accueil & employé/bénévole ───────────────────────
   useEffect(() => {
-    if (!user) { setIsFa(false); return; }
+    if (!user) { setIsFa(false); setIsEmploye(false); return; }
     supabase.from('familles_accueil').select('id').eq('fa_uid', user.uid).eq('actif', true).limit(1)
       .then(({ data }) => setIsFa((data ?? []).length > 0));
+    supabase.from('employes').select('id').eq('uid_employe', user.uid).eq('actif', true).limit(1)
+      .then(({ data }) => setIsEmploye((data ?? []).length > 0));
   }, [user]);
 
   // ── Chargement des profils secondaires ────────────────────────────────────
