@@ -685,6 +685,20 @@ CREATE TABLE historique_lieux_hebergement (
 | `soigneur` | Ses animaux | Fiches animaux | Son planning | ❌ | ❌ | ❌ |
 | `benevole` | Ses animaux | Rapports basiques | Ses créneaux | ❌ | ❌ | ❌ |
 
+**Permissions JSONB (table `employes.permissions`) — ✅ Implémenté (2026-06-23)**
+
+| Clé | Valeur | Effet |
+|-----|--------|-------|
+| `modifier_animaux` | `true` | Peut éditer les fiches animaux |
+| `modifier_animaux` | absent/false | Lecture seule sur les fiches animaux |
+| `gerer_taches` | `true` | Peut créer/modifier des tâches |
+
+**Comportement implémenté :**
+- Employé : tap sur un animal dans `MesEmployeurs` → fiche en `readOnly: perms['modifier_animaux'] != true`
+- Bénévole : tap sur un animal dans `MesAssociations` → fiche en `readOnly: true` (toujours)
+- Cession/Adoption : **bloquée** pour employés et bénévoles (bouton masqué)
+- Profil mixte : les animaux élevage et les animaux association sont séparés (filtre `is_association`)
+
 ### 5.3 Invitation et onboarding — ✅ Implémenté (in-app)
 
 - ✅ **Ajout via recherche PetsMatch** : éleveur et association invitent un utilisateur existant (app + web)
@@ -952,8 +966,8 @@ Phase 4 — Améliorations
 | PLAN02 | Planning chenil semaine | 🔜 | ✅ onglet chenil | 🔜 |
 | PLAN03 | Auto RDV → chambre | 🔜 | 🔜 | ❌ |
 | PLAN04 | Stats occupation | 🔜 | 🔜 | 🔜 |
-| EMP01 | Invitation employés | 🔜 | ✅ `/employes` (exclut bénévoles) | 🔜 |
-| BEN01 | Gestion bénévoles | 🔜 | ✅ `/association/benevoles` (type=benevole) | ❌ |
+| EMP01 | Invitation employés | ✅ `employes_page` (onglets animaux/tâches, tap fiche readOnly) | ✅ `/employes` (exclut bénévoles, tap /mes-animaux/:id) | 🔜 |
+| BEN01 | Gestion bénévoles | ✅ `mes_associations_benevole` (onglets animaux/tâches, tap readOnly) | ✅ `/mes-associations` (animaux cliquables → fiche) | ❌ |
 | EMP02 | Planning soigneurs | 🔜 | 🔜 | ❌ |
 | EMP03 | Affectation soigneurs | 🔜 | 🔜 | ❌ |
 
@@ -1528,6 +1542,7 @@ CREATE TABLE documents_animaux (
 | DOC05 | Cession — attach auto du contrat de vente signé existant | App + Web | ✅ Livré 2026-06-19 |
 | DOC06 | Certificat de cession (attestation de transfert) | App + Web | ✅ Livré 2026-06-19 |
 | DOC07 | Contrats web depuis app + Mes Contrats particulier + clause stérilisation | App + Web | ✅ Livré 2026-06-20 |
+| DOC08 | Cession — droits acquéreur + animal dans Mes Animaux + notifications | App + Web | ✅ Livré 2026-06-23 |
 
 **Notes DOC01-DOC02 :**
 - Web `/elevage/contrat/page.tsx` : migré Firestore → Supabase `documents_animaux`, sélecteur animal, génération dynamique via `generateContratHTML`, types vente/reservation/cession
@@ -1543,6 +1558,25 @@ CREATE TABLE documents_animaux (
 - Web contrat de vente : checkbox clause stérilisation (Tranche 2) ; stockée en `metadata.avec_sterilisation` ; lue dans `/signer-contrat/[token]` pour affichage conditionnel Article 2
 - Web `proxy.ts` : renommage de `middleware.ts` → `proxy.ts` (convention Next.js 16) ; `turbopack.root` conservé pour résoudre conflit lockfiles Flutter/Next.js
 - Config app : `kSiteBaseUrl` dans `lib/config.dart` (IP locale tests → domaine production)
+
+**Notes DOC08 — Cession acquéreur (2026-06-23) :**
+- Après validation des deux signatures : `uid_acquereur` est renseigné dans `animaux`, `statut = 'sorti'`
+- **Acquéreur** : animal visible dans **Mes Animaux** (pas de page séparée), droits d'écriture complets (`readOnly: false`)
+- **Éleveur/asso cédant** : animal dans Sorties, fiche en lecture seule (`isCededByMe = uid_eleveur === user AND uid_acquereur != null AND statut = 'sorti'`)
+- Notifications :
+  - `cession_signature_demandee` → acquéreur reçoit lien `/signer-contrat/[token]` cliquable (app + web)
+  - `cession_confirmee` → redirige vers Mes Animaux (app + web)
+  - `contrat_signe_acquereur` / `cession_signe_acquereur` → éleveur voit "Confirmer la cession →" dans header web
+- Web `isOwner = uid_eleveur === user OR uid_acquereur === user` — boutons Modifier/Céder accessibles à l'acquéreur
+- Associations : cession/adoption désormais activée (bouton "Proposer à l'adoption" au lieu de "Céder")
+
+**Règle saillie — réservée aux éleveurs professionnels (2026-06-23) :**
+- `TrouverCompagnonPage` (app) : section "Saillies disponibles" masquée pour particuliers (`!User_Info.isElevage`) → bloc grisé cadenas + message réglementaire
+- `annonces_feed_page.dart` : filtre "Saillie" grisé avec icône 🔒 ; tap → dialog "Accès restreint — réservé éleveurs pro"
+- Si `typeFilter: 'saillie'` passé directement à non-éleveur : plein écran de restriction
+- Web `annonces/page.tsx` : gate affiché à la place des résultats si `filtreType === 'saillie' && !isEleveur`
+- Web `annonces/feed/page.tsx` : bouton Saillie `cursor-not-allowed` + `title` tooltip
+- Web `annonces/carte/page.tsx` : même traitement sur les filtres de la carte
 
 ### 9bis.5 Intégration YouSign — Modèle économique & Quotas (SIGN01)
 
