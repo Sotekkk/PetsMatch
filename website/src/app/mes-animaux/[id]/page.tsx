@@ -575,11 +575,15 @@ function DocumentsAnimalTab({ animalId }: { animalId: string }) {
   const typeLabel: Record<string,string> = {
     contrat_vente: 'Contrat de vente',
     contrat_reservation: 'Contrat de réservation',
+    contrat_saillie: 'Contrat de saillie',
+    contrat_adoption: 'Contrat d\'adoption',
     certificat_cession: 'Certificat de cession',
   };
   const typeIcon: Record<string,string> = {
     contrat_vente: '🤝',
     contrat_reservation: '🔖',
+    contrat_saillie: '💞',
+    contrat_adoption: '🏡',
     certificat_cession: '📋',
   };
   const statutBadge = (statut: string) => {
@@ -1046,6 +1050,8 @@ export default function AnimalFichePage() {
   const { user, userData } = useAuth();
   const router = useRouter();
   const isEleveur = userData?.isElevage === true;
+  // isOwner = l'utilisateur est bien le propriétaire de cet animal (pas juste un employé)
+  // Déterminé après chargement de l'animal (voir useMemo ci-dessous)
   const isNew = id === 'ajouter';
 
   // ── État identité
@@ -1578,9 +1584,12 @@ export default function AnimalFichePage() {
     return <div className="flex items-center justify-center py-32"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin"/></div>;
   }
 
-  const isCede = animal.statut === 'sorti' || animal.statut === 'decede';
-  const isOriginalBreeder = isEleveur && user?.uid === animal.uid_eleveur;
-  const isAcquereur = user?.uid === animal.uid_acquereur;
+  const isAcquereur = !!user && user.uid === animal.uid_acquereur;
+  // isOwner : propriétaire original OU acquéreur après cession confirmée
+  const isOwner = !!user && (user.uid === animal.uid_eleveur || isAcquereur);
+  // isCede du point de vue de l'éleveur original (pas de l'acquéreur qui a les droits d'écriture)
+  const isCede = (animal.statut === 'sorti' || animal.statut === 'decede') && !isAcquereur;
+  const isOriginalBreeder = isEleveur && !!user && user.uid === animal.uid_eleveur;
   // Animal cédé vu par l'éleveur d'origine → lecture seule, juste Identité
   const tabs = (isCede && isOriginalBreeder && !isAcquereur)
     ? [{ key:'identite', label:'Identité' }, { key:'documents', label:'Documents' }]
@@ -1617,17 +1626,22 @@ export default function AnimalFichePage() {
               className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 text-sm transition-colors">
               📊
             </button>
-            {isEleveur && !isCede && animal.statut !== 'cession_en_cours' && (
+            {isOwner && !isCede && animal.statut !== 'cession_en_cours' && (
               <button onClick={() => setShowCession(true)}
                 className="text-sm text-amber-700 font-semibold border border-amber-300 rounded-full px-3 py-1.5 hover:bg-amber-50 transition-colors">
                 🤝 Céder
               </button>
             )}
-            {isEleveur && !isCede && animal.statut !== 'cession_en_cours' && (
+            {isOwner && !isCede && animal.statut !== 'cession_en_cours' && (
               <button onClick={() => setEditing(true)}
                 className="text-sm text-[#0C5C6C] font-semibold border border-[#0C5C6C]/30 rounded-full px-3 py-1.5 hover:bg-[#0C5C6C]/5">
                 Modifier
               </button>
+            )}
+            {isEleveur && !isOwner && (
+              <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-3 py-1.5">
+                Lecture seule
+              </span>
             )}
           </div>
         )}

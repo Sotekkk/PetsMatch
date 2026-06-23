@@ -1,3 +1,4 @@
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart' show speciesIcon, speciesLabel;
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
@@ -158,24 +159,30 @@ class _TrouverCompagnonPageState extends State<TrouverCompagnonPage> {
 
                 // ── Saillies ─────────────────────────────────────────────
                 const SizedBox(height: 28),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const _SectionTitle('Saillies disponibles'),
-                    TextButton(
-                      onPressed: () => Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnnoncesPublicPage(typeFilter: 'saillie'))),
-                      child: Text('Voir tout',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                              color: const Color(0xFF8B5CF6))),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                _SaillieShortcut(
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const AnnoncesPublicPage(typeFilter: 'saillie'))),
-                ),
+                if (User_Info.isElevage) ...[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const _SectionTitle('Saillies disponibles'),
+                      TextButton(
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const AnnoncesPublicPage(typeFilter: 'saillie'))),
+                        child: Text('Voir tout',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                                color: const Color(0xFF8B5CF6))),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  _SaillieShortcut(
+                    onTap: () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const AnnoncesPublicPage(typeFilter: 'saillie'))),
+                  ),
+                ] else ...[
+                  const _SectionTitle('Saillies'),
+                  const SizedBox(height: 10),
+                  _SaillieLocked(),
+                ],
               ]),
             ),
           ),
@@ -390,6 +397,40 @@ class _SaillieShortcut extends StatelessWidget {
           const Icon(Icons.chevron_right, color: Color(0xFF8B5CF6)),
         ]),
       ),
+    );
+  }
+}
+
+// ── Saillie réservée aux éleveurs ────────────────────────────────────────────
+class _SaillieLocked extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(children: [
+        Container(
+          width: 44, height: 44,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(Icons.lock_outline, color: Colors.grey, size: 22),
+        ),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Réservé aux éleveurs professionnels',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                  fontSize: 13, color: Colors.grey)),
+          const SizedBox(height: 3),
+          Text('La reproduction par des particuliers n\'est pas conforme à notre règlement.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+        ])),
+      ]),
     );
   }
 }

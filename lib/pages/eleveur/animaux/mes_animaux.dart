@@ -1455,11 +1455,18 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   }
 
   void _openFiche(BuildContext context, String? animalId, {Map<String, dynamic>? data}) {
+    // Lecture seule uniquement pour l'éleveur ORIGINAL qui cède l'animal (il voit dans ses Sorties)
+    // L'acquéreur a les droits d'écriture sur l'animal reçu
+    final isCededByMe = data != null
+        && data['uid_eleveur'] == _uid
+        && data['uid_acquereur'] != null
+        && (data['statut'] as String? ?? '') == 'sorti';
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => AnimalFichePage(
         animalId: animalId,
         initialData: data,
         preselectedEspece: _filterEspece != 'tous' ? _filterEspece : null,
+        readOnly: isCededByMe,
       ),
     )).then((_) => _loadAnimaux());
   }

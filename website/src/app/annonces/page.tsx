@@ -65,7 +65,8 @@ const BREED_FILES: Record<string, string> = {
 };
 
 export default function AnnoncesPage() {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
+  const isEleveur = userData?.isElevage === true;
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
   const [eleveurVerifs, setEleveurVerifs] = useState<Record<string, EleveurVerif>>({});
   const [loading, setLoading] = useState(true);
@@ -426,6 +427,15 @@ export default function AnnoncesPage() {
       {loading ? (
         <div className="flex justify-center py-20">
           <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : filtreType === 'saillie' && !isEleveur ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center px-6">
+          <div className="text-5xl mb-4">🔒</div>
+          <h3 className="font-bold text-[#1F2A2E] text-lg mb-2">Réservé aux éleveurs professionnels</h3>
+          <p className="text-gray-500 text-sm max-w-sm">
+            La reproduction et les saillies sont réservées aux éleveurs professionnels inscrits sur PetsMatch.
+            La reproduction par des particuliers n&apos;est pas conforme à notre règlement.
+          </p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-20 text-gray-400">Aucune annonce trouvée</div>

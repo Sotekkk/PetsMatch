@@ -804,6 +804,31 @@ export default function Header() {
                                 className="mt-1 text-xs font-bold text-[#0C5C6C] underline"
                               >Voir mes contrats →</a>
                             )}
+                            {n.type === 'cession_signature_demandee' && (() => {
+                              const d = (n as Notif & { data?: Record<string, string> }).data;
+                              const url = d?.signingUrl ?? (d?.token ? `/signer-contrat/${d.token}` : null);
+                              return url ? (
+                                <a href={url} target="_blank" rel="noopener noreferrer"
+                                  onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
+                                  className="mt-1 text-xs font-bold text-amber-700 underline">
+                                  ✍️ Signer le contrat →
+                                </a>
+                              ) : null;
+                            })()}
+                            {n.type === 'cession_confirmee' && (
+                              <a href="/mes-animaux"
+                                onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
+                                className="mt-1 text-xs font-bold text-[#6E9E57] underline">
+                                🐾 Voir dans Mes Animaux →
+                              </a>
+                            )}
+                            {(n.type === 'contrat_signe_acquereur' || n.type === 'cession_signe_acquereur') && (
+                              <a href="/mes-animaux"
+                                onClick={(e) => { e.stopPropagation(); setBellOpen(false); }}
+                                className="mt-1 text-xs font-bold text-[#0C5C6C] underline">
+                                🔔 Confirmer la cession →
+                              </a>
+                            )}
                           </div>
                         </div>
                       );

@@ -19,6 +19,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
+import 'package:PetsMatch/config.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -229,6 +230,26 @@ class _NotificationsPageState extends State<NotificationsPage> {
       ));
       return;
     }
+    // Cession — signature demandée à l'acquéreur → ouvrir le lien de signature
+    if (type == 'cession_signature_demandee') {
+      final signingUrl = data is Map ? data['signingUrl'] as String? : null;
+      final token      = data is Map ? data['token']      as String? : null;
+      final url = signingUrl ?? (token != null ? '$kSiteBaseUrl/signer-contrat/$token' : null);
+      if (url != null) {
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      }
+      return;
+    }
+    // Cession confirmée côté acquéreur → voir dans Mes Animaux
+    if (type == 'cession_confirmee') {
+      if (!mounted) return;
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => const MesAnimauxPage(),
+      ));
+      return;
+    }
+    // Cession révoquée → juste marquer lue (déjà fait)
+    if (type == 'cession_revoquee') return;
     if (type == 'annonce_expiration' && annonceId != null) {
       // Charger les données de l'annonce depuis Supabase pour ouvrir directement l'édition
       final supa = Supabase.instance.client;

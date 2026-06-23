@@ -66,15 +66,25 @@ export default function MesEmployeursPage() {
 
     const { data: rows } = await supabase
       .from('employes')
-      .select('uid_eleveur, permissions')
+      .select('uid_eleveur, permissions, type')
       .eq('uid_employe', user.uid)
       .eq('actif', true);
 
     if (!rows || rows.length === 0) { setLoading(false); return; }
 
-    const uids = rows.map(r => r.uid_eleveur as string);
+    // Exclut les bénévoles, déduplique par uid_eleveur
+    const seenUids = new Set<string>();
+    const filteredRows = rows.filter(r => {
+      if (r.type === 'benevole') return false;
+      if (seenUids.has(r.uid_eleveur)) return false;
+      seenUids.add(r.uid_eleveur);
+      return true;
+    });
+    if (filteredRows.length === 0) { setLoading(false); return; }
+
+    const uids = filteredRows.map(r => r.uid_eleveur as string);
     const permMap: Record<string, Record<string, boolean>> = {};
-    rows.forEach(r => { permMap[r.uid_eleveur] = (r.permissions as Record<string, boolean>) ?? {}; });
+    filteredRows.forEach(r => { permMap[r.uid_eleveur] = (r.permissions as Record<string, boolean>) ?? {}; });
 
     // Dates pour plan_taches
     const past = new Date(); past.setDate(past.getDate() - 7);
@@ -90,6 +100,7 @@ export default function MesEmployeursPage() {
         .select('id, nom, espece, race, sexe, photo_url, uid_eleveur')
         .in('uid_eleveur', uids)
         .eq('statut', 'present')
+        .or('is_association.is.null,is_association.eq.false')
         .order('nom'),
       supabase.from('taches_elevage')
         .select('id, titre, date, statut, animal_id, uid_eleveur')

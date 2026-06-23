@@ -1031,11 +1031,12 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               tooltip: 'Partager avec mon vétérinaire',
               onPressed: () => showVetShareSheet(context, widget.animalId!),
             ),
-          if (widget.animalId != null && !widget.vetMode && !widget.isAssociation
+          if (widget.animalId != null && !widget.vetMode
+              && !widget.readOnly
               && _statut != 'sorti' && _statut != 'decede' && _statut != 'cession_en_cours')
             IconButton(
               icon: const Icon(Icons.handshake_outlined, size: 20),
-              tooltip: 'Céder cet animal',
+              tooltip: widget.isAssociation ? 'Proposer à l\'adoption' : 'Céder cet animal',
               onPressed: () => showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
@@ -10368,7 +10369,9 @@ class _DocumentsTabState extends State<_DocumentsTab> {
     switch (type) {
       case 'contrat_vente': return 'Contrat de vente';
       case 'contrat_reservation': return 'Contrat de réservation';
+      case 'contrat_saillie': return 'Contrat de saillie';
       case 'certificat_cession': return 'Certificat de cession';
+      case 'contrat_adoption': return 'Contrat d\'adoption';
       default: return 'Document';
     }
   }

@@ -63,7 +63,8 @@ export default function MesAssociationsPage() {
 
     if (!rows || rows.length === 0) { setLoading(false); return; }
 
-    const uids = rows.map(r => r.uid_eleveur as string);
+    // Déduplique les uid_eleveur
+    const uids = [...new Set(rows.map(r => r.uid_eleveur as string))];
 
     const past = new Date(); past.setDate(past.getDate() - 7);
     const future = new Date(); future.setDate(future.getDate() + 90);
@@ -85,7 +86,7 @@ export default function MesAssociationsPage() {
         .in('uid', uids),
       supabase.from('animaux')
         .select('id, nom, espece, race, photo_url, uid_eleveur')
-        .in('uid_eleveur', uids).eq('is_association', true).eq('statut', 'present').order('nom'),
+        .in('uid_eleveur', uids).eq('is_association', true).in('statut', ['disponible', 'en_soin', 'present']).order('nom'),
       supabase.from('taches_elevage')
         .select('id, titre, date, statut, animal_id, uid_eleveur')
         .in('uid_eleveur', uids).eq('assigne_a', user.uid).neq('statut', 'fait').order('date'),
@@ -241,7 +242,8 @@ export default function MesAssociationsPage() {
                   ) : (
                     <div className="grid grid-cols-3 gap-2">
                       {asso.animaux.map(a => (
-                        <div key={a.id} className="bg-gray-50 rounded-xl overflow-hidden">
+                        <Link key={a.id} href={`/mes-animaux/${a.id}`}
+                          className="bg-gray-50 rounded-xl overflow-hidden hover:shadow-md transition-shadow">
                           <div className="aspect-square relative bg-gray-100">
                             {a.photo_url ? (
                               <Image src={a.photo_url} alt={a.nom ?? ''} fill className="object-cover" sizes="120px" unoptimized />
@@ -253,7 +255,7 @@ export default function MesAssociationsPage() {
                             <p className="text-xs font-semibold text-[#1F2A2E] truncate">{a.nom ?? '—'}</p>
                             <p className="text-xs text-gray-400 truncate">{a.race ?? a.espece ?? ''}</p>
                           </div>
-                        </div>
+                        </Link>
                       ))}
                     </div>
                   )}

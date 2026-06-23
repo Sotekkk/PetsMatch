@@ -567,16 +567,26 @@ export default function FeedPage() {
                 { value: 'tous', label: 'Tous' },
                 { value: 'vente', label: '🐾 Compagnon' },
                 { value: 'saillie', label: '💜 Saillie' },
-              ].map((t) => (
-                <button key={t.value} onClick={() => setFiltreType(t.value)}
-                  className={`flex-1 py-3 rounded-2xl border-2 text-sm font-medium transition-colors ${
-                    filtreType === t.value
-                      ? 'border-[#0C5C6C] bg-[#E8F4F6] text-[#0C5C6C]'
-                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                  }`}>
-                  {t.label}
-                </button>
-              ))}
+              ].map((t) => {
+                const locked = t.value === 'saillie' && userData?.isElevage !== true;
+                return (
+                  <button key={t.value}
+                    onClick={() => {
+                      if (locked) return;
+                      setFiltreType(t.value);
+                    }}
+                    title={locked ? 'Réservé aux éleveurs professionnels' : undefined}
+                    className={`flex-1 py-3 rounded-2xl border-2 text-sm font-medium transition-colors ${
+                      locked
+                        ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
+                        : filtreType === t.value
+                          ? 'border-[#0C5C6C] bg-[#E8F4F6] text-[#0C5C6C]'
+                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}>
+                    {locked ? '🔒 Saillie' : t.label}
+                  </button>
+                );
+              })}
             </div>
           </div>)}
 

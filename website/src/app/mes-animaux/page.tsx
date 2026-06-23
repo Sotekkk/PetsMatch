@@ -25,6 +25,8 @@ interface Animal {
   reproducteur?: boolean;
   is_retraite?: boolean;
   intervalle_chaleurs_jours?: number | null;
+  uid_eleveur?: string | null;
+  uid_acquereur?: string | null;
 }
 
 const CHALEURS_INTERVAL_WEB: Record<string, number> = {
@@ -305,9 +307,10 @@ export default function MesAnimauxPage() {
   useEffect(() => {
     if (!user) return;
     setFetching(true);
+    // Exclure les animaux d'association (profil mixte) — gérés dans /association/animaux
     const query = isEleveur
-      ? supabase.from('animaux').select('*').or(`uid_eleveur.eq.${user.uid},uid_acquereur.eq.${user.uid}`).order('nom', { ascending: true })
-      : supabase.from('animaux').select('*').or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid},uid_acquereur.eq.${user.uid}`).order('nom', { ascending: true });
+      ? supabase.from('animaux').select('*').or(`uid_eleveur.eq.${user.uid},uid_acquereur.eq.${user.uid}`).or('is_association.is.null,is_association.eq.false').order('nom', { ascending: true })
+      : supabase.from('animaux').select('*').or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid},uid_acquereur.eq.${user.uid}`).or('is_association.is.null,is_association.eq.false').order('nom', { ascending: true });
 
     query.then(async ({ data }) => {
       const list = (data ?? []) as Animal[];
@@ -785,7 +788,7 @@ export default function MesAnimauxPage() {
             onDelete={selectMode ? undefined : () => deleteAnimal(a.id)}
             onToggleReproducteur={isEleveur && tab === 'presents' && !selectMode ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
             onToggleRetraite={isEleveur && tab === 'presents' && !selectMode ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined}
-            onCeder={isEleveur && tab === 'presents' && !selectMode ? () => setCederAnimal(a) : undefined} />)}
+            onCeder={isEleveur && tab === 'presents' && !selectMode && a.uid_eleveur === user?.uid ? () => setCederAnimal(a) : undefined} />)}
         </div>
       )}
 

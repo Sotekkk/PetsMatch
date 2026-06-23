@@ -2426,6 +2426,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
 
   bool _loading = true;
   List<Map<String, dynamic>> _employeurs = [];
+  final Map<String, bool> _showAnimaux = {}; // uid → true=animaux false=taches
 
   @override
   void initState() { super.initState(); _load(); }
@@ -2434,26 +2435,73 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      final rows = await _supa
-          .from('employes')
-          .select()
-          .eq('uid_employe', _uid)
-          .eq('actif', true)
-          .order('created_at');
+      final rows = await _supa.from('employes')
+          .select('uid_eleveur, permissions, type')
+          .eq('uid_employe', _uid).eq('actif', true).order('created_at');
 
-      final List<Map<String, dynamic>> result = [];
-      for (final e in rows) {
-        final u = await _supa
-            .from('users')
+      // Déduplique et exclut les bénévoles
+      final seenUids = <String>{};
+      final emplois = <Map<String, dynamic>>[];
+      for (final r in rows as List) {
+        if (r['type'] == 'benevole') continue;
+        final uid = r['uid_eleveur'] as String;
+        if (seenUids.add(uid)) emplois.add(r);
+      }
+      if (emplois.isEmpty) {
+        if (mounted) setState(() { _employeurs = []; _loading = false; });
+        return;
+      }
+
+      final uids = emplois.map((e) => e['uid_eleveur'] as String).toList();
+      final pastStr   = DateTime.now().subtract(const Duration(days: 7)).toIso8601String().substring(0, 10);
+      final futureStr = DateTime.now().add(const Duration(days: 90)).toIso8601String().substring(0, 10);
+
+      final results = await Future.wait([
+        _supa.from('users')
             .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, profile_picture_url_elevage')
-            .eq('uid', e['uid_eleveur'] as String)
-            .maybeSingle();
-        if (u != null) result.add({...e, 'user': u});
+            .inFilter('uid', uids),
+        _supa.from('animaux')
+            .select('id, nom, espece, race, photo_url, uid_eleveur')
+            .inFilter('uid_eleveur', uids).eq('statut', 'present').neq('is_association', true).order('nom'),
+        _supa.from('taches_elevage')
+            .select('id, titre, date, statut, animal_id, uid_eleveur')
+            .inFilter('uid_eleveur', uids).eq('assigne_a', _uid).neq('statut', 'fait').order('date'),
+        _supa.from('plan_taches')
+            .select('id, label, date_prevue, statut, animal_id, uid_eleveur')
+            .inFilter('uid_eleveur', uids).eq('assigned_to', _uid).neq('statut', 'fait')
+            .gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue'),
+      ]);
+
+      final users     = results[0] as List;
+      final animaux   = results[1] as List;
+      final taches    = results[2] as List;
+      final planTaches = results[3] as List;
+
+      final result = <Map<String, dynamic>>[];
+      for (final e in emplois) {
+        final uid = e['uid_eleveur'] as String;
+        final u = users.firstWhere((u) => u['uid'] == uid, orElse: () => <String, dynamic>{});
+        if ((u as Map).isEmpty) continue;
+        final anims = animaux.where((a) => a['uid_eleveur'] == uid).toList();
+        final allTaches = [
+          ...taches.where((t) => t['uid_eleveur'] == uid).map((t) => {...t, 'source': 'manuel', 'date': t['date']}),
+          ...planTaches.where((t) => t['uid_eleveur'] == uid).map((t) => {...t, 'source': 'protocole', 'titre': t['label'] ?? 'Tâche', 'date': t['date_prevue']}),
+        ]..sort((a, b) => (a['date'] as String).compareTo(b['date'] as String));
+        result.add({...e, 'user': u, 'animaux': anims, 'taches': allTaches});
       }
       if (mounted) setState(() { _employeurs = result; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _marquerFait(Map<String, dynamic> t) async {
+    if (t['source'] == 'manuel') {
+      await _supa.from('taches_elevage').update({'statut': 'fait'}).eq('id', t['id']);
+    } else {
+      await _supa.from('plan_taches').update({'statut': 'fait'}).eq('id', t['id']);
+    }
+    _load();
   }
 
   String _nomEmployeur(Map<String, dynamic> u) {
@@ -2492,17 +2540,30 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                       itemBuilder: (_, i) {
                         final e = _employeurs[i];
                         final u = e['user'] as Map<String, dynamic>;
+                        final uid = u['uid'] as String;
                         final nom = _nomEmployeur(u);
                         final photo = _photoEmployeur(u);
                         final perms = (e['permissions'] as Map<String, dynamic>?) ?? {};
-                        return _EmployeurCard(
-                          nom: nom, photo: photo,
-                          teal: _teal, dark: _dark,
-                          onTap: () => Navigator.push(context, MaterialPageRoute(
+                        final animaux = e['animaux'] as List;
+                        final taches  = e['taches'] as List;
+                        final showAnim = _showAnimaux[uid] ?? true;
+                        return _EmployeurExpandedCard(
+                          uid: uid, nom: nom, photo: photo, teal: _teal, dark: _dark,
+                          showAnimaux: showAnim,
+                          animaux: animaux.cast<Map<String, dynamic>>(),
+                          taches: taches.cast<Map<String, dynamic>>(),
+                          onTabChange: (val) => setState(() => _showAnimaux[uid] = val),
+                          onVoirProfil: () => Navigator.push(context, MaterialPageRoute(
                             builder: (_) => EmployeurDetailPage(
-                              eleveurUid: u['uid'] as String,
-                              eleveurNom: nom,
-                              permissions: perms,
+                              eleveurUid: uid, eleveurNom: nom, permissions: perms,
+                            ),
+                          )),
+                          onMarquerFait: _marquerFait,
+                          onAnimalTap: (animal) => Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => AnimalFichePage(
+                              animalId: animal['id'] as String?,
+                              readOnly: perms['modifier_animaux'] != true,
+                              eleveurUidOverride: uid,
                             ),
                           )),
                         );
@@ -2513,41 +2574,176 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
   }
 }
 
-class _EmployeurCard extends StatelessWidget {
-  final String nom;
+class _EmployeurExpandedCard extends StatelessWidget {
+  final String uid, nom;
   final String? photo;
   final Color teal, dark;
-  final VoidCallback onTap;
-  const _EmployeurCard({required this.nom, required this.photo,
-      required this.teal, required this.dark, required this.onTap});
+  final bool showAnimaux;
+  final List<Map<String, dynamic>> animaux, taches;
+  final ValueChanged<bool> onTabChange;
+  final VoidCallback onVoirProfil;
+  final Future<void> Function(Map<String, dynamic>) onMarquerFait;
+  final void Function(Map<String, dynamic>) onAnimalTap;
+
+  const _EmployeurExpandedCard({
+    required this.uid, required this.nom, required this.photo,
+    required this.teal, required this.dark, required this.showAnimaux,
+    required this.animaux, required this.taches,
+    required this.onTabChange, required this.onVoirProfil, required this.onMarquerFait,
+    required this.onAnimalTap,
+  });
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
       ),
-      child: Row(children: [
-        CircleAvatar(
-          radius: 24,
-          backgroundColor: teal.withOpacity(0.12),
-          backgroundImage: photo != null ? CachedNetworkImageProvider(photo!) : null,
-          child: photo == null ? Icon(Icons.business, color: teal, size: 22) : null,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+          child: Row(children: [
+            CircleAvatar(
+              radius: 22, backgroundColor: teal.withOpacity(0.12),
+              backgroundImage: photo != null ? CachedNetworkImageProvider(photo!) : null,
+              child: photo == null ? Icon(Icons.business, color: teal, size: 20) : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Text(nom.isEmpty ? 'Élevage' : nom,
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15, color: dark))),
+            GestureDetector(
+              onTap: onVoirProfil,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  border: Border.all(color: teal.withOpacity(0.6)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text('Voir', style: TextStyle(color: teal, fontSize: 12, fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ]),
         ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Text(nom.isEmpty ? 'Élevage' : nom,
-              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15, color: dark)),
+        // Tabs
+        Container(
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
+          child: Row(children: [
+            _tab(context, '🐾 Animaux (${animaux.length})', showAnimaux, () => onTabChange(true)),
+            _tab(context, '✅ Tâches (${taches.length})', !showAnimaux, () => onTabChange(false)),
+          ]),
         ),
-        Icon(Icons.chevron_right, color: Colors.grey.shade400),
+        // Contenu
+        if (showAnimaux) _buildAnimaux() else _buildTaches(),
       ]),
+    );
+  }
+
+  Widget _tab(BuildContext ctx, String label, bool active, VoidCallback onTap) => Expanded(
+    child: GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          border: active ? Border(bottom: BorderSide(color: teal, width: 2)) : null,
+        ),
+        child: Text(label, textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500,
+                color: active ? teal : Colors.grey.shade400)),
+      ),
     ),
   );
+
+  Widget _buildAnimaux() {
+    if (animaux.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Center(child: Text('Aucun animal',
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade400))),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.all(10),
+      child: GridView.builder(
+        shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 0.85),
+        itemCount: animaux.length,
+        itemBuilder: (_, i) {
+          final a = animaux[i];
+          final photoUrl = a['photo_url'] as String?;
+          return GestureDetector(
+            onTap: () => onAnimalTap(a),
+            child: Column(children: [
+              Expanded(child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: photoUrl != null
+                    ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover, width: double.infinity)
+                    : Container(color: Colors.grey.shade100, child: const Icon(Icons.pets, color: Colors.grey)),
+              )),
+              const SizedBox(height: 4),
+              Text(a['nom'] ?? '—', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(a['race'] ?? a['espece'] ?? '', style: TextStyle(fontSize: 10, color: Colors.grey.shade500), maxLines: 1, overflow: TextOverflow.ellipsis),
+            ]),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildTaches() {
+    if (taches.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Center(child: Text('Aucune tâche assignée',
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade400))),
+      );
+    }
+    return ListView.builder(
+      shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(10),
+      itemCount: taches.length,
+      itemBuilder: (_, i) {
+        final t = taches[i];
+        final date = t['date'] as String? ?? '';
+        final dt = date.isNotEmpty ? DateTime.tryParse(date) : null;
+        final dateStr = dt != null
+            ? '${dt.day}/${dt.month}/${dt.year}'
+            : date;
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(10)),
+          child: Row(children: [
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(t['titre'] as String? ?? 'Tâche',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: dark)),
+              if (dateStr.isNotEmpty)
+                Text('📅 $dateStr', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+              if (t['source'] == 'protocole')
+                Container(
+                  margin: const EdgeInsets.only(top: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(color: teal.withOpacity(0.08), borderRadius: BorderRadius.circular(4)),
+                  child: Text('protocole', style: TextStyle(fontSize: 10, color: teal)),
+                ),
+            ])),
+            GestureDetector(
+              onTap: () => onMarquerFait(t),
+              child: Container(
+                width: 28, height: 28,
+                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.grey.shade300)),
+                child: Icon(Icons.check, size: 16, color: Colors.grey.shade400),
+              ),
+            ),
+          ]),
+        );
+      },
+    );
+  }
 }
 
 // ─── Page détail employeur (public — deep link depuis notifications) ───────────

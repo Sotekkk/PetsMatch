@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-context';
 import { PAYS_LIST, REGIONS_BY_PAYS, departmentsInRegion } from '@/lib/french-geo';
 import type { AnnonceMapItem } from '@/components/AnnoncesMap';
 
@@ -80,6 +81,8 @@ export default function AnnoncesCartePageWrapper() {
 
 function AnnoncesCartePage() {
   const searchParams = useSearchParams();
+  const { userData } = useAuth();
+  const isEleveur = userData?.isElevage === true;
 
   const [items, setItems] = useState<(AnnonceMapItem & { espece?: string; race?: string; pays_eleveur?: string; region_eleveur?: string; departement_eleveur?: string })[]>([]);
   const [loading, setLoading] = useState(true);
@@ -241,16 +244,23 @@ function AnnoncesCartePage() {
             { value: 'tous', label: 'Tous' },
             { value: 'vente', label: '🐾 Compagnon' },
             { value: 'saillie', label: '💜 Saillie' },
-          ].map(t => (
-            <button key={t.value} onClick={() => setFiltreType(t.value)}
-              className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors border ${
-                filtreType === t.value
-                  ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
-              }`}>
-              {t.label}
-            </button>
-          ))}
+          ].map(t => {
+            const locked = t.value === 'saillie' && !isEleveur;
+            return (
+              <button key={t.value}
+                onClick={() => { if (!locked) setFiltreType(t.value); }}
+                title={locked ? 'Réservé aux éleveurs professionnels' : undefined}
+                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors border ${
+                  locked
+                    ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'
+                    : filtreType === t.value
+                      ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
+                }`}>
+                {locked ? '🔒 Saillie' : t.label}
+              </button>
+            );
+          })}
           <div className="w-px h-4 bg-gray-200 flex-shrink-0" />
           {ESPECES.map(esp => (
             <button key={esp} onClick={() => setFiltreEspece(esp)}

@@ -736,19 +736,57 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
               for (final t in [('tous', 'Tous'), ('vente', '🐾 Compagnon'), ('saillie', '💜 Saillie')])
                 Expanded(
                   child: GestureDetector(
-                    onTap: () => setState(() => _typeVente = t.$1),
+                    onTap: () {
+                      if (t.$1 == 'saillie' && !User_Info.isElevage) {
+                        showDialog(context: context, builder: (_) => AlertDialog(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          title: const Row(children: [
+                            Text('🔒', style: TextStyle(fontSize: 20)),
+                            SizedBox(width: 8),
+                            Text('Accès restreint',
+                                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+                          ]),
+                          content: const Text(
+                            'Les saillies sont réservées aux éleveurs professionnels inscrits sur PetsMatch.\n\nLa reproduction par des particuliers n\'est pas conforme à notre règlement.',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 13),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Compris', style: TextStyle(color: Color(0xFF0C5C6C))),
+                            ),
+                          ],
+                        ));
+                        return;
+                      }
+                      setState(() => _typeVente = t.$1);
+                    },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       margin: const EdgeInsets.only(right: 8),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
-                        color: _typeVente == t.$1 ? const Color(0xFFE8F4F6) : Colors.white,
+                        color: t.$1 == 'saillie' && !User_Info.isElevage
+                            ? Colors.grey.shade50
+                            : _typeVente == t.$1 ? const Color(0xFFE8F4F6) : Colors.white,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: _typeVente == t.$1 ? _teal : const Color(0xFFE5E7EB), width: 2),
+                        border: Border.all(
+                          color: t.$1 == 'saillie' && !User_Info.isElevage
+                              ? Colors.grey.shade200
+                              : _typeVente == t.$1 ? _teal : const Color(0xFFE5E7EB),
+                          width: 2,
+                        ),
                       ),
-                      child: Text(t.$2, textAlign: TextAlign.center,
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-                              color: _typeVente == t.$1 ? _teal : const Color(0xFF6F767B))),
+                      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        if (t.$1 == 'saillie' && !User_Info.isElevage)
+                          const Padding(padding: EdgeInsets.only(right: 4),
+                              child: Icon(Icons.lock_outline, size: 12, color: Colors.grey)),
+                        Flexible(child: Text(t.$2, textAlign: TextAlign.center,
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                                color: t.$1 == 'saillie' && !User_Info.isElevage
+                                    ? Colors.grey.shade400
+                                    : _typeVente == t.$1 ? _teal : const Color(0xFF6F767B)))),
+                      ]),
                     ),
                   ),
                 ),
@@ -779,6 +817,32 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
   }
 
   Widget _buildFeed() {
+    if (_typeVente == 'saillie' && !User_Info.isElevage) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8F8F6),
+        appBar: AppBar(
+          backgroundColor: Colors.white, elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new, size: 18, color: Color(0xFF1F2A2E)),
+            onPressed: () => setState(() { _feedStarted = false; _typeVente = 'tous'; }),
+          ),
+        ),
+        body: Center(child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Text('🔒', style: TextStyle(fontSize: 56)),
+            const SizedBox(height: 16),
+            const Text('Réservé aux éleveurs professionnels',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF1F2A2E))),
+            const SizedBox(height: 10),
+            Text('La reproduction et les saillies sont réservées aux éleveurs professionnels inscrits sur PetsMatch.\n\nLa reproduction par des particuliers n\'est pas conforme à notre règlement.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+          ]),
+        )),
+      );
+    }
     if (_items.isEmpty) {
       return Scaffold(
         backgroundColor: Colors.black,
