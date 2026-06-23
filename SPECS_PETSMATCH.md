@@ -1,5 +1,5 @@
 # PetsMatch — Spécifications fonctionnelles complètes
-**Dernière mise à jour : 2026-06-09**
+**Dernière mise à jour : 2026-06-23**
 **Branche active : `feature/v2-updates`**
 
 ---
@@ -321,6 +321,37 @@ Doses calculées depuis formule DER (adulte × 1.6 chien / × 1.4 chat ; junior 
 | Rappels RDV | 24h et 1h avant le RDV (client + pro) | ✅ | — |
 | Retraite reproductive | J-30 (orange) et Jour J (rouge) — femelles proches de l'âge de retraite | ✅ | — |
 | Badge cloche | Realtime Supabase + polling 20s (fallback DELETE sans REPLICA IDENTITY) | ✅ | ✅ |
+| `cession_confirmee` → fiche animal directe (via animalId dans data) | ✅ | ✅ |
+| `cession_signee_acquereur` → fiche éleveur en écriture pour confirmer | ✅ | — |
+
+### 4.14 Cession multi-rôles *(juin 2026)*
+
+**Modèle de propriété :**
+- `uid_eleveur` = créateur original (immuable, jamais modifié)
+- `uid_acquereur` = acquéreur après cession (nouveau propriétaire)
+- Ancien propriétaire : voit l'animal dans ses Sorties/Anciens via `uid_eleveur`
+- Nouveau propriétaire : voit l'animal via `uid_acquereur`
+
+| Paire de cession | App | Web |
+|---|---|---|
+| Éleveur → Particulier | ✅ | ✅ |
+| Éleveur → Association | ✅ | ✅ |
+| Association → Particulier (adoption) | ✅ | ✅ |
+| Particulier → Association (abandon) | ✅ | ✅ |
+| Association → Éleveur | ✅ | ✅ |
+| Particulier → Particulier | ✅ | ✅ |
+
+**Comportement par profil :**
+
+| Profil | Où voir ses animaux acquis | Fiche |
+|---|---|---|
+| Particulier | Menu → Mes Animaux Acquis + home (uid_acquereur) | Écriture complète + bouton Céder |
+| Éleveur | Onglet Présents (uid_acquereur) | Écriture + Céder si acquéreur |
+| Association | Section "Reçus par cession" dans Mes Animaux | Écriture avec isAssociation=true |
+
+**Règle clé (save) :** `eleveurUidOverride = uid_eleveur` original → saves ne changent jamais `uid_eleveur`, garantissant la visibilité de l'ancien proprio dans ses Sorties.
+
+**Onglet Anciens (éleveur) :** `uid_acquereur != null AND uid_acquereur != moi` → animal toujours visible même si le nouveau proprio change le statut.
 
 ---
 
@@ -379,8 +410,8 @@ Doses calculées depuis formule DER (adulte × 1.6 chien / × 1.4 chat ; junior 
 | — | Ration gestante (+25% à partir de S5) et lactation (+50%) | Haute | App + Web |
 | — | Chiots/chatons en sevrage (progression 4→8 semaines) | Moyenne | App + Web |
 | AL02 | Recettes ration ménagère en base de données (admin) | Moyenne | App + Web |
-| — | Transfert de propriété : lien email → fiche animal sur nouveau compte → historique propriétaires | Haute | App + Web |
-| — | Animaux "Anciens" (post-transfert) : lecture seule | Moyenne | App + Web |
+| — | ~~Transfert de propriété~~ ✅ Cession multi-rôles implémentée (juin 2026) — voir §4.14 | ~~Haute~~ | App + Web |
+| — | ~~Animaux "Anciens" (post-transfert) : lecture seule~~ ✅ Acquéreur a accès écriture + bouton Céder | ~~Moyenne~~ | App + Web |
 
 ### 5.6 Agenda
 
@@ -1606,6 +1637,7 @@ CREATE TABLE signalements (
 1. **Exécuter les migrations SQL** dans Supabase SQL Editor :
    - `supabase/migration_marques_v2.sql` (~50 gammes adultes chien/chat/cheval/lapin)
    - `supabase/migration_marques_v3_junior.sql` (~34 gammes junior/puppy/kitten)
+   - `supabase/migration_cession_multi_roles.sql` (colonnes `type_cedant` / `type_acquereur`)
 2. **Migration SQL `gestations`** — ajouter colonnes `reminder_j7/j3/j1_sent` (requis par la Cloud Function mise-bas A37)
 
 ### Haute priorité
@@ -1619,7 +1651,7 @@ CREATE TABLE signalements (
 
 ### Priorité moyenne
 10. Interface admin web marques aliments
-11. Transfert de propriété animal (A09 étendu)
+11. ~~Transfert de propriété animal (A09 étendu)~~ ✅ Cession multi-rôles terminée 2026-06-23
 12. Courbe de poids portée comparative (A43)
 13. Ration gestante / lactation / sevrage
 14. AG08 — Créneaux disponibles/indisponibles pro
