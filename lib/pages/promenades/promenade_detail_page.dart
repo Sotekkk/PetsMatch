@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:PetsMatch/main.dart' show getApiKey;
+import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -405,28 +406,33 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
           children: [
             // ── Organisateur ──
-            _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Organisé par',
-                  style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey)),
-              const SizedBox(height: 8),
-              Row(children: [
-                _avatar(_organizer?['profile_picture_url']?.toString(), 22),
-                const SizedBox(width: 10),
-                Text(
-                  '${_organizer?['firstname'] ?? ''} ${_organizer?['lastname'] ?? ''}'.trim().isEmpty
-                      ? 'Organisateur'
-                      : '${_organizer?['firstname'] ?? ''} ${_organizer?['lastname'] ?? ''}'.trim(),
-                  style: const TextStyle(
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15),
-                ),
-              ]),
-            ])),
+            GestureDetector(
+              onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => PublicProfilePage(targetUid: _promenade!['organisateur_uid'].toString()))),
+              child: _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Organisé par',
+                    style: TextStyle(
+                        fontFamily: 'Galey',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey)),
+                const SizedBox(height: 8),
+                Row(children: [
+                  _avatar(_organizer?['profile_picture_url']?.toString(), 22),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(
+                    '${_organizer?['firstname'] ?? ''} ${_organizer?['lastname'] ?? ''}'.trim().isEmpty
+                        ? 'Organisateur'
+                        : '${_organizer?['firstname'] ?? ''} ${_organizer?['lastname'] ?? ''}'.trim(),
+                    style: const TextStyle(
+                        fontFamily: 'Galey',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15),
+                  )),
+                  const Icon(Icons.chevron_right, color: Colors.grey, size: 18),
+                ]),
+              ])),
+            ),
             const SizedBox(height: 10),
 
             // ── Infos ──
@@ -517,20 +523,25 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
                 const SizedBox(height: 10),
                 Wrap(spacing: 12, runSpacing: 10, children: accepted.map((part) {
                   final u = part['user'] as Map?;
-                  return Column(mainAxisSize: MainAxisSize.min, children: [
-                    _avatar(u?['profile_picture_url']?.toString(), 20),
-                    const SizedBox(height: 4),
-                    SizedBox(
-                      width: 52,
-                      child: Text(
-                        u?['firstname']?.toString() ?? '?',
-                        textAlign: TextAlign.center,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontFamily: 'Galey', fontSize: 10, color: Colors.grey),
+                  final partUid = part['user_uid']?.toString() ?? '';
+                  return GestureDetector(
+                    onTap: partUid.isNotEmpty ? () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => PublicProfilePage(targetUid: partUid))) : null,
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      _avatar(u?['profile_picture_url']?.toString(), 20),
+                      const SizedBox(height: 4),
+                      SizedBox(
+                        width: 52,
+                        child: Text(
+                          u?['firstname']?.toString() ?? '?',
+                          textAlign: TextAlign.center,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontFamily: 'Galey', fontSize: 10, color: Colors.grey),
+                        ),
                       ),
-                    ),
-                  ]);
+                    ]),
+                  );
                 }).toList()),
               ])),
               const SizedBox(height: 10),

@@ -22,6 +22,7 @@ import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/promenades/promenade_detail_page.dart';
+import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -333,6 +334,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
       if (promenadeId != null) {
         await Navigator.push(context, MaterialPageRoute(
           builder: (_) => PromenadeDetailPage(promenadeId: promenadeId),
+        ));
+      }
+    } else if (type == 'petfriend_request' || type == 'petfriend_accepted') {
+      final fromUid = data is Map ? data['fromUid'] as String? : null;
+      if (fromUid != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => PublicProfilePage(targetUid: fromUid),
         ));
       }
     } else if (type == 'employee_invite') {

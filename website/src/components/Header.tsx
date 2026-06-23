@@ -426,6 +426,9 @@ function getNotifUrl(n: Notif): string | null {
     case 'promenade_annulee':
     case 'promenade_modifiee':
       return d.promenadeId ? `/promenades/${d.promenadeId}` : '/promenades';
+    case 'petfriend_request':
+    case 'petfriend_accepted':
+      return d.fromUid ? `/profil/${d.fromUid}` : '/petfriends';
     case 'employee_invite':
     case 'tache':
       return '/mes-employeurs';
