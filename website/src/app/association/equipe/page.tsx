@@ -205,8 +205,17 @@ function EquipeUnifiee({ uid }: { uid: string }) {
     load();
   };
 
-  const toggleActif = async (id: string, actif: boolean) => {
+  const toggleActif = async (id: string, actif: boolean, uidEmploye?: string) => {
     await supabase.from('employes').update({ actif: !actif }).eq('id', id);
+    if (actif && uidEmploye) {
+      await supabase.from('notifications').insert({
+        uid: uidEmploye, type: 'employee_revoked',
+        title: 'Statut bénévole modifié',
+        body: 'Votre statut de bénévole a été désactivé',
+        data: {},
+        read: false,
+      });
+    }
     load();
   };
 
@@ -405,6 +414,13 @@ function EmployesTab({ uid }: { uid: string }) {
   async function revoquer(emp: Employe) {
     if (!confirm(`Retirer ${emp.nom} de votre équipe ?`)) return;
     await supabase.from('employes').update({ actif: false }).eq('id', emp.id);
+    await supabase.from('notifications').insert({
+      uid: emp.uid_employe, type: 'employee_revoked',
+      title: 'Accès retiré',
+      body: `Vous avez été retiré de l'équipe`,
+      data: { eleveurUid: uid },
+      read: false,
+    });
     load();
   }
 
@@ -556,8 +572,17 @@ function BenevolesTab({ uid }: { uid: string }) {
     load();
   };
 
-  const toggleActif = async (id: string, actif: boolean) => {
+  const toggleActif = async (id: string, actif: boolean, uidEmploye?: string) => {
     await supabase.from('employes').update({ actif: !actif }).eq('id', id);
+    if (actif && uidEmploye) {
+      await supabase.from('notifications').insert({
+        uid: uidEmploye, type: 'employee_revoked',
+        title: 'Statut bénévole modifié',
+        body: 'Votre statut de bénévole a été désactivé',
+        data: {},
+        read: false,
+      });
+    }
     load();
   };
 
@@ -630,7 +655,7 @@ function BenevolesTab({ uid }: { uid: string }) {
                   <BenevoleCard key={b.id} b={b} uid={uid}
                     isOpen={expanded[b.id] ?? false}
                     onToggleOpen={() => setExpanded(prev => ({ ...prev, [b.id]: !(prev[b.id] ?? false) }))}
-                    onToggle={() => toggleActif(b.id, b.actif)}
+                    onToggle={() => toggleActif(b.id, b.actif, b.uid_employe)}
                     onEdit={() => setEditing(b)}
                     onDelete={() => handleDelete(b.id)}
                     onAssign={() => setAssigning(b)} />
@@ -646,7 +671,7 @@ function BenevolesTab({ uid }: { uid: string }) {
                   <BenevoleCard key={b.id} b={b} uid={uid}
                     isOpen={expanded[b.id] ?? false}
                     onToggleOpen={() => setExpanded(prev => ({ ...prev, [b.id]: !(prev[b.id] ?? false) }))}
-                    onToggle={() => toggleActif(b.id, b.actif)}
+                    onToggle={() => toggleActif(b.id, b.actif, b.uid_employe)}
                     onEdit={() => setEditing(b)}
                     onDelete={() => handleDelete(b.id)}
                     onAssign={() => setAssigning(b)} />
@@ -792,9 +817,18 @@ function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
       const e = enclos.find(x => x.id === form.enclos_id);
       if (e) payload.notes = `${payload.notes ? payload.notes + '\n' : ''}Enclos: ${e.nom}`;
     }
-    const { error } = await supabase.from('taches_elevage').insert(payload);
+    const { data: inserted, error } = await supabase.from('taches_elevage').insert(payload).select().single();
     setSaving(false);
     if (error) { alert(`Erreur: ${error.message}`); return; }
+    if (assigneeUid) {
+      await supabase.from('notifications').insert({
+        uid: assigneeUid, type: 'tache',
+        title: 'Nouvelle tâche assignée',
+        body: form.titre.trim(),
+        data: { eleveurUid: uid, tacheId: (inserted as { id: string }).id },
+        read: false,
+      });
+    }
     onClose();
   }
 
@@ -923,6 +957,15 @@ function AddPetsMatchModal({ uid, type, onClose }: { uid: string; type: 'employe
           telephone: u.phone_number || null,
         });
       }
+      await supabase.from('notifications').insert({
+        uid: u.uid, type: 'employee_invite',
+        title: type === 'benevole' ? 'Invitation bénévole' : 'Invitation à rejoindre une équipe',
+        body: type === 'benevole'
+          ? 'Vous avez été ajouté comme bénévole dans une association'
+          : 'Vous avez été ajouté à l\'équipe d\'une association',
+        data: { assoUid: uid },
+        read: false,
+      });
       onClose();
     } finally {
       setAdding(null);

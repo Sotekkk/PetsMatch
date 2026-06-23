@@ -174,7 +174,7 @@ class _EmployesTabState extends State<_EmployesTab> {
     }
   }
 
-  Future<void> _revoquer(String employeId, String nom) async {
+  Future<void> _revoquer(String employeId, String nom, String uidEmploye) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -192,6 +192,14 @@ class _EmployesTabState extends State<_EmployesTab> {
     );
     if (ok != true) return;
     await _supa.from('employes').update({'actif': false}).eq('id', employeId);
+    await _supa.from('notifications').insert({
+      'uid':   uidEmploye,
+      'type':  'employee_revoked',
+      'title': 'Accès retiré',
+      'body':  'Vous avez été retiré de l\'équipe de $_nomElevage',
+      'data':  {'eleveurUid': _uid},
+      'read':  false,
+    });
     await _load();
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('$nom a été retiré de votre élevage')));
@@ -235,7 +243,7 @@ class _EmployesTabState extends State<_EmployesTab> {
                       teal: widget.teal, dark: widget.dark,
                       employeId: e['id'].toString(),
                       permissions: (e['permissions'] as Map<String, dynamic>?) ?? {},
-                      onRevoquer: () => _revoquer(e['id'].toString(), nom),
+                      onRevoquer: () => _revoquer(e['id'].toString(), nom, e['uid_employe'] as String),
                       onPermissionsChanged: _load,
                     );
                   },

@@ -91,8 +91,18 @@ class _BenevolesPageState extends State<BenevolesPage> {
     }
   }
 
-  Future<void> _toggle(String id, bool actif) async {
+  Future<void> _toggle(String id, bool actif, {String? uidEmploye}) async {
     await _supa.from('employes').update({'actif': !actif}).eq('id', id);
+    if (actif && uidEmploye != null) {
+      await _supa.from('notifications').insert({
+        'uid':   uidEmploye,
+        'type':  'employee_revoked',
+        'title': 'Statut bénévole modifié',
+        'body':  'Votre statut de bénévole a été désactivé',
+        'data':  <String, dynamic>{},
+        'read':  false,
+      });
+    }
     _load();
   }
 
@@ -293,7 +303,7 @@ class _BenevolesPageState extends State<BenevolesPage> {
                       ),
                       ...actifs.map((b) => _BenevoleTile(
                         benevole: b,
-                        onToggle: () => _toggle(b['id'], b['actif'] == true),
+                        onToggle: () => _toggle(b['id'], b['actif'] == true, uidEmploye: b['uid_employe'] as String?),
                         onDelete: () => _delete(b['id']),
                       )),
                     ],
@@ -306,7 +316,7 @@ class _BenevolesPageState extends State<BenevolesPage> {
                       ),
                       ...inactifs.map((b) => _BenevoleTile(
                         benevole: b,
-                        onToggle: () => _toggle(b['id'], b['actif'] == true),
+                        onToggle: () => _toggle(b['id'], b['actif'] == true, uidEmploye: b['uid_employe'] as String?),
                         onDelete: () => _delete(b['id']),
                       )),
                     ],
@@ -465,6 +475,14 @@ class _SearchBenevoleSheetState extends State<_SearchBenevoleSheet> {
         'profil_source': 'association',
       });
     }
+    await _supa.from('notifications').insert({
+      'uid':   uid,
+      'type':  'employee_invite',
+      'title': 'Invitation bénévole',
+      'body':  'Vous avez été ajouté comme bénévole dans une association',
+      'data':  {'assoUid': widget.uid},
+      'read':  false,
+    });
     widget.onAdded();
     if (mounted) {
       Navigator.pop(context);

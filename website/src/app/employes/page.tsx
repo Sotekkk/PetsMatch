@@ -157,6 +157,13 @@ function EquipeTab({ uid }: { uid: string }) {
   async function revoquer(emp: Employee) {
     if (!confirm(`Retirer ${emp.user ? nomUser(emp.user) : 'cet employé'} de votre équipe ?`)) return;
     await supabase.from('employes').update({ actif: false }).eq('id', emp.id);
+    await supabase.from('notifications').insert({
+      uid: emp.uid_employe, type: 'employee_revoked',
+      title: 'Accès retiré',
+      body: 'Vous avez été retiré de l\'équipe',
+      data: { eleveurUid: uid },
+      read: false,
+    });
     load();
   }
 

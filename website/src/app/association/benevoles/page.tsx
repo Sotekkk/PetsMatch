@@ -110,6 +110,13 @@ function EmployesTab({ uid }: { uid: string }) {
   async function revoquer(emp: Employe) {
     if (!confirm(`Retirer ${emp.nom} de votre équipe ?`)) return;
     await supabase.from('employes').update({ actif: false }).eq('id', emp.id);
+    await supabase.from('notifications').insert({
+      uid: emp.uid_employe, type: 'employee_revoked',
+      title: 'Accès retiré',
+      body: 'Vous avez été retiré de l\'équipe',
+      data: { assoUid: uid },
+      read: false,
+    });
     load();
   }
 
@@ -190,6 +197,15 @@ function AddEmployeModal({ uid, onClose, type = 'employe' }: { uid: string; onCl
           type: type === 'benevole' ? 'benevole' : null,
         });
       }
+      await supabase.from('notifications').insert({
+        uid: u.uid, type: 'employee_invite',
+        title: type === 'benevole' ? 'Invitation bénévole' : 'Invitation à rejoindre une équipe',
+        body: type === 'benevole'
+          ? 'Vous avez été ajouté comme bénévole dans une association'
+          : 'Vous avez été ajouté à l\'équipe d\'une association',
+        data: { assoUid: uid },
+        read: false,
+      });
       onClose();
     } finally {
       setAdding(null);
