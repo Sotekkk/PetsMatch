@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:PetsMatch/main.dart' show getApiKey;
+import 'package:PetsMatch/pages/promenades/promenade_detail_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_webservice/places.dart';
@@ -24,7 +25,7 @@ class _PromenadesPageState extends State<PromenadePage> {
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   List<Map<String, dynamic>> _promenades = [];
-  Set<String> _mesParticipations = {};
+  Map<String, String> _mesParticipations = {}; // id → statut
   bool _loading = true;
 
   @override
@@ -43,14 +44,16 @@ class _PromenadesPageState extends State<PromenadePage> {
           .gte('date_heure', DateTime.now().toIso8601String())
           .order('date_heure');
 
-      Set<String> participations = {};
+      Map<String, String> participations = {};
       if (_uid.isNotEmpty) {
         final partData = await _supa
             .from('promenades_participants')
-            .select('promenade_id')
+            .select('promenade_id, statut')
             .eq('user_uid', _uid);
-        participations = Set<String>.from(
-            (partData as List).map((e) => e['promenade_id'].toString()));
+        participations = {
+          for (final e in (partData as List))
+            e['promenade_id'].toString(): (e['statut'] ?? 'accepte').toString()
+        };
       }
 
       if (mounted) {
@@ -67,12 +70,12 @@ class _PromenadesPageState extends State<PromenadePage> {
 
   Future<void> _toggleParticipation(String id) async {
     if (_uid.isEmpty) return;
-    final dejaDedans = _mesParticipations.contains(id);
+    final dejaDedans = _mesParticipations.containsKey(id);
     setState(() {
       if (dejaDedans) {
         _mesParticipations.remove(id);
       } else {
-        _mesParticipations.add(id);
+        _mesParticipations[id] = 'en_attente';
       }
     });
     try {
@@ -86,13 +89,41 @@ class _PromenadesPageState extends State<PromenadePage> {
         await _supa.from('promenades_participants').insert({
           'promenade_id': id,
           'user_uid': _uid,
+          'statut': 'en_attente',
           'rejoint_at': DateTime.now().toIso8601String(),
         });
+        // Notifier l'organisateur
+        final promenade = _promenades.firstWhere(
+            (p) => p['id'].toString() == id, orElse: () => {});
+        final orgUid = promenade['organisateur_uid']?.toString() ?? '';
+        final titre = promenade['titre']?.toString() ?? 'une promenade';
+        if (orgUid.isNotEmpty && orgUid != _uid) {
+          try {
+            final me = await _supa
+                .from('users')
+                .select('firstname, lastname')
+                .eq('uid', _uid)
+                .maybeSingle();
+            final nom = me != null
+                ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim()
+                : 'Quelqu\'un';
+            await _supa.from('notifications').insert({
+              'user_uid': orgUid,
+              'type': 'promenade_join',
+              'title': 'Nouvelle demande de participation',
+              'body': '$nom veut rejoindre "$titre"',
+              'data': {'promenadeId': id, 'fromUid': _uid},
+              'read': false,
+              'created_at': DateTime.now().toIso8601String(),
+            });
+          } catch (_) {}
+        }
       }
+      _load();
     } catch (_) {
       setState(() {
         if (dejaDedans) {
-          _mesParticipations.add(id);
+          _mesParticipations[id] = 'accepte';
         } else {
           _mesParticipations.remove(id);
         }
@@ -149,10 +180,22 @@ class _PromenadesPageState extends State<PromenadePage> {
                     itemBuilder: (_, i) {
                       final p = _promenades[i];
                       final id = p['id'].toString();
-                      return _PromenadesCard(
-                        promenade: p,
-                        estParticipant: _mesParticipations.contains(id),
-                        onToggle: _uid.isNotEmpty ? () => _toggleParticipation(id) : null,
+                      final myStatut = _mesParticipations[id];
+                      return GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  PromenadeDetailPage(promenadeId: id)),
+                        ),
+                        child: _PromenadesCard(
+                          promenade: p,
+                          estParticipant: myStatut != null,
+                          myStatut: myStatut,
+                          onToggle: _uid.isNotEmpty && myStatut == null
+                              ? () => _toggleParticipation(id)
+                              : null,
+                        ),
                       );
                     },
                   ),
@@ -182,10 +225,11 @@ class _PromenadesPageState extends State<PromenadePage> {
 class _PromenadesCard extends StatelessWidget {
   final Map<String, dynamic> promenade;
   final bool estParticipant;
+  final String? myStatut;
   final VoidCallback? onToggle;
 
   const _PromenadesCard(
-      {required this.promenade, required this.estParticipant, this.onToggle});
+      {required this.promenade, required this.estParticipant, this.myStatut, this.onToggle});
 
   static Color _niveauColor(String n) => switch (n) {
         'facile' => const Color(0xFF6E9E57),
@@ -368,46 +412,59 @@ class _PromenadesCard extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis),
           ],
-          if (onToggle != null || isFull) ...[
+          if (estParticipant || onToggle != null || isFull) ...[
             const SizedBox(height: 10),
             Align(
               alignment: Alignment.centerRight,
-              child: isFull
+              child: myStatut == 'en_attente'
                   ? Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
+                        color: Colors.amber.shade50,
+                        border: Border.all(color: Colors.amber.shade300),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Text('Complet',
+                      child: Text('⏳ En attente',
                           style: TextStyle(
                               fontFamily: 'Galey',
-                              fontSize: 13,
+                              fontSize: 12,
                               fontWeight: FontWeight.w700,
-                              color: Colors.grey)),
+                              color: Colors.amber.shade800)),
                     )
-                  : GestureDetector(
-                      onTap: onToggle,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: estParticipant ? _orange : Colors.transparent,
-                          border: Border.all(color: _orange),
-                          borderRadius: BorderRadius.circular(20),
+                  : isFull
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text('Complet',
+                              style: TextStyle(
+                                  fontFamily: 'Galey',
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.grey)),
+                        )
+                      : GestureDetector(
+                          onTap: onToggle,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: myStatut == 'accepte' ? _orange : Colors.transparent,
+                              border: Border.all(color: _orange),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              myStatut == 'accepte' ? 'Inscrit ✓' : 'Rejoindre',
+                              style: TextStyle(
+                                  fontFamily: 'Galey',
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: myStatut == 'accepte' ? Colors.white : _orange),
+                            ),
+                          ),
                         ),
-                        child: Text(
-                          estParticipant ? 'Inscrit ✓' : 'Rejoindre',
-                          style: TextStyle(
-                              fontFamily: 'Galey',
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: estParticipant ? Colors.white : _orange),
-                        ),
-                      ),
-                    ),
             ),
           ],
         ]),

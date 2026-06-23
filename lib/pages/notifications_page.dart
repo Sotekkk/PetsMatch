@@ -21,6 +21,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/pages/promenades/promenade_detail_page.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -326,6 +327,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => const MesAnimauxPage(),
       ));
+    } else if (type == 'promenade_join' || type == 'promenade_accepte' || type == 'promenade_refuse') {
+      final promenadeId = data is Map ? data['promenadeId'] as String? : null;
+      if (promenadeId != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => PromenadeDetailPage(promenadeId: promenadeId),
+        ));
+      }
     } else if (type == 'employee_invite') {
       final eleveurUid = data is Map ? data['eleveurUid'] as String? : null;
       final eleveurNom = data is Map ? (data['eleveurNom'] as String? ?? 'Mon employeur') : 'Mon employeur';

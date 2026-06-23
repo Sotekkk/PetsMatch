@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -51,19 +52,20 @@ function openNav(lat: number, lng: number) {
 // ── Carte promenade ────────────────────────────────────────────────────────────
 
 function PromenadesCard({
-  p, estParticipant, onToggle, loading,
+  p, myStatut, onToggle, loading, onClick,
 }: {
   p: Promenade;
-  estParticipant: boolean;
+  myStatut?: string;
   onToggle: () => void;
   loading: boolean;
+  onClick: () => void;
 }) {
   const nb = p.promenades_participants?.[0]?.count ?? 0;
-  const isFull = !estParticipant && !!p.participants_max && nb >= p.participants_max;
+  const isFull = !myStatut && !!p.participants_max && nb >= p.participants_max;
   const couleur = NIVEAU_COLOR[p.niveau] ?? '#888';
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2">
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2 cursor-pointer" onClick={onClick}>
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <h3 className="font-bold text-[15px] text-gray-800 leading-tight">{p.titre}</h3>
@@ -120,21 +122,26 @@ function PromenadesCard({
 
       {/* Bouton rejoindre */}
       <div className="flex justify-end mt-1">
-        {isFull ? (
+        {myStatut === 'en_attente' ? (
+          <span className="px-4 py-1.5 rounded-full text-[12px] font-bold"
+            style={{ backgroundColor: '#FFFDE7', color: '#F57F17', border: '1px solid #FFD54F' }}>
+            ⏳ En attente
+          </span>
+        ) : isFull ? (
           <span className="px-4 py-1.5 rounded-full text-[13px] font-bold bg-gray-100 text-gray-400">
             Complet
           </span>
         ) : (
           <button
-            onClick={onToggle}
+            onClick={e => { e.stopPropagation(); onToggle(); }}
             disabled={loading}
             className="px-4 py-1.5 rounded-full text-[13px] font-bold transition-colors"
-            style={estParticipant
+            style={myStatut === 'accepte'
               ? { backgroundColor: '#EF6C00', color: '#fff' }
               : { border: '1.5px solid #EF6C00', color: '#EF6C00', backgroundColor: 'transparent' }
             }
           >
-            {loading ? '…' : estParticipant ? 'Inscrit ✓' : 'Rejoindre'}
+            {loading ? '…' : myStatut === 'accepte' ? 'Inscrit ✓' : 'Rejoindre'}
           </button>
         )}
       </div>
@@ -381,9 +388,10 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
 export default function PromenadePage() {
   const { user } = useAuth();
+  const router = useRouter();
 
   const [promenades, setPromenades] = useState<Promenade[]>([]);
-  const [mesParticipations, setMesParticipations] = useState<Set<string>>(new Set());
+  const [mesParticipations, setMesParticipations] = useState<Record<string, string>>({});
   const [loadingToggle, setLoadingToggle] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -403,9 +411,13 @@ export default function PromenadePage() {
       if (user) {
         const { data: partData } = await supabase
           .from('promenades_participants')
-          .select('promenade_id')
+          .select('promenade_id, statut')
           .eq('user_uid', user.uid);
-        setMesParticipations(new Set((partData ?? []).map((r: { promenade_id: string }) => r.promenade_id)));
+        const map: Record<string, string> = {};
+        (partData ?? []).forEach((r: { promenade_id: string; statut: string }) => {
+          map[r.promenade_id] = r.statut ?? 'accepte';
+        });
+        setMesParticipations(map);
       }
     } finally {
       setLoading(false);
@@ -416,11 +428,11 @@ export default function PromenadePage() {
 
   async function toggleParticipation(id: string) {
     if (!user) return;
-    const estDedans = mesParticipations.has(id);
+    const estDedans = !!mesParticipations[id];
     setLoadingToggle(id);
     setMesParticipations(prev => {
-      const next = new Set(prev);
-      estDedans ? next.delete(id) : next.add(id);
+      const next = { ...prev };
+      if (estDedans) delete next[id]; else next[id] = 'en_attente';
       return next;
     });
     try {
@@ -428,14 +440,31 @@ export default function PromenadePage() {
         await supabase.from('promenades_participants')
           .delete().eq('promenade_id', id).eq('user_uid', user.uid);
       } else {
-        await supabase.from('promenades_participants')
-          .insert({ promenade_id: id, user_uid: user.uid, rejoint_at: new Date().toISOString() });
+        await supabase.from('promenades_participants').insert({
+          promenade_id: id, user_uid: user.uid,
+          statut: 'en_attente', rejoint_at: new Date().toISOString(),
+        });
+        // Notifier l'organisateur
+        const promenade = promenades.find(p => p.id === id);
+        if (promenade && promenade.organisateur_uid !== user.uid) {
+          const { data: me } = await supabase.from('users')
+            .select('firstname, lastname').eq('uid', user.uid).maybeSingle();
+          const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
+          await supabase.from('notifications').insert({
+            user_uid: promenade.organisateur_uid,
+            type: 'promenade_join',
+            title: 'Nouvelle demande de participation',
+            body: `${nom} veut rejoindre "${promenade.titre}"`,
+            data: { promenadeId: id, fromUid: user.uid },
+            read: false, created_at: new Date().toISOString(),
+          });
+        }
       }
       await load();
     } catch {
       setMesParticipations(prev => {
-        const next = new Set(prev);
-        estDedans ? next.add(id) : next.delete(id);
+        const next = { ...prev };
+        if (estDedans) next[id] = 'accepte'; else delete next[id];
         return next;
       });
     } finally {
@@ -493,9 +522,10 @@ export default function PromenadePage() {
               <PromenadesCard
                 key={p.id}
                 p={p}
-                estParticipant={mesParticipations.has(p.id)}
+                myStatut={mesParticipations[p.id]}
                 onToggle={() => toggleParticipation(p.id)}
                 loading={loadingToggle === p.id}
+                onClick={() => router.push(`/promenades/${p.id}`)}
               />
             ))}
           </div>

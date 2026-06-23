@@ -420,6 +420,10 @@ function getNotifUrl(n: Notif): string | null {
     case 'rdv_refuse':
     case 'rdv_annule':
       return '/agenda';
+    case 'promenade_join':
+    case 'promenade_accepte':
+    case 'promenade_refuse':
+      return d.promenadeId ? `/promenades/${d.promenadeId}` : '/promenades';
     case 'employee_invite':
     case 'tache':
       return '/mes-employeurs';
