@@ -452,7 +452,7 @@ export default function PromenadePage() {
             .select('firstname, lastname').eq('uid', user.uid).maybeSingle();
           const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
           await supabase.from('notifications').insert({
-            user_uid: promenade.organisateur_uid,
+            uid: promenade.organisateur_uid,
             type: 'promenade_join',
             title: 'Nouvelle demande de participation',
             body: `${nom} veut rejoindre "${promenade.titre}"`,

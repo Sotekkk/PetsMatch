@@ -153,7 +153,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
           ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim()
           : 'Quelqu\'un';
       await _supa.from('notifications').insert({
-        'user_uid': orgUid,
+        'uid': orgUid,
         'type': 'promenade_join',
         'title': 'Nouvelle demande de participation',
         'body': '$nom veut rejoindre "${p['titre']}"',
@@ -172,7 +172,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         .eq('user_uid', userUid);
     try {
       await _supa.from('notifications').insert({
-        'user_uid': userUid,
+        'uid': userUid,
         'type': 'promenade_accepte',
         'title': 'Participation confirmée',
         'body': 'Votre demande pour "${_promenade!['titre']}" a été acceptée !',
@@ -192,7 +192,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         .eq('user_uid', userUid);
     try {
       await _supa.from('notifications').insert({
-        'user_uid': userUid,
+        'uid': userUid,
         'type': 'promenade_refuse',
         'title': 'Participation refusée',
         'body': 'Votre demande pour "${_promenade!['titre']}" n\'a pas été retenue.',
@@ -246,7 +246,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         if (uid == _uid) continue;
         try {
           await _supa.from('notifications').insert({
-            'user_uid': uid,
+            'uid': uid,
             'type': 'promenade_annulee',
             'title': 'Promenade annulée',
             'body': 'La promenade "$titre"${dateStr.isNotEmpty ? ' du $dateStr' : ''} a été annulée par l\'organisateur.',
@@ -284,7 +284,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
             if (uid == _uid) continue;
             try {
               await _supa.from('notifications').insert({
-                'user_uid': uid,
+                'uid': uid,
                 'type': 'promenade_modifiee',
                 'title': 'Promenade modifiée',
                 'body': body,

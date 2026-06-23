@@ -111,7 +111,7 @@ class _PromenadesPageState extends State<PromenadePage> {
                 ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim()
                 : 'Quelqu\'un';
             await _supa.from('notifications').insert({
-              'user_uid': orgUid,
+              'uid': orgUid,
               'type': 'promenade_join',
               'title': 'Nouvelle demande de participation',
               'body': '$nom veut rejoindre "$titre"',

@@ -164,7 +164,7 @@ function EditModal({ promenade, participants, currentUid, onClose, onSaved }: {
       const dateStr = new Date(dateVal).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
       for (const part of toNotify) {
         await supabase.from('notifications').insert({
-          user_uid: part.user_uid, type: 'promenade_modifiee',
+          uid: part.user_uid, type: 'promenade_modifiee',
           title: 'Promenade modifiée',
           body: `La promenade "${titre.trim()}" a été modifiée. Nouvelles infos : ${lieu.trim()}, ${dateStr}.`,
           data: { promenadeId: promenade.id }, read: false, created_at: new Date().toISOString(),
@@ -331,7 +331,7 @@ export default function PromenadeDetailPage() {
           .select('firstname, lastname').eq('uid', user.uid).maybeSingle();
         const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
         await supabase.from('notifications').insert({
-          user_uid: promenade.organisateur_uid,
+          uid: promenade.organisateur_uid,
           type: 'promenade_join',
           title: 'Nouvelle demande de participation',
           body: `${nom} veut rejoindre "${promenade.titre}"`,
@@ -363,7 +363,7 @@ export default function PromenadeDetailPage() {
       .update({ statut: 'accepte' })
       .eq('promenade_id', id).eq('user_uid', userUid);
     await supabase.from('notifications').insert({
-      user_uid: userUid,
+      uid: userUid,
       type: 'promenade_accepte',
       title: 'Participation confirmée',
       body: `Votre demande pour "${promenade?.titre}" a été acceptée !`,
@@ -385,7 +385,7 @@ export default function PromenadeDetailPage() {
       for (const part of toNotify) {
         if (part.user_uid === user.uid) continue;
         await supabase.from('notifications').insert({
-          user_uid: part.user_uid,
+          uid: part.user_uid,
           type: 'promenade_annulee',
           title: 'Promenade annulée',
           body: `La promenade "${promenade.titre}" du ${dateStr} a été annulée par l'organisateur.`,
@@ -405,7 +405,7 @@ export default function PromenadeDetailPage() {
     await supabase.from('promenades_participants').delete()
       .eq('promenade_id', id).eq('user_uid', userUid);
     await supabase.from('notifications').insert({
-      user_uid: userUid,
+      uid: userUid,
       type: 'promenade_refuse',
       title: 'Participation refusée',
       body: `Votre demande pour "${promenade?.titre}" n'a pas été retenue.`,
