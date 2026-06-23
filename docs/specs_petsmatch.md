@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-06-23 — ajout §16 Lieux Pet-Friendly  
+> Dernière mise à jour : 2026-06-23 — ajout §16 Lieux Pet-Friendly, §17 Promenades améliorées, §18 PetFriends  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -17,6 +17,8 @@
 8. [Modèle économique — Abonnements, Boosts & Marketplace](#8-modèle-économique--abonnements-boosts--marketplace)
 9. [Validation automatique & Badges de confiance](#9-validation-automatique--badges-de-confiance)
 16. [Lieux Pet-Friendly — Hôtels, Hébergements & Restaurants](#16-lieux-pet-friendly--hôtels-hébergements--restaurants)
+17. [Promenades collectives — Améliorations](#17-promenades-collectives--améliorations)
+18. [PetFriends — Réseau social propriétaires](#18-petfriends--réseau-social-propriétaires)
 
 ---
 
@@ -3236,6 +3238,388 @@ Phase 5 — GPS + Paiement + Notifs
 Phase 6 — V2
   PFP22 (carte interactive)
   PFP36 (dashboard stats avancées)
+```
+
+---
+
+---
+
+## 17. Promenades collectives — Améliorations
+
+> **Ajouté le 2026-06-23**  
+> La page `PromenadePage` (Flutter) et la future page web `/promenades` existent partiellement. Ce §17 ajoute GPS/Waze, jauge participants, visibilité sélective et invitations. Dépend de §18 (PetFriends) pour la visibilité "amis uniquement".
+
+---
+
+### 17.1 État actuel (base de travail)
+
+**Implémenté :**
+- `lib/pages/promenades/promenades_page.dart` — liste, rejoindre/quitter, formulaire création
+- Formulaire : titre, lieu (texte libre), date/heure, niveau, durée
+- Table Supabase `promenades` + `promenades_participants` (définies dans SPEC_PRO_SERVICES)
+- Champs `lat`, `lng`, `participants_max` présents dans le schéma mais **non utilisés dans l'UI**
+
+**Manquant :**
+- Geocodage de l'adresse → lat/lng enregistrés
+- Bouton "Obtenir l'itinéraire" → Waze / Google Maps
+- Affichage jauge X/Y participants + blocage quand complet
+- Visibilité : publique / PetFriends / invitation uniquement
+- Invitation nominative d'utilisateurs PetsMatch
+
+---
+
+### 17.2 Geocodage & GPS du point de rendez-vous
+
+#### Formulaire de création (Flutter + Web)
+- Le champ "Lieu de rendez-vous" devient un champ d'autocomplétion d'adresse
+- API : Google Places Autocomplete (ou Nominatim/Photon si hors budget)
+- À la sélection d'une suggestion : `lat` et `lng` sont remplis automatiquement et stockés avec l'annonce
+- Affichage de confirmation sous le champ : `📍 Trouvé : Parking du Lac, Rennes (48.1035, -1.6747)`
+- Si l'utilisateur tape une adresse libre sans valider une suggestion → warning "Adresse non géolocalisée — itinéraire indisponible"
+
+#### Sur la carte de promenade
+```
+📍 Parking du Lac, Rennes
+[🗺️ Y aller]  ← bouton visible si lat/lng présents
+```
+
+#### Bouton "Y aller" — deep link
+1. Détecte Waze installé → `waze://ul?ll={lat},{lng}&navigate=yes`
+2. Fallback Google Maps → `https://maps.google.com/?daddr={lat},{lng}`
+3. Web : ouvre Google Maps dans un nouvel onglet
+
+---
+
+### 17.3 Nombre maximum de participants
+
+#### Formulaire de création
+- Nouveau champ optionnel "Nombre max de participants" (int, min 2, max 50 ; vide = illimité)
+- Placeholder : "Illimité"
+
+#### Affichage sur la carte
+```
+👥 3 / 8 participants   ← si max défini
+👥 5 participants       ← si illimité
+```
+
+#### Règles métier
+- Quand `nb_participants >= participants_max` :
+  - Bouton "Rejoindre" → désactivé, label "Complet"
+  - `statut` passe automatiquement à `'complet'` via trigger Supabase (ou client-side check)
+- Si un participant se désinscrit depuis une promenade "complète" → `statut` repasse à `'ouvert'`
+- L'organisateur peut modifier le max après création (dans une future page "Mes promenades")
+
+---
+
+### 17.4 Visibilité & partage sélectif
+
+#### Options de visibilité (formulaire de création)
+| Option | Icône | Comportement |
+|---|---|---|
+| `publique` | 🌍 | Visible par tous les utilisateurs PetsMatch (comportement actuel) |
+| `petfriends` | 👥 | Visible uniquement par les PetFriends de l'organisateur (§18) |
+| `invitation` | 🔒 | Visible uniquement par les personnes explicitement invitées |
+
+Valeur par défaut : `publique`
+
+#### Feed — filtrage selon visibilité
+- Une promenade `petfriends` apparaît dans le feed d'un utilisateur **seulement s'il est PetFriend de l'organisateur**
+- Une promenade `invitation` n'apparaît dans le feed que des invités + l'organisateur
+- L'organisateur voit toujours ses promenades quelle que soit la visibilité
+
+#### Tableau des modifications BDD
+```sql
+ALTER TABLE promenades ADD COLUMN IF NOT EXISTS
+  visibilite TEXT DEFAULT 'publique';  -- publique | petfriends | invitation
+```
+
+---
+
+### 17.5 Invitations nominatives
+
+Disponible quand `visibilite = 'invitation'` (ou en complément de `petfriends`).
+
+#### Flux d'invitation
+1. Organisateur tape un prénom / pseudo dans un champ de recherche
+2. Résultats : utilisateurs PetsMatch avec leur photo de profil + premier animal
+3. Organisateur sélectionne 1 à N personnes → liste d'invités affichée sous le formulaire
+4. À la création : notification push + in-app envoyée à chaque invité :
+   > "🦮 [Prénom] t'invite à une promenade : *Balade au bord du lac* — Sam 28 juin à 9h30"
+
+#### Table `promenades_invitations`
+```sql
+CREATE TABLE promenades_invitations (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  promenade_id   UUID NOT NULL REFERENCES promenades(id) ON DELETE CASCADE,
+  inviteur_uid   TEXT NOT NULL,
+  invite_uid     TEXT NOT NULL,
+  statut         TEXT DEFAULT 'en_attente',  -- en_attente | accepte | refuse
+  vu_at          TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(promenade_id, invite_uid)
+);
+```
+
+---
+
+### 17.6 Tickets Promenades (PRO01–PRO18)
+
+#### GPS & Navigation
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PRO01** | Migration SQL — `ALTER TABLE promenades ADD COLUMN visibilite`, `CREATE TABLE promenades_invitations` | Backend | V1 |
+| **PRO02** | Formulaire création Flutter — champ adresse avec autocomplétion geocodage + sauvegarde lat/lng | App | V1 |
+| **PRO03** | Formulaire création Web — même champ adresse autocomplétion | Web | V1 |
+| **PRO04** | Bouton "Y aller" sur la carte Flutter — deep link Waze + fallback Google Maps | App | V1 |
+| **PRO05** | Bouton "Y aller" sur la carte Web | Web | V1 |
+
+#### Participants
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PRO06** | Formulaire création — champ "Nombre max de participants" (optionnel) | App + Web | V1 |
+| **PRO07** | Carte promenade — affichage jauge "X / Y participants" (ou "X participants" si illimité) | App + Web | V1 |
+| **PRO08** | Blocage bouton "Rejoindre" quand complet + label "Complet" + trigger statut automatique | App + Web | V1 |
+
+#### Visibilité
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PRO09** | Formulaire création — sélecteur visibilité (🌍 Publique / 👥 PetFriends / 🔒 Invitation) | App + Web | V1 |
+| **PRO10** | Feed — filtre les promenades selon visibilité + PetFriends du user connecté (dépend PFR) | App + Web | V1 |
+
+#### Invitations
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PRO11** | Formulaire — recherche & sélection d'utilisateurs à inviter (si visibilité = invitation) | App + Web | V1 |
+| **PRO12** | Notification push + in-app à l'invité lors de la création | App + Web | V1 |
+| **PRO13** | Réponse invitation — accepter / refuser depuis la notification ou depuis la page promenade | App + Web | V1 |
+
+#### Page détail & gestion
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PRO14** | Page détail promenade Flutter — infos complètes, liste participants avec avatars, bouton rejoindre | App | V1 |
+| **PRO15** | Page détail promenade Web `/promenades/[id]` — même contenu | Web | V1 |
+| **PRO16** | Page "Mes promenades" (organisées + rejointes) — modification/annulation pour l'organisateur | App + Web | V2 |
+| **PRO17** | Notification rappel 2h avant la promenade aux participants inscrits | App + Web | V1 |
+| **PRO18** | Chat de groupe promenade — canal dédié dans la messagerie (catégorie `promenade`) entre participants | App + Web | V2 |
+
+---
+
+## 18. PetFriends — Réseau social propriétaires
+
+> **Ajouté le 2026-06-23**  
+> Système d'amis entre utilisateurs particuliers (et éleveurs/associations) pour partager les animaux, les promenades et la messagerie directe. Inspiré du concept "amis" Facebook — bidirectionnel (demande + acceptation), pas un système de "follow" unilatéral.
+
+---
+
+### 18.1 Vision & concept
+
+**Problème** : les utilisateurs PetsMatch ne peuvent actuellement pas se "retrouver" entre propriétaires d'animaux. La messagerie n'est accessible que dans le contexte d'une annonce ou d'un service. Il n'existe aucun lien social entre particuliers.
+
+**Solution** : les **PetFriends** sont les amis PetsMatch d'un utilisateur. En devenant PetFriend :
+- On voit les animaux partagés de son ami (ceux qu'il a marqués "visibles aux amis")
+- On reçoit les promenades qu'il organise en mode "PetFriends uniquement"
+- On peut lui écrire via la messagerie directement (sans passer par une annonce)
+
+**Qui peut avoir des PetFriends ?** Tous les profils connectés (particulier, éleveur, association, pro).  
+**Visibilité** : la liste de vos PetFriends est privée (non visible par les autres).
+
+---
+
+### 18.2 Système de demande d'amis
+
+#### Flux
+```
+A trouve le profil de B (via promenade, fiche animal, suggestions)
+       ↓
+A appuie "Ajouter en PetFriend" 
+       ↓
+B reçoit notification : "🐾 [A] veut devenir ton PetFriend"
+       ↓
+B accepte → relation bidirectionnelle créée
+B refuse → aucune notification à A, demande disparaît silencieusement
+       ↓
+A est notifié si B accepte : "✅ [B] a accepté ta demande de PetFriend !"
+```
+
+#### États d'une relation
+| Statut | Description |
+|---|---|
+| `en_attente` | Demande envoyée, en attente de réponse |
+| `accepte` | Amis — relation bidirectionnelle active |
+| `refuse` | Refus silencieux (B ne recontacte pas A) |
+| `bloque` | Bloqué (bloque aussi la messagerie) — utilise le système de blocage existant |
+
+---
+
+### 18.3 Profil public & animaux partagés
+
+#### Page profil utilisateur `/profil/[uid]` (publique)
+Accessible à tous les utilisateurs connectés (lien depuis une promenade, une annonce, etc.)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  [Photo de profil]  Prénom Nom                          │
+│  📍 Ville · 🐕 2 animaux                                │
+│  [➕ Ajouter en PetFriend] / [✓ PetFriend] / [En attente]│
+│  [💬 Message]  ← visible seulement si PetFriend         │
+├─────────────────────────────────────────────────────────┤
+│  🐾 Ses animaux (visibles aux amis)                     │
+│  [Photo]  Rex — Labrador · 3 ans                        │
+│  [Photo]  Luna — Berger Belge · 1 an                    │
+│  ← Animaux marqués "visible aux PetFriends" uniquement  │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Règles de visibilité des animaux sur la page publique :**
+- Animaux avec `visible_petfriends = true` → visibles si l'utilisateur connecté est PetFriend
+- Animaux avec `visible_petfriends = false` → jamais visibles sur profil public
+- Le nombre total d'animaux est toujours affiché ("2 animaux") mais pas les détails si non ami
+
+#### Paramètre animal "visible aux PetFriends"
+Ajout d'un toggle dans la fiche d'édition de l'animal :
+- "🔒 Visible par mes PetFriends" (default: false)
+- Concerne uniquement la visibilité sur le profil public — les annonces restent visibles normalement
+
+---
+
+### 18.4 Mes PetFriends — liste & découverte
+
+#### Page "Mes PetFriends" (app + web)
+Accessible depuis le menu profil.
+
+```
+┌────────────────────────┐
+│  Mes PetFriends  (12)  │
+│  [Demandes reçues (2)] │
+├────────────────────────┤
+│  [Avatar] Léa · 🐕🐈   │ → tap → profil de Léa
+│  [Avatar] Marco · 🐕   │
+│  [Avatar] Sophie · 🐇  │
+│  ...                   │
+├────────────────────────┤
+│  Demandes envoyées (1) │
+│  [Avatar] Tom — En attente │
+└────────────────────────┘
+```
+
+#### Suggestions de PetFriends (V2)
+- Basées sur : même ville, mêmes espèces, participation aux mêmes promenades
+- Affichées en bas de la liste si < 5 PetFriends
+
+---
+
+### 18.5 Messagerie entre PetFriends
+
+La messagerie Firestore existante est déjà multi-catégories (§15.1). On ajoute :
+- Catégorie `petfriends` dans la messagerie
+- Bouton "💬 Message" sur le profil public d'un PetFriend → ouvre ou crée la conversation
+- Une conversation PetFriend ne nécessite **pas** de passer par une annonce/service
+
+**Contrainte** : seuls les PetFriends (statut `accepte`) peuvent s'écrire. Si la relation est supprimée → la conversation reste accessible en lecture mais plus d'envoi possible.
+
+---
+
+### 18.6 Schéma BDD
+
+```sql
+-- Relations PetFriends
+CREATE TABLE petfriends (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  uid_demandeur   TEXT NOT NULL,    -- qui envoie la demande
+  uid_recepteur   TEXT NOT NULL,    -- qui reçoit
+  statut          TEXT DEFAULT 'en_attente',  -- en_attente | accepte | refuse
+  vu_at           TIMESTAMPTZ,      -- quand le récepteur a vu la demande
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(uid_demandeur, uid_recepteur)
+);
+
+-- Index pour requêtes rapides "mes amis" (dans les deux sens)
+CREATE INDEX idx_pf_demandeur ON petfriends (uid_demandeur, statut);
+CREATE INDEX idx_pf_recepteur ON petfriends (uid_recepteur, statut);
+
+-- Visibilité animal côté PetFriends
+-- Ajouter colonne sur la table animaux existante :
+ALTER TABLE animaux ADD COLUMN IF NOT EXISTS visible_petfriends BOOLEAN DEFAULT false;
+
+-- RLS : chaque user voit ses propres relations + les relations où il est récepteur
+-- (service role pour les lectures croisées)
+ALTER TABLE petfriends ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "pf_own_rows" ON petfriends FOR ALL
+  USING (uid_demandeur = current_setting('app.uid', true)
+      OR uid_recepteur = current_setting('app.uid', true));
+```
+
+> **Note RLS** : comme pour les autres tables, Firebase Auth ne fournit pas `auth.uid()`. Utiliser `service role` côté API ou des policies permissives avec filtrage applicatif (même pattern que les tables `notifications`, `likes`, etc.)
+
+---
+
+### 18.7 Tickets PetFriends (PFR01–PFR22)
+
+#### BDD & Backend
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFR01** | Migration SQL — table `petfriends` + index + `ALTER TABLE animaux ADD visible_petfriends` | Backend | V1 |
+| **PFR02** | RLS policies `petfriends` — permissive (même pattern notifications) | Backend | V1 |
+| **PFR03** | API helper `isFriend(uid_a, uid_b)` — vérifie statut `accepte` dans les deux sens | Backend | V1 |
+| **PFR04** | API `getFriends(uid)` — liste des PetFriends acceptés avec leurs infos profil | Backend | V1 |
+
+#### Demande d'amis
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFR05** | Bouton "Ajouter en PetFriend" sur profil public + fiche animal — états : ➕ / ⏳ / ✓ PetFriend | App + Web | V1 |
+| **PFR06** | Notification in-app + push à la demande reçue : "🐾 [Prénom] veut être ton PetFriend" | App + Web | V1 |
+| **PFR07** | Interface "Demandes reçues" — accepter / refuser avec swipe (app) ou boutons (web) | App + Web | V1 |
+| **PFR08** | Notification à l'envoyeur lors de l'acceptation | App + Web | V1 |
+| **PFR09** | Supprimer un PetFriend — depuis la liste Mes PetFriends (action destructrice, confirmation requise) | App + Web | V2 |
+
+#### Profil public
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFR10** | Page profil public `/profil/[uid]` — photo, prénom, ville, nb animaux, bouton PetFriend + Message | Web | V1 |
+| **PFR11** | Page profil public Flutter — même contenu, accessible via promenade / fiche animal | App | V1 |
+| **PFR12** | Affichage des animaux "visible_petfriends" sur le profil d'un ami | App + Web | V1 |
+| **PFR13** | Toggle "Visible par mes PetFriends" dans la fiche d'édition d'un animal | App + Web | V1 |
+
+#### Liste & découverte
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFR14** | Page "Mes PetFriends" — liste amis + demandes reçues (badge) + demandes envoyées | App + Web | V1 |
+| **PFR15** | Recherche d'utilisateurs par prénom/pseudo pour envoyer une demande | App + Web | V1 |
+| **PFR16** | Suggestions PetFriends — même ville + mêmes espèces (max 5 suggestions) | App + Web | V2 |
+
+#### Messagerie
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFR17** | Catégorie `petfriends` dans la messagerie Firestore | App + Web | V1 |
+| **PFR18** | Bouton "💬 Message" sur le profil public d'un PetFriend → crée/ouvre conversation catégorie petfriends | App + Web | V1 |
+| **PFR19** | Restriction envoi message : seuls les PetFriends (statut accepte) peuvent écrire | App + Web | V1 |
+
+#### Intégration Promenades
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFR20** | Feed promenades — filtrage visibilité `petfriends` (n'affiche que les promenades d'amis) (dépend PRO10) | App + Web | V1 |
+| **PFR21** | Invitations promenade — champ de recherche limité aux PetFriends (en plus des autres users) | App + Web | V1 |
+
+#### Admin
+| Code | Intitulé | Surface | Priorité |
+|---|---|---|---|
+| **PFR22** | Stats admin — nb relations PetFriends créées par jour/semaine, taux d'acceptation | Admin | V2 |
+
+---
+
+### 18.8 Ordre d'implémentation
+
+```
+Phase 1 — BDD (PRO01, PFR01, PFR02)
+Phase 2 — Promenades GPS + Waze (PRO02–PRO08) ← implémentable immédiatement
+Phase 3 — Profil public PetFriends (PFR05, PFR10, PFR11)
+Phase 4 — Demande d'amis + notifications (PFR06–PFR08, PFR14, PFR15)
+Phase 5 — Messagerie PetFriends (PFR17–PFR19)
+Phase 6 — Animaux partagés (PFR12, PFR13)
+Phase 7 — Visibilité promenades (PRO09, PRO10, PFR20, PFR21)
+Phase 8 — Invitations promenade (PRO11–PRO13, PRO17)
+Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
 ```
 
 ---

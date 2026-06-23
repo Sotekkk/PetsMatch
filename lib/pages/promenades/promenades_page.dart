@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const _orange = Color(0xFFEF6C00);
 
@@ -33,7 +35,7 @@ class _PromenadesPageState extends State<PromenadePage> {
     try {
       final promData = await _supa
           .from('promenades')
-          .select()
+          .select('*, promenades_participants(count)')
           .eq('statut', 'ouvert')
           .gte('date_heure', DateTime.now().toIso8601String())
           .order('date_heure');
@@ -197,6 +199,16 @@ class _PromenadesCard extends StatelessWidget {
     }
   }
 
+  static Future<void> _openNavigation(double lat, double lng) async {
+    final wazeUrl = Uri.parse('waze://ul?ll=$lat,$lng&navigate=yes');
+    final mapsUrl = Uri.parse('https://maps.google.com/?daddr=$lat,$lng');
+    if (await canLaunchUrl(wazeUrl)) {
+      await launchUrl(wazeUrl);
+    } else {
+      await launchUrl(mapsUrl, mode: LaunchMode.externalApplication);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final titre = promenade['titre']?.toString() ?? 'Promenade';
@@ -206,6 +218,18 @@ class _PromenadesCard extends StatelessWidget {
     final duree = (promenade['duree_minutes'] as num?)?.toInt();
     final distance = (promenade['distance_km'] as num?)?.toDouble();
     final desc = promenade['description']?.toString() ?? '';
+    final lat = (promenade['lat'] as num?)?.toDouble();
+    final lng = (promenade['lng'] as num?)?.toDouble();
+    final participantsMax = (promenade['participants_max'] as num?)?.toInt();
+
+    final partsData = promenade['promenades_participants'];
+    final nbParticipants = (partsData is List && partsData.isNotEmpty)
+        ? (partsData.first['count'] as num?)?.toInt() ?? 0
+        : 0;
+
+    final isFull = !estParticipant &&
+        participantsMax != null &&
+        nbParticipants >= participantsMax;
 
     return Container(
       decoration: BoxDecoration(
@@ -263,9 +287,31 @@ class _PromenadesCard extends StatelessWidget {
                         fontFamily: 'Galey', fontSize: 12, color: Colors.grey),
                     overflow: TextOverflow.ellipsis),
               ),
+              if (lat != null && lng != null)
+                GestureDetector(
+                  onTap: () => _openNavigation(lat, lng),
+                  child: Container(
+                    margin: const EdgeInsets.only(left: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2E7D5E).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.navigation_outlined, size: 11, color: Color(0xFF2E7D5E)),
+                      SizedBox(width: 3),
+                      Text('Y aller',
+                          style: TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF2E7D5E))),
+                    ]),
+                  ),
+                ),
             ]),
           ],
-          if (duree != null || distance != null) ...[
+          if (duree != null || distance != null || nbParticipants > 0) ...[
             const SizedBox(height: 4),
             Row(children: [
               if (duree != null) ...[
@@ -281,6 +327,32 @@ class _PromenadesCard extends StatelessWidget {
                 Text('${distance.toStringAsFixed(1)} km',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
               ],
+              if ((duree != null || distance != null) && nbParticipants > 0)
+                const SizedBox(width: 12),
+              if (nbParticipants > 0 || participantsMax != null) ...[
+                Icon(Icons.group_outlined,
+                    size: 13, color: isFull ? Colors.red.shade400 : Colors.grey),
+                const SizedBox(width: 4),
+                Text(
+                  participantsMax != null
+                      ? '$nbParticipants / $participantsMax'
+                      : '$nbParticipants',
+                  style: TextStyle(
+                      fontFamily: 'Galey',
+                      fontSize: 12,
+                      color: isFull ? Colors.red.shade400 : Colors.grey,
+                      fontWeight: isFull ? FontWeight.w700 : FontWeight.normal),
+                ),
+                if (isFull) ...[
+                  const SizedBox(width: 4),
+                  Text('· Complet',
+                      style: TextStyle(
+                          fontFamily: 'Galey',
+                          fontSize: 12,
+                          color: Colors.red.shade400,
+                          fontWeight: FontWeight.w700)),
+                ],
+              ],
             ]),
           ],
           if (desc.isNotEmpty) ...[
@@ -291,30 +363,46 @@ class _PromenadesCard extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis),
           ],
-          if (onToggle != null) ...[
+          if (onToggle != null || isFull) ...[
             const SizedBox(height: 10),
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
-                onTap: onToggle,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: estParticipant ? _orange : Colors.transparent,
-                    border: Border.all(color: _orange),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    estParticipant ? 'Inscrit ✓' : 'Rejoindre',
-                    style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: estParticipant ? Colors.white : _orange),
-                  ),
-                ),
-              ),
+              child: isFull
+                  ? Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text('Complet',
+                          style: TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey)),
+                    )
+                  : GestureDetector(
+                      onTap: onToggle,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: estParticipant ? _orange : Colors.transparent,
+                          border: Border.all(color: _orange),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          estParticipant ? 'Inscrit ✓' : 'Rejoindre',
+                          style: TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: estParticipant ? Colors.white : _orange),
+                        ),
+                      ),
+                    ),
             ),
           ],
         ]),
@@ -343,7 +431,33 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
   String _niveau = 'facile';
   DateTime _dateHeure = DateTime.now().add(const Duration(days: 3));
   int _dureeMinutes = 60;
+  int? _participantsMax;
+  double? _lat;
+  double? _lng;
   bool _saving = false;
+  bool _geocoding = false;
+
+  Future<void> _geocodeAddress() async {
+    if (_lieuRdv.trim().isEmpty) return;
+    setState(() => _geocoding = true);
+    try {
+      final locations = await locationFromAddress(_lieuRdv.trim());
+      if (locations.isNotEmpty && mounted) {
+        setState(() {
+          _lat = locations.first.latitude;
+          _lng = locations.first.longitude;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() { _lat = null; _lng = null; });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Adresse non trouvée — itinéraire indisponible')));
+      }
+    } finally {
+      if (mounted) setState(() => _geocoding = false);
+    }
+  }
 
   Future<void> _pickDate() async {
     final date = await showDatePicker(
@@ -381,6 +495,9 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
         'duree_minutes': _dureeMinutes,
         'statut': 'ouvert',
         'created_at': DateTime.now().toIso8601String(),
+        if (_lat != null) 'lat': _lat,
+        if (_lng != null) 'lng': _lng,
+        if (_participantsMax != null) 'participants_max': _participantsMax,
       });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -445,8 +562,43 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
                 TextFormField(
                   decoration: _dec('Adresse, parking, point de repère…'),
                   validator: (v) => (v?.trim().isEmpty ?? true) ? 'Obligatoire' : null,
+                  onChanged: (v) {
+                    _lieuRdv = v.trim();
+                    if (_lat != null) setState(() { _lat = null; _lng = null; });
+                  },
                   onSaved: (v) => _lieuRdv = v?.trim() ?? '',
                 ),
+                const SizedBox(height: 6),
+                Row(children: [
+                  GestureDetector(
+                    onTap: _geocoding ? null : _geocodeAddress,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2E7D5E).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        if (_geocoding)
+                          const SizedBox(width: 12, height: 12,
+                              child: CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFF2E7D5E)))
+                        else
+                          const Icon(Icons.my_location_outlined, size: 13, color: Color(0xFF2E7D5E)),
+                        const SizedBox(width: 5),
+                        const Text('Géolocaliser',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                fontWeight: FontWeight.w600, color: Color(0xFF2E7D5E))),
+                      ]),
+                    ),
+                  ),
+                  if (_lat != null) ...[
+                    const SizedBox(width: 8),
+                    const Icon(Icons.check_circle_outline, size: 14, color: Color(0xFF2E7D5E)),
+                    const SizedBox(width: 4),
+                    const Text('Position trouvée',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF2E7D5E))),
+                  ],
+                ]),
                 const SizedBox(height: 12),
 
                 _lbl('Date et heure *'),
@@ -500,6 +652,18 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
                       decoration: _dec('60'),
                       keyboardType: TextInputType.number,
                       onSaved: (v) => _dureeMinutes = int.tryParse(v?.trim() ?? '') ?? 60,
+                    ),
+                  ])),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    _lbl('Max participants'),
+                    TextFormField(
+                      decoration: _dec('Illimité'),
+                      keyboardType: TextInputType.number,
+                      onSaved: (v) {
+                        final n = int.tryParse(v?.trim() ?? '');
+                        _participantsMax = (n != null && n >= 2) ? n : null;
+                      },
                     ),
                   ])),
                 ]),
