@@ -22,7 +22,25 @@ interface Promenade {
   distance_km?: number;
   participants_max?: number;
   statut: string;
+  espece?: string;
+  toutes_races?: boolean;
+  races?: string;
   promenades_participants: { count: number }[];
+}
+
+const ESPECES = ['Toutes espèces', 'Chiens', 'Chats', 'Lapins', 'Oiseaux', 'Rongeurs', 'Reptiles', 'NAC'];
+
+function especeEmoji(e: string) {
+  switch (e) {
+    case 'Chiens': return '🐕 Chiens';
+    case 'Chats': return '🐈 Chats';
+    case 'Lapins': return '🐇 Lapins';
+    case 'Oiseaux': return '🐦 Oiseaux';
+    case 'Rongeurs': return '🐹 Rongeurs';
+    case 'Reptiles': return '🦎 Reptiles';
+    case 'NAC': return '🐾 NAC';
+    default: return '🌍 Toutes espèces';
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -100,6 +118,19 @@ function PromenadesCard({
         </div>
       )}
 
+      {/* Espèce */}
+      {p.espece && p.espece !== 'Toutes espèces' && (
+        <div className="flex items-center gap-2">
+          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold"
+            style={{ backgroundColor: '#2E7D5E18', color: '#2E7D5E' }}>
+            {especeEmoji(p.espece)}
+          </span>
+          {!p.toutes_races && p.races && (
+            <span className="text-[11px] text-gray-400 truncate">• {p.races}</span>
+          )}
+        </div>
+      )}
+
       {/* Méta : durée + distance + participants */}
       <div className="flex items-center gap-3 text-gray-400 text-[12px]">
         {p.duree_minutes && <span>⏱ {p.duree_minutes} min</span>}
@@ -163,6 +194,9 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   const [duree, setDuree] = useState('60');
   const [maxParticipants, setMaxParticipants] = useState('');
   const [description, setDescription] = useState('');
+  const [espece, setEspece] = useState('Toutes espèces');
+  const [toutesRaces, setToutesRaces] = useState(true);
+  const [races, setRaces] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -240,6 +274,9 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
       if (lng !== null) row.lng = lng;
       const maxN = parseInt(maxParticipants);
       if (maxN >= 2) row.participants_max = maxN;
+      row.espece = espece;
+      row.toutes_races = toutesRaces;
+      if (!toutesRaces && races.trim()) row.races = races.trim();
 
       const { error: err } = await supabase.from('promenades').insert(row);
       if (err) throw err;
@@ -364,9 +401,43 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
               value={description} onChange={e => setDescription(e.target.value)}
               rows={3}
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[14px] focus:outline-none focus:border-[#2E7D5E] resize-none"
-              placeholder="Parcours, espèces bienvenues, équipement…"
+              placeholder="Parcours, équipement recommandé…"
             />
           </div>
+
+          {/* Espèce */}
+          <div>
+            <label className="block text-[12px] font-semibold text-gray-500 mb-2">Espèce concernée</label>
+            <div className="flex flex-wrap gap-2">
+              {ESPECES.map(e => (
+                <button key={e} type="button" onClick={() => setEspece(e)}
+                  className="px-3 py-1.5 rounded-full text-[12px] font-semibold transition-colors"
+                  style={espece === e
+                    ? { backgroundColor: '#2E7D5E', color: '#fff' }
+                    : { backgroundColor: '#F5F5F5', color: '#555' }}>
+                  {especeEmoji(e)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Toutes races */}
+          <div className="flex items-center justify-between">
+            <span className="text-[13px] font-semibold text-gray-700">Toutes races acceptées</span>
+            <button type="button" onClick={() => setToutesRaces(!toutesRaces)}
+              className="relative w-11 h-6 rounded-full transition-colors"
+              style={{ backgroundColor: toutesRaces ? '#2E7D5E' : '#D1D5DB' }}>
+              <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                style={{ transform: toutesRaces ? 'translateX(20px)' : 'none' }} />
+            </button>
+          </div>
+          {!toutesRaces && (
+            <input
+              value={races} onChange={e => setRaces(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[14px] focus:outline-none focus:border-[#2E7D5E]"
+              placeholder="Ex : Golden Retriever, Labrador…"
+            />
+          )}
 
           {error && <p className="text-red-500 text-[13px]">{error}</p>}
 
@@ -395,6 +466,8 @@ export default function PromenadePage() {
   const [loadingToggle, setLoadingToggle] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [filterEspece, setFilterEspece] = useState('Toutes espèces');
+  const [filterLieu, setFilterLieu] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -496,41 +569,81 @@ export default function PromenadePage() {
         )}
       </div>
 
+      {/* Filtres */}
+      <div className="bg-white border-b border-gray-100 px-4 py-3 flex flex-col gap-2 max-w-2xl mx-auto">
+        {/* Lieu */}
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#2E7D5E] text-[14px]">📍</span>
+          <input
+            value={filterLieu} onChange={e => setFilterLieu(e.target.value)}
+            className="w-full bg-gray-50 rounded-xl pl-8 pr-8 py-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-[#2E7D5E] border-none"
+            placeholder="Filtrer par ville, département, région…"
+          />
+          {filterLieu && (
+            <button onClick={() => setFilterLieu('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-[14px]">✕</button>
+          )}
+        </div>
+        {/* Espèce chips */}
+        <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
+          {ESPECES.map(e => (
+            <button key={e} onClick={() => setFilterEspece(e)}
+              className="shrink-0 px-3 py-1 rounded-full text-[12px] font-semibold transition-colors"
+              style={filterEspece === e
+                ? { backgroundColor: '#2E7D5E', color: '#fff' }
+                : { backgroundColor: '#F0F0F0', color: '#666' }}>
+              {especeEmoji(e)}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Contenu */}
       <div className="max-w-2xl mx-auto px-4 py-5">
         {loading ? (
           <div className="flex justify-center py-20">
             <div className="w-8 h-8 border-2 border-[#EF6C00] border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : promenades.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-gray-400">
-            <span className="text-6xl mb-4">🦮</span>
-            <p className="font-bold text-lg text-gray-500">Aucune promenade à venir</p>
-            <p className="text-[14px] mt-1">Organisez la première !</p>
-            {user && (
-              <button
-                onClick={() => setShowCreate(true)}
-                className="mt-6 px-6 py-2.5 rounded-full font-bold text-white text-[14px]"
-                style={{ backgroundColor: '#EF6C00' }}
-              >
-                + Organiser une promenade
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {promenades.map(p => (
-              <PromenadesCard
-                key={p.id}
-                p={p}
-                myStatut={mesParticipations[p.id]}
-                onToggle={() => toggleParticipation(p.id)}
-                loading={loadingToggle === p.id}
-                onClick={() => router.push(`/promenades/${p.id}`)}
-              />
-            ))}
-          </div>
-        )}
+        ) : (() => {
+          const filtered = promenades.filter(p => {
+            const esp = p.espece ?? 'Toutes espèces';
+            if (filterEspece !== 'Toutes espèces' && esp !== 'Toutes espèces' && esp !== filterEspece) return false;
+            if (filterLieu.trim()) {
+              const adresse = (p.lieu_rdv ?? '').toLowerCase();
+              if (!adresse.includes(filterLieu.toLowerCase().trim())) return false;
+            }
+            return true;
+          });
+          return filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 text-gray-400">
+              <span className="text-6xl mb-4">🦮</span>
+              <p className="font-bold text-lg text-gray-500">Aucune promenade à venir</p>
+              <p className="text-[14px] mt-1">Organisez la première !</p>
+              {user && (
+                <button
+                  onClick={() => setShowCreate(true)}
+                  className="mt-6 px-6 py-2.5 rounded-full font-bold text-white text-[14px]"
+                  style={{ backgroundColor: '#EF6C00' }}
+                >
+                  + Organiser une promenade
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {filtered.map(p => (
+                <PromenadesCard
+                  key={p.id}
+                  p={p}
+                  myStatut={mesParticipations[p.id]}
+                  onToggle={() => toggleParticipation(p.id)}
+                  loading={loadingToggle === p.id}
+                  onClick={() => router.push(`/promenades/${p.id}`)}
+                />
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       {showCreate && (

@@ -23,6 +23,24 @@ interface Promenade {
   distance_km?: number;
   participants_max?: number;
   statut: string;
+  espece?: string;
+  toutes_races?: boolean;
+  races?: string;
+}
+
+const ESPECES_DETAIL = ['Toutes espèces', 'Chiens', 'Chats', 'Lapins', 'Oiseaux', 'Rongeurs', 'Reptiles', 'NAC'];
+
+function especeEmojiDetail(e: string) {
+  switch (e) {
+    case 'Chiens': return '🐕 Chiens';
+    case 'Chats': return '🐈 Chats';
+    case 'Lapins': return '🐇 Lapins';
+    case 'Oiseaux': return '🐦 Oiseaux';
+    case 'Rongeurs': return '🐹 Rongeurs';
+    case 'Reptiles': return '🦎 Reptiles';
+    case 'NAC': return '🐾 NAC';
+    default: return '🌍 Toutes espèces';
+  }
 }
 
 interface Participant {
@@ -90,6 +108,9 @@ function EditModal({ promenade, participants, currentUid, onClose, onSaved }: {
   const [duree, setDuree] = useState(String(promenade.duree_minutes ?? 60));
   const [maxP, setMaxP] = useState(promenade.participants_max ? String(promenade.participants_max) : '');
   const [desc, setDesc] = useState(promenade.description ?? '');
+  const [espece, setEspece] = useState(promenade.espece ?? 'Toutes espèces');
+  const [toutesRaces, setToutesRaces] = useState(promenade.toutes_races ?? true);
+  const [races, setRaces] = useState(promenade.races ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -156,6 +177,9 @@ function EditModal({ promenade, participants, currentUid, onClose, onSaved }: {
       };
       if (lat !== null) updates.lat = lat;
       if (lng !== null) updates.lng = lng;
+      updates.espece = espece;
+      updates.toutes_races = toutesRaces;
+      updates.races = (!toutesRaces && races.trim()) ? races.trim() : null;
 
       await supabase.from('promenades').update(updates).eq('id', promenade.id);
 
@@ -242,6 +266,34 @@ function EditModal({ promenade, participants, currentUid, onClose, onSaved }: {
             <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={3}
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[14px] focus:outline-none focus:border-[#2E7D5E] resize-none" />
           </div>
+          <div>
+            <label className="block text-[12px] font-semibold text-gray-500 mb-2">Espèce concernée</label>
+            <div className="flex flex-wrap gap-2">
+              {ESPECES_DETAIL.map(e => (
+                <button key={e} type="button" onClick={() => setEspece(e)}
+                  className="px-3 py-1.5 rounded-full text-[12px] font-semibold transition-colors"
+                  style={espece === e
+                    ? { backgroundColor: '#2E7D5E', color: '#fff' }
+                    : { backgroundColor: '#F5F5F5', color: '#555' }}>
+                  {especeEmojiDetail(e)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[13px] font-semibold text-gray-700">Toutes races acceptées</span>
+            <button type="button" onClick={() => setToutesRaces(!toutesRaces)}
+              className="relative w-11 h-6 rounded-full transition-colors"
+              style={{ backgroundColor: toutesRaces ? '#2E7D5E' : '#D1D5DB' }}>
+              <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                style={{ transform: toutesRaces ? 'translateX(20px)' : 'none' }} />
+            </button>
+          </div>
+          {!toutesRaces && (
+            <input value={races} onChange={e => setRaces(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-[14px] focus:outline-none focus:border-[#2E7D5E]"
+              placeholder="Ex : Golden Retriever, Labrador…" />
+          )}
           {error && <p className="text-red-500 text-[13px]">{error}</p>}
           <button onClick={handleSave} disabled={saving}
             className="w-full py-3 rounded-xl font-bold text-white text-[15px]"

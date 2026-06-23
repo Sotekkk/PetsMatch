@@ -782,12 +782,16 @@ class _EditSheetState extends State<_EditSheet> {
   late final TextEditingController _descCtrl;
   late final TextEditingController _lieuCtrl;
   String _niveau = 'facile';
+  String _espece = 'Toutes espèces';
+  bool _toutesRaces = true;
   late DateTime _dateHeure;
   late int _dureeMinutes;
   int? _participantsMax;
   double? _lat;
   double? _lng;
   bool _saving = false;
+
+  late final TextEditingController _racesCtrl;
 
   // Google Places
   late final GoogleMapsPlaces _places;
@@ -796,6 +800,18 @@ class _EditSheetState extends State<_EditSheet> {
   bool _loadingPred = false;
 
   static const _kNiveaux = ['facile', 'moyen', 'difficile'];
+  static const _kEspeces = ['Toutes espèces', 'Chiens', 'Chats', 'Lapins', 'Oiseaux', 'Rongeurs', 'Reptiles', 'NAC'];
+
+  static String _especeEmoji(String e) => switch (e) {
+    'Chiens' => '🐕 Chiens',
+    'Chats' => '🐈 Chats',
+    'Lapins' => '🐇 Lapins',
+    'Oiseaux' => '🐦 Oiseaux',
+    'Rongeurs' => '🐹 Rongeurs',
+    'Reptiles' => '🦎 Reptiles',
+    'NAC' => '🐾 NAC',
+    _ => '🌍 Toutes espèces',
+  };
 
   @override
   void initState() {
@@ -805,6 +821,9 @@ class _EditSheetState extends State<_EditSheet> {
     _descCtrl = TextEditingController(text: p['description']?.toString() ?? '');
     _lieuCtrl = TextEditingController(text: p['lieu_rdv']?.toString() ?? '');
     _niveau = p['niveau']?.toString() ?? 'facile';
+    _espece = p['espece']?.toString() ?? 'Toutes espèces';
+    _toutesRaces = p['toutes_races'] as bool? ?? true;
+    _racesCtrl = TextEditingController(text: p['races']?.toString() ?? '');
     _dateHeure = p['date_heure'] != null
         ? DateTime.parse(p['date_heure'].toString()).toLocal()
         : DateTime.now().add(const Duration(days: 1));
@@ -820,6 +839,7 @@ class _EditSheetState extends State<_EditSheet> {
     _titreCtrl.dispose();
     _descCtrl.dispose();
     _lieuCtrl.dispose();
+    _racesCtrl.dispose();
     _places.dispose();
     _debounce?.cancel();
     super.dispose();
@@ -882,6 +902,9 @@ class _EditSheetState extends State<_EditSheet> {
         if (_lat != null) 'lat': _lat,
         if (_lng != null) 'lng': _lng,
         'participants_max': _participantsMax,
+        'espece': _espece,
+        'toutes_races': _toutesRaces,
+        'races': (!_toutesRaces && _racesCtrl.text.trim().isNotEmpty) ? _racesCtrl.text.trim() : null,
       };
       await _supa.from('promenades')
           .update(updates)
@@ -1035,9 +1058,47 @@ class _EditSheetState extends State<_EditSheet> {
             _lbl('Description'),
             TextFormField(
               controller: _descCtrl,
-              decoration: _dec('Parcours, espèces bienvenues, équipement…'),
+              decoration: _dec('Parcours, équipement recommandé…'),
               maxLines: 3,
             ),
+            const SizedBox(height: 12),
+
+            _lbl('Espèce concernée'),
+            Wrap(spacing: 6, runSpacing: 6, children: _kEspeces.map((e) {
+              final sel = _espece == e;
+              return GestureDetector(
+                onTap: () => setState(() => _espece = e),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: sel ? _green : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(_especeEmoji(e),
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: sel ? Colors.white : Colors.grey.shade700)),
+                ),
+              );
+            }).toList()),
+            const SizedBox(height: 12),
+
+            Row(children: [
+              const Expanded(child: Text('Toutes races acceptées',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600))),
+              Switch(
+                value: _toutesRaces,
+                onChanged: (v) => setState(() => _toutesRaces = v),
+                activeColor: _green,
+              ),
+            ]),
+            if (!_toutesRaces) ...[
+              const SizedBox(height: 6),
+              TextFormField(
+                controller: _racesCtrl,
+                decoration: _dec('Ex : Golden Retriever, Labrador…'),
+              ),
+            ],
             const SizedBox(height: 24),
 
             SizedBox(

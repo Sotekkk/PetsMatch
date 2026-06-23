@@ -12,6 +12,18 @@ import 'package:url_launcher/url_launcher.dart';
 const _orange = Color(0xFFEF6C00);
 
 const _kNiveaux = ['facile', 'moyen', 'difficile'];
+const _kEspeces = ['Toutes espèces', 'Chiens', 'Chats', 'Lapins', 'Oiseaux', 'Rongeurs', 'Reptiles', 'NAC'];
+
+String _especeEmoji(String e) => switch (e) {
+  'Chiens' => '🐕 Chiens',
+  'Chats' => '🐈 Chats',
+  'Lapins' => '🐇 Lapins',
+  'Oiseaux' => '🐦 Oiseaux',
+  'Rongeurs' => '🐹 Rongeurs',
+  'Reptiles' => '🦎 Reptiles',
+  'NAC' => '🐾 NAC',
+  _ => '🌍 Toutes espèces',
+};
 
 class PromenadePage extends StatefulWidget {
   const PromenadePage({super.key});
@@ -27,6 +39,23 @@ class _PromenadesPageState extends State<PromenadePage> {
   List<Map<String, dynamic>> _promenades = [];
   Map<String, String> _mesParticipations = {}; // id → statut
   bool _loading = true;
+
+  // Filtres
+  String _filterEspece = 'Toutes espèces';
+  final _filterLieuCtrl = TextEditingController();
+
+  List<Map<String, dynamic>> get _filtered {
+    final lieu = _filterLieuCtrl.text.toLowerCase().trim();
+    return _promenades.where((p) {
+      final espece = p['espece']?.toString() ?? 'Toutes espèces';
+      if (_filterEspece != 'Toutes espèces' && espece != 'Toutes espèces' && espece != _filterEspece) return false;
+      if (lieu.isNotEmpty) {
+        final adresse = (p['lieu_rdv'] ?? '').toString().toLowerCase();
+        if (!adresse.contains(lieu)) return false;
+      }
+      return true;
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -171,38 +200,90 @@ class _PromenadesPageState extends State<PromenadePage> {
           : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _orange))
-          : _promenades.isEmpty
-              ? _empty()
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  color: _orange,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                    itemCount: _promenades.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) {
-                      final p = _promenades[i];
-                      final id = p['id'].toString();
-                      final myStatut = _mesParticipations[id];
-                      return GestureDetector(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) =>
-                                  PromenadeDetailPage(promenadeId: id)),
-                        ),
-                        child: _PromenadesCard(
-                          promenade: p,
-                          estParticipant: myStatut != null,
-                          myStatut: myStatut,
-                          onToggle: _uid.isNotEmpty && myStatut == null
-                              ? () => _toggleParticipation(id)
-                              : null,
+          : Column(children: [
+              // ── Filtres ──
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  // Filtre lieu
+                  TextField(
+                    controller: _filterLieuCtrl,
+                    onChanged: (_) => setState(() {}),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Filtrer par ville, département, région…',
+                      hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey, fontSize: 13),
+                      prefixIcon: const Icon(Icons.location_on_outlined, size: 18, color: Color(0xFF2E7D5E)),
+                      suffixIcon: _filterLieuCtrl.text.isNotEmpty
+                          ? IconButton(icon: const Icon(Icons.close, size: 16),
+                              onPressed: () => setState(() => _filterLieuCtrl.clear()))
+                          : null,
+                      filled: true, fillColor: const Color(0xFFF5F5F5),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Filtre espèce
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(children: _kEspeces.map((e) {
+                      final sel = _filterEspece == e;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: GestureDetector(
+                          onTap: () => setState(() => _filterEspece = e),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: sel ? const Color(0xFF2E7D5E) : Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(_especeEmoji(e),
+                                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: sel ? Colors.white : Colors.grey.shade700)),
+                          ),
                         ),
                       );
-                    },
+                    }).toList()),
                   ),
-                ),
+                ]),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: _filtered.isEmpty
+                    ? _empty()
+                    : RefreshIndicator(
+                        onRefresh: _load,
+                        color: _orange,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                          itemCount: _filtered.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 10),
+                          itemBuilder: (_, i) {
+                            final p = _filtered[i];
+                            final id = p['id'].toString();
+                            final myStatut = _mesParticipations[id];
+                            return GestureDetector(
+                              onTap: () => Navigator.push(context,
+                                  MaterialPageRoute(builder: (_) => PromenadeDetailPage(promenadeId: id))),
+                              child: _PromenadesCard(
+                                promenade: p,
+                                estParticipant: myStatut != null,
+                                myStatut: myStatut,
+                                onToggle: _uid.isNotEmpty && myStatut == null
+                                    ? () => _toggleParticipation(id)
+                                    : null,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+              ),
+            ]),
     );
   }
 
@@ -273,6 +354,9 @@ class _PromenadesCard extends StatelessWidget {
     final lat = (promenade['lat'] as num?)?.toDouble();
     final lng = (promenade['lng'] as num?)?.toDouble();
     final participantsMax = (promenade['participants_max'] as num?)?.toInt();
+    final espece = promenade['espece']?.toString() ?? '';
+    final toutesRaces = promenade['toutes_races'] as bool? ?? true;
+    final races = promenade['races']?.toString() ?? '';
 
     final partsData = promenade['promenades_participants'];
     final nbParticipants = (partsData is List && partsData.isNotEmpty)
@@ -319,6 +403,26 @@ class _PromenadesCard extends StatelessWidget {
                       fontWeight: FontWeight.w700)),
             ),
           ]),
+          if (espece.isNotEmpty && espece != 'Toutes espèces') ...[
+            const SizedBox(height: 6),
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                    color: const Color(0xFF2E7D5E).withValues(alpha: 0.09),
+                    borderRadius: BorderRadius.circular(12)),
+                child: Text(_especeEmoji(espece),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                        color: Color(0xFF2E7D5E), fontWeight: FontWeight.w600)),
+              ),
+              if (!toutesRaces && races.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Expanded(child: Text('• $races',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey),
+                    overflow: TextOverflow.ellipsis)),
+              ],
+            ]),
+          ],
           if (dateHeure.isNotEmpty) ...[
             const SizedBox(height: 6),
             Row(children: [
@@ -493,12 +597,16 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
   String _titre = '';
   String _description = '';
   String _niveau = 'facile';
+  String _espece = 'Toutes espèces';
+  bool _toutesRaces = true;
   DateTime _dateHeure = DateTime.now().add(const Duration(days: 3));
   int _dureeMinutes = 60;
   int? _participantsMax;
   double? _lat;
   double? _lng;
   bool _saving = false;
+
+  final _racesCtrl = TextEditingController();
 
   late final GoogleMapsPlaces _places;
   final _lieuCtrl = TextEditingController();
@@ -517,6 +625,7 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
     _places.dispose();
     _debounce?.cancel();
     _lieuCtrl.dispose();
+    _racesCtrl.dispose();
     super.dispose();
   }
 
@@ -592,6 +701,9 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
         if (_lat != null) 'lat': _lat,
         if (_lng != null) 'lng': _lng,
         if (_participantsMax != null) 'participants_max': _participantsMax,
+        'espece': _espece,
+        'toutes_races': _toutesRaces,
+        if (!_toutesRaces && _racesCtrl.text.trim().isNotEmpty) 'races': _racesCtrl.text.trim(),
       });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -794,10 +906,48 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
 
                 _lbl('Description'),
                 TextFormField(
-                  decoration: _dec('Parcours, espèces bienvenues, équipement…'),
+                  decoration: _dec('Parcours, équipement recommandé…'),
                   maxLines: 3,
                   onSaved: (v) => _description = v?.trim() ?? '',
                 ),
+                const SizedBox(height: 12),
+
+                _lbl('Espèce concernée'),
+                Wrap(spacing: 6, runSpacing: 6, children: _kEspeces.map((e) {
+                  final sel = _espece == e;
+                  return GestureDetector(
+                    onTap: () => setState(() => _espece = e),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: sel ? const Color(0xFF2E7D5E) : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(_especeEmoji(e),
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: sel ? Colors.white : Colors.grey.shade700)),
+                    ),
+                  );
+                }).toList()),
+                const SizedBox(height: 12),
+
+                Row(children: [
+                  const Expanded(child: Text('Toutes races acceptées',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600))),
+                  Switch(
+                    value: _toutesRaces,
+                    onChanged: (v) => setState(() => _toutesRaces = v),
+                    activeColor: const Color(0xFF2E7D5E),
+                  ),
+                ]),
+                if (!_toutesRaces) ...[
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    controller: _racesCtrl,
+                    decoration: _dec('Ex : Golden Retriever, Labrador…'),
+                  ),
+                ],
                 const SizedBox(height: 24),
 
                 SizedBox(
