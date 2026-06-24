@@ -258,12 +258,14 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
     if (uid.isEmpty) return;
     setState(() => _loadingAnimaux = true);
     try {
-      final data = await _supa
-          .from('animaux')
-          .select()
-          .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid,uid_acquereur.eq.$uid')
-          .order('created_at', ascending: false);
-      final list = List<Map<String, dynamic>>.from(data);
+      final ownRows = await _supa
+          .from('animaux_proprietes')
+          .select('animal_id, date_fin')
+          .eq('uid_proprio', uid);
+      final allIds = (ownRows as List).map((r) => r['animal_id'] as String).toList();
+      final list = allIds.isEmpty ? <Map<String, dynamic>>[] : List<Map<String, dynamic>>.from(
+        await _supa.from('animaux').select().inFilter('id', allIds).order('created_at', ascending: false),
+      );
 
       // Batch-fetch noms des cédants pour les animaux acquis
       final cedantUids = list

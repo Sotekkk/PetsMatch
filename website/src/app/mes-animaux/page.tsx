@@ -324,78 +324,34 @@ export default function MesAnimauxPage() {
     setFetching(true);
 
     async function loadAll() {
-      // 1) Récupérer animaux_proprietes en premier pour avoir les animal_id où l'utilisateur est propriétaire actuel
-      //    (date_fin IS NULL) — couvre le cas où uid_acquereur n'a pas été mis à jour lors d'une cession
-      const { data: ownRowsEarly } = await supabase
+      // Source unique : animaux_proprietes
+      // date_fin IS NULL = propriétaire actuel (présents), NOT NULL = ancien propriétaire (anciens)
+      const { data: ownRows } = await supabase
         .from('animaux_proprietes')
         .select('animal_id, date_fin')
         .eq('uid_proprio', user!.uid);
 
-      const currentOwnerAnimalIds = (ownRowsEarly ?? [])
-        .filter(r => !r.date_fin)
-        .map(r => r.animal_id as string);
+      const rows = ownRows ?? [];
+      const currentIds = new Set(rows.filter(r => !r.date_fin).map(r => r.animal_id as string));
+      const allAnimalIds = [...new Set(rows.map(r => r.animal_id as string))];
 
-      // 2) Récupérer TOUS les animaux via uid_eleveur / uid_acquereur / uid_proprietaire
-      //    + ceux où l'utilisateur est propriétaire actuel selon animaux_proprietes
-      const orClause = `uid_eleveur.eq.${user!.uid},uid_acquereur.eq.${user!.uid},uid_proprietaire.eq.${user!.uid}`;
-      const [{ data }, extraData] = await Promise.all([
-        supabase.from('animaux').select('*')
-          .or(orClause)
-          .or('is_association.is.null,is_association.eq.false')
-          .order('nom', { ascending: true }),
-        currentOwnerAnimalIds.length > 0
-          ? supabase.from('animaux').select('*')
-              .in('id', currentOwnerAnimalIds)
-              .or('is_association.is.null,is_association.eq.false')
-          : Promise.resolve({ data: [] }),
-      ]);
-
-      // Fusionner et dédupliquer
-      const seen = new Set<string>();
-      const merged: Animal[] = [];
-      for (const a of [...(data ?? []), ...(extraData.data ?? [])]) {
-        if (!seen.has((a as Animal).id)) { seen.add((a as Animal).id); merged.push(a as Animal); }
+      if (allAnimalIds.length === 0) {
+        setAnimaux([]);
+        setCessionEnAttente(new Set());
+        setFetching(false);
+        return;
       }
-      merged.sort((a, b) => (a.nom ?? '').localeCompare(b.nom ?? '', 'fr'));
 
-      const list = merged;
+      const { data } = await supabase
+        .from('animaux')
+        .select('*')
+        .in('id', allAnimalIds)
+        .or('is_association.is.null,is_association.eq.false')
+        .order('nom', { ascending: true });
+
+      const list = (data ?? []) as Animal[];
       setAnimaux(list);
-
-      // 3) Utiliser animaux_proprietes (déjà chargé) pour le split présents/anciens
-      const ownRows = ownRowsEarly;
-      const currentIds = new Set((ownRows ?? []).filter(r => !r.date_fin).map(r => r.animal_id as string));
-      const hasOwnershipData = (ownRows ?? []).length > 0;
-
-      if (hasOwnershipData) {
-        // Pour les animaux absents de la table (ex. uid_proprietaire non migré) :
-        // les ajouter à currentIds si statut != sorti/decede
-        list.forEach(a => {
-          if (!currentIds.has(a.id) && !(ownRows ?? []).some(r => r.animal_id === a.id)) {
-            const s = a.statut ?? 'present';
-            if (s !== 'sorti' && s !== 'decede') currentIds.add(a.id);
-          }
-        });
-        setCessionEnAttente(currentIds);
-      } else {
-        // Fallback complet : statut + uid_acquereur + documents en attente
-        const sortisIds = list.filter(a => a.statut === 'sorti').map(a => a.id);
-        const pending = new Set(
-          list.filter(a => {
-            const s = a.statut ?? 'present';
-            return s !== 'sorti' && s !== 'decede';
-          }).map(a => a.id)
-        );
-        list.filter(a => a.uid_acquereur === user!.uid).forEach(a => pending.add(a.id));
-        if (sortisIds.length > 0) {
-          const { data: pendingDocs } = await supabase
-            .from('documents_animaux').select('animal_id')
-            .in('animal_id', sortisIds).in('type', ['contrat_vente', 'certificat_cession'])
-            .not('statut', 'in', '(signe,annule,refuse,archive,expire)');
-          (pendingDocs ?? []).forEach((d: {animal_id:string}) => pending.add(d.animal_id));
-        }
-        setCessionEnAttente(pending);
-      }
-
+      setCessionEnAttente(currentIds);
       setFetching(false);
 
       // Calcul flags chaleurs et gestante pour les femelles présentes
@@ -470,24 +426,10 @@ export default function MesAnimauxPage() {
 
   if (loading || !user) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
 
-  // Séparer présents / anciens
-  // Si animaux_proprietes est peuplé : cessionEnAttente = Set des animal_id où date_fin IS NULL (propriétaire actuel)
-  // Sinon fallback : logique statut + uid_acquereur
-  const presents = animaux.filter(a => {
-    // Propriétaire actuel selon la table de propriété
-    if (cessionEnAttente.size > 0) return cessionEnAttente.has(a.id) && a.statut !== 'decede';
-    // Fallback
-    const s = a.statut ?? 'present';
-    if (s === 'decede') return false;
-    if (s === 'sorti') return a.uid_acquereur === user?.uid;
-    return true;
-  });
-  const anciens = animaux.filter(a => {
-    if (cessionEnAttente.size > 0) return !cessionEnAttente.has(a.id) || a.statut === 'decede';
-    // Fallback
-    const s = a.statut ?? '';
-    return s === 'decede' || (s === 'sorti' && a.uid_acquereur !== user?.uid);
-  });
+  // Séparer présents / anciens via animaux_proprietes (source unique)
+  // cessionEnAttente = animal_id où date_fin IS NULL = propriétaire actuel
+  const presents = animaux.filter(a => cessionEnAttente.has(a.id) && a.statut !== 'decede');
+  const anciens  = animaux.filter(a => !cessionEnAttente.has(a.id) || a.statut === 'decede');
 
   // Espèces disponibles dans chaque groupe
   const especesPresents = [...new Set(presents.map(a => a.espece).filter(Boolean))] as string[];

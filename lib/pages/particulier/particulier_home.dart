@@ -49,10 +49,16 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
     try {
       final uid = User_Info.uid;
       final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      final animaux = await _supa
+      final ownRows = await _supa
+          .from('animaux_proprietes')
+          .select('animal_id')
+          .eq('uid_proprio', uid)
+          .isFilter('date_fin', null);
+      final myIds = (ownRows as List).map((r) => r['animal_id'] as String).toList();
+      final animaux = myIds.isEmpty ? [] : await _supa
           .from('animaux')
           .select()
-          .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid,uid_acquereur.eq.$uid');
+          .inFilter('id', myIds);
       final alertesMes = await _supa
           .from('alertes_perdus')
           .select()
