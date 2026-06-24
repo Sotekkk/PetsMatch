@@ -257,7 +257,7 @@ export default function CertificatEngagementPage() {
 
       {/* Header — masqué à l'impression */}
       <div className="print:hidden">
-        <Link href="/mes-annonces" className="text-sm text-[#0C5C6C] hover:underline">← Mes annonces</Link>
+        <Link href="/elevage/contrat" className="text-sm text-[#0C5C6C] hover:underline">← Mes Contrats</Link>
         <div className="flex items-center justify-between mt-1 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Certificats d'engagement</h1>
