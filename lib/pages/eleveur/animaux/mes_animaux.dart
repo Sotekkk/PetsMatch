@@ -124,46 +124,28 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     try {
       final supa = Supabase.instance.client;
 
-      // animaux_proprietes = source de vérité pour le split présents/anciens
-      final ownRowsFuture = supa.from('animaux_proprietes')
+      // Source unique : animaux_proprietes
+      // Requiert les policies RLS animaux_select/update/delete_via_proprietes sur la table animaux
+      final ownRows = await supa.from('animaux_proprietes')
           .select('animal_id, date_fin').eq('uid_proprio', _uid!);
-      // uid fields = pass-through RLS (tant que la policy animaux_select_via_proprietes n'est pas en place)
-      final byUidFuture = supa.from('animaux').select()
-          .or('uid_eleveur.eq.$_uid,uid_acquereur.eq.$_uid,uid_proprietaire.eq.$_uid')
-          .or('is_association.eq.false,is_association.is.null');
-      final results = await Future.wait([ownRowsFuture, byUidFuture]);
-
-      final ownRows = results[0] as List;
       final currentIds = <String>{};
       final formerIds  = <String>{};
-      for (final r in ownRows) {
+      for (final r in ownRows as List) {
         final id = r['animal_id'] as String? ?? '';
         if (id.isEmpty) continue;
         if (r['date_fin'] == null) currentIds.add(id); else formerIds.add(id);
       }
 
-      final byUid = List<Map<String, dynamic>>.from(results[1] as List);
-      final knownIds = byUid.map((a) => a['id'] as String? ?? '').toSet();
-      final allOwnedIds = {...currentIds, ...formerIds};
-
-      // Fetch animaux manquants (dans animaux_proprietes mais pas via uid fields)
-      // Nécessite la policy RLS animaux_select_via_proprietes — silencieux si absente
-      final missingIds = allOwnedIds.difference(knownIds).toList();
-      List<Map<String, dynamic>> extra = [];
-      if (missingIds.isNotEmpty) {
-        final extraRows = await supa.from('animaux').select()
-            .inFilter('id', missingIds)
-            .or('is_association.eq.false,is_association.is.null');
-        extra = List<Map<String, dynamic>>.from(extraRows as List);
+      final allAnimalIds = {...currentIds, ...formerIds}.toList();
+      if (allAnimalIds.isEmpty) {
+        setState(() { _animauxData = []; _loading = false; });
+        return;
       }
 
-      final seen = <String>{};
-      final animaux = <Map<String, dynamic>>[];
-      for (final a in [...byUid, ...extra]) {
-        final id = a['id'] as String? ?? '';
-        if (id.isEmpty || seen.contains(id)) continue;
-        seen.add(id); animaux.add(a);
-      }
+      final rows = await supa.from('animaux').select()
+          .inFilter('id', allAnimalIds)
+          .or('is_association.eq.false,is_association.is.null');
+      final animaux = List<Map<String, dynamic>>.from(rows as List);
 
       _currentOwnerIds = currentIds;
       _formerOwnerIds  = formerIds;
