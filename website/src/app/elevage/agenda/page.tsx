@@ -144,7 +144,7 @@ function AddTacheModal({ selectedDate, uid, profilSource, employes, onClose, onS
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto">
         <h2 className="font-bold text-gray-800 mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
           Nouvelle tâche
         </h2>
@@ -269,7 +269,7 @@ function AddProtocoleModal({ selectedDate, uid, profilSource, employes, onClose,
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto">
         <h2 className="font-bold text-gray-800 mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
           Nouveau protocole
         </h2>
@@ -381,7 +381,7 @@ function EditTacheModal({ tache, employes, currentUid, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto">
         <h2 className="font-bold text-gray-800 mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
           Modifier la tâche
         </h2>
@@ -476,7 +476,7 @@ function EditProtocoleModal({ groupe, employes, currentUid, onClose, onSaved }: 
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto">
         <h2 className="font-bold text-gray-800 mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
           Modifier le protocole
         </h2>
@@ -1780,7 +1780,7 @@ export default function AgendaElevagePage() {
           profilSource={profilSource}
           employes={employes}
           onClose={() => setShowAddTache(false)}
-          onSaved={() => { setShowAddTache(false); load(); }}
+          onSaved={() => { setShowAddTache(false); load(); loadMonth(); }}
         />
       )}
 
@@ -1791,7 +1791,7 @@ export default function AgendaElevagePage() {
           profilSource={profilSource}
           employes={employes}
           onClose={() => setShowAddProtocole(false)}
-          onSaved={() => { setShowAddProtocole(false); load(); }}
+          onSaved={() => { setShowAddProtocole(false); load(); loadMonth(); }}
         />
       )}
 
@@ -1801,7 +1801,7 @@ export default function AgendaElevagePage() {
           employes={employes}
           currentUid={user.uid}
           onClose={() => setEditTache(null)}
-          onSaved={() => { setEditTache(null); load(); }}
+          onSaved={() => { setEditTache(null); load(); loadMonth(); }}
         />
       )}
 
@@ -1811,7 +1811,7 @@ export default function AgendaElevagePage() {
           employes={employes}
           currentUid={user.uid}
           onClose={() => setEditGroupe(null)}
-          onSaved={() => { setEditGroupe(null); load(); }}
+          onSaved={() => { setEditGroupe(null); load(); loadMonth(); }}
         />
       )}
 

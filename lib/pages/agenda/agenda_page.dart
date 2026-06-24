@@ -185,15 +185,15 @@ class _AgendaPageState extends State<AgendaPage> {
       // ── Tâches manuelles ─────────────────────────────────────────────────
       final d1 = widget.isAssociation
           ? await _supa.from('taches_elevage')
-              .select('id,titre,date,statut,assigne_a,uid_eleveur')
+              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
               .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
               .eq('profil_source', 'association')
           : await _supa.from('taches_elevage')
-              .select('id,titre,date,statut,assigne_a,uid_eleveur')
+              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
               .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
               .or('profil_source.is.null,profil_source.eq.eleveur');
       final d2 = await _supa.from('taches_elevage')
-          .select('id,titre,date,statut,assigne_a,uid_eleveur')
+          .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
           .eq('assigne_a', _uid).gte('date', from).lte('date', to);
       final seen = <dynamic>{};
       final all  = <Map<String, dynamic>>[];
@@ -461,9 +461,14 @@ class _AgendaPageState extends State<AgendaPage> {
                         fontWeight: FontWeight.w600, color: kGreen),
                   ),
                 )
-              else if (t['responsable_nom'] != null)
-                Text('👤 ${t['responsable_nom']}',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: Colors.grey.shade500)),
+              else ...[
+                if (t['heure'] != null)
+                  Text('🕐 ${(t['heure'] as String).substring(0, 5)}',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: Colors.grey.shade500)),
+                if (t['responsable_nom'] != null)
+                  Text('👤 ${t['responsable_nom']}',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: Colors.grey.shade500)),
+              ],
             ],
           )),
           if (!isDone) ...[
