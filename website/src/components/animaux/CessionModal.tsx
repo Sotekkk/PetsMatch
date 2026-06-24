@@ -40,13 +40,19 @@ interface Props {
   eleveurInfo: EleveurInfo;
   onClose: () => void;
   onCeded: () => void;
+  /** true = l'utilisateur est acquéreur qui re-cède (don / abandon, pas de contrat) */
+  isReCession?: boolean;
 }
 
-const QUALITES = [
+const QUALITES_FULL = [
   { value: 'particulier', label: 'Particulier' },
   { value: 'eleveur',     label: 'Éleveur' },
   { value: 'refuge',      label: 'Refuge / Association' },
   { value: 'autre',       label: 'Autre' },
+];
+const QUALITES_RECESSION = [
+  { value: 'particulier', label: 'Particulier / Famille' },
+  { value: 'refuge',      label: 'Association / Refuge' },
 ];
 
 function fmtDate(s?: string) {
@@ -54,7 +60,7 @@ function fmtDate(s?: string) {
   return new Date(s).toLocaleDateString('fr-FR');
 }
 
-export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCeded }: Props) {
+export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCeded, isReCession = false }: Props) {
   const [step, setStep] = useState<'acquéreur' | 'details' | 'documents'>('acquéreur');
 
   // Acquéreur
@@ -486,17 +492,19 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
                   <input type="date" value={dateCession} onChange={e => setDateCession(e.target.value)}
                     className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Prix (€)</label>
-                  <input type="number" min="0" placeholder="0" value={prix} onChange={e => setPrix(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
-                </div>
+                {!isReCession && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Prix (€)</label>
+                    <input type="number" min="0" placeholder="0" value={prix} onChange={e => setPrix(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                  </div>
+                )}
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1">Qualité de l'acquéreur</label>
                 <div className="flex flex-wrap gap-2">
-                  {QUALITES.map(q => (
+                  {(isReCession ? QUALITES_RECESSION : QUALITES_FULL).map(q => (
                     <button key={q.value} onClick={() => setQualite(q.value)}
                       className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${qualite === q.value ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200'}`}>
                       {q.label}
@@ -553,9 +561,11 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
                   className="flex-1 border border-gray-200 text-gray-600 font-semibold py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors">
                   ← Retour
                 </button>
-                <button onClick={() => setStep('documents')} disabled={!nom.trim() || !dateCession}
+                <button
+                  onClick={() => isReCession ? save() : setStep('documents')}
+                  disabled={!nom.trim() || !dateCession || saving}
                   className="flex-1 bg-[#0C5C6C] text-white font-semibold py-2.5 rounded-xl text-sm hover:bg-[#094F5D] disabled:opacity-40 transition-colors">
-                  Documents →
+                  {isReCession ? (saving ? 'Enregistrement…' : 'Confirmer le transfert') : 'Documents →'}
                 </button>
               </div>
             </>

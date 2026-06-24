@@ -75,12 +75,13 @@ function Chip({
   );
 }
 
-function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, isRetraite = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, onDelete, onToggleReproducteur, onToggleRetraite, onSelect, onCeder }: {
+function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, isRetraite = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, onDelete, onToggleReproducteur, onToggleRetraite, onSelect, onCeder, onTransferer }: {
   a: Animal; tab: 'presents' | 'anciens'; showPorteeBadge?: boolean;
   reproducteur?: boolean; isRetraite?: boolean; chaleurFlag?: boolean; gestanteFlag?: boolean;
   selectMode?: boolean; selected?: boolean;
   onDelete?: () => void; onToggleReproducteur?: () => void; onToggleRetraite?: () => void; onSelect?: () => void;
   onCeder?: () => void;
+  onTransferer?: () => void;
 }) {
   const espColor = SPECIES.find(s => s.value === a.espece)?.color ?? '#6F767B';
   const isMale   = (a.sexe ?? '').toLowerCase().startsWith('m');
@@ -204,6 +205,14 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, isR
           className="absolute top-[108px] right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-amber-500 text-white rounded-full w-7 h-7 flex items-center justify-center shadow-md text-xs"
           title="Céder cet animal">
           🤝
+        </button>
+      )}
+      {!selectMode && tab === 'presents' && onTransferer && (
+        <button
+          onClick={e => { e.preventDefault(); onTransferer(); }}
+          className="absolute top-[108px] right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-teal-600 text-white rounded-full w-7 h-7 flex items-center justify-center shadow-md text-xs"
+          title="Transférer / donner cet animal">
+          🔄
         </button>
       )}
       {!selectMode && onDelete && (
@@ -853,7 +862,8 @@ export default function MesAnimauxPage() {
             onDelete={selectMode ? undefined : () => deleteAnimal(a.id)}
             onToggleReproducteur={isEleveur && tab === 'presents' && !selectMode ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
             onToggleRetraite={isEleveur && tab === 'presents' && !selectMode ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined}
-            onCeder={isEleveur && tab === 'presents' && !selectMode && a.uid_eleveur === user?.uid ? () => setCederAnimal(a) : undefined} />)}
+            onCeder={isEleveur && tab === 'presents' && !selectMode && a.uid_eleveur === user?.uid ? () => setCederAnimal(a) : undefined}
+            onTransferer={tab === 'presents' && !selectMode && a.uid_eleveur !== user?.uid && a.uid_acquereur === user?.uid ? () => setCederAnimal(a) : undefined} />)}
         </div>
       )}
 
@@ -941,6 +951,7 @@ export default function MesAnimauxPage() {
         animal={cederAnimal}
         uid={user.uid}
         eleveurInfo={{ nom: nomElevage || user.email || 'Éleveur', adresse: adresseElevage, email: user.email ?? '' }}
+        isReCession={cederAnimal.uid_eleveur !== user.uid && cederAnimal.uid_acquereur === user.uid}
         onClose={() => setCederAnimal(null)}
         onCeded={() => {
           setCederAnimal(null);
