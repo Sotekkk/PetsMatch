@@ -150,6 +150,17 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
   }
 
   function openContratCreation() {
+    // Pré-remplit l'animal et l'acheteur dans la page contrat via localStorage
+    localStorage.setItem('cession_prefill', JSON.stringify({
+      animal_id:   animal.id,
+      animal_nom:  animal.nom ?? '',
+      acq_nom:     nom.trim(),
+      acq_email:   email.trim(),
+      acq_tel:     tel.trim(),
+      acq_adresse: adresse.trim(),
+      prix:        prix.trim(),
+      date:        dateCession,
+    }));
     const popup = window.open('/elevage/contrat', '_blank', 'width=900,height=700,left=100,top=80');
     contratPopupRef.current = popup;
     const timer = setInterval(() => {

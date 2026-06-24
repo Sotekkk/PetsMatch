@@ -111,6 +111,36 @@ export default function ContratsPage() {
     load();
   }, [user]);
 
+  // Préremplissage depuis la modale de cession (via localStorage)
+  useEffect(() => {
+    if (fetching) return;
+    const raw = localStorage.getItem('cession_prefill');
+    if (!raw) return;
+    try {
+      const p = JSON.parse(raw) as {
+        animal_id: string; animal_nom: string;
+        acq_nom: string; acq_email: string; acq_tel: string; acq_adresse: string;
+        prix: string; date: string;
+      };
+      localStorage.removeItem('cession_prefill');
+      // Sélectionner l'animal
+      const found = animaux.find(a => a.id === p.animal_id) ?? null;
+      if (found) { setAnimalId(found.id); setSelectedAnimal(found); }
+      // Remplir les champs acquéreur
+      const parts = p.acq_nom.trim().split(' ');
+      setAcqPrenom(parts[0] ?? '');
+      setAcqNom(parts.slice(1).join(' '));
+      setAcqEmail(p.acq_email);
+      setAcqTel(p.acq_tel);
+      setAcqAdresse(p.acq_adresse);
+      if (p.prix) setPrix(p.prix);
+      if (p.date) setDateDoc(p.date);
+      // Ouvrir directement le formulaire en mode contrat_vente
+      setFormType('contrat_vente');
+      setShowForm(true);
+    } catch { /* ignore */ }
+  }, [fetching, animaux]);
+
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.data?.type === 'contract_signed') load();

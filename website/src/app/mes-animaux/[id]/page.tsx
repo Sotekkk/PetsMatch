@@ -570,6 +570,10 @@ function DocumentsAnimalTab({ animalId }: { animalId: string }) {
       setLoading(false);
     }
     load();
+    // Recharge quand l'onglet reprend le focus (ex. retour de la page de signature)
+    const onFocus = () => load();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, [animalId]);
 
   const typeLabel: Record<string,string> = {
@@ -627,9 +631,11 @@ function DocumentsAnimalTab({ animalId }: { animalId: string }) {
                     {statutBadge(doc.statut as string)}
                   </div>
                 </div>
-                {!!doc.url && (
-                  <a href={String(doc.url)} target="_blank" rel="noreferrer"
-                    className="text-[#0C5C6C] hover:text-[#0a4a58] flex-shrink-0">
+                {(!!doc.url || !!doc.token) && (
+                  <a href={doc.pdf_signe_url ? String(doc.pdf_signe_url) : doc.url ? String(doc.url) : `/signer-contrat/${doc.token}`}
+                    target="_blank" rel="noreferrer"
+                    className="text-[#0C5C6C] hover:text-[#0a4a58] flex-shrink-0"
+                    title={!doc.url ? 'Ouvrir / Signer' : 'Ouvrir le document'}>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                   </a>
                 )}
