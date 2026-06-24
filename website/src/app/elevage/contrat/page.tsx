@@ -338,15 +338,9 @@ export default function ContratsPage() {
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-[#1F2A2E] font-galey">📄 Mes Contrats</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Réservations, ventes — liés à vos animaux</p>
-        </div>
-        <button onClick={() => { resetForm(); setFormType('contrat_vente'); setShowForm(true); }}
-          className="flex items-center gap-2 bg-[#0C5C6C] hover:bg-[#0a4f5e] text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors">
-          + Nouveau contrat
-        </button>
+      <div>
+        <h1 className="text-2xl font-bold text-[#1F2A2E] font-galey">📄 Mes Contrats</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Réservations, ventes — liés à vos animaux</p>
       </div>
 
       {/* Certificats d'engagement */}
