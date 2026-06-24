@@ -82,6 +82,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
   // Pension access
   List<Map<String, dynamic>> _pensionAcces = [];
+  // Registre mouvements (plusieurs E/S par animal)
+  List<Map<String, dynamic>> _mouvements = [];
   // Vet access (visible au propriétaire)
   List<Map<String, dynamic>> _vetAcces = [];
   // Owner uid (utilisé dans le mode vétérinaire)
@@ -269,6 +271,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       }
     } catch (_) {}
     _loadPensionAcces();
+    _loadMouvements();
   }
 
   Future<void> _loadPensionAcces() async {
@@ -281,6 +284,274 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           .eq('statut', 'approved');
       if (mounted) setState(() => _pensionAcces = List<Map<String, dynamic>>.from(rows));
     } catch (_) {}
+  }
+
+  Future<void> _loadMouvements() async {
+    if (widget.animalId == null) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final res = await _supa
+          .from('registre_mouvements')
+          .select('*')
+          .eq('animal_id', widget.animalId!)
+          .eq('uid_eleveur', uid)
+          .order('date_mouvement', ascending: false);
+      if (mounted) setState(() => _mouvements = List<Map<String, dynamic>>.from(res));
+    } catch (_) {}
+  }
+
+  Future<void> _showAddMouvementSheet(BuildContext context) async {
+    if (widget.animalId == null) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    const qualiteLabels = <String, String>{
+      'naissance': 'Naissance dans l\'élevage', 'eleveur': 'Éleveur',
+      'particulier': 'Particulier', 'refuge': 'Refuge / Association',
+      'importation': 'Importation', 'association': 'Association', 'autre': 'Autre',
+    };
+    String type = 'entree';
+    DateTime date = DateTime.now();
+    String motif = '';
+    String provQualite = '';
+    String provNom = '';
+    String provAdresse = '';
+    String destQualite = '';
+    String destNom = '';
+    String destAdresse = '';
+    final notesCtrl = TextEditingController();
+    bool saving = false;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) {
+        const deco = InputDecoration(
+          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(10)),
+              borderSide: BorderSide(color: Color(0xFFE4E7E2))),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(10)),
+              borderSide: BorderSide(color: Color(0xFFE4E7E2))),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(10)),
+              borderSide: BorderSide(color: Color(0xFF0C5C6C), width: 1.5)),
+          isDense: true,
+        );
+        return Container(
+          decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          padding: EdgeInsets.only(
+              left: 20, right: 20, top: 12,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 28),
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 16),
+            const Text('Ajouter un mouvement', style: TextStyle(
+                fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+            const SizedBox(height: 16),
+            // Type
+            Row(children: [
+              for (final t in <(String, String, IconData)>[
+                ('entree', 'Entrée', Icons.arrow_downward),
+                ('sortie', 'Sortie', Icons.arrow_upward),
+              ])
+                Expanded(child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () => setSheet(() { type = t.$1; motif = ''; }),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: type == t.$1 ? const Color(0xFF0C5C6C) : Colors.transparent,
+                        border: Border.all(
+                            color: type == t.$1 ? const Color(0xFF0C5C6C) : Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Icon(t.$3, size: 14,
+                            color: type == t.$1 ? Colors.white : const Color(0xFF0C5C6C)),
+                        const SizedBox(width: 6),
+                        Text(t.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: type == t.$1 ? Colors.white : const Color(0xFF1F2A2E))),
+                      ]),
+                    ),
+                  ),
+                )),
+            ]),
+            const SizedBox(height: 12),
+            // Date
+            GestureDetector(
+              onTap: () async {
+                final d = await showDatePicker(
+                  context: ctx,
+                  initialDate: date,
+                  firstDate: DateTime(1990), lastDate: DateTime(2100),
+                  builder: (c, child) => Theme(
+                      data: ThemeData.light().copyWith(
+                          colorScheme: const ColorScheme.light(primary: Color(0xFF0C5C6C))),
+                      child: child!),
+                );
+                if (d != null) setSheet(() => date = d);
+              },
+              child: InputDecorator(
+                decoration: deco.copyWith(
+                  labelText: 'Date *',
+                  labelStyle: const TextStyle(
+                      fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                  suffixIcon: const Icon(Icons.calendar_today_outlined,
+                      size: 14, color: Color(0xFF6F767B)),
+                ),
+                child: Text(DateFormat('dd/MM/yyyy').format(date),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            // Motif
+            DropdownButtonFormField<String>(
+              value: motif.isEmpty ? null : motif,
+              isExpanded: true,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
+              decoration: deco.copyWith(
+                  labelText: 'Motif',
+                  labelStyle: const TextStyle(
+                      fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+              items: (type == 'entree'
+                  ? <(String, String)>[('naissance', 'Naissance'), ('achat', 'Achat / Acquisition'),
+                      ('cession', 'Cession'), ('retour_saillie', 'Retour de saillie'),
+                      ('retour_pension', 'Retour de pension'), ('autre', 'Autre')]
+                  : <(String, String)>[('cession', 'Cession'), ('saillie', 'Saillie'),
+                      ('pension', 'Pension / Garde'), ('retraite', 'Retraite'),
+                      ('adoption', 'Adoption'), ('vente', 'Vente'), ('autre', 'Autre')])
+                  .map((t) => DropdownMenuItem(value: t.$1,
+                      child: Text(t.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 13))))
+                  .toList(),
+              onChanged: (v) => setSheet(() => motif = v ?? ''),
+            ),
+            const SizedBox(height: 10),
+            if (type == 'entree') ...[
+              DropdownButtonFormField<String>(
+                value: provQualite.isEmpty ? null : provQualite,
+                isExpanded: true,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
+                decoration: deco.copyWith(
+                    labelText: 'Qualité fournisseur',
+                    labelStyle: const TextStyle(
+                        fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+                items: ['naissance', 'eleveur', 'particulier', 'refuge', 'importation', 'autre']
+                    .map((v) => DropdownMenuItem(value: v,
+                        child: Text(qualiteLabels[v] ?? v,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13))))
+                    .toList(),
+                onChanged: (v) => setSheet(() => provQualite = v ?? ''),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                onChanged: (v) => provNom = v,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                decoration: deco.copyWith(labelText: 'Nom / Élevage',
+                    labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                onChanged: (v) => provAdresse = v,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                decoration: deco.copyWith(labelText: 'Adresse',
+                    labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+              ),
+            ] else ...[
+              DropdownButtonFormField<String>(
+                value: destQualite.isEmpty ? null : destQualite,
+                isExpanded: true,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
+                decoration: deco.copyWith(
+                    labelText: 'Qualité destinataire',
+                    labelStyle: const TextStyle(
+                        fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+                items: ['eleveur', 'particulier', 'refuge', 'association', 'autre']
+                    .map((v) => DropdownMenuItem(value: v,
+                        child: Text(qualiteLabels[v] ?? v,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13))))
+                    .toList(),
+                onChanged: (v) => setSheet(() => destQualite = v ?? ''),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                onChanged: (v) => destNom = v,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                decoration: deco.copyWith(labelText: 'Nom / Élevage',
+                    labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                onChanged: (v) => destAdresse = v,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                decoration: deco.copyWith(labelText: 'Adresse',
+                    labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+              ),
+            ],
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: notesCtrl,
+              maxLines: 2,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+              decoration: deco.copyWith(labelText: 'Notes (optionnel)',
+                  labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(width: double.infinity, child: ElevatedButton(
+              onPressed: saving ? null : () async {
+                setSheet(() => saving = true);
+                try {
+                  await _supa.from('registre_mouvements').insert({
+                    'animal_id':    widget.animalId,
+                    'uid_eleveur':  uid,
+                    'type':         type,
+                    'date_mouvement': date.toIso8601String().split('T').first,
+                    if (motif.isNotEmpty) 'motif': motif,
+                    if (type == 'entree') ...{
+                      if (provQualite.isNotEmpty) 'provenance_qualite': provQualite,
+                      if (provNom.isNotEmpty)     'provenance_nom':     provNom,
+                      if (provAdresse.isNotEmpty) 'provenance_adresse': provAdresse,
+                    } else ...{
+                      if (destQualite.isNotEmpty) 'destinataire_qualite': destQualite,
+                      if (destNom.isNotEmpty)     'destinataire_nom':     destNom,
+                      if (destAdresse.isNotEmpty) 'destinataire_adresse': destAdresse,
+                    },
+                    if (notesCtrl.text.isNotEmpty) 'notes': notesCtrl.text,
+                  });
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  await _loadMouvements();
+                } catch (e) {
+                  setSheet(() => saving = false);
+                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0C5C6C),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: saving
+                  ? const SizedBox(width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Enregistrer',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            )),
+          ])),
+        );
+      }),
+    );
+    notesCtrl.dispose();
   }
 
   Future<void> _revokePensionAcces(BuildContext context, String accesId, String proNom) async {
@@ -645,11 +916,50 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       final cessionId = _cessionEnCours!['id'];
       final uidAcq    = _cessionEnCours!['uid_acquereur'] as String?;
       // Transférer la fiche
+      final dateCession = (_cessionEnCours!['date_cession'] as String?)
+          ?? DateTime.now().toIso8601String().split('T').first;
       await _supa.from('animaux').update({
-        'statut':       'sorti',
+        'statut':        'sorti',
         'uid_acquereur': uidAcq,
-        'date_sortie':  (_cessionEnCours!['date_cession'] as String?) ?? DateTime.now().toIso8601String().split('T').first,
+        'date_sortie':   dateCession,
       }).eq('id', widget.animalId!);
+      // Insérer mouvements dans registre_mouvements (historique de vie de l'animal)
+      final currentUid = FirebaseAuth.instance.currentUser?.uid;
+      if (uidAcq != null && currentUid != null) {
+        final profilAcq = await _supa.from('users')
+            .select('firstname, lastname, name_elevage, is_elevage, is_association')
+            .eq('uid', uidAcq).maybeSingle();
+        final nomAcqRaw = (profilAcq?['name_elevage'] as String? ?? '').isNotEmpty
+            ? profilAcq!['name_elevage'] as String
+            : '${profilAcq?['firstname'] ?? ''} ${profilAcq?['lastname'] ?? ''}'.trim();
+        final isAcqEleveur = profilAcq?['is_elevage'] == true;
+        final isAcqAsso    = profilAcq?['is_association'] == true;
+        // Sortie pour le cédant
+        await _supa.from('registre_mouvements').insert({
+          'animal_id':             widget.animalId,
+          'uid_eleveur':           currentUid,
+          'type':                  'sortie',
+          'date_mouvement':        dateCession,
+          'motif':                 'cession',
+          'destinataire_qualite':  isAcqEleveur ? 'eleveur' : (isAcqAsso ? 'association' : 'particulier'),
+          'destinataire_nom':      nomAcqRaw,
+          'cession_id':            cessionId,
+        });
+        // Entrée pour l'acquéreur (éleveur ou association uniquement)
+        if (isAcqEleveur || isAcqAsso) {
+          await _supa.from('registre_mouvements').insert({
+            'animal_id':           widget.animalId,
+            'uid_eleveur':         uidAcq,
+            'type':                'entree',
+            'date_mouvement':      dateCession,
+            'motif':               'cession',
+            'provenance_qualite':  'eleveur',
+            'provenance_nom':      _nomElevage ?? '',
+            'provenance_adresse':  _adresseElevage ?? '',
+            'cession_id':          cessionId,
+          });
+        }
+      }
       // Marquer la cession confirmée
       await _supa.from('cessions').update({
         'statut':       'confirme',
@@ -2428,10 +2738,102 @@ class _IdentiteTab extends StatelessWidget {
                 ),
               ),
             ),
+
+            // ── Historique des mouvements (plusieurs E/S par animal) ──────────
+            const SizedBox(height: 20),
+            Row(children: [
+              const Text('Historique des mouvements',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => s._showAddMouvementSheet(context),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.add_circle_outline, size: 14, color: Color(0xFF6E9E57)),
+                  SizedBox(width: 4),
+                  Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      color: Color(0xFF6E9E57), fontWeight: FontWeight.w600)),
+                ]),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            if (s._mouvements.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  s._isNewOwner
+                      ? 'Votre entrée par cession sera ici une fois la migration appliquée'
+                      : 'Aucun mouvement enregistré · utilisez "Ajouter" pour saillies, pensions…',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey),
+                ),
+              )
+            else
+              for (final m in s._mouvements) _buildMouvementCard(m),
           ],
         ),
       ),
       ),
+    );
+  }
+
+  Widget _buildMouvementCard(Map<String, dynamic> m) {
+    final isEntree = m['type'] == 'entree';
+    final fmt = DateFormat('dd/MM/yyyy');
+    final rawDate = m['date_mouvement'] as String?;
+    final date = rawDate != null ? fmt.format(DateTime.parse(rawDate)) : '—';
+    final motif = m['motif'] as String? ?? '';
+    const motifLabels = <String, String>{
+      'cession': 'Cession', 'saillie': 'Saillie', 'pension': 'Pension / Garde',
+      'retraite': 'Retraite', 'adoption': 'Adoption', 'vente': 'Vente',
+      'naissance': 'Naissance', 'achat': 'Achat / Acquisition',
+      'retour_saillie': 'Retour de saillie', 'retour_pension': 'Retour de pension',
+      'autre': 'Autre',
+    };
+    final motifLabel = motifLabels[motif] ?? motif;
+    final tiersNom = isEntree
+        ? (m['provenance_nom'] as String? ?? '')
+        : (m['destinataire_nom'] as String? ?? '');
+    final tiersQualite = isEntree
+        ? _qualiteLabel(m['provenance_qualite'] as String? ?? '')
+        : _qualiteLabel(m['destinataire_qualite'] as String? ?? '');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isEntree ? const Color(0xFFF0F8EE) : const Color(0xFFFFF3E0),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+            color: isEntree ? const Color(0xFFA7C79A) : const Color(0xFFFFCC80)),
+      ),
+      child: Row(children: [
+        Icon(isEntree ? Icons.arrow_downward : Icons.arrow_upward,
+            size: 15,
+            color: isEntree ? const Color(0xFF6E9E57) : Colors.orange.shade700),
+        const SizedBox(width: 8),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text(isEntree ? 'Entrée' : 'Sortie',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: isEntree ? const Color(0xFF4A7A3A) : Colors.orange.shade800)),
+            if (motifLabel.isNotEmpty) ...[
+              const Text(' · ', style: TextStyle(
+                  fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+              Text(motifLabel, style: const TextStyle(
+                  fontFamily: 'Galey', fontSize: 12, color: Colors.black87)),
+            ],
+            const Spacer(),
+            Text(date, style: const TextStyle(
+                fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
+          ]),
+          if (tiersQualite.isNotEmpty || tiersNom.isNotEmpty)
+            Padding(padding: const EdgeInsets.only(top: 2), child: Text(
+                [tiersQualite, tiersNom].where((v) => v.isNotEmpty).join(' — '),
+                style: const TextStyle(
+                    fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B)))),
+        ])),
+      ]),
     );
   }
 

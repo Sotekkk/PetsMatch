@@ -34,6 +34,8 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
 
   bool _planLoading  = true;
   bool _hasRegistres = false;
+  // Animaux acquis par cession (uid_acquereur = moi) non encore filtrés par uid_eleveur
+  List<Map<String, dynamic>> _acquisAnimaux = [];
 
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   final _supa = Supabase.instance.client;
@@ -42,6 +44,20 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
   void initState() {
     super.initState();
     _checkPlan();
+    _loadAcquis();
+  }
+
+  Future<void> _loadAcquis() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final res = await _supa
+          .from('animaux')
+          .select('id, nom, espece, race, sexe, identification, date_naissance, statut, date_entree, date_sortie, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, importation_ref, is_association, uid_eleveur')
+          .eq('uid_acquereur', uid)
+          .neq('uid_eleveur', uid);
+      if (mounted) setState(() => _acquisAnimaux = List<Map<String, dynamic>>.from(res));
+    } catch (_) {}
   }
 
   Future<void> _checkPlan() async {
@@ -330,6 +346,10 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
           .eq('uid_eleveur', _uid),
       builder: (ctx, snap) {
         var allDocs = snap.data ?? [];
+        // Fusionner avec les animaux acquis par cession
+        final existingIds = allDocs.map((d) => d['id']).toSet();
+        final acquisFiltered = _acquisAnimaux.where((d) => !existingIds.contains(d['id'])).toList();
+        allDocs = [...allDocs, ...acquisFiltered];
         // Isolation multi-profil : filtre is_association pour ne pas mélanger
         allDocs = allDocs.where((d) {
           final flag = d['is_association'];

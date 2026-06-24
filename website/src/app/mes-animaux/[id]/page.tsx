@@ -1071,6 +1071,10 @@ export default function AnimalFichePage() {
 
   // ── État enregistre entrée/sortie
   const [showRegistre, setShowRegistre] = useState(false);
+  const [mouvements, setMouvements] = useState<{id:string;type:string;date_mouvement:string;motif?:string;provenance_qualite?:string;provenance_nom?:string;destinataire_qualite?:string;destinataire_nom?:string}[]>([]);
+  const [showAddMvt, setShowAddMvt] = useState(false);
+  const [mvtForm, setMvtForm] = useState({type:'entree',date:new Date().toISOString().slice(0,10),motif:'',provQualite:'',provNom:'',destQualite:'',destNom:'',notes:''});
+  const [savingMvt, setSavingMvt] = useState(false);
 
   // ── État alerte perdue
   const [alerteId, setAlerteId] = useState<string|null>(null);
@@ -1183,6 +1187,13 @@ export default function AnimalFichePage() {
     setVetAcces(grantRows.map(g => ({ ...g, vet_nom: names[g.vet_id] ?? 'Vétérinaire' })));
   }, [id, isNew]);
 
+  const loadMouvements = useCallback(async () => {
+    if (!id || isNew || !user) return;
+    const { data } = await supabase.from('registre_mouvements').select('id, type, date_mouvement, motif, provenance_qualite, provenance_nom, destinataire_qualite, destinataire_nom')
+      .eq('animal_id', id).eq('uid_eleveur', user.uid).order('date_mouvement', { ascending: false });
+    setMouvements(data ?? []);
+  }, [id, isNew, user]);
+
   const loadCessionEnCours = useCallback(async () => {
     if (!id || isNew || animal.statut !== 'cession_en_cours') return;
     const { data } = await supabase
@@ -1225,7 +1236,7 @@ export default function AnimalFichePage() {
   }
 
   useEffect(() => { loadBreeds(animal.espece ?? 'chien').then(setBreeds); }, [animal.espece]);
-  useEffect(() => { loadAnimal(); loadHealth(); loadRepro(); loadAlerte(); loadDocs(); }, [loadAnimal, loadHealth, loadRepro, loadAlerte, loadDocs]);
+  useEffect(() => { loadAnimal(); loadHealth(); loadRepro(); loadAlerte(); loadDocs(); loadMouvements(); }, [loadAnimal, loadHealth, loadRepro, loadAlerte, loadDocs, loadMouvements]);
   useEffect(() => { loadCessionEnCours(); }, [loadCessionEnCours]);
   useEffect(() => {
     if (!user || !isEleveur) return;
@@ -2159,6 +2170,40 @@ export default function AnimalFichePage() {
                       )}
                     </>
                   )}
+                  {/* ── Historique mouvements ── */}
+                  <div className="pt-2 border-t border-gray-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Historique des mouvements</span>
+                      <button onClick={() => setShowAddMvt(true)}
+                        className="text-xs font-semibold text-[#6E9E57] hover:text-[#4A7A3A] flex items-center gap-1">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
+                        Ajouter
+                      </button>
+                    </div>
+                    {mouvements.length === 0 ? (
+                      <p className="text-xs text-gray-400">Aucun mouvement · utilisez &quot;Ajouter&quot; pour saillies, pensions…</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {mouvements.map(m => {
+                          const isE = m.type === 'entree';
+                          const motifLabels: Record<string,string> = {cession:'Cession',saillie:'Saillie',pension:'Pension / Garde',retraite:'Retraite',adoption:'Adoption',vente:'Vente',naissance:'Naissance',achat:'Achat',retour_saillie:'Retour saillie',retour_pension:'Retour pension',autre:'Autre'};
+                          const provFr: Record<string,string> = {eleveur:'Éleveur',particulier:'Particulier',refuge:'Refuge',association:'Association',naissance:'Naissance',importation:'Importation',autre:'Autre'};
+                          const tiers = isE ? [provFr[m.provenance_qualite??''], m.provenance_nom].filter(Boolean).join(' — ') : [provFr[m.destinataire_qualite??''], m.destinataire_nom].filter(Boolean).join(' — ');
+                          return (
+                            <div key={m.id} className={`flex items-start gap-2 px-3 py-2 rounded-xl text-xs ${isE ? 'bg-[#F0F8EE] border border-[#A7C79A]' : 'bg-orange-50 border border-orange-200'}`}>
+                              <span className={isE ? 'text-[#6E9E57]' : 'text-orange-600'}>{isE ? '↓' : '↑'}</span>
+                              <div className="flex-1 min-w-0">
+                                <span className={`font-semibold ${isE ? 'text-[#4A7A3A]' : 'text-orange-700'}`}>{isE ? 'Entrée' : 'Sortie'}</span>
+                                {m.motif && <span className="text-gray-500"> · {motifLabels[m.motif] ?? m.motif}</span>}
+                                {tiers && <div className="text-gray-500 truncate">{tiers}</div>}
+                              </div>
+                              <span className="text-gray-400 whitespace-nowrap">{new Date(m.date_mouvement).toLocaleDateString('fr-FR')}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -2561,6 +2606,81 @@ export default function AnimalFichePage() {
           onClose={() => setShowCession(false)}
           onCeded={() => { setShowCession(false); loadAnimal(); }}
         />
+      )}
+
+      {showAddMvt && user && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setShowAddMvt(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="p-5 space-y-3">
+              <h3 className="font-bold text-[#1F2A2E] text-base" style={{fontFamily:'Galey,sans-serif'}}>Ajouter un mouvement</h3>
+              <div className="flex gap-2">
+                {[['entree','Entrée'],['sortie','Sortie']].map(([v,l])=>(
+                  <button key={v} onClick={()=>setMvtForm(f=>({...f,type:v,motif:''}))}
+                    className={`flex-1 py-2 rounded-xl text-sm font-semibold border-2 transition-colors ${mvtForm.type===v?'bg-[#0C5C6C] border-[#0C5C6C] text-white':'border-gray-200 text-gray-600'}`}>{l}</button>
+                ))}
+              </div>
+              <input type="date" value={mvtForm.date} onChange={e=>setMvtForm(f=>({...f,date:e.target.value}))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              <select value={mvtForm.motif} onChange={e=>setMvtForm(f=>({...f,motif:e.target.value}))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white">
+                <option value="">Motif (optionnel)</option>
+                {(mvtForm.type==='entree'?[['naissance','Naissance'],['achat','Achat'],['cession','Cession'],['retour_saillie','Retour saillie'],['retour_pension','Retour pension'],['autre','Autre']]:[['cession','Cession'],['saillie','Saillie'],['pension','Pension / Garde'],['retraite','Retraite'],['adoption','Adoption'],['vente','Vente'],['autre','Autre']]).map(([v,l])=>(
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+              {mvtForm.type==='entree' ? (
+                <>
+                  <select value={mvtForm.provQualite} onChange={e=>setMvtForm(f=>({...f,provQualite:e.target.value}))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white">
+                    <option value="">Qualité fournisseur</option>
+                    {[['eleveur','Éleveur'],['particulier','Particulier'],['refuge','Refuge'],['naissance','Naissance'],['importation','Importation'],['autre','Autre']].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                  </select>
+                  <input placeholder="Nom / Élevage" value={mvtForm.provNom} onChange={e=>setMvtForm(f=>({...f,provNom:e.target.value}))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                </>
+              ) : (
+                <>
+                  <select value={mvtForm.destQualite} onChange={e=>setMvtForm(f=>({...f,destQualite:e.target.value}))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white">
+                    <option value="">Qualité destinataire</option>
+                    {[['eleveur','Éleveur'],['particulier','Particulier'],['refuge','Refuge'],['association','Association'],['autre','Autre']].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                  </select>
+                  <input placeholder="Nom / Élevage" value={mvtForm.destNom} onChange={e=>setMvtForm(f=>({...f,destNom:e.target.value}))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                </>
+              )}
+              <input placeholder="Notes (optionnel)" value={mvtForm.notes} onChange={e=>setMvtForm(f=>({...f,notes:e.target.value}))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              <div className="flex gap-2 pt-1">
+                <button disabled={savingMvt} onClick={async () => {
+                  setSavingMvt(true);
+                  const payload: Record<string,string> = {
+                    animal_id: id as string, uid_eleveur: user.uid,
+                    type: mvtForm.type, date_mouvement: mvtForm.date,
+                  };
+                  if (mvtForm.motif) payload.motif = mvtForm.motif;
+                  if (mvtForm.type==='entree') {
+                    if (mvtForm.provQualite) payload.provenance_qualite = mvtForm.provQualite;
+                    if (mvtForm.provNom) payload.provenance_nom = mvtForm.provNom;
+                  } else {
+                    if (mvtForm.destQualite) payload.destinataire_qualite = mvtForm.destQualite;
+                    if (mvtForm.destNom) payload.destinataire_nom = mvtForm.destNom;
+                  }
+                  if (mvtForm.notes) payload.notes = mvtForm.notes;
+                  await supabase.from('registre_mouvements').insert(payload);
+                  setSavingMvt(false);
+                  setShowAddMvt(false);
+                  setMvtForm({type:'entree',date:new Date().toISOString().slice(0,10),motif:'',provQualite:'',provNom:'',destQualite:'',destNom:'',notes:''});
+                  loadMouvements();
+                }}
+                  className="flex-1 bg-[#0C5C6C] disabled:opacity-60 text-white font-semibold py-2.5 rounded-xl text-sm">
+                  {savingMvt ? 'Enregistrement…' : 'Enregistrer'}
+                </button>
+                <button onClick={()=>setShowAddMvt(false)} className="flex-1 border border-gray-200 text-gray-600 font-medium py-2.5 rounded-xl text-sm">Annuler</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

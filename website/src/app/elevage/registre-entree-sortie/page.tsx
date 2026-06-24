@@ -97,17 +97,19 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
   async function loadData() {
     if (!user) return;
     try {
-      let q = supabase
-        .from('animaux')
-        .select('id, nom, espece, race, sexe, identification, date_naissance, photo_url, statut, date_entree, date_sortie, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, importation_ref, nom_mere, puce_mere')
-        .eq('uid_eleveur', user.uid);
-      if (isAssociation) {
-        q = q.eq('is_association', true);
-      } else {
-        q = q.or('is_association.is.null,is_association.eq.false');
-      }
-      const { data } = await q.order('date_entree', { ascending: false });
-      setAnimaux((data as Animal[]) ?? []);
+      const cols = 'id, nom, espece, race, sexe, identification, date_naissance, photo_url, statut, date_entree, date_sortie, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, importation_ref, nom_mere, puce_mere';
+      const assoCond = isAssociation ? 'is_association.eq.true' : 'is_association.is.null,is_association.eq.false';
+      const [r1, r2] = await Promise.all([
+        supabase.from('animaux').select(cols).eq('uid_eleveur', user.uid).or(assoCond).order('date_entree', { ascending: false }),
+        supabase.from('animaux').select(cols).eq('uid_acquereur', user.uid).neq('uid_eleveur', user.uid).or(assoCond),
+      ]);
+      const seen = new Set<string>();
+      const merged = [...(r1.data ?? []), ...(r2.data ?? [])].filter((a) => {
+        if (seen.has((a as Animal).id)) return false;
+        seen.add((a as Animal).id);
+        return true;
+      });
+      setAnimaux(merged as Animal[]);
     } catch { /* ignore */ } finally {
       setFetching(false);
     }
