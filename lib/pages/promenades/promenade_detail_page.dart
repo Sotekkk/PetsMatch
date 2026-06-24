@@ -800,17 +800,12 @@ class _EditSheetState extends State<_EditSheet> {
   bool _loadingPred = false;
 
   static const _kNiveaux = ['facile', 'moyen', 'difficile'];
-  static const _kEspeces = ['Toutes espèces', 'Chiens', 'Chats', 'Lapins', 'Oiseaux', 'Rongeurs', 'Reptiles', 'NAC'];
+  static const _kEspeces = ['Toutes', 'Chiens', 'Chevaux'];
 
   static String _especeEmoji(String e) => switch (e) {
-    'Chiens' => '🐕 Chiens',
-    'Chats' => '🐈 Chats',
-    'Lapins' => '🐇 Lapins',
-    'Oiseaux' => '🐦 Oiseaux',
-    'Rongeurs' => '🐹 Rongeurs',
-    'Reptiles' => '🦎 Reptiles',
-    'NAC' => '🐾 NAC',
-    _ => '🌍 Toutes espèces',
+    'Chiens'  => '🐕 Chiens',
+    'Chevaux' => '🐴 Chevaux',
+    _         => '🌍 Toutes',
   };
 
   @override
@@ -821,7 +816,7 @@ class _EditSheetState extends State<_EditSheet> {
     _descCtrl = TextEditingController(text: p['description']?.toString() ?? '');
     _lieuCtrl = TextEditingController(text: p['lieu_rdv']?.toString() ?? '');
     _niveau = p['niveau']?.toString() ?? 'facile';
-    _espece = p['espece']?.toString() ?? 'Toutes espèces';
+    _espece = p['espece']?.toString() ?? 'Toutes';
     _toutesRaces = p['toutes_races'] as bool? ?? true;
     _racesCtrl = TextEditingController(text: p['races']?.toString() ?? '');
     _dateHeure = p['date_heure'] != null

@@ -12,17 +12,12 @@ import 'package:url_launcher/url_launcher.dart';
 const _orange = Color(0xFFEF6C00);
 
 const _kNiveaux = ['facile', 'moyen', 'difficile'];
-const _kEspeces = ['Toutes espèces', 'Chiens', 'Chats', 'Lapins', 'Oiseaux', 'Rongeurs', 'Reptiles', 'NAC'];
+const _kEspeces = ['Toutes', 'Chiens', 'Chevaux'];
 
 String _especeEmoji(String e) => switch (e) {
-  'Chiens' => '🐕 Chiens',
-  'Chats' => '🐈 Chats',
-  'Lapins' => '🐇 Lapins',
-  'Oiseaux' => '🐦 Oiseaux',
-  'Rongeurs' => '🐹 Rongeurs',
-  'Reptiles' => '🦎 Reptiles',
-  'NAC' => '🐾 NAC',
-  _ => '🌍 Toutes espèces',
+  'Chiens'  => '🐕 Chiens',
+  'Chevaux' => '🐴 Chevaux',
+  _         => '🌍 Toutes',
 };
 
 class PromenadePage extends StatefulWidget {
@@ -41,14 +36,14 @@ class _PromenadesPageState extends State<PromenadePage> {
   bool _loading = true;
 
   // Filtres
-  String _filterEspece = 'Toutes espèces';
+  String _filterEspece = 'Toutes';
   final _filterLieuCtrl = TextEditingController();
 
   List<Map<String, dynamic>> get _filtered {
     final lieu = _filterLieuCtrl.text.toLowerCase().trim();
     return _promenades.where((p) {
-      final espece = p['espece']?.toString() ?? 'Toutes espèces';
-      if (_filterEspece != 'Toutes espèces' && espece != 'Toutes espèces' && espece != _filterEspece) return false;
+      final espece = p['espece']?.toString() ?? 'Toutes';
+      if (_filterEspece != 'Toutes' && espece != 'Toutes' && espece != 'Toutes espèces' && espece != _filterEspece) return false;
       if (lieu.isNotEmpty) {
         final adresse = (p['lieu_rdv'] ?? '').toString().toLowerCase();
         if (!adresse.contains(lieu)) return false;
@@ -184,7 +179,7 @@ class _PromenadesPageState extends State<PromenadePage> {
         backgroundColor: const Color(0xFF2E7D5E),
         foregroundColor: Colors.white,
         elevation: 0,
-        title: const Text('Promenades collectives',
+        title: const Text('Promenades & Randonnées',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
@@ -403,7 +398,7 @@ class _PromenadesCard extends StatelessWidget {
                       fontWeight: FontWeight.w700)),
             ),
           ]),
-          if (espece.isNotEmpty && espece != 'Toutes espèces') ...[
+          if (espece.isNotEmpty && espece != 'Toutes' && espece != 'Toutes espèces') ...[
             const SizedBox(height: 6),
             Row(children: [
               Container(
@@ -597,7 +592,7 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
   String _titre = '';
   String _description = '';
   String _niveau = 'facile';
-  String _espece = 'Toutes espèces';
+  String _espece = 'Toutes';
   bool _toutesRaces = true;
   DateTime _dateHeure = DateTime.now().add(const Duration(days: 3));
   int _dureeMinutes = 60;

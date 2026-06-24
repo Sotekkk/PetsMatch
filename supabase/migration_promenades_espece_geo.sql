@@ -4,7 +4,7 @@
 -- ============================================================
 
 ALTER TABLE promenades
-  ADD COLUMN IF NOT EXISTS espece       TEXT DEFAULT 'Toutes espèces',
+  ADD COLUMN IF NOT EXISTS espece       TEXT DEFAULT 'Toutes',
   ADD COLUMN IF NOT EXISTS toutes_races BOOLEAN DEFAULT true,
   ADD COLUMN IF NOT EXISTS races        TEXT,
   ADD COLUMN IF NOT EXISTS departement  TEXT,

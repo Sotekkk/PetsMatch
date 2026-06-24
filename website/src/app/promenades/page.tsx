@@ -28,18 +28,13 @@ interface Promenade {
   promenades_participants: { count: number }[];
 }
 
-const ESPECES = ['Toutes espèces', 'Chiens', 'Chats', 'Lapins', 'Oiseaux', 'Rongeurs', 'Reptiles', 'NAC'];
+const ESPECES = ['Toutes', 'Chiens', 'Chevaux'];
 
 function especeEmoji(e: string) {
   switch (e) {
-    case 'Chiens': return '🐕 Chiens';
-    case 'Chats': return '🐈 Chats';
-    case 'Lapins': return '🐇 Lapins';
-    case 'Oiseaux': return '🐦 Oiseaux';
-    case 'Rongeurs': return '🐹 Rongeurs';
-    case 'Reptiles': return '🦎 Reptiles';
-    case 'NAC': return '🐾 NAC';
-    default: return '🌍 Toutes espèces';
+    case 'Chiens':  return '🐕 Chiens';
+    case 'Chevaux': return '🐴 Chevaux';
+    default:        return '🌍 Toutes';
   }
 }
 
@@ -119,7 +114,7 @@ function PromenadesCard({
       )}
 
       {/* Espèce */}
-      {p.espece && p.espece !== 'Toutes espèces' && (
+      {p.espece && p.espece !== 'Toutes' && p.espece !== 'Toutes espèces' && (
         <div className="flex items-center gap-2">
           <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold"
             style={{ backgroundColor: '#2E7D5E18', color: '#2E7D5E' }}>
@@ -194,7 +189,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   const [duree, setDuree] = useState('60');
   const [maxParticipants, setMaxParticipants] = useState('');
   const [description, setDescription] = useState('');
-  const [espece, setEspece] = useState('Toutes espèces');
+  const [espece, setEspece] = useState('Toutes');
   const [toutesRaces, setToutesRaces] = useState(true);
   const [races, setRaces] = useState('');
   const [saving, setSaving] = useState(false);
@@ -466,7 +461,7 @@ export default function PromenadePage() {
   const [loadingToggle, setLoadingToggle] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [filterEspece, setFilterEspece] = useState('Toutes espèces');
+  const [filterEspece, setFilterEspece] = useState('Toutes');
   const [filterLieu, setFilterLieu] = useState('');
 
   const load = useCallback(async () => {
@@ -555,7 +550,7 @@ export default function PromenadePage() {
             ←
           </button>
           <h1 className="font-bold text-lg" style={{ fontFamily: 'Galey, sans-serif' }}>
-            🦮 Promenades collectives
+            🐕🐴 Promenades & Randonnées
           </h1>
         </div>
         {user && (
@@ -607,7 +602,7 @@ export default function PromenadePage() {
         ) : (() => {
           const filtered = promenades.filter(p => {
             const esp = p.espece ?? 'Toutes espèces';
-            if (filterEspece !== 'Toutes espèces' && esp !== 'Toutes espèces' && esp !== filterEspece) return false;
+            if (filterEspece !== 'Toutes' && esp !== 'Toutes' && esp !== 'Toutes espèces' && esp !== filterEspece) return false;
             if (filterLieu.trim()) {
               const adresse = (p.lieu_rdv ?? '').toLowerCase();
               if (!adresse.includes(filterLieu.toLowerCase().trim())) return false;

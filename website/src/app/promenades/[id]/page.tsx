@@ -28,18 +28,13 @@ interface Promenade {
   races?: string;
 }
 
-const ESPECES_DETAIL = ['Toutes espèces', 'Chiens', 'Chats', 'Lapins', 'Oiseaux', 'Rongeurs', 'Reptiles', 'NAC'];
+const ESPECES_DETAIL = ['Toutes', 'Chiens', 'Chevaux'];
 
 function especeEmojiDetail(e: string) {
   switch (e) {
-    case 'Chiens': return '🐕 Chiens';
-    case 'Chats': return '🐈 Chats';
-    case 'Lapins': return '🐇 Lapins';
-    case 'Oiseaux': return '🐦 Oiseaux';
-    case 'Rongeurs': return '🐹 Rongeurs';
-    case 'Reptiles': return '🦎 Reptiles';
-    case 'NAC': return '🐾 NAC';
-    default: return '🌍 Toutes espèces';
+    case 'Chiens':  return '🐕 Chiens';
+    case 'Chevaux': return '🐴 Chevaux';
+    default:        return '🌍 Toutes';
   }
 }
 
@@ -108,7 +103,7 @@ function EditModal({ promenade, participants, currentUid, onClose, onSaved }: {
   const [duree, setDuree] = useState(String(promenade.duree_minutes ?? 60));
   const [maxP, setMaxP] = useState(promenade.participants_max ? String(promenade.participants_max) : '');
   const [desc, setDesc] = useState(promenade.description ?? '');
-  const [espece, setEspece] = useState(promenade.espece ?? 'Toutes espèces');
+  const [espece, setEspece] = useState(promenade.espece ?? 'Toutes');
   const [toutesRaces, setToutesRaces] = useState(promenade.toutes_races ?? true);
   const [races, setRaces] = useState(promenade.races ?? '');
   const [saving, setSaving] = useState(false);
