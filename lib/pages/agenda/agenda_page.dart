@@ -269,7 +269,7 @@ class _AgendaPageState extends State<AgendaPage> {
     _                 => '📋',
   };
 
-  Widget _buildDayTasksSection(List<Map<String, dynamic>> tasks) {
+  Widget _buildDayTasksSection(List<Map<String, dynamic>> tasks, {DateTime? day}) {
     final manuel = tasks.where((t) => t['_source'] != 'protocole').toList();
 
     final protoMap = <String, List<Map<String, dynamic>>>{};
@@ -451,6 +451,24 @@ class _AgendaPageState extends State<AgendaPage> {
             const Spacer(),
             Text('$doneItems/$totalItems',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => _showAddTacheSheet(day ?? _selectedDay ?? DateTime.now()),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: _kTeal.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _kTeal.withValues(alpha: 0.3)),
+                ),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.add, size: 12, color: _kTeal),
+                  SizedBox(width: 2),
+                  Text('Tâche', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                      fontWeight: FontWeight.w600, color: _kTeal)),
+                ]),
+              ),
+            ),
           ]),
           const SizedBox(height: 8),
 
@@ -567,6 +585,27 @@ class _AgendaPageState extends State<AgendaPage> {
 
   void _prevMonth() { _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1); _load(); _loadTasks(); }
   void _nextMonth() { _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1); _load(); _loadTasks(); }
+
+  // ── Add tâche manuelle ─────────────────────────────────────────────────────
+
+  void _showAddTacheSheet(DateTime day) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      isDismissible: true,
+      enableDrag: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _AddTacheSheet(
+        day: day,
+        uid: _uid,
+        profilSource: User_Info.activeType == 'association' ? 'association' : 'eleveur',
+        onSaved: _loadTasks,
+      ),
+    );
+  }
 
   // ── Add event ──────────────────────────────────────────────────────────────
 
@@ -812,7 +851,37 @@ class _AgendaPageState extends State<AgendaPage> {
         ]),
       ),
       const Divider(height: 1),
-      if (dayTasks.isNotEmpty) _buildDayTasksSection(dayTasks),
+      if (dayTasks.isNotEmpty)
+        _buildDayTasksSection(dayTasks, day: day)
+      else
+        Container(
+          color: const Color(0xFFEDF6F7),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Row(children: [
+            const Text('✅', style: TextStyle(fontSize: 12)),
+            const SizedBox(width: 6),
+            const Text('Tâches du jour',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: _kTeal)),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => _showAddTacheSheet(day),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: _kTeal.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _kTeal.withValues(alpha: 0.3)),
+                ),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.add, size: 12, color: _kTeal),
+                  SizedBox(width: 2),
+                  Text('Nouvelle tâche', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                      fontWeight: FontWeight.w600, color: _kTeal)),
+                ]),
+              ),
+            ),
+          ]),
+        ),
       Expanded(
         child: RefreshIndicator(
           onRefresh: () async { await _load(); await _loadTasks(); },
@@ -2142,6 +2211,152 @@ class _AgendaProtoSheetState extends State<_AgendaProtoSheet> {
           }),
 
           const SizedBox(height: 24),
+        ]),
+      ),
+    );
+  }
+}
+
+// ── Ajout tâche manuelle depuis l'agenda ──────────────────────────────────────
+
+class _AddTacheSheet extends StatefulWidget {
+  final DateTime day;
+  final String uid;
+  final String profilSource;
+  final VoidCallback onSaved;
+  const _AddTacheSheet({required this.day, required this.uid, required this.profilSource, required this.onSaved});
+  @override State<_AddTacheSheet> createState() => _AddTacheSheetState();
+}
+
+class _AddTacheSheetState extends State<_AddTacheSheet> {
+  final _titreCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+  TimeOfDay? _heure;
+  bool _saving = false;
+
+  @override void dispose() { _titreCtrl.dispose(); _notesCtrl.dispose(); super.dispose(); }
+
+  Future<void> _save() async {
+    if (_titreCtrl.text.trim().isEmpty) return;
+    setState(() => _saving = true);
+    final dateStr = DateFormat('yyyy-MM-dd').format(widget.day);
+    final heureStr = _heure != null
+        ? '${_heure!.hour.toString().padLeft(2, '0')}:${_heure!.minute.toString().padLeft(2, '0')}'
+        : null;
+    await Supabase.instance.client.from('taches_elevage').insert({
+      'uid_eleveur': widget.uid,
+      'titre': _titreCtrl.text.trim(),
+      'date': dateStr,
+      'heure': heureStr,
+      'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+      'statut': 'a_faire',
+      'profil_source': widget.profilSource,
+    });
+    setState(() => _saving = false);
+    widget.onSaved();
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Center(child: Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+          )),
+          const SizedBox(height: 16),
+          const Text('Nouvelle tâche',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF1E2025))),
+          const SizedBox(height: 16),
+          const Text('Titre *', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _titreCtrl,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            onChanged: (_) => setState(() {}),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Ex: Nettoyage cage, Pesée…',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: _kTeal, width: 2)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text('Heure (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          GestureDetector(
+            onTap: () async {
+              final t = await showTimePicker(context: context, initialTime: _heure ?? TimeOfDay.now());
+              if (t != null && mounted) setState(() => _heure = t);
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade400),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _heure != null ? _heure!.format(context) : 'Sélectionner une heure',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                    color: _heure != null ? const Color(0xFF1E2025) : Colors.grey.shade500),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text('Notes (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _notesCtrl,
+            maxLines: 3,
+            textCapitalization: TextCapitalization.sentences,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Informations complémentaires…',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: _kTeal, width: 2)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.grey.shade300),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Annuler',
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _saving || _titreCtrl.text.trim().isEmpty ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _kTeal,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: Text(_saving ? 'Ajout…' : 'Ajouter',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
         ]),
       ),
     );

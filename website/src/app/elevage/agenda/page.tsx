@@ -96,6 +96,89 @@ function groupRoutines(routines: Routine[]): RoutineGroupe[] {
   }));
 }
 
+// ── Ajout tâche manuelle depuis l'agenda ─────────────────────────────────────
+
+function AddTacheModal({ selectedDate, uid, profilSource, onClose, onSaved }: {
+  selectedDate: string;
+  uid: string;
+  profilSource: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [titre, setTitre] = useState('');
+  const [heure, setHeure] = useState('');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!titre.trim()) return;
+    setSaving(true);
+    await supabase.from('taches_elevage').insert({
+      uid_eleveur: uid,
+      titre: titre.trim(),
+      date: selectedDate,
+      heure: heure || null,
+      notes: notes.trim() || null,
+      statut: 'a_faire',
+      profil_source: profilSource,
+    });
+    setSaving(false);
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+        <h2 className="font-bold text-gray-800 mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Nouvelle tâche
+        </h2>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">Titre *</label>
+            <input
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+              placeholder="Ex: Nettoyage cage, Pesée…"
+              value={titre}
+              onChange={e => setTitre(e.target.value)}
+              autoFocus
+              onKeyDown={e => e.key === 'Enter' && save()}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">Heure (optionnel)</label>
+            <input
+              type="time"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+              value={heure}
+              onChange={e => setHeure(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">Notes (optionnel)</label>
+            <textarea
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none"
+              placeholder="Informations complémentaires…"
+              rows={3}
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="flex gap-3 mt-5">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 font-medium">
+            Annuler
+          </button>
+          <button onClick={save} disabled={!titre.trim() || saving}
+            className="flex-1 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition-colors">
+            {saving ? 'Ajout…' : 'Ajouter'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Attribution Modal (tâches manuelles — multi-employés) ─────────────────────
 
 function AttributionModal({ tache, employes, currentUid, onClose, onSaved }: {
@@ -696,6 +779,7 @@ export default function AgendaElevagePage() {
   const [validateGroupe, setValidateGroupe] = useState<RoutineGroupe | null>(null);
   const [attributionTask, setAttributionTask] = useState<TacheManuelle | null>(null);
   const [confirmDelete, setConfirmDelete]     = useState<{ label: string; onConfirm: () => void } | null>(null);
+  const [showAddTache, setShowAddTache]       = useState(false);
   const [monthDates, setMonthDates]     = useState<Map<string, string[]>>(new Map());
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
@@ -1046,6 +1130,14 @@ export default function AgendaElevagePage() {
             </div>
           </div>
 
+          {/* Bouton ajout tâche */}
+          <div className="flex justify-end mb-3">
+            <button onClick={() => setShowAddTache(true)}
+              className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 hover:bg-teal-100 transition-colors">
+              <span className="text-base leading-none">+</span> Nouvelle tâche
+            </button>
+          </div>
+
           {/* Liste du jour */}
           {loadingData ? (
             <div className="flex justify-center py-12">
@@ -1116,6 +1208,14 @@ export default function AgendaElevagePage() {
             </div>
           </div>
 
+          {/* Bouton ajout tâche */}
+          <div className="flex justify-end mb-3">
+            <button onClick={() => setShowAddTache(true)}
+              className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 hover:bg-teal-100 transition-colors">
+              <span className="text-base leading-none">+</span> Nouvelle tâche
+            </button>
+          </div>
+
           {loadingData ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
@@ -1173,6 +1273,14 @@ export default function AgendaElevagePage() {
             </div>
           </div>
 
+          {/* Bouton ajout tâche */}
+          <div className="flex justify-end mb-3">
+            <button onClick={() => setShowAddTache(true)}
+              className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 hover:bg-teal-100 transition-colors">
+              <span className="text-base leading-none">+</span> Nouvelle tâche
+            </button>
+          </div>
+
           {loadingData ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
@@ -1208,6 +1316,16 @@ export default function AgendaElevagePage() {
       )}
 
       {/* ── Modals ──────────────────────────────────────────────────────────── */}
+
+      {showAddTache && (
+        <AddTacheModal
+          selectedDate={selectedDate}
+          uid={user.uid}
+          profilSource={profilSource}
+          onClose={() => setShowAddTache(false)}
+          onSaved={() => { setShowAddTache(false); load(); }}
+        />
+      )}
 
       {validateGroupe && (
         <RoutineModal
