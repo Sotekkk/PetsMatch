@@ -20,6 +20,8 @@ class CessionSheet extends StatefulWidget {
   final String uid;
   final String nomElevage;
   final VoidCallback onCeded;
+  /// true = l'utilisateur est l'acquéreur qui re-cède (pas l'éleveur d'origine)
+  final bool isReCession;
 
   const CessionSheet({
     super.key,
@@ -27,6 +29,7 @@ class CessionSheet extends StatefulWidget {
     required this.uid,
     required this.nomElevage,
     required this.onCeded,
+    this.isReCession = false,
   });
 
   @override
@@ -382,9 +385,16 @@ class _CessionSheetState extends State<CessionSheet> {
           const SizedBox(height: 14),
           Row(children: [
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('🤝 Céder ${widget.animal['nom'] ?? 'cet animal'}',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _dark)),
-              Text('Étape ${_step + 1}/3', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+              Text(
+                widget.isReCession
+                  ? '🔄 Transférer ${widget.animal['nom'] ?? 'cet animal'}'
+                  : '🤝 Céder ${widget.animal['nom'] ?? 'cet animal'}',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _dark),
+              ),
+              Text(
+                widget.isReCession ? 'Don / Abandon' : 'Étape ${_step + 1}/3',
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
             ])),
             if (_step > 0)
               GestureDetector(
@@ -522,11 +532,14 @@ class _CessionSheetState extends State<CessionSheet> {
             Row(children: [
               Expanded(child: _FieldBlock('Qualité', child: DropdownButtonFormField<String>(
                 value: _qualite,
-                items: const [
-                  DropdownMenuItem(value: 'particulier', child: Text('Particulier')),
-                  DropdownMenuItem(value: 'eleveur',     child: Text('Éleveur')),
-                  DropdownMenuItem(value: 'refuge',      child: Text('Refuge')),
-                  DropdownMenuItem(value: 'autre',       child: Text('Autre')),
+                items: [
+                  const DropdownMenuItem(value: 'particulier', child: Text('Particulier / Famille')),
+                  const DropdownMenuItem(value: 'refuge',      child: Text('Association / Refuge')),
+                  // Options réservées aux éleveurs d'origine
+                  if (!widget.isReCession) ...[
+                    const DropdownMenuItem(value: 'eleveur', child: Text('Éleveur')),
+                    const DropdownMenuItem(value: 'autre',   child: Text('Autre')),
+                  ],
                 ],
                 onChanged: (v) => setState(() => _qualite = v!),
                 decoration: _inputDec('Qualité'),
@@ -563,10 +576,11 @@ class _CessionSheetState extends State<CessionSheet> {
                 decoration: _inputDec('email@exemple.fr'),
               ))),
               const SizedBox(width: 8),
-              Expanded(child: _FieldBlock('Prix (€)', child: TextField(
-                controller: _prixCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: _inputDec('0'),
-              ))),
+              if (!widget.isReCession)
+                Expanded(child: _FieldBlock('Prix (€)', child: TextField(
+                  controller: _prixCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: _inputDec('0'),
+                ))),
             ]),
             const SizedBox(height: 10),
             _FieldBlock('Adresse', child: TextField(
@@ -580,11 +594,21 @@ class _CessionSheetState extends State<CessionSheet> {
             )),
             const SizedBox(height: 14),
             ElevatedButton(
-              onPressed: _nomCtrl.text.trim().isEmpty ? null : () => setState(() => _step = 2),
+              onPressed: _nomCtrl.text.trim().isEmpty ? null : () {
+                if (widget.isReCession) {
+                  // Particulier qui re-cède : pas de documents, valider directement
+                  _save();
+                } else {
+                  setState(() => _step = 2);
+                }
+              },
               style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white,
                   minimumSize: const Size(double.infinity, 46),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              child: const Text('Documents →', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              child: Text(
+                widget.isReCession ? 'Confirmer le transfert' : 'Documents →',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600),
+              ),
             ),
           ],
 
