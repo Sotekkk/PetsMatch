@@ -11,7 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { usePlan } from '@/lib/use-plan';
 import { useRouter } from 'next/navigation';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { ACTIVE_PROFILE_KEY, PROFILE_CHANGE_EVENT } from '@/hooks/useActiveProfile';
+import { ACTIVE_PROFILE_KEY, ACTIVE_PROFILE_TYPE_KEY, PROFILE_CHANGE_EVENT } from '@/hooks/useActiveProfile';
 
 interface Notif {
   id: string;
@@ -458,7 +458,13 @@ export default function Header() {
   const [isFa, setIsFa] = useState(false);
   const [isEmploye, setIsEmploye] = useState(false);
   const [isBenevole, setIsBenevole] = useState(false);
-  const [activeProfileId, setActiveProfileId] = useState<string>('');
+  // Lazy init: lit localStorage immédiatement pour éviter le flash du profil primaire
+  const [activeProfileId, setActiveProfileId] = useState<string>(() =>
+    typeof window !== 'undefined' ? (localStorage.getItem(ACTIVE_PROFILE_KEY) ?? '') : ''
+  );
+  const [cachedProfileType, setCachedProfileType] = useState<string | null>(() =>
+    typeof window !== 'undefined' ? localStorage.getItem(ACTIVE_PROFILE_TYPE_KEY) : null
+  );
   const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
@@ -469,29 +475,35 @@ export default function Header() {
   // ── Effective profile data (primary or secondary) ─────────────────────────
   const activeProfile = profiles.find(p => p.id === activeProfileId) ?? null;
 
-  const effectiveIsAssociation =
-    (activeProfile?.profile_type === 'association') ||
-    (!activeProfile && userData?.isAssociation === true);
+  // Si un profil secondaire est sélectionné (activeProfileId non vide) mais que les
+  // profils ne sont pas encore chargés depuis Supabase, on utilise le type mis en cache
+  // dans localStorage pour éviter de tomber sur les données du profil primaire.
+  const resolvedProfileType: string | null =
+    activeProfile?.profile_type ??
+    (activeProfileId && !activeProfile ? cachedProfileType : null);
 
-  const effectiveType = activeProfile?.profile_type ?? (
+  const effectiveIsAssociation =
+    (resolvedProfileType === 'association') ||
+    (!resolvedProfileType && userData?.isAssociation === true);
+
+  const effectiveType = resolvedProfileType ?? (
     userData?.isPro ? (userData?.catPro ?? 'sante')
     : userData?.isAssociation ? 'association'
     : (userData?.isElevage ? 'eleveur' : 'particulier')
   );
-  const effectiveIsEleveur = activeProfile
-    ? (activeProfile.profile_type === 'eleveur' || PRO_TYPES.has(activeProfile.profile_type))
+  const effectiveIsEleveur = resolvedProfileType
+    ? (resolvedProfileType === 'eleveur' || PRO_TYPES.has(resolvedProfileType))
     : userData?.isElevage === true;
-  const effectiveIsPension = activeProfile
-    ? activeProfile.profile_type === 'pension'
+  const effectiveIsPension = resolvedProfileType
+    ? resolvedProfileType === 'pension'
     : (userData?.isPro === true && userData?.catPro === 'pension');
   // Détection pro primaire (userData.isPro = true, aucun profil secondaire actif)
-  const isPrimaryPro = !activeProfile && userData?.isPro === true;
+  const isPrimaryPro = !resolvedProfileType && userData?.isPro === true;
   const primaryCatPro = userData?.catPro ?? '';
 
-  const effectiveIsVet = !!(activeProfile && (
-    activeProfile.profile_type === 'veterinaire' || activeProfile.profile_type === 'sante' ||
-    activeProfile.cat_pro === 'veterinaire' || activeProfile.cat_pro === 'sante'
-  )) || (isPrimaryPro && (primaryCatPro === 'veterinaire' || primaryCatPro === 'sante'));
+  const effectiveIsVet = !!(resolvedProfileType === 'veterinaire' || resolvedProfileType === 'sante' ||
+    activeProfile?.cat_pro === 'veterinaire' || activeProfile?.cat_pro === 'sante'
+  ) || (isPrimaryPro && (primaryCatPro === 'veterinaire' || primaryCatPro === 'sante'));
 
   const primaryDisplayName = userData?.nameElevage ?? userData?.firstname ?? user?.email ?? '';
   const primaryAvatar = userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
@@ -551,7 +563,7 @@ export default function Header() {
 
   // ── Chargement des profils secondaires ────────────────────────────────────
   useEffect(() => {
-    if (!user) { setProfiles([]); setActiveProfileId(''); return; }
+    if (!user) { setProfiles([]); setActiveProfileId(''); setCachedProfileType(null); return; }
 
     supabase
       .from('user_profiles')
@@ -560,38 +572,50 @@ export default function Header() {
       .then(({ data }) => {
         const rows = (data ?? []) as UserProfile[];
         setProfiles(rows);
-        // Read localStorage at resolution time to avoid stale-closure race condition
+        // Lire localStorage au moment de la résolution (évite la stale-closure race)
         const savedId = localStorage.getItem(ACTIVE_PROFILE_KEY) ?? '';
-        if (savedId && rows.some(p => p.id === savedId)) {
-          setActiveProfileId(savedId);
+        if (savedId) {
+          const match = rows.find(p => p.id === savedId);
+          if (match) {
+            setActiveProfileId(savedId);
+            setCachedProfileType(match.profile_type);
+            localStorage.setItem(ACTIVE_PROFILE_TYPE_KEY, match.profile_type);
+          } else {
+            // Profil introuvable → retour au profil primaire
+            setActiveProfileId('');
+            setCachedProfileType(null);
+            localStorage.removeItem(ACTIVE_PROFILE_KEY);
+            localStorage.removeItem(ACTIVE_PROFILE_TYPE_KEY);
+          }
         }
       });
   }, [user]);
 
   function switchProfile(id: string | null) {
     const newId = id ?? '';
+    const targetProfile = profiles.find(p => p.id === newId);
+    const targetType = newId ? (targetProfile?.profile_type ?? null) : null;
 
-    // Persist before navigation so the new page reads the right profile
+    // Persist ID + type AVANT la navigation pour que la nouvelle page les lise immédiatement
     if (newId) {
       localStorage.setItem(ACTIVE_PROFILE_KEY, newId);
+      if (targetType) localStorage.setItem(ACTIVE_PROFILE_TYPE_KEY, targetType);
+      else localStorage.removeItem(ACTIVE_PROFILE_TYPE_KEY);
     } else {
       localStorage.removeItem(ACTIVE_PROFILE_KEY);
+      localStorage.removeItem(ACTIVE_PROFILE_TYPE_KEY);
     }
 
     setActiveProfileId(newId);
+    setCachedProfileType(targetType);
     window.dispatchEvent(new Event(PROFILE_CHANGE_EVENT));
     setProfileSwitcherOpen(false);
     setDropdownOpen(false);
     setMenuOpen(false);
 
-    // Navigate to the home of the target profile so the page reloads fresh
-    const targetProfile = profiles.find(p => p.id === newId);
-    const dest = targetProfile?.profile_type === 'association'
-      ? '/association'
-      : targetProfile?.profile_type === 'eleveur'
-        ? '/'
-        : '/';
-    router.push(dest);
+    // Hard reload vers la bonne section — garantit un état propre
+    const dest = targetType === 'association' ? '/association' : '/';
+    window.location.href = dest;
   }
 
   // ── Messages non lus ──────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export const ACTIVE_PROFILE_KEY = 'petsMatch_activeProfileId';
+export const ACTIVE_PROFILE_TYPE_KEY = 'petsMatch_activeProfileType';
 export const PROFILE_CHANGE_EVENT = 'petsMatchProfileChanged';
 
 interface ActiveProfileState {
