@@ -10260,6 +10260,40 @@ class _DocumentsTabState extends State<_DocumentsTab> {
                 fontSize: 13, color: _green, letterSpacing: 0.3)),
       );
 
+  Future<void> _transmettreDoc(Map<String, dynamic> doc) async {
+    final id = doc['id'].toString();
+    final token = doc['token'] as String?;
+    if (token == null) return;
+    await _supa.from('documents_animaux').update({'statut': 'en_attente'}).eq('id', id);
+    // Notifier l'acquéreur s'il est sur PetsMatch
+    final meta = doc['metadata'] as Map? ?? {};
+    final acqEmail = meta['acquereur_email'] as String?;
+    if (acqEmail != null && acqEmail.trim().isNotEmpty) {
+      final target = await _supa.from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
+      if (target != null) {
+        final signingUrl = '$kSiteBaseUrl/signer-contrat/$token';
+        await _supa.from('notifications').insert({
+          'uid': target['uid'],
+          'type': 'contrat_invite',
+          'title': '📄 Contrat à signer',
+          'body': '${doc['titre'] ?? 'Un contrat'} vous a été transmis — vérifiez et signez',
+          'data': {'token': token, 'url': signingUrl},
+          'read': false,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+    }
+    if (mounted) {
+      setState(() {
+        final idx = _docs.indexWhere((d) => d['id'] == id);
+        if (idx != -1) _docs[idx] = {..._docs[idx], 'statut': 'en_attente'};
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Contrat transmis pour signature'), duration: Duration(seconds: 3)),
+      );
+    }
+  }
+
   Widget _buildDocCard(Map<String, dynamic> doc) {
     final type = doc['type'] as String? ?? '';
     final statut = doc['statut'] as String? ?? 'brouillon';
@@ -10271,56 +10305,73 @@ class _DocumentsTabState extends State<_DocumentsTab> {
     final url = doc['url'] as String?;
     final token = doc['token'] as String?;
     final signingUrl = token != null ? '$kSiteBaseUrl/signer-contrat/$token' : null;
+    final isBrouillon = statut == 'brouillon';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       elevation: 0,
       color: Colors.grey[50],
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        leading: CircleAvatar(
-          backgroundColor: _green.withOpacity(0.1),
-          child: Icon(_typeIcon(type), color: _green, size: 20),
-        ),
-        title: Text(_typeLabel(type),
-            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
-        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (acq.isNotEmpty)
-            Text(acq, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-          Row(children: [
-            Text(date, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey[500])),
-            const SizedBox(width: 8),
-            _statutBadge(statut),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          leading: CircleAvatar(
+            backgroundColor: _green.withOpacity(0.1),
+            child: Icon(_typeIcon(type), color: _green, size: 20),
+          ),
+          title: Text(_typeLabel(type),
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+          subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (acq.isNotEmpty)
+              Text(acq, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            Row(children: [
+              Text(date, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey[500])),
+              const SizedBox(width: 8),
+              _statutBadge(statut),
+            ]),
           ]),
-        ]),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (signingUrl != null) ...[
-              IconButton(
-                icon: const Icon(Icons.open_in_new, size: 18, color: _green),
-                tooltip: 'Ouvrir',
-                onPressed: () => launchUrl(Uri.parse(signingUrl), mode: LaunchMode.externalApplication),
-              ),
-              IconButton(
-                icon: const Icon(Icons.link, size: 18, color: _green),
-                tooltip: 'Copier le lien',
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: signingUrl));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Lien copié'), duration: Duration(seconds: 2)),
-                  );
-                },
-              ),
-            ] else if (url != null)
-              IconButton(
-                icon: const Icon(Icons.open_in_new, size: 18, color: _green),
-                onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
-              ),
-          ],
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (signingUrl != null && !isBrouillon) ...[
+                IconButton(
+                  icon: const Icon(Icons.open_in_new, size: 18, color: _green),
+                  tooltip: 'Ouvrir',
+                  onPressed: () => launchUrl(Uri.parse(signingUrl), mode: LaunchMode.externalApplication),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.link, size: 18, color: _green),
+                  tooltip: 'Copier le lien',
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: signingUrl));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Lien copié'), duration: Duration(seconds: 2)),
+                    );
+                  },
+                ),
+              ] else if (url != null && !isBrouillon)
+                IconButton(
+                  icon: const Icon(Icons.open_in_new, size: 18, color: _green),
+                  onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+                ),
+            ],
+          ),
         ),
-      ),
+        // Bouton Transmettre pour les brouillons
+        if (isBrouillon && token != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+            child: FilledButton.icon(
+              onPressed: () => _transmettreDoc(doc),
+              style: FilledButton.styleFrom(
+                  backgroundColor: _green,
+                  padding: const EdgeInsets.symmetric(vertical: 10)),
+              icon: const Icon(Icons.send_outlined, size: 16),
+              label: const Text('📤 Transmettre pour signature',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+            ),
+          ),
+      ]),
     );
   }
 

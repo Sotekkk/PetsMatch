@@ -37,6 +37,7 @@ export default function SignerCessionPage({ params }: { params: { token: string 
   const [error, setError]     = useState('');
   const [signed, setSigned]   = useState(false);
   const [signing, setSigning] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const padRef    = useRef<unknown>(null);
 
@@ -78,7 +79,7 @@ export default function SignerCessionPage({ params }: { params: { token: string 
         .maybeSingle();
 
       if (e || !data) { setError('Lien invalide ou expiré.'); return; }
-      if (data.statut === 'confirme') { setSigned(true); }
+      if (data.statut === 'confirme') { setSigned(true); setConfirmed(true); }
 
       const animalData = (data as Record<string, unknown>).animaux as Record<string, unknown> || {};
       const userData   = (data as Record<string, unknown>).users   as Record<string, unknown> || {};
@@ -177,15 +178,88 @@ export default function SignerCessionPage({ params }: { params: { token: string 
           <p className="text-sm opacity-80 mt-1">Signature électronique requise</p>
         </div>
 
-        {signed ? (
-          <div className="bg-green-50 border border-green-200 rounded-2xl p-6 text-center">
-            <div className="text-5xl mb-3">✅</div>
-            <h2 className="text-lg font-bold text-green-800 font-galey">Contrat signé</h2>
-            <p className="text-sm text-green-700 mt-2">
-              Merci {cession.nom_acquereur}. Votre signature a bien été enregistrée.<br />
-              L&apos;éleveur recevra une notification et confirmera le transfert.
-            </p>
+        {/* Bandeau statut */}
+        {signed && (
+          <div className={`rounded-2xl p-4 text-center text-sm font-semibold ${confirmed ? 'bg-green-600 text-white' : 'bg-green-50 border border-green-200 text-green-800'}`}>
+            {confirmed
+              ? '✅ Cession confirmée — le transfert de propriété est effectif'
+              : '✅ Signature enregistrée — en attente de confirmation par le vendeur'}
           </div>
+        )}
+
+        {signed ? (
+          <>
+            {/* Récapitulatif — toujours visible */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
+              <h2 className="font-bold text-[#1F2A2E] font-galey">📋 Récapitulatif</h2>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <Field label="Animal" value={`${cession.animal.nom ?? '—'} (${cession.animal.espece ?? '—'})`} />
+                <Field label="Race" value={cession.animal.race ?? '—'} />
+                {dn && <Field label="Né le" value={dn} />}
+                <Field label="Puce" value={cession.animal.identification ?? '—'} />
+                <Field label="Vendeur" value={cession.eleveur.nom} />
+                <Field label="Acheteur" value={cession.nom_acquereur} />
+                <Field label="Prix" value={prixStr} />
+                {cession.date_cession && <Field label="Date" value={new Date(cession.date_cession).toLocaleDateString('fr-FR')} />}
+              </div>
+              {cession.notes && (
+                <div className="bg-gray-50 rounded-xl p-3 text-sm text-gray-600">
+                  <span className="font-semibold">Notes : </span>{cession.notes}
+                </div>
+              )}
+              {cession.contrat_url && (
+                <a href={cession.contrat_url} target="_blank" rel="noreferrer"
+                  className="flex items-center gap-2 text-sm text-[#0C5C6C] hover:underline">
+                  📄 Lire le contrat complet
+                </a>
+              )}
+            </div>
+
+            {/* Signatures des deux parties */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+              <h2 className="font-bold text-[#1F2A2E] font-galey mb-4">✍️ Signatures</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                {/* Signature acquéreur */}
+                <div>
+                  <p className="text-xs text-gray-500 mb-1 font-semibold">Acquéreur — {cession.nom_acquereur}</p>
+                  {cession.signature_acquereur ? (
+                    <div className="border border-green-200 rounded-xl overflow-hidden bg-green-50 p-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={cession.signature_acquereur} alt="Signature acquéreur"
+                        className="w-full h-20 object-contain" />
+                      <p className="text-[10px] text-green-700 text-center mt-1 font-medium">✅ Signature électronique validée</p>
+                    </div>
+                  ) : (
+                    <div className="border border-dashed border-gray-200 rounded-xl h-24 flex items-center justify-center">
+                      <p className="text-xs text-gray-400">En attente de signature</p>
+                    </div>
+                  )}
+                </div>
+                {/* Signature / confirmation vendeur */}
+                <div>
+                  <p className="text-xs text-gray-500 mb-1 font-semibold">Vendeur — {cession.eleveur.nom}</p>
+                  {confirmed ? (
+                    <div className="border border-green-200 rounded-xl bg-green-50 p-3 h-24 flex flex-col items-center justify-center gap-1">
+                      <p className="text-2xl">✅</p>
+                      <p className="text-xs text-green-700 font-semibold text-center">Cession confirmée</p>
+                      <p className="text-[10px] text-green-600 text-center">Transfert de propriété effectif</p>
+                    </div>
+                  ) : (
+                    <div className="border border-dashed border-amber-200 rounded-xl bg-amber-50 p-3 h-24 flex flex-col items-center justify-center gap-1">
+                      <p className="text-2xl">⏳</p>
+                      <p className="text-xs text-amber-700 font-semibold text-center">En attente de confirmation</p>
+                      <p className="text-[10px] text-amber-600 text-center">Le vendeur confirmera le transfert</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <button onClick={() => window.print()}
+              className="w-full border border-[#0C5C6C] text-[#0C5C6C] font-semibold py-3 rounded-2xl text-sm hover:bg-[#0C5C6C]/5 transition-colors">
+              🖨️ Imprimer / Sauvegarder en PDF
+            </button>
+          </>
         ) : (
           <>
             {/* Récapitulatif */}

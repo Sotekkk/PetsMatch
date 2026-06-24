@@ -77,8 +77,9 @@ export default function ContratsPage() {
   const [showForm, setShowForm]   = useState(false);
   const [formType, setFormType]   = useState<DocAnimal['type']>('contrat_vente');
   const [saving, setSaving]       = useState(false);
-  const [deleting, setDeleting]   = useState<string | null>(null);
-  const [cancelling, setCancelling] = useState<string | null>(null);
+  const [deleting, setDeleting]       = useState<string | null>(null);
+  const [cancelling, setCancelling]   = useState<string | null>(null);
+  const [transmitting, setTransmitting] = useState<string | null>(null);
   const [auditOpen, setAuditOpen] = useState<Record<string, boolean>>({});
   const [auditCache, setAuditCache] = useState<Record<string, AuditEntry[]>>({});
 
@@ -260,6 +261,33 @@ export default function ContratsPage() {
     return (data as { token: string } | null)?.token ?? null;
   }
 
+  async function transmettreDoc(doc: DocAnimal) {
+    if (!user || !doc.token) return;
+    setTransmitting(doc.id);
+    // Passer statut en_attente
+    await supabase.from('documents_animaux').update({ statut: 'en_attente' }).eq('id', doc.id);
+    // Notifier l'acquéreur si sur PetsMatch
+    const acqEmail = doc.metadata?.acquereur_email as string | undefined;
+    const acqNomMeta = doc.metadata?.acquereur_nom as string | undefined;
+    if (acqEmail?.trim()) {
+      const { data: targetUser } = await supabase.from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
+      if (targetUser?.uid) {
+        const elvNom = profile?.name_elevage || `${profile?.firstname ?? ''} ${profile?.lastname ?? ''}`.trim() || 'Un éleveur';
+        const signingUrl = `${window.location.origin}/signer-contrat/${doc.token}`;
+        await sendNotification({
+          uid: targetUser.uid, type: 'contrat_invite',
+          title: '📄 Contrat à signer',
+          body: `${elvNom} vous envoie "${doc.titre}" — vérifiez et signez`,
+          data: { token: doc.token, url: signingUrl },
+        });
+      }
+    }
+    setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, statut: 'en_attente' as const } : d));
+    setTransmitting(null);
+    const acqLabel = acqNomMeta || acqEmail || 'l\'acquéreur';
+    alert(`Contrat transmis à ${acqLabel} ! Lien : ${window.location.origin}/signer-contrat/${doc.token}`);
+  }
+
   async function deleteDoc(id: string, titre: string) {
     if (!confirm(`Supprimer "${titre}" ?`)) return;
     setDeleting(id);
@@ -385,11 +413,23 @@ export default function ContratsPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {d.token && (
+                    {/* Transmettre — brouillon uniquement */}
+                    {d.statut === 'brouillon' && d.token && (
+                      <button onClick={() => transmettreDoc(d)} disabled={transmitting === d.id}
+                        className="text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors disabled:opacity-40"
+                        style={{ backgroundColor: '#0C5C6C', color: '#fff' }}>
+                        {transmitting === d.id ? '…' : '📤 Transmettre'}
+                      </button>
+                    )}
+                    {d.token && d.statut !== 'brouillon' && (
                       <a href={`/signer-contrat/${d.token}`} target="_blank" rel="noopener noreferrer"
                         className="text-xs text-[#0C5C6C] hover:underline font-medium">✏️ Ouvrir</a>
                     )}
-                    {d.token && d.statut !== 'annule' && d.statut !== 'refuse' && (
+                    {d.token && d.statut === 'brouillon' && (
+                      <a href={`/signer-contrat/${d.token}`} target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-gray-400 hover:underline font-medium">Aperçu</a>
+                    )}
+                    {d.token && d.statut !== 'annule' && d.statut !== 'refuse' && d.statut !== 'brouillon' && (
                       <button onClick={() => {
                         const link = `${window.location.origin}/signer-contrat/${d.token}`;
                         navigator.clipboard.writeText(link);

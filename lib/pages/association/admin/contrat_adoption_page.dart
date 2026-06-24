@@ -61,6 +61,38 @@ class _ContratAdoptionPageState extends State<ContratAdoptionPage> {
     }
   }
 
+  Future<void> _transmettreContrat(Map<String, dynamic> contrat) async {
+    final id    = contrat['id'].toString();
+    final token = contrat['token'] as String?;
+    if (token == null) return;
+    await _supa.from('documents_animaux').update({'statut': 'en_attente'}).eq('id', id);
+    // Notifier l'adoptant si sur PetsMatch
+    final meta     = contrat['metadata'] as Map<String, dynamic>? ?? {};
+    final acqEmail = meta['acquereur_email'] as String?;
+    if (acqEmail != null && acqEmail.trim().isNotEmpty) {
+      final target = await _supa.from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
+      if (target != null) {
+        await _supa.from('notifications').insert({
+          'uid':  target['uid'],
+          'type': 'contrat_invite',
+          'title': '📄 Contrat d\'adoption à signer',
+          'body':  '${contrat['titre'] ?? 'Un contrat d\'adoption'} vous a été transmis — vérifiez et signez',
+          'data':  {'token': token, 'url': '$kSiteBaseUrl/signer-contrat/$token'},
+          'read':  false,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      final idx = _contrats.indexWhere((c) => c['id'] == id);
+      if (idx != -1) _contrats[idx] = {..._contrats[idx], 'statut': 'en_attente'};
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Contrat transmis pour signature'), duration: Duration(seconds: 3)),
+    );
+  }
+
   void _openCreate() {
     showModalBottomSheet(
       context: context,
@@ -109,6 +141,9 @@ class _ContratAdoptionPageState extends State<ContratAdoptionPage> {
                         await _supa.from('documents_animaux').delete().eq('id', _contrats[i]['id']);
                         _load();
                       },
+                      onTransmettre: (_contrats[i]['statut'] ?? 'brouillon') == 'brouillon'
+                          ? () => _transmettreContrat(_contrats[i])
+                          : null,
                     ),
                   ),
                 ),
@@ -149,13 +184,19 @@ class _ContratCard extends StatelessWidget {
   final Map<String, dynamic> contrat;
   final List<Map<String, dynamic>> animaux;
   final VoidCallback onDelete;
+  final VoidCallback? onTransmettre;
 
-  const _ContratCard({required this.contrat, required this.animaux, required this.onDelete});
+  const _ContratCard({required this.contrat, required this.animaux, required this.onDelete, this.onTransmettre});
+
+  bool get _isBrouillon => (contrat['statut'] ?? 'brouillon') == 'brouillon';
 
   String get _statutLabel => switch (contrat['statut'] ?? 'brouillon') {
-    'signe'    => 'Signé',
-    'en_cours' => 'En cours',
-    _          => 'Brouillon',
+    'signe'      => '✅ Signé',
+    'en_attente' => '⏳ En attente',
+    'partiellement_signe' => '✍️ Partiel',
+    'annule'     => '🚫 Annulé',
+    'en_cours'   => 'En cours',
+    _            => 'Brouillon',
   };
 
   Color get _statutColor => switch (contrat['statut'] ?? 'brouillon') {
@@ -192,35 +233,47 @@ class _ContratCard extends StatelessWidget {
         Text('Adoptant : $adoptant', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
         if (token != null) ...[
           const SizedBox(height: 10),
-          Row(children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.open_in_browser, size: 15),
-                label: const Text('Ouvrir le contrat', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+          if (_isBrouillon && onTransmettre != null)
+            FilledButton.icon(
+              onPressed: onTransmettre,
+              style: FilledButton.styleFrom(
+                  backgroundColor: _teal,
+                  minimumSize: const Size(double.infinity, 38),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+              icon: const Icon(Icons.send_outlined, size: 15),
+              label: const Text('📤 Transmettre pour signature',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+            )
+          else
+            Row(children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.open_in_browser, size: 15),
+                  label: const Text('Ouvrir le contrat', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  style: OutlinedButton.styleFrom(
+                      foregroundColor: _teal, side: const BorderSide(color: _teal),
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                  onPressed: () async {
+                    final url = Uri.parse('$kSiteBaseUrl/signer-contrat/$token');
+                    if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.copy, size: 15),
+                label: const Text('Lien', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
                 style: OutlinedButton.styleFrom(
-                    foregroundColor: _teal, side: const BorderSide(color: _teal),
-                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    foregroundColor: _green, side: const BorderSide(color: _green),
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                onPressed: () async {
-                  final url = Uri.parse('$kSiteBaseUrl/signer-contrat/$token');
-                  if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: '$kSiteBaseUrl/signer-contrat/$token'));
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lien copié !')));
                 },
               ),
-            ),
-            const SizedBox(width: 8),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.copy, size: 15),
-              label: const Text('Lien', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-              style: OutlinedButton.styleFrom(
-                  foregroundColor: _green, side: const BorderSide(color: _green),
-                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: '$kSiteBaseUrl/signer-contrat/$token'));
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lien copié !')));
-              },
-            ),
-          ]),
+            ]),
         ],
         Align(
           alignment: Alignment.centerRight,

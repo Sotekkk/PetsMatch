@@ -73,7 +73,8 @@ export default function ContratsAdoptionPage() {
   const [fetching, setFetching] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving]   = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteId, setDeleteId]         = useState<string | null>(null);
+  const [transmitting, setTransmitting] = useState<string | null>(null);
 
   // Form fields
   const [animalId, setAnimalId]     = useState('');
@@ -214,6 +215,34 @@ export default function ContratsAdoptionPage() {
     setSaving(false);
   }
 
+  async function transmettreDoc(doc: DocAdoption) {
+    if (!user) return;
+    setTransmitting(doc.id);
+    const token = await getToken(doc.id);
+    // Passer statut en_attente
+    await supabase.from('documents_animaux').update({ statut: 'en_attente' }).eq('id', doc.id);
+    // Notifier l'adoptant si sur PetsMatch
+    const acqEmail = doc.metadata?.acquereur_email as string | undefined;
+    const acqNom   = doc.metadata?.acquereur_nom as string | undefined;
+    if (acqEmail?.trim()) {
+      const { data: targetUser } = await supabase.from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
+      if (targetUser?.uid) {
+        const assoNom = profile?.name_elevage || `${profile?.firstname ?? ''} ${profile?.lastname ?? ''}`.trim() || 'Une association';
+        const signingUrl = `${window.location.origin}/signer-contrat/${token}`;
+        await sendNotification({
+          uid: targetUser.uid, type: 'contrat_invite',
+          title: '📄 Contrat d\'adoption à signer',
+          body: `${assoNom} vous envoie "${doc.titre}" — vérifiez et signez`,
+          data: { token, url: signingUrl },
+        });
+      }
+    }
+    setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, statut: 'en_attente' as const } : d));
+    setTransmitting(null);
+    const label = acqNom || acqEmail || 'l\'adoptant';
+    alert(`Contrat transmis à ${label} !`);
+  }
+
   async function openDoc(doc: DocAdoption) {
     if (!doc.metadata) return;
     const url = `${window.location.origin}/signer-contrat/${await getToken(doc.id)}`;
@@ -293,9 +322,17 @@ export default function ContratsAdoptionPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Transmettre — brouillon uniquement */}
+                  {doc.statut === 'brouillon' && (
+                    <button onClick={() => transmettreDoc(doc)} disabled={transmitting === doc.id}
+                      className="text-xs font-galey font-semibold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-40"
+                      style={{ backgroundColor: '#0C5C6C', color: '#fff' }}>
+                      {transmitting === doc.id ? '…' : '📤 Transmettre'}
+                    </button>
+                  )}
                   <button onClick={() => openDoc(doc)}
                     className="text-xs font-galey font-semibold text-teal-700 border border-teal-200 px-3 py-1.5 rounded-xl hover:bg-teal-50 transition-colors">
-                    ✍️ Signer
+                    {doc.statut === 'brouillon' ? '👁 Aperçu' : '✍️ Signer'}
                   </button>
                   <button onClick={() => downloadPDF(doc)}
                     className="text-xs font-galey font-semibold text-gray-600 border border-gray-200 px-3 py-1.5 rounded-xl hover:bg-gray-50 transition-colors">
