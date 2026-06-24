@@ -325,21 +325,16 @@ export default function MesAnimauxPage() {
 
     async function loadAll() {
       const uid = user!.uid;
-      console.log('[MesAnimaux] uid =', uid);
 
-      // Source unique : animaux_proprietes
-      const { data: ownRows, error: ownErr } = await supabase
+      // Source unique : animaux_proprietes (nécessite policy RLS USING true sur animaux_proprietes)
+      const { data: ownRows } = await supabase
         .from('animaux_proprietes')
         .select('animal_id, date_fin')
         .eq('uid_proprio', uid);
 
-      console.log('[MesAnimaux] animaux_proprietes rows =', ownRows?.length, 'error =', ownErr);
-
       const rows = ownRows ?? [];
       const currentIds = new Set(rows.filter(r => !r.date_fin).map(r => r.animal_id as string));
       const allAnimalIds = [...new Set(rows.map(r => r.animal_id as string))];
-
-      console.log('[MesAnimaux] allAnimalIds =', allAnimalIds.length, allAnimalIds);
 
       if (allAnimalIds.length === 0) {
         setAnimaux([]);
@@ -348,13 +343,11 @@ export default function MesAnimauxPage() {
         return;
       }
 
-      const { data, error: animErr } = await supabase
+      const { data } = await supabase
         .from('animaux')
         .select('*')
         .in('id', allAnimalIds)
         .order('nom', { ascending: true });
-
-      console.log('[MesAnimaux] animaux fetched =', data?.length, 'error =', animErr);
 
       const merged = (data ?? []) as Animal[];
       setAnimaux(merged);
