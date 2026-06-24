@@ -107,7 +107,6 @@ const MENU_ELEVEUR = [
       { href: '/elevage/inventaire',              label: 'Inventaire',         icon: '📦' },
       { href: '/employes',                        label: 'Mes employés',       icon: '👥' },
       { href: '/elevage/registre-entree-sortie', label: 'Entrée - Sortie',  icon: '📂', pro: true },
-      { href: '/mes-taches',                      label: 'Mes tâches',         icon: '✅' },
     ],
   },
   {
@@ -164,7 +163,6 @@ const MENU_VET = [
     icon: '👤',
     items: [
       { href: '/profil',     label: 'Modifier mon profil', icon: '✏️' },
-      { href: '/mes-taches', label: 'Mes tâches',          icon: '✅' },
     ],
   },
   {
@@ -194,7 +192,6 @@ const MENU_PRO = [
     items: [
       { href: '/profil',     label: 'Modifier mon profil', icon: '✏️' },
       { href: '/employes',   label: 'Mes employés',        icon: '👥' },
-      { href: '/mes-taches', label: 'Mes tâches',          icon: '✅' },
     ],
   },
   {
@@ -243,7 +240,6 @@ const MENU_ASSOCIATION = [
       { href: '/association/benevoles',                  label: 'Bénévoles',             icon: '🤝' },
       { href: '/employes',                               label: 'Mes employés',          icon: '👥' },
       { href: '/association/registre-entree-sortie',     label: 'Entrée - Sortie',       icon: '📂' },
-      { href: '/mes-taches',                             label: 'Mes tâches',            icon: '✅' },
     ],
   },
   {
@@ -252,7 +248,6 @@ const MENU_ASSOCIATION = [
     items: [
       { href: '/association/agenda', label: 'Agenda',    icon: '🗓️' },
       { href: '/mes-rdv',            label: 'Mes RDV',   icon: '📅' },
-      { href: '/mes-taches',         label: 'Mes tâches', icon: '✅' },
     ],
   },
   {
@@ -299,7 +294,6 @@ const MENU_PARTICULIER = [
       { href: '/profil',              label: 'Mon Profil',         icon: '👤' },
       { href: '/mes-animaux',         label: 'Mes Animaux',        icon: '🐾' },
       { href: '/mes-animaux-acquis',  label: 'Mes Animaux Acquis', icon: '🤝' },
-      { href: '/mes-taches',          label: 'Mes tâches',         icon: '✅' },
     ],
   },
   {
