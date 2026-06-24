@@ -64,6 +64,13 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
   const [loadingFemelles, setLoadingFemelles] = useState(false);
   const [femelleSaved, setFemelleSaved]   = useState(false);
   const [savingFemelle, setSavingFemelle] = useState(false);
+  // Correction coordonnées acquéreur
+  const [editContact, setEditContact]     = useState(false);
+  const [contactNom, setContactNom]       = useState('');
+  const [contactPrenom, setContactPrenom] = useState('');
+  const [contactAdresse, setContactAdresse] = useState('');
+  const [contactTel, setContactTel]       = useState('');
+  const [savingContact, setSavingContact] = useState(false);
   const canvasElvRef        = useRef<HTMLCanvasElement>(null);
   const canvasAcqRef        = useRef<HTMLCanvasElement>(null);
   const drawingElv          = useRef(false);
@@ -180,6 +187,11 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       setAnimalStored(animal);
       setDataContratStored(dataContrat);
       if (meta.femelle_animal_id) setFemelleSaved(true);
+      // Pré-remplir les champs contact acquéreur
+      setContactNom(meta.acquereur_nom ?? '');
+      setContactPrenom(meta.acquereur_prenom ?? '');
+      setContactAdresse(meta.acquereur_adresse ?? '');
+      setContactTel(meta.acquereur_tel ?? '');
       setDoc(data as DocRow);
       setHtml(generatedHtml);
       setStatus('ready');
@@ -374,6 +386,32 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     if (window.opener) window.opener.postMessage({ type: 'contract_refused' }, '*');
   }
 
+  async function saveContactAcquereur() {
+    if (!doc) return;
+    setSavingContact(true);
+    const newMeta = {
+      ...doc.metadata,
+      acquereur_nom:     contactNom.trim(),
+      acquereur_prenom:  contactPrenom.trim(),
+      acquereur_adresse: contactAdresse.trim(),
+      acquereur_tel:     contactTel.trim(),
+    };
+    await supabase.from('documents_animaux').update({ metadata: newMeta }).eq('id', doc.id);
+    // Régénère le HTML avec les nouvelles coordonnées
+    if (eleveurStored && animalStored) {
+      const updatedData = { ...dataContratStored!, nom: contactNom.trim(), adresse: contactAdresse.trim(), tel: contactTel.trim() };
+      let newHtml = '';
+      if (doc.type === 'contrat_reservation') newHtml = generateContratReservationHTML(animalStored, updatedData, eleveurStored, {});
+      else if (doc.type === 'certificat_cession') newHtml = generateCertificatCessionHTML(animalStored, updatedData, eleveurStored, { eleveurUid: doc.uid_eleveur });
+      else if (doc.type === 'contrat_saillie') newHtml = generateContratSaillieHTML(animalStored, updatedData, eleveurStored, {});
+      else newHtml = generateContratHTML(animalStored, updatedData, eleveurStored, {});
+      if (newHtml) setHtml(newHtml);
+    }
+    setDoc(prev => prev ? { ...prev, metadata: newMeta } : prev);
+    setSavingContact(false);
+    setEditContact(false);
+  }
+
   if (status === 'loading') return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
       <div className="text-center">
@@ -400,6 +438,9 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
   const isCancelled = doc?.statut === 'annule';
   const isExpired   = doc?.statut === 'expire';
   const isFinal     = isSigned || isRefused || isCancelled || isExpired;
+  // Éleveur/propriétaire = peut modifier les champs du contrat. Acquéreur = lecture seule sur les champs vendeur.
+  const isOwner = !!user && !!doc && user.uid === doc.uid_eleveur;
+  const iframeHtml = isOwner ? html : html.replace(/contenteditable="true"/g, 'contenteditable="false"');
   const elvHandlers  = makeDrawHandlers(canvasElvRef,  drawingElv);
   const acqHandlers  = makeDrawHandlers(canvasAcqRef,  drawingAcq);
 
@@ -475,10 +516,53 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         {!isFinal && <span className="opacity-75 text-xs">🔒 Lien privé — partagez uniquement avec l&apos;acquéreur</span>}
       </div>
 
+      {/* Section correction coordonnées — acquéreur uniquement */}
+      {!isOwner && !isFinal && (
+        <div className="bg-amber-50 border-b border-amber-100 px-4 py-3">
+          {!editContact ? (
+            <div className="flex items-center justify-between max-w-3xl mx-auto">
+              <div className="text-sm text-amber-800">
+                <span className="font-semibold">Vos coordonnées : </span>
+                {[contactPrenom, contactNom].filter(Boolean).join(' ') || doc?.metadata?.acquereur_nom || '—'}
+                {contactAdresse && ` · ${contactAdresse}`}
+              </div>
+              <button onClick={() => setEditContact(true)}
+                className="text-xs text-amber-700 border border-amber-300 px-3 py-1 rounded-lg hover:bg-amber-100 transition-colors flex-shrink-0 ml-3">
+                ✏️ Corriger
+              </button>
+            </div>
+          ) : (
+            <div className="max-w-3xl mx-auto space-y-3">
+              <p className="text-sm font-semibold text-amber-800">Corriger vos coordonnées</p>
+              <div className="grid grid-cols-2 gap-3">
+                <input value={contactPrenom} onChange={e => setContactPrenom(e.target.value)} placeholder="Prénom"
+                  className="border border-amber-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-amber-400" />
+                <input value={contactNom} onChange={e => setContactNom(e.target.value)} placeholder="Nom"
+                  className="border border-amber-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-amber-400" />
+                <input value={contactAdresse} onChange={e => setContactAdresse(e.target.value)} placeholder="Adresse complète"
+                  className="border border-amber-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-amber-400 col-span-2" />
+                <input value={contactTel} onChange={e => setContactTel(e.target.value)} placeholder="Téléphone"
+                  className="border border-amber-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-amber-400" />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={saveContactAcquereur} disabled={savingContact}
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                  {savingContact ? '…' : '✅ Enregistrer'}
+                </button>
+                <button onClick={() => setEditContact(false)}
+                  className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5">
+                  Annuler
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Iframe contrat */}
       <div className="flex-1 w-full" style={{ minHeight: '70vh' }}>
         <iframe
-          srcDoc={html}
+          srcDoc={iframeHtml}
           className="w-full border-0"
           style={{ height: '80vh', minHeight: 500 }}
           title={doc?.titre ?? 'Contrat'}

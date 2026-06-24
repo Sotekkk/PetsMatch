@@ -50,6 +50,12 @@ export function animalTerms(espece?: string) {
   }
 }
 
+function fmtMontant(x: string | number | null | undefined): string {
+  if (x == null || x === '') return '';
+  const n = Math.round(typeof x === 'string' ? parseFloat(x) : Number(x));
+  return isNaN(n) ? '' : n.toLocaleString('fr-FR');
+}
+
 const CSS = `
 *{box-sizing:border-box}
 body{font-family:Arial,sans-serif;font-size:11.5px;margin:0;color:#222;line-height:1.6;orphans:4;widows:4}
@@ -529,7 +535,7 @@ En cas de perte ou blessure de l'animal confié par faute de la partie gardienne
 Il incombe à ${t.titreFemelle.toLowerCase()} de rétribuer la saillie au profit de ${t.titreMale.toLowerCase()}.<br>
 La rétribution est :<br>
 <div style="margin:6px 0">
-  <span class="cb" onclick="toggleCb(this)">☐</span> <strong>En numéraire</strong> : montant fixé à <span class="e" contenteditable="true" data-ph="X €">${data.prix && parseFloat(data.prix) > 0 ? parseFloat(data.prix).toLocaleString('fr-FR') + ' €' : ''}</span><br>
+  <span class="cb" onclick="toggleCb(this)">☐</span> <strong>En numéraire</strong> : montant fixé à <span class="e" contenteditable="true" data-ph="X €">${data.prix && fmtMontant(data.prix) ? fmtMontant(data.prix) + ' €' : ''}</span><br>
   <span style="font-size:10px;margin-left:18px">Acompte à la signature : <span class="e" contenteditable="true" data-ph="X €"></span> — Solde à l'issue de la dernière saillie : <span class="e" contenteditable="true" data-ph="X €"></span></span>
 </div>
 <div style="margin:6px 0">
@@ -632,8 +638,8 @@ export function generateContratHTML(
   const isMasculin = ['male','mâle','m'].includes((animal.sexe ?? '').toLowerCase());
   const sterilDelai = isMasculin ? t.sterilM : t.sterilF;
   const acheteurNom = data.nom || '';
-  const isGratuit = !data.prix || parseFloat(data.prix) === 0;
-  const prixTTC = data.prix ? `${parseFloat(data.prix).toLocaleString('fr-FR')} euros TTC` : '';
+  const isGratuit = !data.prix || Math.round(parseFloat(String(data.prix))) === 0;
+  const prixTTC = data.prix ? `${fmtMontant(data.prix)} euros TTC` : '';
   const dn = animal.date_naissance ? new Date(animal.date_naissance).toLocaleDateString('fr-FR') : '';
   const dateVente = data.dateCession ? new Date(data.dateCession).toLocaleDateString('fr-FR') : today;
   const animalId = opts?.animalId ?? '';
@@ -933,7 +939,7 @@ ${animal.espece?.toLowerCase() === 'chien' || animal.espece?.toLowerCase() === '
 <div class="art-title">Article 2 — Conditions de cession</div>
 <div class="block">
 Date effective de cession : <span class="e wide" contenteditable="true" data-ph="jj/mm/aaaa">${dateVente}</span><br>
-Prix de cession : <span class="e wide" contenteditable="true" data-ph="Montant en euros">${data.prix ? `${parseFloat(data.prix).toLocaleString('fr-FR')} euros TTC` : ''}</span><br>
+Prix de cession : <span class="e wide" contenteditable="true" data-ph="Montant en euros">${data.prix ? `${fmtMontant(data.prix)} euros TTC` : ''}</span><br>
 Mode de règlement : <span class="cb" onclick="toggleCb(this)">☐</span> Virement &nbsp;
 <span class="cb" onclick="toggleCb(this)">☐</span> Espèces &nbsp;
 <span class="cb" onclick="toggleCb(this)">☐</span> Chèque<br>
@@ -1015,9 +1021,9 @@ export function generateContratReservationHTML(
   const today = new Date().toLocaleDateString('fr-FR');
   const dn = animal.date_naissance ? new Date(animal.date_naissance).toLocaleDateString('fr-FR') : '';
   const acqNom    = data.nom ?? '';
-  const prix      = data.prix ? `${parseFloat(data.prix).toLocaleString('fr-FR')} euros` : '';
-  const acompte   = data.acompte ? `${parseFloat(data.acompte).toLocaleString('fr-FR')} euros` : '';
-  const tranche1  = data.tranche1 ? `${parseFloat(data.tranche1).toLocaleString('fr-FR')} euros` : '';
+  const prix      = data.prix ? `${fmtMontant(data.prix)} euros` : '';
+  const acompte   = data.acompte ? `${fmtMontant(data.acompte)} euros` : '';
+  const tranche1  = data.tranche1 ? `${fmtMontant(data.tranche1)} euros` : '';
   const animalId  = opts?.animalId ?? '';
   const sbUrl     = opts?.supabaseUrl ?? '';
   const sbKey     = opts?.supabaseKey ?? '';

@@ -211,9 +211,13 @@ function fmtDate(d: string | null | undefined) {
 
 function fmtPrix(p: number | string | null | undefined) {
   if (p == null || p === '') return null;
-  const n = typeof p === 'string' ? parseFloat(p) : p;
-  if (isNaN(n)) return null;
-  return n % 1 === 0 ? `${n.toFixed(0)} €` : `${n.toFixed(2).replace('.', ',')} €`;
+  const raw = typeof p === 'string' ? parseFloat(p) : Number(p);
+  if (isNaN(raw)) return null;
+  const n = raw % 1 === 0 ? raw : raw; // keep decimals for display
+  const formatted = raw % 1 === 0
+    ? Math.round(raw).toLocaleString('fr-FR')
+    : raw.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${formatted} €`;
 }
 
 export default function CertificatPublicPage({ params }: { params: Promise<{ token: string }> }) {
