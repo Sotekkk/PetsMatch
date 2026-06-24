@@ -1735,8 +1735,8 @@ export default function ProfilPage() {
             </button>
             <input ref={bannerInputRef} type="file" accept="image/*" className="hidden" onChange={handleBannerChange} />
             <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
-            <div className="px-5 -mt-10 mb-4 flex items-end gap-3 relative z-10">
-              <div className="w-20 h-20 rounded-full overflow-hidden bg-[#EEF5EA] flex items-center justify-center flex-shrink-0 border-4 border-white shadow-md cursor-pointer relative group" onClick={() => avatarInputRef.current?.click()}>
+            <div className="flex flex-col items-center relative z-10 pb-4">
+              <div className="-mt-10 w-20 h-20 rounded-full overflow-hidden bg-[#EEF5EA] flex items-center justify-center flex-shrink-0 border-4 border-white shadow-md cursor-pointer relative group" onClick={() => avatarInputRef.current?.click()}>
                 {(avatarPreview ?? avatar)
                   ? <Image src={avatarPreview ?? avatar!} alt="" width={80} height={80} className="object-cover w-full h-full" />
                   : <span className="text-2xl font-bold text-[#0C5C6C]">{(nameElevage[0] ?? user.email?.[0] ?? '?').toUpperCase()}</span>
@@ -1745,9 +1745,9 @@ export default function ProfilPage() {
                   <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 </div>
               </div>
-              <div className="pb-1">
-                <p className="font-bold text-[#1F2A2E] text-sm">{nameElevage || 'Mon élevage'}</p>
-                <span className="text-xs bg-[#EEF5EA] text-[#0C5C6C] px-2 py-0.5 rounded-full font-medium">
+              <div className="mt-2 text-center px-4">
+                <p className="font-bold text-[#1F2A2E] text-base leading-tight">{nameElevage || 'Mon élevage'}</p>
+                <span className="text-xs bg-[#EEF5EA] text-[#0C5C6C] px-2 py-0.5 rounded-full font-medium mt-1 inline-block">
                   {userData?.isValidate ? '✓ PRO Vérifié' : 'Éleveur'}
                 </span>
               </div>
