@@ -322,6 +322,7 @@ const MENU_PARTICULIER = [
       { href: '/annonces',      label: 'Trouver un compagnon', icon: '❤️' },
       { href: '/adoptions',     label: 'Adoptions',            icon: '💚' },
       { href: '/elevages',      label: 'Élevages',             icon: '🏡' },
+      { href: '/associations',  label: 'Associations',         icon: '🏠' },
     ],
   },
   {
