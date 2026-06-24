@@ -147,6 +147,13 @@ export default function HomeDashboard() {
       });
   }, [activeProfileId]);
 
+  // Redirection association hors du rendu (évite le setState-in-render)
+  useEffect(() => {
+    if (loading || profileLoading) return;
+    if (activeProfile?.profile_type === 'association') { router.replace('/association'); return; }
+    if (!activeProfile && userData?.isAssociation === true) { router.replace('/association'); }
+  }, [loading, profileLoading, activeProfile, userData, router]);
+
   if (loading || profileLoading) {
     return (
       <div className="flex items-center justify-center py-32">
@@ -157,13 +164,8 @@ export default function HomeDashboard() {
 
   if (!user) return <GuestHome />;
 
-  // Profil association (primaire ou secondaire) → espace association
-  if (activeProfile?.profile_type === 'association') {
-    router.replace('/association');
-    return <div className="flex items-center justify-center py-32"><div className="w-8 h-8 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" /></div>;
-  }
-  if (!activeProfile && userData?.isAssociation === true) {
-    router.replace('/association');
+  // Profil association → redirection gérée dans useEffect, on affiche un spinner en attendant
+  if (activeProfile?.profile_type === 'association' || (!activeProfile && userData?.isAssociation === true)) {
     return <div className="flex items-center justify-center py-32"><div className="w-8 h-8 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" /></div>;
   }
 
