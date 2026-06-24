@@ -28,6 +28,7 @@ interface TacheManuelle {
   titre: string;
   date: string;
   statut: string;
+  uid_eleveur: string;
   heure?: string | null;
   assigne_a?: string | null;
   assignes_a?: string[] | null;
@@ -98,30 +99,45 @@ function groupRoutines(routines: Routine[]): RoutineGroupe[] {
 
 // ── Ajout tâche manuelle depuis l'agenda ─────────────────────────────────────
 
-function AddTacheModal({ selectedDate, uid, profilSource, onClose, onSaved }: {
+function AddTacheModal({ selectedDate, uid, profilSource, employes, onClose, onSaved }: {
   selectedDate: string;
   uid: string;
   profilSource: string;
+  employes: Employe[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [titre, setTitre] = useState('');
   const [heure, setHeure] = useState('');
   const [notes, setNotes] = useState('');
+  const [assignedTo, setAssignedTo] = useState('');
   const [saving, setSaving] = useState(false);
 
   async function save() {
     if (!titre.trim()) return;
     setSaving(true);
+    const assigneUid = assignedTo || null;
     await supabase.from('taches_elevage').insert({
-      uid_eleveur: uid,
-      titre: titre.trim(),
-      date: selectedDate,
-      heure: heure || null,
-      notes: notes.trim() || null,
-      statut: 'a_faire',
-      profil_source: profilSource,
+      uid_eleveur: uid, titre: titre.trim(), date: selectedDate,
+      heure: heure || null, notes: notes.trim() || null,
+      statut: 'a_faire', profil_source: profilSource,
+      assigne_a: assigneUid, assignes_a: assigneUid ? [assigneUid] : null,
     });
+    if (assigneUid) {
+      try {
+        const { data: moi } = await supabase.from('users')
+          .select('firstname,lastname,name_elevage,is_elevage').eq('uid', uid).maybeSingle();
+        const nomEleveur = moi
+          ? (moi.is_elevage ? (moi.name_elevage ?? 'Votre éleveur') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
+          : 'Votre éleveur';
+        await supabase.from('notifications').insert({
+          uid: assigneUid, type: 'tache_assignee',
+          title: 'Nouvelle tâche assignée 📋',
+          body: `${nomEleveur} vous a assigné : ${titre.trim()}`,
+          data: {}, read: false,
+        });
+      } catch (_) {}
+    }
     setSaving(false);
     onSaved();
   }
@@ -158,11 +174,24 @@ function AddTacheModal({ selectedDate, uid, profilSource, onClose, onSaved }: {
             <textarea
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none"
               placeholder="Informations complémentaires…"
-              rows={3}
+              rows={2}
               value={notes}
               onChange={e => setNotes(e.target.value)}
             />
           </div>
+          {employes.length > 0 && (
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">Attribuer à (optionnel)</label>
+              <select
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                value={assignedTo}
+                onChange={e => setAssignedTo(e.target.value)}
+              >
+                <option value="">— Personne —</option>
+                {employes.map(e => <option key={e.uid} value={e.uid}>{e.nom}</option>)}
+              </select>
+            </div>
+          )}
         </div>
         <div className="flex gap-3 mt-5">
           <button onClick={onClose}
@@ -195,30 +224,45 @@ const ACTE_OPTIONS = [
   { value: 'autre',          label: '📋 Autre' },
 ];
 
-function AddProtocoleModal({ selectedDate, uid, profilSource, onClose, onSaved }: {
+function AddProtocoleModal({ selectedDate, uid, profilSource, employes, onClose, onSaved }: {
   selectedDate: string;
   uid: string;
   profilSource: string;
+  employes: Employe[];
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [label, setLabel]       = useState('');
-  const [typeActe, setTypeActe] = useState('autre');
+  const [label, setLabel]         = useState('');
+  const [typeActe, setTypeActe]   = useState('autre');
   const [animalNom, setAnimalNom] = useState('');
-  const [saving, setSaving]     = useState(false);
+  const [assignedTo, setAssignedTo] = useState('');
+  const [saving, setSaving]       = useState(false);
 
   async function save() {
     if (!label.trim()) return;
     setSaving(true);
+    const assigneUid = assignedTo || null;
     await supabase.from('plan_taches').insert({
-      uid_eleveur:   uid,
-      label:         label.trim(),
-      date_prevue:   selectedDate,
-      statut:        'a_faire',
-      type_acte:     typeActe,
-      animal_nom:    animalNom.trim() || null,
-      profil_source: profilSource,
+      uid_eleveur: uid, label: label.trim(), date_prevue: selectedDate,
+      statut: 'a_faire', type_acte: typeActe,
+      animal_nom: animalNom.trim() || null,
+      profil_source: profilSource, assigned_to: assigneUid,
     });
+    if (assigneUid) {
+      try {
+        const { data: moi } = await supabase.from('users')
+          .select('firstname,lastname,name_elevage,is_elevage').eq('uid', uid).maybeSingle();
+        const nomEleveur = moi
+          ? (moi.is_elevage ? (moi.name_elevage ?? 'Votre éleveur') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
+          : 'Votre éleveur';
+        await supabase.from('notifications').insert({
+          uid: assigneUid, type: 'tache_assignee',
+          title: 'Nouveau protocole assigné 📋',
+          body: `${nomEleveur} vous a assigné : ${label.trim()}`,
+          data: {}, read: false,
+        });
+      } catch (_) {}
+    }
     setSaving(false);
     onSaved();
   }
@@ -262,6 +306,19 @@ function AddProtocoleModal({ selectedDate, uid, profilSource, onClose, onSaved }
               onChange={e => setAnimalNom(e.target.value)}
             />
           </div>
+          {employes.length > 0 && (
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">Attribuer à (optionnel)</label>
+              <select
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                value={assignedTo}
+                onChange={e => setAssignedTo(e.target.value)}
+              >
+                <option value="">— Personne —</option>
+                {employes.map(e => <option key={e.uid} value={e.uid}>{e.nom}</option>)}
+              </select>
+            </div>
+          )}
         </div>
         <div className="flex gap-3 mt-5">
           <button onClick={onClose}
@@ -272,6 +329,196 @@ function AddProtocoleModal({ selectedDate, uid, profilSource, onClose, onSaved }
             className="flex-1 py-2.5 disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition-colors"
             style={{ backgroundColor: '#D97706' }}>
             {saving ? 'Ajout…' : 'Ajouter'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Édition tâche manuelle ────────────────────────────────────────────────────
+
+function EditTacheModal({ tache, employes, currentUid, onClose, onSaved }: {
+  tache: TacheManuelle;
+  employes: Employe[];
+  currentUid: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [titre, setTitre]     = useState(tache.titre);
+  const [heure, setHeure]     = useState(tache.heure ?? '');
+  const [notes, setNotes]     = useState(tache.notes ?? '');
+  const prevAssigne           = tache.assigne_a ?? (tache.assignes_a?.[0] ?? null);
+  const [assignedTo, setAssignedTo] = useState(prevAssigne ?? '');
+  const [saving, setSaving]   = useState(false);
+
+  async function save() {
+    if (!titre.trim()) return;
+    setSaving(true);
+    const newAssigne = assignedTo || null;
+    await supabase.from('taches_elevage').update({
+      titre: titre.trim(), heure: heure || null, notes: notes.trim() || null,
+      assigne_a: newAssigne, assignes_a: newAssigne ? [newAssigne] : null,
+    }).eq('id', tache.id);
+    if (newAssigne && newAssigne !== prevAssigne) {
+      try {
+        const { data: moi } = await supabase.from('users')
+          .select('firstname,lastname,name_elevage,is_elevage').eq('uid', currentUid).maybeSingle();
+        const nomEleveur = moi
+          ? (moi.is_elevage ? (moi.name_elevage ?? 'Votre éleveur') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
+          : 'Votre éleveur';
+        await supabase.from('notifications').insert({
+          uid: newAssigne, type: 'tache_assignee',
+          title: 'Tâche assignée 📋',
+          body: `${nomEleveur} vous a assigné : ${titre.trim()}`,
+          data: { tacheId: tache.id }, read: false,
+        });
+      } catch (_) {}
+    }
+    setSaving(false);
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+        <h2 className="font-bold text-gray-800 mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Modifier la tâche
+        </h2>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">Titre *</label>
+            <input
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+              value={titre} onChange={e => setTitre(e.target.value)} autoFocus
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">Heure (optionnel)</label>
+            <input type="time"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+              value={heure} onChange={e => setHeure(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">Notes (optionnel)</label>
+            <textarea
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none"
+              rows={2} value={notes} onChange={e => setNotes(e.target.value)} />
+          </div>
+          {employes.length > 0 && (
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">Attribuer à</label>
+              <select
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                value={assignedTo} onChange={e => setAssignedTo(e.target.value)}
+              >
+                <option value="">— Personne —</option>
+                {employes.map(e => <option key={e.uid} value={e.uid}>{e.nom}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-3 mt-5">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 font-medium">
+            Annuler
+          </button>
+          <button onClick={save} disabled={!titre.trim() || saving}
+            className="flex-1 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition-colors">
+            {saving ? 'Sauvegarde…' : 'Enregistrer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Édition protocole ─────────────────────────────────────────────────────────
+
+function EditProtocoleModal({ groupe, employes, currentUid, onClose, onSaved }: {
+  groupe: RoutineGroupe;
+  employes: Employe[];
+  currentUid: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [label, setLabel]         = useState(groupe.label);
+  const [typeActe, setTypeActe]   = useState(groupe.typeActe || 'autre');
+  const prevAssigned              = groupe.routines[0]?.assigned_to ?? null;
+  const [assignedTo, setAssignedTo] = useState(prevAssigned ?? '');
+  const [saving, setSaving]       = useState(false);
+
+  async function save() {
+    if (!label.trim()) return;
+    setSaving(true);
+    const newAssigned = assignedTo || null;
+    await supabase.from('plan_taches')
+      .update({ label: label.trim(), type_acte: typeActe, assigned_to: newAssigned })
+      .in('id', groupe.routines.map(r => r.id));
+    if (newAssigned && newAssigned !== prevAssigned) {
+      try {
+        const { data: moi } = await supabase.from('users')
+          .select('firstname,lastname,name_elevage,is_elevage').eq('uid', currentUid).maybeSingle();
+        const nomEleveur = moi
+          ? (moi.is_elevage ? (moi.name_elevage ?? 'Votre éleveur') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
+          : 'Votre éleveur';
+        await supabase.from('notifications').insert({
+          uid: newAssigned, type: 'tache_assignee',
+          title: 'Protocole assigné 📋',
+          body: `${nomEleveur} vous a assigné : ${label.trim()}`,
+          data: { protocoleId: groupe.etapeId }, read: false,
+        });
+      } catch (_) {}
+    }
+    setSaving(false);
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+        <h2 className="font-bold text-gray-800 mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Modifier le protocole
+        </h2>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">Intitulé *</label>
+            <input
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              value={label} onChange={e => setLabel(e.target.value)} autoFocus
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">Type d&apos;acte</label>
+            <select
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+              value={typeActe} onChange={e => setTypeActe(e.target.value)}
+            >
+              {ACTE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          {employes.length > 0 && (
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">Attribuer à</label>
+              <select
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                value={assignedTo} onChange={e => setAssignedTo(e.target.value)}
+              >
+                <option value="">— Personne —</option>
+                {employes.map(e => <option key={e.uid} value={e.uid}>{e.nom}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-3 mt-5">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 font-medium">
+            Annuler
+          </button>
+          <button onClick={save} disabled={!label.trim() || saving}
+            className="flex-1 py-2.5 disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition-colors"
+            style={{ backgroundColor: '#D97706' }}>
+            {saving ? 'Sauvegarde…' : 'Enregistrer'}
           </button>
         </div>
       </div>
@@ -300,10 +547,36 @@ function AttributionModal({ tache, employes, currentUid, onClose, onSaved }: {
   async function save() {
     setSaving(true);
     const arr = [...selected];
+    const prevUids = new Set(existing);
+    const newlyAssigned = arr.filter(uid => !prevUids.has(uid));
+
     await supabase.from('taches_elevage').update({
       assignes_a: arr,
       assigne_a: arr[0] ?? null,
     }).eq('id', tache.id);
+
+    // Notifier chaque nouvel assigné
+    if (newlyAssigned.length > 0) {
+      try {
+        const { data: moi } = await supabase.from('users')
+          .select('firstname, lastname, name_elevage, is_elevage')
+          .eq('uid', currentUid).maybeSingle();
+        const nomEleveur = moi
+          ? (moi.is_elevage ? (moi.name_elevage ?? 'Votre éleveur') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
+          : 'Votre éleveur';
+        await Promise.all(newlyAssigned.map(uid =>
+          supabase.from('notifications').insert({
+            uid,
+            type:  'tache_assignee',
+            title: 'Nouvelle tâche assignée 📋',
+            body:  `${nomEleveur} vous a assigné : ${tache.titre}`,
+            data:  { tacheId: tache.id },
+            read:  false,
+          })
+        ));
+      } catch (_) {}
+    }
+
     setSaving(false);
     onSaved();
   }
@@ -881,6 +1154,8 @@ export default function AgendaElevagePage() {
   const [confirmDelete, setConfirmDelete]     = useState<{ label: string; onConfirm: () => void } | null>(null);
   const [showAddTache, setShowAddTache]         = useState(false);
   const [showAddProtocole, setShowAddProtocole] = useState(false);
+  const [editTache, setEditTache]               = useState<TacheManuelle | null>(null);
+  const [editGroupe, setEditGroupe]             = useState<RoutineGroupe | null>(null);
   const [monthDates, setMonthDates]     = useState<Map<string, string[]>>(new Map());
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
@@ -922,7 +1197,7 @@ export default function AgendaElevagePage() {
         .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_at')
         .eq('assigned_to', user.uid).eq('date_prevue', selectedDate),
       (() => { const q = supabase.from('taches_elevage')
-        .select('id,titre,date,statut,heure,assigne_a,assignes_a,fait_par,notes')
+        .select('id,titre,date,statut,heure,uid_eleveur,assigne_a,assignes_a,fait_par,notes')
         .eq('uid_eleveur', user.uid).eq('date', selectedDate);
         return profilSource === 'association' ? q.eq('profil_source', 'association') : q.or('profil_source.is.null,profil_source.eq.eleveur'); })(),
     ]);
@@ -1109,6 +1384,13 @@ export default function AgendaElevagePage() {
             {!effectuee && (
               <span className={`text-sm font-bold ${allDone ? 'text-gray-400' : 'text-teal-600'}`}>{done}/{total}</span>
             )}
+            <button onClick={() => setEditGroupe(g)}
+              className="p-1 rounded-lg hover:bg-orange-50 text-gray-300 hover:text-orange-400">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
             <button onClick={() => setConfirmDelete({
               label: `Supprimer le protocole "${g.label}" de ce jour ?`,
               onConfirm: () => deleteGroupe(g),
@@ -1175,6 +1457,13 @@ export default function AgendaElevagePage() {
             {assignees.length > 0 ? '✎' : '+ Attrib.'}
           </button>
         )}
+        <button onClick={() => setEditTache(t)}
+          className="p-1 rounded-lg hover:bg-teal-50 text-gray-300 hover:text-teal-400 flex-shrink-0">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        </button>
         <button onClick={() => deleteManuel(t)}
           className="p-1 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 flex-shrink-0">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1489,6 +1778,7 @@ export default function AgendaElevagePage() {
           selectedDate={selectedDate}
           uid={user.uid}
           profilSource={profilSource}
+          employes={employes}
           onClose={() => setShowAddTache(false)}
           onSaved={() => { setShowAddTache(false); load(); }}
         />
@@ -1499,8 +1789,29 @@ export default function AgendaElevagePage() {
           selectedDate={selectedDate}
           uid={user.uid}
           profilSource={profilSource}
+          employes={employes}
           onClose={() => setShowAddProtocole(false)}
           onSaved={() => { setShowAddProtocole(false); load(); }}
+        />
+      )}
+
+      {editTache && (
+        <EditTacheModal
+          tache={editTache}
+          employes={employes}
+          currentUid={user.uid}
+          onClose={() => setEditTache(null)}
+          onSaved={() => { setEditTache(null); load(); }}
+        />
+      )}
+
+      {editGroupe && (
+        <EditProtocoleModal
+          groupe={editGroupe}
+          employes={employes}
+          currentUid={user.uid}
+          onClose={() => setEditGroupe(null)}
+          onSaved={() => { setEditGroupe(null); load(); }}
         />
       )}
 

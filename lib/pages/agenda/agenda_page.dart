@@ -96,8 +96,9 @@ class _AgendaPageState extends State<AgendaPage> {
   final _supa = Supabase.instance.client;
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  List<Map<String, dynamic>> _events = [];
-  List<Map<String, dynamic>> _tasks  = [];
+  List<Map<String, dynamic>> _events   = [];
+  List<Map<String, dynamic>> _tasks    = [];
+  List<Map<String, dynamic>> _employes = [];
   bool _loading = true;
   // 0 = mois, 1 = jour, 2 = liste
   int _viewMode = 0;
@@ -110,6 +111,26 @@ class _AgendaPageState extends State<AgendaPage> {
     _selectedDay = DateTime.now();
     _load();
     _loadTasks();
+    _loadEmployes();
+  }
+
+  Future<void> _loadEmployes() async {
+    try {
+      final emps = await _supa.from('employes')
+          .select('uid_employe').eq('uid_eleveur', _uid).eq('actif', true);
+      if ((emps as List).isEmpty) return;
+      final uids = emps.map((e) => e['uid_employe'] as String).toList();
+      final users = await _supa.from('users')
+          .select('uid,firstname,lastname').inFilter('uid', uids);
+      if (mounted) {
+        setState(() {
+          _employes = (users as List).map((u) => {
+            'uid': u['uid'] as String,
+            'nom': '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim(),
+          }).toList();
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _load() async {
@@ -355,6 +376,13 @@ class _AgendaPageState extends State<AgendaPage> {
                     child: Icon(Icons.schedule_outlined, size: 15, color: Colors.grey.shade400),
                   ),
                 ),
+                GestureDetector(
+                  onTap: () => _showEditProtocoleSheet(groupe),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                    child: Icon(Icons.edit_outlined, size: 15, color: Colors.grey.shade400),
+                  ),
+                ),
                 Icon(Icons.chevron_right, size: 16,
                     color: allDone ? Colors.grey.shade300 : Colors.grey.shade400),
               ],
@@ -447,6 +475,13 @@ class _AgendaPageState extends State<AgendaPage> {
               ),
             ),
           ],
+          GestureDetector(
+            onTap: () => _showEditTacheSheet(t),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Icon(Icons.edit_outlined, size: 16, color: Colors.grey.shade400),
+            ),
+          ),
           GestureDetector(
             onTap: () => _deleteManualTask(t),
             child: Padding(
@@ -646,6 +681,7 @@ class _AgendaPageState extends State<AgendaPage> {
         day: day,
         uid: _uid,
         profilSource: User_Info.activeType == 'association' ? 'association' : 'eleveur',
+        employes: _employes,
         onSaved: _loadTasks,
       ),
     );
@@ -667,6 +703,49 @@ class _AgendaPageState extends State<AgendaPage> {
         day: day,
         uid: _uid,
         profilSource: User_Info.activeType == 'association' ? 'association' : 'eleveur',
+        employes: _employes,
+        onSaved: _loadTasks,
+      ),
+    );
+  }
+
+  // ── Édition tâche manuelle ─────────────────────────────────────────────────
+
+  void _showEditTacheSheet(Map<String, dynamic> tache) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      isDismissible: true,
+      enableDrag: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _EditTacheSheet(
+        tache: tache,
+        uid: _uid,
+        employes: _employes,
+        onSaved: _loadTasks,
+      ),
+    );
+  }
+
+  // ── Édition protocole ──────────────────────────────────────────────────────
+
+  void _showEditProtocoleSheet(List<Map<String, dynamic>> groupe) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      isDismissible: true,
+      enableDrag: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _EditProtocoleSheet(
+        groupe: groupe,
+        uid: _uid,
+        employes: _employes,
         onSaved: _loadTasks,
       ),
     );
@@ -2320,8 +2399,12 @@ class _AddProtocoleSheet extends StatefulWidget {
   final DateTime day;
   final String uid;
   final String profilSource;
+  final List<Map<String, dynamic>> employes;
   final VoidCallback onSaved;
-  const _AddProtocoleSheet({required this.day, required this.uid, required this.profilSource, required this.onSaved});
+  const _AddProtocoleSheet({
+    required this.day, required this.uid, required this.profilSource,
+    required this.employes, required this.onSaved,
+  });
   @override State<_AddProtocoleSheet> createState() => _AddProtocoleSheetState();
 }
 
@@ -2329,6 +2412,7 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
   final _labelCtrl  = TextEditingController();
   final _animalCtrl = TextEditingController();
   String _typeActe = 'autre';
+  String? _selectedEmployeUid;
   bool _saving = false;
 
   @override void dispose() { _labelCtrl.dispose(); _animalCtrl.dispose(); super.dispose(); }
@@ -2337,7 +2421,8 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
     if (_labelCtrl.text.trim().isEmpty) return;
     setState(() => _saving = true);
     final dateStr = DateFormat('yyyy-MM-dd').format(widget.day);
-    await Supabase.instance.client.from('plan_taches').insert({
+    final supa = Supabase.instance.client;
+    await supa.from('plan_taches').insert({
       'uid_eleveur':   widget.uid,
       'label':         _labelCtrl.text.trim(),
       'date_prevue':   dateStr,
@@ -2345,7 +2430,26 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
       'type_acte':     _typeActe,
       'animal_nom':    _animalCtrl.text.trim().isEmpty ? null : _animalCtrl.text.trim(),
       'profil_source': widget.profilSource,
+      'assigned_to':   _selectedEmployeUid,
     });
+    if (_selectedEmployeUid != null) {
+      try {
+        final moi = await supa.from('users')
+            .select('firstname,lastname,name_elevage,is_elevage')
+            .eq('uid', widget.uid).maybeSingle();
+        final nomEleveur = moi != null
+            ? (moi['is_elevage'] == true
+                ? (moi['name_elevage'] ?? 'Votre éleveur')
+                : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim())
+            : 'Votre éleveur';
+        await supa.from('notifications').insert({
+          'uid': _selectedEmployeUid, 'type': 'tache_assignee',
+          'title': 'Nouveau protocole assigné 📋',
+          'body': '$nomEleveur vous a assigné : ${_labelCtrl.text.trim()}',
+          'data': <String, dynamic>{}, 'read': false,
+        });
+      } catch (_) {}
+    }
     setState(() => _saving = false);
     widget.onSaved();
     if (mounted) Navigator.pop(context);
@@ -2418,6 +2522,29 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
+          if (widget.employes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text('Attribuer à (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String?>(
+              value: _selectedEmployeUid,
+              onChanged: (v) => setState(() => _selectedEmployeUid = v),
+              decoration: InputDecoration(
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: kOrange, width: 2)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+              items: [
+                const DropdownMenuItem<String?>(value: null, child: Text('— Personne —', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                ...widget.employes.map((e) => DropdownMenuItem<String?>(
+                  value: e['uid'] as String,
+                  child: Text(e['nom'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                )),
+              ],
+            ),
+          ],
           const SizedBox(height: 20),
           Row(children: [
             Expanded(
@@ -2458,8 +2585,12 @@ class _AddTacheSheet extends StatefulWidget {
   final DateTime day;
   final String uid;
   final String profilSource;
+  final List<Map<String, dynamic>> employes;
   final VoidCallback onSaved;
-  const _AddTacheSheet({required this.day, required this.uid, required this.profilSource, required this.onSaved});
+  const _AddTacheSheet({
+    required this.day, required this.uid, required this.profilSource,
+    required this.employes, required this.onSaved,
+  });
   @override State<_AddTacheSheet> createState() => _AddTacheSheetState();
 }
 
@@ -2467,6 +2598,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
   final _titreCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   TimeOfDay? _heure;
+  String? _selectedEmployeUid;
   bool _saving = false;
 
   @override void dispose() { _titreCtrl.dispose(); _notesCtrl.dispose(); super.dispose(); }
@@ -2478,7 +2610,8 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
     final heureStr = _heure != null
         ? '${_heure!.hour.toString().padLeft(2, '0')}:${_heure!.minute.toString().padLeft(2, '0')}'
         : null;
-    await Supabase.instance.client.from('taches_elevage').insert({
+    final supa = Supabase.instance.client;
+    await supa.from('taches_elevage').insert({
       'uid_eleveur': widget.uid,
       'titre': _titreCtrl.text.trim(),
       'date': dateStr,
@@ -2486,7 +2619,27 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
       'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       'statut': 'a_faire',
       'profil_source': widget.profilSource,
+      'assigne_a': _selectedEmployeUid,
+      'assignes_a': _selectedEmployeUid != null ? [_selectedEmployeUid] : null,
     });
+    if (_selectedEmployeUid != null) {
+      try {
+        final moi = await supa.from('users')
+            .select('firstname,lastname,name_elevage,is_elevage')
+            .eq('uid', widget.uid).maybeSingle();
+        final nomEleveur = moi != null
+            ? (moi['is_elevage'] == true
+                ? (moi['name_elevage'] ?? 'Votre éleveur')
+                : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim())
+            : 'Votre éleveur';
+        await supa.from('notifications').insert({
+          'uid': _selectedEmployeUid, 'type': 'tache_assignee',
+          'title': 'Nouvelle tâche assignée 📋',
+          'body': '$nomEleveur vous a assigné : ${_titreCtrl.text.trim()}',
+          'data': <String, dynamic>{}, 'read': false,
+        });
+      } catch (_) {}
+    }
     setState(() => _saving = false);
     widget.onSaved();
     if (mounted) Navigator.pop(context);
@@ -2551,7 +2704,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
           const SizedBox(height: 6),
           TextField(
             controller: _notesCtrl,
-            maxLines: 3,
+            maxLines: 2,
             textCapitalization: TextCapitalization.sentences,
             style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
             decoration: InputDecoration(
@@ -2563,6 +2716,29 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
+          if (widget.employes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text('Attribuer à (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String?>(
+              value: _selectedEmployeUid,
+              onChanged: (v) => setState(() => _selectedEmployeUid = v),
+              decoration: InputDecoration(
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: _kTeal, width: 2)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+              items: [
+                const DropdownMenuItem<String?>(value: null, child: Text('— Personne —', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                ...widget.employes.map((e) => DropdownMenuItem<String?>(
+                  value: e['uid'] as String,
+                  child: Text(e['nom'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                )),
+              ],
+            ),
+          ],
           const SizedBox(height: 20),
           Row(children: [
             Expanded(
@@ -2588,6 +2764,381 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: Text(_saving ? 'Ajout…' : 'Ajouter',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+// ── Édition tâche manuelle depuis l'agenda ────────────────────────────────────
+
+class _EditTacheSheet extends StatefulWidget {
+  final Map<String, dynamic> tache;
+  final String uid;
+  final List<Map<String, dynamic>> employes;
+  final VoidCallback onSaved;
+  const _EditTacheSheet({
+    required this.tache, required this.uid,
+    required this.employes, required this.onSaved,
+  });
+  @override State<_EditTacheSheet> createState() => _EditTacheSheetState();
+}
+
+class _EditTacheSheetState extends State<_EditTacheSheet> {
+  late final TextEditingController _titreCtrl;
+  late final TextEditingController _notesCtrl;
+  TimeOfDay? _heure;
+  String? _selectedEmployeUid;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titreCtrl = TextEditingController(text: widget.tache['titre'] as String? ?? '');
+    _notesCtrl = TextEditingController(text: widget.tache['notes'] as String? ?? '');
+    _selectedEmployeUid = widget.tache['assigne_a'] as String?;
+    final h = widget.tache['heure'] as String?;
+    if (h != null && h.length >= 5) {
+      final parts = h.split(':');
+      _heure = TimeOfDay(hour: int.tryParse(parts[0]) ?? 0, minute: int.tryParse(parts[1]) ?? 0);
+    }
+  }
+
+  @override void dispose() { _titreCtrl.dispose(); _notesCtrl.dispose(); super.dispose(); }
+
+  Future<void> _save() async {
+    if (_titreCtrl.text.trim().isEmpty) return;
+    setState(() => _saving = true);
+    final heureStr = _heure != null
+        ? '${_heure!.hour.toString().padLeft(2, '0')}:${_heure!.minute.toString().padLeft(2, '0')}'
+        : null;
+    final supa = Supabase.instance.client;
+    final prevAssigne = widget.tache['assigne_a'] as String?;
+    final newAssigne = _selectedEmployeUid;
+    await supa.from('taches_elevage').update({
+      'titre': _titreCtrl.text.trim(),
+      'heure': heureStr,
+      'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+      'assigne_a': newAssigne,
+      'assignes_a': newAssigne != null ? [newAssigne] : null,
+    }).eq('id', widget.tache['id'] as String);
+    if (newAssigne != null && newAssigne != prevAssigne) {
+      try {
+        final moi = await supa.from('users')
+            .select('firstname,lastname,name_elevage,is_elevage')
+            .eq('uid', widget.uid).maybeSingle();
+        final nomEleveur = moi != null
+            ? (moi['is_elevage'] == true
+                ? (moi['name_elevage'] ?? 'Votre éleveur')
+                : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim())
+            : 'Votre éleveur';
+        await supa.from('notifications').insert({
+          'uid': newAssigne, 'type': 'tache_assignee',
+          'title': 'Tâche assignée 📋',
+          'body': '$nomEleveur vous a assigné : ${_titreCtrl.text.trim()}',
+          'data': <String, dynamic>{'tacheId': widget.tache['id']}, 'read': false,
+        });
+      } catch (_) {}
+    }
+    setState(() => _saving = false);
+    widget.onSaved();
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Center(child: Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+          )),
+          const SizedBox(height: 16),
+          const Text('Modifier la tâche',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF1E2025))),
+          const SizedBox(height: 16),
+          const Text('Titre *', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _titreCtrl,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            onChanged: (_) => setState(() {}),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: _kTeal, width: 2)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text('Heure (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          GestureDetector(
+            onTap: () async {
+              final t = await showTimePicker(context: context, initialTime: _heure ?? TimeOfDay.now());
+              if (t != null && mounted) setState(() => _heure = t);
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade400),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _heure != null ? _heure!.format(context) : 'Sélectionner une heure',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                    color: _heure != null ? const Color(0xFF1E2025) : Colors.grey.shade500),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text('Notes (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _notesCtrl,
+            maxLines: 2,
+            textCapitalization: TextCapitalization.sentences,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Informations complémentaires…',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: _kTeal, width: 2)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+          if (widget.employes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text('Attribuer à', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String?>(
+              value: _selectedEmployeUid,
+              onChanged: (v) => setState(() => _selectedEmployeUid = v),
+              decoration: InputDecoration(
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: _kTeal, width: 2)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+              items: [
+                const DropdownMenuItem<String?>(value: null, child: Text('— Personne —', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                ...widget.employes.map((e) => DropdownMenuItem<String?>(
+                  value: e['uid'] as String,
+                  child: Text(e['nom'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                )),
+              ],
+            ),
+          ],
+          const SizedBox(height: 20),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.grey.shade300),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _saving || _titreCtrl.text.trim().isEmpty ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _kTeal,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: Text(_saving ? 'Sauvegarde…' : 'Enregistrer',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+// ── Édition protocole depuis l'agenda ─────────────────────────────────────────
+
+class _EditProtocoleSheet extends StatefulWidget {
+  final List<Map<String, dynamic>> groupe;
+  final String uid;
+  final List<Map<String, dynamic>> employes;
+  final VoidCallback onSaved;
+  const _EditProtocoleSheet({
+    required this.groupe, required this.uid,
+    required this.employes, required this.onSaved,
+  });
+  @override State<_EditProtocoleSheet> createState() => _EditProtocoleSheetState();
+}
+
+class _EditProtocoleSheetState extends State<_EditProtocoleSheet> {
+  late final TextEditingController _labelCtrl;
+  late String _typeActe;
+  String? _selectedEmployeUid;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final first = widget.groupe.first;
+    _labelCtrl = TextEditingController(text: (first['titre'] ?? first['label'] ?? '') as String);
+    _typeActe = (first['type_acte'] as String?) ?? 'autre';
+    _selectedEmployeUid = first['assigned_to'] as String?;
+  }
+
+  @override void dispose() { _labelCtrl.dispose(); super.dispose(); }
+
+  Future<void> _save() async {
+    if (_labelCtrl.text.trim().isEmpty) return;
+    setState(() => _saving = true);
+    final supa = Supabase.instance.client;
+    final ids = widget.groupe.map((t) => t['id'] as String).toList();
+    final prevAssigned = widget.groupe.first['assigned_to'] as String?;
+    final newAssigned = _selectedEmployeUid;
+    await supa.from('plan_taches').update({
+      'label': _labelCtrl.text.trim(),
+      'type_acte': _typeActe,
+      'assigned_to': newAssigned,
+    }).inFilter('id', ids);
+    if (newAssigned != null && newAssigned != prevAssigned) {
+      try {
+        final moi = await supa.from('users')
+            .select('firstname,lastname,name_elevage,is_elevage')
+            .eq('uid', widget.uid).maybeSingle();
+        final nomEleveur = moi != null
+            ? (moi['is_elevage'] == true
+                ? (moi['name_elevage'] ?? 'Votre éleveur')
+                : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim())
+            : 'Votre éleveur';
+        await supa.from('notifications').insert({
+          'uid': newAssigned, 'type': 'tache_assignee',
+          'title': 'Protocole assigné 📋',
+          'body': '$nomEleveur vous a assigné : ${_labelCtrl.text.trim()}',
+          'data': <String, dynamic>{}, 'read': false,
+        });
+      } catch (_) {}
+    }
+    setState(() => _saving = false);
+    widget.onSaved();
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const kOrange = Color(0xFFD97706);
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Center(child: Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+          )),
+          const SizedBox(height: 16),
+          const Text('Modifier le protocole',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF1E2025))),
+          const SizedBox(height: 16),
+          const Text('Intitulé *', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _labelCtrl,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            onChanged: (_) => setState(() {}),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: kOrange, width: 2)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text("Type d'acte", style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            value: _typeActe,
+            onChanged: (v) => setState(() => _typeActe = v ?? 'autre'),
+            decoration: InputDecoration(
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: kOrange, width: 2)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+            items: _kActeOptions.map((o) => DropdownMenuItem(
+              value: o.$1,
+              child: Text(o.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+            )).toList(),
+          ),
+          if (widget.employes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text('Attribuer à', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String?>(
+              value: _selectedEmployeUid,
+              onChanged: (v) => setState(() => _selectedEmployeUid = v),
+              decoration: InputDecoration(
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: kOrange, width: 2)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+              items: [
+                const DropdownMenuItem<String?>(value: null, child: Text('— Personne —', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                ...widget.employes.map((e) => DropdownMenuItem<String?>(
+                  value: e['uid'] as String,
+                  child: Text(e['nom'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                )),
+              ],
+            ),
+          ],
+          const SizedBox(height: 20),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.grey.shade300),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _saving || _labelCtrl.text.trim().isEmpty ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kOrange,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: Text(_saving ? 'Sauvegarde…' : 'Enregistrer',
                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
               ),
             ),
