@@ -479,6 +479,24 @@ class _AgendaPageState extends State<AgendaPage> {
               style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
             const SizedBox(width: 8),
             GestureDetector(
+              onTap: () => _showAddProtocoleSheet(day ?? _selectedDay ?? DateTime.now()),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7ED),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFED7AA)),
+                ),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.add, size: 12, color: Color(0xFF92400E)),
+                  SizedBox(width: 2),
+                  Text('Protocole', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                      fontWeight: FontWeight.w600, color: Color(0xFF92400E))),
+                ]),
+              ),
+            ),
+            const SizedBox(width: 6),
+            GestureDetector(
               onTap: () => _showAddTacheSheet(day ?? _selectedDay ?? DateTime.now()),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -611,6 +629,27 @@ class _AgendaPageState extends State<AgendaPage> {
 
   void _prevMonth() { _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1); _load(); _loadTasks(); }
   void _nextMonth() { _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1); _load(); _loadTasks(); }
+
+  // ── Add protocole depuis l'agenda ──────────────────────────────────────────
+
+  void _showAddProtocoleSheet(DateTime day) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      isDismissible: true,
+      enableDrag: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _AddProtocoleSheet(
+        day: day,
+        uid: _uid,
+        profilSource: User_Info.activeType == 'association' ? 'association' : 'eleveur',
+        onSaved: _loadTasks,
+      ),
+    );
+  }
 
   // ── Add tâche manuelle ─────────────────────────────────────────────────────
 
@@ -890,6 +929,24 @@ class _AgendaPageState extends State<AgendaPage> {
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: _kTeal)),
             const Spacer(),
             GestureDetector(
+              onTap: () => _showAddProtocoleSheet(day),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7ED),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFED7AA)),
+                ),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.add, size: 12, color: Color(0xFF92400E)),
+                  SizedBox(width: 2),
+                  Text('Protocole', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                      fontWeight: FontWeight.w600, color: Color(0xFF92400E))),
+                ]),
+              ),
+            ),
+            const SizedBox(width: 6),
+            GestureDetector(
               onTap: () => _showAddTacheSheet(day),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -901,7 +958,7 @@ class _AgendaPageState extends State<AgendaPage> {
                 child: const Row(mainAxisSize: MainAxisSize.min, children: [
                   Icon(Icons.add, size: 12, color: _kTeal),
                   SizedBox(width: 2),
-                  Text('Nouvelle tâche', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                  Text('Tâche', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
                       fontWeight: FontWeight.w600, color: _kTeal)),
                 ]),
               ),
@@ -2237,6 +2294,158 @@ class _AgendaProtoSheetState extends State<_AgendaProtoSheet> {
           }),
 
           const SizedBox(height: 24),
+        ]),
+      ),
+    );
+  }
+}
+
+// ── Ajout protocole depuis l'agenda ───────────────────────────────────────────
+
+const _kActeOptions = [
+  ('vermifuge',       '💊 Vermifuge'),
+  ('vaccination',     '💉 Vaccination'),
+  ('antiparasitaire', '🛡️ Antiparasitaire'),
+  ('traitement',      '🩺 Traitement'),
+  ('visite',          '🏥 Visite'),
+  ('alimentaire',     '🍽️ Alimentaire'),
+  ('toilettage',      '✂️ Toilettage'),
+  ('nettoyage',       '🧴 Nettoyage'),
+  ('promenade',       '🦮 Promenade'),
+  ('socialisation',   '🦮 Socialisation'),
+  ('autre',           '📋 Autre'),
+];
+
+class _AddProtocoleSheet extends StatefulWidget {
+  final DateTime day;
+  final String uid;
+  final String profilSource;
+  final VoidCallback onSaved;
+  const _AddProtocoleSheet({required this.day, required this.uid, required this.profilSource, required this.onSaved});
+  @override State<_AddProtocoleSheet> createState() => _AddProtocoleSheetState();
+}
+
+class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
+  final _labelCtrl  = TextEditingController();
+  final _animalCtrl = TextEditingController();
+  String _typeActe = 'autre';
+  bool _saving = false;
+
+  @override void dispose() { _labelCtrl.dispose(); _animalCtrl.dispose(); super.dispose(); }
+
+  Future<void> _save() async {
+    if (_labelCtrl.text.trim().isEmpty) return;
+    setState(() => _saving = true);
+    final dateStr = DateFormat('yyyy-MM-dd').format(widget.day);
+    await Supabase.instance.client.from('plan_taches').insert({
+      'uid_eleveur':   widget.uid,
+      'label':         _labelCtrl.text.trim(),
+      'date_prevue':   '${dateStr}T00:00:00',
+      'statut':        'a_faire',
+      'type_acte':     _typeActe,
+      'animal_nom':    _animalCtrl.text.trim().isEmpty ? null : _animalCtrl.text.trim(),
+      'profil_source': widget.profilSource,
+    });
+    setState(() => _saving = false);
+    widget.onSaved();
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const kOrange = Color(0xFFD97706);
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Center(child: Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+          )),
+          const SizedBox(height: 16),
+          const Text('Nouveau protocole',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF1E2025))),
+          const SizedBox(height: 16),
+          const Text('Intitulé *', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _labelCtrl,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            onChanged: (_) => setState(() {}),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Ex: Vermifugation, Vaccination…',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: kOrange, width: 2)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text("Type d'acte", style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            value: _typeActe,
+            onChanged: (v) => setState(() => _typeActe = v ?? 'autre'),
+            decoration: InputDecoration(
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: kOrange, width: 2)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+            items: _kActeOptions.map((o) => DropdownMenuItem(
+              value: o.$1,
+              child: Text(o.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+            )).toList(),
+          ),
+          const SizedBox(height: 12),
+          const Text('Animal concerné (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _animalCtrl,
+            textCapitalization: TextCapitalization.sentences,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              hintText: "Nom de l'animal…",
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: kOrange, width: 2)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.grey.shade300),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _saving || _labelCtrl.text.trim().isEmpty ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kOrange,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: Text(_saving ? 'Ajout…' : 'Ajouter',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
         ]),
       ),
     );
