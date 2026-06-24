@@ -570,17 +570,28 @@ export default function Header() {
 
   function switchProfile(id: string | null) {
     const newId = id ?? '';
-    setActiveProfileId(newId);
+
+    // Persist before navigation so the new page reads the right profile
     if (newId) {
       localStorage.setItem(ACTIVE_PROFILE_KEY, newId);
     } else {
       localStorage.removeItem(ACTIVE_PROFILE_KEY);
     }
-    // Notifie les composants du même onglet (storage event ne fire pas dans le même onglet)
+
+    setActiveProfileId(newId);
     window.dispatchEvent(new Event(PROFILE_CHANGE_EVENT));
     setProfileSwitcherOpen(false);
     setDropdownOpen(false);
     setMenuOpen(false);
+
+    // Navigate to the home of the target profile so the page reloads fresh
+    const targetProfile = profiles.find(p => p.id === newId);
+    const dest = targetProfile?.profile_type === 'association'
+      ? '/association'
+      : targetProfile?.profile_type === 'eleveur'
+        ? '/'
+        : '/';
+    router.push(dest);
   }
 
   // ── Messages non lus ──────────────────────────────────────────────────────
