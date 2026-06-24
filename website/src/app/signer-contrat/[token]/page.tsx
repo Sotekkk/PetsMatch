@@ -645,18 +645,31 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           </p>
         )}
 
-        {/* PREP07 — Télécharger / Imprimer — disponible dès que l'éleveur a signé */}
+        {/* PREP07 — Actions disponibles dès que l'éleveur a signé */}
         {(isSigned || (isOwner && saved.eleveur)) && (
           <div className="flex justify-center mt-4 gap-3 flex-wrap">
+            {/* Valider et fermer — revient à la page précédente sans imprimer */}
+            <button
+              onClick={() => {
+                if (window.opener) {
+                  window.opener.postMessage({ type: 'contract_signed', token }, '*');
+                  window.close();
+                } else {
+                  history.back();
+                }
+              }}
+              className="flex items-center gap-2 bg-[#6E9E57] hover:bg-[#5a8a45] text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
+              ✅ Valider et fermer
+            </button>
             {doc?.pdf_signe_url ? (
               <a href={doc.pdf_signe_url} download
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
+                className="flex items-center gap-2 border border-green-600 text-green-700 hover:bg-green-50 text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
                 📥 Télécharger le PDF signé
               </a>
             ) : (
               <button onClick={handlePrint}
-                className="flex items-center gap-2 border border-green-600 text-green-700 hover:bg-green-50 text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
-                🖨️ {isSigned ? 'Imprimer / Sauvegarder en PDF' : 'Valider et sauvegarder en PDF'}
+                className="flex items-center gap-2 border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
+                🖨️ Imprimer / PDF
               </button>
             )}
           </div>

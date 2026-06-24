@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
-import { generateContratHTML, generateContratVente, generateContratReservationHTML } from '@/lib/contrat-vente';
+import { generateContratHTML, generateContratVente, generateContratReservationHTML, generateCertificatCessionHTML } from '@/lib/contrat-vente';
 import { sendNotification } from '@/lib/notifications';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 
@@ -159,7 +159,14 @@ export default function ContratsPage() {
 
   useEffect(() => {
     const handler = (e: MessageEvent) => {
-      if (e.data?.type === 'contract_signed') load();
+      if (e.data?.type === 'contract_signed') {
+        load();
+        // Si ouvert depuis la modale de cession, se ferme automatiquement après 1,5 s
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('from') === 'cession') {
+          setTimeout(() => window.close(), 1500);
+        }
+      }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
@@ -286,6 +293,24 @@ export default function ContratsPage() {
     win.document.write(html); win.document.close();
   }
 
+  async function previsualiser() {
+    if (!selectedAnimal || !profile) { alert('Sélectionnez un animal d\'abord.'); return; }
+    const elv = eleveurInfo();
+    const villeElevage = profile?.ville_elevage ?? profile?.ville ?? '';
+    const acqNomFull = `${acqPrenom} ${acqNom}`.trim();
+    const dataContrat = { nom: acqNomFull, adresse: acqAdresse, email: acqEmail, tel: acqTel, prix, dateCession: dateDoc, notes };
+    const elvInfo = { nom: elv.nom, adresse: elv.adresse, email: elv.email, siret: elv.siret, tel: elv.tel };
+    const animalEnrichi = { ...selectedAnimal, ville_naissance: villeElevage };
+    const opts = { animalId: selectedAnimal.id, supabaseUrl: '', supabaseKey: '' };
+    let html = '';
+    if (formType === 'certificat_cession') html = generateCertificatCessionHTML(animalEnrichi, dataContrat, elvInfo, { ...opts, eleveurUid: user?.uid ?? '' });
+    else if (formType === 'contrat_reservation') html = generateContratReservationHTML(animalEnrichi, dataContrat, elvInfo, opts);
+    else html = generateContratHTML(animalEnrichi, dataContrat, elvInfo, opts);
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) { alert('Autorisez les popups'); return; }
+    win.document.write(html); win.document.close();
+  }
+
   async function saveDraft(): Promise<string | null> {
     if (!user || !selectedAnimal) return null;
     const titreLabel = formType === 'contrat_vente' ? 'Contrat de vente' : formType === 'contrat_reservation' ? 'Contrat de réservation' : formType === 'contrat_saillie' ? 'Contrat de saillie' : 'Certificat de cession';
@@ -303,7 +328,7 @@ export default function ContratsPage() {
         acquereur_email:     acqEmail,
         acquereur_tel:       acqTel,
         acquereur_adresse:   acqAdresse,
-        prix:                parseFloat(prix) || null,
+        prix:                prix.trim() ? (parseFloat(prix.replace(',', '.')) || null) : null,
         date_cession:        dateDoc,
         notes,
         avec_sterilisation:  avecSteril,
@@ -624,18 +649,16 @@ export default function ContratsPage() {
               </label>
             )}
 
-            <div className="flex gap-2 pt-2">
+            <div className="flex gap-2 pt-2 flex-wrap">
               <button onClick={() => setShowForm(false)}
-                className="flex-1 border border-gray-200 text-gray-600 text-sm font-medium py-2.5 rounded-xl hover:bg-gray-50">
+                className="border border-gray-200 text-gray-600 text-sm font-medium py-2.5 px-4 rounded-xl hover:bg-gray-50">
                 Annuler
               </button>
-              {formType === 'contrat_vente' && (
-                <button onClick={() => { setShowForm(false); openBlankVente(); }}
-                  disabled={saving}
-                  className="flex-1 border border-[#0C5C6C] text-[#0C5C6C] text-sm font-medium py-2.5 rounded-xl hover:bg-[#EEF5FA] transition-colors">
-                  🖨️ Vierge
-                </button>
-              )}
+              <button onClick={previsualiser}
+                disabled={!animalId}
+                className="border border-[#0C5C6C] text-[#0C5C6C] text-sm font-medium py-2.5 px-4 rounded-xl hover:bg-[#EEF5FA] disabled:opacity-40 transition-colors">
+                👁️ Prévisualiser
+              </button>
               <button onClick={() => { setShowForm(false); openAndSign(); }}
                 disabled={!animalId || saving}
                 className="flex-1 bg-[#0C5C6C] hover:bg-[#0a4f5e] disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors">
