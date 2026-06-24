@@ -14,7 +14,6 @@ import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
-import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
@@ -327,19 +326,6 @@ class _EleveurNavState extends State<EleveurNav> {
                     icon: Icons.folder_outlined,
                     label: 'Administratif',
                     children: [
-                      _DrawerSubItem(
-                        label: 'Certificats',
-                        icon: Icons.edit_document,
-                        locked: _planCode == 'free',
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => _planCode == 'free'
-                                ? const AbonnementPage()
-                                : const CertificatsEngagementPage(),
-                          ));
-                        },
-                      ),
                       _DrawerSubItem(
                         label: 'Mes Contrats',
                         icon: Icons.description_outlined,

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
 
 class ContratReservationPage extends StatefulWidget {
   const ContratReservationPage({super.key});
@@ -78,6 +79,15 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
         foregroundColor: Colors.white,
         title: const Text('Contrats', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
         elevation: 0,
+        actions: [
+          TextButton.icon(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => const CertificatsEngagementPage(),
+            )),
+            icon: const Icon(Icons.edit_document, color: Colors.white, size: 18),
+            label: const Text('Certificats', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: _teal,
