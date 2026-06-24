@@ -1506,13 +1506,15 @@ class _IdentiteTab extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (s._statut == 'cession_en_cours' && s._cessionEnCours != null)
-            _CessionEnCoursBanner(
-              cession: s._cessionEnCours!,
-              confirming: s._confirmingCession,
-              revoking: s._revokingCession,
-              onConfirm: s._confirmerCession,
-              onRevoke: s._revoquerCession,
-            ),
+            s._uidAcquereur == FirebaseAuth.instance.currentUser?.uid
+                ? _CessionAcquereurBanner(cession: s._cessionEnCours!)
+                : _CessionEnCoursBanner(
+                    cession: s._cessionEnCours!,
+                    confirming: s._confirmingCession,
+                    revoking: s._revokingCession,
+                    onConfirm: s._confirmerCession,
+                    onRevoke: s._revoquerCession,
+                  ),
           if (s._statut == 'cession_en_cours') const SizedBox(height: 12),
           if (s._statut == 'sorti') _CessionBanner(
             dateDepart: s._dateSortie,
@@ -3114,7 +3116,122 @@ class _DocIcon extends StatelessWidget {
 
 // ─── Banner cession ───────────────────────────────────────────────────────────
 
-// ── Bannière cession en cours ──────────────────────────────────────────────
+// ── Bannière acquéreur — cession en attente de finalisation ────────────────
+
+class _CessionAcquereurBanner extends StatelessWidget {
+  final Map<String, dynamic> cession;
+  const _CessionAcquereurBanner({required this.cession});
+
+  @override
+  Widget build(BuildContext context) {
+    final prix        = (cession['prix'] as num?)?.toDouble();
+    final contratUrl  = cession['contrat_url']     as String?;
+    final certifUrl   = cession['certificat_url']  as String?;
+    final token       = cession['token']            as String?;
+    final dateC       = cession['date_cession']     as String?;
+    final statut      = cession['statut']           as String? ?? '';
+    final hasSigned   = statut == 'signe_acquereur' || statut == 'confirme';
+    final signingUrl  = token != null ? '$kSiteBaseUrl/signer-cession/$token' : null;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF93C5FD)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.transfer_within_a_station_outlined, color: Color(0xFF1D4ED8), size: 18),
+          const SizedBox(width: 6),
+          const Expanded(
+            child: Text('Animal en cours de transfert vers vous',
+                style: TextStyle(fontWeight: FontWeight.w700, fontFamily: 'Galey',
+                    fontSize: 13, color: Color(0xFF1D4ED8))),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        const Text(
+          'Vous êtes désigné acquéreur. Signez les documents et validez le paiement pour finaliser la cession.',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF1E40AF)),
+        ),
+        if (dateC != null || (prix != null && prix > 0)) ...[
+          const SizedBox(height: 6),
+          if (dateC != null) _infoLine('Date prévue', dateC),
+          if (prix != null && prix > 0) _infoLine('Prix', '${prix.toStringAsFixed(0)} €'),
+        ],
+        const SizedBox(height: 8),
+        _docLine('Contrat', contratUrl),
+        _docLine('Certificat de cession', certifUrl),
+        const SizedBox(height: 10),
+        if (!hasSigned && signingUrl != null)
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () async {
+                final url = Uri.parse(signingUrl);
+                if (await canLaunchUrl(url)) {
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                } else {
+                  await Clipboard.setData(ClipboardData(text: signingUrl));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Lien copié — ouvrez-le dans votre navigateur')));
+                  }
+                }
+              },
+              icon: const Icon(Icons.draw_outlined, size: 16),
+              label: const Text('Signer les documents',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1D4ED8),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+            ),
+          ),
+        if (hasSigned) ...[
+          Row(children: [
+            const Icon(Icons.check_circle, color: Color(0xFF6E9E57), size: 14),
+            const SizedBox(width: 4),
+            const Expanded(
+              child: Text('Documents signés — en attente de confirmation du vendeur.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF065F46))),
+            ),
+          ]),
+        ],
+        const SizedBox(height: 4),
+        const Text('La fiche est en lecture seule jusqu\'à confirmation.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey)),
+      ]),
+    );
+  }
+
+  Widget _infoLine(String label, String val) => Padding(
+    padding: const EdgeInsets.only(bottom: 3),
+    child: Row(children: [
+      Text('$label : ', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      Text(val, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+    ]),
+  );
+
+  Widget _docLine(String label, String? url) => Padding(
+    padding: const EdgeInsets.only(bottom: 3),
+    child: Row(children: [
+      Icon(url != null ? Icons.check_circle_outline : Icons.radio_button_unchecked,
+          size: 13, color: url != null ? const Color(0xFF6E9E57) : Colors.orange),
+      const SizedBox(width: 4),
+      Text('$label : ', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      Text(url != null ? 'Fourni ✓' : 'Non fourni',
+          style: TextStyle(fontSize: 11,
+              color: url != null ? const Color(0xFF6E9E57) : Colors.orange,
+              fontWeight: FontWeight.w600)),
+    ]),
+  );
+}
+
+// ── Bannière cession en cours (côté cédant) ────────────────────────────────
 
 class _CessionEnCoursBanner extends StatelessWidget {
   final Map<String, dynamic> cession;

@@ -286,8 +286,10 @@ class _CessionSheetState extends State<CessionSheet> {
       final signingUrl = '$baseUrl/signer-cession/$token';
 
       // 2. Passer l'animal en 'cession_en_cours' (pas encore sorti)
+      // uid_acquereur posé dès maintenant si compte PetsMatch → acquéreur peut voir la fiche en lecture seule
       await _supa.from('animaux').update({
         'statut':               'cession_en_cours',
+        'uid_acquereur':        _foundUser?['uid'],
         'destinataire_qualite': _qualite,
         'destinataire_nom':     _nomCtrl.text.trim(),
         'destinataire_adresse': _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),

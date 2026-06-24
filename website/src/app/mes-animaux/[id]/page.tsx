@@ -1669,8 +1669,62 @@ export default function AnimalFichePage() {
         </div>
       )}
 
-      {/* Bannière cession EN COURS */}
-      {animal.statut === 'cession_en_cours' && (
+      {/* Bannière cession EN COURS — acquéreur (lecture seule, doit signer) */}
+      {animal.statut === 'cession_en_cours' && isAcquereur && cessionEnCours && (() => {
+        const hasSigned = cessionEnCours.statut === 'signe_acquereur' || cessionEnCours.statut === 'confirme';
+        const token = cessionEnCours.token as string | undefined;
+        const signingUrl = token ? `/signer-cession/${token}` : null;
+        const prix = cessionEnCours.prix as number | null;
+        const dateC = cessionEnCours.date_cession as string | undefined;
+        const contratUrl  = cessionEnCours.contrat_url    as string | null;
+        const certifUrl   = cessionEnCours.certificat_url as string | null;
+        return (
+          <div className="mb-4 bg-blue-50 border border-blue-300 rounded-2xl p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">📦</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-blue-800" style={{ fontFamily:'Galey,sans-serif' }}>
+                  Animal en cours de transfert vers vous
+                </p>
+                <p className="text-xs text-blue-700 mt-0.5">
+                  Signez les documents et validez le paiement pour finaliser la cession. La fiche est en lecture seule jusqu'à confirmation.
+                </p>
+                {(dateC || prix) && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    {dateC && <>Date prévue : <strong>{new Date(dateC).toLocaleDateString('fr-FR')}</strong></>}
+                    {dateC && prix ? ' · ' : ''}
+                    {prix && prix > 0 && <>Prix : <strong>{prix} €</strong></>}
+                  </p>
+                )}
+                {/* Statut documents */}
+                <div className="flex gap-3 mt-2 text-xs">
+                  <span className={contratUrl ? 'text-green-600' : 'text-orange-500'}>
+                    {contratUrl ? '✅' : '○'} Contrat
+                  </span>
+                  <span className={certifUrl ? 'text-green-600' : 'text-orange-500'}>
+                    {certifUrl ? '✅' : '○'} Certificat
+                  </span>
+                </div>
+              </div>
+            </div>
+            {!hasSigned && signingUrl && (
+              <a href={signingUrl}
+                className="block w-full text-center text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl py-2.5 transition-colors">
+                ✍️ Signer les documents
+              </a>
+            )}
+            {hasSigned && (
+              <div className="flex items-center gap-2 text-xs text-green-700 font-semibold bg-green-50 rounded-xl px-3 py-2">
+                <span>✅</span>
+                <span>Documents signés — en attente de confirmation du vendeur.</span>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Bannière cession EN COURS — cédant (peut confirmer / révoquer) */}
+      {animal.statut === 'cession_en_cours' && !isAcquereur && (
         <div className="mb-4 bg-amber-50 border border-amber-300 rounded-2xl p-4">
           <div className="flex items-start gap-3">
             <span className="text-2xl">⏳</span>

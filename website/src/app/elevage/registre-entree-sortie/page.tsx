@@ -104,11 +104,11 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
         supabase.from('animaux').select(cols).eq('uid_acquereur', user.uid).neq('uid_eleveur', user.uid).or(assoCond),
       ]);
       const seen = new Set<string>();
-      const merged = [...(r1.data ?? []), ...(r2.data ?? [])].filter((a) => {
+      const merged: Animal[] = [...(r1.data ?? []), ...(r2.data ?? [])].filter((a) => {
         if (seen.has((a as Animal).id)) return false;
         seen.add((a as Animal).id);
         return true;
-      });
+      }) as Animal[];
       // Animaux historiques (re-cédés) : trouvés via registre_mouvements
       const { data: mvts } = await supabase.from('registre_mouvements').select('animal_id').eq('uid_eleveur', user.uid);
       if (mvts && mvts.length > 0) {
@@ -116,9 +116,10 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
         if (historicalIds.length > 0) {
           const { data: historical } = await supabase.from('animaux').select(cols).in('id', historicalIds);
           (historical ?? []).forEach((a) => {
-            if (!seen.has((a as Animal).id)) {
-              seen.add((a as Animal).id);
-              merged.push(a as Animal);
+            const animal = a as unknown as Animal;
+            if (!seen.has(animal.id)) {
+              seen.add(animal.id);
+              merged.push(animal);
             }
           });
         }

@@ -1472,18 +1472,19 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   }
 
   void _openFiche(BuildContext context, String? animalId, {Map<String, dynamic>? data}) {
-    // Lecture seule uniquement pour l'éleveur ORIGINAL qui cède l'animal (il voit dans ses Sorties)
-    // L'acquéreur a les droits d'écriture sur l'animal reçu
-    final isCededByMe = data != null
-        && data['uid_eleveur'] == _uid
-        && data['uid_acquereur'] != null
-        && (data['statut'] as String? ?? '') == 'sorti';
+    final statut = data != null ? (data['statut'] as String? ?? '') : '';
+    // Lecture seule si cédant original sur animal sorti
+    final isCededByMe = data != null && data['uid_eleveur'] == _uid
+        && data['uid_acquereur'] != null && statut == 'sorti';
+    // Lecture seule si acquéreur en attente de confirmation
+    final isAcquereurPending = data != null && data['uid_acquereur'] == _uid
+        && statut == 'cession_en_cours';
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => AnimalFichePage(
         animalId: animalId,
         initialData: data,
         preselectedEspece: _filterEspece != 'tous' ? _filterEspece : null,
-        readOnly: isCededByMe,
+        readOnly: isCededByMe || isAcquereurPending,
       ),
     )).then((_) => _loadAnimaux());
   }
@@ -1694,6 +1695,20 @@ class _AnimalCard extends StatelessWidget {
                             color: color.withOpacity(0.12),
                             child: Center(child: speciesIcon(espece, 44, color)),
                           ),
+                    if (statut == 'cession_en_cours')
+                      Positioned(
+                        top: 6, right: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF8F00),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('⏳ Cession',
+                              style: TextStyle(color: Colors.white, fontSize: 9,
+                                  fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                        ),
+                      ),
                     if (showStatut && (statut == 'sorti' || statut == 'decede'))
                       Positioned(
                         top: 6, right: 6,
