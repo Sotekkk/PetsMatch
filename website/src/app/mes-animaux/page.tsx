@@ -315,72 +315,55 @@ export default function MesAnimauxPage() {
     setFetching(true);
 
     async function loadAll() {
-      // 1) Récupérer toutes les lignes de propriété de l'utilisateur
-      const { data: ownRows } = await supabase
-        .from('animaux_proprietes')
-        .select('animal_id, date_debut, date_fin')
-        .eq('uid_proprio', user!.uid);
-
-      // Fallback : si la table n'est pas encore peuplée, utiliser l'ancienne logique
-      const hasOwnershipData = (ownRows ?? []).length > 0;
-
-      // IDs où l'utilisateur est propriétaire actuel (date_fin IS NULL)
-      const currentIds = new Set((ownRows ?? []).filter(r => !r.date_fin).map(r => r.animal_id as string));
-      // IDs où il était propriétaire (date_fin NOT NULL)
-      const formerIds  = new Set((ownRows ?? []).filter(r =>  r.date_fin).map(r => r.animal_id as string));
-      const allOwnershipIds = [...new Set([...currentIds, ...formerIds])];
-
-      // 2) Récupérer les animaux concernés + fallback ancienne logique
-      let animalIds = allOwnershipIds;
-      if (!hasOwnershipData) {
-        // Fallback : uid_eleveur / uid_acquereur / uid_proprietaire
-        const { data: fallbackRows } = await supabase
-          .from('animaux')
-          .select('id')
-          .or(`uid_eleveur.eq.${user!.uid},uid_acquereur.eq.${user!.uid},uid_proprietaire.eq.${user!.uid}`)
-          .or('is_association.is.null,is_association.eq.false');
-        animalIds = (fallbackRows ?? []).map(r => r.id as string);
-      }
-
-      if (animalIds.length === 0) {
-        // Aussi inclure les animaux dont l'utilisateur est éleveur d'origine
-        const { data: elvRows } = await supabase
-          .from('animaux')
-          .select('id')
-          .eq('uid_eleveur', user!.uid)
-          .or('is_association.is.null,is_association.eq.false');
-        animalIds = (elvRows ?? []).map(r => r.id as string);
-      }
-
-      if (animalIds.length === 0) { setAnimaux([]); setFetching(false); return; }
-
+      // 1) Toujours récupérer TOUS les animaux via uid_eleveur / uid_acquereur / uid_proprietaire
+      //    (source exhaustive — ne jamais laisser un animal disparaître)
       const { data } = await supabase
         .from('animaux')
         .select('*')
-        .in('id', animalIds)
+        .or(`uid_eleveur.eq.${user!.uid},uid_acquereur.eq.${user!.uid},uid_proprietaire.eq.${user!.uid}`)
         .or('is_association.is.null,is_association.eq.false')
         .order('nom', { ascending: true });
 
       const list = (data ?? []) as Animal[];
       setAnimaux(list);
 
-      // Séparation présents / anciens basée sur animaux_proprietes
-      // Si table peuplée : date_fin IS NULL = présent ; sinon fallback statut
+      // 2) Récupérer animaux_proprietes pour le split présents/anciens
+      const { data: ownRows } = await supabase
+        .from('animaux_proprietes')
+        .select('animal_id, date_fin')
+        .eq('uid_proprio', user!.uid);
+
+      const currentIds = new Set((ownRows ?? []).filter(r => !r.date_fin).map(r => r.animal_id as string));
+      const hasOwnershipData = (ownRows ?? []).length > 0;
+
       if (hasOwnershipData) {
-        setCessionEnAttente(currentIds);  // on réutilise le Set pour "est propriétaire actuel"
+        // Pour les animaux absents de la table (ex. uid_proprietaire non migré) :
+        // les ajouter à currentIds si statut != sorti/decede
+        list.forEach(a => {
+          if (!currentIds.has(a.id) && !(ownRows ?? []).some(r => r.animal_id === a.id)) {
+            const s = a.statut ?? 'present';
+            if (s !== 'sorti' && s !== 'decede') currentIds.add(a.id);
+          }
+        });
+        setCessionEnAttente(currentIds);
       } else {
-        // Fallback : détection via documents_animaux
+        // Fallback complet : statut + uid_acquereur + documents en attente
         const sortisIds = list.filter(a => a.statut === 'sorti').map(a => a.id);
+        const pending = new Set(
+          list.filter(a => {
+            const s = a.statut ?? 'present';
+            return s !== 'sorti' && s !== 'decede';
+          }).map(a => a.id)
+        );
+        list.filter(a => a.uid_acquereur === user!.uid).forEach(a => pending.add(a.id));
         if (sortisIds.length > 0) {
           const { data: pendingDocs } = await supabase
             .from('documents_animaux').select('animal_id')
             .in('animal_id', sortisIds).in('type', ['contrat_vente', 'certificat_cession'])
             .not('statut', 'in', '(signe,annule,refuse,archive,expire)');
-          const pending = new Set((pendingDocs ?? []).map((d: {animal_id:string}) => d.animal_id));
-          // Aussi ajouter ceux où uid_acquereur = user
-          list.filter(a => a.uid_acquereur === user!.uid).forEach(a => pending.add(a.id));
-          setCessionEnAttente(pending);
+          (pendingDocs ?? []).forEach((d: {animal_id:string}) => pending.add(d.animal_id));
         }
+        setCessionEnAttente(pending);
       }
 
       setFetching(false);

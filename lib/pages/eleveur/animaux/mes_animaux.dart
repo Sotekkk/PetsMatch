@@ -124,7 +124,13 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     try {
       final supa = Supabase.instance.client;
 
-      // Récupérer les animal_id via animaux_proprietes (source de vérité)
+      // 1) Toujours récupérer tous les animaux via uid_eleveur/uid_acquereur/uid_proprietaire
+      final rows = await supa.from('animaux').select()
+          .or('uid_eleveur.eq.$_uid,uid_acquereur.eq.$_uid,uid_proprietaire.eq.$_uid')
+          .or('is_association.eq.false,is_association.is.null');
+      final animaux = List<Map<String, dynamic>>.from(rows as List);
+
+      // 2) Récupérer animaux_proprietes pour le split présents/anciens
       final ownRows = await supa.from('animaux_proprietes')
           .select('animal_id, date_fin')
           .eq('uid_proprio', _uid!);
@@ -135,23 +141,20 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         if (id.isEmpty) continue;
         if (r['date_fin'] == null) { currentIds.add(id); } else { formerIds.add(id); }
       }
-      final allIds = {...currentIds, ...formerIds}.toList();
+      final hasOwnershipData = (ownRows as List).isNotEmpty;
 
-      // Fallback si table non encore peuplée
-      List<Map<String, dynamic>> animaux;
-      if (allIds.isEmpty) {
-        final rows = await supa.from('animaux').select()
-            .or('uid_eleveur.eq.$_uid,uid_acquereur.eq.$_uid')
-            .or('is_association.eq.false,is_association.is.null');
-        animaux = List<Map<String, dynamic>>.from(rows as List);
-      } else {
-        final rows = await supa.from('animaux').select()
-            .inFilter('id', allIds)
-            .or('is_association.eq.false,is_association.is.null');
-        animaux = List<Map<String, dynamic>>.from(rows as List);
+      // Pour les animaux absents de la table (migration incomplète) → fallback statut
+      if (hasOwnershipData) {
+        for (final a in animaux) {
+          final id = a['id'] as String? ?? '';
+          if (id.isEmpty) continue;
+          if (currentIds.contains(id) || formerIds.contains(id)) continue;
+          final statut = a['statut'] as String? ?? '';
+          if (statut != 'sorti' && statut != 'decede') currentIds.add(id);
+          else formerIds.add(id);
+        }
       }
 
-      // Stocker les ensembles pour le filtre présents/anciens
       _currentOwnerIds = currentIds;
       _formerOwnerIds  = formerIds;
 

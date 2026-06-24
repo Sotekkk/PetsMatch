@@ -99,3 +99,21 @@ WHERE a.uid_acquereur IS NOT NULL
     WHERE ap.animal_id = a.id AND ap.uid_proprio = a.uid_acquereur
   )
 ON CONFLICT DO NOTHING;
+
+-- 3) Particuliers : uid_proprietaire sans uid_eleveur (animal ajouté directement par le propriétaire)
+INSERT INTO public.animaux_proprietes (animal_id, uid_proprio, date_debut, date_fin)
+SELECT
+  a.id,
+  a.uid_proprietaire,
+  COALESCE(a.date_entree::date, a.created_at::date, CURRENT_DATE) AS date_debut,
+  NULL AS date_fin
+FROM public.animaux a
+WHERE a.uid_proprietaire IS NOT NULL
+  AND a.uid_proprietaire != ''
+  AND (a.uid_eleveur IS NULL OR a.uid_eleveur = '')
+  AND a.statut NOT IN ('sorti', 'decede')
+  AND NOT EXISTS (
+    SELECT 1 FROM public.animaux_proprietes ap
+    WHERE ap.animal_id = a.id AND ap.uid_proprio = a.uid_proprietaire
+  )
+ON CONFLICT DO NOTHING;
