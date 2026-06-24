@@ -102,6 +102,11 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, isR
           {a.statut === 'decede' ? 'Décédé' : 'Sorti'}
         </span>
       )}
+      {tab === 'presents' && a.statut === 'en_attente_cession' && !selectMode && (
+        <span className="absolute top-2 right-2 bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg">
+          ⏳ Cession
+        </span>
+      )}
       {showPorteeBadge && a.portee_id && !selectMode && (
         <span className="absolute top-2 left-2 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg bg-[#0C5C6C]/85">
           🐣 Portée

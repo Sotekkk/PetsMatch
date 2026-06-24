@@ -289,6 +289,11 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       ...(bothSigned ? { signe_le: now } : {}),
     }).eq('token', token);
 
+    // Quand le contrat de cession est entièrement signé → finaliser le transfert de l'animal
+    if (bothSigned && (doc.type === 'contrat_vente' || doc.type === 'certificat_cession') && doc.animal_id) {
+      await supabase.from('animaux').update({ statut: 'sorti' }).eq('id', doc.animal_id).eq('statut', 'en_attente_cession');
+    }
+
     // Notifications inter-parties
     const acqEmail  = doc.metadata?.acquereur_email;
     const acqNom    = doc.metadata?.acquereur_nom || 'L\'acquéreur';
@@ -319,7 +324,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           data: { token, url: signingUrl } }) });
     }
 
-    setDoc(prev => prev ? { ...prev, statut: newStatut, metadata: { ...prev.metadata, [sigField]: dataUrl, [dateField]: now } } : prev);
+    setDoc(prev => prev ? { ...prev, statut: newStatut, ...(bothSigned ? { signe_le: now } : {}), metadata: { ...prev.metadata, [sigField]: dataUrl, [dateField]: now } } : prev);
     setSaved(newSaved);
     setSaving(null);
   }
@@ -641,7 +646,9 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
 
         {isSigned && (
           <p className="text-center text-green-700 font-semibold mt-4 text-sm">
-            ✅ Contrat signé le {new Date(doc!.signe_le!).toLocaleDateString('fr-FR', { dateStyle: 'long' })} — les deux parties ont apposé leur signature.
+            ✅ Contrat signé{doc?.signe_le && new Date(doc.signe_le).getFullYear() > 1970
+              ? ` le ${new Date(doc.signe_le).toLocaleDateString('fr-FR', { dateStyle: 'long' })}`
+              : ''} — les deux parties ont apposé leur signature.
           </p>
         )}
 
@@ -651,12 +658,13 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             {/* Valider et fermer — revient à la page précédente sans imprimer */}
             <button
               onClick={() => {
-                if (window.opener) {
-                  window.opener.postMessage({ type: 'contract_signed', token }, '*');
-                  window.close();
-                } else {
-                  history.back();
+                // Notifier l'ouvreur si présent (popup depuis contrat page)
+                if (window.opener && !window.opener.closed) {
+                  try { window.opener.postMessage({ type: 'contract_signed', token }, '*'); } catch { /* cross-origin */ }
                 }
+                // Fermer si popup ; sinon rediriger (timeout laisse le temps au close)
+                window.close();
+                setTimeout(() => { window.location.href = '/elevage/contrat'; }, 300);
               }}
               className="flex items-center gap-2 bg-[#6E9E57] hover:bg-[#5a8a45] text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
               ✅ Valider et fermer

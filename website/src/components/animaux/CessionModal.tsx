@@ -290,7 +290,7 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
       const finalCertificatUrl = certificatUrl || selectedCertificat?.url || null;
 
       await supabase.from('animaux').update({
-        statut:                 'sorti',
+        statut:                 'en_attente_cession',
         date_sortie:            dateCession,
         destinataire_qualite:   qualite,
         destinataire_nom:       nom.trim(),
