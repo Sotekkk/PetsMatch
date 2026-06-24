@@ -553,8 +553,6 @@ export default function Header() {
   useEffect(() => {
     if (!user) { setProfiles([]); setActiveProfileId(''); return; }
 
-    const savedId = localStorage.getItem(ACTIVE_PROFILE_KEY) ?? '';
-
     supabase
       .from('user_profiles')
       .select('id, profile_type, profile_label, avatar_url, name_elevage, cat_pro')
@@ -562,6 +560,8 @@ export default function Header() {
       .then(({ data }) => {
         const rows = (data ?? []) as UserProfile[];
         setProfiles(rows);
+        // Read localStorage at resolution time to avoid stale-closure race condition
+        const savedId = localStorage.getItem(ACTIVE_PROFILE_KEY) ?? '';
         if (savedId && rows.some(p => p.id === savedId)) {
           setActiveProfileId(savedId);
         }
@@ -581,7 +581,6 @@ export default function Header() {
     setProfileSwitcherOpen(false);
     setDropdownOpen(false);
     setMenuOpen(false);
-    router.refresh();
   }
 
   // ── Messages non lus ──────────────────────────────────────────────────────
