@@ -83,6 +83,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   late TabController _tabController;
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   List<Map<String, dynamic>> _animauxData = [];
+  Set<String> _cessionEnAttenteIds = {};  // animaux 'sorti' avec contrat non signé
   Map<String, bool> _chaleurFlags  = {};
   Map<String, bool> _gestanteFlags = {};
   bool _loading = true;
@@ -190,11 +191,33 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         }
       } catch (_) {}
 
+      // Détecter les animaux 'sorti' avec un contrat de cession non signé
+      final sortisIds = animaux
+          .where((a) => (a['statut'] as String? ?? '') == 'sorti')
+          .map((a) => a['id'] as String? ?? '')
+          .where((id) => id.isNotEmpty)
+          .toList();
+      Set<String> pendingIds = {};
+      if (sortisIds.isNotEmpty) {
+        try {
+          final pendingDocs = await supa.from('documents_animaux')
+              .select('animal_id')
+              .inFilter('animal_id', sortisIds)
+              .inFilter('type', ['contrat_vente', 'certificat_cession'])
+              .not('statut', 'in', '(signe,annule,refuse,archive,expire)');
+          pendingIds = (pendingDocs as List)
+              .map((d) => d['animal_id'] as String? ?? '')
+              .where((id) => id.isNotEmpty)
+              .toSet();
+        } catch (_) {}
+      }
+
       if (mounted) setState(() {
-        _animauxData    = animaux;
-        _chaleurFlags   = cFlags;
-        _gestanteFlags  = gFlags;
-        _loading        = false;
+        _animauxData          = animaux;
+        _cessionEnAttenteIds  = pendingIds;
+        _chaleurFlags         = cFlags;
+        _gestanteFlags        = gFlags;
+        _loading              = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -401,7 +424,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
     for (final d in _animauxData) {
       final statut = d['statut'] as String? ?? '';
-      if (statut == 'sorti' || statut == 'decede') continue;
+      final hasPending = _cessionEnAttenteIds.contains(d['id'] as String? ?? '');
+      if (!hasPending && (statut == 'sorti' || statut == 'decede')) continue;
       final esp  = (d['espece'] ?? '') as String;
       final race = (d['race']   ?? '') as String;
       if (esp.isNotEmpty) {
@@ -1046,8 +1070,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     var base = _animauxData.where((data) {
       final statut = data['statut'] as String? ?? '';
       final isReceived = data['uid_acquereur'] == _uid;
-      // Reçus par cession → comptent comme "présents" pour le nouvel acquéreur
-      if (isReceived) { /* keep */ }
+      final hasPendingContract = _cessionEnAttenteIds.contains(data['id'] as String? ?? '');
+      // Reçus ou en attente de cession → restent dans les présents
+      if (isReceived || hasPendingContract) { /* keep */ }
       else if (statut == 'sorti' || statut == 'decede') return false;
       if (_filterEspece != 'tous' && data['espece'] != _filterEspece) return false;
       if (_filterSexe != 'tous' && data['sexe'] != _filterSexe) return false;

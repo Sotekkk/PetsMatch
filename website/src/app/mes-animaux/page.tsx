@@ -248,6 +248,7 @@ export default function MesAnimauxPage() {
   const isEleveur = userData?.isElevage === true;
 
   const [animaux, setAnimaux] = useState<Animal[]>([]);
+  const [cessionEnAttente, setCessionEnAttente] = useState<Set<string>>(new Set());
   const [fetching, setFetching] = useState(true);
   const [chaleurFlags, setChaleurFlags] = useState<Record<string, boolean>>({});
   const [gestanteFlags, setGestanteFlags] = useState<Record<string, boolean>>({});
@@ -322,6 +323,19 @@ export default function MesAnimauxPage() {
       setAnimaux(list);
       setFetching(false);
 
+      // Détecter les animaux 'sorti' qui ont encore un contrat de cession non signé
+      // (cédés avant le fix qui introduisait 'en_attente_cession')
+      const sortisIds = list.filter(a => a.statut === 'sorti').map(a => a.id);
+      if (sortisIds.length > 0) {
+        const { data: pendingDocs } = await supabase
+          .from('documents_animaux')
+          .select('animal_id')
+          .in('animal_id', sortisIds)
+          .in('type', ['contrat_vente', 'certificat_cession'])
+          .not('statut', 'in', '(signe,annule,refuse,archive,expire)');
+        setCessionEnAttente(new Set((pendingDocs ?? []).map((d: {animal_id: string}) => d.animal_id)));
+      }
+
       // Calcul flags chaleurs et gestante pour les femelles présentes
       const femIds = list
         .filter(a => (a.sexe ?? '').startsWith('f') && a.statut !== 'sorti' && a.statut !== 'decede')
@@ -393,11 +407,17 @@ export default function MesAnimauxPage() {
   if (loading || !user) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
 
   // Séparer présents / anciens
+  // Un animal 'sorti' reste dans présents s'il a encore un contrat de cession non signé
   const presents = animaux.filter(a => {
     const s = a.statut ?? 'present';
-    return s !== 'sorti' && s !== 'decede';
+    if (s === 'decede') return false;
+    if (s === 'sorti') return cessionEnAttente.has(a.id);
+    return true;
   });
-  const anciens = animaux.filter(a => a.statut === 'sorti' || a.statut === 'decede');
+  const anciens = animaux.filter(a => {
+    const s = a.statut ?? '';
+    return (s === 'sorti' && !cessionEnAttente.has(a.id)) || s === 'decede';
+  });
 
   // Espèces disponibles dans chaque groupe
   const especesPresents = [...new Set(presents.map(a => a.espece).filter(Boolean))] as string[];
