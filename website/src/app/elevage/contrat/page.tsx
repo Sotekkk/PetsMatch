@@ -87,6 +87,7 @@ export default function ContratsPage() {
   const [animalId, setAnimalId]       = useState('');
   const [selectedAnimal, setSelectedAnimal] = useState<Animal | null>(null);
   const [acqRaisonSociale, setAcqRaisonSociale] = useState('');
+  const [acqSiret, setAcqSiret]       = useState('');
   const [acqNom, setAcqNom]           = useState('');
   const [acqPrenom, setAcqPrenom]     = useState('');
   const [acqEmail, setAcqEmail]       = useState('');
@@ -98,7 +99,7 @@ export default function ContratsPage() {
   const [avecSteril, setAvecSteril]   = useState(true);
   // Recherche acquéreur PetsMatch
   const [userSearch, setUserSearch]   = useState('');
-  type UserResult = { uid:string; firstname:string; lastname:string; name_elevage?:string; is_elevage?:boolean; email:string; phone_number?:string; numero_elevage?:string; code_iso_elevage?:string; rue?:string; ville?:string; code_postal?:string; adress_elevage?:string; };
+  type UserResult = { uid:string; firstname:string; lastname:string; name_elevage?:string; is_elevage?:boolean; email:string; phone_number?:string; numero_elevage?:string; code_iso_elevage?:string; rue?:string; ville?:string; code_postal?:string; adress_elevage?:string; siret?:string; };
   const [userResults, setUserResults] = useState<UserResult[]>([]);
 
   const popupRef = useRef<Window | null>(null);
@@ -136,7 +137,7 @@ export default function ContratsPage() {
     setUserSearch(q);
     if (q.length < 2) { setUserResults([]); return; }
     const isEmail = q.includes('@');
-    const fields = 'uid,firstname,lastname,name_elevage,is_elevage,email,phone_number,numero_elevage,code_iso_elevage,rue,ville,code_postal,adress_elevage';
+    const fields = 'uid,firstname,lastname,name_elevage,is_elevage,email,phone_number,numero_elevage,code_iso_elevage,rue,ville,code_postal,adress_elevage,siret';
     const { data } = isEmail
       ? await supabase.from('users').select(fields).ilike('email', `%${q}%`).limit(5)
       : await supabase.from('users').select(fields).or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,name_elevage.ilike.%${q}%`).limit(8);
@@ -146,6 +147,7 @@ export default function ContratsPage() {
   function selectUser(u: UserResult) {
     const isElv = u.is_elevage && u.name_elevage;
     setAcqRaisonSociale(isElv ? (u.name_elevage ?? '') : '');
+    setAcqSiret(isElv ? (u.siret ?? '') : '');
     setAcqPrenom(u.firstname ?? '');
     setAcqNom(u.lastname ?? '');
     setAcqEmail(u.email ?? '');
@@ -165,7 +167,7 @@ export default function ContratsPage() {
   }
 
   function resetForm() {
-    setAnimalId(''); setSelectedAnimal(null); setAcqRaisonSociale(''); setAcqNom(''); setAcqPrenom('');
+    setAnimalId(''); setSelectedAnimal(null); setAcqRaisonSociale(''); setAcqSiret(''); setAcqNom(''); setAcqPrenom('');
     setAcqEmail(''); setAcqTel(''); setAcqAdresse(''); setPrix('');
     setDateDoc(new Date().toISOString().split('T')[0]); setNotes('');
     setAvecSteril(true);
@@ -250,6 +252,7 @@ export default function ContratsPage() {
       expires_at:  new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       metadata: {
         acquereur_raison_sociale: acqRaisonSociale || null,
+        acquereur_siret:     acqSiret || null,
         acquereur_nom:       `${acqPrenom} ${acqNom}`.trim(),
         acquereur_email:     acqEmail,
         acquereur_tel:       acqTel,
@@ -554,6 +557,7 @@ export default function ContratsPage() {
 
             {/* Infos acquéreur */}
             <div><label className="text-xs text-gray-500 mb-1 block">Raison sociale (entreprise / élevage)</label><input value={acqRaisonSociale} onChange={e => setAcqRaisonSociale(e.target.value)} placeholder="Nom de l'entreprise ou de l'élevage" className={iCls} /></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">SIRET</label><input value={acqSiret} onChange={e => setAcqSiret(e.target.value)} placeholder="14 chiffres" className={iCls} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="text-xs text-gray-500 mb-1 block">Prénom</label><input value={acqPrenom} onChange={e => setAcqPrenom(e.target.value)} className={iCls} /></div>
               <div><label className="text-xs text-gray-500 mb-1 block">Nom</label><input value={acqNom} onChange={e => setAcqNom(e.target.value)} className={iCls} /></div>
