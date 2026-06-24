@@ -91,6 +91,7 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
   const [error, setError]               = useState('');
   const [contratSigne, setContratSigne]       = useState(false);
   const [certificatSigne, setCertificatSigne] = useState(false);
+  const contratPopupRef = useRef<Window | null>(null);
 
   // Documents existants sélectionnables
   type DocEntry = { id: string; type: string; statut: string; url: string; created_at: string };
@@ -129,6 +130,32 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
         setLoadingDocs(false);
       });
   }, [animal.id]);
+
+  function reloadDocs() {
+    setLoadingDocs(true);
+    supabase.from('documents_animaux')
+      .select('id, type, statut, url, created_at')
+      .eq('animal_id', animal.id)
+      .in('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession'])
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        const all = (data ?? []) as DocEntry[];
+        setExistingContrats(all.filter(d => d.type !== 'certificat_cession'));
+        setExistingCertificats(all.filter(d => d.type === 'certificat_cession'));
+        setLoadingDocs(false);
+      });
+  }
+
+  function openContratCreation() {
+    const popup = window.open('/elevage/contrat', '_blank', 'width=900,height=700,left=100,top=80');
+    contratPopupRef.current = popup;
+    const timer = setInterval(() => {
+      if (popup?.closed) {
+        clearInterval(timer);
+        reloadDocs();
+      }
+    }, 800);
+  }
 
   function fillFromUser(data: Record<string, unknown>) {
     const isElv = data.is_elevage === true;
@@ -524,9 +551,15 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
                   <hr className="my-1 border-gray-100" />
 
                   {/* ── Contrat de vente ── */}
-                  <p className="text-xs font-semibold text-[#1F2A2E]">🤝 Contrat de vente / réservation</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-[#1F2A2E]">🤝 Contrat de vente / réservation</p>
+                    <button onClick={openContratCreation}
+                      className="text-xs font-semibold text-[#0C5C6C] hover:underline flex items-center gap-1">
+                      + Créer un contrat
+                    </button>
+                  </div>
                   {existingContrats.length === 0 ? (
-                    <p className="text-xs text-gray-400 italic">Aucun contrat existant — créez-en un depuis <strong>Administratif → Contrats</strong></p>
+                    <p className="text-xs text-gray-400 italic">Aucun contrat existant — cliquez sur &ldquo;Créer un contrat&rdquo; ci-dessus.</p>
                   ) : (
                     <div className="space-y-1.5">
                       {existingContrats.map(d => {
