@@ -1370,7 +1370,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   },
                   uid: FirebaseAuth.instance.currentUser!.uid,
                   nomElevage: _nomElevage ?? '',
-                  isReCession: _isNewOwner,
+                  isReCession: _isNewOwner && !User_Info.isElevage && !User_Info.isAssociation,
                   onCeded: () {
                     _refreshFromSupabase();
                     ScaffoldMessenger.of(context).showSnackBar(
