@@ -64,6 +64,8 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
   const [searchDone, setSearchDone]     = useState(false);
   const [searching, setSearching]       = useState(false);
   const [manual, setManual]             = useState(false);
+  // Données brutes de l'utilisateur PetsMatch sélectionné (pour préremplir le contrat)
+  const [selectedUserData, setSelectedUserData] = useState<Record<string, unknown> | null>(null);
 
   // Autocomplétion adresse BAN
   const [adressSuggestions, setAdressSuggestions] = useState<{ label: string; rue: string; ville: string; cp: string; pays: string }[]>([]);
@@ -151,15 +153,20 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
 
   function openContratCreation() {
     // Pré-remplit l'animal et l'acheteur dans la page contrat via localStorage
+    const isElv = selectedUserData?.is_elevage === true;
     localStorage.setItem('cession_prefill', JSON.stringify({
-      animal_id:   animal.id,
-      animal_nom:  animal.nom ?? '',
-      acq_nom:     nom.trim(),
-      acq_email:   email.trim(),
-      acq_tel:     tel.trim(),
-      acq_adresse: adresse.trim(),
-      prix:        prix.trim(),
-      date:        dateCession,
+      animal_id:          animal.id,
+      animal_nom:         animal.nom ?? '',
+      acq_is_eleveur:     isElv,
+      acq_raison_sociale: isElv ? (selectedUserData?.name_elevage as string ?? '') : '',
+      acq_siret:          isElv ? (selectedUserData?.siret as string ?? '') : '',
+      acq_prenom:         (selectedUserData?.firstname as string ?? ''),
+      acq_nom_famille:    (selectedUserData?.lastname as string ?? ''),
+      acq_email:          email.trim(),
+      acq_tel:            tel.trim(),
+      acq_adresse:        adresse.trim(),
+      prix:               prix.trim(),
+      date:               dateCession,
     }));
     const popup = window.open('/elevage/contrat', '_blank', 'width=900,height=700,left=100,top=80');
     contratPopupRef.current = popup;
@@ -172,6 +179,7 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
   }
 
   function fillFromUser(data: Record<string, unknown>) {
+    setSelectedUserData(data);
     const isElv = data.is_elevage === true;
     const n = isElv
       ? ((data.name_elevage as string) || `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim())
@@ -196,7 +204,7 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
     setSearchDone(false);
     setSearchResult(null);
     setSearchResults([]);
-    const FIELDS = 'uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, email, phone_number, code_iso, rue, ville, code_postal, pays, adress, numero_elevage, code_iso_elevage, rue_elevage, ville_elevage, code_postal_elevage, pays_elevage, adress_elevage';
+    const FIELDS = 'uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, email, phone_number, code_iso, rue, ville, code_postal, pays, adress, numero_elevage, code_iso_elevage, rue_elevage, ville_elevage, code_postal_elevage, pays_elevage, adress_elevage, siret';
     const isEmail = q.includes('@');
     let rows: Record<string, unknown>[] = [];
     if (isEmail) {

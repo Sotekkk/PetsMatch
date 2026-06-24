@@ -119,7 +119,12 @@ export default function ContratsPage() {
     try {
       const p = JSON.parse(raw) as {
         animal_id: string; animal_nom: string;
-        acq_nom: string; acq_email: string; acq_tel: string; acq_adresse: string;
+        acq_is_eleveur?: boolean;
+        acq_raison_sociale?: string; acq_siret?: string;
+        acq_prenom?: string; acq_nom_famille?: string;
+        // legacy fallback
+        acq_nom?: string;
+        acq_email: string; acq_tel: string; acq_adresse: string;
         prix: string; date: string;
       };
       localStorage.removeItem('cession_prefill');
@@ -127,9 +132,19 @@ export default function ContratsPage() {
       const found = animaux.find(a => a.id === p.animal_id) ?? null;
       if (found) { setAnimalId(found.id); setSelectedAnimal(found); }
       // Remplir les champs acquéreur
-      const parts = p.acq_nom.trim().split(' ');
-      setAcqPrenom(parts[0] ?? '');
-      setAcqNom(parts.slice(1).join(' '));
+      if (p.acq_is_eleveur) {
+        setAcqRaisonSociale(p.acq_raison_sociale ?? '');
+        setAcqSiret(p.acq_siret ?? '');
+      }
+      if (p.acq_prenom !== undefined) {
+        setAcqPrenom(p.acq_prenom);
+        setAcqNom(p.acq_nom_famille ?? '');
+      } else if (p.acq_nom) {
+        // legacy: split par espace
+        const parts = p.acq_nom.trim().split(' ');
+        setAcqPrenom(parts[0] ?? '');
+        setAcqNom(parts.slice(1).join(' '));
+      }
       setAcqEmail(p.acq_email);
       setAcqTel(p.acq_tel);
       setAcqAdresse(p.acq_adresse);
