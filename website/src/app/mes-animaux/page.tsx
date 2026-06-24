@@ -348,7 +348,6 @@ export default function MesAnimauxPage() {
         .from('animaux')
         .select('*')
         .in('id', allAnimalIds)
-        .or('is_association.is.null,is_association.eq.false')
         .order('nom', { ascending: true });
 
       const merged = (data ?? []) as Animal[];

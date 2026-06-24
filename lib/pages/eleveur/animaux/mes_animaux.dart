@@ -143,8 +143,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       }
 
       final rows = await supa.from('animaux').select()
-          .inFilter('id', allAnimalIds)
-          .or('is_association.eq.false,is_association.is.null');
+          .inFilter('id', allAnimalIds);
       final animaux = List<Map<String, dynamic>>.from(rows as List);
 
       _currentOwnerIds = currentIds;
