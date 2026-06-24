@@ -82,10 +82,13 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
   // Documents uploadés manuellement
   const [contratUrl, setContratUrl]       = useState('');
   const [certificatUrl, setCertificatUrl] = useState('');
+  const [santeUrl, setSanteUrl]           = useState('');
   const [uploadingContrat, setUploadingContrat]       = useState(false);
   const [uploadingCertificat, setUploadingCertificat] = useState(false);
+  const [uploadingSante, setUploadingSante]           = useState(false);
   const contratRef    = useRef<HTMLInputElement>(null);
   const certificatRef = useRef<HTMLInputElement>(null);
+  const santeRef      = useRef<HTMLInputElement>(null);
 
   const [saving, setSaving]             = useState(false);
   const [error, setError]               = useState('');
@@ -241,9 +244,9 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
     setAdressSuggestions([]);
   }
 
-  async function uploadDoc(file: File, type: 'contrat' | 'certificat') {
-    const setter = type === 'contrat' ? setUploadingContrat : setUploadingCertificat;
-    const urlSetter = type === 'contrat' ? setContratUrl : setCertificatUrl;
+  async function uploadDoc(file: File, type: 'contrat' | 'certificat' | 'sante') {
+    const setter   = type === 'contrat' ? setUploadingContrat : type === 'certificat' ? setUploadingCertificat : setUploadingSante;
+    const urlSetter = type === 'contrat' ? setContratUrl : type === 'certificat' ? setCertificatUrl : setSanteUrl;
     setter(true);
     try {
       const ext = file.name.split('.').pop() ?? 'pdf';
@@ -303,6 +306,18 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
           provenance_qualite: 'eleveur',
           provenance_nom:    eleveurInfo.nom,
           provenance_adresse: eleveurInfo.adresse ?? null,
+        });
+      }
+
+      // Certificat de bonne santé vétérinaire → documents_animaux
+      if (santeUrl) {
+        await supabase.from('documents_animaux').insert({
+          animal_id:  animal.id,
+          uid_eleveur: uid,
+          type:       'certificat_sante',
+          titre:      `Certificat de bonne santé — ${animal.nom ?? 'animal'}`,
+          url:        santeUrl,
+          statut:     'signe',
         });
       }
 
@@ -517,9 +532,15 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
               ) : (
                 <>
                   {/* ── Certificat de cession ── */}
-                  <p className="text-xs font-semibold text-[#1F2A2E]">📜 Certificat de cession / engagement</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-[#1F2A2E]">📜 Certificat de cession / engagement</p>
+                    <button onClick={openContratCreation}
+                      className="text-xs font-semibold text-[#0C5C6C] hover:underline">
+                      + Créer un certificat
+                    </button>
+                  </div>
                   {existingCertificats.length === 0 ? (
-                    <p className="text-xs text-gray-400 italic">Aucun certificat existant</p>
+                    <p className="text-xs text-gray-400 italic">Aucun certificat existant — cliquez sur &ldquo;Créer un certificat&rdquo; ci-dessus.</p>
                   ) : (
                     <div className="space-y-1.5">
                       {existingCertificats.map(d => {
@@ -586,6 +607,20 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
                     <button onClick={() => contratRef.current?.click()} disabled={uploadingContrat}
                       className="text-[#0C5C6C] text-xs hover:underline">
                       {uploadingContrat ? '⏳…' : contratUrl ? '✓ Importé · Remplacer' : '⬆️ Importer PDF'}
+                    </button>
+                  </div>
+
+                  <hr className="my-1 border-gray-100" />
+
+                  {/* ── Certificat de bonne santé vétérinaire ── */}
+                  <p className="text-xs font-semibold text-[#1F2A2E]">🩺 Certificat de bonne santé <span className="font-normal text-gray-400">(vétérinaire)</span></p>
+                  <p className="text-[10px] text-gray-400">PDF uniquement — délivré par le vétérinaire.</p>
+                  <div className="flex items-center gap-3">
+                    <input ref={santeRef} type="file" accept=".pdf" className="hidden"
+                      onChange={e => { if (e.target.files?.[0]) uploadDoc(e.target.files[0], 'sante'); }} />
+                    <button onClick={() => santeRef.current?.click()} disabled={uploadingSante}
+                      className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border transition-colors ${santeUrl ? 'border-green-400 text-green-700 bg-green-50' : 'border-gray-200 text-[#0C5C6C] hover:border-[#0C5C6C]'}`}>
+                      {uploadingSante ? '⏳ Upload…' : santeUrl ? '✅ PDF importé · Remplacer' : '⬆️ Importer PDF'}
                     </button>
                   </div>
                 </>
