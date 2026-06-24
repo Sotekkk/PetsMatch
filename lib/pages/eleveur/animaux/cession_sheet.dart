@@ -299,7 +299,24 @@ class _CessionSheetState extends State<CessionSheet> {
         'cession_certificat_url': certificatUrl,
       }).eq('id', widget.animal['id']);
 
-      // 3. Notifier l'acquéreur
+      // 3. Historique de propriété
+      final dateStr = _dateCession.toIso8601String().split('T').first;
+      // Clôturer la propriété du cédant
+      await _supa.from('animaux_proprietes')
+          .update({'date_fin': dateStr})
+          .eq('animal_id', widget.animal['id'])
+          .eq('uid_proprio', widget.uid)
+          .isFilter('date_fin', null);
+      // Ouvrir la propriété de l'acquéreur (si compte PetsMatch)
+      if (_foundUser?['uid'] != null) {
+        await _supa.from('animaux_proprietes').insert({
+          'animal_id':  widget.animal['id'],
+          'uid_proprio': _foundUser!['uid'],
+          'date_debut':  dateStr,
+        });
+      }
+
+      // 4. Notifier l'acquéreur
       if (_foundUser?['uid'] != null) {
         // In-app si compte PetsMatch
         await _supa.from('notifications').insert({

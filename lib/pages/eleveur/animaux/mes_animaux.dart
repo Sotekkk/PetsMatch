@@ -83,7 +83,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   late TabController _tabController;
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   List<Map<String, dynamic>> _animauxData = [];
-  Set<String> _cessionEnAttenteIds = {};  // animaux 'sorti' avec contrat non signé
+  Set<String> _currentOwnerIds    = {};   // date_fin IS NULL → propriétaire actuel
+  Set<String> _formerOwnerIds     = {};   // date_fin NOT NULL → ancien propriétaire
+  Set<String> _cessionEnAttenteIds = {};  // fallback : animaux 'sorti' avec contrat en attente
   Map<String, bool> _chaleurFlags  = {};
   Map<String, bool> _gestanteFlags = {};
   bool _loading = true;
@@ -121,10 +123,37 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (_animauxData.isEmpty) setState(() => _loading = true);
     try {
       final supa = Supabase.instance.client;
-      final rows = await supa.from('animaux').select()
-          .or('uid_eleveur.eq.$_uid,uid_acquereur.eq.$_uid')
-          .or('is_association.eq.false,is_association.is.null');
-      final animaux = List<Map<String, dynamic>>.from(rows as List);
+
+      // Récupérer les animal_id via animaux_proprietes (source de vérité)
+      final ownRows = await supa.from('animaux_proprietes')
+          .select('animal_id, date_fin')
+          .eq('uid_proprio', _uid!);
+      final currentIds = <String>{};
+      final formerIds  = <String>{};
+      for (final r in ownRows as List) {
+        final id = r['animal_id'] as String? ?? '';
+        if (id.isEmpty) continue;
+        if (r['date_fin'] == null) { currentIds.add(id); } else { formerIds.add(id); }
+      }
+      final allIds = {...currentIds, ...formerIds}.toList();
+
+      // Fallback si table non encore peuplée
+      List<Map<String, dynamic>> animaux;
+      if (allIds.isEmpty) {
+        final rows = await supa.from('animaux').select()
+            .or('uid_eleveur.eq.$_uid,uid_acquereur.eq.$_uid')
+            .or('is_association.eq.false,is_association.is.null');
+        animaux = List<Map<String, dynamic>>.from(rows as List);
+      } else {
+        final rows = await supa.from('animaux').select()
+            .inFilter('id', allIds)
+            .or('is_association.eq.false,is_association.is.null');
+        animaux = List<Map<String, dynamic>>.from(rows as List);
+      }
+
+      // Stocker les ensembles pour le filtre présents/anciens
+      _currentOwnerIds = currentIds;
+      _formerOwnerIds  = formerIds;
 
       // IDs des femelles présentes
       final femIds = animaux
@@ -218,6 +247,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         _chaleurFlags         = cFlags;
         _gestanteFlags        = gFlags;
         _loading              = false;
+        // (currentOwnerIds et formerOwnerIds déjà mis à jour avant le setState)
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -1069,11 +1099,16 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     // Base filter: présents only + search + espèce/sexe/race
     var base = _animauxData.where((data) {
       final statut = data['statut'] as String? ?? '';
-      final isReceived = data['uid_acquereur'] == _uid;
-      final hasPendingContract = _cessionEnAttenteIds.contains(data['id'] as String? ?? '');
-      // Reçus ou en attente de cession → restent dans les présents
-      if (isReceived || hasPendingContract) { /* keep */ }
-      else if (statut == 'sorti' || statut == 'decede') return false;
+      final aid = data['id'] as String? ?? '';
+      // Si animaux_proprietes est peuplé : propriétaire actuel (date_fin IS NULL)
+      if (_currentOwnerIds.isNotEmpty) {
+        if (!_currentOwnerIds.contains(aid)) return false;
+      } else {
+        // Fallback
+        final isReceived = data['uid_acquereur'] == _uid;
+        final hasPending = _cessionEnAttenteIds.contains(aid);
+        if (!isReceived && !hasPending && (statut == 'sorti' || statut == 'decede')) return false;
+      }
       if (_filterEspece != 'tous' && data['espece'] != _filterEspece) return false;
       if (_filterSexe != 'tous' && data['sexe'] != _filterSexe) return false;
       if (_filterRace.isNotEmpty &&
@@ -1411,11 +1446,16 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
     var docs = _animauxData.where((data) {
       final statut = data['statut'] as String? ?? '';
-      final uidAcq = data['uid_acquereur'] as String?;
-      // Animaux reçus par cession par moi → côté acquéreur = "présents", pas "anciens"
-      if (uidAcq == _uid) return false;
-      // Anciens : soit sorti/décédé, soit cédé à quelqu'un d'autre (peu importe le statut actuel)
-      if (uidAcq == null && statut != 'sorti' && statut != 'decede') return false;
+      final aid = data['id'] as String? ?? '';
+      // Si animaux_proprietes est peuplé : anciens = ceux dont je ne suis plus proprio actuel
+      if (_currentOwnerIds.isNotEmpty) {
+        if (_currentOwnerIds.contains(aid)) return false; // présent → pas anciens
+      } else {
+        // Fallback
+        final uidAcq = data['uid_acquereur'] as String?;
+        if (uidAcq == _uid) return false;
+        if (uidAcq == null && statut != 'sorti' && statut != 'decede') return false;
+      }
       if (_anciensEspece != 'tous' && data['espece'] != _anciensEspece) return false;
       if (_anciensStatut != 'tous' && statut != _anciensStatut) return false;
       if (_anciensDtDebut != null || _anciensDtFin != null) {

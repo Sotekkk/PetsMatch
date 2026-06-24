@@ -329,6 +329,23 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
         });
       }
 
+      // ── Historique de propriété ──────────────────────────────────────────
+      // Clôturer la ligne du cédant (date_fin = date de cession)
+      await supabase.from('animaux_proprietes')
+        .update({ date_fin: dateCession })
+        .eq('animal_id', animal.id)
+        .eq('uid_proprio', uid)
+        .is('date_fin', null);
+      // Ouvrir une ligne pour le nouvel acquéreur (tous types, même particulier)
+      if (acqUid) {
+        await supabase.from('animaux_proprietes').insert({
+          animal_id:  animal.id,
+          uid_proprio: acqUid,
+          date_debut:  dateCession,
+          date_fin:    null,
+        });
+      }
+
       // Certificat de bonne santé vétérinaire → documents_animaux
       if (santeUrl) {
         await supabase.from('documents_animaux').insert({

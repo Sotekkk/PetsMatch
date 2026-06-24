@@ -313,28 +313,77 @@ export default function MesAnimauxPage() {
   useEffect(() => {
     if (!user) return;
     setFetching(true);
-    // Exclure les animaux d'association (profil mixte) — gérés dans /association/animaux
-    const query = isEleveur
-      ? supabase.from('animaux').select('*').or(`uid_eleveur.eq.${user.uid},uid_acquereur.eq.${user.uid}`).or('is_association.is.null,is_association.eq.false').order('nom', { ascending: true })
-      : supabase.from('animaux').select('*').or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid},uid_acquereur.eq.${user.uid}`).or('is_association.is.null,is_association.eq.false').order('nom', { ascending: true });
 
-    query.then(async ({ data }) => {
+    async function loadAll() {
+      // 1) Récupérer toutes les lignes de propriété de l'utilisateur
+      const { data: ownRows } = await supabase
+        .from('animaux_proprietes')
+        .select('animal_id, date_debut, date_fin')
+        .eq('uid_proprio', user!.uid);
+
+      // Fallback : si la table n'est pas encore peuplée, utiliser l'ancienne logique
+      const hasOwnershipData = (ownRows ?? []).length > 0;
+
+      // IDs où l'utilisateur est propriétaire actuel (date_fin IS NULL)
+      const currentIds = new Set((ownRows ?? []).filter(r => !r.date_fin).map(r => r.animal_id as string));
+      // IDs où il était propriétaire (date_fin NOT NULL)
+      const formerIds  = new Set((ownRows ?? []).filter(r =>  r.date_fin).map(r => r.animal_id as string));
+      const allOwnershipIds = [...new Set([...currentIds, ...formerIds])];
+
+      // 2) Récupérer les animaux concernés + fallback ancienne logique
+      let animalIds = allOwnershipIds;
+      if (!hasOwnershipData) {
+        // Fallback : uid_eleveur / uid_acquereur / uid_proprietaire
+        const { data: fallbackRows } = await supabase
+          .from('animaux')
+          .select('id')
+          .or(`uid_eleveur.eq.${user!.uid},uid_acquereur.eq.${user!.uid},uid_proprietaire.eq.${user!.uid}`)
+          .or('is_association.is.null,is_association.eq.false');
+        animalIds = (fallbackRows ?? []).map(r => r.id as string);
+      }
+
+      if (animalIds.length === 0) {
+        // Aussi inclure les animaux dont l'utilisateur est éleveur d'origine
+        const { data: elvRows } = await supabase
+          .from('animaux')
+          .select('id')
+          .eq('uid_eleveur', user!.uid)
+          .or('is_association.is.null,is_association.eq.false');
+        animalIds = (elvRows ?? []).map(r => r.id as string);
+      }
+
+      if (animalIds.length === 0) { setAnimaux([]); setFetching(false); return; }
+
+      const { data } = await supabase
+        .from('animaux')
+        .select('*')
+        .in('id', animalIds)
+        .or('is_association.is.null,is_association.eq.false')
+        .order('nom', { ascending: true });
+
       const list = (data ?? []) as Animal[];
       setAnimaux(list);
-      setFetching(false);
 
-      // Détecter les animaux 'sorti' qui ont encore un contrat de cession non signé
-      // (cédés avant le fix qui introduisait 'en_attente_cession')
-      const sortisIds = list.filter(a => a.statut === 'sorti').map(a => a.id);
-      if (sortisIds.length > 0) {
-        const { data: pendingDocs } = await supabase
-          .from('documents_animaux')
-          .select('animal_id')
-          .in('animal_id', sortisIds)
-          .in('type', ['contrat_vente', 'certificat_cession'])
-          .not('statut', 'in', '(signe,annule,refuse,archive,expire)');
-        setCessionEnAttente(new Set((pendingDocs ?? []).map((d: {animal_id: string}) => d.animal_id)));
+      // Séparation présents / anciens basée sur animaux_proprietes
+      // Si table peuplée : date_fin IS NULL = présent ; sinon fallback statut
+      if (hasOwnershipData) {
+        setCessionEnAttente(currentIds);  // on réutilise le Set pour "est propriétaire actuel"
+      } else {
+        // Fallback : détection via documents_animaux
+        const sortisIds = list.filter(a => a.statut === 'sorti').map(a => a.id);
+        if (sortisIds.length > 0) {
+          const { data: pendingDocs } = await supabase
+            .from('documents_animaux').select('animal_id')
+            .in('animal_id', sortisIds).in('type', ['contrat_vente', 'certificat_cession'])
+            .not('statut', 'in', '(signe,annule,refuse,archive,expire)');
+          const pending = new Set((pendingDocs ?? []).map((d: {animal_id:string}) => d.animal_id));
+          // Aussi ajouter ceux où uid_acquereur = user
+          list.filter(a => a.uid_acquereur === user!.uid).forEach(a => pending.add(a.id));
+          setCessionEnAttente(pending);
+        }
       }
+
+      setFetching(false);
 
       // Calcul flags chaleurs et gestante pour les femelles présentes
       const femIds = list
@@ -369,7 +418,9 @@ export default function MesAnimauxPage() {
 
       setChaleurFlags(cFlags);
       setGestanteFlags(gFlags);
-    });
+    }
+
+    loadAll().catch(() => setFetching(false));
   }, [user, isEleveur]);
 
   async function deleteAnimal(id: string) {
@@ -407,25 +458,22 @@ export default function MesAnimauxPage() {
   if (loading || !user) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
 
   // Séparer présents / anciens
+  // Si animaux_proprietes est peuplé : cessionEnAttente = Set des animal_id où date_fin IS NULL (propriétaire actuel)
+  // Sinon fallback : logique statut + uid_acquereur
   const presents = animaux.filter(a => {
+    // Propriétaire actuel selon la table de propriété
+    if (cessionEnAttente.size > 0) return cessionEnAttente.has(a.id) && a.statut !== 'decede';
+    // Fallback
     const s = a.statut ?? 'present';
     if (s === 'decede') return false;
-    if (s === 'sorti') {
-      // L'acquéreur voit l'animal reçu comme présent (c'est maintenant le sien)
-      if (a.uid_acquereur && a.uid_acquereur === user?.uid) return true;
-      // Le vendeur : visible si contrat non encore signé
-      return cessionEnAttente.has(a.id);
-    }
+    if (s === 'sorti') return a.uid_acquereur === user?.uid;
     return true;
   });
   const anciens = animaux.filter(a => {
+    if (cessionEnAttente.size > 0) return !cessionEnAttente.has(a.id) || a.statut === 'decede';
+    // Fallback
     const s = a.statut ?? '';
-    if (s === 'decede') return true;
-    if (s === 'sorti') {
-      if (a.uid_acquereur && a.uid_acquereur === user?.uid) return false;
-      return !cessionEnAttente.has(a.id);
-    }
-    return false;
+    return s === 'decede' || (s === 'sorti' && a.uid_acquereur !== user?.uid);
   });
 
   // Espèces disponibles dans chaque groupe
