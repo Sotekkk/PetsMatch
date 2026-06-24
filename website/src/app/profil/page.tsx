@@ -1595,12 +1595,12 @@ export default function ProfilPage() {
           </div>
         </Link>
         {isEleveur ? (
-          <Link href="/annonces/creer"
+          <Link href="/profil/ajouter"
             className="flex items-center gap-2 bg-white border border-gray-100 shadow-sm rounded-2xl px-4 py-3 hover:shadow-md transition-shadow">
             <span className="text-xl">➕</span>
             <div>
-              <p className="text-sm font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Nouvelle annonce</p>
-              <p className="text-xs text-gray-400">Publier</p>
+              <p className="text-sm font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Nouveau profil</p>
+              <p className="text-xs text-gray-400">Créer un autre profil</p>
             </div>
           </Link>
         ) : (
