@@ -407,16 +407,25 @@ export default function MesAnimauxPage() {
   if (loading || !user) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
 
   // Séparer présents / anciens
-  // Un animal 'sorti' reste dans présents s'il a encore un contrat de cession non signé
   const presents = animaux.filter(a => {
     const s = a.statut ?? 'present';
     if (s === 'decede') return false;
-    if (s === 'sorti') return cessionEnAttente.has(a.id);
+    if (s === 'sorti') {
+      // L'acquéreur voit l'animal reçu comme présent (c'est maintenant le sien)
+      if (a.uid_acquereur && a.uid_acquereur === user?.uid) return true;
+      // Le vendeur : visible si contrat non encore signé
+      return cessionEnAttente.has(a.id);
+    }
     return true;
   });
   const anciens = animaux.filter(a => {
     const s = a.statut ?? '';
-    return (s === 'sorti' && !cessionEnAttente.has(a.id)) || s === 'decede';
+    if (s === 'decede') return true;
+    if (s === 'sorti') {
+      if (a.uid_acquereur && a.uid_acquereur === user?.uid) return false;
+      return !cessionEnAttente.has(a.id);
+    }
+    return false;
   });
 
   // Espèces disponibles dans chaque groupe
