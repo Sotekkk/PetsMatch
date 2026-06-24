@@ -351,6 +351,7 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
   Map<String, dynamic>? _selectedAnimal;
   bool _avecSteril = true;
 
+  final _acqRaisonSocialeCtrl = TextEditingController();
   final _acqNomCtrl      = TextEditingController();
   final _acqPrenomCtrl   = TextEditingController();
   final _acqEmailCtrl    = TextEditingController();
@@ -366,7 +367,7 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
 
   @override
   void dispose() {
-    for (final c in [_acqNomCtrl, _acqPrenomCtrl, _acqEmailCtrl, _acqTelCtrl, _acqAdresseCtrl, _prixCtrl, _notesCtrl, _searchCtrl]) { c.dispose(); }
+    for (final c in [_acqRaisonSocialeCtrl, _acqNomCtrl, _acqPrenomCtrl, _acqEmailCtrl, _acqTelCtrl, _acqAdresseCtrl, _prixCtrl, _notesCtrl, _searchCtrl]) { c.dispose(); }
     super.dispose();
   }
 
@@ -383,8 +384,9 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
 
   void _selectUser(Map<String, dynamic> u) {
     final isElv = u['is_elevage'] == true && (u['name_elevage'] as String? ?? '').isNotEmpty;
-    _acqPrenomCtrl.text = isElv ? '' : (u['firstname'] as String? ?? '');
-    _acqNomCtrl.text    = isElv ? (u['name_elevage'] as String? ?? '') : (u['lastname'] as String? ?? '');
+    _acqRaisonSocialeCtrl.text = isElv ? (u['name_elevage'] as String? ?? '') : '';
+    _acqPrenomCtrl.text = u['firstname'] as String? ?? '';
+    _acqNomCtrl.text    = u['lastname'] as String? ?? '';
     _acqEmailCtrl.text  = u['email'] as String? ?? '';
     if (isElv && (u['numero_elevage'] as String? ?? '').isNotEmpty) {
       final iso = u['code_iso_elevage'] as String? ?? '+33';
@@ -423,6 +425,8 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
             'statut':      'en_attente',
             'expires_at':  DateTime.now().add(const Duration(days: 30)).toIso8601String(),
             'metadata': {
+              if (_acqRaisonSocialeCtrl.text.trim().isNotEmpty)
+                'acquereur_raison_sociale': _acqRaisonSocialeCtrl.text.trim(),
               'acquereur_nom':      '${_acqPrenomCtrl.text.trim()} ${_acqNomCtrl.text.trim()}'.trim(),
               'acquereur_email':    _acqEmailCtrl.text.trim(),
               'acquereur_tel':      _acqTelCtrl.text.trim(),
@@ -496,10 +500,11 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
           Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 12, bottom: 8),
               decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('Nouveau contrat', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFF1F2A2E))),
-              IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(children: [
+              IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back_ios, size: 20), color: const Color(0xFF1F2A2E)),
+              const Expanded(child: Text('Nouveau contrat', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFF1F2A2E)), textAlign: TextAlign.center)),
+              IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close, size: 20), color: const Color(0xFF1F2A2E)),
             ]),
           ),
           Expanded(child: ListView(controller: scroll, padding: const EdgeInsets.fromLTRB(20, 8, 20, 32), children: [
@@ -607,6 +612,7 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
             const SizedBox(height: 16),
 
             // Infos acquéreur
+            _field('Raison sociale (entreprise / élevage)', _acqRaisonSocialeCtrl),
             _field('Prénom', _acqPrenomCtrl),
             _field('Nom', _acqNomCtrl),
             _field('Email', _acqEmailCtrl, type: TextInputType.emailAddress),

@@ -86,6 +86,7 @@ export default function ContratsPage() {
   // Form
   const [animalId, setAnimalId]       = useState('');
   const [selectedAnimal, setSelectedAnimal] = useState<Animal | null>(null);
+  const [acqRaisonSociale, setAcqRaisonSociale] = useState('');
   const [acqNom, setAcqNom]           = useState('');
   const [acqPrenom, setAcqPrenom]     = useState('');
   const [acqEmail, setAcqEmail]       = useState('');
@@ -144,8 +145,9 @@ export default function ContratsPage() {
 
   function selectUser(u: UserResult) {
     const isElv = u.is_elevage && u.name_elevage;
-    setAcqPrenom(isElv ? '' : (u.firstname ?? ''));
-    setAcqNom(isElv ? u.name_elevage! : (u.lastname ?? ''));
+    setAcqRaisonSociale(isElv ? (u.name_elevage ?? '') : '');
+    setAcqPrenom(u.firstname ?? '');
+    setAcqNom(u.lastname ?? '');
     setAcqEmail(u.email ?? '');
     const tel = isElv && u.numero_elevage
       ? `${u.code_iso_elevage ?? '+33'} ${u.numero_elevage}`.trim()
@@ -163,7 +165,7 @@ export default function ContratsPage() {
   }
 
   function resetForm() {
-    setAnimalId(''); setSelectedAnimal(null); setAcqNom(''); setAcqPrenom('');
+    setAnimalId(''); setSelectedAnimal(null); setAcqRaisonSociale(''); setAcqNom(''); setAcqPrenom('');
     setAcqEmail(''); setAcqTel(''); setAcqAdresse(''); setPrix('');
     setDateDoc(new Date().toISOString().split('T')[0]); setNotes('');
     setAvecSteril(true);
@@ -247,6 +249,7 @@ export default function ContratsPage() {
       statut:      'brouillon',
       expires_at:  new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       metadata: {
+        acquereur_raison_sociale: acqRaisonSociale || null,
         acquereur_nom:       `${acqPrenom} ${acqNom}`.trim(),
         acquereur_email:     acqEmail,
         acquereur_tel:       acqTel,
@@ -550,6 +553,7 @@ export default function ContratsPage() {
             </div>
 
             {/* Infos acquéreur */}
+            <div><label className="text-xs text-gray-500 mb-1 block">Raison sociale (entreprise / élevage)</label><input value={acqRaisonSociale} onChange={e => setAcqRaisonSociale(e.target.value)} placeholder="Nom de l'entreprise ou de l'élevage" className={iCls} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="text-xs text-gray-500 mb-1 block">Prénom</label><input value={acqPrenom} onChange={e => setAcqPrenom(e.target.value)} className={iCls} /></div>
               <div><label className="text-xs text-gray-500 mb-1 block">Nom</label><input value={acqNom} onChange={e => setAcqNom(e.target.value)} className={iCls} /></div>
