@@ -324,40 +324,62 @@ export default function MesAnimauxPage() {
     setFetching(true);
 
     async function loadAll() {
-      // Source unique : animaux_proprietes
-      // date_fin IS NULL = propriétaire actuel (présents), NOT NULL = ancien propriétaire (anciens)
-      const { data: ownRows } = await supabase
-        .from('animaux_proprietes')
-        .select('animal_id, date_fin')
-        .eq('uid_proprio', user!.uid);
+      const uid = user!.uid;
 
-      const rows = ownRows ?? [];
-      const currentIds = new Set(rows.filter(r => !r.date_fin).map(r => r.animal_id as string));
-      const allAnimalIds = [...new Set(rows.map(r => r.animal_id as string))];
+      // Les deux requêtes en parallèle :
+      // - animaux_proprietes : source de vérité pour le split présents/anciens
+      // - animaux par uid fields : pass-through RLS (tant que la policy animaux_select_via_proprietes n'est pas en place)
+      const [ownRowsRes, byUidRes] = await Promise.all([
+        supabase.from('animaux_proprietes').select('animal_id, date_fin').eq('uid_proprio', uid),
+        supabase.from('animaux').select('*')
+          .or(`uid_eleveur.eq.${uid},uid_acquereur.eq.${uid},uid_proprietaire.eq.${uid}`)
+          .or('is_association.is.null,is_association.eq.false'),
+      ]);
 
-      if (allAnimalIds.length === 0) {
-        setAnimaux([]);
-        setCessionEnAttente(new Set());
-        setFetching(false);
-        return;
+      const ownRows = ownRowsRes.data ?? [];
+      const currentIds = new Set(ownRows.filter(r => !r.date_fin).map(r => r.animal_id as string));
+      const allOwnedIds = new Set(ownRows.map(r => r.animal_id as string));
+
+      // Fetch les animaux manquants (listés dans animaux_proprietes mais pas retournés par uid fields)
+      // Nécessite la policy RLS animaux_select_via_proprietes — silencieux si absente
+      const knownIds = new Set((byUidRes.data ?? []).map((a: Animal) => a.id));
+      const missingIds = [...allOwnedIds].filter(id => !knownIds.has(id));
+      const extraRes = missingIds.length > 0
+        ? await supabase.from('animaux').select('*').in('id', missingIds).or('is_association.is.null,is_association.eq.false')
+        : { data: [] };
+
+      // Fusion + tri
+      const seen = new Set<string>();
+      const merged: Animal[] = [];
+      for (const a of [...(byUidRes.data ?? []), ...(extraRes.data ?? [])]) {
+        const animal = a as Animal;
+        if (!seen.has(animal.id)) { seen.add(animal.id); merged.push(animal); }
       }
+      merged.sort((a, b) => (a.nom ?? '').localeCompare(b.nom ?? '', 'fr'));
 
-      const { data } = await supabase
-        .from('animaux')
-        .select('*')
-        .in('id', allAnimalIds)
-        .or('is_association.is.null,is_association.eq.false')
-        .order('nom', { ascending: true });
-
-      const list = (data ?? []) as Animal[];
-      setAnimaux(list);
-      setCessionEnAttente(currentIds);
+      // Split présents/anciens piloté par animaux_proprietes
+      // Fallback si ownRows vide : traiter comme présents sauf sorti/decede
+      if (ownRows.length > 0) {
+        setAnimaux(merged);
+        setCessionEnAttente(currentIds);
+      } else {
+        // animaux_proprietes pas encore peuplé → fallback statut
+        const fallbackPresents = new Set(
+          merged.filter(a => {
+            const s = a.statut ?? 'present';
+            return s !== 'sorti' && s !== 'decede';
+          }).map(a => a.id)
+        );
+        merged.filter(a => a.uid_acquereur === uid).forEach(a => fallbackPresents.add(a.id));
+        setAnimaux(merged);
+        setCessionEnAttente(fallbackPresents);
+      }
       setFetching(false);
 
       // Calcul flags chaleurs et gestante pour les femelles présentes
-      const femIds = list
-        .filter(a => (a.sexe ?? '').startsWith('f') && a.statut !== 'sorti' && a.statut !== 'decede')
-        .map(a => a.id);
+      const femIds = merged
+        .filter((a: Animal) => (a.sexe ?? '').startsWith('f') && a.statut !== 'sorti' && a.statut !== 'decede')
+        .map((a: Animal) => a.id);
 
       if (femIds.length === 0) return;
 
@@ -374,7 +396,7 @@ export default function MesAnimauxPage() {
 
       const cFlags: Record<string, boolean> = {};
       const now = new Date();
-      for (const a of list) {
+      for (const a of merged) {
         if (!(a.id in lastChaleur)) continue;
         const interval = (a.intervalle_chaleurs_jours ?? CHALEURS_INTERVAL_WEB[a.espece ?? ''] ?? 0);
         if (!interval) continue;
