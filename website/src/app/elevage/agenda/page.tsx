@@ -1001,21 +1001,30 @@ export default function AgendaElevagePage() {
     const assignees = t.assignes_a?.length ? t.assignes_a : (t.assigne_a ? [t.assigne_a] : []);
     const faitPar   = nomFor(t.fait_par);
     return (
-      <div className={`bg-white rounded-2xl shadow-sm border p-4 flex items-center gap-3 ${
-        isDone ? 'border-gray-100 opacity-70' : 'border-gray-100'
-      }`}>
+      <div
+        className="rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-3"
+        style={{
+          borderLeftWidth: '4px',
+          borderLeftColor: isDone ? '#6E9E57' : '#0C5C6C',
+          backgroundColor: isDone ? '#F4FAF1' : 'white',
+        }}
+      >
         <button onClick={() => toggleManuel(t)}
           className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-            isDone ? 'bg-green-500 border-green-500' : 'border-gray-300 hover:border-teal-400'
+            isDone ? 'border-[#6E9E57] bg-[#6E9E57]' : 'border-gray-300 hover:border-teal-400'
           }`}>
           {isDone && <span className="text-white text-xs font-bold leading-none">✓</span>}
         </button>
         <div className="flex-1 min-w-0">
-          <span className={`text-sm font-medium ${isDone ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-            {t.titre}
-          </span>
-          {isDone && faitPar && (
-            <p className="text-xs text-green-600 mt-0.5">✓ Fait par {faitPar}</p>
+          <span className="text-sm font-medium text-gray-800">{t.titre}</span>
+          {t.heure && !isDone && (
+            <p className="text-xs text-gray-400 mt-0.5">🕐 {t.heure}</p>
+          )}
+          {isDone && (
+            <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full mt-1"
+              style={{ backgroundColor: '#E8F5E2', color: '#4A7C3A' }}>
+              ✓ Effectué{faitPar ? ` par ${faitPar}` : ''}
+            </span>
           )}
           {!isDone && assignees.length > 0 && (
             <p className="text-xs text-teal-600 mt-0.5">
@@ -1023,7 +1032,7 @@ export default function AgendaElevagePage() {
             </p>
           )}
         </div>
-        {employes.length > 0 && (
+        {!isDone && employes.length > 0 && (
           <button onClick={() => setAttributionTask(t)}
             className="text-xs text-teal-600 border border-teal-200 rounded-full px-2 py-0.5 hover:bg-teal-50 flex-shrink-0">
             {assignees.length > 0 ? '✎' : '+ Attrib.'}

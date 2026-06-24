@@ -376,8 +376,22 @@ class _AgendaPageState extends State<AgendaPage> {
     // ── Ligne d'une tâche manuelle ──────────────────────────────────────────
     Widget manuelRow(Map<String, dynamic> t) {
       final isDone = t['statut'] == 'fait';
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 4),
+      const kGreen = Color(0xFF6E9E57);
+      final borderColor = isDone ? kGreen : _kTeal;
+
+      return Container(
+        margin: const EdgeInsets.only(bottom: 5),
+        decoration: BoxDecoration(
+          color: isDone ? const Color(0xFFF4FAF1) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border(
+            left: BorderSide(color: borderColor, width: 3),
+            top: BorderSide(color: Colors.grey.shade200),
+            right: BorderSide(color: Colors.grey.shade200),
+            bottom: BorderSide(color: Colors.grey.shade200),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Row(children: [
           GestureDetector(
             onTap: () async {
@@ -389,9 +403,8 @@ class _AgendaPageState extends State<AgendaPage> {
               width: 18, height: 18,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(
-                    color: isDone ? const Color(0xFF6E9E57) : Colors.grey.shade300, width: 2),
-                color: isDone ? const Color(0xFF6E9E57) : Colors.transparent,
+                border: Border.all(color: borderColor, width: 2),
+                color: isDone ? kGreen : Colors.transparent,
               ),
               child: isDone ? const Icon(Icons.check, size: 11, color: Colors.white) : null,
             ),
@@ -402,14 +415,27 @@ class _AgendaPageState extends State<AgendaPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(t['titre'] ?? '',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                    color: isDone ? Colors.grey.shade400 : const Color(0xFF1E2025),
-                    decoration: isDone ? TextDecoration.lineThrough : null),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1E2025)),
                 maxLines: 1, overflow: TextOverflow.ellipsis),
-              if (t['responsable_nom'] != null)
-                Text(isDone ? 'Fait par : ${t['responsable_nom']}' : '👤 ${t['responsable_nom']}',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 10.5,
-                        color: isDone ? Colors.grey.shade400 : Colors.grey.shade500)),
+              if (isDone)
+                Container(
+                  margin: const EdgeInsets.only(top: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: kGreen.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    t['responsable_nom'] != null
+                        ? '✓ Effectué par ${t['responsable_nom']}'
+                        : '✓ Effectué',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 10,
+                        fontWeight: FontWeight.w600, color: kGreen),
+                  ),
+                )
+              else if (t['responsable_nom'] != null)
+                Text('👤 ${t['responsable_nom']}',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: Colors.grey.shade500)),
             ],
           )),
           if (!isDone) ...[
