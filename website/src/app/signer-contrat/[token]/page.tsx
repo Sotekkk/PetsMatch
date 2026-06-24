@@ -623,7 +623,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             signedAt={doc?.metadata?.signe_eleveur_le}
           />
 
-          {/* Signature acquéreur */}
+          {/* Signature acquéreur — grisée pour le vendeur */}
           <SignatureZone
             label="Signature de l'acquéreur"
             sublabel={doc?.metadata?.acquereur_nom || undefined}
@@ -634,6 +634,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             onSign={() => signer('acquereur')}
             onClear={() => { clearCanvas(canvasAcqRef); setSaved(p => ({ ...p, acquereur: false })); }}
             signedAt={doc?.metadata?.signe_acquereur_le}
+            disabled={isOwner}
           />
 
         </div>
@@ -644,9 +645,9 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           </p>
         )}
 
-        {/* PREP07 — Télécharger / Imprimer */}
-        {isSigned && (
-          <div className="flex justify-center mt-4">
+        {/* PREP07 — Télécharger / Imprimer — disponible dès que l'éleveur a signé */}
+        {(isSigned || (isOwner && saved.eleveur)) && (
+          <div className="flex justify-center mt-4 gap-3 flex-wrap">
             {doc?.pdf_signe_url ? (
               <a href={doc.pdf_signe_url} download
                 className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
@@ -655,7 +656,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             ) : (
               <button onClick={handlePrint}
                 className="flex items-center gap-2 border border-green-600 text-green-700 hover:bg-green-50 text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
-                🖨️ Imprimer / Sauvegarder en PDF
+                🖨️ {isSigned ? 'Imprimer / Sauvegarder en PDF' : 'Valider et sauvegarder en PDF'}
               </button>
             )}
           </div>
@@ -710,7 +711,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
 
 // ── Composant zone de signature ──────────────────────────────────────────────
 function SignatureZone({
-  label, sublabel, canvasRef, handlers, isSigned, saving, onSign, onClear, signedAt,
+  label, sublabel, canvasRef, handlers, isSigned, saving, onSign, onClear, signedAt, disabled,
 }: {
   label: string;
   sublabel?: string;
@@ -722,33 +723,39 @@ function SignatureZone({
   onSign: () => void;
   onClear: () => void;
   signedAt?: string;
+  disabled?: boolean;
 }) {
   return (
-    <div className={`border-2 rounded-xl p-4 ${isSigned ? 'border-green-400 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+    <div className={`border-2 rounded-xl p-4 ${isSigned ? 'border-green-400 bg-green-50' : disabled ? 'border-gray-200 bg-gray-100 opacity-60' : 'border-gray-200 bg-gray-50'}`}>
       <p className="text-sm font-semibold text-[#1F2A2E] mb-0.5">{label}</p>
       {sublabel && <p className="text-xs text-gray-400 mb-2">{sublabel}</p>}
       <canvas
         ref={canvasRef}
         width={400}
         height={120}
-        className="w-full rounded-lg border border-gray-200 bg-white cursor-crosshair touch-none"
+        className={`w-full rounded-lg border border-gray-200 bg-white touch-none ${disabled ? 'cursor-not-allowed' : 'cursor-crosshair'}`}
         style={{ height: 100 }}
-        {...handlers}
+        {...(disabled ? {} : handlers)}
       />
-      <div className="flex gap-2 mt-3">
-        <button onClick={onClear} disabled={isSigned}
-          className="flex-1 text-xs py-2 rounded-lg border border-gray-300 text-gray-500 hover:border-gray-400 disabled:opacity-40">
-          Effacer
-        </button>
-        <button onClick={onSign} disabled={isSigned || saving}
-          className={`flex-1 text-xs py-2 rounded-lg font-semibold transition-colors ${
-            isSigned
-              ? 'bg-green-500 text-white cursor-default'
-              : 'bg-[#0C5C6C] text-white hover:bg-[#0a4f5e]'
-          } disabled:opacity-60`}>
-          {saving ? '…' : isSigned ? '✓ Signé' : 'Signer'}
-        </button>
-      </div>
+      {disabled && !isSigned && (
+        <p className="text-xs text-gray-400 mt-2 text-center italic">Réservé à l&apos;acquéreur</p>
+      )}
+      {!disabled && (
+        <div className="flex gap-2 mt-3">
+          <button onClick={onClear} disabled={isSigned || disabled}
+            className="flex-1 text-xs py-2 rounded-lg border border-gray-300 text-gray-500 hover:border-gray-400 disabled:opacity-40">
+            Effacer
+          </button>
+          <button onClick={onSign} disabled={isSigned || saving || disabled}
+            className={`flex-1 text-xs py-2 rounded-lg font-semibold transition-colors ${
+              isSigned
+                ? 'bg-green-500 text-white cursor-default'
+                : 'bg-[#0C5C6C] text-white hover:bg-[#0a4f5e]'
+            } disabled:opacity-60`}>
+            {saving ? '…' : isSigned ? '✓ Signé' : 'Signer'}
+          </button>
+        </div>
+      )}
       {isSigned && signedAt && (
         <p className="text-xs text-green-600 mt-2 text-center">
           Signé le {new Date(signedAt).toLocaleDateString('fr-FR', { dateStyle: 'medium' })}

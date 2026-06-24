@@ -151,12 +151,13 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
       });
   }
 
-  function openContratCreation() {
+  function openContratCreation(formType: 'contrat_vente' | 'certificat_cession' = 'contrat_vente') {
     // Pré-remplit l'animal et l'acheteur dans la page contrat via localStorage
     const isElv = selectedUserData?.is_elevage === true;
     localStorage.setItem('cession_prefill', JSON.stringify({
       animal_id:          animal.id,
       animal_nom:         animal.nom ?? '',
+      form_type:          formType,
       acq_is_eleveur:     isElv,
       acq_raison_sociale: isElv ? (selectedUserData?.name_elevage as string ?? '') : '',
       acq_siret:          isElv ? (selectedUserData?.siret as string ?? '') : '',
@@ -553,7 +554,7 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
                   {/* ── Certificat de cession ── */}
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-semibold text-[#1F2A2E]">📜 Certificat de cession / engagement</p>
-                    <button onClick={openContratCreation}
+                    <button onClick={() => openContratCreation('certificat_cession')}
                       className="text-xs font-semibold text-[#0C5C6C] hover:underline">
                       + Créer un certificat
                     </button>
@@ -593,7 +594,7 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
                   {/* ── Contrat de vente ── */}
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-semibold text-[#1F2A2E]">🤝 Contrat de vente / réservation</p>
-                    <button onClick={openContratCreation}
+                    <button onClick={() => openContratCreation('contrat_vente')}
                       className="text-xs font-semibold text-[#0C5C6C] hover:underline flex items-center gap-1">
                       + Créer un contrat
                     </button>

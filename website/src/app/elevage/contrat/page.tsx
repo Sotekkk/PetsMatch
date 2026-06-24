@@ -119,6 +119,7 @@ export default function ContratsPage() {
     try {
       const p = JSON.parse(raw) as {
         animal_id: string; animal_nom: string;
+        form_type?: string;
         acq_is_eleveur?: boolean;
         acq_raison_sociale?: string; acq_siret?: string;
         acq_prenom?: string; acq_nom_famille?: string;
@@ -150,8 +151,8 @@ export default function ContratsPage() {
       setAcqAdresse(p.acq_adresse);
       if (p.prix) setPrix(p.prix);
       if (p.date) setDateDoc(p.date);
-      // Ouvrir directement le formulaire en mode contrat_vente
-      setFormType('contrat_vente');
+      // Ouvrir directement le formulaire avec le bon type
+      setFormType((p.form_type as DocAnimal['type']) ?? 'contrat_vente');
       setShowForm(true);
     } catch { /* ignore */ }
   }, [fetching, animaux]);
