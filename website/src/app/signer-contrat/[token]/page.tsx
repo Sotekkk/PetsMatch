@@ -403,6 +403,54 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
   const elvHandlers  = makeDrawHandlers(canvasElvRef,  drawingElv);
   const acqHandlers  = makeDrawHandlers(canvasAcqRef,  drawingAcq);
 
+  function handlePrint() {
+    if (!html) return;
+    const sigElv = doc?.metadata?.signature_eleveur as string | undefined;
+    const sigAcq = doc?.metadata?.signature_acquereur as string | undefined;
+
+    // Parse le HTML du contrat et injecte les signatures dans les zones prévues
+    const parser = new DOMParser();
+    const htmlDoc = parser.parseFromString(html, 'text/html');
+
+    if (doc?.type !== 'contrat_adoption') {
+      const elvRole = doc?.type === 'contrat_saillie' ? 'proprietaire_male' : 'vendeur';
+      const acqRole = doc?.type === 'contrat_saillie' ? 'proprietaire_femelle' : 'acheteur';
+      if (sigElv) {
+        htmlDoc.querySelectorAll(`[data-signer="${elvRole}"] .sign-img`).forEach(el => {
+          el.innerHTML = `<img src="${sigElv}" style="max-height:60px;max-width:100%;object-fit:contain">`;
+        });
+      }
+      if (sigAcq) {
+        htmlDoc.querySelectorAll(`[data-signer="${acqRole}"] .sign-img`).forEach(el => {
+          el.innerHTML = `<img src="${sigAcq}" style="max-height:60px;max-width:100%;object-fit:contain">`;
+        });
+      }
+    }
+
+    // CSS d'impression — supprime les panneaux fixes, corrige la pagination
+    const style = htmlDoc.createElement('style');
+    style.textContent = `
+      @page { size: A4; margin: 15mm 20mm; }
+      *, *::before, *::after { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      .toolbar, .sig-panel { display: none !important; }
+      .page { padding: 20px 30px 30px !important; }
+      body { padding-bottom: 0 !important; }
+      .sign-block { page-break-inside: avoid; break-inside: avoid; }
+      .sign-section { page-break-inside: avoid; break-inside: avoid; }
+      .sign-img { height: auto !important; min-height: 64px; overflow: visible !important; }
+      .sign-img img { max-height: 60px !important; max-width: 100% !important; object-fit: contain !important; display: block; margin: 0 auto; }
+      .sign-row { page-break-inside: avoid; break-inside: avoid; }
+    `;
+    htmlDoc.head.appendChild(style);
+
+    const printHtml = `<!DOCTYPE html>\n${htmlDoc.documentElement.outerHTML}`;
+    const win = window.open('', '_blank', 'width=900,height=1200');
+    if (!win) return;
+    win.document.write(printHtml);
+    win.document.close();
+    setTimeout(() => { win.focus(); win.print(); }, 600);
+  }
+
   const bannerCls = isSigned    ? 'bg-green-600 text-white' :
                     isRefused   ? 'bg-red-500 text-white' :
                     isCancelled ? 'bg-gray-500 text-white' :
@@ -521,7 +569,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
                 📥 Télécharger le PDF signé
               </a>
             ) : (
-              <button onClick={() => window.print()}
+              <button onClick={handlePrint}
                 className="flex items-center gap-2 border border-green-600 text-green-700 hover:bg-green-50 text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
                 🖨️ Imprimer / Sauvegarder en PDF
               </button>

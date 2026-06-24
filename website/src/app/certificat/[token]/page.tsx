@@ -299,36 +299,32 @@ export default function CertificatPublicPage({ params }: { params: Promise<{ tok
   <title>Certificat d'engagement PetsMatch — ${cert!.nom_animal}</title>
   <script src="https://cdn.tailwindcss.com"><\/script>
   <style>
-    /* margin:0 supprime l'en-tête/pied-de-page navigateur (URL, heure, numéro de page) */
     @page { size: A4; margin: 0; }
     *, *::before, *::after { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: white; font-family: system-ui, -apple-system, sans-serif; }
-    /* Marges document portées par le wrapper, pas par @page */
     .print-page { padding: 12mm 14mm 14mm 14mm; max-width: 210mm; margin: 0 auto; }
 
-    /* ── Contrôle des sauts de page ────────────────────────────── */
-    /* Blocs courts qui ne doivent JAMAIS être coupés */
-    .no-break {
-      break-inside: avoid;
-      page-break-inside: avoid;
-    }
-    /* Titre de section : reste solidaire du premier élément qui suit */
-    .keep-next {
-      break-after: avoid;
-      page-break-after: avoid;
-    }
-    /* Évite qu'un saut de page arrive juste avant le bloc signatures */
-    section.no-break.border-t {
-      break-before: auto;
-    }
-    /* Chaque section peut commencer en bas de page, mais pas être coupée si courte */
+    /* ── Contrôle des sauts de page ── */
+    .no-break { break-inside: avoid; page-break-inside: avoid; }
+    .keep-next { break-after: avoid; page-break-after: avoid; }
+    section.no-break.border-t { break-before: auto; }
     section { break-before: auto; }
-    /* Orphelins/veuves dans les paragraphes */
     p { orphans: 3; widows: 3; }
-    /* Coins arrondis conservés à l'impression (Tailwind CDN les applique déjà, sécurité) */
     .rounded-xl { border-radius: 0.75rem !important; }
-    /* Le bloc de couverture ne doit pas être coupé */
     .text-center.border-b { break-inside: avoid; page-break-inside: avoid; }
+
+    /* ── Zone signatures — ne jamais couper ── */
+    .grid.grid-cols-2 { page-break-inside: avoid; break-inside: avoid; }
+    /* Chaque colonne signature reste visible entière */
+    .grid.grid-cols-2 > div { overflow: visible !important; }
+    /* La ligne pointillée de signature ne doit jamais être coupée */
+    .h-14 { height: 3.5rem; overflow: visible !important; page-break-inside: avoid; break-inside: avoid; }
+    /* Empêche un saut juste avant le bloc signatures */
+    section:last-of-type { break-before: avoid; page-break-before: avoid; }
+
+    /* Corrige les hauteurs fixes qui peuvent rogner le contenu */
+    [class*="h-"] { overflow: visible !important; }
+    img { max-width: 100% !important; height: auto !important; object-fit: contain !important; }
   </style>
 </head>
 <body>
@@ -337,7 +333,7 @@ export default function CertificatPublicPage({ params }: { params: Promise<{ tok
   </div>
   <script>
     window.addEventListener('load', function() {
-      setTimeout(function() { window.print(); }, 700);
+      setTimeout(function() { window.print(); }, 1200);
     });
   <\/script>
 </body>

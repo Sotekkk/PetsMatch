@@ -167,6 +167,88 @@ export default function SignerCessionPage({ params }: { params: { token: string 
   const dn = cession.animal.date_naissance ? new Date(cession.animal.date_naissance).toLocaleDateString('fr-FR') : '';
   const prixStr = cession.prix && cession.prix > 0 ? `${cession.prix.toLocaleString('fr-FR')} €` : 'Gratuit';
 
+  function handlePrint() {
+    const sigImgHtml = cession!.signature_acquereur
+      ? `<img src="${cession!.signature_acquereur}" style="max-height:70px;max-width:100%;object-fit:contain;display:block;margin:4px auto">`
+      : '<span style="font-size:10px;color:#aaa;font-style:italic">Signature manuscrite</span>';
+    const vendeurHtml = confirmed
+      ? `<div style="padding:10px;text-align:center"><p style="font-size:22px;margin:0">✅</p><p style="font-size:11px;color:#166534;font-weight:bold;margin:4px 0">Cession confirmée</p><p style="font-size:10px;color:#166534;margin:0">Transfert de propriété effectif</p></div>`
+      : `<div style="padding:10px;text-align:center"><p style="font-size:22px;margin:0">⏳</p><p style="font-size:11px;color:#92400e;font-weight:bold;margin:4px 0">En attente de confirmation</p></div>`;
+
+    const printHtml = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8">
+<title>Contrat de cession — ${cession!.animal.nom ?? 'animal'}</title>
+<style>
+@page{size:A4;margin:15mm 20mm}
+*,*::before,*::after{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:12px;color:#1F2A2E;margin:0;line-height:1.6}
+h1{font-size:18px;text-align:center;color:#0C5C6C;margin:0 0 4px}
+h2{font-size:13px;color:#0C5C6C;margin:20px 0 10px;border-bottom:1px solid #e5e7eb;padding-bottom:4px}
+.header{text-align:center;padding-bottom:12px;margin-bottom:16px;border-bottom:2px solid #0C5C6C}
+.grid{display:flex;flex-wrap:wrap;gap:6px 20px;margin-bottom:12px}
+.field{flex:1;min-width:200px}
+.field-label{font-size:10px;color:#888;margin-bottom:1px}
+.field-value{font-weight:bold}
+.notes{background:#f8f8f8;border:1px solid #eee;border-radius:4px;padding:8px 12px;margin:8px 0;font-size:11px}
+.sig-section{page-break-inside:avoid;break-inside:avoid;margin-top:20px}
+.sig-row{display:flex;gap:20px}
+.sig-block{flex:1;border:1px solid #ddd;border-radius:8px;padding:12px;text-align:center;page-break-inside:avoid;break-inside:avoid}
+.sig-label{font-size:10px;font-weight:bold;text-transform:uppercase;color:#0C5C6C;margin-bottom:2px}
+.sig-name{font-size:11px;color:#555;margin-bottom:6px}
+.sig-img{min-height:70px;border-bottom:1px solid #ccc;display:flex;align-items:center;justify-content:center;margin-bottom:4px;padding:4px}
+.sig-note{font-size:9px;color:#888;margin-top:2px}
+.status{text-align:center;padding:6px 14px;border-radius:6px;font-size:11px;font-weight:bold;margin-bottom:14px}
+.status-ok{background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
+.status-wait{background:#fef9c3;color:#92400e;border:1px solid #fde68a}
+.foot{font-size:9px;color:#aaa;text-align:center;margin-top:20px}
+</style>
+</head><body>
+<div class="header">
+  <h1>Contrat de cession</h1>
+  <p style="font-size:10px;color:#666;margin:2px 0">PetsMatch — Signature électronique</p>
+  <div class="status ${confirmed ? 'status-ok' : 'status-wait'}" style="margin-top:10px">
+    ${confirmed ? '✅ Cession confirmée — transfert de propriété effectif' : '⏳ Signature acquéreur enregistrée — en attente de confirmation vendeur'}
+  </div>
+</div>
+<h2>Informations</h2>
+<div class="grid">
+  <div class="field"><div class="field-label">Animal</div><div class="field-value">${cession!.animal.nom ?? '—'} (${cession!.animal.espece ?? '—'})</div></div>
+  <div class="field"><div class="field-label">Race</div><div class="field-value">${cession!.animal.race ?? '—'}</div></div>
+  ${dn ? `<div class="field"><div class="field-label">Né(e) le</div><div class="field-value">${dn}</div></div>` : ''}
+  <div class="field"><div class="field-label">Identification</div><div class="field-value">${cession!.animal.identification ?? '—'}</div></div>
+  <div class="field"><div class="field-label">Vendeur</div><div class="field-value">${cession!.eleveur.nom}</div></div>
+  <div class="field"><div class="field-label">Acheteur</div><div class="field-value">${cession!.nom_acquereur}</div></div>
+  <div class="field"><div class="field-label">Prix</div><div class="field-value">${prixStr}</div></div>
+  ${cession!.date_cession ? `<div class="field"><div class="field-label">Date</div><div class="field-value">${new Date(cession!.date_cession).toLocaleDateString('fr-FR')}</div></div>` : ''}
+</div>
+${cession!.notes ? `<div class="notes"><strong>Notes : </strong>${cession!.notes}</div>` : ''}
+<div class="sig-section">
+  <h2 style="margin-top:0">Signatures</h2>
+  <div class="sig-row">
+    <div class="sig-block">
+      <div class="sig-label">Acquéreur</div>
+      <div class="sig-name">${cession!.nom_acquereur}</div>
+      <div class="sig-img">${sigImgHtml}</div>
+      <div class="sig-note">✅ Signature électronique validée</div>
+    </div>
+    <div class="sig-block">
+      <div class="sig-label">Vendeur</div>
+      <div class="sig-name">${cession!.eleveur.nom}</div>
+      <div class="sig-img">${vendeurHtml}</div>
+      <div class="sig-note">${confirmed ? '✅ Cession confirmée' : '⏳ En attente de confirmation'}</div>
+    </div>
+  </div>
+</div>
+<div class="foot">Document généré par PetsMatch · Signature électronique simple · Réf. ${cession!.id}</div>
+<script>window.addEventListener('load',function(){setTimeout(function(){window.print();},400)});<\/script>
+</body></html>`;
+
+    const win = window.open('', '_blank', 'width=900,height=1100');
+    if (!win) return;
+    win.document.write(printHtml);
+    win.document.close();
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-2xl mx-auto space-y-6">
@@ -255,7 +337,7 @@ export default function SignerCessionPage({ params }: { params: { token: string 
               </div>
             </div>
 
-            <button onClick={() => window.print()}
+            <button onClick={handlePrint}
               className="w-full border border-[#0C5C6C] text-[#0C5C6C] font-semibold py-3 rounded-2xl text-sm hover:bg-[#0C5C6C]/5 transition-colors">
               🖨️ Imprimer / Sauvegarder en PDF
             </button>
