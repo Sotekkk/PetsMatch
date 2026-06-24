@@ -213,7 +213,7 @@ function AddProtocoleModal({ selectedDate, uid, profilSource, onClose, onSaved }
     await supabase.from('plan_taches').insert({
       uid_eleveur:   uid,
       label:         label.trim(),
-      date_prevue:   `${selectedDate}T00:00:00`,
+      date_prevue:   selectedDate,
       statut:        'a_faire',
       type_acte:     typeActe,
       animal_nom:    animalNom.trim() || null,
@@ -988,6 +988,27 @@ export default function AgendaElevagePage() {
       update.fait_a   = null;
     }
     await supabase.from('taches_elevage').update(update).eq('id', t.id);
+
+    // Notifier l'éleveur quand un employé valide la tâche
+    if (newStatut === 'fait' && t.uid_eleveur && t.uid_eleveur !== user!.uid) {
+      try {
+        const { data: moi } = await supabase.from('users')
+          .select('firstname, lastname, name_elevage, is_elevage')
+          .eq('uid', user!.uid).maybeSingle();
+        const nomEmploye = moi
+          ? (moi.is_elevage ? (moi.name_elevage ?? 'Votre employé') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
+          : 'Votre employé';
+        await supabase.from('notifications').insert({
+          uid:   t.uid_eleveur,
+          type:  'tache_validee',
+          title: 'Tâche validée ✓',
+          body:  `${nomEmploye} a terminé : ${t.titre}`,
+          data:  { tacheId: t.id, eleveurUid: t.uid_eleveur },
+          read:  false,
+        });
+      } catch (_) {}
+    }
+
     load();
   }, [user, load]);
 
@@ -1048,26 +1069,41 @@ export default function AgendaElevagePage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const GroupeCard = ({ g, effectuee = false }: { g: RoutineGroupe; effectuee?: boolean }) => {
-    const done    = g.routines.filter(r => r.statut === 'fait').length;
-    const total   = g.routines.length;
-    const pct     = total > 0 ? done / total : 0;
-    const allDone = done === total;
-    const emoji   = ACTE_EMOJIS[g.typeActe] ?? '📋';
+    const done      = g.routines.filter(r => r.statut === 'fait').length;
+    const total     = g.routines.length;
+    const pct       = total > 0 ? done / total : 0;
+    const allDone   = done === total;
+    const emoji     = ACTE_EMOJIS[g.typeActe] ?? '📋';
+    const acteColor = ACTE_COLOR[g.typeActe] ?? '#0C5C6C';
     return (
-      <div className={`bg-white rounded-2xl shadow-sm border p-4 ${
-        effectuee ? 'border-gray-100 opacity-70' : allDone ? 'border-gray-100 opacity-60' : 'border-teal-100'
-      }`}>
+      <div
+        className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4"
+        style={{
+          borderLeftWidth: '4px',
+          borderLeftColor: effectuee || allDone ? '#D1D5DB' : acteColor,
+          opacity: effectuee ? 0.75 : 1,
+        }}
+      >
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 cursor-pointer hover:shadow-md transition-all ${
-            effectuee || allDone ? 'bg-gray-50' : 'bg-teal-50'
-          }`} onClick={() => !effectuee && setValidateGroupe(g)}>
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 cursor-pointer hover:shadow-md transition-all"
+            style={{ backgroundColor: effectuee || allDone ? '#F3F4F6' : `${acteColor}18` }}
+            onClick={() => !effectuee && setValidateGroupe(g)}
+          >
             {emoji}
           </div>
           <div className="flex-1 min-w-0 cursor-pointer" onClick={() => !effectuee && setValidateGroupe(g)}>
-            <p className={`font-semibold text-sm ${effectuee || allDone ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+            <p className={`font-semibold text-sm ${effectuee || allDone ? 'text-gray-400' : 'text-gray-800'}`}>
               {g.label}
             </p>
-            <p className="text-xs text-gray-400 mt-0.5">Protocole · {total} animal{total > 1 ? 'x' : ''}</p>
+            {allDone && !effectuee ? (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full mt-0.5"
+                style={{ backgroundColor: '#E8F5E2', color: '#4A7C3A' }}>
+                ✓ Effectué
+              </span>
+            ) : (
+              <p className="text-xs text-gray-400 mt-0.5">Protocole · {total} animal{total > 1 ? 'x' : ''}</p>
+            )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {!effectuee && (

@@ -457,7 +457,7 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: () => Navigator.pushReplacement(context,
+                  onPressed: () => Navigator.push(context,
                       MaterialPageRoute(builder: (_) => const AbonnementPage())),
                   icon: const Text('⚡', style: TextStyle(fontSize: 18)),
                   label: const Text('Voir les plans',

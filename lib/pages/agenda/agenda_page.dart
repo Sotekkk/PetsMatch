@@ -2340,7 +2340,7 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
     await Supabase.instance.client.from('plan_taches').insert({
       'uid_eleveur':   widget.uid,
       'label':         _labelCtrl.text.trim(),
-      'date_prevue':   '${dateStr}T00:00:00',
+      'date_prevue':   dateStr,
       'statut':        'a_faire',
       'type_acte':     _typeActe,
       'animal_nom':    _animalCtrl.text.trim().isEmpty ? null : _animalCtrl.text.trim(),
