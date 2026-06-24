@@ -124,13 +124,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     try {
       final supa = Supabase.instance.client;
 
-      // 1) Toujours récupérer tous les animaux via uid_eleveur/uid_acquereur/uid_proprietaire
-      final rows = await supa.from('animaux').select()
-          .or('uid_eleveur.eq.$_uid,uid_acquereur.eq.$_uid,uid_proprietaire.eq.$_uid')
-          .or('is_association.eq.false,is_association.is.null');
-      final animaux = List<Map<String, dynamic>>.from(rows as List);
-
-      // 2) Récupérer animaux_proprietes pour le split présents/anciens
+      // 1) Récupérer animaux_proprietes en premier — couvre le cas où uid_acquereur
+      //    n'a pas été mis à jour lors d'une cession mais animaux_proprietes l'est
       final ownRows = await supa.from('animaux_proprietes')
           .select('animal_id, date_fin')
           .eq('uid_proprio', _uid!);
@@ -143,7 +138,24 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       }
       final hasOwnershipData = (ownRows as List).isNotEmpty;
 
-      // Pour les animaux absents de la table (migration incomplète) → fallback statut
+      // 2) Récupérer tous les animaux via uid_eleveur/uid_acquereur/uid_proprietaire
+      final rows = await supa.from('animaux').select()
+          .or('uid_eleveur.eq.$_uid,uid_acquereur.eq.$_uid,uid_proprietaire.eq.$_uid')
+          .or('is_association.eq.false,is_association.is.null');
+      var animaux = List<Map<String, dynamic>>.from(rows as List);
+
+      // 3) Compléter avec les animaux où l'utilisateur est propriétaire actuel
+      //    selon animaux_proprietes mais absent des champs uid_eleveur/uid_acquereur/uid_proprietaire
+      final knownIds = animaux.map((a) => a['id'] as String? ?? '').toSet();
+      final missingIds = currentIds.difference(knownIds);
+      if (missingIds.isNotEmpty) {
+        final extraRows = await supa.from('animaux').select()
+            .inFilter('id', missingIds.toList())
+            .or('is_association.eq.false,is_association.is.null');
+        animaux = [...animaux, ...List<Map<String, dynamic>>.from(extraRows as List)];
+      }
+
+      // 4) Pour les animaux absents de la table (migration incomplète) → fallback statut
       if (hasOwnershipData) {
         for (final a in animaux) {
           final id = a['id'] as String? ?? '';

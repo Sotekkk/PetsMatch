@@ -324,24 +324,45 @@ export default function MesAnimauxPage() {
     setFetching(true);
 
     async function loadAll() {
-      // 1) Toujours récupérer TOUS les animaux via uid_eleveur / uid_acquereur / uid_proprietaire
-      //    (source exhaustive — ne jamais laisser un animal disparaître)
-      const { data } = await supabase
-        .from('animaux')
-        .select('*')
-        .or(`uid_eleveur.eq.${user!.uid},uid_acquereur.eq.${user!.uid},uid_proprietaire.eq.${user!.uid}`)
-        .or('is_association.is.null,is_association.eq.false')
-        .order('nom', { ascending: true });
-
-      const list = (data ?? []) as Animal[];
-      setAnimaux(list);
-
-      // 2) Récupérer animaux_proprietes pour le split présents/anciens
-      const { data: ownRows } = await supabase
+      // 1) Récupérer animaux_proprietes en premier pour avoir les animal_id où l'utilisateur est propriétaire actuel
+      //    (date_fin IS NULL) — couvre le cas où uid_acquereur n'a pas été mis à jour lors d'une cession
+      const { data: ownRowsEarly } = await supabase
         .from('animaux_proprietes')
         .select('animal_id, date_fin')
         .eq('uid_proprio', user!.uid);
 
+      const currentOwnerAnimalIds = (ownRowsEarly ?? [])
+        .filter(r => !r.date_fin)
+        .map(r => r.animal_id as string);
+
+      // 2) Récupérer TOUS les animaux via uid_eleveur / uid_acquereur / uid_proprietaire
+      //    + ceux où l'utilisateur est propriétaire actuel selon animaux_proprietes
+      const orClause = `uid_eleveur.eq.${user!.uid},uid_acquereur.eq.${user!.uid},uid_proprietaire.eq.${user!.uid}`;
+      const [{ data }, extraData] = await Promise.all([
+        supabase.from('animaux').select('*')
+          .or(orClause)
+          .or('is_association.is.null,is_association.eq.false')
+          .order('nom', { ascending: true }),
+        currentOwnerAnimalIds.length > 0
+          ? supabase.from('animaux').select('*')
+              .in('id', currentOwnerAnimalIds)
+              .or('is_association.is.null,is_association.eq.false')
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      // Fusionner et dédupliquer
+      const seen = new Set<string>();
+      const merged: Animal[] = [];
+      for (const a of [...(data ?? []), ...(extraData.data ?? [])]) {
+        if (!seen.has((a as Animal).id)) { seen.add((a as Animal).id); merged.push(a as Animal); }
+      }
+      merged.sort((a, b) => (a.nom ?? '').localeCompare(b.nom ?? '', 'fr'));
+
+      const list = merged;
+      setAnimaux(list);
+
+      // 3) Utiliser animaux_proprietes (déjà chargé) pour le split présents/anciens
+      const ownRows = ownRowsEarly;
       const currentIds = new Set((ownRows ?? []).filter(r => !r.date_fin).map(r => r.animal_id as string));
       const hasOwnershipData = (ownRows ?? []).length > 0;
 
