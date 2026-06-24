@@ -109,6 +109,20 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
         seen.add((a as Animal).id);
         return true;
       });
+      // Animaux historiques (re-cédés) : trouvés via registre_mouvements
+      const { data: mvts } = await supabase.from('registre_mouvements').select('animal_id').eq('uid_eleveur', user.uid);
+      if (mvts && mvts.length > 0) {
+        const historicalIds = [...new Set(mvts.map((m: { animal_id: string }) => m.animal_id))].filter(id => !seen.has(id));
+        if (historicalIds.length > 0) {
+          const { data: historical } = await supabase.from('animaux').select(cols).in('id', historicalIds);
+          (historical ?? []).forEach((a) => {
+            if (!seen.has((a as Animal).id)) {
+              seen.add((a as Animal).id);
+              merged.push(a as Animal);
+            }
+          });
+        }
+      }
       setAnimaux(merged as Animal[]);
     } catch { /* ignore */ } finally {
       setFetching(false);

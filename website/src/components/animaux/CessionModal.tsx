@@ -79,7 +79,7 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
   const [prix, setPrix]             = useState('');
   const [notes, setNotes]           = useState('');
 
-  // Documents
+  // Documents uploadés manuellement
   const [contratUrl, setContratUrl]       = useState('');
   const [certificatUrl, setCertificatUrl] = useState('');
   const [uploadingContrat, setUploadingContrat]       = useState(false);
@@ -92,8 +92,13 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
   const [contratSigne, setContratSigne]       = useState(false);
   const [certificatSigne, setCertificatSigne] = useState(false);
 
-  // Contrat existant dans documents_animaux (auto-attach DOC05)
-  const [existingContrat, setExistingContrat] = useState<{ type: string; statut: string; url: string } | null>(null);
+  // Documents existants sélectionnables
+  type DocEntry = { id: string; type: string; statut: string; url: string; created_at: string };
+  const [existingContrats,    setExistingContrats]    = useState<DocEntry[]>([]);
+  const [existingCertificats, setExistingCertificats] = useState<DocEntry[]>([]);
+  const [selectedContrat,    setSelectedContrat]    = useState<DocEntry | null>(null);
+  const [selectedCertificat, setSelectedCertificat] = useState<DocEntry | null>(null);
+  const [loadingDocs, setLoadingDocs] = useState(true);
 
   // Écoute le contrat ou certificat signé depuis la popup
   useEffect(() => {
@@ -110,16 +115,19 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
     return () => window.removeEventListener('message', handler);
   }, []);
 
-  // Chargement du contrat existant lié à l'animal (DOC05)
+  // Chargement de tous les documents liés à l'animal
   useEffect(() => {
     supabase.from('documents_animaux')
-      .select('type, statut, url')
+      .select('id, type, statut, url, created_at')
       .eq('animal_id', animal.id)
-      .in('type', ['contrat_vente', 'contrat_reservation'])
+      .in('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession'])
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-      .then(({ data }) => { if (data) setExistingContrat(data as { type: string; statut: string; url: string }); });
+      .then(({ data }) => {
+        const all = (data ?? []) as DocEntry[];
+        setExistingContrats(all.filter(d => d.type !== 'certificat_cession'));
+        setExistingCertificats(all.filter(d => d.type === 'certificat_cession'));
+        setLoadingDocs(false);
+      });
   }, [animal.id]);
 
   function fillFromUser(data: Record<string, unknown>) {
@@ -228,8 +236,8 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
     setSaving(true);
     setError('');
     try {
-      // Auto-attach contrat existant si aucun n'a été uploadé manuellement (DOC05)
-      const finalContratUrl = contratUrl || existingContrat?.url || null;
+      const finalContratUrl    = contratUrl    || selectedContrat?.url    || null;
+      const finalCertificatUrl = certificatUrl || selectedCertificat?.url || null;
 
       await supabase.from('animaux').update({
         statut:                 'sorti',
@@ -239,10 +247,37 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
         destinataire_adresse:   adresse.trim() || null,
         uid_acquereur:          searchResult?.uid ?? null,
         cession_contrat_url:    finalContratUrl,
-        cession_certificat_url: certificatUrl || null,
+        cession_certificat_url: finalCertificatUrl,
         cession_prix:           prix ? parseFloat(prix) : null,
         cession_notes:          notes.trim() || null,
       }).eq('id', animal.id);
+
+      // Enregistrer les mouvements dans le registre
+      const acqUid = searchResult?.uid ?? null;
+      // Sortie pour le cédant
+      await supabase.from('registre_mouvements').insert({
+        animal_id:             animal.id,
+        uid_eleveur:           uid,
+        type:                  'sortie',
+        date_mouvement:        dateCession,
+        motif:                 'cession',
+        destinataire_qualite:  qualite,
+        destinataire_nom:      nom.trim() || null,
+        destinataire_adresse:  adresse.trim() || null,
+      });
+      // Entrée pour l'acquéreur s'il a un compte éleveur ou association
+      if (acqUid && (qualite === 'eleveur' || qualite === 'refuge')) {
+        await supabase.from('registre_mouvements').insert({
+          animal_id:         animal.id,
+          uid_eleveur:       acqUid,
+          type:              'entree',
+          date_mouvement:    dateCession,
+          motif:             'cession',
+          provenance_qualite: 'eleveur',
+          provenance_nom:    eleveurInfo.nom,
+          provenance_adresse: eleveurInfo.adresse ?? null,
+        });
+      }
 
       // Notifier l'acquéreur si c'est un utilisateur PetsMatch
       if (searchResult?.uid) {
@@ -450,69 +485,78 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
           {/* ── Étape 3 : Documents ─────────────────────────────────── */}
           {step === 'documents' && (
             <>
-              <p className="text-xs text-gray-500">Générez les documents et/ou uploadez les versions signées.</p>
-
-              {/* Bannière contrat existant auto-attaché (DOC05) */}
-              {existingContrat && !contratUrl && (
-                <div className="flex items-start gap-2 bg-green-50 border border-green-200 rounded-xl p-3">
-                  <span className="text-green-600 mt-0.5">✅</span>
-                  <div>
-                    <p className="text-xs font-bold text-green-800">Contrat existant détecté</p>
-                    <p className="text-xs text-green-700">
-                      {existingContrat.type === 'contrat_reservation' ? 'Contrat de réservation' : 'Contrat de vente'}
-                      {' '}({existingContrat.statut === 'signe' ? 'signé ✓' : 'brouillon'}) — sera automatiquement attaché à cette cession.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Certificat de cession */}
-              <div className={`border rounded-xl p-4 space-y-3 ${certificatSigne ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
-                <div>
-                  <p className="text-sm font-bold text-[#1F2A2E]">📜 Certificat de cession</p>
-                  <p className="text-xs text-gray-400">Uploadez le certificat signé</p>
-                </div>
-                {certificatSigne && (
-                  <div className="flex items-center gap-2 text-xs text-green-700 font-semibold">
-                    <span>✅ Certificat signé numériquement et enregistré</span>
-                    {certificatUrl && <a href={certificatUrl} target="_blank" rel="noreferrer" className="underline">Voir</a>}
-                  </div>
-                )}
-                {!certificatSigne && (
-                  <div>
+              {loadingDocs ? (
+                <p className="text-xs text-gray-400 text-center py-4">Chargement des documents…</p>
+              ) : (
+                <>
+                  {/* ── Certificat de cession ── */}
+                  <p className="text-xs font-semibold text-[#1F2A2E]">📜 Certificat de cession / engagement</p>
+                  {existingCertificats.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic">Aucun certificat existant</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {existingCertificats.map(d => {
+                        const sel = selectedCertificat?.id === d.id;
+                        const label = d.statut === 'signe' ? '✅ Signé' : d.statut === 'partiellement_signe' ? '✍️ Partiel' : d.statut === 'en_attente' ? '⏳ En attente' : '📝 Brouillon';
+                        const date = d.created_at ? new Date(d.created_at).toLocaleDateString('fr-FR') : '';
+                        return (
+                          <button key={d.id} onClick={() => setSelectedCertificat(sel ? null : d)}
+                            className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-colors ${sel ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                            <span className="text-sm">{sel ? '🔵' : '⚪'}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-[#1F2A2E]">Certificat de cession</p>
+                              <p className="text-[10px] text-gray-500">{label}{date ? `  ·  ${date}` : ''}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="flex gap-3">
                     <input ref={certificatRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
                       onChange={e => { if (e.target.files?.[0]) uploadDoc(e.target.files[0], 'certificat'); }} />
                     <button onClick={() => certificatRef.current?.click()} disabled={uploadingCertificat}
-                      className="w-full border-2 border-dashed border-gray-200 rounded-xl py-2.5 text-xs text-gray-400 hover:border-[#0C5C6C]/40 hover:text-[#0C5C6C] transition-colors">
-                      {uploadingCertificat ? '⏳ Upload…' : certificatUrl ? '✓ Uploadé · Remplacer' : '⬆️ Ou uploader un PDF signé'}
+                      className="text-[#0C5C6C] text-xs hover:underline">
+                      {uploadingCertificat ? '⏳…' : certificatUrl ? '✓ Importé · Remplacer' : '⬆️ Importer PDF'}
                     </button>
                   </div>
-                )}
-              </div>
 
-              {/* Contrat de vente */}
-              <div className={`border rounded-xl p-4 space-y-3 ${contratSigne ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
-                <div>
-                  <p className="text-sm font-bold text-[#1F2A2E]">🤝 Contrat de vente</p>
-                  <p className="text-xs text-gray-400">Uploadez le contrat signé (ou créez-en un depuis <strong>Administratif → Contrats</strong>)</p>
-                </div>
-                {contratSigne && (
-                  <div className="flex items-center gap-2 text-xs text-green-700 font-semibold">
-                    <span>✅ Contrat signé numériquement et enregistré</span>
-                    {contratUrl && <a href={contratUrl} target="_blank" rel="noreferrer" className="underline">Voir</a>}
-                  </div>
-                )}
-                {!contratSigne && (
-                  <div>
+                  <hr className="my-1 border-gray-100" />
+
+                  {/* ── Contrat de vente ── */}
+                  <p className="text-xs font-semibold text-[#1F2A2E]">🤝 Contrat de vente / réservation</p>
+                  {existingContrats.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic">Aucun contrat existant — créez-en un depuis <strong>Administratif → Contrats</strong></p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {existingContrats.map(d => {
+                        const sel = selectedContrat?.id === d.id;
+                        const typeLabel = d.type === 'contrat_reservation' ? 'Contrat de réservation' : 'Contrat de vente';
+                        const label = d.statut === 'signe' ? '✅ Signé' : d.statut === 'partiellement_signe' ? '✍️ Partiel' : d.statut === 'en_attente' ? '⏳ En attente' : '📝 Brouillon';
+                        const date = d.created_at ? new Date(d.created_at).toLocaleDateString('fr-FR') : '';
+                        return (
+                          <button key={d.id} onClick={() => setSelectedContrat(sel ? null : d)}
+                            className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-colors ${sel ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                            <span className="text-sm">{sel ? '🔵' : '⚪'}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-[#1F2A2E]">{typeLabel}</p>
+                              <p className="text-[10px] text-gray-500">{label}{date ? `  ·  ${date}` : ''}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="flex gap-3">
                     <input ref={contratRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
                       onChange={e => { if (e.target.files?.[0]) uploadDoc(e.target.files[0], 'contrat'); }} />
                     <button onClick={() => contratRef.current?.click()} disabled={uploadingContrat}
-                      className="w-full border-2 border-dashed border-gray-200 rounded-xl py-2 text-xs text-gray-400 hover:border-[#0C5C6C]/40 hover:text-[#0C5C6C] transition-colors">
-                      {uploadingContrat ? '⏳ Upload…' : contratUrl ? '✓ Uploadé · Remplacer' : '⬆️ Ou uploader un PDF signé'}
+                      className="text-[#0C5C6C] text-xs hover:underline">
+                      {uploadingContrat ? '⏳…' : contratUrl ? '✓ Importé · Remplacer' : '⬆️ Importer PDF'}
                     </button>
                   </div>
-                )}
-              </div>
+                </>
+              )}
 
               {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
 

@@ -175,6 +175,21 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         }
       }
 
+      // Animaux passés par le registre mouvements (re-cédés — ne sont plus uid_eleveur ni uid_acquereur)
+      final existingIds = animaux.map((a) => a['id'] as String? ?? '').toSet();
+      try {
+        final mvts = await supa.from('registre_mouvements')
+            .select('animal_id').eq('uid_eleveur', _uid!);
+        final mvtIds = (mvts as List)
+            .map((m) => m['animal_id'] as String? ?? '')
+            .where((id) => id.isNotEmpty && !existingIds.contains(id))
+            .toSet().toList();
+        if (mvtIds.isNotEmpty) {
+          final historical = await supa.from('animaux').select().inFilter('id', mvtIds);
+          animaux.addAll(List<Map<String, dynamic>>.from(historical as List));
+        }
+      } catch (_) {}
+
       if (mounted) setState(() {
         _animauxData    = animaux;
         _chaleurFlags   = cFlags;

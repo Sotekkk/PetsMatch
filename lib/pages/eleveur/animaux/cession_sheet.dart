@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
-import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -56,14 +55,18 @@ class _CessionSheetState extends State<CessionSheet> {
   final _notesCtrl    = TextEditingController();
   late DateTime _dateCession;
 
-  // Documents
+  // Documents uploadés manuellement
   String? _contratUrl;
   String? _certificatUrl;
   bool _uploadingContrat    = false;
   bool _uploadingCertificat = false;
 
-  // Contrat existant dans documents_animaux (auto-attach DOC05)
-  Map<String, dynamic>? _existingContrat;
+  // Documents existants dans documents_animaux (sélectionnable)
+  List<Map<String, dynamic>> _existingContrats     = [];
+  List<Map<String, dynamic>> _existingCertificats  = [];
+  Map<String, dynamic>? _selectedContrat;
+  Map<String, dynamic>? _selectedCertificat;
+  bool _loadingDocs = true;
 
   bool _saving = false;
   bool _generatingPdf  = false;
@@ -74,22 +77,29 @@ class _CessionSheetState extends State<CessionSheet> {
   void initState() {
     super.initState();
     _dateCession = DateTime.now();
-    _loadExistingContrat();
+    _loadExistingDocs();
   }
 
-  Future<void> _loadExistingContrat() async {
+  Future<void> _loadExistingDocs() async {
     final animalId = widget.animal['id'] as String?;
-    if (animalId == null) return;
-    final res = await _supa
-        .from('documents_animaux')
-        .select('id, type, titre, url, statut, created_at')
-        .eq('animal_id', animalId)
-        .inFilter('type', ['contrat_vente', 'contrat_reservation'])
-        .order('created_at', ascending: false)
-        .limit(1)
-        .maybeSingle();
-    if (res != null && mounted) {
-      setState(() => _existingContrat = Map<String, dynamic>.from(res));
+    if (animalId == null) { setState(() => _loadingDocs = false); return; }
+    try {
+      final res = await _supa
+          .from('documents_animaux')
+          .select('id, type, titre, url, statut, created_at, metadata')
+          .eq('animal_id', animalId)
+          .inFilter('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession'])
+          .order('created_at', ascending: false);
+      if (mounted) {
+        final all = List<Map<String, dynamic>>.from(res);
+        setState(() {
+          _existingContrats    = all.where((d) => d['type'] != 'certificat_cession').toList();
+          _existingCertificats = all.where((d) => d['type'] == 'certificat_cession').toList();
+          _loadingDocs = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingDocs = false);
     }
   }
 
@@ -249,8 +259,9 @@ class _CessionSheetState extends State<CessionSheet> {
     }
     setState(() { _saving = true; _error = null; });
     try {
-      // Auto-attach contrat existant si aucun n'a été uploadé manuellement (DOC05)
-      final contratUrl = _contratUrl ?? _existingContrat?['url'] as String?;
+      // Utiliser le doc sélectionné ou uploadé manuellement
+      final contratUrl     = _contratUrl ?? _selectedContrat?['url'] as String?;
+      final certificatUrl  = _certificatUrl ?? _selectedCertificat?['url'] as String?;
 
       // 1. Créer l'enregistrement de cession (sans transférer la fiche)
       final row = await _supa.from('cessions').insert({
@@ -267,7 +278,7 @@ class _CessionSheetState extends State<CessionSheet> {
         'date_cession':       _dateCession.toIso8601String().split('T').first,
         'statut':             'en_attente_acquereur',
         'contrat_url':        contratUrl,
-        'certificat_url':     _certificatUrl,
+        'certificat_url':     certificatUrl,
       }).select('token').single();
 
       final token = row['token'] as String;
@@ -283,7 +294,7 @@ class _CessionSheetState extends State<CessionSheet> {
         'cession_prix':         _prixCtrl.text.isEmpty ? null : double.tryParse(_prixCtrl.text.replaceAll(',', '.')),
         'cession_notes':        _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         'cession_contrat_url':  contratUrl,
-        'cession_certificat_url': _certificatUrl,
+        'cession_certificat_url': certificatUrl,
       }).eq('id', widget.animal['id']);
 
       // 3. Notifier l'acquéreur
@@ -560,47 +571,96 @@ class _CessionSheetState extends State<CessionSheet> {
 
           // ── Étape 2 : Documents ──────────────────────────────
           if (_step == 2) ...[
-            // Bannière contrat existant auto-attaché (DOC05)
-            if (_existingContrat != null && _contratUrl == null) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFECFDF5),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF6EE7B7)),
+            if (_loadingDocs)
+              const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 16), child: CircularProgressIndicator()))
+            else ...[
+              // ── Certificat de cession ───────────────────────
+              _docSectionHeader('📜 Certificat de cession / engagement'),
+              const SizedBox(height: 8),
+              if (_existingCertificats.isEmpty)
+                _docEmptyHint('Aucun certificat existant')
+              else
+                for (final d in _existingCertificats)
+                  _docPickerTile(
+                    doc: d,
+                    selected: _selectedCertificat?['id'] == d['id'],
+                    onTap: () => setState(() =>
+                      _selectedCertificat = _selectedCertificat?['id'] == d['id'] ? null : Map.from(d)),
+                  ),
+              const SizedBox(height: 8),
+              Row(children: [
+                TextButton.icon(
+                  onPressed: _generatingCert ? null : _genererCertificat,
+                  icon: _generatingCert
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.add_circle_outline, size: 14),
+                  label: Text(_generatingCert ? 'Création…' : 'Créer nouveau',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  style: TextButton.styleFrom(foregroundColor: _teal, padding: EdgeInsets.zero),
                 ),
-                child: Row(children: [
-                  const Icon(Icons.check_circle_outline, color: Color(0xFF059669), size: 18),
+                const SizedBox(width: 16),
+                TextButton.icon(
+                  onPressed: _uploadingCertificat ? null : () => _uploadDoc('certificat'),
+                  icon: _uploadingCertificat
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.upload_outlined, size: 14),
+                  label: Text(_uploadingCertificat ? 'Upload…' : 'Importer PDF',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  style: TextButton.styleFrom(foregroundColor: _teal, padding: EdgeInsets.zero),
+                ),
+                if (_certificatUrl != null) ...[
                   const SizedBox(width: 8),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('Contrat existant détecté',
-                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF065F46))),
-                    Text(
-                      '${_existingContrat!['type'] == 'contrat_reservation' ? 'Contrat de réservation' : 'Contrat de vente'} — ${_existingContrat!['statut'] == 'signe' ? 'signé ✓' : 'brouillon'} — sera attaché à cette cession.',
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF065F46)),
-                    ),
-                  ])),
-                ]),
-              ),
-              const SizedBox(height: 12),
+                  const Icon(Icons.check_circle, color: _green, size: 14),
+                  const Text(' importé', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green)),
+                ],
+              ]),
+
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 16),
+
+              // ── Contrat de vente / réservation ───────────────
+              _docSectionHeader('🤝 Contrat de vente / réservation'),
+              const SizedBox(height: 8),
+              if (_existingContrats.isEmpty)
+                _docEmptyHint('Aucun contrat existant')
+              else
+                for (final d in _existingContrats)
+                  _docPickerTile(
+                    doc: d,
+                    selected: _selectedContrat?['id'] == d['id'],
+                    onTap: () => setState(() =>
+                      _selectedContrat = _selectedContrat?['id'] == d['id'] ? null : Map.from(d)),
+                  ),
+              const SizedBox(height: 8),
+              Row(children: [
+                TextButton.icon(
+                  onPressed: _generatingPdf ? null : _genererPdf,
+                  icon: _generatingPdf
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.add_circle_outline, size: 14),
+                  label: Text(_generatingPdf ? 'Création…' : 'Créer nouveau',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  style: TextButton.styleFrom(foregroundColor: _teal, padding: EdgeInsets.zero),
+                ),
+                const SizedBox(width: 16),
+                TextButton.icon(
+                  onPressed: _uploadingContrat ? null : () => _uploadDoc('contrat'),
+                  icon: _uploadingContrat
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.upload_outlined, size: 14),
+                  label: Text(_uploadingContrat ? 'Upload…' : 'Importer PDF',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  style: TextButton.styleFrom(foregroundColor: _teal, padding: EdgeInsets.zero),
+                ),
+                if (_contratUrl != null) ...[
+                  const SizedBox(width: 8),
+                  const Icon(Icons.check_circle, color: _green, size: 14),
+                  const Text(' importé', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green)),
+                ],
+              ]),
             ],
-            const SizedBox(height: 8),
-            _DocRow(
-              title: '📜 Certificat de cession',
-              subtitle: 'Document légal de transfert',
-              uploaded: _certificatUrl != null,
-              uploading: _uploadingCertificat,
-              onUpload: () => _uploadDoc('certificat'),
-            ),
-            const SizedBox(height: 10),
-            _DocRow(
-              title: '🤝 Contrat de vente',
-              subtitle: 'Inclut garanties légales',
-              uploaded: _contratUrl != null,
-              uploading: _uploadingContrat,
-              onUpload: () => _uploadDoc('contrat'),
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             ElevatedButton(
               onPressed: _saving ? null : _save,
               style: ElevatedButton.styleFrom(backgroundColor: _green, foregroundColor: Colors.white,
@@ -621,6 +681,64 @@ class _CessionSheetState extends State<CessionSheet> {
 }
 
 // ── Helpers UI ────────────────────────────────────────────────────────────────
+
+Widget _docSectionHeader(String title) => Text(title,
+    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+        fontSize: 13, color: Color(0xFF1F2A2E)));
+
+Widget _docEmptyHint(String msg) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Text(msg, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)));
+
+// Tuile de sélection d'un document existant
+Widget _docPickerTile({
+  required Map<String, dynamic> doc,
+  required bool selected,
+  required VoidCallback onTap,
+}) {
+  final type = doc['type'] as String? ?? '';
+  final statut = doc['statut'] as String? ?? '';
+  final typeLabel = type == 'certificat_cession'
+      ? 'Certificat de cession'
+      : type == 'contrat_reservation' ? 'Contrat de réservation' : 'Contrat de vente';
+  final statutLabel = statut == 'signe'
+      ? '✅ Signé'
+      : statut == 'partiellement_signe' ? '✍️ Partiellement signé'
+      : statut == 'en_attente' ? '⏳ En attente signature' : '📝 Brouillon';
+  final rawDate = doc['created_at'] as String?;
+  final date = rawDate != null
+      ? '${DateTime.parse(rawDate).day.toString().padLeft(2, '0')}/${DateTime.parse(rawDate).month.toString().padLeft(2, '0')}/${DateTime.parse(rawDate).year}'
+      : '';
+
+  return GestureDetector(
+    onTap: onTap,
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: selected ? const Color(0xFFECFDF5) : Colors.grey.shade50,
+        border: Border.all(
+            color: selected ? const Color(0xFF059669) : Colors.grey.shade200,
+            width: selected ? 1.5 : 1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(children: [
+        Icon(selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+            size: 18, color: selected ? const Color(0xFF059669) : Colors.grey.shade400),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(typeLabel, style: const TextStyle(
+              fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+              color: Color(0xFF1F2A2E))),
+          const SizedBox(height: 2),
+          Text('$statutLabel${date.isNotEmpty ? '  ·  $date' : ''}',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
+        ])),
+      ]),
+    ),
+  );
+}
 
 InputDecoration _inputDec(String hint) => InputDecoration(
   hintText: hint,
@@ -643,44 +761,6 @@ class _FieldBlock extends StatelessWidget {
   ]);
 }
 
-class _DocRow extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final bool uploaded;
-  final bool uploading;
-  final VoidCallback onUpload;
-  const _DocRow({required this.title, required this.subtitle, required this.uploaded, required this.uploading, required this.onUpload});
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      border: Border.all(color: Colors.grey.shade200),
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Row(children: [
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _dark, fontFamily: 'Galey')),
-        Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-        if (uploaded)
-          const Text('✓ Uploadé', style: TextStyle(fontSize: 11, color: _green, fontWeight: FontWeight.w600)),
-      ])),
-      OutlinedButton(
-        onPressed: uploading ? null : onUpload,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: _teal,
-          side: const BorderSide(color: _teal),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        ),
-        child: uploading
-            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: _teal, strokeWidth: 2))
-            : Text(uploaded ? 'Remplacer' : '⬆️ Uploader',
-                style: const TextStyle(fontSize: 12, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-      ),
-    ]),
-  );
-}
 
 // ── Dialogue lien de signature ────────────────────────────────────────────────
 
