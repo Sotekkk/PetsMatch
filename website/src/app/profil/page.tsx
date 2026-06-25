@@ -993,9 +993,8 @@ function EmployeursLink({ uid }: { uid: string }) {
 
   useEffect(() => {
     if (!uid) return;
-    supabase.from('employes').select('id', { count: 'exact', head: true })
-      .eq('uid_employe', uid).eq('actif', true)
-      .then(({ count }) => setIsEmploye((count ?? 0) > 0));
+    supabase.from('employes').select('id').eq('uid_employe', uid).eq('actif', true).limit(1)
+      .then(({ data }) => setIsEmploye((data ?? []).length > 0));
   }, [uid]);
 
   if (!isEmploye) return null;
