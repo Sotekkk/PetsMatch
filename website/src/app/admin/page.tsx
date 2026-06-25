@@ -132,10 +132,13 @@ export default function AdminPage() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<ProfileEntry | null>(null);
 
-  // Annonces en attente
-  interface AnnonceAdmin { id: string; titre?: string; espece?: string; race?: string; nom_eleveur?: string; uid_eleveur?: string; created_at?: string; photos?: string[]; type_vente?: string; }
+  // Annonces en attente / suspectes / suspendues
+  interface AnnonceAdmin { id: string; titre?: string; espece?: string; race?: string; nom_eleveur?: string; uid_eleveur?: string; created_at?: string; photos?: string[]; type_vente?: string; is_suspect?: boolean; suspect_reasons?: string[]; statut?: string; vues?: number; }
   const [annoncesEnAttente, setAnnoncesEnAttente] = useState<AnnonceAdmin[]>([]);
+  const [annoncesSuspectes, setAnnoncesSuspectes] = useState<AnnonceAdmin[]>([]);
+  const [annoncesSuspendues, setAnnoncesSuspendues] = useState<AnnonceAdmin[]>([]);
   const [annoncesLoading, setAnnoncesLoading] = useState(false);
+  const [annoncesTab, setAnnoncesTab] = useState<'attente' | 'suspectes' | 'suspendues'>('attente');
 
   // Tarification
   interface PlanAdmin { id: string; plan_code: string; label: string; prix_mensuel: number; prix_annuel: number; max_annonces: number; duree_annonce_jours: number; auto_publish: boolean; stripe_price_id_mensuel?: string; stripe_price_id_annuel?: string; actif: boolean; }
@@ -621,6 +624,48 @@ export default function AdminPage() {
     } finally { setAnnonceSaving(null); }
   }
 
+  const loadAnnoncesSuspectes = useCallback(async () => {
+    setAnnoncesLoading(true);
+    try {
+      const res = await fetch('/api/admin/annonces?type=suspectes');
+      const { annonces } = await res.json() as { annonces: AnnonceAdmin[] };
+      setAnnoncesSuspectes(annonces ?? []);
+    } finally { setAnnoncesLoading(false); }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadAnnoncesSuspendues = useCallback(async () => {
+    setAnnoncesLoading(true);
+    try {
+      const res = await fetch('/api/admin/annonces?type=suspendues');
+      const { annonces } = await res.json() as { annonces: AnnonceAdmin[] };
+      setAnnoncesSuspendues(annonces ?? []);
+    } finally { setAnnoncesLoading(false); }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function suspendAnnonce(id: string) {
+    setAnnonceSaving(id);
+    try {
+      const res = await fetch('/api/admin/annonces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user!.uid, annonce_id: id, action: 'suspend' }),
+      });
+      if (res.ok) setAnnoncesSuspectes(prev => prev.filter(a => a.id !== id));
+    } finally { setAnnonceSaving(null); }
+  }
+
+  async function restoreAnnonce(id: string) {
+    setAnnonceSaving(id);
+    try {
+      const res = await fetch('/api/admin/annonces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user!.uid, annonce_id: id, action: 'restore' }),
+      });
+      if (res.ok) setAnnoncesSuspendues(prev => prev.filter(a => a.id !== id));
+    } finally { setAnnonceSaving(null); }
+  }
+
   // ── Tarification ─────────────────────────────────────────────────────────────
   const loadTarification = useCallback(async () => {
     setTarifLoading(true);
@@ -700,7 +745,7 @@ export default function AdminPage() {
     if (tab === 'signalements') loadSignalements(sigFilter);
     if (tab === 'dossiers' && dossiers.length === 0 && refusedDossiers.length === 0) loadDossiers();
     if (tab === 'utilisateurs' && entries.length === 0) loadUsers();
-    if (tab === 'annonces') loadAnnoncesEnAttente();
+    if (tab === 'annonces') { loadAnnoncesEnAttente(); loadAnnoncesSuspectes(); loadAnnoncesSuspendues(); }
     if (tab === 'tarification') loadTarification();
   }, [isAdmin, tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1255,70 +1300,181 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ─── Annonces en attente ───────────────────────────────────────── */}
+        {/* ─── Annonces modération ───────────────────────────────────────── */}
         {tab === 'annonces' && (
           <div className="max-w-4xl mx-auto">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h2 className="font-bold text-[#1F2A2E] text-lg" style={{ fontFamily: 'Galey, sans-serif' }}>
-                  Annonces en attente de validation
-                </h2>
-                <p className="text-sm text-gray-400">{annoncesEnAttente.length} annonce(s) FREE à modérer</p>
-              </div>
-              <button onClick={loadAnnoncesEnAttente} className="text-xs text-gray-400 hover:text-[#0C5C6C]">↺ Rafraîchir</button>
+            {/* En-tête + sous-onglets */}
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-[#1F2A2E] text-lg" style={{ fontFamily: 'Galey, sans-serif' }}>
+                Modération des annonces
+              </h2>
+              <button onClick={() => {
+                if (annoncesTab === 'attente') loadAnnoncesEnAttente();
+                if (annoncesTab === 'suspectes') loadAnnoncesSuspectes();
+                if (annoncesTab === 'suspendues') loadAnnoncesSuspendues();
+              }} className="text-xs text-gray-400 hover:text-[#0C5C6C]">↺ Rafraîchir</button>
             </div>
+            <div className="flex gap-2 mb-5">
+              {([
+                { key: 'attente',    label: '⏳ En attente', count: annoncesEnAttente.length,   color: 'amber' },
+                { key: 'suspectes',  label: '🚨 Suspectes',  count: annoncesSuspectes.length,   color: 'red'   },
+                { key: 'suspendues', label: '🔒 Suspendues', count: annoncesSuspendues.length,  color: 'gray'  },
+              ] as const).map(t => (
+                <button key={t.key} onClick={() => setAnnoncesTab(t.key)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
+                    annoncesTab === t.key
+                      ? t.color === 'amber' ? 'bg-amber-500 text-white border-amber-500'
+                      : t.color === 'red'   ? 'bg-red-500 text-white border-red-500'
+                      : 'bg-gray-600 text-white border-gray-600'
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                  }`}>
+                  {t.label}
+                  {t.count > 0 && (
+                    <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${annoncesTab === t.key ? 'bg-white/30' : 'bg-gray-100 text-gray-600'}`}>
+                      {t.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
             {annoncesLoading ? (
               <div className="flex justify-center py-16">
                 <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
               </div>
-            ) : annoncesEnAttente.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
-                <p className="text-4xl mb-2">✅</p>
-                <p className="text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Aucune annonce en attente de validation.</p>
-              </div>
             ) : (
-              <div className="flex flex-col gap-3">
-                {annoncesEnAttente.map(a => {
-                  const photo = a.photos?.[0];
-                  const date = a.created_at ? new Date(a.created_at).toLocaleDateString('fr-FR') : '—';
-                  return (
-                    <div key={a.id}
-                      onClick={() => setSelectedAnnonceAdmin(a)}
-                      className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-4 cursor-pointer hover:border-[#A7C79A] transition-colors shadow-sm">
-                      <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
-                        {photo ? (
-                          <img src={photo} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-2xl">🐾</div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-[#1F2A2E] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
-                          {a.titre ?? 'Sans titre'}
-                        </p>
-                        <p className="text-sm text-gray-500">{[a.espece, a.race].filter(Boolean).join(' · ') || '—'}</p>
-                        <p className="text-xs text-gray-400">Par {a.nom_eleveur ?? a.uid_eleveur ?? '—'} · {date}</p>
-                      </div>
-                      <div className="flex gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                        <button
-                          onClick={() => approveAnnonce(a.id)}
-                          disabled={annonceSaving === a.id}
-                          className="px-3 py-1.5 bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-colors"
-                          style={{ fontFamily: 'Galey, sans-serif' }}>
-                          {annonceSaving === a.id ? '…' : '✅ Valider'}
-                        </button>
-                        <button
-                          onClick={() => rejectAnnonce(a.id)}
-                          disabled={annonceSaving === a.id}
-                          className="px-3 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 text-xs font-semibold rounded-xl transition-colors"
-                          style={{ fontFamily: 'Galey, sans-serif' }}>
-                          ❌ Refuser
-                        </button>
-                      </div>
+              <>
+                {/* ── En attente ── */}
+                {annoncesTab === 'attente' && (
+                  annoncesEnAttente.length === 0 ? (
+                    <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                      <p className="text-4xl mb-2">✅</p>
+                      <p className="text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Aucune annonce en attente.</p>
                     </div>
-                  );
-                })}
-              </div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {annoncesEnAttente.map(a => {
+                        const photo = a.photos?.[0];
+                        const date = a.created_at ? new Date(a.created_at).toLocaleDateString('fr-FR') : '—';
+                        return (
+                          <div key={a.id} onClick={() => setSelectedAnnonceAdmin(a)}
+                            className="bg-white rounded-2xl border border-amber-100 p-4 flex items-center gap-4 cursor-pointer hover:border-amber-300 transition-colors shadow-sm">
+                            <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
+                              {photo ? <img src={photo} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-2xl">🐾</div>}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-[#1F2A2E] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{a.titre ?? 'Sans titre'}</p>
+                              <p className="text-sm text-gray-500">{[a.espece, a.race].filter(Boolean).join(' · ') || '—'}</p>
+                              <p className="text-xs text-gray-400">Par {a.nom_eleveur ?? a.uid_eleveur ?? '—'} · {date}</p>
+                            </div>
+                            <div className="flex gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                              <button onClick={() => approveAnnonce(a.id)} disabled={annonceSaving === a.id}
+                                className="px-3 py-1.5 bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-colors">
+                                {annonceSaving === a.id ? '…' : '✅ Valider'}
+                              </button>
+                              <button onClick={() => rejectAnnonce(a.id)} disabled={annonceSaving === a.id}
+                                className="px-3 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 text-xs font-semibold rounded-xl transition-colors">
+                                ❌ Refuser
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
+                )}
+
+                {/* ── Suspectes ── */}
+                {annoncesTab === 'suspectes' && (
+                  annoncesSuspectes.length === 0 ? (
+                    <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                      <p className="text-4xl mb-2">🎉</p>
+                      <p className="text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Aucune annonce suspecte détectée.</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {annoncesSuspectes.map(a => {
+                        const photo = a.photos?.[0];
+                        const date = a.created_at ? new Date(a.created_at).toLocaleDateString('fr-FR') : '—';
+                        return (
+                          <div key={a.id} className="bg-white rounded-2xl border border-red-100 p-4 shadow-sm">
+                            <div className="flex items-start gap-4">
+                              <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
+                                {photo ? <img src={photo} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-2xl">🐾</div>}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div>
+                                    <p className="font-semibold text-[#1F2A2E] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{a.titre ?? 'Sans titre'}</p>
+                                    <p className="text-sm text-gray-500">{[a.espece, a.race].filter(Boolean).join(' · ') || '—'}</p>
+                                    <p className="text-xs text-gray-400">Par {a.nom_eleveur ?? a.uid_eleveur ?? '—'} · {date} · 👁 {a.vues ?? 0} vues</p>
+                                  </div>
+                                  <div className="flex gap-2 flex-shrink-0">
+                                    <button onClick={() => approveAnnonce(a.id)} disabled={annonceSaving === a.id}
+                                      className="px-3 py-1.5 bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-colors whitespace-nowrap">
+                                      {annonceSaving === a.id ? '…' : '✅ OK'}
+                                    </button>
+                                    <button onClick={() => suspendAnnonce(a.id)} disabled={annonceSaving === a.id}
+                                      className="px-3 py-1.5 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-colors whitespace-nowrap">
+                                      🔒 Suspendre
+                                    </button>
+                                  </div>
+                                </div>
+                                {/* Raisons */}
+                                {a.suspect_reasons && a.suspect_reasons.length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5 mt-2">
+                                    {a.suspect_reasons.map((r, i) => (
+                                      <span key={i} className="text-[11px] bg-red-50 text-red-600 border border-red-100 px-2 py-0.5 rounded-full">⚠️ {r}</span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
+                )}
+
+                {/* ── Suspendues ── */}
+                {annoncesTab === 'suspendues' && (
+                  annoncesSuspendues.length === 0 ? (
+                    <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                      <p className="text-4xl mb-2">📋</p>
+                      <p className="text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Aucune annonce suspendue.</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {annoncesSuspendues.map(a => {
+                        const photo = a.photos?.[0];
+                        const date = a.created_at ? new Date(a.created_at).toLocaleDateString('fr-FR') : '—';
+                        return (
+                          <div key={a.id} className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm opacity-80">
+                            <div className="flex items-center gap-4">
+                              <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0 grayscale">
+                                {photo ? <img src={photo} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-2xl">🐾</div>}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-[#1F2A2E] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{a.titre ?? 'Sans titre'}</p>
+                                <p className="text-sm text-gray-500">{[a.espece, a.race].filter(Boolean).join(' · ') || '—'}</p>
+                                <p className="text-xs text-gray-400">Par {a.nom_eleveur ?? a.uid_eleveur ?? '—'} · {date}</p>
+                                <span className={`inline-block mt-1 text-[11px] px-2 py-0.5 rounded-full font-medium ${a.statut === 'refuse' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
+                                  {a.statut === 'refuse' ? 'Refusée' : 'Suspendue'}
+                                </span>
+                              </div>
+                              <button onClick={() => restoreAnnonce(a.id)} disabled={annonceSaving === a.id}
+                                className="px-3 py-1.5 border border-[#6E9E57] text-[#6E9E57] hover:bg-[#EEF5EA] disabled:opacity-50 text-xs font-semibold rounded-xl transition-colors whitespace-nowrap flex-shrink-0">
+                                {annonceSaving === a.id ? '…' : '♻️ Restaurer'}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
+                )}
+              </>
             )}
           </div>
         )}
