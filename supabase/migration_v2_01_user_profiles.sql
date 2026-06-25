@@ -215,7 +215,7 @@ INSERT INTO user_profiles (
 SELECT
   u.uid,
 
-  -- profile_type V2
+  -- profile_type V2 (même normalisation qu'en ÉTAPE 2)
   CASE
     WHEN COALESCE(u.is_elevage, FALSE) AND NOT COALESCE(u.is_association, FALSE) THEN 'eleveur'
     WHEN COALESCE(u.is_association, FALSE)                                        THEN 'association'
@@ -225,10 +225,19 @@ SELECT
       'photographe','para_medical','marechal_ferrant',
       'petfriendly','partenaire'
     )                                                                             THEN u.cat_pro
-    WHEN u.cat_pro IN ('educateur','comportementaliste')                          THEN 'education'
-    WHEN u.cat_pro = 'veto'                                                       THEN 'veterinaire'
-    WHEN u.cat_pro = 'garde'                                                      THEN 'petsitter'
-    WHEN COALESCE(u.is_pro, FALSE)                                                THEN COALESCE(u.cat_pro,'particulier')
+    WHEN u.cat_pro IN ('educateur','comportementaliste','education canine')        THEN 'education'
+    WHEN u.cat_pro IN ('veto','Vétérinaire','veterinaire')                        THEN 'veterinaire'
+    WHEN u.cat_pro IN ('garde','pet sitter','garde animaux')                      THEN 'petsitter'
+    WHEN u.cat_pro IN ('Santé animal','sante','santé','para médical',
+                       'para-medical','paramédical','ostéopathie','osteopathie')  THEN 'para_medical'
+    WHEN u.cat_pro IN ('elevage','Elevage','Élevage','éleveur')                   THEN 'eleveur'
+    WHEN u.cat_pro IN ('pension','Pension','chenil','chatterie')                  THEN 'pension'
+    WHEN u.cat_pro IN ('promeneur','Promeneur','dog walker')                      THEN 'promeneur'
+    WHEN u.cat_pro IN ('photo','Photographe','photographe animalier')             THEN 'photographe'
+    WHEN u.cat_pro IN ('maréchal','marechal','Maréchal ferrant')                  THEN 'marechal_ferrant'
+    WHEN u.cat_pro IN ('partenaire','Partenaire')                                 THEN 'partenaire'
+    WHEN u.cat_pro IN ('petfriendly','pet-friendly','lieu')                       THEN 'petfriendly'
+    -- cat_pro inconnu ou non mappé → particulier par défaut
     ELSE 'particulier'
   END,
 
