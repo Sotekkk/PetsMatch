@@ -43,9 +43,11 @@ BEGIN
       AND column_name = 'especes_elevees'
       AND data_type = 'ARRAY'
   ) THEN
+    ALTER TABLE user_profiles ALTER COLUMN especes_elevees DROP DEFAULT;
     ALTER TABLE user_profiles
       ALTER COLUMN especes_elevees TYPE JSONB
       USING COALESCE(to_jsonb(especes_elevees), '[]'::jsonb);
+    ALTER TABLE user_profiles ALTER COLUMN especes_elevees SET DEFAULT '[]'::jsonb;
   END IF;
 END $$;
 
