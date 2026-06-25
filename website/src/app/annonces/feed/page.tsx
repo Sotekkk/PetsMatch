@@ -403,7 +403,7 @@ export default function FeedPage() {
       const q = supabase.from('likes').delete().eq('user_uid', user!.uid).eq('annonce_id', item.annonceId);
       item.bebeIndex !== null ? await q.eq('bebe_index', item.bebeIndex) : await q.is('bebe_index', null);
     } else {
-      await supabase.from('likes').upsert({ user_uid: user!.uid, annonce_id: item.annonceId, bebe_index: item.bebeIndex, profile_type: profileType });
+      await supabase.from('likes').upsert({ user_uid: user!.uid, annonce_id: item.annonceId, bebe_index: item.bebeIndex, profile_type: profileType, ...(activeProfileId ? { profile_id: activeProfileId } : {}) });
       if (item.uidEleveur && item.uidEleveur !== user!.uid) {
         const likerName = userData?.firstname
           ? `${userData.firstname}${userData.lastname ? ' ' + userData.lastname : ''}`
@@ -440,7 +440,7 @@ export default function FeedPage() {
       const q = supabase.from('favoris').delete().eq('user_uid', user!.uid).eq('annonce_id', item.annonceId);
       item.bebeIndex !== null ? await q.eq('bebe_index', item.bebeIndex) : await q.is('bebe_index', null);
     } else {
-      await supabase.from('favoris').upsert({ user_uid: user!.uid, annonce_id: item.annonceId, bebe_index: item.bebeIndex, profile_type: profileType });
+      await supabase.from('favoris').upsert({ user_uid: user!.uid, annonce_id: item.annonceId, bebe_index: item.bebeIndex, profile_type: profileType, ...(activeProfileId ? { profile_id: activeProfileId } : {}) });
     }
   }
 

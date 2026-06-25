@@ -65,7 +65,7 @@ const BREED_FILES: Record<string, string> = {
 };
 
 export default function AnnoncesPage() {
-  const { user, userData } = useAuth();
+  const { user, userData, activeProfileId } = useAuth();
   const isEleveur = userData?.isElevage === true;
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
   const [eleveurVerifs, setEleveurVerifs] = useState<Record<string, EleveurVerif>>({});
@@ -146,7 +146,7 @@ export default function AnnoncesPage() {
         const q = supabase.from('likes').delete().eq('user_uid', user.uid).eq('annonce_id', annonceId);
         bebeIndex !== null ? await q.eq('bebe_index', bebeIndex) : await q.is('bebe_index', null);
       } else {
-        await supabase.from('likes').upsert({ user_uid: user.uid, annonce_id: annonceId, bebe_index: bebeIndex });
+        await supabase.from('likes').upsert({ user_uid: user.uid, annonce_id: annonceId, bebe_index: bebeIndex, ...(activeProfileId ? { profile_id: activeProfileId } : {}) });
         if (uidEleveur && uidEleveur !== user.uid) {
           supabase.from('notifications').insert({
             uid: uidEleveur, type: 'like',

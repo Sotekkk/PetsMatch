@@ -269,6 +269,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
           'annonce_id':  widget.annonceId,
           'bebe_index':  null,
           'profile_type': User_Info.activeType,
+          if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,
         });
       }
       await _loadLikeState();
@@ -829,6 +830,7 @@ class _BabyCardState extends State<_BabyCard> {
           'annonce_id': widget.annonceId,
           'bebe_index': widget.bebeIndex,
           'profile_type': User_Info.activeType,
+          if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,
         });
         if (widget.uidEleveur != null && widget.uidEleveur != uid) {
           await Supabase.instance.client.from('notifications').insert({

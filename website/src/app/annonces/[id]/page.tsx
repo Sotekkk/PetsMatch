@@ -399,7 +399,7 @@ export default function AnnonceDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedBebe = searchParams.get('bebe');
-  const { user } = useAuth();
+  const { user, activeProfileId } = useAuth();
   const [annonce, setAnnonce] = useState<Annonce | null>(null);
   const [pro, setPro] = useState<ProData | null>(null);
   const [assoData, setAssoData] = useState<AssoData | null>(null);
@@ -578,7 +578,7 @@ export default function AnnonceDetailPage() {
         await supabase.from('likes').delete()
           .eq('user_uid', user.uid).eq('annonce_id', id!).is('bebe_index', null);
       } else {
-        await supabase.from('likes').upsert({ user_uid: user.uid, annonce_id: id!, bebe_index: null, profile_type: 'particulier' });
+        await supabase.from('likes').upsert({ user_uid: user.uid, annonce_id: id!, bebe_index: null, profile_type: 'particulier', ...(activeProfileId ? { profile_id: activeProfileId } : {}) });
       }
       const { data: rows } = await supabase.from('likes').select('user_uid').eq('annonce_id', id!).is('bebe_index', null);
       if (rows) {

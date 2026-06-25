@@ -40,7 +40,7 @@ function ageLabel(dateStr?: string) {
 }
 
 export default function AdoptionsPage() {
-  const { user } = useAuth();
+  const { user, activeProfileId } = useAuth();
   const [annonces, setAnnonces]   = useState<Annonce[]>([]);
   const [loading, setLoading]     = useState(true);
   const [espece, setEspece]       = useState('tous');
@@ -86,7 +86,7 @@ export default function AdoptionsPage() {
     if (wasLiked) {
       await supabase.from('likes').delete().eq('annonce_id', id).eq('user_uid', user.uid);
     } else {
-      await supabase.from('likes').insert({ annonce_id: id, user_uid: user.uid, bebe_index: -1 });
+      await supabase.from('likes').insert({ annonce_id: id, user_uid: user.uid, bebe_index: -1, ...(activeProfileId ? { profile_id: activeProfileId } : {}) });
     }
   }, [user, likedIds]);
 
