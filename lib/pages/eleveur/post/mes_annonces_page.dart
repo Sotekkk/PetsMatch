@@ -472,6 +472,15 @@ class _AnnonceCardState extends State<_AnnonceCard> {
     _            => s,
   };
 
+  void _showStats() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AnnonceStatsSheet(annonceId: widget.id, titre: widget.data['titre'] as String? ?? ''),
+    );
+  }
+
   Future<void> _togglePause() async {
     final prev = _statut;
     final next = _statut == 'pause' ? 'disponible' : 'pause';
@@ -676,6 +685,14 @@ class _AnnonceCardState extends State<_AnnonceCard> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               child: Row(children: [
+                // Stats
+                _ActionBtn(
+                  icon: Icons.bar_chart_outlined,
+                  label: 'Stats',
+                  color: _teal,
+                  onTap: _showStats,
+                ),
+                const SizedBox(width: 8),
                 // Pause / Activer
                 _ActionBtn(
                   icon: isPaused ? Icons.play_arrow_outlined : Icons.pause_outlined,
@@ -759,6 +776,340 @@ class _AnnonceCardState extends State<_AnnonceCard> {
     color: const Color(0xFFEEF5EA),
     child: Center(child: speciesIcon(espece, 32,
         const Color(0xFF6E9E57).withValues(alpha: 0.35))),
+  );
+}
+
+// ─── Stats bottom sheet ──────────────────────────────────────────────────────
+
+class _AnnonceStatsSheet extends StatefulWidget {
+  final String annonceId;
+  final String titre;
+  const _AnnonceStatsSheet({required this.annonceId, required this.titre});
+  @override
+  State<_AnnonceStatsSheet> createState() => _AnnonceStatsSheetState();
+}
+
+class _AnnonceStatsSheetState extends State<_AnnonceStatsSheet> {
+  static const _teal  = Color(0xFF0C5C6C);
+  static const _green = Color(0xFF6E9E57);
+
+  bool _loading = true;
+  String? _error;
+  Map<String, dynamic>? _stats;
+  int _period = 30;
+  String? _typeVente; // 'portee' | 'saillie' | null
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      // Charge le type de l'annonce
+      final annonceRow = await Supabase.instance.client
+          .from('annonces')
+          .select('type_vente, vues, contacts')
+          .eq('id', widget.annonceId)
+          .maybeSingle();
+      _typeVente = annonceRow?['type_vente'] as String?;
+
+      // Charge les stats via l'API web
+      final uri = Uri.parse('/api/annonces/stats?annonceId=${widget.annonceId}&period=$_period');
+      // Sur mobile on passe par Supabase direct (pas d'API Next.js accessible)
+      await _loadFromSupabase(annonceRow);
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  Future<void> _loadFromSupabase(Map<String, dynamic>? annonceRow) async {
+    final supa = Supabase.instance.client;
+    final since = DateTime.now().subtract(Duration(days: _period));
+    final sinceStr = since.toIso8601String().split('T')[0];
+
+    final futures = await Future.wait([
+      supa.from('annonces_stats_daily')
+          .select('date, vues, visiteurs, contacts, favoris')
+          .eq('annonce_id', widget.annonceId)
+          .gte('date', sinceStr)
+          .order('date'),
+      supa.from('animaux_portee_stats')
+          .select('bebe_index, vues, favoris')
+          .eq('annonce_id', widget.annonceId)
+          .gte('date', sinceStr),
+      supa.from('likes')
+          .select('id')
+          .eq('annonce_id', widget.annonceId),
+    ]);
+
+    final daily   = futures[0] as List<dynamic>;
+    final porteeRaw = futures[1] as List<dynamic>;
+    final likes   = futures[2] as List<dynamic>;
+
+    final totalVues     = daily.fold<int>(0, (s, d) => s + ((d['vues'] as num?)?.toInt() ?? 0));
+    final totalContacts = daily.fold<int>(0, (s, d) => s + ((d['contacts'] as num?)?.toInt() ?? 0));
+    final totalFavoris  = likes.length;
+
+    // Agréger portée
+    final porteeMap = <int, Map<String, int>>{};
+    for (final row in porteeRaw) {
+      final i = (row['bebe_index'] as num).toInt();
+      porteeMap.putIfAbsent(i, () => {'vues': 0, 'favoris': 0});
+      porteeMap[i]!['vues'] = porteeMap[i]!['vues']! + ((row['vues'] as num?)?.toInt() ?? 0);
+      porteeMap[i]!['favoris'] = porteeMap[i]!['favoris']! + ((row['favoris'] as num?)?.toInt() ?? 0);
+    }
+    final portee = porteeMap.entries
+        .map((e) => {'index': e.key, 'vues': e.value['vues'], 'favoris': e.value['favoris']})
+        .toList()
+      ..sort((a, b) => (b['vues'] as int).compareTo(a['vues'] as int));
+
+    final vues = (totalVues > 0 ? totalVues : (annonceRow?['vues'] as num?)?.toInt()) ?? 0;
+    final contacts = (totalContacts > 0 ? totalContacts : (annonceRow?['contacts'] as num?)?.toInt()) ?? 0;
+    final tauxConversion = vues > 0 ? (contacts / vues * 100).round() : 0;
+    final tauxInteret    = vues > 0 ? (totalFavoris / vues * 100).round() : 0;
+    final score = (tauxConversion * 0.4 + tauxInteret * 0.3 + (vues / 10).clamp(0, 100) * 0.3).round();
+
+    if (mounted) setState(() {
+      _loading = false;
+      _stats = {
+        'vues': vues, 'contacts': contacts, 'favoris': totalFavoris,
+        'tauxConversion': tauxConversion, 'tauxInteret': tauxInteret, 'score': score,
+        'daily': daily, 'portee': portee,
+      };
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      minChildSize: 0.4,
+      expand: false,
+      builder: (_, sc) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFFF8F8F6),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(children: [
+          // Poignée
+          Container(margin: const EdgeInsets.symmetric(vertical: 10),
+            width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          // Header
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [Color(0xFF0C5C6C), Color(0xFF6E9E57)]),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Statistiques', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white.withValues(alpha: 0.7))),
+                Text(widget.titre.isNotEmpty ? widget.titre : 'Annonce',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                if (_typeVente != null)
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20)),
+                    child: Text(
+                      _typeVente == 'saillie' ? '🐴 Saillie' : _typeVente == 'portee' ? '🐾 Portée' : '🐾 Animal',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white),
+                    ),
+                  ),
+              ])),
+              // Sélecteur période
+              Row(children: [7, 30].map((p) => GestureDetector(
+                onTap: () { setState(() => _period = p); _load(); },
+                child: Container(
+                  margin: const EdgeInsets.only(left: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _period == p ? Colors.white : Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text('${p}j', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: _period == p ? _teal : Colors.white)),
+                ),
+              )).toList()),
+            ]),
+          ),
+          // Contenu
+          Expanded(child: _loading
+              ? const Center(child: CircularProgressIndicator(color: Color(0xFF0C5C6C)))
+              : _error != null
+                  ? Center(child: Text('Erreur : $_error', style: const TextStyle(color: Colors.red)))
+                  : _buildContent(sc)),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildContent(ScrollController sc) {
+    final s = _stats!;
+    final vues     = s['vues'] as int;
+    final contacts = s['contacts'] as int;
+    final favoris  = s['favoris'] as int;
+    final taux     = s['tauxConversion'] as int;
+    final score    = s['score'] as int;
+    final portee   = s['portee'] as List<dynamic>;
+    final isSaillie = _typeVente == 'saillie';
+
+    return ListView(controller: sc, padding: const EdgeInsets.symmetric(horizontal: 16), children: [
+      // KPIs principaux
+      Row(children: [
+        _KpiCard(icon: '👁️', label: 'Vues', value: '$vues', color: _teal),
+        const SizedBox(width: 10),
+        _KpiCard(icon: isSaillie ? '🤝' : '💬', label: isSaillie ? 'Demandes' : 'Contacts', value: '$contacts', color: _green),
+        const SizedBox(width: 10),
+        _KpiCard(icon: '❤️', label: 'Favoris', value: '$favoris', color: const Color(0xFFEC4899)),
+      ]),
+      const SizedBox(height: 12),
+
+      // Score attractivité
+      Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade100)),
+        child: Row(children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('🏆 Score attractivité', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1F2A2E))),
+            const SizedBox(height: 6),
+            ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(
+              value: score / 100,
+              minHeight: 8,
+              backgroundColor: Colors.grey.shade100,
+              valueColor: AlwaysStoppedAnimation(score >= 70 ? _green : score >= 40 ? Colors.amber : Colors.redAccent),
+            )),
+            const SizedBox(height: 4),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text('Taux contact : $taux%', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6B7280))),
+              Text('Score : $score/100', style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.bold,
+                  color: score >= 70 ? _green : score >= 40 ? Colors.amber.shade700 : Colors.redAccent)),
+            ]),
+          ])),
+        ]),
+      ),
+      const SizedBox(height: 12),
+
+      // Section portée (seulement si portée, pas saillie)
+      if (!isSaillie && portee.isNotEmpty) ...[
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.shade100)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('🐾 Portée — podium', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1F2A2E))),
+            const SizedBox(height: 10),
+            Row(children: [
+              // Top vues
+              Expanded(child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(12)),
+                child: Column(children: [
+                  const Text('🏆 Plus consulté', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFD97706), fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text('Chiot #${(portee.first['index'] as int) + 1}', style: const TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFB45309))),
+                  Text('👁️ ${portee.first['vues']} vues', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFD97706))),
+                ]),
+              )),
+              const SizedBox(width: 10),
+              // Top favoris
+              Expanded(child: (){
+                final topFav = [...portee]..sort((a, b) => (b['favoris'] as int).compareTo(a['favoris'] as int));
+                return Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: const Color(0xFFFFF1F2), borderRadius: BorderRadius.circular(12)),
+                  child: Column(children: [
+                    const Text('❤️ Plus aimé', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFE11D48), fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    Text('Chiot #${(topFav.first['index'] as int) + 1}', style: const TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFBE123C))),
+                    Text('❤️ ${topFav.first['favoris']} favoris', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFE11D48))),
+                  ]),
+                );
+              }()),
+            ]),
+            // Classement complet
+            if (portee.length > 1) ...[
+              const SizedBox(height: 12),
+              const Divider(height: 1),
+              const SizedBox(height: 8),
+              ...portee.take(6).toList().asMap().entries.map((e) {
+                final rank = e.key + 1;
+                final b = e.value as Map<String, dynamic>;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(children: [
+                    Text('#$rank', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey.shade400)),
+                    const SizedBox(width: 8),
+                    Text('Chiot #${(b['index'] as int) + 1}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF374151))),
+                    const Spacer(),
+                    Text('👁️ ${b['vues']}', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6B7280))),
+                    const SizedBox(width: 12),
+                    Text('❤️ ${b['favoris']}', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6B7280))),
+                  ]),
+                );
+              }),
+            ],
+          ]),
+        ),
+        const SizedBox(height: 12),
+      ],
+
+      // Section saillie spécifique
+      if (isSaillie) ...[
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.shade100)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('🐴 Données saillie', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1F2A2E))),
+            const SizedBox(height: 8),
+            _InfoRow('Demandes de contact', '$contacts'),
+            _InfoRow('Intérêt (favoris)', '$favoris éleveurs'),
+            _InfoRow('Taux de demande', '${vues > 0 ? (contacts / vues * 100).round() : 0}% des visiteurs'),
+          ]),
+        ),
+        const SizedBox(height: 12),
+      ],
+
+      const SizedBox(height: 20),
+    ]);
+  }
+}
+
+Widget _InfoRow(String label, String value) => Padding(
+  padding: const EdgeInsets.symmetric(vertical: 3),
+  child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+    Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6B7280))),
+    Text(value, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
+  ]),
+);
+
+class _KpiCard extends StatelessWidget {
+  final String icon, label, value;
+  final Color color;
+  const _KpiCard({required this.icon, required this.label, required this.value, required this.color});
+  @override
+  Widget build(BuildContext context) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.grey.shade100)),
+      child: Column(children: [
+        Text(icon, style: const TextStyle(fontSize: 18)),
+        const SizedBox(height: 4),
+        Text(value, style: TextStyle(fontFamily: 'Galey', fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+        Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xFF9CA3AF))),
+      ]),
+    ),
   );
 }
 

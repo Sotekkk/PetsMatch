@@ -256,6 +256,7 @@ function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLi
   onOpenLightbox: (photos: string[], idx: number) => void;
   onShowLikers?: () => void;
 }) {
+  const cardRef = useRef<HTMLDivElement>(null);
   const [idx, setIdx] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
@@ -264,6 +265,27 @@ function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLi
   const statut = b.statut ?? 'disponible';
   const statutColor = statut === 'disponible' ? '#6E9E57' : statut === 'reserve' ? '#F59E0B' : '#94A3B8';
   const statutLabel = statut === 'disponible' ? 'Dispo' : statut === 'reserve' ? 'Réservé' : 'Vendu';
+
+  // Tracking vue chiot (une fois quand la carte devient visible)
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const key = `vue_bebe_${annonceId}_${index}`;
+    if (sessionStorage.getItem(key)) return;
+    const obs = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        sessionStorage.setItem(key, '1');
+        fetch('/api/annonces/stats', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ annonceId, bebeIndex: index }),
+        }).catch(() => {});
+        obs.disconnect();
+      }
+    }, { threshold: 0.5 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [annonceId, index]);
 
   useEffect(() => {
     supabase.from('likes').select('user_uid').eq('annonce_id', annonceId).eq('bebe_index', index)
@@ -304,7 +326,7 @@ function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLi
   };
 
   return (
-    <div className="rounded-xl overflow-hidden border border-[#E8EDE6] bg-[#F8F8F6]">
+    <div ref={cardRef} className="rounded-xl overflow-hidden border border-[#E8EDE6] bg-[#F8F8F6]">
       <div className="aspect-square relative bg-[#EEF5EA] group"
         onClick={() => photos.length > 0 && onOpenLightbox(photos, idx)}
         style={{ cursor: photos.length > 0 ? 'zoom-in' : 'default' }}>
@@ -403,6 +425,19 @@ export default function AnnonceDetailPage() {
   const [sigDesc, setSigDesc] = useState('');
   const [sigLoading, setSigLoading] = useState(false);
   const [sigSent, setSigSent] = useState(false);
+
+  // Tracking vue (fire-and-forget, une seule fois par session)
+  useEffect(() => {
+    if (!id) return;
+    const key = `vue_tracked_${id}`;
+    const isUnique = !sessionStorage.getItem(key);
+    if (isUnique) sessionStorage.setItem(key, '1');
+    fetch('/api/annonces/stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ annonceId: id, unique: isUnique }),
+    }).catch(() => {});
+  }, [id]);
 
   useEffect(() => {
     if (!id) return;
