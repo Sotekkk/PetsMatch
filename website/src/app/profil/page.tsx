@@ -1870,9 +1870,9 @@ export default function ProfilPage() {
               </div>
             </>
           )}
-          <Field label="Date de naissance *">
+          <Field label={isEleveur ? "Date de naissance *" : "Date de naissance"}>
             <input type="date" value={dob} onChange={e => setDob(e.target.value)}
-              required className={inputCls} />
+              required={isEleveur} className={inputCls} />
           </Field>
         </Card>
 
