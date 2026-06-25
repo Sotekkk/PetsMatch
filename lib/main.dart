@@ -34,12 +34,19 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void _handleNotifNavigation(Map<String, dynamic> data) {
-  final type = data['type'] as String? ?? '';
   final ctx = navigatorKey.currentState;
   if (ctx == null) return;
 
-  // Toutes les notifications ouvrent d'abord la page notifications (cloche)
-  // Les types spécifiques naviguent ensuite vers la page métier appropriée
+  // Si la notif est destinée à un profil secondaire spécifique, on y bascule
+  final recipientProfileId = data['recipient_profile_id'] as String? ?? '';
+  if (recipientProfileId.isNotEmpty) {
+    final profiles = User_Info.availableProfiles;
+    final target = profiles.where((p) => p['id']?.toString() == recipientProfileId).firstOrNull;
+    if (target != null) {
+      User_Info.applyProfile(target);
+    }
+  }
+
   ctx.push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
 }
 

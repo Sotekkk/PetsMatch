@@ -336,16 +336,29 @@ class _MessagePageState extends State<MessagePage> {
 
                   if ((data['deletedFor'] as Map?)?[uid] == true) return false;
 
-                  // Filtre profil
+                  // Filtre profil (V2 multi-profil)
+                  final convProPid      = data['pro_profile_id']      as String? ?? '';
+                  final convConsumerPid = data['consumer_profile_id'] as String? ?? '';
+                  final activePid       = User_Info.activeProfileId;
+
+                  if (activePid.isNotEmpty) {
+                    // Profil secondaire actif : montrer convs où je suis le pro OU le consommateur
+                    // Les convs sans aucun tag (anciennes données) restent visibles
+                    final isMePro      = convProPid == activePid;
+                    final isMeConsumer = convConsumerPid == activePid;
+                    final isUntagged   = convProPid.isEmpty && convConsumerPid.isEmpty;
+                    if (!isMePro && !isMeConsumer && !isUntagged) return false;
+                  } else {
+                    // Vue particulier : cacher les convs taguées à un profil secondaire de l'utilisateur
+                    final myProfileIds = User_Info.availableProfiles.map((p) => p['id']?.toString() ?? '').toList();
+                    if (convProPid.isNotEmpty && myProfileIds.contains(convProPid)) return false;
+                    if (convConsumerPid.isNotEmpty && myProfileIds.contains(convConsumerPid)) return false;
+                  }
+
+                  // Rétrocompat : ancien champ participant_profile_types (si présent)
                   final profileTypes = data['participant_profile_types'] as Map? ?? {};
                   final myType = profileTypes[uid] as String?;
                   if (myType != null && myType.isNotEmpty && myType != _currentProfileType) return false;
-                  if (User_Info.isPro && myType == null) {
-                    final pid = User_Info.activeProfileId;
-                    final convPid = data['pro_profile_id'] as String? ?? '';
-                    if (pid.isEmpty && convPid.isNotEmpty) return false;
-                    if (pid.isNotEmpty && convPid != pid) return false;
-                  }
 
                   // Bloqués
                   final others = (data['participants'] as List).where((p) => p != uid);

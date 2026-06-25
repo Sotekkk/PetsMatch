@@ -67,8 +67,9 @@ serve(async (req) => {
 
     // Payload Supabase Database Webhook : { type, table, record, old_record }
     const record = body?.record ?? body;
-    const { uid, title, body: notifBody, data } = record as {
+    const { uid, title, body: notifBody, data, recipient_profile_id } = record as {
       uid: string; title: string; body: string; data: Record<string, unknown>;
+      recipient_profile_id?: string;
     };
 
     if (!uid || !title) {
@@ -77,6 +78,23 @@ serve(async (req) => {
     }
 
     const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+    // Résoudre le nom du profil destinataire si présent
+    let profileSuffix = '';
+    let profileName   = '';
+    let profileType   = '';
+    if (recipient_profile_id) {
+      const { data: profileRow } = await supa
+        .from('user_profiles')
+        .select('profile_name, profile_type')
+        .eq('id', recipient_profile_id)
+        .maybeSingle();
+      if (profileRow) {
+        profileName = (profileRow as { profile_name: string; profile_type: string }).profile_name ?? '';
+        profileType = (profileRow as { profile_name: string; profile_type: string }).profile_type ?? '';
+        if (profileName) profileSuffix = ` → ${profileName}`;
+      }
+    }
 
     // Récupérer le FCM token de l'utilisateur cible
     const { data: userRow } = await supa
@@ -101,6 +119,10 @@ serve(async (req) => {
         dataStr[k] = v != null ? String(v) : '';
       }
     }
+    // Injecter le profil destinataire dans le payload FCM (utilisé pour le switch automatique)
+    if (recipient_profile_id) dataStr['recipient_profile_id'] = recipient_profile_id;
+    if (profileName)          dataStr['recipient_profile_name'] = profileName;
+    if (profileType)          dataStr['recipient_profile_type'] = profileType;
 
     const fcmRes = await fetch(
       `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
@@ -113,7 +135,7 @@ serve(async (req) => {
         body: JSON.stringify({
           message: {
             token: fcmToken,
-            notification: { title, body: notifBody ?? '' },
+            notification: { title, body: (notifBody ?? '') + profileSuffix },
             data: dataStr,
             android: {
               priority: 'high',
