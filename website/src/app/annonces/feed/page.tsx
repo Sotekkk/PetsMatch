@@ -264,10 +264,9 @@ export default function FeedPage() {
     setPhotoIndex(0);
 
     if (user) {
-      const pt = profileType || 'particulier';
       const [{ data: likes }, { data: favs }] = await Promise.all([
-        supabase.from('likes').select('annonce_id, bebe_index').eq('user_uid', user.uid).or(`profile_type.eq.${pt},profile_type.is.null`),
-        supabase.from('favoris').select('annonce_id, bebe_index').eq('user_uid', user.uid).or(`profile_type.eq.${pt},profile_type.is.null`),
+        supabase.from('likes').select('annonce_id, bebe_index').eq('user_uid', user.uid),
+        supabase.from('favoris').select('annonce_id, bebe_index').eq('user_uid', user.uid),
       ]);
       if (likes) setLikedKeys(new Set(likes.map((l) => `${l.annonce_id}_${l.bebe_index ?? 'null'}`)));
       if (favs) setFavoritedKeys(new Set(favs.map((f) => `${f.annonce_id}_${f.bebe_index ?? 'null'}`)));

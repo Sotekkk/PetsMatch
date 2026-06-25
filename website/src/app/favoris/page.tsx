@@ -27,19 +27,12 @@ type Tab = 'favoris' | 'likes';
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
-async function loadItems(userUid: string, table: Tab, profileType: string, isPrimary: boolean): Promise<SavedItem[]> {
-  let q = supabase
+async function loadItems(userUid: string, table: Tab): Promise<SavedItem[]> {
+  const { data: rows } = await supabase
     .from(table)
     .select('annonce_id, bebe_index')
-    .eq('user_uid', userUid);
-  if (isPrimary) {
-    // Profil primaire : inclure les anciens favoris (null) pour rétrocompat
-    q = q.or(`profile_type.eq.${profileType},profile_type.is.null`);
-  } else {
-    // Profil secondaire : filtrer strict, pas les anciens favoris null
-    q = q.eq('profile_type', profileType);
-  }
-  const { data: rows } = await q.order('created_at', { ascending: false });
+    .eq('user_uid', userUid)
+    .order('created_at', { ascending: false });
 
   if (!rows || rows.length === 0) return [];
 
@@ -138,11 +131,11 @@ export default function FavorisPage() {
     const isPrimary = !activeProfileId;
     if (t === 'likes') {
       setLoadingLikes(true);
-      const items = await loadItems(user.uid, 'likes', profileType, isPrimary);
+      const items = await loadItems(user.uid, 'likes');
       setLikeItems(items); setLoadingLikes(false); setLoadedLikes(true);
     } else {
       setLoadingFavs(true);
-      const items = await loadItems(user.uid, 'favoris', profileType, isPrimary);
+      const items = await loadItems(user.uid, 'favoris');
       setFavItems(items); setLoadingFavs(false); setLoadedFavs(true);
     }
   }
