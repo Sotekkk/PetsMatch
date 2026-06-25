@@ -5,6 +5,7 @@ import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_poids_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_soin_sheet.dart';
 import 'package:PetsMatch/services/chaleurs_notif_service.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -123,14 +124,31 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (_animauxData.isEmpty) setState(() => _loading = true);
     try {
       final supa = Supabase.instance.client;
+      final activeProfileId = User_Info.activeProfileId;
 
-      // Source unique : animaux_proprietes
-      // Requiert les policies RLS animaux_select/update/delete_via_proprietes sur la table animaux
-      final ownRows = await supa.from('animaux_proprietes')
-          .select('animal_id, date_fin').eq('uid_proprio', _uid!);
+      // Filtre par profile_id_proprio si disponible (post-migration V2.05),
+      // sinon fallback uid_proprio (pré-migration ou profil sans profile_id)
+      final ownQuery = activeProfileId.isNotEmpty
+          ? supa.from('animaux_proprietes')
+              .select('animal_id, date_fin')
+              .eq('uid_proprio', _uid!)
+              .eq('profile_id_proprio', activeProfileId)
+          : supa.from('animaux_proprietes')
+              .select('animal_id, date_fin')
+              .eq('uid_proprio', _uid!);
+
+      List ownRows = await ownQuery;
+
+      // Fallback : si la colonne profile_id_proprio n'est pas encore peuplée,
+      // on retombe sur tous les animaux de l'uid (comportement pré-migration)
+      if (ownRows.isEmpty && activeProfileId.isNotEmpty) {
+        ownRows = await supa.from('animaux_proprietes')
+            .select('animal_id, date_fin').eq('uid_proprio', _uid!);
+      }
+
       final currentIds = <String>{};
       final formerIds  = <String>{};
-      for (final r in ownRows as List) {
+      for (final r in ownRows) {
         final id = r['animal_id'] as String? ?? '';
         if (id.isEmpty) continue;
         if (r['date_fin'] == null) currentIds.add(id); else formerIds.add(id);

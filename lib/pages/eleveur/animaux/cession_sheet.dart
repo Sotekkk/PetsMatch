@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -312,10 +313,18 @@ class _CessionSheetState extends State<CessionSheet> {
           .isFilter('date_fin', null);
       // Ouvrir la propriété de l'acquéreur (si compte PetsMatch)
       if (_foundUser?['uid'] != null) {
+        // Profil particulier de l'acquéreur (les cessions vont toujours vers le profil particulier)
+        final acqProfileRow = await _supa
+            .from('user_profiles')
+            .select('id')
+            .eq('uid', _foundUser!['uid'])
+            .eq('profile_type', 'particulier')
+            .maybeSingle();
         await _supa.from('animaux_proprietes').insert({
-          'animal_id':  widget.animal['id'],
-          'uid_proprio': _foundUser!['uid'],
-          'date_debut':  dateStr,
+          'animal_id':          widget.animal['id'],
+          'uid_proprio':        _foundUser!['uid'],
+          'date_debut':         dateStr,
+          if (acqProfileRow != null) 'profile_id_proprio': acqProfileRow['id'],
         });
       }
 

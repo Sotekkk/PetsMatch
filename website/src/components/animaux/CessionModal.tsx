@@ -342,13 +342,20 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
         .eq('animal_id', animal.id)
         .eq('uid_proprio', uid)
         .is('date_fin', null);
-      // Ouvrir une ligne pour le nouvel acquéreur (tous types, même particulier)
+      // Ouvrir une ligne pour le nouvel acquéreur (profil particulier par défaut)
       if (acqUid) {
+        const { data: acqProfile } = await supabase
+          .from('user_profiles')
+          .select('id')
+          .eq('uid', acqUid)
+          .eq('profile_type', 'particulier')
+          .maybeSingle();
         await supabase.from('animaux_proprietes').insert({
-          animal_id:  animal.id,
-          uid_proprio: acqUid,
-          date_debut:  dateCession,
-          date_fin:    null,
+          animal_id:          animal.id,
+          uid_proprio:        acqUid,
+          date_debut:         dateCession,
+          date_fin:           null,
+          profile_id_proprio: acqProfile?.id ?? null,
         });
       }
 

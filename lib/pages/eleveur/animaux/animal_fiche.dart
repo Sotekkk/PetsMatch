@@ -835,9 +835,12 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
       final uid = widget.eleveurUidOverride ?? FirebaseAuth.instance.currentUser!.uid;
       final id = widget.animalId ?? DateTime.now().millisecondsSinceEpoch.toString();
+      final activeProfileId = User_Info.activeProfileId;
       final data = {
         'id':                  id,
         'uid_eleveur':         uid,
+        if (activeProfileId.isNotEmpty && widget.animalId == null)
+          'profile_id': activeProfileId,
         'espece':              _espece,
         'description':         _descriptionCtrl.text.trim(),
         'nom':                 _nomCtrl.text.trim(),
@@ -886,6 +889,19 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       };
 
       await _supa.from('animaux').upsert(data);
+
+      // Création : initialiser animaux_proprietes avec le profil actif
+      if (widget.animalId == null) {
+        try {
+          final dateStr = (_dateEntree ?? DateTime.now()).toIso8601String().split('T').first;
+          await _supa.from('animaux_proprietes').upsert({
+            'animal_id':          id,
+            'uid_proprio':        uid,
+            'date_debut':         dateStr,
+            if (activeProfileId.isNotEmpty) 'profile_id_proprio': activeProfileId,
+          }, onConflict: 'animal_id,uid_proprio');
+        } catch (_) {}
+      }
 
       // Protocoles auto pour un nouvel animal entrant
       if (widget.animalId == null) {
