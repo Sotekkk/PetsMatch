@@ -52,6 +52,8 @@ class _LoginPageState extends State<LoginPage> {
           .doc(cred.user!.uid)
           .get();
       User_Info.updateUserInfo(doc.data() as Map<String, dynamic>);
+      // Charge les profils V2 depuis Supabase (écrase les données du profil actif)
+      await User_Info.loadProfiles(cred.user!.uid);
       // Sauvegarde du token FCM maintenant que l'user est authentifié
       saveFcmTokenToFirestore().catchError((_) {});
 

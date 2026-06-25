@@ -622,6 +622,8 @@ class _MentionsLegalesState extends State<MentionsLegales> {
       User? user = userCredential.user;
       Object isRegistered =
           await registerElevage(User_Info.email, User_Info.password);
+      // Charge les profils V2 créés par registerElevage
+      await User_Info.loadProfiles(userCredential.user!.uid);
       if (User_Info.isElevage) {
         _sendRegistrationEmail(isRegistered);
       }

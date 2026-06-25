@@ -351,18 +351,23 @@ class User_Info {
     departementElevage = departement;
     regionElevage    = region;
 
-    // Flags de rôle
-    const proTypes = {'veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage', 'photographe', 'marechal_ferrant'};
+    // Flags de rôle (types V2 normalisés)
+    const proTypes = {
+      'veterinaire', 'para_medical', 'education', 'petsitter',
+      'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+    };
     isAssociation = type == 'association';
     isPro     = proTypes.contains(type);
-    isElevage = type == 'eleveur' || isPro;
+    isElevage = type == 'eleveur';
     catPro       = p['cat_pro']?.toString() ?? (isPro ? type : '');
     professionPro = p['profession_pro']?.toString() ?? '';
 
-    // Éleveur
-    nameElevage    = p['name_elevage']?.toString().isNotEmpty == true
-        ? p['name_elevage']!.toString()
-        : p['profile_label']?.toString() ?? '';
+    // Éleveur — colonne renommée name_elevage → nom en V2
+    nameElevage    = p['nom']?.toString().isNotEmpty == true
+        ? p['nom']!.toString()
+        : p['name_elevage']?.toString().isNotEmpty == true
+            ? p['name_elevage']!.toString()
+            : p['profile_label']?.toString() ?? '';
     numeroElevage  = p['numero_elevage']?.toString() ?? '0000000000';
     acacedNumero   = p['acaced_numero']?.toString() ?? '';
     especesElevees = _safeStringList(p['especes_elevees'], []);
@@ -395,6 +400,28 @@ class User_Info {
     }
 
     acceptNewClients = p['accept_new_clients'] as bool? ?? true;
+  }
+
+  // Charge tous les profils depuis Supabase et applique le profil principal.
+  // À appeler après chaque connexion Firebase réussie.
+  static Future<void> loadProfiles(String firebaseUid) async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('user_profiles')
+          .select()
+          .eq('uid', firebaseUid)
+          .order('is_main', ascending: false)
+          .order('created_at', ascending: true);
+      final profiles = List<Map<String, dynamic>>.from(rows as List);
+      availableProfiles = profiles;
+      if (profiles.isEmpty) return;
+      // Profil principal en premier (is_main=true) sinon premier disponible
+      final main = profiles.firstWhere(
+        (p) => p['is_main'] == true,
+        orElse: () => profiles.first,
+      );
+      applyProfile(main);
+    } catch (_) {}
   }
 
   static List<String> _safeStringList(dynamic raw, List<String> fallback) {
