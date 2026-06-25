@@ -61,7 +61,7 @@ SELECT
     ELSE 'pending'
   END,
   v.granted_at,
-  v.created_at
+  COALESCE(v.granted_at, NOW())
 FROM vet_access_grants v
 JOIN animaux a ON a.id = v.animal_id
 WHERE EXISTS (
@@ -92,8 +92,8 @@ SELECT
     WHEN 'revoked'  THEN 'revoked'
     ELSE 'pending'
   END,
-  p.created_at,  -- pension_acces n'a pas de granted_at distinct
-  p.created_at
+  NULL,   -- granted_at (pas de colonne équivalente dans pension_acces)
+  NOW()
 FROM pension_acces p
 JOIN animaux a ON a.id = p.animal_id
 WHERE EXISTS (
