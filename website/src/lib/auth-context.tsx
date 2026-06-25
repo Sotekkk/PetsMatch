@@ -190,6 +190,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [availableProfiles, setAvailableProfiles] = useState<Profile[]>([]);
   const [activeProfileId, setActiveProfileIdState] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  // cgu_accepted_at est dans `users`, pas dans user_profiles — on le cache au premier fetch
+  const [cachedCguAcceptedAt, setCachedCguAcceptedAt] = useState<string | null>(null);
 
   function setActiveProfileId(id: string) {
     const profile = availableProfiles.find(p => p.id === id);
@@ -197,27 +199,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(ACTIVE_PROFILE_TYPE_KEY, profile?.profile_type ?? '');
     window.dispatchEvent(new Event(PROFILE_CHANGE_EVENT));
     setActiveProfileIdState(id);
-    if (profile) setUserData(mapProfile(profile as unknown as Record<string, unknown>));
+    if (profile) setUserData(mapProfile({ ...(profile as unknown as Record<string, unknown>), cgu_accepted_at: cachedCguAcceptedAt }));
   }
 
   async function fetchProfiles(uid: string) {
     try {
-      const { data } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('uid', uid)
-        .order('is_main', { ascending: false })
-        .order('created_at', { ascending: true });
+      const [profilesRes, userRes] = await Promise.all([
+        supabase.from('user_profiles').select('*').eq('uid', uid)
+          .order('is_main', { ascending: false })
+          .order('created_at', { ascending: true }),
+        supabase.from('users').select('cgu_accepted_at').eq('uid', uid).maybeSingle(),
+      ]);
 
-      const profiles = (data ?? []) as Profile[];
+      const profiles = (profilesRes.data ?? []) as Profile[];
+      const cguAcceptedAt = (userRes.data as { cgu_accepted_at?: string } | null)?.cgu_accepted_at ?? null;
+      setCachedCguAcceptedAt(cguAcceptedAt);
+
       setAvailableProfiles(profiles);
 
       if (profiles.length === 0) { setUserData(null); return; }
 
-      // Profil actif : is_main=true en priorité, sinon le premier
       const mainProfile = profiles.find(p => p.is_main) ?? profiles[0];
-
-      // Respecte un choix précédent stocké en localStorage (même session)
       const storedId = localStorage.getItem(ACTIVE_PROFILE_KEY) ?? '';
       const active = profiles.find(p => p.id === storedId) ?? mainProfile;
 
@@ -225,7 +227,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(ACTIVE_PROFILE_TYPE_KEY, active.profile_type ?? '');
       window.dispatchEvent(new Event(PROFILE_CHANGE_EVENT));
       setActiveProfileIdState(active.id);
-      setUserData(mapProfile(active as unknown as Record<string, unknown>));
+      setUserData(mapProfile({ ...(active as unknown as Record<string, unknown>), cgu_accepted_at: cguAcceptedAt }));
     } catch {
       setUserData(null);
     }

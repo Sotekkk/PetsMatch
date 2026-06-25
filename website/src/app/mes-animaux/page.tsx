@@ -322,6 +322,7 @@ export default function MesAnimauxPage() {
   useEffect(() => {
     if (!user) return;
     setFetching(true);
+    let cancelled = false;
 
     async function loadAll() {
       const uid = user!.uid;
@@ -365,9 +366,7 @@ export default function MesAnimauxPage() {
       const allAnimalIds = [...new Set(rows.map(r => r.animal_id as string))];
 
       if (allAnimalIds.length === 0) {
-        setAnimaux([]);
-        setCessionEnAttente(new Set());
-        setFetching(false);
+        if (!cancelled) { setAnimaux([]); setCessionEnAttente(new Set()); setFetching(false); }
         return;
       }
 
@@ -378,9 +377,7 @@ export default function MesAnimauxPage() {
         .order('nom', { ascending: true });
 
       const merged = (data ?? []) as Animal[];
-      setAnimaux(merged);
-      setCessionEnAttente(currentIds);
-      setFetching(false);
+      if (!cancelled) { setAnimaux(merged); setCessionEnAttente(currentIds); setFetching(false); }
 
       // Calcul flags chaleurs et gestante pour les femelles présentes
       const femIds = merged
@@ -413,11 +410,13 @@ export default function MesAnimauxPage() {
       const gFlags: Record<string, boolean> = {};
       for (const g of (gests ?? [])) gFlags[g.animal_id as string] = true;
 
+      if (cancelled) return;
       setChaleurFlags(cFlags);
       setGestanteFlags(gFlags);
     }
 
-    loadAll().catch(() => setFetching(false));
+    loadAll().catch(() => { if (!cancelled) setFetching(false); });
+    return () => { cancelled = true; };
   }, [user, isEleveur, activeProfileId]);
 
   async function deleteAnimal(id: string) {
