@@ -258,11 +258,34 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
     if (uid.isEmpty) return;
     setState(() => _loadingAnimaux = true);
     try {
-      final ownRows = await _supa
-          .from('animaux_proprietes')
-          .select('animal_id, date_fin')
-          .eq('uid_proprio', uid);
-      final allIds = (ownRows as List).map((r) => r['animal_id'] as String).toList();
+      final activeProfileId = User_Info.activeProfileId;
+      List ownRows;
+      if (activeProfileId.isNotEmpty) {
+        final check = await _supa
+            .from('animaux_proprietes')
+            .select('animal_id')
+            .eq('uid_proprio', uid)
+            .not('profile_id_proprio', 'is', null)
+            .limit(1);
+        if ((check as List).isNotEmpty) {
+          ownRows = await _supa
+              .from('animaux_proprietes')
+              .select('animal_id, date_fin')
+              .eq('uid_proprio', uid)
+              .eq('profile_id_proprio', activeProfileId);
+        } else {
+          ownRows = await _supa
+              .from('animaux_proprietes')
+              .select('animal_id, date_fin')
+              .eq('uid_proprio', uid);
+        }
+      } else {
+        ownRows = await _supa
+            .from('animaux_proprietes')
+            .select('animal_id, date_fin')
+            .eq('uid_proprio', uid);
+      }
+      final allIds = (ownRows).map((r) => r['animal_id'] as String).toList();
       final list = allIds.isEmpty ? <Map<String, dynamic>>[] : List<Map<String, dynamic>>.from(
         await _supa.from('animaux').select().inFilter('id', allIds).order('created_at', ascending: false),
       );

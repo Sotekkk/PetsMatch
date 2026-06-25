@@ -49,12 +49,38 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
     try {
       final uid = User_Info.uid;
       final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      final ownRows = await _supa
-          .from('animaux_proprietes')
-          .select('animal_id')
-          .eq('uid_proprio', uid)
-          .isFilter('date_fin', null);
-      final myIds = (ownRows as List).map((r) => r['animal_id'] as String).toList();
+      final activeProfileId = User_Info.activeProfileId;
+
+      List ownRows;
+      if (activeProfileId.isNotEmpty) {
+        final check = await _supa
+            .from('animaux_proprietes')
+            .select('animal_id')
+            .eq('uid_proprio', uid)
+            .not('profile_id_proprio', 'is', null)
+            .limit(1);
+        if ((check as List).isNotEmpty) {
+          ownRows = await _supa
+              .from('animaux_proprietes')
+              .select('animal_id')
+              .eq('uid_proprio', uid)
+              .eq('profile_id_proprio', activeProfileId)
+              .isFilter('date_fin', null);
+        } else {
+          ownRows = await _supa
+              .from('animaux_proprietes')
+              .select('animal_id')
+              .eq('uid_proprio', uid)
+              .isFilter('date_fin', null);
+        }
+      } else {
+        ownRows = await _supa
+            .from('animaux_proprietes')
+            .select('animal_id')
+            .eq('uid_proprio', uid)
+            .isFilter('date_fin', null);
+      }
+      final myIds = (ownRows).map((r) => r['animal_id'] as String).toList();
       final animaux = myIds.isEmpty ? [] : await _supa
           .from('animaux')
           .select()
