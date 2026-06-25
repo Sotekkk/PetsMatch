@@ -231,8 +231,8 @@ SELECT
   ) AS member_profile_id,
   'famille_accueil' AS role,
   ARRAY['read_animaux','write_animaux_basic','read_agenda'] AS permissions,
-  CASE fa.statut WHEN 'actif' THEN 'actif' ELSE 'inactif' END,
-  fa.created_at
+  CASE WHEN COALESCE(fa.actif, TRUE) THEN 'actif' ELSE 'inactif' END,
+  COALESCE(fa.created_at, NOW())
 FROM familles_accueil fa
 WHERE fa.fa_uid IS NOT NULL
   AND EXISTS (SELECT 1 FROM user_profiles up WHERE up.uid = fa.association_uid)
