@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from './firebase';
 import { supabase } from './supabase';
@@ -192,17 +192,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   // cgu_accepted_at est dans `users`, pas dans user_profiles — on le cache au premier fetch
   const [cachedCguAcceptedAt, setCachedCguAcceptedAt] = useState<string | null>(null);
+  // Ref pour éviter les closures périmées dans fetchProfiles
+  const cachedCguRef = useRef<string | null>(null);
 
-  function setActiveProfileId(id: string) {
-    const profile = availableProfiles.find(p => p.id === id);
-    localStorage.setItem(ACTIVE_PROFILE_KEY, id);
-    localStorage.setItem(ACTIVE_PROFILE_TYPE_KEY, profile?.profile_type ?? '');
-    window.dispatchEvent(new Event(PROFILE_CHANGE_EVENT));
-    setActiveProfileIdState(id);
-    if (profile) setUserData(mapProfile({ ...(profile as unknown as Record<string, unknown>), cgu_accepted_at: cachedCguAcceptedAt }));
-  }
-
-  async function fetchProfiles(uid: string) {
+  const fetchProfiles = useCallback(async (uid: string) => {
     try {
       const [profilesRes, userRes] = await Promise.all([
         supabase.from('user_profiles').select('*').eq('uid', uid)
@@ -213,6 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const profiles = (profilesRes.data ?? []) as Profile[];
       const cguAcceptedAt = (userRes.data as { cgu_accepted_at?: string } | null)?.cgu_accepted_at ?? null;
+      cachedCguRef.current = cguAcceptedAt;
       setCachedCguAcceptedAt(cguAcceptedAt);
 
       setAvailableProfiles(profiles);
@@ -231,7 +225,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setUserData(null);
     }
-  }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setActiveProfileId = useCallback((id: string) => {
+    setAvailableProfiles(prev => {
+      const profile = prev.find(p => p.id === id);
+      localStorage.setItem(ACTIVE_PROFILE_KEY, id);
+      localStorage.setItem(ACTIVE_PROFILE_TYPE_KEY, profile?.profile_type ?? '');
+      window.dispatchEvent(new Event(PROFILE_CHANGE_EVENT));
+      setActiveProfileIdState(id);
+      if (profile) setUserData(mapProfile({ ...(profile as unknown as Record<string, unknown>), cgu_accepted_at: cachedCguRef.current }));
+      return prev;
+    });
+  }, []);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
@@ -248,11 +254,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
     return unsub;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchProfiles]);
 
-  async function refreshUserData() {
+  const refreshUserData = useCallback(async () => {
     if (user) await fetchProfiles(user.uid);
-  }
+  }, [user, fetchProfiles]);
 
   return (
     <AuthContext.Provider value={{
