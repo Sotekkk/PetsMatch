@@ -211,8 +211,10 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
       }();
 
       final now = DateTime.now().toIso8601String();
+      final activeProfileId = User_Info.activeProfileId;
       final data = <String, dynamic>{
         'uid_eleveur':         uid,
+        if (activeProfileId.isNotEmpty) 'profile_id': activeProfileId,
         'nom_eleveur':         nomAsso,
         'ville_eleveur':       ville,
         'departement_eleveur': dep,

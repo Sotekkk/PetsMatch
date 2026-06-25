@@ -623,8 +623,10 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       }();
 
       final now = DateTime.now().toIso8601String();
+      final activeProfileId = User_Info.activeProfileId;
       final supaData = <String, dynamic>{
         'uid_eleveur':          uid,
+        if (activeProfileId.isNotEmpty) 'profile_id': activeProfileId,
         'nom_eleveur':          nomEleveur,
         'ville_eleveur':        villeEleveur,
         'departement_eleveur':  departementEleveur,

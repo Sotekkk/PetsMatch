@@ -43,7 +43,7 @@ const STATUT_COLOR: Record<string, string> = {
 type FilterKey = 'toutes' | 'disponible' | 'archivee' | 'pause';
 
 export default function MesAnnoncesPage() {
-  const { user, loading, userData } = useAuth();
+  const { user, loading, userData, activeProfileId } = useAuth();
   const { plan, config: planConfig, activeAnnonces: activeCount } = usePlan();
   const router = useRouter();
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
@@ -58,18 +58,24 @@ export default function MesAnnoncesPage() {
   }, [loading, user, userData, router]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || loading) return;
     const SELECT = 'id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at';
-    supabase
-      .from('annonces')
-      .select(SELECT)
-      .eq('uid_eleveur', user.uid)
-      .or('profil_source.is.null,profil_source.neq.association')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setAnnonces((data ?? []) as Annonce[]);
-        setFetching(false);
-      }, () => setFetching(false));
+
+    async function load() {
+      // Vérifie si la migration profile_id a été jouée
+      const { data: check } = await supabase.from('annonces').select('id')
+        .eq('uid_eleveur', user!.uid).not('profile_id', 'is', null).limit(1);
+      let q = supabase.from('annonces').select(SELECT).order('created_at', { ascending: false });
+      if ((check ?? []).length > 0 && activeProfileId) {
+        q = q.eq('profile_id', activeProfileId);
+      } else {
+        q = q.eq('uid_eleveur', user!.uid).or('profil_source.is.null,profil_source.neq.association');
+      }
+      const { data } = await q;
+      setAnnonces((data ?? []) as Annonce[]);
+      setFetching(false);
+    }
+    load().catch(() => setFetching(false));
 
     const channel = supabase
       .channel(`mes-annonces-${user.uid}`)
@@ -85,7 +91,7 @@ export default function MesAnnoncesPage() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user]);
+  }, [user, loading, activeProfileId]);
 
   async function handleDelete(id: string) {
     if (!confirm('Supprimer définitivement cette annonce ?')) return;

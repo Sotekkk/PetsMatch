@@ -1,4 +1,5 @@
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
@@ -348,14 +349,24 @@ class _AnnoncesListState extends State<_AnnoncesList> {
     if (widget.uid == null) return;
     if (mounted) setState(() => _loading = true);
     try {
-      var query = Supabase.instance.client
-          .from('annonces')
-          .select()
-          .eq('uid_eleveur', widget.uid!);
-      if (widget.isAssociation) {
-        query = query.eq('profil_source', 'association');
+      final activeProfileId = User_Info.activeProfileId;
+      // Vérifie si la migration profile_id a été jouée (au moins une annonce avec profile_id)
+      final checkMigration = await Supabase.instance.client
+          .from('annonces').select('id')
+          .eq('uid_eleveur', widget.uid!)
+          .not('profile_id', 'is', null).limit(1);
+      var query = Supabase.instance.client.from('annonces').select();
+      if ((checkMigration as List).isNotEmpty && activeProfileId.isNotEmpty) {
+        // Migration faite → filtre strict par profil actif
+        query = query.eq('profile_id', activeProfileId);
       } else {
-        query = query.neq('profil_source', 'association');
+        // Fallback pré-migration → filtre par uid + profil_source
+        query = query.eq('uid_eleveur', widget.uid!);
+        if (widget.isAssociation) {
+          query = query.eq('profil_source', 'association');
+        } else {
+          query = query.neq('profil_source', 'association');
+        }
       }
       final data = await query.order('created_at', ascending: false);
       if (!mounted) return;

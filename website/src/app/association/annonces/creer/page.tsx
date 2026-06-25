@@ -22,7 +22,7 @@ async function uploadPhoto(file: File, uid: string): Promise<string> {
 }
 
 export default function CreerAnnonceAssoPage() {
-  const { user } = useAuth();
+  const { user, activeProfileId } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
   const animalIdParam = params.get('animalId');
@@ -193,6 +193,7 @@ export default function CreerAnnonceAssoPage() {
 
         await supabase.from('annonces').insert({
           uid_eleveur: user.uid,
+          ...(activeProfileId ? { profile_id: activeProfileId } : {}),
           nom_eleveur: nomAsso,
           ville_eleveur: userData?.ville_elevage ?? '',
           departement_eleveur: userData?.departement_elevage ?? '',

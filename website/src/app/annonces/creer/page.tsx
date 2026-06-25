@@ -77,7 +77,7 @@ const DB_TO_ESPECE: Record<string, string> = {
 };
 
 function CreerAnnoncePageInner() {
-  const { user, userData, loading } = useAuth();
+  const { user, userData, loading, activeProfileId } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -700,9 +700,27 @@ function CreerAnnoncePageInner() {
       const nomEleveur = (userData?.nameElevage ?? `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim()) || '';
       const villeEleveur = userData?.villeElevage ?? userData?.ville ?? '';
 
+      // ── Détection mots interdits / annonce suspecte ────────────────────────
+      const PRIX_MIN: Record<string, number> = { chien: 150, chat: 100, cheval: 800, lapin: 20, oiseau: 30 };
+      const PRIX_MAX: Record<string, number> = { chien: 20000, chat: 6000, cheval: 150000, lapin: 1000, oiseau: 5000, nac: 3000 };
+      const BLACKLIST = ['bitcoin', 'crypto', 'western union', 'mandat cash', 'arnaque', 'don gratuit', 'livraison longue distance', 'visa gift', 'paypal friends'];
+      const espDb = (ESPECE_DB[espece] ?? espece).toLowerCase();
+      const suspectReasons: string[] = [];
+      const fullText = `${titre} ${description}`.toLowerCase();
+      const prixNum = prix ? Number(prix) : null;
+      const prixMinPorteeNum = prixMin ? Number(prixMin) : null;
+      if (prixNum && prixNum > 0 && PRIX_MIN[espDb] && prixNum < PRIX_MIN[espDb]) suspectReasons.push('prix_tres_bas');
+      if (prixNum && PRIX_MAX[espDb] && prixNum > PRIX_MAX[espDb]) suspectReasons.push('prix_tres_eleve');
+      if (prixMinPorteeNum && prixMinPorteeNum > 0 && PRIX_MIN[espDb] && prixMinPorteeNum < PRIX_MIN[espDb]) suspectReasons.push('prix_portee_bas');
+      for (const w of BLACKLIST) { if (fullText.includes(w)) suspectReasons.push(`mot_suspect:${w}`); }
+
       const { error: insertError } = await supabase.from('annonces').insert({
         id: genId(),
-        uid_eleveur: user!.uid, nom_eleveur: nomEleveur, ville_eleveur: villeEleveur,
+        uid_eleveur: user!.uid,
+        ...(activeProfileId ? { profile_id: activeProfileId } : {}),
+        nom_eleveur: nomEleveur, ville_eleveur: villeEleveur,
+        is_suspect: suspectReasons.length > 0,
+        suspect_reasons: suspectReasons,
         titre: titre || `${espece} ${race}`.trim(),
         espece: ESPECE_DB[espece] ?? espece.toLowerCase(), race,
         type: type === 'portee' ? 'portee' : 'animal',
@@ -737,6 +755,22 @@ function CreerAnnoncePageInner() {
         num_passeport_equin: espece === 'Cheval' ? numPasseportEquin || null : null,
       });
       if (insertError) throw new Error(insertError.message);
+
+      // ── Déclencher la validation auto du profil si encore en attente ────────
+      if (activeProfileId) {
+        const { data: profil } = await supabase
+          .from('user_profiles').select('validation_status, profile_type')
+          .eq('id', activeProfileId).maybeSingle();
+        if (profil && profil.profile_type !== 'particulier' && profil.validation_status === 'pending') {
+          // Fire-and-forget : ne bloque pas la redirection
+          fetch('/api/admin/validate-profile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ profileId: activeProfileId, adminUid: 'auto-annonce' }),
+          }).catch(() => {});
+        }
+      }
+
       router.push(annonceStatut === 'en_attente' ? '/mes-annonces?pending=1' : '/mes-annonces');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
