@@ -209,6 +209,8 @@ INSERT INTO user_profiles (
   fcm_token,
   apns_token,
   is_premium,
+  stripe_customer_id,
+  cgu_accepted_at,
   horaires,
   tarifs,
   durees_motifs,
@@ -313,6 +315,8 @@ SELECT
   u.fcm_token,
   u.apns_token,
   COALESCE(u.is_premium, FALSE),
+  u.stripe_customer_id,
+  u.cgu_accepted_at,
   '{}',                             -- horaires
   NULL,                             -- tarifs
   '{}',                             -- durees_motifs
@@ -362,7 +366,9 @@ ON CONFLICT (uid, profile_type) DO UPDATE SET
   date_of_birth    = COALESCE(EXCLUDED.date_of_birth,    user_profiles.date_of_birth),
   fcm_token        = COALESCE(EXCLUDED.fcm_token,        user_profiles.fcm_token),
   apns_token       = COALESCE(EXCLUDED.apns_token,       user_profiles.apns_token),
-  is_premium       = EXCLUDED.is_premium;
+  is_premium       = EXCLUDED.is_premium,
+  stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, user_profiles.stripe_customer_id),
+  cgu_accepted_at  = COALESCE(EXCLUDED.cgu_accepted_at,  user_profiles.cgu_accepted_at);
 
 -- ─── ÉTAPE 4 : Profil particulier secondaire pour tous les pros
 

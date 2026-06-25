@@ -61,13 +61,43 @@ WHERE up.uid = u.uid
   AND (up.departement_pro IS NULL OR up.departement_pro = '')
   AND u.departement_elevage IS NOT NULL AND u.departement_elevage != '';
 
+-- 6. stripe_customer_id depuis users
+UPDATE user_profiles up
+SET stripe_customer_id = u.stripe_customer_id
+FROM users u
+WHERE up.uid = u.uid
+  AND up.is_main = TRUE
+  AND up.stripe_customer_id IS NULL
+  AND u.stripe_customer_id IS NOT NULL;
+
+-- 7. cgu_accepted_at depuis users
+UPDATE user_profiles up
+SET cgu_accepted_at = u.cgu_accepted_at
+FROM users u
+WHERE up.uid = u.uid
+  AND up.is_main = TRUE
+  AND up.cgu_accepted_at IS NULL
+  AND u.cgu_accepted_at IS NOT NULL;
+
+-- 8. lat_pro / lng_pro depuis lat / lng si même adresse (pro sans coordonnées spécifiques)
+UPDATE user_profiles up
+SET
+  lat_pro = up.lat,
+  lng_pro = up.lng
+WHERE up.is_main = TRUE
+  AND up.lat_pro IS NULL
+  AND up.lat IS NOT NULL;
+
 -- Vérification
 SELECT
   up.uid,
   up.nom,
   up.departement,       up.departement_pro,
   up.region,            up.region_pro,
-  up.adresse
+  up.adresse,
+  up.stripe_customer_id,
+  up.cgu_accepted_at,
+  up.lat_pro,           up.lng_pro
 FROM user_profiles up
 WHERE up.is_main = TRUE
 ORDER BY up.uid;
