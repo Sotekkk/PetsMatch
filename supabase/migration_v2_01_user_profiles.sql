@@ -32,6 +32,23 @@ BEGIN
   END IF;
 END $$;
 
+-- ─── ÉTAPE 0b : Conversions de types ────────────────────────
+-- especes_elevees TEXT[] → JSONB (pour stocker [{espece, races[]}])
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'user_profiles'
+      AND column_name = 'especes_elevees'
+      AND data_type = 'ARRAY'
+  ) THEN
+    ALTER TABLE user_profiles
+      ALTER COLUMN especes_elevees TYPE JSONB
+      USING COALESCE(to_jsonb(especes_elevees), '[]'::jsonb);
+  END IF;
+END $$;
+
 -- ─── ÉTAPE 1 : Colonnes manquantes sur user_profiles ────────
 
 ALTER TABLE user_profiles
