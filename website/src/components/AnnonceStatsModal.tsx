@@ -9,6 +9,7 @@ interface BebeStats { index: number; vues: number; favoris: number; }
 
 interface StatsData {
   annonce: { titre?: string; espece?: string; race?: string; type?: string; type_vente?: string; photos?: string[]; created_at?: string; vues?: number; } | null;
+  // type = 'portee' | 'saillie' | 'animal' ; type_vente = 'vente' | 'don' | etc.
   totalVues: number; totalContacts: number; totalFavoris: number;
   tauxConversion: number; tauxInteret: number; scoreAttractif: number;
   classement: { position: number; total: number } | null;
@@ -178,7 +179,7 @@ export default function AnnonceStatsModal({ annonceId, annonceTitle, isPremium, 
             )}
 
             {/* Chiots de la portée — visible dès que l'annonce est de type portée */}
-            {(stats.annonce?.type_vente === 'portee' || stats.portee.length > 0) && (
+            {(stats.annonce?.type === 'portee' || stats.portee.length > 0) && (
               <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
                 <p className="text-sm font-semibold text-[#1F2A2E] mb-3">🐾 Stats par chiot</p>
                 {stats.portee.length === 0 ? (
