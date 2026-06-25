@@ -57,7 +57,7 @@ function formatDate(dateStr?: string) {
 }
 
 export default function ParticulierDashboard() {
-  const { user, userData } = useAuth();
+  const { user, userData, loading: authLoading, activeProfileId } = useAuth();
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [mesAlertes, setMesAlertes] = useState<Alerte[]>([]);
   const [alertesPubliques, setAlertesPubliques] = useState<Alerte[]>([]);
@@ -69,30 +69,56 @@ export default function ParticulierDashboard() {
   const avatar = userData?.profilePictureUrl ?? null;
 
   useEffect(() => {
-    if (!user) return;
-    Promise.all([
-      supabase.from('animaux').select('id, nom, espece, race, sexe, photo_url')
-        .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`),
-      supabase.from('alertes_perdus').select()
-        .eq('uid_proprietaire', user.uid).eq('statut', 'perdu'),
-      supabase.from('alertes_perdus')
-        .select('id, nom_animal, espece, race, derniere_localisation, date_perte, photo_url')
-        .eq('statut', 'perdu')
-        .order('created_at', { ascending: false })
-        .limit(6),
-      supabase.from('annonces')
-        .select('id, titre, espece, race, type, type_vente, photos, prix, prix_min_portee, ville_eleveur')
-        .eq('statut', 'disponible')
-        .order('created_at', { ascending: false })
-        .limit(8),
-    ]).then(([animauxRes, alertesMesRes, alertesPubliquesRes, annoncesRes]) => {
-      setAnimaux(animauxRes.data ?? []);
+    if (!user || authLoading) return;
+    const uid = user.uid;
+
+    async function load() {
+      // Récupérer les IDs des animaux présents pour ce profil
+      let animalIds: string[] = [];
+      if (activeProfileId) {
+        const { data: check } = await supabase
+          .from('animaux_proprietes').select('animal_id')
+          .eq('uid_proprio', uid).not('profile_id_proprio', 'is', null).limit(1);
+        if ((check ?? []).length > 0) {
+          const { data: rows } = await supabase
+            .from('animaux_proprietes').select('animal_id')
+            .eq('uid_proprio', uid).eq('profile_id_proprio', activeProfileId).is('date_fin', null);
+          animalIds = (rows ?? []).map(r => r.animal_id as string);
+        } else {
+          const { data: rows } = await supabase
+            .from('animaux_proprietes').select('animal_id')
+            .eq('uid_proprio', uid).is('date_fin', null);
+          animalIds = (rows ?? []).map(r => r.animal_id as string);
+        }
+      } else {
+        const { data: rows } = await supabase
+          .from('animaux_proprietes').select('animal_id')
+          .eq('uid_proprio', uid).is('date_fin', null);
+        animalIds = (rows ?? []).map(r => r.animal_id as string);
+      }
+
+      const [animauxRes, alertesMesRes, alertesPubliquesRes, annoncesRes] = await Promise.all([
+        animalIds.length > 0
+          ? supabase.from('animaux').select('id, nom, espece, race, sexe, photo_url').in('id', animalIds)
+          : Promise.resolve({ data: [] }),
+        supabase.from('alertes_perdus').select()
+          .eq('uid_proprietaire', uid).eq('statut', 'perdu'),
+        supabase.from('alertes_perdus')
+          .select('id, nom_animal, espece, race, derniere_localisation, date_perte, photo_url')
+          .eq('statut', 'perdu').order('created_at', { ascending: false }).limit(6),
+        supabase.from('annonces')
+          .select('id, titre, espece, race, type, type_vente, photos, prix, prix_min_portee, ville_eleveur')
+          .eq('statut', 'disponible').order('created_at', { ascending: false }).limit(8),
+      ]);
+      setAnimaux((animauxRes.data ?? []) as Animal[]);
       setMesAlertes((alertesMesRes.data ?? []) as Alerte[]);
-      setAlertesPubliques(alertesPubliquesRes.data ?? []);
-      setAnnonces(annoncesRes.data ?? []);
+      setAlertesPubliques((alertesPubliquesRes.data ?? []) as Alerte[]);
+      setAnnonces((annoncesRes.data ?? []) as Annonce[]);
       setLoading(false);
-    }).catch(() => setLoading(false));
-  }, [user]);
+    }
+
+    load().catch(() => setLoading(false));
+  }, [user, authLoading, activeProfileId]);
 
   if (loading) {
     return (

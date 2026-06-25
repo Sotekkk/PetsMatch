@@ -72,8 +72,31 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
           .select().eq('uid_proprietaire', uid).eq('statut', 'perdu');
 
       if (!User_Info.isPro) {
-        // Éleveur : animaux + annonces + annonces récentes + plan
-        final animaux = await supa.from('animaux').select('id').eq('uid_eleveur', uid);
+        // Éleveur : animaux présents (date_fin IS NULL, filtrés par profil actif)
+        final activeProfileId = User_Info.activeProfileId;
+        int animalCount;
+        if (activeProfileId.isNotEmpty) {
+          final check = await supa.from('animaux_proprietes')
+              .select('animal_id').eq('uid_proprio', uid)
+              .not('profile_id_proprio', 'is', null).limit(1);
+          if ((check as List).isNotEmpty) {
+            final rows = await supa.from('animaux_proprietes')
+                .select('animal_id').eq('uid_proprio', uid)
+                .eq('profile_id_proprio', activeProfileId)
+                .isFilter('date_fin', null);
+            animalCount = (rows as List).length;
+          } else {
+            final rows = await supa.from('animaux_proprietes')
+                .select('animal_id').eq('uid_proprio', uid)
+                .isFilter('date_fin', null);
+            animalCount = (rows as List).length;
+          }
+        } else {
+          final rows = await supa.from('animaux_proprietes')
+              .select('animal_id').eq('uid_proprio', uid)
+              .isFilter('date_fin', null);
+          animalCount = (rows as List).length;
+        }
         final annonces = await supa.from('annonces').select('id')
             .eq('uid_eleveur', uid).inFilter('statut', ['disponible', 'reserve']);
         final recent = await supa.from('annonces')
@@ -85,7 +108,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
         final activeCount = await PlanService.countActiveAnnonces(uid);
         if (!mounted) return;
         setState(() {
-          _animalCount = (animaux as List).length;
+          _animalCount = animalCount;
           _postCount = (annonces as List).length;
           _recentAnnonces = List<Map<String, dynamic>>.from(recent);
           _mesAlertes = List<Map<String, dynamic>>.from(alertes as List);

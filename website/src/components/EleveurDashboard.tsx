@@ -38,7 +38,7 @@ const QUICK_LINKS = [
 ];
 
 export default function EleveurDashboard() {
-  const { user, userData } = useAuth();
+  const { user, userData, loading: authLoading, activeProfileId } = useAuth();
   const { plan, config: planConfig, activeAnnonces, loading: planLoading } = usePlan();
   const [animalCount, setAnimalCount] = useState(0);
   const [mesAlertes, setMesAlertes] = useState<{ id: string }[]>([]);
@@ -51,16 +51,44 @@ export default function EleveurDashboard() {
   const avatar = userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
 
   useEffect(() => {
-    if (!user) return;
-    Promise.all([
-      supabase.from('animaux').select('id', { count: 'exact', head: true }).eq('uid_eleveur', user.uid),
-      supabase.from('alertes_perdus').select('id').eq('uid_proprietaire', user.uid).eq('statut', 'perdu'),
-    ]).then(([animaux, alertes]) => {
-      setAnimalCount(animaux.count ?? 0);
-      setMesAlertes((alertes.data ?? []) as { id: string }[]);
+    if (!user || authLoading) return;
+    const uid = user.uid;
+
+    async function loadCount() {
+      let count = 0;
+      if (activeProfileId) {
+        const { data: check } = await supabase
+          .from('animaux_proprietes').select('animal_id')
+          .eq('uid_proprio', uid).not('profile_id_proprio', 'is', null).limit(1);
+        if ((check ?? []).length > 0) {
+          const { count: c } = await supabase
+            .from('animaux_proprietes')
+            .select('animal_id', { count: 'exact', head: true })
+            .eq('uid_proprio', uid).eq('profile_id_proprio', activeProfileId).is('date_fin', null);
+          count = c ?? 0;
+        } else {
+          const { count: c } = await supabase
+            .from('animaux_proprietes')
+            .select('animal_id', { count: 'exact', head: true })
+            .eq('uid_proprio', uid).is('date_fin', null);
+          count = c ?? 0;
+        }
+      } else {
+        const { count: c } = await supabase
+          .from('animaux_proprietes')
+          .select('animal_id', { count: 'exact', head: true })
+          .eq('uid_proprio', uid).is('date_fin', null);
+        count = c ?? 0;
+      }
+      const { data: alertes } = await supabase
+        .from('alertes_perdus').select('id').eq('uid_proprietaire', uid).eq('statut', 'perdu');
+      setAnimalCount(count);
+      setMesAlertes((alertes ?? []) as { id: string }[]);
       setLoading(false);
-    }).catch(() => setLoading(false));
-  }, [user]);
+    }
+
+    loadCount().catch(() => setLoading(false));
+  }, [user, authLoading, activeProfileId]);
 
   useEffect(() => {
     if (!user) return;
