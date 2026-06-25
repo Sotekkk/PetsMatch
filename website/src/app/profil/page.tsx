@@ -1113,8 +1113,16 @@ export default function ProfilPage() {
     if (!loading && !user) router.push('/connexion');
   }, [loading, user, router]);
 
+  // Clé qui change uniquement quand le profil actif change (pas quand userData est rafraîchi)
+  const initKey = activeProfileId || 'main';
+  const initializedFor = useRef<string | null>(null);
+
   useEffect(() => {
     if (!userData) return;
+    // Ne ré-initialise les champs que si le profil a changé, pas à chaque refresh userData
+    if (initializedFor.current === initKey) return;
+    initializedFor.current = initKey;
+
     setFirstname(userData.firstname ?? '');
     setLastname(userData.lastname ?? '');
     setPhone(userData.phone ?? '');
@@ -1149,7 +1157,7 @@ export default function ProfilPage() {
       setFacebook(userData.facebook ?? '');
       setSiteWeb(userData.siteWeb ?? '');
     }
-  }, [userData, isEleveur]);
+  }, [userData, isEleveur, initKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
