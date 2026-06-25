@@ -1281,7 +1281,10 @@ export default function ProfilPage() {
     if (resolvedType === 'association') {
       return <AssociationEdit profileId={activeProfileId} uid={user.uid} />;
     }
-    return <SecondaryProEdit profileId={activeProfileId} uid={user.uid} />;
+    // particulier → formulaire principal ci-dessous (pas de page pro)
+    if (resolvedType && resolvedType !== 'particulier') {
+      return <SecondaryProEdit profileId={activeProfileId} uid={user.uid} />;
+    }
   }
 
   function toggleEspece(espece: string) {
