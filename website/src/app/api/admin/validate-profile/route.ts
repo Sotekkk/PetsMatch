@@ -89,13 +89,19 @@ interface ValidationResult {
 // ─── Algo principal ───────────────────────────────────────────────────────────
 async function validateProfile(profile: Record<string, unknown>): Promise<ValidationResult> {
   const profileType = (profile.profile_type as string) ?? '';
-  const siret       = (profile.siret as string | null) ?? null;
-  const rna         = (profile.rna  as string | null) ?? null;
+  // Normaliser SIRET/RNA : supprimer espaces, tirets, points
+  const rawSiret = (profile.siret as string | null) ?? null;
+  const siret    = rawSiret ? rawSiret.replace(/[\s\-\.]/g, '') : null;
+  const rawRna   = (profile.rna as string | null) ?? null;
+  const rna      = rawRna ? rawRna.replace(/[\s\-\.]/g, '') : null;
   const nom         = (profile.nom  as string | null)
                    ?? (profile.name_elevage as string | null)
                    ?? null;
+  // Le représentant peut être dans profession_pro (convention asso) ou firstname/lastname
+  const professionPro = (profile.profession_pro as string | null) ?? null;
   const firstname   = (profile.firstname as string | null) ?? null;
   const lastname    = (profile.lastname  as string | null) ?? null;
+  const repName     = professionPro ?? ((firstname || lastname) ? `${firstname ?? ''} ${lastname ?? ''}`.trim() : null);
 
   const reasons: string[] = [];
   let score = 0;
@@ -167,23 +173,24 @@ async function validateProfile(profile: Record<string, unknown>): Promise<Valida
     reasons.push('⚠️  Code NAF non disponible dans l\'annuaire');
   }
 
-  // ── Dirigeant ──
+  // ── Dirigeant / représentant ──
   const dirigeants = result.dirigeants ?? [];
-  if (dirigeants.length > 0 && (firstname || lastname)) {
-    const fullName = `${firstname ?? ''} ${lastname ?? ''}`;
+  if (dirigeants.length > 0 && repName) {
     const matched = dirigeants.some(d => {
       const apiFullName = `${d.prenoms ?? ''} ${d.nom ?? ''}`;
-      return jaccard(fullName, apiFullName) >= 0.5;
+      return jaccard(repName, apiFullName) >= 0.5;
     });
     if (matched) {
-      reasons.push(`✅ Nom du dirigeant/représentant trouvé dans l'annuaire`);
+      reasons.push(`✅ Représentant "${repName}" trouvé dans l'annuaire`);
       score += 0.20;
     } else {
       const listedNames = dirigeants.slice(0, 3).map(d => `${d.prenoms ?? ''} ${d.nom ?? ''}`.trim()).join(', ');
-      reasons.push(`⚠️  Nom déclaré "${fullName}" ne correspond à aucun dirigeant listé (${listedNames || 'liste vide'})`);
+      reasons.push(`⚠️  Représentant déclaré "${repName}" absent de la liste annuaire (${listedNames || 'liste vide'})`);
     }
   } else if (dirigeants.length === 0) {
     reasons.push('⚠️  Aucun dirigeant disponible dans l\'annuaire pour comparaison');
+  } else {
+    reasons.push('⚠️  Nom du représentant non renseigné — comparaison impossible');
   }
 
   // ── Seuil d'auto-validation ──

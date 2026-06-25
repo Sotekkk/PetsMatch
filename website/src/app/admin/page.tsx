@@ -371,24 +371,27 @@ export default function AdminPage() {
   function mapSecondaryRows(rows: Record<string, unknown>[], fireMap: Record<string, FireUser>): DossierEntry[] {
     return rows.map((r) => {
       const fire = fireMap[r['uid'] as string] ?? {};
+      const ptype = (r['profile_type'] as string) ?? '';
+      // nom peut être dans `nom` (association) ou `name_elevage` (éleveur)
+      const nomElevage = (r['nom'] as string) ?? (r['name_elevage'] as string) ?? null;
       return {
         uid:            r['uid'] as string,
         profileTableId: r['id'] as string,
-        firstname:      (fire as FireUser).firstname ?? '',
-        lastname:       (fire as FireUser).lastname ?? '',
-        email:          (fire as FireUser).email ?? '',
-        siret:          null,
-        kbisUrl:        null,
-        acacedDocUrl:   null,
-        acaced:         null,
-        catPro:         (r['cat_pro'] as string) ?? (r['profile_type'] as string) ?? null,
+        firstname:      (fire as FireUser).firstname ?? (r['firstname'] as string) ?? '',
+        lastname:       (fire as FireUser).lastname  ?? (r['lastname']  as string) ?? '',
+        email:          (fire as FireUser).email     ?? (r['email']     as string) ?? '',
+        siret:          (r['siret'] as string) ?? null,
+        kbisUrl:        (r['kbis_url'] as string) ?? null,
+        acacedDocUrl:   (r['acaced_doc_url'] as string) ?? null,
+        acaced:         (r['acaced'] as string) ?? null,
+        catPro:         (r['cat_pro'] as string) ?? ptype ?? null,
         professionPro:  (r['profession_pro'] as string) ?? null,
         certifications: (r['certifications'] as DossierEntry['certifications']) ?? null,
-        isElevage:      r['profile_type'] === 'eleveur',
-        isPro:          true,
-        nameElevage:    (r['name_elevage'] as string) ?? null,
+        isElevage:      ptype === 'eleveur',
+        isPro:          ptype !== 'particulier',
+        nameElevage:    nomElevage,
         createdAt:      (r['created_at'] as string) ?? null,
-        rejectionReason:null,
+        rejectionReason:(r['rejection_reason'] as string) ?? null,
         isSecondary:    true,
       };
     });
@@ -409,8 +412,10 @@ export default function AdminPage() {
           .order('created_at', { ascending: true }),
         supabase
           .from('user_profiles')
-          .select('id, uid, profile_type, cat_pro, profession_pro, certifications, name_elevage, created_at')
-          .eq('statut_pro', 'en_attente')
+          .select('id, uid, profile_type, cat_pro, profession_pro, certifications, name_elevage, nom, siret, rna, firstname, lastname, kbis_url, acaced_doc_url, acaced, rejection_reason, created_at, is_validate, statut_pro')
+          .not('profile_type', 'is', null)
+          .neq('profile_type', 'particulier')
+          .or('statut_pro.eq.en_attente,is_validate.eq.false')
           .order('created_at', { ascending: true }),
         supabase
           .from('users')
