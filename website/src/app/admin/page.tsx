@@ -448,7 +448,7 @@ export default function AdminPage() {
     setDossierSaving(saveKey);
     try {
       if (d.isSecondary && d.profileTableId) {
-        await supabase.from('user_profiles').update({ statut_pro: 'actif' }).eq('id', d.profileTableId);
+        await supabase.from('user_profiles').update({ statut_pro: 'actif', is_validate: true, rejection_reason: null }).eq('id', d.profileTableId);
       } else {
         await supabase.from('users').update({
           is_validate: true, statut_pro: 'actif', rejection_reason: null,
