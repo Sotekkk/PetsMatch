@@ -568,8 +568,22 @@ export default function Header() {
     const newId = id ?? '';
     const targetProfile = profiles.find(p => p.id === newId) ?? profiles.find(p => p.is_main);
     const targetType = targetProfile?.profile_type ?? null;
+    const finalId = newId || (targetProfile?.id ?? '');
 
-    authSetActiveId(newId || (targetProfile?.id ?? ''));
+    // Écriture localStorage en premier — garantit le changement même si AuthContext
+    // n'a pas encore chargé availableProfiles (race condition sur pages hors accueil)
+    if (finalId) {
+      localStorage.setItem(ACTIVE_PROFILE_KEY, finalId);
+      if (targetProfile?.profile_type) {
+        localStorage.setItem(ACTIVE_PROFILE_TYPE_KEY, targetProfile.profile_type);
+      }
+      window.dispatchEvent(new Event(PROFILE_CHANGE_EVENT));
+    } else {
+      localStorage.removeItem(ACTIVE_PROFILE_KEY);
+      localStorage.removeItem(ACTIVE_PROFILE_TYPE_KEY);
+    }
+
+    authSetActiveId(finalId || null);
     setProfileSwitcherOpen(false);
     setDropdownOpen(false);
     setMenuOpen(false);
