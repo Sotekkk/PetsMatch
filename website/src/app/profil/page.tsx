@@ -1434,43 +1434,42 @@ export default function ProfilPage() {
         if (isEleveur) payload.profile_picture_url_elevage = avatarUrl;
       }
 
-      await supabase.from('users').upsert(payload, { onConflict: 'uid' });
+      const { error: usersErr } = await supabase.from('users').upsert(payload, { onConflict: 'uid' });
+      if (usersErr) { setFormErrors([`[users] ${usersErr.message}`]); return; }
 
-      // Sync vers user_profiles (source V2) — ciblage par id si profil secondaire, sinon is_main
-      try {
-        const profileUpdate: Record<string, unknown> = {
-          firstname,
-          lastname,
-          phone_number: phone,
-          ville,
-          code_postal: cpParticulier,
-          date_of_birth: dob,
-          departement: fromPostalCode(cpParticulier)?.departement ?? '',
-          region:      fromPostalCode(cpParticulier)?.region      ?? '',
-        };
-        if (payload.profile_picture_url) profileUpdate.avatar_url = payload.profile_picture_url;
-        if (isEleveur) {
-          profileUpdate.nom            = nameElevage;
-          profileUpdate.phone_number   = phoneElevage;
-          profileUpdate.desc_entreprise = description;
-          profileUpdate.rue_pro        = rue;
-          profileUpdate.code_postal_pro = cp;
-          profileUpdate.ville_pro      = villeElevage;
-          profileUpdate.pays_pro       = pays;
-          profileUpdate.adresse        = [rue, cp, villeElevage, pays].filter(Boolean).join(', ');
-          profileUpdate.siret          = siret.trim();
-          profileUpdate.instagram      = instagram.trim();
-          profileUpdate.facebook       = facebook.trim();
-          profileUpdate.site_web       = siteWeb.trim();
-          if (payload.banner_url) profileUpdate.banner_url = payload.banner_url;
-          if (payload.profile_picture_url_elevage) profileUpdate.profile_picture_url_pro = payload.profile_picture_url_elevage;
-        }
-        if (activeProfileId) {
-          await supabase.from('user_profiles').update(profileUpdate).eq('id', activeProfileId);
-        } else {
-          await supabase.from('user_profiles').update(profileUpdate).eq('uid', user!.uid).eq('is_main', true);
-        }
-      } catch { /* non bloquant */ }
+      // Sync vers user_profiles (source V2)
+      const profileUpdate: Record<string, unknown> = {
+        firstname,
+        lastname,
+        phone_number: phone,
+        ville,
+        code_postal: cpParticulier,
+        date_of_birth: dob,
+        departement: fromPostalCode(cpParticulier)?.departement ?? '',
+        region:      fromPostalCode(cpParticulier)?.region      ?? '',
+      };
+      if (payload.profile_picture_url) profileUpdate.avatar_url = payload.profile_picture_url;
+      if (isEleveur) {
+        profileUpdate.nom            = nameElevage;
+        profileUpdate.phone_number   = phoneElevage;
+        profileUpdate.desc_entreprise = description;
+        profileUpdate.rue_pro        = rue;
+        profileUpdate.code_postal_pro = cp;
+        profileUpdate.ville_pro      = villeElevage;
+        profileUpdate.pays_pro       = pays;
+        profileUpdate.adresse        = [rue, cp, villeElevage, pays].filter(Boolean).join(', ');
+        profileUpdate.siret          = siret.trim();
+        profileUpdate.instagram      = instagram.trim();
+        profileUpdate.facebook       = facebook.trim();
+        profileUpdate.site_web       = siteWeb.trim();
+        if (payload.banner_url) profileUpdate.banner_url = payload.banner_url;
+        if (payload.profile_picture_url_elevage) profileUpdate.profile_picture_url_pro = payload.profile_picture_url_elevage;
+      }
+      const profileQ = activeProfileId
+        ? supabase.from('user_profiles').update(profileUpdate).eq('id', activeProfileId)
+        : supabase.from('user_profiles').update(profileUpdate).eq('uid', user!.uid).eq('is_main', true);
+      const { error: profileErr } = await profileQ;
+      if (profileErr) { setFormErrors([`[user_profiles] ${profileErr.message}`]); return; }
 
       // Sync all profile fields to Firestore so the Flutter app can read them
       try {
