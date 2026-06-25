@@ -184,6 +184,8 @@ INSERT INTO user_profiles (
   rue_pro,
   ville_pro,
   code_postal_pro,
+  departement_pro,
+  region_pro,
   pays_pro,
   instagram,
   facebook,
@@ -262,14 +264,16 @@ SELECT
   u.rue,
   u.ville,
   u.code_postal,
-  NULL,                             -- departement (non dispo sur users)
-  NULL,                             -- region
+  u.departement,
+  u.region,
   COALESCE(u.pays, 'France'),
   u.lat,
   u.lng,
   u.rue_elevage,                    -- rue_pro
   u.ville_elevage,                  -- ville_pro
   u.code_postal_elevage,            -- code_postal_pro
+  u.departement_elevage,            -- departement_pro
+  u.region_elevage,                 -- region_pro
   u.pays_elevage,                   -- pays_pro
   u.instagram,
   u.facebook,
@@ -338,6 +342,8 @@ ON CONFLICT (uid, profile_type) DO UPDATE SET
   rue_pro          = COALESCE(EXCLUDED.rue_pro,          user_profiles.rue_pro),
   ville_pro        = COALESCE(EXCLUDED.ville_pro,        user_profiles.ville_pro),
   code_postal_pro  = COALESCE(EXCLUDED.code_postal_pro,  user_profiles.code_postal_pro),
+  departement_pro  = COALESCE(EXCLUDED.departement_pro,  user_profiles.departement_pro),
+  region_pro       = COALESCE(EXCLUDED.region_pro,       user_profiles.region_pro),
   pays_pro         = COALESCE(EXCLUDED.pays_pro,         user_profiles.pays_pro),
   instagram        = COALESCE(EXCLUDED.instagram,        user_profiles.instagram),
   facebook         = COALESCE(EXCLUDED.facebook,         user_profiles.facebook),
