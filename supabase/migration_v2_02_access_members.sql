@@ -302,24 +302,18 @@ WHERE up.uid = pt.uid_eleveur
   AND pt.profile_id IS NULL;
 
 -- ─── 10. Colonnes profile_id sur contrats / notifications ───
+-- contrats = fichiers PDF (uid_eleveur = propriétaire du document)
+-- uid_cedant/uid_acquereur sont dans la table animaux (déjà section 7)
 
 ALTER TABLE contrats
-  ADD COLUMN IF NOT EXISTS profile_id_cedant   UUID REFERENCES user_profiles(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS profile_id_acquereur UUID REFERENCES user_profiles(id) ON DELETE SET NULL;
+  ADD COLUMN IF NOT EXISTS profile_id UUID REFERENCES user_profiles(id) ON DELETE SET NULL;
 
 UPDATE contrats c
-SET profile_id_cedant = up.id
+SET profile_id = up.id
 FROM user_profiles up
-WHERE up.uid = c.uid_cedant
+WHERE up.uid = c.uid_eleveur
   AND up.is_main = TRUE
-  AND c.profile_id_cedant IS NULL;
-
-UPDATE contrats c
-SET profile_id_acquereur = up.id
-FROM user_profiles up
-WHERE up.uid = c.uid_acquereur
-  AND up.is_main = TRUE
-  AND c.profile_id_acquereur IS NULL;
+  AND c.profile_id IS NULL;
 
 ALTER TABLE notifications
   ADD COLUMN IF NOT EXISTS profile_id UUID REFERENCES user_profiles(id) ON DELETE SET NULL;
