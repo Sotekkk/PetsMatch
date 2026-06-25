@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
+import AnnonceStatsModal from '@/components/AnnonceStatsModal';
 
 interface Annonce {
   id: string;
@@ -50,6 +51,9 @@ export default function MesAnnoncesPage() {
   const [fetching, setFetching] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>('toutes');
+  const [statsAnnonceId, setStatsAnnonceId] = useState<string | null>(null);
+  const [statsAnnonceTitle, setStatsAnnonceTitle] = useState<string | undefined>();
+  const isPremium = plan === 'premium';
 
   useEffect(() => {
     if (loading) return;
@@ -274,6 +278,12 @@ export default function MesAnnoncesPage() {
                       Modifier
                     </Link>
                     <button
+                      onClick={() => { setStatsAnnonceId(a.id); setStatsAnnonceTitle(a.titre); }}
+                      title="Statistiques"
+                      className="px-2.5 py-2 text-xs border border-[#0C5C6C]/20 text-[#0C5C6C] hover:bg-[#E8F4F6] rounded-xl transition-colors">
+                      📊
+                    </button>
+                    <button
                       onClick={() => handlePause(a)}
                       title={statut === 'pause' ? 'Réactiver' : 'Mettre en pause'}
                       className={`px-2.5 py-2 text-xs border rounded-xl transition-colors ${statut === 'pause' ? 'border-[#6E9E57] text-[#6E9E57] hover:bg-[#EEF5EA]' : 'border-gray-200 text-gray-400 hover:border-[#0C5C6C]/40 hover:text-[#0C5C6C]'}`}>
@@ -291,6 +301,15 @@ export default function MesAnnoncesPage() {
             );
           })}
         </div>
+      )}
+
+      {statsAnnonceId && (
+        <AnnonceStatsModal
+          annonceId={statsAnnonceId}
+          annonceTitle={statsAnnonceTitle}
+          isPremium={isPremium}
+          onClose={() => setStatsAnnonceId(null)}
+        />
       )}
     </div>
   );
