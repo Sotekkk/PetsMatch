@@ -120,6 +120,11 @@ export default function AdminPage() {
   const [showRefusModal, setShowRefusModal] = useState(false);
   const [refusMotif, setRefusMotif] = useState('');
 
+  // Validation automatique SIRET/RNA
+  interface ValidationInfo { score: number; reasons: string[]; autoValidated: boolean }
+  const [validationChecking, setValidationChecking] = useState<string | null>(null);
+  const [validationCache, setValidationCache] = useState<Record<string, ValidationInfo>>({});
+
   // Utilisateurs
   const [entries, setEntries] = useState<ProfileEntry[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -489,6 +494,38 @@ export default function AdminPage() {
       setRefusMotif('');
     } finally {
       setDossierSaving(null);
+    }
+  }
+
+  async function runAutoValidate(d: DossierEntry) {
+    const key = d.profileTableId ?? d.uid;
+    setValidationChecking(key);
+    try {
+      const res = await fetch('/api/admin/validate-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: d.uid,
+          adminUid: user?.uid,
+        }),
+      });
+      const json = await res.json() as { results?: { profileId: string; score: number; reasons: string[]; autoValidated: boolean; skipped?: boolean }[] };
+      const result = json.results?.[0];
+      if (result && !result.skipped) {
+        setValidationCache(prev => ({ ...prev, [key]: { score: result.score, reasons: result.reasons, autoValidated: result.autoValidated } }));
+        if (result.autoValidated) {
+          // Retirer du dossier en attente
+          setDossiers(prev => prev.filter(x =>
+            d.isSecondary ? x.profileTableId !== d.profileTableId : (x.isSecondary || x.uid !== d.uid)
+          ));
+          setStats(prev => prev ? { ...prev, profilsEnAttente: Math.max(0, prev.profilsEnAttente - 1) } : prev);
+          if (selectedDossier?.uid === d.uid) setSelectedDossier(null);
+        }
+      }
+    } catch {
+      alert('Erreur lors de la vérification automatique');
+    } finally {
+      setValidationChecking(null);
     }
   }
 
@@ -1057,6 +1094,15 @@ export default function AdminPage() {
                       {d.createdAt && (
                         <p className="text-xs text-gray-400 mb-3">Déposé le {new Date(d.createdAt).toLocaleDateString('fr-FR')}</p>
                       )}
+                      <div className="flex gap-1.5 mb-2">
+                        <button
+                          onClick={e => { e.stopPropagation(); runAutoValidate(d); }}
+                          disabled={validationChecking === (d.isSecondary ? d.profileTableId : d.uid) || dossierSaving === (d.isSecondary ? d.profileTableId : d.uid)}
+                          className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white text-xs font-semibold py-2 rounded-xl transition-colors"
+                          style={{ fontFamily: 'Galey, sans-serif' }}>
+                          {validationChecking === (d.isSecondary ? d.profileTableId : d.uid) ? '⏳ Vérif…' : '🔍 Vérifier auto'}
+                        </button>
+                      </div>
                       <div className="flex gap-2">
                         <button
                           onClick={e => { e.stopPropagation(); approveDossier(d); }}
@@ -1073,6 +1119,19 @@ export default function AdminPage() {
                           ❌ Refuser
                         </button>
                       </div>
+                      {validationCache[d.isSecondary ? (d.profileTableId ?? d.uid) : d.uid] && (() => {
+                        const vr = validationCache[d.isSecondary ? (d.profileTableId ?? d.uid) : d.uid];
+                        return (
+                          <div className={`mt-2 rounded-xl p-2 text-xs ${vr.autoValidated ? 'bg-green-50 border border-green-200' : 'bg-orange-50 border border-orange-200'}`}>
+                            <p className="font-semibold mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+                              {vr.autoValidated ? `✅ Auto-validé (${Math.round(vr.score * 100)}/100)` : `⚠️ Revue requise (${Math.round(vr.score * 100)}/100)`}
+                            </p>
+                            <ul className="space-y-0.5 text-gray-600">
+                              {vr.reasons.map((r, i) => <li key={i}>{r}</li>)}
+                            </ul>
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>
@@ -1649,6 +1708,21 @@ export default function AdminPage() {
                 )}
               </Section>
 
+              {/* ── Résultat vérification automatique ── */}
+              {validationCache[selectedDossier.isSecondary ? (selectedDossier.profileTableId ?? selectedDossier.uid) : selectedDossier.uid] && (() => {
+                const vr = validationCache[selectedDossier.isSecondary ? (selectedDossier.profileTableId ?? selectedDossier.uid) : selectedDossier.uid];
+                return (
+                  <div className={`rounded-xl p-3 text-xs ${vr.autoValidated ? 'bg-green-50 border border-green-200' : 'bg-orange-50 border border-orange-200'}`}>
+                    <p className="font-bold mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      {vr.autoValidated ? `✅ Vérification réussie (${Math.round(vr.score * 100)}/100)` : `⚠️ Vérification échouée — revue manuelle (${Math.round(vr.score * 100)}/100)`}
+                    </p>
+                    <ul className="space-y-1 text-gray-700">
+                      {vr.reasons.map((r, i) => <li key={i}>{r}</li>)}
+                    </ul>
+                  </div>
+                );
+              })()}
+
               {selectedDossier.rejectionReason ? (
                 <button
                   onClick={() => reconsiderDossier(selectedDossier)}
@@ -1658,22 +1732,31 @@ export default function AdminPage() {
                   {dossierSaving === selectedDossier.uid ? '…' : '↩ Reconsidérer le dossier'}
                 </button>
               ) : (
-                <div className="flex gap-3 pt-2">
+                <>
                   <button
-                    onClick={() => approveDossier(selectedDossier)}
-                    disabled={dossierSaving === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid)}
-                    className="flex-1 bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+                    onClick={() => runAutoValidate(selectedDossier)}
+                    disabled={validationChecking === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid) || dossierSaving === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid)}
+                    className="w-full bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors mb-2"
                     style={{ fontFamily: 'Galey, sans-serif' }}>
-                    {dossierSaving === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid) ? '…' : '✅ Valider le dossier'}
+                    {validationChecking === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid) ? '⏳ Vérification SIRET/RNA en cours…' : '🔍 Vérifier automatiquement (SIRET/RNA)'}
                   </button>
-                  <button
-                    onClick={() => setShowRefusModal(true)}
-                    disabled={dossierSaving === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid)}
-                    className="flex-1 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 text-sm font-semibold py-2.5 rounded-xl transition-colors"
-                    style={{ fontFamily: 'Galey, sans-serif' }}>
-                    ❌ Refuser
-                  </button>
-                </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => approveDossier(selectedDossier)}
+                      disabled={dossierSaving === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid)}
+                      className="flex-1 bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+                      style={{ fontFamily: 'Galey, sans-serif' }}>
+                      {dossierSaving === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid) ? '…' : '✅ Forcer la validation'}
+                    </button>
+                    <button
+                      onClick={() => setShowRefusModal(true)}
+                      disabled={dossierSaving === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid)}
+                      className="flex-1 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 text-sm font-semibold py-2.5 rounded-xl transition-colors"
+                      style={{ fontFamily: 'Galey, sans-serif' }}>
+                      ❌ Refuser
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           </div>
