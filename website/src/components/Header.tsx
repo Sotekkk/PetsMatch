@@ -27,6 +27,7 @@ interface UserProfile {
   id: string;
   profile_type: string;
   profile_label: string | null;
+  nom: string | null;
   avatar_url: string | null;
   name_elevage: string | null;
   cat_pro: string | null;
@@ -344,13 +345,15 @@ function typeLabel(type: string): string {
     association:      'Association',
     eleveur:          'Éleveur',
     veterinaire:      'Vétérinaire',
-    sante:            'Santé animale',
+    para_medical:     'Para-médical',
     education:        'Éducation',
-    garde:            'Garde',
+    petsitter:        'Pet-sitter',
     pension:          'Pension',
-    toilettage:       'Toilettage',
+    promeneur:        'Promeneur',
     photographe:      'Photographe',
     marechal_ferrant: 'Maréchal-ferrant',
+    petfriendly:      'Lieu Pet-Friendly',
+    partenaire:       'Partenaire',
   } as Record<string, string>)[type] ?? 'Profil';
 }
 
@@ -360,13 +363,15 @@ function typeEmoji(type: string): string {
     association:      '🐾',
     eleveur:          '🐾',
     veterinaire:      '🏥',
-    sante:            '💆',
+    para_medical:     '💆',
     education:        '🧠',
-    garde:            '🏠',
+    petsitter:        '🏠',
     pension:          '🏨',
-    toilettage:       '✂️',
+    promeneur:        '🚶',
     photographe:      '📷',
     marechal_ferrant: '🔨',
+    petfriendly:      '📍',
+    partenaire:       '🤝',
   } as Record<string, string>)[type] ?? '👤';
 }
 
@@ -509,7 +514,7 @@ export default function Header() {
   const primaryAvatar = userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
 
   const effectiveDisplayName = activeProfile
-    ? (activeProfile.profile_label ?? activeProfile.name_elevage ?? primaryDisplayName)
+    ? (activeProfile.nom ?? activeProfile.profile_label ?? activeProfile.name_elevage ?? primaryDisplayName)
     : primaryDisplayName;
   const effectiveAvatar = activeProfile?.avatar_url ?? primaryAvatar;
 
@@ -567,7 +572,7 @@ export default function Header() {
 
     supabase
       .from('user_profiles')
-      .select('id, profile_type, profile_label, avatar_url, name_elevage, cat_pro')
+      .select('id, profile_type, profile_label, nom, avatar_url, name_elevage, cat_pro')
       .eq('uid', user.uid)
       .then(({ data }) => {
         const rows = (data ?? []) as UserProfile[];
@@ -726,7 +731,7 @@ export default function Header() {
             <p className={`text-sm truncate ${!activeProfileId ? 'font-bold text-[#1F2A2E]' : 'font-medium text-gray-700'}`}>
               {primaryDisplayName}
             </p>
-            <p className="text-xs text-gray-400">{typeLabel(userData?.isElevage ? (userData?.catPro || (userData?.isPro ? 'sante' : 'eleveur')) : 'particulier')}</p>
+            <p className="text-xs text-gray-400">{typeLabel(userData?.profileType ?? 'particulier')}</p>
           </div>
         </button>
 
@@ -750,7 +755,7 @@ export default function Header() {
             </div>
             <div className="min-w-0 flex-1">
               <p className={`text-sm truncate ${activeProfileId === p.id ? 'font-bold text-[#1F2A2E]' : 'font-medium text-gray-700'}`}>
-                {p.profile_label ?? p.name_elevage ?? typeLabel(p.profile_type)}
+                {p.nom ?? p.profile_label ?? typeLabel(p.profile_type)}
               </p>
               <p className="text-xs text-gray-400">{typeLabel(p.profile_type)}</p>
             </div>

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
@@ -30,10 +29,16 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
   }
 
   Future<void> _loadProfiles() async {
+    // Utilise les profils déjà chargés au login si disponibles
+    if (User_Info.availableProfiles.isNotEmpty) {
+      if (mounted) setState(() { _profiles = User_Info.availableProfiles; _loading = false; });
+      return;
+    }
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
       final rows = await ProfileService.loadProfiles(uid);
+      User_Info.availableProfiles = rows;
       if (mounted) setState(() { _profiles = rows; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -46,7 +51,7 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
       (r) => r['id']?.toString() == User_Info.activeProfileId,
       orElse: () => {},
     );
-    return p['profile_label']?.toString() ?? User_Info.primaryLabel;
+    return p['nom']?.toString() ?? p['profile_label']?.toString() ?? User_Info.primaryLabel;
   }
 
   String get _currentAvatar {
@@ -73,13 +78,15 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
     'eleveur'          => 'Éleveur',
     'association'      => 'Association',
     'veterinaire'      => 'Vétérinaire',
-    'sante'            => 'Santé animale',
+    'para_medical'     => 'Para-médical',
     'education'        => 'Éducation',
-    'garde'            => 'Garde',
+    'petsitter'        => 'Pet-sitter',
     'pension'          => 'Pension',
-    'toilettage'       => 'Toilettage',
+    'promeneur'        => 'Promeneur',
     'photographe'      => 'Photographe',
     'marechal_ferrant' => 'Maréchal-ferrant',
+    'petfriendly'      => 'Lieu Pet-Friendly',
+    'partenaire'       => 'Partenaire',
     _                  => 'Profil',
   };
 
@@ -88,28 +95,32 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
     'eleveur'          => Icons.pets,
     'association'      => Icons.favorite_outline,
     'veterinaire'      => Icons.local_hospital_outlined,
-    'sante'            => Icons.self_improvement_outlined,
+    'para_medical'     => Icons.self_improvement_outlined,
     'education'        => Icons.psychology_outlined,
-    'garde'            => Icons.home_outlined,
+    'petsitter'        => Icons.home_outlined,
     'pension'          => Icons.hotel_outlined,
-    'toilettage'       => Icons.content_cut,
+    'promeneur'        => Icons.directions_walk_outlined,
     'photographe'      => Icons.camera_alt_outlined,
     'marechal_ferrant' => Icons.handyman_outlined,
+    'petfriendly'      => Icons.place_outlined,
+    'partenaire'       => Icons.handshake_outlined,
     _                  => Icons.account_circle_outlined,
   };
 
   Future<void> _switchToProfile(Map<String, dynamic>? profile) async {
-    Navigator.pop(context); // ferme le bottom sheet
+    Navigator.pop(context);
 
     if (profile == null) {
-      // Retour au profil principal
+      // Retour au profil principal (is_main=true dans availableProfiles)
       if (User_Info.activeProfileId.isEmpty) return;
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null) return;
-      try {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-        if (doc.exists) User_Info.updateUserInfo(doc.data()!);
-      } catch (_) {}
+      final main = User_Info.availableProfiles.firstWhere(
+        (p) => p['is_main'] == true,
+        orElse: () => User_Info.availableProfiles.isNotEmpty
+            ? User_Info.availableProfiles.first
+            : <String, dynamic>{},
+      );
+      if (main.isEmpty) return;
+      User_Info.applyProfile(main);
     } else {
       final id = profile['id']?.toString() ?? '';
       if (User_Info.activeProfileId == id) return;
@@ -312,7 +323,7 @@ class _SwitcherSheet extends StatelessWidget {
                 final id = p['id']?.toString() ?? '';
                 final type = p['profile_type']?.toString() ?? '';
                 return _ProfileRow(
-                  label: p['profile_label']?.toString() ?? typeLabel(type),
+                  label: p['nom']?.toString() ?? p['profile_label']?.toString() ?? typeLabel(type),
                   sublabel: typeLabel(type),
                   icon: typeIcon(type),
                   avatarUrl: p['avatar_url']?.toString() ?? '',
