@@ -16,14 +16,9 @@ const firebaseConfig = {
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
-// Firebase App Check (anti-bot / anti-abus)
-if (typeof window !== 'undefined') {
+// Firebase App Check — production uniquement (le token debug cause des 400 en local)
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'production') {
   const appCheckKey = process.env.NEXT_PUBLIC_FIREBASE_APP_CHECK_KEY;
-  if (process.env.NODE_ENV !== 'production') {
-    // Active le token de debug en dev (à whitelister dans la Firebase Console)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
-  }
   if (appCheckKey) {
     initializeAppCheck(app, {
       provider: new ReCaptchaV3Provider(appCheckKey),

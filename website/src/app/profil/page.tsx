@@ -1327,7 +1327,7 @@ export default function ProfilPage() {
     const errs: string[] = [];
     if (!firstname.trim()) errs.push('Prénom requis');
     if (!lastname.trim()) errs.push('Nom requis');
-    if (!dob) errs.push('Date de naissance requise');
+    if (isEleveur && !dob) errs.push('Date de naissance requise');
     if (isEleveur) {
       if (!nameElevage.trim()) errs.push("Nom de l'élevage requis");
       if (!phoneElevage.trim()) errs.push("Téléphone de l'élevage requis");
@@ -1496,9 +1496,11 @@ export default function ProfilPage() {
         if (payload.banner_url) firestoreUpdate.bannerUrl = payload.banner_url as string;
         await updateDoc(doc(db, 'users', user!.uid), firestoreUpdate);
       } catch { /* doc may not exist yet, ignore */ }
-      await updateProfile(user!, {
-        displayName: isEleveur ? nameElevage : `${firstname} ${lastname}`.trim(),
-      });
+      try {
+        await updateProfile(user!, {
+          displayName: isEleveur ? nameElevage : `${firstname} ${lastname}`.trim(),
+        });
+      } catch { /* non bloquant — App Check ou réseau */ }
       await refreshUserData();
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
