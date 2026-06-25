@@ -318,7 +318,45 @@ FROM users u
 WHERE NOT EXISTS (
   SELECT 1 FROM user_profiles up
   WHERE up.uid = u.uid AND up.is_main = TRUE
-);
+)
+ON CONFLICT (uid, profile_type) DO UPDATE SET
+  is_main          = TRUE,
+  nom              = COALESCE(EXCLUDED.nom,              user_profiles.nom),
+  firstname        = COALESCE(EXCLUDED.firstname,        user_profiles.firstname),
+  lastname         = COALESCE(EXCLUDED.lastname,         user_profiles.lastname),
+  phone_number     = COALESCE(EXCLUDED.phone_number,     user_profiles.phone_number),
+  email_contact    = COALESCE(EXCLUDED.email_contact,    user_profiles.email_contact),
+  avatar_url       = COALESCE(EXCLUDED.avatar_url,       user_profiles.avatar_url),
+  profile_picture_url_pro = COALESCE(EXCLUDED.profile_picture_url_pro, user_profiles.profile_picture_url_pro),
+  adresse          = COALESCE(EXCLUDED.adresse,          user_profiles.adresse),
+  rue              = COALESCE(EXCLUDED.rue,              user_profiles.rue),
+  ville            = COALESCE(EXCLUDED.ville,            user_profiles.ville),
+  code_postal      = COALESCE(EXCLUDED.code_postal,      user_profiles.code_postal),
+  pays             = COALESCE(EXCLUDED.pays,             user_profiles.pays),
+  lat              = COALESCE(EXCLUDED.lat,              user_profiles.lat),
+  lng              = COALESCE(EXCLUDED.lng,              user_profiles.lng),
+  rue_pro          = COALESCE(EXCLUDED.rue_pro,          user_profiles.rue_pro),
+  ville_pro        = COALESCE(EXCLUDED.ville_pro,        user_profiles.ville_pro),
+  code_postal_pro  = COALESCE(EXCLUDED.code_postal_pro,  user_profiles.code_postal_pro),
+  pays_pro         = COALESCE(EXCLUDED.pays_pro,         user_profiles.pays_pro),
+  instagram        = COALESCE(EXCLUDED.instagram,        user_profiles.instagram),
+  facebook         = COALESCE(EXCLUDED.facebook,         user_profiles.facebook),
+  site_web         = COALESCE(EXCLUDED.site_web,         user_profiles.site_web),
+  is_validate      = EXCLUDED.is_validate,
+  statut_pro       = COALESCE(EXCLUDED.statut_pro,       user_profiles.statut_pro),
+  rejection_reason = COALESCE(EXCLUDED.rejection_reason, user_profiles.rejection_reason),
+  siret            = COALESCE(EXCLUDED.siret,            user_profiles.siret),
+  kbis_url         = COALESCE(EXCLUDED.kbis_url,         user_profiles.kbis_url),
+  acaced           = COALESCE(EXCLUDED.acaced,           user_profiles.acaced),
+  acaced_date_obtention = COALESCE(EXCLUDED.acaced_date_obtention, user_profiles.acaced_date_obtention),
+  acaced_doc_url   = COALESCE(EXCLUDED.acaced_doc_url,   user_profiles.acaced_doc_url),
+  numero_elevage   = COALESCE(EXCLUDED.numero_elevage,   user_profiles.numero_elevage),
+  especes_elevees  = COALESCE(EXCLUDED.especes_elevees,  user_profiles.especes_elevees),
+  especes_acceptees = COALESCE(EXCLUDED.especes_acceptees, user_profiles.especes_acceptees),
+  date_of_birth    = COALESCE(EXCLUDED.date_of_birth,    user_profiles.date_of_birth),
+  fcm_token        = COALESCE(EXCLUDED.fcm_token,        user_profiles.fcm_token),
+  apns_token       = COALESCE(EXCLUDED.apns_token,       user_profiles.apns_token),
+  is_premium       = EXCLUDED.is_premium;
 
 -- ─── ÉTAPE 4 : Profil particulier secondaire pour tous les pros
 
@@ -351,12 +389,7 @@ WHERE (
   OR COALESCE(u.is_association, FALSE)
   OR COALESCE(u.is_pro, FALSE)
 )
-AND NOT EXISTS (
-  SELECT 1 FROM user_profiles up
-  WHERE up.uid = u.uid
-    AND up.profile_type = 'particulier'
-    AND up.is_main = FALSE
-);
+ON CONFLICT (uid, profile_type) DO NOTHING;
 
 -- ─── ÉTAPE 5 : Relier users.profile_id au profil principal ──
 
