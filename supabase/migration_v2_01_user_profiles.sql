@@ -275,10 +275,7 @@ SELECT
   COALESCE(u.especes_elevees, '[]'),
   NULL,                             -- especes_accueil (spécifique association)
   NULL,                             -- capacite_accueil
-  CASE
-    WHEN u.especes_acceptees IS NOT NULL THEN to_jsonb(u.especes_acceptees)
-    ELSE NULL
-  END,
+  u.especes_acceptees,
   u.date_of_birth,
   u.fcm_token,
   u.apns_token,
