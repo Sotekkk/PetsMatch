@@ -17,8 +17,8 @@ export default function EnAttenteValidationPage() {
     if (!user) { router.replace('/connexion'); return; }
     // Already approved → back to home
     if (userData?.isValidate) { router.replace('/'); return; }
-    // Not an éleveur/pro → no validation needed
-    if (!userData?.isElevage && !userData?.isPro) { router.replace('/'); return; }
+    // Not an éleveur/pro/association → no validation needed
+    if (!userData?.isElevage && !userData?.isPro && !userData?.isAssociation) { router.replace('/'); return; }
   }, [user, userData, loading, router]);
 
   if (loading || !userData) {
