@@ -42,10 +42,10 @@ export default function AssociationLayout({ children }: { children: React.ReactN
     Promise.all([
       supabase.from('users').select('is_association, name_elevage, firstname, lastname').eq('uid', user.uid).single(),
       activeProfileId
-        ? supabase.from('user_profiles').select('profile_type, profile_label, name_elevage').eq('id', activeProfileId).single()
+        ? supabase.from('user_profiles').select('profile_type, nom').eq('id', activeProfileId).single()
         : Promise.resolve({ data: null }),
     ]).then(([{ data }, { data: secProfile }]) => {
-      // Accès autorisé si compte primaire association OU profil secondaire association actif
+      // Accès autorisé si compte primaire association OU profil actif de type association
       const secIsAsso = secProfile && (secProfile as { profile_type: string }).profile_type === 'association';
       if (!data?.is_association && !secIsAsso) {
         setIsAssociation(false);
@@ -53,7 +53,7 @@ export default function AssociationLayout({ children }: { children: React.ReactN
       }
       setIsAssociation(true);
       const label = secIsAsso
-        ? ((secProfile as { profile_label?: string; name_elevage?: string }).profile_label ?? (secProfile as { name_elevage?: string }).name_elevage ?? '')
+        ? ((secProfile as { nom?: string }).nom ?? '')
         : '';
       setNomAsso(label || (data as { name_elevage?: string; firstname?: string; lastname?: string } | null)?.name_elevage || `${(data as { firstname?: string } | null)?.firstname ?? ''} ${(data as { lastname?: string } | null)?.lastname ?? ''}`.trim());
     });
