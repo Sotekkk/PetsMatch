@@ -840,6 +840,7 @@ class _BabyCardState extends State<_BabyCard> {
             'body': 'Quelqu\'un a aimé un bébé de votre portée',
             'data': {'annonceId': widget.annonceId, 'bebeIndex': widget.bebeIndex},
             'read': false,
+            if (User_Info.activeProfileId.isNotEmpty) 'sender_profile_id': User_Info.activeProfileId,
           });
         }
       }

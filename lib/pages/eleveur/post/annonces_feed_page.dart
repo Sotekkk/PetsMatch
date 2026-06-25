@@ -456,6 +456,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
             'body': '$name a aimé "${item.nom}"',
             'data': {'annonceId': item.annonceId, 'bebeIndex': item.bebeIndex, 'fromUid': uid},
             'read': false,
+            if (User_Info.activeProfileId.isNotEmpty) 'sender_profile_id': User_Info.activeProfileId,
           });
           // Push via Firebase Cloud Functions (même infra que les alertes)
           unawaited(FirebaseFunctions.instanceFor(region: 'europe-west1')

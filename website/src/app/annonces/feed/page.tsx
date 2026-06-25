@@ -414,6 +414,7 @@ export default function FeedPage() {
           body: `${likerName} a aimé "${item.nom}"`,
           data: { annonceId: item.annonceId, bebeIndex: item.bebeIndex, fromUid: user!.uid },
           read: false,
+          ...(activeProfileId ? { sender_profile_id: activeProfileId } : {}),
         });
         // Push notification via Firebase Cloud Functions (même infra que les alertes perdus)
         httpsCallable(functions, 'sendLikeNotification')({

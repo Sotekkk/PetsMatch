@@ -154,6 +154,7 @@ export default function AnnoncesPage() {
             body: 'Quelqu\'un a aimé votre annonce',
             data: { annonceId, bebeIndex },
             read: false,
+            ...(activeProfileId ? { sender_profile_id: activeProfileId } : {}),
           }).then(() => {});
         }
       }
