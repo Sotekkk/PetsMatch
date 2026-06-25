@@ -4,15 +4,17 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from './firebase';
 import { supabase } from './supabase';
+import { ACTIVE_PROFILE_KEY, ACTIVE_PROFILE_TYPE_KEY, PROFILE_CHANGE_EVENT } from '@/hooks/useActiveProfile';
 
 export interface UserData {
   firstname?: string;
   lastname?: string;
   isElevage?: boolean;
   isAssociation?: boolean;
+  isPro?: boolean;
+  profileType?: string;
   rna?: string;
   isValidate?: boolean;
-  isPro?: boolean;
   catPro?: string;
   nameElevage?: string;
   ville?: string;
@@ -57,8 +59,32 @@ export interface UserData {
   numeroTva?: string;
 }
 
-// Supabase snake_case → web camelCase
-function mapUser(d: Record<string, unknown>): UserData {
+export interface Profile {
+  id: string;
+  uid: string;
+  profile_type: string | null;
+  is_main: boolean;
+  nom: string | null;
+  firstname: string | null;
+  lastname: string | null;
+  avatar_url: string | null;
+  profile_picture_url_pro: string | null;
+  statut_pro: string | null;
+  is_validate: boolean | null;
+  ville: string | null;
+  ville_pro: string | null;
+  [key: string]: unknown;
+}
+
+const PRO_TYPES = new Set([
+  'veterinaire', 'para_medical', 'education', 'petsitter',
+  'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+]);
+
+// Supabase user_profiles snake_case → web camelCase
+function mapProfile(d: Record<string, unknown>): UserData {
+  const type = (d.profile_type as string | undefined) ?? '';
+
   const especesElevees = (d.especes_elevees as { espece: string; races?: string[] }[] | undefined) ?? [];
   const dogBreeds = (d.dog_breeds as string[] | undefined) ?? [];
   const catBreeds = (d.cat_breeds as string[] | undefined) ?? [];
@@ -69,35 +95,46 @@ function mapUser(d: Record<string, unknown>): UserData {
         ...(d.is_dog ? ['Chien'] : []),
         ...(d.is_cat ? ['Chat'] : []),
       ];
-
   const races = especesElevees.length > 0
     ? [...new Set(especesElevees.flatMap(e => e.races ?? []))]
     : [...new Set([...dogBreeds, ...catBreeds])];
 
+  // nom = colonne renommée depuis name_elevage en V2
+  const nameElevage = (d.nom as string | undefined)
+    ?? (d.name_elevage as string | undefined);
+
+  // Adresse perso
+  const ville      = (d.ville as string | undefined);
+  const codePostal = (d.code_postal as string | undefined);
+  // Adresse pro (suffixe _pro ajouté en V2)
+  const villePro      = (d.ville_pro as string | undefined) ?? ville;
+  const codePostalPro = (d.code_postal_pro as string | undefined) ?? codePostal;
+
   return {
     firstname:             d.firstname as string | undefined,
     lastname:              d.lastname as string | undefined,
-    isElevage:             d.is_elevage as boolean | undefined,
-    isAssociation:         d.is_association as boolean | undefined,
+    profileType:           type || undefined,
+    isElevage:             type === 'eleveur',
+    isAssociation:         type === 'association',
+    isPro:                 PRO_TYPES.has(type),
     rna:                   d.rna as string | undefined,
     isValidate:            d.is_validate as boolean | undefined,
-    isPro:                 d.is_pro as boolean | undefined,
-    catPro:                d.cat_pro as string | undefined,
-    nameElevage:           d.name_elevage as string | undefined,
-    ville:                 d.ville as string | undefined,
-    codePostal:            d.code_postal as string | undefined,
+    catPro:                d.cat_pro as string | undefined ?? (PRO_TYPES.has(type) ? type : undefined),
+    nameElevage,
+    ville,
+    codePostal,
     departement:           d.departement as string | undefined,
     region:                d.region as string | undefined,
     dob:                   d.date_of_birth as string | undefined,
-    villeElevage:          d.ville_elevage as string | undefined,
-    codePostalElevage:     d.code_postal_elevage as string | undefined,
-    paysElevage:           d.pays_elevage as string | undefined,
-    adressElevage:         d.adress_elevage as string | undefined,
-    rueElevage:            d.rue_elevage as string | undefined,
-    profilePictureUrl:     d.profile_picture_url as string | undefined,
-    profilePictureUrlElevage: d.profile_picture_url_elevage as string | undefined,
-    descriptionElevage:    d.desc_entreprise as string | undefined,
-    descEntreprise:        d.desc_entreprise as string | undefined,
+    villeElevage:          villePro,
+    codePostalElevage:     codePostalPro,
+    paysElevage:           (d.pays_pro as string | undefined) ?? (d.pays as string | undefined),
+    adressElevage:         (d.rue_pro as string | undefined) ?? (d.rue as string | undefined),
+    rueElevage:            (d.rue_pro as string | undefined) ?? (d.rue as string | undefined),
+    profilePictureUrl:     (d.avatar_url as string | undefined),
+    profilePictureUrlElevage: (d.profile_picture_url_pro as string | undefined) ?? (d.avatar_url as string | undefined),
+    descriptionElevage:    d.description as string | undefined,
+    descEntreprise:        d.description as string | undefined,
     phone:                 d.phone_number as string | undefined,
     siret:                 d.siret as string | undefined,
     numeroElevage:         d.numero_elevage as string | undefined,
@@ -117,7 +154,7 @@ function mapUser(d: Record<string, unknown>): UserData {
     cguAcceptedAt:         d.cgu_accepted_at as string | undefined,
     isPremium:             d.is_premium as boolean | undefined,
     kbisUrl:               d.kbis_url as string | undefined,
-    acacedDocUrl:          d.acaced_doc_url as string | undefined,
+    acacedDocUrl:          d.diplome_url as string | undefined,
     instagram:             d.instagram   as string | undefined,
     facebook:              d.facebook    as string | undefined,
     siteWeb:               d.site_web    as string | undefined,
@@ -131,6 +168,9 @@ interface AuthContextType {
   user: User | null;
   userData: UserData | null;
   loading: boolean;
+  availableProfiles: Profile[];
+  activeProfileId: string;
+  setActiveProfileId: (id: string) => void;
   refreshUserData: () => Promise<void>;
 }
 
@@ -138,22 +178,54 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   userData: null,
   loading: true,
+  availableProfiles: [],
+  activeProfileId: '',
+  setActiveProfileId: () => {},
   refreshUserData: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
+  const [availableProfiles, setAvailableProfiles] = useState<Profile[]>([]);
+  const [activeProfileId, setActiveProfileIdState] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
-  async function fetchUserData(uid: string) {
+  function setActiveProfileId(id: string) {
+    const profile = availableProfiles.find(p => p.id === id);
+    localStorage.setItem(ACTIVE_PROFILE_KEY, id);
+    localStorage.setItem(ACTIVE_PROFILE_TYPE_KEY, profile?.profile_type ?? '');
+    window.dispatchEvent(new Event(PROFILE_CHANGE_EVENT));
+    setActiveProfileIdState(id);
+    if (profile) setUserData(mapProfile(profile as unknown as Record<string, unknown>));
+  }
+
+  async function fetchProfiles(uid: string) {
     try {
       const { data } = await supabase
-        .from('users')
+        .from('user_profiles')
         .select('*')
         .eq('uid', uid)
-        .single();
-      setUserData(data ? mapUser(data as Record<string, unknown>) : null);
+        .order('is_main', { ascending: false })
+        .order('created_at', { ascending: true });
+
+      const profiles = (data ?? []) as Profile[];
+      setAvailableProfiles(profiles);
+
+      if (profiles.length === 0) { setUserData(null); return; }
+
+      // Profil actif : is_main=true en priorité, sinon le premier
+      const mainProfile = profiles.find(p => p.is_main) ?? profiles[0];
+
+      // Respecte un choix précédent stocké en localStorage (même session)
+      const storedId = localStorage.getItem(ACTIVE_PROFILE_KEY) ?? '';
+      const active = profiles.find(p => p.id === storedId) ?? mainProfile;
+
+      localStorage.setItem(ACTIVE_PROFILE_KEY, active.id);
+      localStorage.setItem(ACTIVE_PROFILE_TYPE_KEY, active.profile_type ?? '');
+      window.dispatchEvent(new Event(PROFILE_CHANGE_EVENT));
+      setActiveProfileIdState(active.id);
+      setUserData(mapProfile(active as unknown as Record<string, unknown>));
     } catch {
       setUserData(null);
     }
@@ -163,21 +235,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        await fetchUserData(u.uid);
+        await fetchProfiles(u.uid);
       } else {
         setUserData(null);
+        setAvailableProfiles([]);
+        setActiveProfileIdState('');
+        localStorage.removeItem(ACTIVE_PROFILE_KEY);
+        localStorage.removeItem(ACTIVE_PROFILE_TYPE_KEY);
       }
       setLoading(false);
     });
     return unsub;
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function refreshUserData() {
-    if (user) await fetchUserData(user.uid);
+    if (user) await fetchProfiles(user.uid);
   }
 
   return (
-    <AuthContext.Provider value={{ user, userData, loading, refreshUserData }}>
+    <AuthContext.Provider value={{
+      user, userData, loading,
+      availableProfiles, activeProfileId, setActiveProfileId,
+      refreshUserData,
+    }}>
       {children}
     </AuthContext.Provider>
   );
