@@ -56,6 +56,7 @@ interface Message {
   id: string;
   text: string;
   senderId: string;
+  sender_profile_id?: string;
   timestamp: Timestamp | null;
   isRead: boolean;
   imageUrl?: string;
@@ -243,6 +244,7 @@ function MessagesPageInner() {
         senderId: user.uid,
         timestamp: serverTimestamp(),
         isRead: false,
+        ...(activeProfileId ? { sender_profile_id: activeProfileId } : {}),
       });
       const conv = conversations.find(c => c.id === selectedId);
       const unread = { ...(conv?.unreadCount ?? {}) };

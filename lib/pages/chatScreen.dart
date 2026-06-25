@@ -78,11 +78,13 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendMessage(String text, String senderId, {String? imageUrl, double? lat, double? lng, String? alerteId}) async {
     if (text.trim().isEmpty && imageUrl == null && lat == null) return;
     final convRef = _conversations.doc(widget.conversationId);
+    final senderProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
     await convRef.collection('messages').add({
       'text': text,
       'senderId': senderId,
       'timestamp': FieldValue.serverTimestamp(),
       'isRead': false,
+      if (senderProfileId != null) 'sender_profile_id': senderProfileId,
       if (imageUrl != null) 'imageUrl': imageUrl,
       if (lat != null && lng != null) ...{'type': 'location', 'lat': lat, 'lng': lng},
       if (alerteId != null) 'alerteId': alerteId,
