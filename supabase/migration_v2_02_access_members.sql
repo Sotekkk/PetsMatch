@@ -281,10 +281,10 @@ CREATE INDEX IF NOT EXISTS idx_animaux_prop_profile ON animaux_proprietes (profi
 
 -- ─── 9. Colonnes profile_id sur tables agenda / tâches ──────
 
-ALTER TABLE agenda
+ALTER TABLE agenda_events
   ADD COLUMN IF NOT EXISTS profile_id UUID REFERENCES user_profiles(id) ON DELETE SET NULL;
 
-UPDATE agenda ag
+UPDATE agenda_events ag
 SET profile_id = up.id
 FROM user_profiles up
 WHERE up.uid = ag.uid
