@@ -111,10 +111,9 @@ ALTER TABLE user_profiles ADD CONSTRAINT user_profiles_profile_type_check
     'particulier','eleveur','association','veterinaire',
     'pension','education','petsitter','promeneur',
     'photographe','para_medical','marechal_ferrant',
-    'petfriendly','partenaire',
-    -- anciennes valeurs (compatibilité V1)
-    'educateur','comportementaliste','garde','veto','sante'
-  ));
+    'petfriendly','partenaire'
+  ))
+  NOT VALID;  -- s'applique aux nouvelles lignes seulement, pas aux données historiques
 
 -- Contrainte CHECK sur statut_pro (V1 + V2)
 ALTER TABLE user_profiles DROP CONSTRAINT IF EXISTS user_profiles_statut_pro_check;
@@ -132,13 +131,30 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profiles_main_per_uid
 
 UPDATE user_profiles
 SET profile_type = CASE
-  WHEN profile_type = 'educateur'         THEN 'education'
-  WHEN profile_type = 'comportementaliste' THEN 'education'
-  WHEN profile_type = 'veto'              THEN 'veterinaire'
-  WHEN profile_type = 'garde'             THEN 'petsitter'
+  WHEN profile_type IN ('educateur','comportementaliste','Éducateur','education canine') THEN 'education'
+  WHEN profile_type IN ('veto','Vétérinaire','veterinaire')                             THEN 'veterinaire'
+  WHEN profile_type IN ('garde','pet sitter','Pet Sitter','garde animaux')              THEN 'petsitter'
+  WHEN profile_type IN ('Santé animal','sante','santé','para médical','Para médical',
+                        'para-medical','paramédical','ostéopathie','osteopathie')       THEN 'para_medical'
+  WHEN profile_type IN ('elevage','Elevage','Élevage','éleveur')                        THEN 'eleveur'
+  WHEN profile_type IN ('association','Association','refuge','Refuge')                  THEN 'association'
+  WHEN profile_type IN ('pension','Pension','chenil','Chenil','chatterie')              THEN 'pension'
+  WHEN profile_type IN ('promeneur','Promeneur','dog walker')                           THEN 'promeneur'
+  WHEN profile_type IN ('photo','Photographe','photographe animalier')                  THEN 'photographe'
+  WHEN profile_type IN ('maréchal','marechal','Maréchal ferrant','marechal-ferrant')    THEN 'marechal_ferrant'
+  WHEN profile_type IN ('particulier','Particulier','particular')                       THEN 'particulier'
+  WHEN profile_type IN ('partenaire','Partenaire','partner')                            THEN 'partenaire'
+  WHEN profile_type IN ('petfriendly','pet-friendly','Pet-friendly','lieu')             THEN 'petfriendly'
+  -- Valeurs inconnues → NULL (seront ignorées ou à corriger manuellement)
+  WHEN profile_type NOT IN (
+    'particulier','eleveur','association','veterinaire',
+    'pension','education','petsitter','promeneur',
+    'photographe','para_medical','marechal_ferrant',
+    'petfriendly','partenaire'
+  )                                                                                     THEN NULL
   ELSE profile_type
 END
-WHERE profile_type IN ('educateur','comportementaliste','veto','garde');
+WHERE profile_type IS NOT NULL;
 
 -- ─── ÉTAPE 3 : Créer les profils principaux depuis users ─────
 -- Un profil is_main=TRUE par utilisateur
