@@ -320,7 +320,8 @@ export default function MesAnimauxPage() {
   }, [user, isEleveur]);
 
   useEffect(() => {
-    if (!user) return;
+    // Attendre que l'auth ET le profil actif soient chargés avant de requêter
+    if (!user || loading) return;
     setFetching(true);
     let cancelled = false;
 
@@ -417,7 +418,7 @@ export default function MesAnimauxPage() {
 
     loadAll().catch(() => { if (!cancelled) setFetching(false); });
     return () => { cancelled = true; };
-  }, [user, isEleveur, activeProfileId]);
+  }, [user, loading, isEleveur, activeProfileId]);
 
   async function deleteAnimal(id: string) {
     await supabase.from('animaux').delete().eq('id', id);
