@@ -329,11 +329,11 @@ class User_Info {
     if (ln.isNotEmpty) lastname = ln;
     final ph = p['phone']?.toString() ?? '';
     if (ph.isNotEmpty) phone_number = ph;
-    final av = p['avatar_url']?.toString() ?? '';
-    if (av.isNotEmpty) {
-      profilePictureUrl = av;
-      profilePictureUrlElevage = av;
-    }
+    final av    = p['avatar_url']?.toString() ?? '';
+    final avPro = p['profile_picture_url_pro']?.toString() ?? '';
+    if (av.isNotEmpty) profilePictureUrl = av;
+    // photo pro (logo élevage / cabinet) distincte de l'avatar personnel
+    profilePictureUrlElevage = avPro.isNotEmpty ? avPro : (av.isNotEmpty ? av : profilePictureUrlElevage);
 
     // Adresse pro (remplace les deux adresses)
     adress        = p['adresse']?.toString() ?? '';

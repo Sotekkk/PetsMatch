@@ -451,7 +451,7 @@ function getNotifUrl(n: Notif): string | null {
 // ── Composant Header ──────────────────────────────────────────────────────────
 
 export default function Header() {
-  const { user, userData, loading } = useAuth();
+  const { user, userData, loading, availableProfiles: authProfiles, activeProfileId: authActiveId, setActiveProfileId: authSetActiveId } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
@@ -459,18 +459,14 @@ export default function Header() {
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [pensionDialog, setPensionDialog] = useState<Notif | null>(null);
-  // Profile switching
-  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  // Profile switching — utilise directement les profils chargés par AuthContext
+  const profiles: UserProfile[] = authProfiles as unknown as UserProfile[];
   const [isFa, setIsFa] = useState(false);
   const [isEmploye, setIsEmploye] = useState(false);
   const [isBenevole, setIsBenevole] = useState(false);
-  // Lazy init: lit localStorage immédiatement pour éviter le flash du profil primaire
-  const [activeProfileId, setActiveProfileId] = useState<string>(() =>
-    typeof window !== 'undefined' ? (localStorage.getItem(ACTIVE_PROFILE_KEY) ?? '') : ''
-  );
-  const [cachedProfileType, setCachedProfileType] = useState<string | null>(() =>
-    typeof window !== 'undefined' ? localStorage.getItem(ACTIVE_PROFILE_TYPE_KEY) : null
-  );
+  const activeProfileId = authActiveId;
+  const cachedProfileType: string | null =
+    typeof window !== 'undefined' ? (localStorage.getItem(ACTIVE_PROFILE_TYPE_KEY) ?? null) : null;
   const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
@@ -567,54 +563,13 @@ export default function Header() {
       });
   }, [user]);
 
-  // ── Chargement des profils secondaires ────────────────────────────────────
-  useEffect(() => {
-    if (!user) { setProfiles([]); setActiveProfileId(''); setCachedProfileType(null); return; }
-
-    supabase
-      .from('user_profiles')
-      .select('id, profile_type, is_main, profile_label, nom, avatar_url, name_elevage, cat_pro')
-      .eq('uid', user.uid)
-      .then(({ data }) => {
-        const rows = (data ?? []) as UserProfile[];
-        setProfiles(rows);
-        // Lire localStorage au moment de la résolution (évite la stale-closure race)
-        const savedId = localStorage.getItem(ACTIVE_PROFILE_KEY) ?? '';
-        if (savedId) {
-          const match = rows.find(p => p.id === savedId);
-          if (match) {
-            setActiveProfileId(savedId);
-            setCachedProfileType(match.profile_type);
-            localStorage.setItem(ACTIVE_PROFILE_TYPE_KEY, match.profile_type);
-          } else {
-            // Profil introuvable → retour au profil primaire
-            setActiveProfileId('');
-            setCachedProfileType(null);
-            localStorage.removeItem(ACTIVE_PROFILE_KEY);
-            localStorage.removeItem(ACTIVE_PROFILE_TYPE_KEY);
-          }
-        }
-      });
-  }, [user]);
 
   function switchProfile(id: string | null) {
     const newId = id ?? '';
-    const targetProfile = profiles.find(p => p.id === newId);
-    const targetType = newId ? (targetProfile?.profile_type ?? null) : null;
+    const targetProfile = profiles.find(p => p.id === newId) ?? profiles.find(p => p.is_main);
+    const targetType = targetProfile?.profile_type ?? null;
 
-    // Persist ID + type AVANT la navigation pour que la nouvelle page les lise immédiatement
-    if (newId) {
-      localStorage.setItem(ACTIVE_PROFILE_KEY, newId);
-      if (targetType) localStorage.setItem(ACTIVE_PROFILE_TYPE_KEY, targetType);
-      else localStorage.removeItem(ACTIVE_PROFILE_TYPE_KEY);
-    } else {
-      localStorage.removeItem(ACTIVE_PROFILE_KEY);
-      localStorage.removeItem(ACTIVE_PROFILE_TYPE_KEY);
-    }
-
-    setActiveProfileId(newId);
-    setCachedProfileType(targetType);
-    window.dispatchEvent(new Event(PROFILE_CHANGE_EVENT));
+    authSetActiveId(newId || (targetProfile?.id ?? ''));
     setProfileSwitcherOpen(false);
     setDropdownOpen(false);
     setMenuOpen(false);
