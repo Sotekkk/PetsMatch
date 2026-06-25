@@ -193,30 +193,27 @@ INSERT INTO profile_members (
 )
 SELECT
   COALESCE(
-    (SELECT up.id FROM user_profiles up WHERE up.uid = e.uid AND up.is_main = TRUE LIMIT 1),
-    (SELECT up.id FROM user_profiles up WHERE up.uid = e.uid LIMIT 1)
+    (SELECT up.id FROM user_profiles up WHERE up.uid = e.uid_eleveur AND up.is_main = TRUE LIMIT 1),
+    (SELECT up.id FROM user_profiles up WHERE up.uid = e.uid_eleveur LIMIT 1)
   ) AS org_profile_id,
   COALESCE(
-    (SELECT up.id FROM user_profiles up WHERE up.uid = e.employee_uid AND up.is_main = TRUE LIMIT 1),
-    (SELECT up.id FROM user_profiles up WHERE up.uid = e.employee_uid LIMIT 1)
+    (SELECT up.id FROM user_profiles up WHERE up.uid = e.uid_employe AND up.is_main = TRUE LIMIT 1),
+    (SELECT up.id FROM user_profiles up WHERE up.uid = e.uid_employe LIMIT 1)
   ) AS member_profile_id,
-  COALESCE(
-    CASE e.role_employe
-      WHEN 'admin'    THEN 'manager'
-      WHEN 'manager'  THEN 'manager'
-      WHEN 'soigneur' THEN 'employe'
-      WHEN 'benevole' THEN 'benevole'
-      ELSE 'employe'
-    END,
-    'employe'
-  ) AS role,
-  COALESCE(e.permissions, ARRAY['read_animaux','read_agenda','write_taches']),
-  'actif',
-  COALESCE(e.created_at, NOW())
+  CASE e.type
+    WHEN 'admin'    THEN 'manager'
+    WHEN 'manager'  THEN 'manager'
+    WHEN 'soigneur' THEN 'employe'
+    WHEN 'benevole' THEN 'benevole'
+    ELSE 'employe'
+  END AS role,
+  ARRAY['read_animaux','read_agenda','write_taches'],
+  CASE WHEN COALESCE(e.actif, TRUE) THEN 'actif' ELSE 'inactif' END,
+  NOW()
 FROM employes e
-WHERE e.employee_uid IS NOT NULL
-  AND EXISTS (SELECT 1 FROM user_profiles up WHERE up.uid = e.uid)
-  AND EXISTS (SELECT 1 FROM user_profiles up WHERE up.uid = e.employee_uid)
+WHERE e.uid_employe IS NOT NULL
+  AND EXISTS (SELECT 1 FROM user_profiles up WHERE up.uid = e.uid_eleveur)
+  AND EXISTS (SELECT 1 FROM user_profiles up WHERE up.uid = e.uid_employe)
 ON CONFLICT (org_profile_id, member_profile_id) DO NOTHING;
 
 -- Migrer familles d'accueil (table familles_accueil)
