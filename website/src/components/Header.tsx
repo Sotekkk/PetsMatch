@@ -26,6 +26,7 @@ interface Notif {
 interface UserProfile {
   id: string;
   profile_type: string;
+  is_main: boolean;
   profile_label: string | null;
   nom: string | null;
   avatar_url: string | null;
@@ -572,7 +573,7 @@ export default function Header() {
 
     supabase
       .from('user_profiles')
-      .select('id, profile_type, profile_label, nom, avatar_url, name_elevage, cat_pro')
+      .select('id, profile_type, is_main, profile_label, nom, avatar_url, name_elevage, cat_pro')
       .eq('uid', user.uid)
       .then(({ data }) => {
         const rows = (data ?? []) as UserProfile[];
@@ -711,56 +712,43 @@ export default function Header() {
           </button>
         </div>
 
-        {/* Profil principal */}
-        <button
-          onClick={() => { switchProfile(null); onClose(); }}
-          className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white transition-colors text-left ${!activeProfileId ? 'bg-white' : ''}`}>
-          <div className="w-8 h-8 rounded-full overflow-hidden bg-[#6E9E57] flex items-center justify-center flex-shrink-0 relative">
-            {primaryAvatar ? (
-              <Image src={primaryAvatar} alt="" width={32} height={32} className="object-cover w-full h-full" />
-            ) : (
-              <span className="text-white text-xs font-bold">{(primaryDisplayName[0] ?? '?').toUpperCase()}</span>
-            )}
-            {!activeProfileId && (
-              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-[#6E9E57] rounded-full border-2 border-white flex items-center justify-center">
-                <span className="text-white text-[8px]">✓</span>
-              </span>
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className={`text-sm truncate ${!activeProfileId ? 'font-bold text-[#1F2A2E]' : 'font-medium text-gray-700'}`}>
-              {primaryDisplayName}
-            </p>
-            <p className="text-xs text-gray-400">{typeLabel(userData?.profileType ?? 'particulier')}</p>
-          </div>
-        </button>
-
-        {/* Profils secondaires */}
-        {profiles.map(p => (
-          <button
-            key={p.id}
-            onClick={() => { switchProfile(p.id); onClose(); }}
-            className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white transition-colors text-left ${activeProfileId === p.id ? 'bg-white' : ''}`}>
-            <div className="w-8 h-8 rounded-full overflow-hidden bg-[#DCE8D5] flex items-center justify-center flex-shrink-0 relative">
-              {p.avatar_url ? (
-                <Image src={p.avatar_url} alt="" width={32} height={32} className="object-cover w-full h-full" />
-              ) : (
-                <span className="text-[#6E9E57] text-sm">{typeEmoji(p.profile_type)}</span>
-              )}
-              {activeProfileId === p.id && (
-                <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-[#6E9E57] rounded-full border-2 border-white flex items-center justify-center">
-                  <span className="text-white text-[8px]">✓</span>
-                </span>
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className={`text-sm truncate ${activeProfileId === p.id ? 'font-bold text-[#1F2A2E]' : 'font-medium text-gray-700'}`}>
-                {p.nom ?? p.profile_label ?? typeLabel(p.profile_type)}
-              </p>
-              <p className="text-xs text-gray-400">{typeLabel(p.profile_type)}</p>
-            </div>
-          </button>
-        ))}
+        {/* Liste plate de tous les profils */}
+        {profiles.map(p => {
+          const isActive = activeProfileId === p.id || (!activeProfileId && p.is_main);
+          const displayName = p.nom ?? p.profile_label ?? typeLabel(p.profile_type);
+          return (
+            <button
+              key={p.id}
+              onClick={() => { switchProfile(p.id); onClose(); }}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white transition-colors text-left ${isActive ? 'bg-white' : ''}`}>
+              <div className="w-8 h-8 rounded-full overflow-hidden bg-[#DCE8D5] flex items-center justify-center flex-shrink-0 relative">
+                {p.avatar_url ? (
+                  <Image src={p.avatar_url} alt="" width={32} height={32} className="object-cover w-full h-full" />
+                ) : (
+                  <span className="text-[#6E9E57] text-sm">{typeEmoji(p.profile_type)}</span>
+                )}
+                {isActive && (
+                  <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-[#6E9E57] rounded-full border-2 border-white flex items-center justify-center">
+                    <span className="text-white text-[8px]">✓</span>
+                  </span>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <p className={`text-sm truncate ${isActive ? 'font-bold text-[#1F2A2E]' : 'font-medium text-gray-700'}`}>
+                    {displayName}
+                  </p>
+                  {p.is_main && (
+                    <span className="text-[10px] bg-[#EEF5EA] text-[#6E9E57] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0">
+                      Principal
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400">{typeEmoji(p.profile_type)} {typeLabel(p.profile_type)}</p>
+              </div>
+            </button>
+          );
+        })}
 
         {/* Ajouter un profil */}
         <Link href="/profil/ajouter"

@@ -107,26 +107,11 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
     _                  => Icons.account_circle_outlined,
   };
 
-  Future<void> _switchToProfile(Map<String, dynamic>? profile) async {
+  Future<void> _switchToProfile(Map<String, dynamic> profile) async {
     Navigator.pop(context);
-
-    if (profile == null) {
-      // Retour au profil principal (is_main=true dans availableProfiles)
-      if (User_Info.activeProfileId.isEmpty) return;
-      final main = User_Info.availableProfiles.firstWhere(
-        (p) => p['is_main'] == true,
-        orElse: () => User_Info.availableProfiles.isNotEmpty
-            ? User_Info.availableProfiles.first
-            : <String, dynamic>{},
-      );
-      if (main.isEmpty) return;
-      User_Info.applyProfile(main);
-    } else {
-      final id = profile['id']?.toString() ?? '';
-      if (User_Info.activeProfileId == id) return;
-      User_Info.applyProfile(profile);
-    }
-
+    final id = profile['id']?.toString() ?? '';
+    if (User_Info.activeProfileId == id) return;
+    User_Info.applyProfile(profile);
     if (mounted) {
       navigatorKey.currentState?.pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => BottomNav()),
@@ -147,9 +132,6 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
         profiles: _profiles,
         loading: _loading,
         activeProfileId: User_Info.activeProfileId,
-        primaryLabel: User_Info.primaryLabel,
-        primaryType: User_Info.primaryType,
-        primaryAvatar: User_Info.primaryAvatar,
         onSelect: _switchToProfile,
         onAddProfile: () {
           Navigator.pop(context);
@@ -254,10 +236,7 @@ class _SwitcherSheet extends StatelessWidget {
   final List<Map<String, dynamic>> profiles;
   final bool loading;
   final String activeProfileId;
-  final String primaryLabel;
-  final String primaryType;
-  final String primaryAvatar;
-  final void Function(Map<String, dynamic>?) onSelect;
+  final void Function(Map<String, dynamic>) onSelect;
   final VoidCallback onAddProfile;
   final void Function(String id) onDelete;
   final String Function(String) typeLabel;
@@ -267,9 +246,6 @@ class _SwitcherSheet extends StatelessWidget {
     required this.profiles,
     required this.loading,
     required this.activeProfileId,
-    required this.primaryLabel,
-    required this.primaryType,
-    required this.primaryAvatar,
     required this.onSelect,
     required this.onAddProfile,
     required this.onDelete,
@@ -303,16 +279,6 @@ class _SwitcherSheet extends StatelessWidget {
                   fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
             const SizedBox(height: 12),
 
-            // Profil principal
-            _ProfileRow(
-              label: primaryLabel.isNotEmpty ? primaryLabel : 'Profil principal',
-              sublabel: typeLabel(primaryType),
-              icon: typeIcon(primaryType),
-              avatarUrl: primaryAvatar,
-              isActive: activeProfileId.isEmpty,
-              onTap: () => onSelect(null),
-            ),
-
             if (loading)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
@@ -322,14 +288,16 @@ class _SwitcherSheet extends StatelessWidget {
               ...profiles.map((p) {
                 final id = p['id']?.toString() ?? '';
                 final type = p['profile_type']?.toString() ?? '';
+                final isMain = p['is_main'] == true;
                 return _ProfileRow(
                   label: p['nom']?.toString() ?? p['profile_label']?.toString() ?? typeLabel(type),
                   sublabel: typeLabel(type),
                   icon: typeIcon(type),
                   avatarUrl: p['avatar_url']?.toString() ?? '',
-                  isActive: activeProfileId == id,
+                  isActive: activeProfileId == id || (activeProfileId.isEmpty && isMain),
+                  isMain: isMain,
                   onTap: () => onSelect(p),
-                  onDelete: () => onDelete(id),
+                  onDelete: isMain ? null : () => onDelete(id),
                 );
               }),
 
@@ -366,6 +334,7 @@ class _ProfileRow extends StatelessWidget {
   final IconData icon;
   final String avatarUrl;
   final bool isActive;
+  final bool isMain;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
 
@@ -375,6 +344,7 @@ class _ProfileRow extends StatelessWidget {
     required this.icon,
     required this.avatarUrl,
     required this.isActive,
+    this.isMain = false,
     required this.onTap,
     this.onDelete,
   });
@@ -407,11 +377,26 @@ class _ProfileRow extends StatelessWidget {
             ),
         ],
       ),
-      title: Text(label,
+      title: Row(children: [
+        Flexible(child: Text(label,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontFamily: 'Galey',
             fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-          )),
+          ))),
+        if (isMain) ...[
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEEF5EA),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Text('Principal',
+              style: TextStyle(fontSize: 10, color: Color(0xFF6E9E57), fontFamily: 'Galey')),
+          ),
+        ],
+      ]),
       subtitle: Text(sublabel,
           style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
       trailing: onDelete != null
