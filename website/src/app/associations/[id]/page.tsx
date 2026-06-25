@@ -43,7 +43,7 @@ interface Animal {
 export default function AssociationProfilePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, activeProfileId } = useAuth();
   const [profile, setProfile] = useState<AssoProfile | null>(null);
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
   const [animaux, setAnimaux] = useState<Animal[]>([]);
@@ -114,12 +114,19 @@ export default function AssociationProfilePage() {
       if (!snap.empty) {
         convId = snap.docs[0].id;
       } else {
+        // Récupère le profil Supabase de l'association
+        const { data: proProfile } = await supabase
+          .from('user_profiles').select('id').eq('uid', id)
+          .order('is_main', { ascending: false }).limit(1).maybeSingle();
+
         const ref = await addDoc(collection(db, 'conversations'), {
           participants: [user.uid, id].sort(),
           participantIds,
           lastMessage: '',
           timestamp: serverTimestamp(),
           categorie: 'communaute',
+          ...(proProfile?.id ? { pro_profile_id: proProfile.id } : {}),
+          ...(activeProfileId ? { consumer_profile_id: activeProfileId } : {}),
         });
         convId = ref.id;
       }

@@ -27,12 +27,13 @@ type Tab = 'favoris' | 'likes';
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
-async function loadItems(userUid: string, table: Tab): Promise<SavedItem[]> {
-  const { data: rows } = await supabase
-    .from(table)
-    .select('annonce_id, bebe_index')
-    .eq('user_uid', userUid)
-    .order('created_at', { ascending: false });
+async function loadItems(userUid: string, table: Tab, activeProfileId: string | null, profileType: string): Promise<SavedItem[]> {
+  const base = supabase.from(table).select('annonce_id, bebe_index').eq('user_uid', userUid);
+  // Filtre par profile_id (précis) avec fallback sur données sans profile_id
+  const q = activeProfileId
+    ? base.or(`profile_id.eq.${activeProfileId},profile_id.is.null`)
+    : base.or(`profile_type.eq.${profileType},profile_type.is.null`);
+  const { data: rows } = await q.order('created_at', { ascending: false });
 
   if (!rows || rows.length === 0) return [];
 
@@ -131,11 +132,11 @@ export default function FavorisPage() {
     const isPrimary = !activeProfileId;
     if (t === 'likes') {
       setLoadingLikes(true);
-      const items = await loadItems(user.uid, 'likes');
+      const items = await loadItems(user.uid, 'likes', activeProfileId ?? null, profileType);
       setLikeItems(items); setLoadingLikes(false); setLoadedLikes(true);
     } else {
       setLoadingFavs(true);
-      const items = await loadItems(user.uid, 'favoris');
+      const items = await loadItems(user.uid, 'favoris', activeProfileId ?? null, profileType);
       setFavItems(items); setLoadingFavs(false); setLoadedFavs(true);
     }
   }

@@ -9,6 +9,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 
@@ -44,6 +45,7 @@ interface Conversation {
   unreadCount: Record<string, number>;
   categorie?: string;
   pro_profile_id?: string;
+  consumer_profile_id?: string;
   pinnedFor?: Record<string, boolean>;
   archivedFor?: Record<string, boolean>;
   mutedFor?: Record<string, number>;
@@ -96,6 +98,7 @@ function MessagesPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [userProfileIds, setUserProfileIds] = useState<string[]>([]);
   const userInfoCacheRef = useRef<Record<string, UserInfo>>({});
   const [, forceUpdate] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -119,6 +122,13 @@ function MessagesPageInner() {
     getDoc(doc(db, 'bloquer', user.uid)).then(snap => {
       if (snap.exists()) setBlockedUsers(Object.keys(snap.data() ?? {}));
     });
+  }, [user]);
+
+  // Charger tous les profile IDs de l'utilisateur (pour filtrer les conversations)
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('user_profiles').select('id').eq('uid', user.uid)
+      .then(({ data }) => { if (data) setUserProfileIds(data.map((r: { id: string }) => r.id)); });
   }, [user]);
 
   // ── Actions Firestore ─────────────────────────────────────────────────────
@@ -271,9 +281,18 @@ function MessagesPageInner() {
       if (others.some(p => blockedUsers.includes(p))) return false;
 
       if (activeProfileId) {
-        if ((conv.pro_profile_id ?? '') !== activeProfileId) return false;
+        // Profil secondaire actif : montrer convs où je suis le pro OU le consommateur avec ce profil
+        const isMePro      = conv.pro_profile_id === activeProfileId;
+        const isMeConsumer = conv.consumer_profile_id === activeProfileId;
+        // Fallback : ancienne conv sans tags → inclure si l'utilisateur est concerné
+        const isUntagged   = !conv.pro_profile_id && !conv.consumer_profile_id;
+        if (!isMePro && !isMeConsumer && !isUntagged) return false;
       } else {
-        if (conv.pro_profile_id) return false;
+        // Vue particulier (aucun profil secondaire actif) :
+        // cacher les convs taguées à l'un des profils secondaires de l'utilisateur
+        const proIsMyProfile      = conv.pro_profile_id && userProfileIds.includes(conv.pro_profile_id);
+        const consumerIsMyProfile = conv.consumer_profile_id && userProfileIds.includes(conv.consumer_profile_id);
+        if (proIsMyProfile || consumerIsMyProfile) return false;
       }
 
       const isArchived = conv.archivedFor?.[user.uid] === true;

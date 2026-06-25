@@ -507,6 +507,11 @@ export default function AnnonceDetailPage() {
     if (!user || !annonce?.uid_eleveur) { router.push('/connexion'); return; }
     setSending(true);
     try {
+      // Récupère le profil Supabase de l'éleveur pour taguer la conversation
+      const { data: proProfile } = await supabase
+        .from('user_profiles').select('id').eq('uid', annonce.uid_eleveur)
+        .order('is_main', { ascending: false }).limit(1).maybeSingle();
+
       const participants = [user.uid, annonce.uid_eleveur].sort();
       const convId = participants.join('_') + '_annonce_' + id;
       const titre = annonce.titre || annonce.race || annonce.espece || 'Annonce';
@@ -516,6 +521,8 @@ export default function AnnonceDetailPage() {
         timestamp: serverTimestamp(),
         unreadCount: { [annonce.uid_eleveur]: 1 },
         categorie: 'annonces',
+        ...(proProfile?.id ? { pro_profile_id: proProfile.id } : {}),
+        ...(activeProfileId ? { consumer_profile_id: activeProfileId } : {}),
       });
       await addDoc(collection(db, 'conversations', convId, 'messages'), {
         text: `Bonjour, je suis intéressé(e) par votre annonce : ${titre}`,
