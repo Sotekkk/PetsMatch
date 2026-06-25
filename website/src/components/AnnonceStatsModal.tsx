@@ -8,7 +8,7 @@ interface GeoStat  { departement: string; vues: number; }
 interface BebeStats { index: number; vues: number; favoris: number; }
 
 interface StatsData {
-  annonce: { titre?: string; espece?: string; race?: string; type?: string; photos?: string[]; created_at?: string; vues?: number; };
+  annonce: { titre?: string; espece?: string; race?: string; type?: string; type_vente?: string; photos?: string[]; created_at?: string; vues?: number; } | null;
   totalVues: number; totalContacts: number; totalFavoris: number;
   tauxConversion: number; tauxInteret: number; scoreAttractif: number;
   classement: { position: number; total: number } | null;
@@ -177,48 +177,55 @@ export default function AnnonceStatsModal({ annonceId, annonceTitle, isPremium, 
               </div>
             )}
 
-            {/* Chiots de la portée — FREE pour tous (stat différenciante PetsMatch) */}
-            {stats.portee.length > 0 && (() => {
-              const topVues = stats.portee[0];
-              const topFavoris = [...stats.portee].sort((a, b) => b.favoris - a.favoris)[0];
-              return (
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                  <p className="text-sm font-semibold text-[#1F2A2E] mb-3">🐾 Portée — podium</p>
-                  <div className="grid grid-cols-2 gap-3 mb-3">
-                    <div className="bg-amber-50 rounded-xl p-3 text-center">
-                      <p className="text-xs text-amber-600 font-semibold mb-1">🏆 Plus consulté</p>
-                      <p className="text-lg font-bold text-amber-700" style={{ fontFamily: 'Galey, sans-serif' }}>Chiot #{topVues.index + 1}</p>
-                      <p className="text-xs text-amber-500">👁️ {topVues.vues} vues</p>
-                    </div>
-                    <div className="bg-pink-50 rounded-xl p-3 text-center">
-                      <p className="text-xs text-pink-600 font-semibold mb-1">❤️ Plus aimé</p>
-                      <p className="text-lg font-bold text-pink-700" style={{ fontFamily: 'Galey, sans-serif' }}>Chiot #{topFavoris.index + 1}</p>
-                      <p className="text-xs text-pink-500">❤️ {topFavoris.favoris} favoris</p>
-                    </div>
+            {/* Chiots de la portée — visible dès que l'annonce est de type portée */}
+            {(stats.annonce?.type_vente === 'portee' || stats.portee.length > 0) && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                <p className="text-sm font-semibold text-[#1F2A2E] mb-3">🐾 Stats par chiot</p>
+                {stats.portee.length === 0 ? (
+                  <div className="text-center py-5">
+                    <p className="text-2xl mb-2">📊</p>
+                    <p className="text-sm font-medium text-gray-500">Les stats s'accumulent</p>
+                    <p className="text-xs text-gray-400 mt-1">Chaque visite sur un chiot est comptée automatiquement. Revenez après quelques visites !</p>
                   </div>
-                  {/* Classement complet → Premium */}
-                  {isPremium ? (
-                    <div className="space-y-1.5 border-t border-gray-100 pt-3">
-                      <p className="text-xs text-gray-400 mb-2">Classement complet</p>
-                      {stats.portee.slice(0, 8).map((b, i) => (
-                        <div key={b.index} className="flex items-center gap-3">
-                          <span className="text-xs font-bold text-gray-300 w-5">#{i + 1}</span>
-                          <span className="text-xs text-gray-600 flex-1">Chiot #{b.index + 1}</span>
-                          <div className="flex items-center gap-3 text-xs text-gray-400">
-                            <span>👁️ {b.vues}</span>
-                            <span>❤️ {b.favoris}</span>
-                          </div>
-                        </div>
-                      ))}
+                ) : (() => {
+                  const topVues = stats.portee[0];
+                  const topFavoris = [...stats.portee].sort((a, b) => b.favoris - a.favoris)[0];
+                  return (<>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div className="bg-amber-50 rounded-xl p-3 text-center">
+                        <p className="text-xs text-amber-600 font-semibold mb-1">🏆 Plus consulté</p>
+                        <p className="text-lg font-bold text-amber-700" style={{ fontFamily: 'Galey, sans-serif' }}>Chiot #{topVues.index + 1}</p>
+                        <p className="text-xs text-amber-500">👁️ {topVues.vues} vues</p>
+                      </div>
+                      <div className="bg-pink-50 rounded-xl p-3 text-center">
+                        <p className="text-xs text-pink-600 font-semibold mb-1">❤️ Plus aimé</p>
+                        <p className="text-lg font-bold text-pink-700" style={{ fontFamily: 'Galey, sans-serif' }}>Chiot #{topFavoris.index + 1}</p>
+                        <p className="text-xs text-pink-500">❤️ {topFavoris.favoris} favoris</p>
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-xs text-center text-gray-400 border-t border-gray-100 pt-3">
-                      👑 <span className="text-amber-600 font-medium">Premium</span> — classement complet + évolution par chiot
-                    </p>
-                  )}
-                </div>
-              );
-            })()}
+                    {isPremium ? (
+                      <div className="space-y-1.5 border-t border-gray-100 pt-3">
+                        <p className="text-xs text-gray-400 mb-2">Classement complet</p>
+                        {stats.portee.slice(0, 8).map((b, i) => (
+                          <div key={b.index} className="flex items-center gap-3">
+                            <span className="text-xs font-bold text-gray-300 w-5">#{i + 1}</span>
+                            <span className="text-xs text-gray-600 flex-1">Chiot #{b.index + 1}</span>
+                            <div className="flex items-center gap-3 text-xs text-gray-400">
+                              <span>👁️ {b.vues}</span>
+                              <span>❤️ {b.favoris}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-center text-gray-400 border-t border-gray-100 pt-3">
+                        👑 <span className="text-amber-600 font-medium">Premium</span> — classement complet + évolution par chiot
+                      </p>
+                    )}
+                  </>);
+                })()}
+              </div>
+            )}
 
             {/* Origine géographique (Premium) */}
             {isPremium && stats.geo.length > 0 && (
