@@ -401,9 +401,9 @@ export default function AdminPage() {
     setDossiersLoading(true);
     try {
       const [
-        { data: pendingPrimary },
-        { data: pendingSecondary },
-        { data: refusedPrimary },
+        { data: pendingPrimary, error: err1 },
+        { data: pendingSecondary, error: err2 },
+        { data: refusedPrimary, error: err3 },
       ] = await Promise.all([
         supabase
           .from('users')
@@ -412,7 +412,7 @@ export default function AdminPage() {
           .order('created_at', { ascending: true }),
         supabase
           .from('user_profiles')
-          .select('id, uid, profile_type, cat_pro, profession_pro, certifications, name_elevage, nom, siret, rna, firstname, lastname, kbis_url, acaced_doc_url, acaced, rejection_reason, created_at, is_validate, statut_pro')
+          .select('id, uid, profile_type, cat_pro, profession_pro, certifications, nom, siret, rna, firstname, lastname, kbis_url, acaced_doc_url, acaced, rejection_reason, created_at, is_validate, statut_pro')
           .not('profile_type', 'is', null)
           .neq('profile_type', 'particulier')
           .not('is_validate', 'is', true)
@@ -424,6 +424,10 @@ export default function AdminPage() {
           .eq('statut_pro', 'refuse')
           .order('created_at', { ascending: false }),
       ]);
+
+      if (err1) console.error('[dossiers] users pending:', err1.message);
+      if (err2) console.error('[dossiers] user_profiles pending:', err2.message);
+      if (err3) console.error('[dossiers] users refused:', err3.message);
 
       const snap = await getDocs(collection(db, 'users'));
       const fireMap: Record<string, FireUser> = {};
