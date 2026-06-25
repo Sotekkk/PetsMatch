@@ -415,7 +415,8 @@ export default function AdminPage() {
           .select('id, uid, profile_type, cat_pro, profession_pro, certifications, name_elevage, nom, siret, rna, firstname, lastname, kbis_url, acaced_doc_url, acaced, rejection_reason, created_at, is_validate, statut_pro')
           .not('profile_type', 'is', null)
           .neq('profile_type', 'particulier')
-          .or('statut_pro.eq.en_attente,is_validate.eq.false')
+          .not('is_validate', 'is', true)
+          .not('statut_pro', 'eq', 'refuse')
           .order('created_at', { ascending: true }),
         supabase
           .from('users')
