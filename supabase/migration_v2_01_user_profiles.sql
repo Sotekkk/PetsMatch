@@ -275,7 +275,11 @@ SELECT
   COALESCE(u.especes_elevees, '[]'),
   NULL,                             -- especes_accueil (spécifique association)
   NULL,                             -- capacite_accueil
-  u.especes_acceptees,
+  CASE
+    WHEN u.especes_acceptees IS NOT NULL AND jsonb_typeof(u.especes_acceptees) = 'array'
+    THEN ARRAY(SELECT jsonb_array_elements_text(u.especes_acceptees))
+    ELSE NULL::TEXT[]
+  END,
   u.date_of_birth,
   u.fcm_token,
   u.apns_token,
