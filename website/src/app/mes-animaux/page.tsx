@@ -326,18 +326,26 @@ export default function MesAnimauxPage() {
     async function loadAll() {
       const uid = user!.uid;
 
-      // Source : animaux_proprietes — filtré par profile_id_proprio si disponible (post-migration V2.05)
+      // Source : animaux_proprietes — filtré par profile_id_proprio (post-migration V2.05)
+      // Vérifie d'abord si la migration a été jouée, sinon retombe sur uid_proprio
       let ownRows: { animal_id: string; date_fin: string | null }[] = [];
       if (activeProfileId) {
-        const { data: byProfile } = await supabase
+        const { data: check } = await supabase
           .from('animaux_proprietes')
-          .select('animal_id, date_fin')
+          .select('animal_id')
           .eq('uid_proprio', uid)
-          .eq('profile_id_proprio', activeProfileId);
-        // Fallback si la migration n'a pas encore été jouée (colonne vide)
-        if ((byProfile ?? []).length > 0) {
-          ownRows = byProfile as typeof ownRows;
+          .not('profile_id_proprio', 'is', null)
+          .limit(1);
+        if ((check ?? []).length > 0) {
+          // Migration faite → filtre strict par profil (vide = correct pour ce profil)
+          const { data: byProfile } = await supabase
+            .from('animaux_proprietes')
+            .select('animal_id, date_fin')
+            .eq('uid_proprio', uid)
+            .eq('profile_id_proprio', activeProfileId);
+          ownRows = (byProfile ?? []) as typeof ownRows;
         } else {
+          // Migration pas encore jouée → tous les animaux de l'uid
           const { data: fallback } = await supabase
             .from('animaux_proprietes')
             .select('animal_id, date_fin')

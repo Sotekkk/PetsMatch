@@ -126,24 +126,31 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       final supa = Supabase.instance.client;
       final activeProfileId = User_Info.activeProfileId;
 
-      // Filtre par profile_id_proprio si disponible (post-migration V2.05),
-      // sinon fallback uid_proprio (pré-migration ou profil sans profile_id)
-      final ownQuery = activeProfileId.isNotEmpty
-          ? supa.from('animaux_proprietes')
+      // Vérifie si la migration V2.05 a été jouée (au moins une ligne avec profile_id_proprio)
+      // → si oui, on filtre par profil ; si non, on retombe sur uid_proprio (rétrocompat)
+      List ownRows;
+      if (activeProfileId.isNotEmpty) {
+        final check = await supa.from('animaux_proprietes')
+            .select('animal_id')
+            .eq('uid_proprio', _uid!)
+            .not('profile_id_proprio', 'is', null)
+            .limit(1);
+        if ((check as List).isNotEmpty) {
+          // Migration faite → filtre strict par profil (liste vide = normal pour ce profil)
+          ownRows = await supa.from('animaux_proprietes')
               .select('animal_id, date_fin')
               .eq('uid_proprio', _uid!)
-              .eq('profile_id_proprio', activeProfileId)
-          : supa.from('animaux_proprietes')
+              .eq('profile_id_proprio', activeProfileId);
+        } else {
+          // Migration pas encore jouée → tous les animaux de l'uid
+          ownRows = await supa.from('animaux_proprietes')
               .select('animal_id, date_fin')
               .eq('uid_proprio', _uid!);
-
-      List ownRows = await ownQuery;
-
-      // Fallback : si la colonne profile_id_proprio n'est pas encore peuplée,
-      // on retombe sur tous les animaux de l'uid (comportement pré-migration)
-      if (ownRows.isEmpty && activeProfileId.isNotEmpty) {
+        }
+      } else {
         ownRows = await supa.from('animaux_proprietes')
-            .select('animal_id, date_fin').eq('uid_proprio', _uid!);
+            .select('animal_id, date_fin')
+            .eq('uid_proprio', _uid!);
       }
 
       final currentIds = <String>{};
