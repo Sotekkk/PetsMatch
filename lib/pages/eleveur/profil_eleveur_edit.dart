@@ -514,6 +514,28 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
           if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acaced_doc_url': acacedDocUrl,
         }, onConflict: 'uid');
+
+        // Sync user_profiles (source V2)
+        await supa.from('user_profiles').update({
+          'nom':                    _nomElevageCtrl.text.trim(),
+          'firstname':              _prenomCtrl.text.trim(),
+          'lastname':               _nomCtrl.text.trim(),
+          'rue_pro':                _rueCtrl.text.trim(),
+          'code_postal_pro':        _cpCtrl.text.trim(),
+          'ville_pro':              _villeCtrl.text.trim(),
+          'pays_pro':               _paysCtrl.text.trim(),
+          'adresse':                adresseFull,
+          if (_profileLat != null) 'lat_pro': _profileLat,
+          if (_profileLng != null) 'lng_pro': _profileLng,
+          if (photoUrl != null) 'profile_picture_url_pro': photoUrl,
+          if (bannerUrl != null) 'banner_url': bannerUrl,
+          'siret':      _siretCtrl.text.trim(),
+          'instagram':  _instagramCtrl.text.trim(),
+          'facebook':   _facebookCtrl.text.trim(),
+          'site_web':   _siteWebCtrl.text.trim(),
+          if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
+          if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acaced_doc_url': acacedDocUrl,
+        }).eq('uid', uid).eq('is_main', true);
       } catch (_) {}
 
       // Propagate location fields to all existing announcements
