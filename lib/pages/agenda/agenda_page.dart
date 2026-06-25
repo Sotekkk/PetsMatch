@@ -183,15 +183,35 @@ class _AgendaPageState extends State<AgendaPage> {
     final to   = '${toDate.year}-${toDate.month.toString().padLeft(2, '0')}-${toDate.day.toString().padLeft(2, '0')}';
     try {
       // ── Tâches manuelles ─────────────────────────────────────────────────
-      final d1 = widget.isAssociation
-          ? await _supa.from('taches_elevage')
-              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
-              .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
-              .eq('profil_source', 'association')
-          : await _supa.from('taches_elevage')
-              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
-              .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
-              .or('profil_source.is.null,profil_source.eq.eleveur');
+      final pid = User_Info.activeProfileId;
+      dynamic d1;
+      if (pid.isNotEmpty) {
+        d1 = await _supa.from('taches_elevage')
+            .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
+            .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
+            .eq('profile_id', pid);
+        if ((d1 as List).isEmpty) {
+          d1 = widget.isAssociation
+              ? await _supa.from('taches_elevage')
+                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
+                  .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
+                  .eq('profil_source', 'association')
+              : await _supa.from('taches_elevage')
+                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
+                  .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
+                  .or('profil_source.is.null,profil_source.eq.eleveur');
+        }
+      } else {
+        d1 = widget.isAssociation
+            ? await _supa.from('taches_elevage')
+                .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
+                .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
+                .eq('profil_source', 'association')
+            : await _supa.from('taches_elevage')
+                .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
+                .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
+                .or('profil_source.is.null,profil_source.eq.eleveur');
+      }
       final d2 = await _supa.from('taches_elevage')
           .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
           .eq('assigne_a', _uid).gte('date', from).lte('date', to);
@@ -204,24 +224,48 @@ class _AgendaPageState extends State<AgendaPage> {
 
       // ── Tâches protocole (plan_taches) ───────────────────────────────────
       try {
-        final p1 = widget.isAssociation
-            ? await _supa.from('plan_taches')
-                .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
-                .eq('uid_eleveur', _uid)
-                .gte('date_prevue', from).lte('date_prevue', to)
-                .eq('profil_source', 'association')
-            : await _supa.from('plan_taches')
-                .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
-                .eq('uid_eleveur', _uid)
-                .gte('date_prevue', from).lte('date_prevue', to)
-                .or('profil_source.is.null,profil_source.eq.eleveur');
+        dynamic p1;
+        if (pid.isNotEmpty) {
+          p1 = await _supa.from('plan_taches')
+              .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+              .eq('uid_eleveur', _uid)
+              .gte('date_prevue', from).lte('date_prevue', to)
+              .eq('profile_id', pid);
+          if ((p1 as List).isEmpty) {
+            p1 = widget.isAssociation
+                ? await _supa.from('plan_taches')
+                    .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+                    .eq('uid_eleveur', _uid)
+                    .gte('date_prevue', from).lte('date_prevue', to)
+                    .eq('profil_source', 'association')
+                : await _supa.from('plan_taches')
+                    .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+                    .eq('uid_eleveur', _uid)
+                    .gte('date_prevue', from).lte('date_prevue', to)
+                    .or('profil_source.is.null,profil_source.eq.eleveur');
+          }
+        } else {
+          p1 = widget.isAssociation
+              ? await _supa.from('plan_taches')
+                  .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+                  .eq('uid_eleveur', _uid)
+                  .gte('date_prevue', from).lte('date_prevue', to)
+                  .eq('profil_source', 'association')
+              : await _supa.from('plan_taches')
+                  .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+                  .eq('uid_eleveur', _uid)
+                  .gte('date_prevue', from).lte('date_prevue', to)
+                  .or('profil_source.is.null,profil_source.eq.eleveur');
+        }
         final p2q = _supa.from('plan_taches')
             .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
             .eq('assigned_to', _uid)
             .gte('date_prevue', from).lte('date_prevue', to);
-        final p2 = widget.isAssociation
-            ? await p2q.eq('profil_source', 'association')
-            : await p2q.or('profil_source.is.null,profil_source.eq.eleveur');
+        final p2 = pid.isNotEmpty
+            ? await p2q.eq('profile_id', pid)
+            : (widget.isAssociation
+                ? await p2q.eq('profil_source', 'association')
+                : await p2q.or('profil_source.is.null,profil_source.eq.eleveur'));
         final seenPlan = <dynamic>{};
         for (final t in [...(p1 as List), ...(p2 as List)]) {
           final m = Map<String, dynamic>.from(t);
@@ -2427,6 +2471,7 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
     setState(() => _saving = true);
     final dateStr = DateFormat('yyyy-MM-dd').format(widget.day);
     final supa = Supabase.instance.client;
+    final profileId = User_Info.activeProfileId;
     await supa.from('plan_taches').insert({
       'uid_eleveur':   widget.uid,
       'label':         _labelCtrl.text.trim(),
@@ -2435,6 +2480,7 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
       'type_acte':     _typeActe,
       'animal_nom':    _animalCtrl.text.trim().isEmpty ? null : _animalCtrl.text.trim(),
       'profil_source': widget.profilSource,
+      if (profileId.isNotEmpty) 'profile_id': profileId,
       'assigned_to':   _selectedEmployeUid,
     });
     if (_selectedEmployeUid != null) {
@@ -2616,6 +2662,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
         ? '${_heure!.hour.toString().padLeft(2, '0')}:${_heure!.minute.toString().padLeft(2, '0')}'
         : null;
     final supa = Supabase.instance.client;
+    final profileIdTache = User_Info.activeProfileId;
     await supa.from('taches_elevage').insert({
       'uid_eleveur': widget.uid,
       'titre': _titreCtrl.text.trim(),
@@ -2624,6 +2671,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
       'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       'statut': 'a_faire',
       'profil_source': widget.profilSource,
+      if (profileIdTache.isNotEmpty) 'profile_id': profileIdTache,
       'assigne_a': _selectedEmployeUid,
       'assignes_a': _selectedEmployeUid != null ? [_selectedEmployeUid] : null,
     });

@@ -250,7 +250,7 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, isR
 }
 
 export default function MesAnimauxPage() {
-  const { user, userData, loading } = useAuth();
+  const { user, userData, loading, activeProfileId } = useAuth();
   const { plan } = usePlan();
   const router = useRouter();
 
@@ -326,13 +326,33 @@ export default function MesAnimauxPage() {
     async function loadAll() {
       const uid = user!.uid;
 
-      // Source unique : animaux_proprietes (nécessite policy RLS USING true sur animaux_proprietes)
-      const { data: ownRows } = await supabase
-        .from('animaux_proprietes')
-        .select('animal_id, date_fin')
-        .eq('uid_proprio', uid);
+      // Source : animaux_proprietes — filtré par profile_id_proprio si disponible (post-migration V2.05)
+      let ownRows: { animal_id: string; date_fin: string | null }[] = [];
+      if (activeProfileId) {
+        const { data: byProfile } = await supabase
+          .from('animaux_proprietes')
+          .select('animal_id, date_fin')
+          .eq('uid_proprio', uid)
+          .eq('profile_id_proprio', activeProfileId);
+        // Fallback si la migration n'a pas encore été jouée (colonne vide)
+        if ((byProfile ?? []).length > 0) {
+          ownRows = byProfile as typeof ownRows;
+        } else {
+          const { data: fallback } = await supabase
+            .from('animaux_proprietes')
+            .select('animal_id, date_fin')
+            .eq('uid_proprio', uid);
+          ownRows = (fallback ?? []) as typeof ownRows;
+        }
+      } else {
+        const { data } = await supabase
+          .from('animaux_proprietes')
+          .select('animal_id, date_fin')
+          .eq('uid_proprio', uid);
+        ownRows = (data ?? []) as typeof ownRows;
+      }
 
-      const rows = ownRows ?? [];
+      const rows = ownRows;
       const currentIds = new Set(rows.filter(r => !r.date_fin).map(r => r.animal_id as string));
       const allAnimalIds = [...new Set(rows.map(r => r.animal_id as string))];
 
@@ -390,7 +410,7 @@ export default function MesAnimauxPage() {
     }
 
     loadAll().catch(() => setFetching(false));
-  }, [user, isEleveur]);
+  }, [user, isEleveur, activeProfileId]);
 
   async function deleteAnimal(id: string) {
     await supabase.from('animaux').delete().eq('id', id);

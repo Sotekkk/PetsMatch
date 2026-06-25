@@ -99,10 +99,11 @@ function groupRoutines(routines: Routine[]): RoutineGroupe[] {
 
 // ── Ajout tâche manuelle depuis l'agenda ─────────────────────────────────────
 
-function AddTacheModal({ selectedDate, uid, profilSource, employes, onClose, onSaved }: {
+function AddTacheModal({ selectedDate, uid, profilSource, activeProfileId, employes, onClose, onSaved }: {
   selectedDate: string;
   uid: string;
   profilSource: string;
+  activeProfileId?: string | null;
   employes: Employe[];
   onClose: () => void;
   onSaved: () => void;
@@ -121,6 +122,7 @@ function AddTacheModal({ selectedDate, uid, profilSource, employes, onClose, onS
       uid_eleveur: uid, titre: titre.trim(), date: selectedDate,
       heure: heure || null, notes: notes.trim() || null,
       statut: 'a_faire', profil_source: profilSource,
+      profile_id: activeProfileId || null,
       assigne_a: assigneUid, assignes_a: assigneUid ? [assigneUid] : null,
     });
     if (assigneUid) {
@@ -224,10 +226,11 @@ const ACTE_OPTIONS = [
   { value: 'autre',          label: '📋 Autre' },
 ];
 
-function AddProtocoleModal({ selectedDate, uid, profilSource, employes, onClose, onSaved }: {
+function AddProtocoleModal({ selectedDate, uid, profilSource, activeProfileId, employes, onClose, onSaved }: {
   selectedDate: string;
   uid: string;
   profilSource: string;
+  activeProfileId?: string | null;
   employes: Employe[];
   onClose: () => void;
   onSaved: () => void;
@@ -246,7 +249,8 @@ function AddProtocoleModal({ selectedDate, uid, profilSource, employes, onClose,
       uid_eleveur: uid, label: label.trim(), date_prevue: selectedDate,
       statut: 'a_faire', type_acte: typeActe,
       animal_nom: animalNom.trim() || null,
-      profil_source: profilSource, assigned_to: assigneUid,
+      profil_source: profilSource, profile_id: activeProfileId || null,
+      assigned_to: assigneUid,
     });
     if (assigneUid) {
       try {
@@ -1135,7 +1139,7 @@ function WeekStrip({ selectedDate, onSelectDay, monthDates }:
 // ════════════════════════════════════════════════════════════════════════════════
 
 export default function AgendaElevagePage() {
-  const { user, loading } = useAuth();
+  const { user, loading, activeProfileId } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const profilSource = pathname.startsWith('/association') ? 'association' : 'eleveur';
@@ -1185,28 +1189,34 @@ export default function AgendaElevagePage() {
 
   useEffect(() => { if (user) loadEmployes(); }, [user, loadEmployes]);
 
+  // Applique le filtre profil : profile_id si disponible, sinon profil_source (rétrocompat)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const withProfileFilter = useCallback((q: any) =>
+    activeProfileId
+      ? q.eq('profile_id', activeProfileId)
+      : (profilSource === 'association' ? q.eq('profil_source', 'association') : q.or('profil_source.is.null,profil_source.eq.eleveur')),
+  [activeProfileId, profilSource]);
+
   const load = useCallback(async () => {
     if (!user) return;
     setLoadingData(true);
     const [r1, r2, tm] = await Promise.all([
-      (() => { const q = supabase.from('plan_taches')
+      withProfileFilter(supabase.from('plan_taches')
         .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_at')
-        .eq('uid_eleveur', user.uid).eq('date_prevue', selectedDate);
-        return profilSource === 'association' ? q.eq('profil_source', 'association') : q.or('profil_source.is.null,profil_source.eq.eleveur'); })(),
+        .eq('uid_eleveur', user.uid).eq('date_prevue', selectedDate)),
       supabase.from('plan_taches')
         .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_at')
         .eq('assigned_to', user.uid).eq('date_prevue', selectedDate),
-      (() => { const q = supabase.from('taches_elevage')
+      withProfileFilter(supabase.from('taches_elevage')
         .select('id,titre,date,statut,heure,uid_eleveur,assigne_a,assignes_a,fait_par,notes')
-        .eq('uid_eleveur', user.uid).eq('date', selectedDate);
-        return profilSource === 'association' ? q.eq('profil_source', 'association') : q.or('profil_source.is.null,profil_source.eq.eleveur'); })(),
+        .eq('uid_eleveur', user.uid).eq('date', selectedDate)),
     ]);
     const seen = new Set<string>();
     const allR = [...(r1.data ?? []), ...(r2.data ?? [])] as Routine[];
     setRoutines(allR.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; }));
     setTachesM((tm.data ?? []) as TacheManuelle[]);
     setLoadingData(false);
-  }, [user, selectedDate]);
+  }, [user, selectedDate, withProfileFilter]);
 
   useEffect(() => { if (user) load(); }, [user, load]);
 
@@ -1216,14 +1226,12 @@ export default function AgendaElevagePage() {
     const from = `${focusedYear}-${mm}-01`;
     const to   = `${focusedYear}-${mm}-${String(daysInMonthFn(focusedYear, focusedMois)).padStart(2, '0')}`;
     const [r1, r2, tm] = await Promise.all([
-      (() => { const q = supabase.from('plan_taches').select('date_prevue,type_acte').eq('uid_eleveur', user.uid)
-        .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`);
-        return profilSource === 'association' ? q.eq('profil_source', 'association') : q.or('profil_source.is.null,profil_source.eq.eleveur'); })(),
+      withProfileFilter(supabase.from('plan_taches').select('date_prevue,type_acte').eq('uid_eleveur', user.uid)
+        .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`)),
       supabase.from('plan_taches').select('date_prevue,type_acte').eq('assigned_to', user.uid)
         .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`),
-      (() => { const q = supabase.from('taches_elevage').select('date').eq('uid_eleveur', user.uid)
-        .gte('date', from).lte('date', to);
-        return profilSource === 'association' ? q.eq('profil_source', 'association') : q.or('profil_source.is.null,profil_source.eq.eleveur'); })(),
+      withProfileFilter(supabase.from('taches_elevage').select('date').eq('uid_eleveur', user.uid)
+        .gte('date', from).lte('date', to)),
     ]);
     const map = new Map<string, Set<string>>();
     const addC = (date: string, c: string) => {
@@ -1234,7 +1242,7 @@ export default function AgendaElevagePage() {
       addC(r.date_prevue.split('T')[0], ACTE_COLOR[r.type_acte ?? ''] ?? '#9E9E9E'));
     ((tm.data ?? []) as { date: string }[]).forEach(t => addC(t.date, '#6E9E57'));
     setMonthDates(new Map([...map.entries()].map(([d, s]) => [d, [...s]])));
-  }, [user, focusedYear, focusedMois]);
+  }, [user, focusedYear, focusedMois, withProfileFilter]);
 
   useEffect(() => { if (user) loadMonth(); }, [user, loadMonth]);
 
@@ -1778,6 +1786,7 @@ export default function AgendaElevagePage() {
           selectedDate={selectedDate}
           uid={user.uid}
           profilSource={profilSource}
+          activeProfileId={activeProfileId}
           employes={employes}
           onClose={() => setShowAddTache(false)}
           onSaved={() => { setShowAddTache(false); load(); loadMonth(); }}
@@ -1789,6 +1798,7 @@ export default function AgendaElevagePage() {
           selectedDate={selectedDate}
           uid={user.uid}
           profilSource={profilSource}
+          activeProfileId={activeProfileId}
           employes={employes}
           onClose={() => setShowAddProtocole(false)}
           onSaved={() => { setShowAddProtocole(false); load(); loadMonth(); }}
