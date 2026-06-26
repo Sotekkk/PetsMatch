@@ -5,6 +5,7 @@ import 'package:PetsMatch/pages/admin/supabase_migration_page.dart';
 import 'package:PetsMatch/pages/admin/user_list.dart';
 import 'package:PetsMatch/pages/admin/verification_list.dart';
 import 'package:PetsMatch/pages/marketplace/admin_marketplace_tab.dart';
+import 'package:PetsMatch/pages/admin/lieux_admin_tab.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/services/renewal_service.dart';
 import 'package:PetsMatch/utils.dart';
@@ -24,6 +25,7 @@ class _AdminPanelState extends State<AdminPanel> {
   int _selectedIndex = 0;
   int _pendingSig = 0;
   int _suspectAnnonces = 0;
+  int _pendingLieux = 0;
 
   late final List<Widget> _pages;
 
@@ -38,9 +40,11 @@ class _AdminPanelState extends State<AdminPanel> {
       const SignalementsAdmin(),
       const AdminMarketplaceTab(),
       const AnnoncesAdmin(),
+      const LieuxAdminTab(),
     ];
     _loadPendingSig();
     _loadSuspectAnnonces();
+    _loadPendingLieux();
   }
 
   Future<void> _loadPendingSig() async {
@@ -50,6 +54,16 @@ class _AdminPanelState extends State<AdminPanel> {
           .select('id')
           .eq('statut', 'en_attente');
       if (mounted) setState(() => _pendingSig = (res as List).length);
+    } catch (_) {}
+  }
+
+  Future<void> _loadPendingLieux() async {
+    try {
+      final res = await Supabase.instance.client
+          .from('petfriendly_places')
+          .select('id')
+          .eq('statut', 'en_attente_validation');
+      if (mounted) setState(() => _pendingLieux = (res as List).length);
     } catch (_) {}
   }
 
@@ -108,6 +122,7 @@ class _AdminPanelState extends State<AdminPanel> {
           setState(() => _selectedIndex = index);
           if (index == 4) _loadPendingSig();
           if (index == 6) _loadSuspectAnnonces();
+          if (index == 7) _loadPendingLieux();
         },
         items: [
           const BottomNavigationBarItem(
@@ -149,6 +164,16 @@ class _AdminPanelState extends State<AdminPanel> {
                   )
                 : const Icon(Icons.campaign_outlined),
             label: 'Annonces',
+          ),
+          BottomNavigationBarItem(
+            icon: _pendingLieux > 0
+                ? Badge(
+                    label: Text('$_pendingLieux',
+                        style: const TextStyle(fontSize: 10, fontFamily: 'Galey')),
+                    child: const Icon(Icons.hotel_outlined),
+                  )
+                : const Icon(Icons.hotel_outlined),
+            label: 'Lieux',
           ),
         ],
       ),

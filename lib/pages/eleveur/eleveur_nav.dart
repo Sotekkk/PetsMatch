@@ -23,6 +23,7 @@ import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
+import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
 import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
@@ -568,6 +569,16 @@ class _EleveurNavState extends State<EleveurNav> {
                           ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)
                           : const ProfilEleveurEditPage(),
                     ));
+                  },
+                ),
+                const Divider(height: 8),
+                _DrawerItem(
+                  icon: Icons.store_outlined,
+                  label: 'Mon Établissement',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const MonEtablissementPage()));
                   },
                 ),
                 const Divider(height: 8),
