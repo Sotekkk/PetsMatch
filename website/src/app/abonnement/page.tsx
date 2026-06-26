@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 interface PlanTarifaire {
   plan_code: string;
@@ -41,11 +42,13 @@ const PLAN_BTN: Record<string, string> = {
 
 function AbonnementContent() {
   const { user, loading: authLoading } = useAuth();
+  const activeProfileId = useActiveProfile();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [plans, setPlans] = useState<PlanTarifaire[]>([]);
   const [boosts, setBoosts] = useState<ProduitPonctuel[]>([]);
   const [currentPlan, setCurrentPlan] = useState<string>('free');
+  const [profileName, setProfileName] = useState<string>('');
   const [periodicite, setPeriodicite] = useState<'mensuel' | 'annuel'>('mensuel');
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [loadingPortal, setLoadingPortal] = useState(false);
@@ -77,6 +80,14 @@ function AbonnementContent() {
     const isSuccess = !!searchParams.get('success');
 
     const fetchPlan = async () => {
+      if (activeProfileId) {
+        // Lire le plan directement sur le profil actif
+        const { data } = await supabase
+          .from('user_profiles').select('plan_code, profile_name').eq('id', activeProfileId).maybeSingle();
+        setProfileName(data?.profile_name ?? '');
+        return (data?.plan_code as string) ?? 'free';
+      }
+      // Profil principal → lire depuis abonnements
       const { data } = await supabase
         .from('abonnements').select('plan_code').eq('uid', user.uid).eq('statut', 'actif')
         .order('created_at', { ascending: false }).limit(1).maybeSingle();
@@ -139,7 +150,7 @@ function AbonnementContent() {
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: user.uid, email: user.email, plan: planCode, periodicite }),
+        body: JSON.stringify({ uid: user.uid, email: user.email, plan: planCode, periodicite, ...(activeProfileId ? { profile_id: activeProfileId } : {}) }),
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
@@ -168,7 +179,13 @@ function AbonnementContent() {
     <div className="max-w-5xl mx-auto px-4 py-12">
       <div className="text-center mb-10">
         <h1 className="font-['Galey'] font-bold text-3xl text-[#1F2A2E] mb-2">Plans & Abonnements</h1>
-        <p className="text-gray-500">Choisissez le plan adapté à votre élevage</p>
+        {profileName ? (
+          <p className="text-[#0C5C6C] font-['Galey'] font-semibold text-sm mt-1">
+            Profil : {profileName}
+          </p>
+        ) : (
+          <p className="text-gray-500">Choisissez le plan adapté à votre élevage</p>
+        )}
       </div>
 
       {message && (
