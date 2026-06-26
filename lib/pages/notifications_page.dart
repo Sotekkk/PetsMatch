@@ -847,6 +847,130 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 }
 
+/// Badge non-lu pour l'icône Messages (conversations Supabase)
+class MsgBadge extends StatefulWidget {
+  final IconData icon;
+  final IconData activeIcon;
+  final bool active;
+  final VoidCallback onTap;
+
+  const MsgBadge({
+    super.key,
+    required this.icon,
+    required this.activeIcon,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  State<MsgBadge> createState() => _MsgBadgeState();
+}
+
+class _MsgBadgeState extends State<MsgBadge> with WidgetsBindingObserver {
+  static const _green = Color(0xFF6E9E57);
+  final _supa = Supabase.instance.client;
+  final _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  int _unread = 0;
+  RealtimeChannel? _channel;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _fetchUnread();
+    _subscribe();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _channel?.unsubscribe();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _fetchUnread();
+  }
+
+  Future<void> _fetchUnread() async {
+    if (_uid.isEmpty) return;
+    try {
+      final rows = await _supa
+          .from('conversations')
+          .select('unread_count')
+          .filter('participants', 'cs', '["$_uid"]')
+          .eq('type', 'direct');
+      int total = 0;
+      for (final row in rows as List) {
+        final m = row['unread_count'];
+        if (m is Map && m[_uid] is int) total += m[_uid] as int;
+      }
+      if (mounted) setState(() => _unread = total);
+    } catch (_) {}
+  }
+
+  void _subscribe() {
+    if (_uid.isEmpty) return;
+    _channel = _supa
+        .channel('msg_badge_$_uid')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'conversations',
+          callback: (_) => _fetchUnread(),
+        )
+        .subscribe();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: InkWell(
+        onTap: widget.onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  widget.active ? widget.activeIcon : widget.icon,
+                  color: widget.active ? _green : Colors.grey,
+                  size: 24,
+                ),
+                if (_unread > 0)
+                  Positioned(
+                    right: -6, top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                      child: Text(
+                        _unread > 99 ? '99+' : '$_unread',
+                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Text(
+              'Messages',
+              style: TextStyle(
+                  fontSize: 11,
+                  fontFamily: 'Galey',
+                  color: widget.active ? _green : Colors.grey,
+                  fontWeight: widget.active ? FontWeight.w600 : FontWeight.normal),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Streams the unread notification count from Supabase for the badge.
 class NotifBadge extends StatefulWidget {
   final IconData icon;

@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/pages/petfriends/petfriend_chat_page.dart';
 
 class PublicProfilePage extends StatefulWidget {
   final String targetUid;
@@ -43,7 +44,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
       // Profil
       final p = await _supa
           .from('users')
-          .select('uid, firstname, lastname, profile_picture_url, city, profile_type')
+          .select('uid, firstname, lastname, profile_picture_url, ville, profile_type')
           .eq('uid', widget.targetUid)
           .maybeSingle();
 
@@ -81,15 +82,14 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
       if (isFriend) {
         final res = await _supa
             .from('animaux')
-            .select('id, nom, espece, race, age, photo')
+            .select('id, nom, espece, race, age, photo, couleur')
             .eq('uid_proprietaire', widget.targetUid)
             .eq('est_actif', true);
         animaux = List<Map<String, dynamic>>.from(res as List);
       } else {
-        // Uniquement les animaux non-marqués petfriends-only (visible_petfriends = false)
         final res = await _supa
             .from('animaux')
-            .select('id, nom, espece, race, age, photo')
+            .select('id, nom, espece, race, age, photo, couleur')
             .eq('uid_proprietaire', widget.targetUid)
             .eq('est_actif', true)
             .eq('visible_petfriends', false);
@@ -188,6 +188,61 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     }
   }
 
+  Future<void> _openDm() async {
+    final sorted = ([_myUid, widget.targetUid]..sort()).join('_');
+
+    // Chercher une conversation directe existante (type=direct ou null, participant_ids=sorted)
+    final existing = await _supa
+        .from('conversations')
+        .select('id, participants_info')
+        .eq('participant_ids', sorted)
+        .or('type.eq.direct,type.is.null')
+        .maybeSingle();
+
+    String convId;
+    if (existing != null) {
+      convId = existing['id'].toString();
+    } else {
+      // Créer la conversation DM dans Supabase
+      final myData = await _supa.from('users')
+          .select('firstname, lastname, profile_picture_url')
+          .eq('uid', _myUid).maybeSingle();
+      final otherData = await _supa.from('users')
+          .select('firstname, lastname, profile_picture_url')
+          .eq('uid', widget.targetUid).maybeSingle();
+      final myName    = '${myData?['firstname'] ?? ''} ${myData?['lastname'] ?? ''}'.trim();
+      final otherName = '${otherData?['firstname'] ?? ''} ${otherData?['lastname'] ?? ''}'.trim();
+
+      final Map<String, dynamic> participantsInfo = {
+        _myUid: {'name': myName.isEmpty ? 'Utilisateur' : myName,
+          if ((myData?['profile_picture_url'] as String?)?.isNotEmpty == true) 'photo': myData!['profile_picture_url']},
+        widget.targetUid: {'name': otherName.isEmpty ? 'Utilisateur' : otherName,
+          if ((otherData?['profile_picture_url'] as String?)?.isNotEmpty == true) 'photo': otherData!['profile_picture_url']},
+      };
+
+      final created = await _supa.from('conversations').insert({
+        'type':              'direct',
+        'participants':      [_myUid, widget.targetUid],
+        'participant_ids':   sorted,
+        'participants_info': participantsInfo,
+        'last_message':      '',
+        'unread_count':      {_myUid: 0, widget.targetUid: 0},
+        'updated_at':        DateTime.now().toIso8601String(),
+      }).select('id').single();
+      convId = created['id'].toString();
+    }
+
+    if (!mounted) return;
+    final p = _profile!;
+    final nom = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => PetFriendChatPage(
+        conversationId: convId,
+        convNom: nom.isNotEmpty ? nom : 'Message',
+      ),
+    ));
+  }
+
   Future<void> _removeFriend() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -237,7 +292,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
 
     final p = _profile!;
     final nom = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
-    final city = p['city']?.toString() ?? '';
+    final city = p['ville']?.toString() ?? '';
     final photoUrl = p['profile_picture_url']?.toString() ?? '';
     final isFriend = _relStatut == 'accepte';
 
@@ -309,10 +364,16 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
               ),
             )))
           else
-            _card(Wrap(
-              spacing: 12, runSpacing: 12,
-              children: _animaux.map((a) => _animalChip(a)).toList(),
-            )),
+            SizedBox(
+              height: 140,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                itemCount: _animaux.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (_, i) => _animalCard(_animaux[i]),
+              ),
+            ),
         ],
       ),
     );
@@ -370,35 +431,67 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     }
 
     if (_relStatut == 'accepte') {
-      return OutlinedButton.icon(
-        onPressed: _removeFriend,
-        style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.red, side: const BorderSide(color: Colors.red),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
-        icon: const Icon(Icons.person_remove_outlined, size: 18),
-        label: const Text('Supprimer PetFriend',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-      );
+      return Column(mainAxisSize: MainAxisSize.min, children: [
+        FilledButton.icon(
+          onPressed: _openDm,
+          style: FilledButton.styleFrom(
+              backgroundColor: _green,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
+          icon: const Icon(Icons.chat_bubble_outline, size: 18),
+          label: const Text('Envoyer un message',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        ),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: _removeFriend,
+          icon: const Icon(Icons.person_remove_outlined, size: 16, color: Colors.red),
+          label: const Text('Supprimer PetFriend',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.red)),
+        ),
+      ]);
     }
 
     return const SizedBox.shrink();
   }
 
-  Widget _animalChip(Map<String, dynamic> a) {
+  Widget _animalCard(Map<String, dynamic> a) {
     final photo = a['photo']?.toString() ?? '';
     final nom = a['nom']?.toString() ?? '—';
     final espece = a['espece']?.toString() ?? '';
-    return Column(mainAxisSize: MainAxisSize.min, children: [
-      CircleAvatar(
-        radius: 30,
-        backgroundColor: const Color(0xFFE8F5E9),
-        backgroundImage: photo.isNotEmpty ? CachedNetworkImageProvider(photo) : null,
-        child: photo.isEmpty ? const Icon(Icons.pets, size: 22, color: _green) : null,
+    final race = a['race']?.toString() ?? '';
+    return Container(
+      width: 110,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 6, offset: const Offset(0, 2))],
       ),
-      const SizedBox(height: 4),
-      Text(nom, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
-      Text(espece, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey)),
-    ]);
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+          child: photo.isNotEmpty
+              ? CachedNetworkImage(
+                  imageUrl: photo, height: 76, fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(height: 76, color: const Color(0xFFE8F5E9),
+                      child: const Center(child: Icon(Icons.pets, color: Color(0xFF2E7D5E), size: 28))),
+                  errorWidget: (_, __, ___) => Container(height: 76, color: const Color(0xFFE8F5E9),
+                      child: const Center(child: Icon(Icons.pets, color: Color(0xFF2E7D5E), size: 28))),
+                )
+              : Container(height: 76, color: const Color(0xFFE8F5E9),
+                  child: const Center(child: Icon(Icons.pets, color: Color(0xFF2E7D5E), size: 28))),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(nom, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(race.isNotEmpty ? race : espece,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+          ]),
+        ),
+      ]),
+    );
   }
 
   Widget _sectionTitle(String title, int count) => Padding(

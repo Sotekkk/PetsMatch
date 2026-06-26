@@ -3,6 +3,7 @@ import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/main_feed.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -61,33 +62,17 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
   Future<void> _openChat() async {
     setState(() => _loadingChat = true);
     try {
-      final currentUserId = FirebaseAuth.instance.currentUser!.uid;
       final eleveurId = widget.user.uid;
-      final sortedIds = [currentUserId, eleveurId]..sort();
-      final participantIds = sortedIds.join('_');
-
-      final snap = await FirebaseFirestore.instance
-          .collection('conversations')
-          .where('participantIds', isEqualTo: participantIds)
-          .limit(1)
-          .get();
-
-      final DocumentReference ref = snap.docs.isEmpty
-          ? await FirebaseFirestore.instance.collection('conversations').add({
-              'participants': [currentUserId, eleveurId],
-              'participantIds': participantIds,
-              'lastMessage': '',
-              'timestamp': FieldValue.serverTimestamp(),
-              'categorie': 'communaute',
-            })
-          : snap.docs.first.reference;
-
+      final convId = await MessagingHelper.openOrCreateConversation(
+        otherUid: eleveurId,
+        categorie: 'communaute',
+      );
       if (mounted) {
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) =>
-                ChatScreen(conversationId: ref.id, eleveurId: eleveurId),
+                ChatScreen(conversationId: convId, eleveurId: eleveurId),
           ),
         );
       }

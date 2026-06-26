@@ -102,9 +102,9 @@ class _ParticulierNavState extends State<ParticulierNav> {
                   label: 'Accueil', active: _selectedIndex == 0,
                   onTap: () => setState(() => _selectedIndex = 0),
                 ),
-                _NavItem(
+                MsgBadge(
                   icon: Icons.chat_bubble_outline, activeIcon: Icons.chat_bubble,
-                  label: 'Messages', active: _selectedIndex == 1,
+                  active: _selectedIndex == 1,
                   onTap: () => setState(() => _selectedIndex = 1),
                 ),
                 NotifBadge(

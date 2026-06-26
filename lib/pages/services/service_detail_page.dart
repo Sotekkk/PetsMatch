@@ -1,8 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
@@ -156,30 +155,14 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   Future<void> _openChat() async {
     setState(() => _loadingChat = true);
     try {
-      final currentUserId = FirebaseAuth.instance.currentUser!.uid;
-      final proId = widget.proUid;
-      final sortedIds = [currentUserId, proId]..sort();
-      // Unique key per secondary profile to keep conversations separate
-      final profileSuffix = widget.profileTableId != null ? ':${widget.profileTableId}' : '';
-      final participantIds = '${sortedIds.join("_")}$profileSuffix';
-      final snap = await FirebaseFirestore.instance
-          .collection('conversations')
-          .where('participantIds', isEqualTo: participantIds)
-          .limit(1)
-          .get();
-      final DocumentReference ref = snap.docs.isEmpty
-          ? await FirebaseFirestore.instance.collection('conversations').add({
-              'participants': [currentUserId, proId],
-              'participantIds': participantIds,
-              'lastMessage': '',
-              'timestamp': FieldValue.serverTimestamp(),
-              'categorie': 'services',
-              if (widget.profileTableId != null) 'pro_profile_id': widget.profileTableId,
-            })
-          : snap.docs.first.reference;
+      final convId = await MessagingHelper.openOrCreateConversation(
+        otherUid: widget.proUid,
+        categorie: 'service-professionnel',
+        myProfileId: widget.profileTableId,
+      );
       if (mounted) {
         Navigator.push(context, MaterialPageRoute(
-          builder: (_) => ChatScreen(conversationId: ref.id, eleveurId: proId),
+          builder: (_) => ChatScreen(conversationId: convId, eleveurId: widget.proUid),
         ));
       }
     } finally {

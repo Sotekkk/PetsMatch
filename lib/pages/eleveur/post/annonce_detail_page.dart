@@ -8,8 +8,9 @@ import 'package:PetsMatch/pages/user_detail_page_feed.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_slider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -1699,38 +1700,13 @@ class _BottomBarState extends State<_BottomBar> {
             .eq('id', widget.annonceId))
         .catchError((_) {});
     try {
-      final me = FirebaseAuth.instance.currentUser!.uid;
-      final sorted = [me, widget.uidEleveur]..sort();
-      final participantIds = sorted.join('_');
-      final snap = await FirebaseFirestore.instance
-          .collection('conversations')
-          .where('participantIds', isEqualTo: participantIds)
-          .limit(1).get();
-      final profileTypes = <String, String>{
-        widget.uidEleveur: 'eleveur',
-        me: User_Info.catPro.isNotEmpty ? User_Info.catPro
-            : (User_Info.isElevage ? 'eleveur' : 'particulier'),
-      };
-      DocumentReference ref;
-      if (snap.docs.isEmpty) {
-        ref = await FirebaseFirestore.instance.collection('conversations').add({
-          'participants': [me, widget.uidEleveur],
-          'participantIds': participantIds,
-          'lastMessage': '',
-          'timestamp': FieldValue.serverTimestamp(),
-          'categorie': 'annonces',
-          'participant_profile_types': profileTypes,
-        });
-      } else {
-        ref = snap.docs.first.reference;
-        final existing = snap.docs.first.data() as Map<String, dynamic>;
-        if (existing['participant_profile_types'] == null) {
-          await ref.update({'participant_profile_types': profileTypes});
-        }
-      }
+      final convId = await MessagingHelper.openOrCreateConversation(
+        otherUid: widget.uidEleveur,
+        categorie: 'annonces',
+      );
       if (mounted) Navigator.push(context, MaterialPageRoute(
           builder: (_) => ChatScreen(
-              conversationId: ref.id, eleveurId: widget.uidEleveur)));
+              conversationId: convId, eleveurId: widget.uidEleveur)));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

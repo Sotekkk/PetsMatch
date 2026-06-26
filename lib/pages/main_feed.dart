@@ -8,6 +8,7 @@ import 'package:PetsMatch/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
@@ -841,48 +842,20 @@ class _PostWidgetState extends State<PostWidget> {
   }
 
   Future<void> openChatWithEleveur() async {
-    String currentUserId = FirebaseAuth.instance.currentUser!.uid;
-    String eleveurId = widget.post['uidEleveur'];
-    List<String> sortedIds = [currentUserId, eleveurId]..sort();
-    String participantIds = sortedIds.join('_');
-
-    QuerySnapshot conversationSnapshot = await FirebaseFirestore.instance
-        .collection('conversations')
-        .where('participantIds', isEqualTo: participantIds)
-        .limit(1)
-        .get();
-
-    final profileTypes = <String, String>{
-      eleveurId: 'eleveur',
-      currentUserId: User_Info.catPro.isNotEmpty ? User_Info.catPro
-          : (User_Info.isElevage ? 'eleveur' : 'particulier'),
-    };
-    DocumentReference conversationRef;
-    if (conversationSnapshot.docs.isEmpty) {
-      conversationRef =
-          await FirebaseFirestore.instance.collection('conversations').add({
-        'participants': [currentUserId, eleveurId],
-        'participantIds': participantIds,
-        'lastMessage': '',
-        'timestamp': FieldValue.serverTimestamp(),
-        'categorie': 'annonces',
-        'participant_profile_types': profileTypes,
-      });
-    } else {
-      conversationRef = conversationSnapshot.docs.first.reference;
-      final existing = conversationSnapshot.docs.first.data() as Map<String, dynamic>;
-      if (existing['participant_profile_types'] == null) {
-        await conversationRef.update({'participant_profile_types': profileTypes});
-      }
-    }
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatScreen(
-            conversationId: conversationRef.id, eleveurId: eleveurId),
-      ),
+    final eleveurId = widget.post['uidEleveur'] as String;
+    final convId = await MessagingHelper.openOrCreateConversation(
+      otherUid: eleveurId,
+      categorie: 'annonces',
     );
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatScreen(
+              conversationId: convId, eleveurId: eleveurId),
+        ),
+      );
+    }
   }
 
   Future<SendReport> _sendSignalementEmail({

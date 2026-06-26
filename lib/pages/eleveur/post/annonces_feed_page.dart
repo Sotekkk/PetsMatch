@@ -12,6 +12,7 @@ import 'package:PetsMatch/widgets/verification_badge.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' show thumbUrl;
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -581,37 +582,13 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
     }
     setState(() => _openingChat = true);
     try {
-      final sorted       = [me, item.uidEleveur!]..sort();
-      final participantIds = sorted.join('_');
-      final snap = await FirebaseFirestore.instance
-          .collection('conversations')
-          .where('participantIds', isEqualTo: participantIds)
-          .limit(1).get();
-      final profileTypes = <String, String>{
-        item.uidEleveur!: 'eleveur',
-        me: User_Info.catPro.isNotEmpty ? User_Info.catPro
-            : (User_Info.isElevage ? 'eleveur' : 'particulier'),
-      };
-      DocumentReference ref;
-      if (snap.docs.isEmpty) {
-        ref = await FirebaseFirestore.instance.collection('conversations').add({
-          'participants': [me, item.uidEleveur!],
-          'participantIds': participantIds,
-          'lastMessage': '',
-          'timestamp': FieldValue.serverTimestamp(),
-          'categorie': 'annonces',
-          'participant_profile_types': profileTypes,
-        });
-      } else {
-        ref = snap.docs.first.reference;
-        final existing = snap.docs.first.data() as Map<String, dynamic>;
-        if (existing['participant_profile_types'] == null) {
-          await ref.update({'participant_profile_types': profileTypes});
-        }
-      }
+      final convId = await MessagingHelper.openOrCreateConversation(
+        otherUid: item.uidEleveur!,
+        categorie: 'annonces',
+      );
       if (mounted) {
         Navigator.push(context, MaterialPageRoute(
-            builder: (_) => ChatScreen(conversationId: ref.id, eleveurId: item.uidEleveur!)));
+            builder: (_) => ChatScreen(conversationId: convId, eleveurId: item.uidEleveur!)));
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(

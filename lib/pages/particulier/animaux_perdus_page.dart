@@ -6,8 +6,8 @@ import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -698,55 +698,23 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
     }
 
     try {
-      final firestore = FirebaseFirestore.instance;
-      final existing = await firestore
-          .collection('conversations')
-          .where('participants', arrayContains: currentUid)
-          .get();
-
-      String? conversationId;
-      for (final doc in existing.docs) {
-        final participants =
-            List<String>.from(doc.data()['participants'] ?? []);
-        if (participants.contains(ownerId)) {
-          conversationId = doc.id;
-          break;
-        }
-      }
-
-      bool isNew = false;
-      if (conversationId == null) {
-        final docRef = await firestore.collection('conversations').add({
-          'participants': [currentUid, ownerId],
-          'lastMessage': '',
-          'timestamp': FieldValue.serverTimestamp(),
-          'unreadCount': {currentUid: 0, ownerId: 0},
-          'categorie': 'animaux-perdus',
-        });
-        conversationId = docRef.id;
-        isNew = true;
-      } else {
-        final conv = existing.docs.firstWhere((d) => d.id == conversationId);
-        if (conv.data()['categorie'] != 'animaux-perdus') {
-          await firestore
-              .collection('conversations')
-              .doc(conversationId)
-              .update({'categorie': 'animaux-perdus'});
-        }
-      }
-
-      if (!mounted) return;
       final alerteId = a['id'] as String?;
       final nomAnimal = a['nom_animal'] as String?;
+      final convId = await MessagingHelper.openOrCreateConversation(
+        otherUid: ownerId,
+        categorie: 'animaux-perdus',
+        alerteId: alerteId,
+        nomAnimal: nomAnimal,
+      );
+      if (!mounted) return;
       Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => ChatScreen(
-              conversationId: conversationId!,
+              conversationId: convId,
               eleveurId: ownerId,
               alerteId: alerteId,
               nomAnimal: nomAnimal,
-              isNewConversation: isNew,
             ),
           ));
     } catch (e) {

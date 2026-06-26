@@ -144,10 +144,9 @@ class _EleveurNavState extends State<EleveurNav> {
                   active: _selectedIndex == 0,
                   onTap: () => setState(() => _selectedIndex = 0),
                 ),
-                _NavItem(
+                MsgBadge(
                   icon: Icons.chat_bubble_outline,
                   activeIcon: Icons.chat_bubble,
-                  label: 'Messages',
                   active: _selectedIndex == 1,
                   onTap: () => setState(() => _selectedIndex = 1),
                 ),

@@ -2,8 +2,8 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -92,12 +92,7 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
       final phone = (assoProfile?['phone'] ?? assoProfile?['telephone'])?.toString().trim() ?? '';
       final siteWeb = assoProfile?['site_web']?.toString().trim() ?? '';
 
-      // Filtre is_association sur les animaux si possible
-      final allAnimaux = List<Map<String, dynamic>>.from(animaux);
-      final hasIsAssociation = allAnimaux.any((a) => a.containsKey('is_association'));
-      final filteredAnimaux = hasIsAssociation
-          ? allAnimaux.where((a) => a['is_association'] == true).toList()
-          : allAnimaux;
+      final filteredAnimaux = List<Map<String, dynamic>>.from(animaux);
 
       if (mounted) {
         setState(() {
@@ -122,43 +117,15 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
     if (currentUid == null || currentUid == widget.uid) return;
     setState(() => _loadingChat = true);
     try {
-      final sortedIds = [currentUid, widget.uid]..sort();
-      final participantIds = sortedIds.join('_');
-      final snap = await FirebaseFirestore.instance
-          .collection('conversations')
-          .where('participantIds', isEqualTo: participantIds)
-          .limit(1)
-          .get();
-      final bool isNew = snap.docs.isEmpty;
-      final String conversationId;
-      final profileTypes = <String, String>{
-        widget.uid: 'association',
-        currentUid: User_Info.catPro.isNotEmpty ? User_Info.catPro
-            : (User_Info.isAssociation ? 'association'
-              : (User_Info.isElevage ? 'eleveur' : 'particulier')),
-      };
-      if (isNew) {
-        final ref = await FirebaseFirestore.instance.collection('conversations').add({
-          'participants': [currentUid, widget.uid],
-          'participantIds': participantIds,
-          'lastMessage': '',
-          'timestamp': FieldValue.serverTimestamp(),
-          'participant_profile_types': profileTypes,
-        });
-        conversationId = ref.id;
-      } else {
-        conversationId = snap.docs.first.id;
-        final existing = snap.docs.first.data() as Map<String, dynamic>;
-        if (existing['participant_profile_types'] == null) {
-          await snap.docs.first.reference.update({'participant_profile_types': profileTypes});
-        }
-      }
+      final convId = await MessagingHelper.openOrCreateConversation(
+        otherUid: widget.uid,
+        categorie: 'communaute',
+      );
       if (!mounted) return;
       Navigator.push(context, MaterialPageRoute(
         builder: (_) => ChatScreen(
-          conversationId: conversationId,
+          conversationId: convId,
           eleveurId: widget.uid,
-          isNewConversation: isNew,
         ),
       ));
     } catch (_) {} finally {

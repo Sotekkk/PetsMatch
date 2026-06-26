@@ -22,8 +22,8 @@ import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
@@ -4592,40 +4592,16 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
   Future<void> _openChat() async {
     final owner = _owner;
     if (owner == null) return;
-    final myUid = FirebaseAuth.instance.currentUser?.uid;
-    if (myUid == null) return;
     setState(() => _openingChat = true);
     try {
-      final sortedIds = [myUid, owner['uid'] as String]..sort();
-      final participantIds = sortedIds.join('_');
-      final snap = await FirebaseFirestore.instance
-          .collection('conversations')
-          .where('participantIds', isEqualTo: participantIds)
-          .limit(1)
-          .get();
-      final myProfileType = User_Info.catPro.isNotEmpty ? User_Info.catPro
-          : (User_Info.isAssociation ? 'association'
-            : (User_Info.isElevage ? 'eleveur' : 'particulier'));
-      DocumentReference ref;
-      if (snap.docs.isEmpty) {
-        ref = await FirebaseFirestore.instance.collection('conversations').add({
-          'participants': [myUid, owner['uid']],
-          'participantIds': participantIds,
-          'lastMessage': '',
-          'timestamp': FieldValue.serverTimestamp(),
-          'categorie': 'services',
-          'participant_profile_types': {myUid: myProfileType},
-        });
-      } else {
-        ref = snap.docs.first.reference;
-        final existing = snap.docs.first.data() as Map<String, dynamic>;
-        if (existing['participant_profile_types'] == null) {
-          await ref.update({'participant_profile_types': {myUid: myProfileType}});
-        }
-      }
+      final ownerUid = owner['uid'] as String;
+      final convId = await MessagingHelper.openOrCreateConversation(
+        otherUid: ownerUid,
+        categorie: 'services',
+      );
       if (mounted) {
         Navigator.push(context, MaterialPageRoute(
-          builder: (_) => ChatScreen(conversationId: ref.id, eleveurId: owner['uid'] as String),
+          builder: (_) => ChatScreen(conversationId: convId, eleveurId: ownerUid),
         ));
       }
     } finally {

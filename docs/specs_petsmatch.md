@@ -2632,8 +2632,34 @@ Champs couverts :
 
 ## 15. Messagerie & Paramètres utilisateur
 
-> Dernière mise à jour : 2026-06-18  
-> Surfaces : **App Flutter (Android/iOS) + Site Web Next.js**
+> Dernière mise à jour : 2026-06-26  
+> Surfaces : **App Flutter (Android/iOS) + Site Web Next.js**  
+> **Migration complète Firestore → Supabase (2026-06-26)** : toute la messagerie (éleveur/particulier, PetFriends DM + groupes) est désormais stockée dans Supabase (`conversations` + `messages`). Firestore n'est plus utilisé pour les messages.
+
+---
+
+### 15.0 Architecture messagerie — Supabase
+
+| Table | Rôle |
+|---|---|
+| `conversations` | Une ligne par conversation (DM ou groupe) |
+| `messages` | Un message par ligne, lié à `conversation_id` |
+| `bloquages` | Remplace `bloquer/$uid` Firestore — `{uid, blocked_uid}` |
+
+**Colonnes clés `conversations` :**
+- `participants` JSONB array de UIDs — filtré avec `@>` (opérateur `cs` côté client)
+- `participant_ids` TEXT — join trié des UIDs (`[uid1,uid2]..sort().join('_')`) pour identifier les DMs
+- `participants_info` JSONB — `{uid: {name, photo}}` pour l'affichage sans re-fetch
+- `unread_count` JSONB — `{uid: n}` par participant
+- `pinned_for`, `archived_for`, `muted_for`, `deleted_for` JSONB
+- `type` TEXT — `'direct'` | `'groupe'`
+- `categorie` TEXT — catégorie de la conversation
+
+**Realtime :** abonnement via `supabase.channel().onPostgresChanges(INSERT, table: 'messages', filter: conversation_id=eq.X)` pour les messages en temps réel. Pour la liste des conversations : abonnement sans filtre + rechargement complet au changement (Supabase Realtime ne supporte pas les filtres JSONB).
+
+**RLS :** politiques permissives (`USING(true)`) car Firebase Auth → `auth.uid()` est null côté Supabase.
+
+**Helper Flutter :** `lib/utils/messaging_helper.dart` — `MessagingHelper.openOrCreateConversation({otherUid, categorie, alerteId, nomAnimal, myProfileId, otherProfileId})` — trouve ou crée une conversation Supabase depuis n'importe quelle page.
 
 ---
 
@@ -2641,7 +2667,7 @@ Champs couverts :
 
 Les conversations sont regroupées par catégorie affichée sous forme d'onglets horizontaux.
 
-| Clé Firestore | Label | Emoji | Couleur |
+| Clé `categorie` | Label | Emoji | Couleur |
 |---|---|---|---|
 | `null` / non défini | Tous | — | — |
 | `animaux-perdus` | Perdus/Trouvés | 🐾 | Orange |
@@ -2651,7 +2677,7 @@ Les conversations sont regroupées par catégorie affichée sous forme d'onglets
 | `service-professionnel` | Services | 🔧 | Violet foncé |
 | `__archived__` | Archivés | 📦 | Ardoise |
 
-**Attribution de la catégorie :** définie côté créateur de la conversation selon le contexte (annonce, profil éleveur, profil pro). La valeur est stockée dans le document Firestore `conversations/{id}.categorie`.
+**Attribution de la catégorie :** définie côté créateur via `MessagingHelper.openOrCreateConversation(categorie: '...')`. Valeur stockée dans `conversations.categorie` (Supabase).
 
 ---
 
@@ -2660,23 +2686,24 @@ Les conversations sont regroupées par catégorie affichée sous forme d'onglets
 **Flutter :** `showModalBottomSheet` au long-press sur une carte conversation.  
 **Web :** menu contextuel (right-click / clic droit) avec overlay positionné aux coordonnées de la souris.
 
-| Action | Champ Firestore | Comportement |
+| Action | Champ Supabase | Comportement |
 |---|---|---|
-| **Épingler / Désépingler** | `pinnedFor.$uid: bool` | Conversation remontée en tête de liste |
-| **Archiver / Désarchiver** | `archivedFor.$uid: bool` | Masquée des onglets, visible uniquement dans "Archivés" |
-| **Sourdine 8h** | `mutedFor.$uid: epochMs` | Icône 🔕 sur la carte, notifications désactivées jusqu'à l'heure définie |
-| **Bloquer l'utilisateur** | `bloquer/$uid` (doc Firestore) | Conversation masquée définitivement, expéditeur ne peut plus contacter |
-| **Supprimer** | `deletedFor.$uid: bool` | Conversation masquée uniquement pour l'utilisateur courant |
+| **Épingler / Désépingler** | `pinned_for JSONB {uid: bool}` | Conversation remontée en tête de liste |
+| **Archiver / Désarchiver** | `archived_for JSONB {uid: bool}` | Masquée des onglets, visible uniquement dans "Archivés" |
+| **Sourdine 8h** | `muted_for JSONB {uid: epochMs}` | Icône 🔕 sur la carte, badge non-lu masqué |
+| **Bloquer l'utilisateur** | `bloquages` table `{uid, blocked_uid}` | Conversation masquée définitivement |
+| **Supprimer** | `deleted_for JSONB {uid: bool}` | Conversation masquée uniquement pour l'utilisateur courant |
 
-**Ordre d'affichage :** épinglées en premier, puis par timestamp décroissant.  
+**Ordre d'affichage :** épinglées en premier, puis par `updated_at` décroissant.  
 **Filtrage :** les conversations supprimées, archivées (sauf onglet Archivés) et bloquées sont exclues.
 
 ---
 
 ### 15.3 Messagerie — Visuel des cartes
 
-- Fond `#F0F9FF` + icône 📌 en haut à droite si conversation épinglée
-- Icône 🔕 si sourdine active (`mutedFor.$uid > Date.now()`)
+- Fond `#F0F9FF` + icône 📌 en haut à gauche du nom si conversation épinglée
+- Icône 🔕 si sourdine active (`muted_for[uid] > Date.now()`)
+- Badge rouge sur l'icône Messages de la bottom nav (widget `MsgBadge`) — somme de `unread_count[uid]` sur toutes les conversations directes, mis à jour en Realtime
 - Avatar + nom + dernière message + timestamp (format relatif)
 
 ---
@@ -2734,10 +2761,13 @@ Page `/profil/bloques` : liste des utilisateurs bloqués avec bouton de débloca
 
 | Feature | Code | App Flutter | Web | Notes |
 |---|---|---|---|---|
-| Catégories messagerie (7 onglets) | MSG01 | ✅ | ✅ | Firestore `categorie` |
-| Actions long-press (5 actions) | MSG02 | ✅ | ✅ | Right-click web |
-| Épinglage / archivage / sourdine | MSG03 | ✅ | ✅ | Champs `pinnedFor` etc. |
-| Blocage + page utilisateurs bloqués | MSG04 | ✅ | ✅ | `bloquer/$uid` Firestore |
+| Catégories messagerie (7 onglets) | MSG01 | ✅ | ✅ | Supabase `conversations.categorie` |
+| Actions long-press (5 actions) | MSG02 | ✅ | ✅ | Right-click web — JSONB Supabase |
+| Épinglage / archivage / sourdine | MSG03 | ✅ | ✅ | `pinned_for`/`archived_for`/`muted_for` JSONB |
+| Blocage utilisateurs | MSG04 | ✅ | ✅ | Table `bloquages` Supabase (ex-Firestore) |
+| Badge non-lu icône Messages | MSG05 | ✅ | ✅ | `MsgBadge` Flutter / badge header web |
+| Notification push nouveau message | MSG06 | ✅ | — | Trigger SQL → `notifications` → Edge Function FCM |
+| Chat PetFriends (DM + groupes) | MSG07 | ✅ | ✅ | Supabase Realtime — `petfriend_chat_page.dart` |
 | Paramètres — menu principal | SET01 | ✅ | ✅ (section /profil) | — |
 | Paramètres — info utilisateur | SET02 | ✅ | — | Espèces → profil éleveur |
 | Paramètres — connexion & sécurité | SET03 | ✅ | ✅ | Reset mdp Firebase |
