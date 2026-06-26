@@ -79,21 +79,18 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
       // Animaux : visibles si ami accepté, sinon uniquement publics
       final bool isFriend = relStatut == 'accepte';
       List<Map<String, dynamic>> animaux = [];
-      if (isFriend) {
-        final res = await _supa
-            .from('animaux')
-            .select('id, nom, espece, race, age, photo, couleur')
-            .eq('uid_proprietaire', widget.targetUid)
-            .eq('est_actif', true);
-        animaux = List<Map<String, dynamic>>.from(res as List);
-      } else {
-        final res = await _supa
-            .from('animaux')
-            .select('id, nom, espece, race, age, photo, couleur')
-            .eq('uid_proprietaire', widget.targetUid)
-            .eq('est_actif', true)
-            .eq('visible_petfriends', false);
-        animaux = List<Map<String, dynamic>>.from(res as List);
+      try {
+        if (isFriend) {
+          final res = await _supa
+              .from('animaux')
+              .select('id, nom, espece, race, date_naissance, photo_url, couleur')
+              .eq('uid_proprietaire', widget.targetUid)
+              .not('statut', 'in', '(sorti,decede)');
+          animaux = List<Map<String, dynamic>>.from(res as List);
+        }
+        // Non-ami : animaux masqués (deviendra public quand colonne est_public ajoutée)
+      } catch (_) {
+        // colonnes optionnelles absentes → on affiche 0 animaux sans planter
       }
 
       if (mounted) {
@@ -455,7 +452,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
   }
 
   Widget _animalCard(Map<String, dynamic> a) {
-    final photo = a['photo']?.toString() ?? '';
+    final photo = (a['photo_url'] ?? a['photo'])?.toString() ?? '';
     final nom = a['nom']?.toString() ?? '—';
     final espece = a['espece']?.toString() ?? '';
     final race = a['race']?.toString() ?? '';

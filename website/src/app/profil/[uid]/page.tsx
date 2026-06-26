@@ -11,7 +11,7 @@ interface UserProfile {
   firstname?: string;
   lastname?: string;
   profile_picture_url?: string;
-  city?: string;
+  ville?: string;
 }
 
 interface Animal {
@@ -19,8 +19,8 @@ interface Animal {
   nom: string;
   espece?: string;
   race?: string;
-  age?: number;
-  photo?: string;
+  date_naissance?: string;
+  photo_url?: string;
 }
 
 type RelStatut = 'en_attente' | 'accepte' | null;
@@ -58,7 +58,7 @@ export default function PublicProfilePage() {
     setLoading(true);
     try {
       const { data: p } = await supabase.from('users')
-        .select('uid, firstname, lastname, profile_picture_url, city')
+        .select('uid, firstname, lastname, profile_picture_url, ville')
         .eq('uid', targetUid).maybeSingle();
       setProfile(p ?? null);
 
@@ -78,11 +78,18 @@ export default function PublicProfilePage() {
 
       // Animaux
       const isFriend = rStatut === 'accepte';
-      let query = supabase.from('animaux').select('id, nom, espece, race, age, photo')
-        .eq('uid_proprietaire', targetUid).eq('est_actif', true);
-      if (!isFriend) query = query.eq('visible_petfriends', false);
-      const { data: anim } = await query;
-      setAnimaux((anim ?? []) as Animal[]);
+      let animData: Animal[] = [];
+      if (isFriend) {
+        try {
+          const { data: anim } = await supabase.from('animaux')
+            .select('id, nom, espece, race, date_naissance, photo_url, couleur')
+            .eq('uid_proprietaire', targetUid)
+            .not('statut', 'in', '("sorti","decede")');
+          animData = (anim ?? []) as Animal[];
+        } catch (_) { /* colonnes optionnelles absentes */ }
+      }
+      // Non-ami : animaux masqués (est_public à ajouter plus tard)
+      setAnimaux(animData);
     } finally {
       setLoading(false);
     }
@@ -176,8 +183,8 @@ export default function PublicProfilePage() {
           <Avatar url={profile.profile_picture_url} name={nom} size={88} />
           <div className="text-center">
             <p className="font-bold text-[20px]" style={{ fontFamily: 'Galey, sans-serif' }}>{nom}</p>
-            {profile.city && (
-              <p className="text-gray-400 text-[13px] mt-0.5">📍 {profile.city}</p>
+            {profile.ville && (
+              <p className="text-gray-400 text-[13px] mt-0.5">📍 {profile.ville}</p>
             )}
             {isFriend && (
               <span className="inline-block mt-1 px-3 py-1 bg-[#E8F5E9] text-[#2E7D5E] text-[12px] font-semibold rounded-full">
@@ -208,8 +215,8 @@ export default function PublicProfilePage() {
             <div className="bg-white rounded-2xl p-4 shadow-sm flex flex-wrap gap-4">
               {animaux.map(a => (
                 <div key={a.id} className="flex flex-col items-center gap-1">
-                  {a.photo ? (
-                    <Image src={a.photo} alt={a.nom} width={52} height={52}
+                  {a.photo_url ? (
+                    <Image src={a.photo_url} alt={a.nom} width={52} height={52}
                       className="rounded-full object-cover" style={{ width: 52, height: 52 }} />
                   ) : (
                     <div className="w-[52px] h-[52px] rounded-full bg-[#E8F5E9] flex items-center justify-center">
