@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-06-23 — ajout §16 Lieux Pet-Friendly, §17 Promenades améliorées, §18 PetFriends  
+> Dernière mise à jour : 2026-06-26 — §15 messagerie Firestore→Supabase, §16 Lieux Pet-Friendly (PFP01-PFP40), fix profil éleveur Natacha  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -973,6 +973,24 @@ Phase 4 — Améliorations
 | BEN01 | Gestion bénévoles | ✅ `mes_associations_benevole` (onglets animaux/tâches, tap readOnly) | ✅ `/mes-associations` (animaux cliquables → fiche) | ❌ |
 | EMP02 | Planning soigneurs | 🔜 | 🔜 | ❌ |
 | EMP03 | Affectation soigneurs | 🔜 | 🔜 | ❌ |
+| **PFP01** | Migrations SQL — `petfriendly_places`, `petfriendly_reviews`, `place_likes`, `place_favoris` | 🔜 Backend | 🔜 | 🔜 |
+| **PFP02** | RLS policies pet-friendly | 🔜 | 🔜 | 🔜 |
+| **PFP03** | API geocoding (adresse → lat/lng) | 🔜 | 🔜 | ❌ |
+| **PFP04** | API nearest places (rayon + filtres) | 🔜 | 🔜 | ❌ |
+| **PFP05** | Trigger recalcul `note_moyenne` + `nb_avis` | 🔜 | 🔜 | ❌ |
+| **PFP06–08** | Formulaire inscription pro 3 étapes | 🔜 | 🔜 | ❌ |
+| **PFP09** | Choix plan + Stripe essai 14j | 🔜 | 🔜 | ❌ |
+| **PFP10–11** | Validation admin + email confirmation | 🔜 | 🔜 | 🔜 |
+| **PFP12** | Page "Mon établissement" édition post-validation | 🔜 | 🔜 | ❌ |
+| **PFP13–17** | Page profil public établissement (bannière, horaires, infos pet-friendly) | 🔜 | 🔜 | ❌ |
+| **PFP18–21** | Feed `/lieux-pet-friendly` + filtres + tri | 🔜 | 🔜 | ❌ |
+| **PFP22** | Carte interactive (marqueurs) | 🔜 | 🔜 | ❌ |
+| **PFP23–25** | Likes & favoris + vue "qui a liké" | 🔜 | 🔜 | ❌ |
+| **PFP26–30** | Avis + réponse pro + contestation + admin | 🔜 | 🔜 | 🔜 |
+| **PFP31–32** | Navigation GPS (Waze + Google Maps) | 🔜 | 🔜 | ❌ |
+| **PFP33–35** | Paiement Stripe + gestion abonnement + expiration | 🔜 | 🔜 | ❌ |
+| **PFP36–37** | Dashboard stats pro + notifications pro | 🔜 | 🔜 | ❌ |
+| **PFP38–40** | Tarification admin — seed SQL + vue admin + lecture dynamique | 🔜 | 🔜 | 🔜 |
 
 ---
 
