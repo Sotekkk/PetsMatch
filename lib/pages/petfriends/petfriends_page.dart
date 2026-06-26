@@ -51,10 +51,13 @@ class _PetFriendsPageState extends State<PetFriendsPage>
 
   Future<void> _loadAllUsers() async {
     try {
+      // PetsFriend = réseau particuliers uniquement : exclure éleveurs, associations, pros
       final rows = await _supa
           .from('users')
-          .select('uid, firstname, lastname, profile_picture_url, city')
+          .select('uid, firstname, lastname, profile_picture_url, ville')
           .neq('uid', _myUid)
+          .or('is_elevage.is.null,is_elevage.eq.false')
+          .or('is_pro.is.null,is_pro.eq.false')
           .limit(500);
       if (mounted) setState(() {
         _allUsers = List<Map<String, dynamic>>.from(rows as List);
@@ -102,7 +105,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
       final uids = byUid.keys.toList();
       final profiles = await _supa
           .from('users')
-          .select('uid, firstname, lastname, profile_picture_url, city')
+          .select('uid, firstname, lastname, profile_picture_url, ville')
           .inFilter('uid', uids);
       final Map<String, Map<String, dynamic>> profMap = {
         for (final p in (profiles as List)) p['uid'].toString(): p as Map<String, dynamic>
@@ -121,7 +124,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
           firstname: prof['firstname']?.toString() ?? '',
           lastname: prof['lastname']?.toString() ?? '',
           photoUrl: prof['profile_picture_url']?.toString() ?? '',
-          city: prof['city']?.toString() ?? '',
+          city: prof['ville']?.toString() ?? '',
         );
         if (rel['statut'] == 'accepte') friends.add(row);
         else if (rel['dir'] == 'received') recv.add(row);
@@ -316,7 +319,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
         final u = _searchResults[i];
         final uid = u['uid'].toString();
         final nom = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
-        final city = u['city']?.toString() ?? '';
+        final city = u['ville']?.toString() ?? '';
         final photo = u['profile_picture_url']?.toString() ?? '';
         final statut = _searchStatuts[uid];
 

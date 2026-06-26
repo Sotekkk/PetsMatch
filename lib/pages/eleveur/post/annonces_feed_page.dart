@@ -365,20 +365,31 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
         } catch (_) {}
       }
 
-      // Likes & favoris
+      // Likes & favoris — filtrés par profil actif
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid != null) {
+        final activePid = User_Info.activeProfileId;
+        PostgrestFilterBuilder<List<Map<String, dynamic>>> likesQ = Supabase.instance.client
+            .from('likes').select('annonce_id, bebe_index').eq('user_uid', uid);
+        PostgrestFilterBuilder<List<Map<String, dynamic>>> favsQ = Supabase.instance.client
+            .from('favoris').select('annonce_id, bebe_index').eq('user_uid', uid);
+        if (activePid.isNotEmpty) {
+          likesQ = likesQ.or('profile_id.eq.$activePid,profile_id.is.null');
+          favsQ  = favsQ.or('profile_id.eq.$activePid,profile_id.is.null');
+        } else {
+          final pt = User_Info.isElevage ? 'eleveur' : User_Info.isAssociation ? 'association' : 'particulier';
+          likesQ = likesQ.or('profile_type.eq.$pt,profile_type.is.null');
+          favsQ  = favsQ.or('profile_type.eq.$pt,profile_type.is.null');
+        }
         try {
-          final likes = await Supabase.instance.client
-              .from('likes').select('annonce_id, bebe_index').eq('user_uid', uid);
+          final likes = await likesQ;
           _likedKeys
             ..clear()
             ..addAll(List<Map<String, dynamic>>.from(likes)
                 .map((l) => '${l['annonce_id']}_${l['bebe_index'] ?? 'null'}'));
         } catch (_) {}
         try {
-          final favs = await Supabase.instance.client
-              .from('favoris').select('annonce_id, bebe_index').eq('user_uid', uid);
+          final favs = await favsQ;
           _favoriKeys
             ..clear()
             ..addAll(List<Map<String, dynamic>>.from(favs)

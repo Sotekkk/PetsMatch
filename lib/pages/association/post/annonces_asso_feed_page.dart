@@ -1,3 +1,4 @@
+import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/association/association_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -55,10 +56,15 @@ class _AnnoncesAssoFeedPageState extends State<AnnoncesAssoFeedPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) { setState(() => _likesLoaded = true); return; }
     try {
-      final liked = await Supabase.instance.client
-          .from('likes')
-          .select('annonce_id')
-          .eq('user_uid', uid);
+      final activePid = User_Info.activeProfileId;
+      var likedQ = Supabase.instance.client.from('likes').select('annonce_id').eq('user_uid', uid);
+      if (activePid.isNotEmpty) {
+        likedQ = likedQ.or('profile_id.eq.$activePid,profile_id.is.null');
+      } else {
+        final pt = User_Info.isElevage ? 'eleveur' : User_Info.isAssociation ? 'association' : 'particulier';
+        likedQ = likedQ.or('profile_type.eq.$pt,profile_type.is.null');
+      }
+      final liked = await likedQ;
       final counts = await Supabase.instance.client
           .from('likes')
           .select('annonce_id');
@@ -102,7 +108,11 @@ class _AnnoncesAssoFeedPageState extends State<AnnoncesAssoFeedPage> {
       } else {
         await Supabase.instance.client
             .from('likes')
-            .insert({'annonce_id': annonceId, 'user_uid': uid, 'bebe_index': -1});
+            .insert({
+              'annonce_id': annonceId, 'user_uid': uid, 'bebe_index': -1,
+              'profile_type': User_Info.activeType,
+              if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,
+            });
       }
     } catch (_) {
       // rollback
