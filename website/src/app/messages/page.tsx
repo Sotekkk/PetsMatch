@@ -556,7 +556,7 @@ function MessagesPageInner() {
                   <div className="relative flex-shrink-0 self-center" onClick={e => e.stopPropagation()}>
                     <button
                       onClick={() => setMsgMenu(isMenuOpen ? null : { id: msg.id, isMe })}
-                      className="w-7 h-7 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-all"
+                      className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-all"
                     >
                       <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                         <circle cx="4" cy="10" r="1.5"/><circle cx="10" cy="10" r="1.5"/><circle cx="16" cy="10" r="1.5"/>
@@ -586,7 +586,7 @@ function MessagesPageInner() {
                 );
 
                 return (
-                  <div key={msg.id} className="group">
+                  <div key={msg.id}>
                     {showDate && iso && (
                       <div className="flex justify-center my-3">
                         <span className="bg-gray-200 text-gray-500 text-xs px-3 py-1 rounded-full">{fmtDate(iso)}</span>
