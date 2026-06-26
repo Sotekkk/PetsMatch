@@ -5,6 +5,7 @@ import 'package:PetsMatch/pages/evenements/evenements_page.dart';
 import 'package:PetsMatch/pages/promenades/promenades_page.dart';
 import 'package:PetsMatch/pages/communaute/forum_page.dart';
 import 'package:PetsMatch/pages/communaute/groupes_page.dart';
+import 'package:PetsMatch/pages/lieux/lieux_pet_friendly_page.dart';
 
 class VeterinairesPag extends StatelessWidget {
   const VeterinairesPag({super.key});
@@ -223,14 +224,14 @@ class SortiesPage extends StatelessWidget {
           title: 'Cafés & restaurants',
           description: 'Établissements acceptant les animaux',
           onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(
-            builder: (_) => const FriendlyMapPage(filterCategory: 'Restaurant / Bar'))),
+            builder: (_) => const LieuxPetFriendlyPage(filterCategorie: 'restauration'))),
         ),
         _Section(
           icon: Icons.hotel_outlined,
           title: 'Hôtels & hébergements',
           description: 'Séjours pet-friendly partout en France',
           onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(
-            builder: (_) => const FriendlyMapPage(filterCategory: 'Hôtel / Hébergement'))),
+            builder: (_) => const LieuxPetFriendlyPage(filterCategorie: 'hebergement'))),
         ),
         _Section(
           icon: Icons.event_outlined,
