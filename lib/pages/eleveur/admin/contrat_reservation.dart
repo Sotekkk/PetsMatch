@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -29,16 +30,32 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
   Future<void> _load() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+
+    // Récupérer l'id du profil éleveur pour filtrer les animaux
+    final profileRes = await _supa.from('user_profiles')
+        .select('id')
+        .eq('uid', uid)
+        .eq('profile_type', 'eleveur')
+        .maybeSingle();
+    final eleveurProfileId = profileRes?['id'] as String?;
+
     final [docs, animaux, profil] = await Future.wait([
       _supa.from('documents_animaux')
           .select()
           .eq('uid_eleveur', uid)
           .order('created_at', ascending: false),
-      _supa.from('animaux')
-          .select('id, nom, espece, race, identification, date_naissance, sexe')
-          .eq('uid_eleveur', uid)
-          .not('statut', 'in', '(sorti,decede)')
-          .order('nom'),
+      eleveurProfileId != null
+          ? _supa.from('animaux')
+              .select('id, nom, espece, race, identification, date_naissance, sexe, photo_url')
+              .eq('uid_eleveur', uid)
+              .eq('profile_id', eleveurProfileId)
+              .not('statut', 'in', '(sorti,decede)')
+              .order('nom')
+          : _supa.from('animaux')
+              .select('id, nom, espece, race, identification, date_naissance, sexe, photo_url')
+              .eq('uid_eleveur', uid)
+              .not('statut', 'in', '(sorti,decede)')
+              .order('nom'),
       _supa.from('users')
           .select('firstname, lastname, name_elevage, is_elevage, adress_elevage, adress, rue, ville, code_postal, siret, email, numero_elevage, code_iso_elevage, phone_number, code_iso')
           .eq('uid', uid)
@@ -783,11 +800,21 @@ class _AnimalPickerSheet extends StatelessWidget {
             separatorBuilder: (_, __) => const Divider(height: 1, indent: 16, endIndent: 16),
             itemBuilder: (_, i) {
               final a = animaux[i];
+              final photoUrl = a['photo_url'] as String? ?? '';
               return ListTile(
                 leading: Container(
-                  width: 36, height: 36,
-                  decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(8)),
-                  child: const Center(child: Text('🐾', style: TextStyle(fontSize: 16))),
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(10)),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: photoUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: photoUrl, width: 44, height: 44, fit: BoxFit.cover,
+                            placeholder: (_, __) => const Center(child: Text('🐾', style: TextStyle(fontSize: 16))),
+                            errorWidget: (_, __, ___) => const Center(child: Text('🐾', style: TextStyle(fontSize: 16))),
+                          )
+                        : const Center(child: Text('🐾', style: TextStyle(fontSize: 16))),
+                  ),
                 ),
                 title: Text(
                   '${a['nom'] ?? '—'}',
