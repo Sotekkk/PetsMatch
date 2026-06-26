@@ -39,18 +39,49 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() => _loading = true);
+
+    // Étape 1 : profil (chaque source dans son try indépendant)
+    Map<String, dynamic>? profileData;
     try {
-      // Profil
       final p = await _supa
           .from('users')
           .select('uid, firstname, lastname, profile_picture_url, ville, profile_type')
           .eq('uid', widget.targetUid)
           .maybeSingle();
+      if (p != null) profileData = Map<String, dynamic>.from(p);
+    } catch (_) {}
 
-      // Relation PetFriend
-      String? relStatut, relDir, relId;
-      if (!_isMe) {
+    if (profileData == null) {
+      try {
+        final up = await _supa
+            .from('user_profiles')
+            .select('uid, firstname, lastname, avatar_url, ville, profile_type')
+            .eq('uid', widget.targetUid)
+            .order('is_main', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        if (up != null) {
+          profileData = {
+            'uid':                 up['uid'],
+            'firstname':           up['firstname'],
+            'lastname':            up['lastname'],
+            'profile_picture_url': up['avatar_url'],
+            'ville':               up['ville'],
+            'profile_type':        up['profile_type'],
+          };
+        }
+      } catch (_) {}
+    }
+
+    // Affiche le profil dès qu'on l'a, sans attendre le reste
+    if (mounted) setState(() => _profile = profileData);
+
+    // Étape 2 : relation PetFriend
+    String? relStatut, relDir, relId;
+    try {
+      if (!_isMe && _myUid.isNotEmpty) {
         final sent = await _supa
             .from('petfriends')
             .select('id, statut')
@@ -75,36 +106,29 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
           }
         }
       }
+    } catch (_) {}
 
-      // Animaux : visibles si ami accepté, sinon uniquement publics
-      final bool isFriend = relStatut == 'accepte';
-      List<Map<String, dynamic>> animaux = [];
-      try {
-        if (isFriend) {
-          final res = await _supa
-              .from('animaux')
-              .select('id, nom, espece, race, date_naissance, photo_url, couleur')
-              .eq('uid_proprietaire', widget.targetUid)
-              .not('statut', 'in', '(sorti,decede)');
-          animaux = List<Map<String, dynamic>>.from(res as List);
-        }
-        // Non-ami : animaux masqués (deviendra public quand colonne est_public ajoutée)
-      } catch (_) {
-        // colonnes optionnelles absentes → on affiche 0 animaux sans planter
+    // Étape 3 : animaux (amis uniquement)
+    List<Map<String, dynamic>> animaux = [];
+    try {
+      if (relStatut == 'accepte') {
+        final res = await _supa
+            .from('animaux')
+            .select('id, nom, espece, race, date_naissance, photo_url, couleur')
+            .eq('uid_proprietaire', widget.targetUid)
+            .not('statut', 'in', '(sorti,decede)');
+        animaux = List<Map<String, dynamic>>.from(res as List);
       }
+    } catch (_) {}
 
-      if (mounted) {
-        setState(() {
-          _profile = p != null ? Map<String, dynamic>.from(p) : null;
-          _animaux = animaux;
-          _relStatut = relStatut;
-          _relDirection = relDir;
-          _relId = relId;
-          _loading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _loading = false);
+    if (mounted) {
+      setState(() {
+        _animaux = animaux;
+        _relStatut = relStatut;
+        _relDirection = relDir;
+        _relId = relId;
+        _loading = false;
+      });
     }
   }
 

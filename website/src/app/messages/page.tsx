@@ -436,16 +436,19 @@ function MessagesPageInner() {
               const isPinned = conv.pinned_for?.[user.uid] === true;
               const isSelected = conv.id === selectedId;
               return (
-                <button
+                <div
                   key={conv.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => {
                     setSelectedId(conv.id);
                     setMobileView('thread');
                     setContextMenu(null);
                     if (oUid && !userInfoCacheRef.current[oUid]) getUserInfo(oUid);
                   }}
+                  onKeyDown={e => { if (e.key === 'Enter') { setSelectedId(conv.id); setMobileView('thread'); }}}
                   onContextMenu={e => { e.preventDefault(); setContextMenu({ id: conv.id, x: e.clientX, y: e.clientY }); }}
-                  className={`w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 transition-colors relative ${
+                  className={`group w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 transition-colors relative cursor-pointer ${
                     isSelected ? 'bg-[#0C5C6C]/5' : isPinned ? 'bg-[#F0F9FF]' : ''
                   }`}>
                   {isSelected && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#0C5C6C]" />}
@@ -472,7 +475,21 @@ function MessagesPageInner() {
                         </span>
                         {isMuted && <span className="text-gray-400 text-xs flex-shrink-0">🔕</span>}
                       </div>
-                      <span className="text-xs text-gray-400 flex-shrink-0">{fmtTime(conv.updated_at)}</span>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setContextMenu({ id: conv.id, x: rect.left - 180, y: rect.bottom + 4 });
+                          }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600"
+                          title="Actions">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
+                          </svg>
+                        </button>
+                        <span className="text-xs text-gray-400 group-hover:opacity-0">{fmtTime(conv.updated_at)}</span>
+                      </div>
                     </div>
                     <p className={`text-xs truncate ${unread > 0 ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>
                       {conv.last_message ?? ''}
@@ -483,7 +500,7 @@ function MessagesPageInner() {
                       </span>
                     )}
                   </div>
-                </button>
+                </div>
               );
             })
           )}
