@@ -405,6 +405,18 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
     setState(() => _searchResults = []);
   }
 
+  Future<void> _showAnimalPicker(BuildContext context) async {
+    final selected = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AnimalPickerSheet(animaux: widget.animaux),
+    );
+    if (selected != null) {
+      setState(() => _selectedAnimal = selected);
+    }
+  }
+
   Future<void> _creer() async {
     if (_selectedAnimal == null) return;
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -543,25 +555,29 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
             // Sélecteur animal
             const Text('Animal concerné *', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFE0E0E0)),
-                borderRadius: BorderRadius.circular(12),
-                color: Colors.white,
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  isExpanded: true,
-                  value: _selectedAnimal?['id'] as String?,
-                  hint: const Text('Sélectionner un animal', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
-                  onChanged: (v) => setState(() => _selectedAnimal = widget.animaux.firstWhere((a) => a['id'] == v)),
-                  items: widget.animaux.map((a) => DropdownMenuItem<String>(
-                    value: a['id'] as String,
-                    child: Text('${a['nom'] ?? '—'} (${a['espece'] ?? '—'}${a['race'] != null ? ' · ${a['race']}' : ''})',
-                        style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-                  )).toList(),
+            GestureDetector(
+              onTap: () => _showAnimalPicker(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFE0E0E0)),
+                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.white,
                 ),
+                child: Row(children: [
+                  Expanded(
+                    child: Text(
+                      _selectedAnimal != null
+                          ? '${_selectedAnimal!['nom'] ?? '—'} (${_selectedAnimal!['espece'] ?? '—'}${_selectedAnimal!['race'] != null ? ' · ${_selectedAnimal!['race']}' : ''})'
+                          : 'Sélectionner un animal',
+                      style: TextStyle(
+                        fontFamily: 'Galey', fontSize: 13,
+                        color: _selectedAnimal != null ? const Color(0xFF1F2A2E) : Colors.grey,
+                      ),
+                    ),
+                  ),
+                  const Icon(Icons.keyboard_arrow_down, color: Colors.grey, size: 20),
+                ]),
               ),
             ),
             if (_selectedAnimal != null)
@@ -718,4 +734,77 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
       ),
     ]),
   );
+}
+
+// ── Sélecteur animal avec flèche retour ───────────────────────────────────────
+
+class _AnimalPickerSheet extends StatelessWidget {
+  final List<Map<String, dynamic>> animaux;
+  const _AnimalPickerSheet({required this.animaux});
+
+  static const _teal = Color(0xFF0C5C6C);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 40, height: 4,
+          margin: const EdgeInsets.only(top: 12, bottom: 8),
+          decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(children: [
+            IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.arrow_back_ios, size: 20),
+              color: const Color(0xFF1F2A2E),
+            ),
+            const Expanded(
+              child: Text('Sélectionner un animal',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFF1F2A2E)),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(width: 48),
+          ]),
+        ),
+        const Divider(height: 1),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: animaux.length,
+            separatorBuilder: (_, __) => const Divider(height: 1, indent: 16, endIndent: 16),
+            itemBuilder: (_, i) {
+              final a = animaux[i];
+              return ListTile(
+                leading: Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(8)),
+                  child: const Center(child: Text('🐾', style: TextStyle(fontSize: 16))),
+                ),
+                title: Text(
+                  '${a['nom'] ?? '—'}',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E)),
+                ),
+                subtitle: Text(
+                  '${a['espece'] ?? '—'}${a['race'] != null ? ' · ${a['race']}' : ''}',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF888888)),
+                ),
+                trailing: const Icon(Icons.chevron_right, color: _teal, size: 20),
+                onTap: () => Navigator.pop(context, a),
+              );
+            },
+          ),
+        ),
+        SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
+      ]),
+    );
+  }
 }
