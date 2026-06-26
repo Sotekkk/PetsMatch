@@ -57,9 +57,20 @@ post_install do |installer|
     end
   end
 
+  # Pods managed correctly by CocoaPods — skip header manipulation for these.
+  SKIP_HEADER_MANIPULATION = %w[
+    FirebaseFirestore FirebaseFirestoreInternal FirebaseFirestoreSwift
+    FirebaseAuth FirebaseAuthInterop FirebaseCore FirebaseCoreInternal
+    FirebaseCoreExtension FirebaseAppCheckInterop FirebaseMessaging
+    Mantle
+    StripePayments StripePaymentsUI StripePaymentSheet StripeCore
+    Stripe3DS2 StripeApplePay StripeUICore stripe_ios
+  ].freeze
+
   # Step 1: ensure every public header is reachable from the pod root dir.
   # Track new copies so Step 3 knows which headers CocoaPods missed.
   installer.pods_project.targets.each do |target|
+    next if SKIP_HEADER_MANIPULATION.include?(target.name)
     pod_dir = File.join(pods_root, target.name)
     next unless Dir.exist?(pod_dir)
     Dir.glob(File.join(pod_dir, '**/Public', target.name, '*.h')).each do |h|
@@ -294,5 +305,53 @@ post_install do |installer|
     end.compact
     new_content = new_lines.join
     File.write(umbrella, new_content) if new_content != content
+  end
+
+  # Step 6: safety net — remove known cross-pod headers still present in umbrella
+  # headers of skipped pods (residual from previous pod install runs).
+  # Step 6: remove cross-pod headers incorrectly injected into umbrella headers by Step 3.
+  # Firebase: FIRAuthInterop belongs to FirebaseAuthInterop, not FirebaseFirestore*.
+  # Mantle: EXT* headers belong to libextobjc, not Mantle.
+  # StripePayments: STDS* headers belong to Stripe3DS2, not StripePayments.
+  exact_cross_pod = {
+    'FirebaseFirestoreInternal' => %w[FIRAuthInterop.h FIRAuthInteropErrors.h],
+    'FirebaseFirestore'         => %w[FIRAuthInterop.h FIRAuthInteropErrors.h],
+    'Mantle'                    => %w[MTLEXTKeyPathCoding.h EXTKeyPathCoding.h MTLEXTRuntimeExtensions.h EXTRuntimeExtensions.h MTLEXTScope.h EXTScope.h MTLMetamacros.h metamacros.h],
+  }
+  exact_cross_pod.each do |pod_name, headers|
+    umbrella = File.expand_path(File.join(support_files_root, pod_name, "#{pod_name}-umbrella.h"))
+    next unless File.exist?(umbrella)
+    content = File.read(umbrella)
+    new_content = content.each_line.reject { |l| headers.any? { |h| l =~ /^#import\s+"#{Regexp.escape(h)}"/ } }.join
+    File.write(umbrella, new_content) if new_content != content
+  end
+
+  # Mantle embeds extobjc headers in a subdirectory not visible to Xcode by default.
+  mantle_extobjc_path = File.join(pods_root, 'Mantle', 'Mantle', 'extobjc', 'include')
+  installer.pods_project.targets.each do |target|
+    next unless target.name == 'Mantle'
+    target.build_configurations.each do |config|
+      existing = config.build_settings['HEADER_SEARCH_PATHS'] || '$(inherited)'
+      config.build_settings['HEADER_SEARCH_PATHS'] = [
+        existing,
+        "\"#{mantle_extobjc_path}\"",
+      ].join(' ')
+    end
+  end
+
+  # StripePayments embeds Stripe3DS2 headers inside its own pod directory.
+  # Use the absolute path (not $(PODS_ROOT) variable) so Xcode resolves it during pod install.
+  stripe3ds2_path      = File.join(pods_root, 'StripePayments', 'Stripe3DS2', 'Stripe3DS2')
+  stripe3ds2_inc_path  = File.join(stripe3ds2_path, 'include')
+  installer.pods_project.targets.each do |target|
+    next unless %w[StripePayments StripePaymentsUI StripePaymentSheet stripe_ios].include?(target.name)
+    target.build_configurations.each do |config|
+      existing = config.build_settings['HEADER_SEARCH_PATHS'] || '$(inherited)'
+      config.build_settings['HEADER_SEARCH_PATHS'] = [
+        existing,
+        "\"#{stripe3ds2_path}\"",
+        "\"#{stripe3ds2_inc_path}\"",
+      ].join(' ')
+    end
   end
 end

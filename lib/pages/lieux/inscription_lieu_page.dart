@@ -345,9 +345,19 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
   // ─── Étape 1 — Identité ──────────────────────────────────────────────────
 
   Widget _buildStep1() {
-    const sousHebergement = ['hotel','hebergement_insolite','gite','camping','villa_location'];
-    const sousRestauration = ['cafe','restaurant','bar','fast_food','boulangerie'];
-    final sousList = _categorie == 'hebergement' ? sousHebergement : sousRestauration;
+    const allTypes = [
+      ('hotel',                '🏨', 'Hôtel'),
+      ('hebergement_insolite', '🏕️', 'Hébergement insolite'),
+      ('gite',                 '🏡', 'Gîte / Chambre d\'hôtes'),
+      ('camping',              '⛺', 'Camping'),
+      ('villa_location',       '🏖️', 'Location saisonnière'),
+      ('cafe',                 '☕', 'Café / Salon de thé'),
+      ('restaurant',           '🍽️', 'Restaurant'),
+      ('bar',                  '🍺', 'Bar / Brasserie'),
+      ('fast_food',            '🍔', 'Restauration rapide'),
+      ('boulangerie',          '🥐', 'Boulangerie / Pâtisserie'),
+    ];
+    const hebergementTypes = {'hotel','hebergement_insolite','gite','camping','villa_location'};
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -357,22 +367,26 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
         const SizedBox(height: 12),
         _Field(_siretCtrl, 'SIRET (14 chiffres)', keyboardType: TextInputType.number, maxLength: 14),
         const SizedBox(height: 20),
-        _SectionTitle('Catégorie'),
-        Row(children: [
-          _CatChip('🏨 Hébergement', 'hebergement', _categorie, (v) {
-            setState(() { _categorie = v; _sousCategorie = 'hotel'; });
-          }),
-          const SizedBox(width: 10),
-          _CatChip('🍽️ Restauration', 'restauration', _categorie, (v) {
-            setState(() { _categorie = v; _sousCategorie = 'cafe'; });
-          }),
-        ]),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          value: _sousCategorie,
-          decoration: _inputDeco('Sous-catégorie'),
-          items: sousList.map((s) => DropdownMenuItem(value: s, child: Text(_sousLabel(s)))).toList(),
-          onChanged: (v) { if (v != null) setState(() => _sousCategorie = v); },
+        _SectionTitle('Type d\'établissement'),
+        Wrap(
+          spacing: 8, runSpacing: 8,
+          children: allTypes.map((t) {
+            final sel = _sousCategorie == t.$1;
+            return FilterChip(
+              label: Text('${t.$2} ${t.$3}', style: TextStyle(
+                  fontSize: 12, color: sel ? Colors.white : Colors.grey.shade700)),
+              selected: sel,
+              selectedColor: _teal,
+              backgroundColor: Colors.white,
+              checkmarkColor: Colors.white,
+              showCheckmark: false,
+              side: BorderSide(color: sel ? _teal : Colors.grey.shade300),
+              onSelected: (_) => setState(() {
+                _sousCategorie = t.$1;
+                _categorie = hebergementTypes.contains(t.$1) ? 'hebergement' : 'restauration';
+              }),
+            );
+          }).toList(),
         ),
         const SizedBox(height: 20),
         _SectionTitle('Adresse'),
