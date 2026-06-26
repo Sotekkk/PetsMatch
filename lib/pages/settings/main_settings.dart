@@ -6,6 +6,7 @@ import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
+import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
 import 'package:PetsMatch/pages/settings/about_us.dart';
 import 'package:PetsMatch/pages/settings/connectionSecu.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
@@ -196,6 +197,15 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                   },
                 ),
               ],
+              buildSettingsOption(
+                context,
+                icon: Icons.store_outlined,
+                text: 'Mon établissement',
+                onTap: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (context) => const MonEtablissementPage()));
+                },
+              ),
               buildSettingsOption(
                 context,
                 icon: Icons.block_outlined,
