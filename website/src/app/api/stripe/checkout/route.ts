@@ -9,7 +9,7 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { uid, email, plan, periodicite, annonce_id, produit_code } = await req.json();
+    const { uid, email, plan, periodicite, annonce_id, produit_code, profile_id } = await req.json();
     if (!uid || !email) return NextResponse.json({ error: 'uid et email requis' }, { status: 400 });
 
     const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
@@ -37,8 +37,8 @@ export async function POST(req: NextRequest) {
         line_items: [{ price: priceId, quantity: 1 }],
         success_url: `${origin}/abonnement?success=1&plan=${plan}&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url:  `${origin}/abonnement?cancelled=1`,
-        metadata: { uid, plan, periodicite },
-        subscription_data: { metadata: { uid, plan, periodicite } },
+        metadata: { uid, plan, periodicite, ...(profile_id ? { profile_id } : {}) },
+        subscription_data: { metadata: { uid, plan, periodicite, ...(profile_id ? { profile_id } : {}) } },
       });
 
       return NextResponse.json({ url: session.url });

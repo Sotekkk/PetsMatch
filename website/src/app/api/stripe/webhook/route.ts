@@ -37,19 +37,23 @@ export async function POST(req: NextRequest) {
         if (session.mode === 'subscription' && session.subscription) {
           const plan = session.metadata?.plan ?? 'pro';
           const periodicite = session.metadata?.periodicite ?? 'mensuel';
+          const profileId = session.metadata?.profile_id ?? null;
           const subId = typeof session.subscription === 'string' ? session.subscription : session.subscription.id;
 
           const sub = await stripe.subscriptions.retrieve(subId, { expand: ['items'] });
           const periodEnd = sub.items.data[0]?.current_period_end ?? null;
           const dateFin = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
 
-          // Désactiver l'ancien abonnement actif avant d'insérer le nouveau
-          await supabase.from('abonnements')
+          // Désactiver l'ancien abonnement actif pour ce profil avant d'insérer le nouveau
+          const cancelQ = supabase.from('abonnements')
             .update({ statut: 'annule', updated_at: new Date().toISOString() })
             .eq('uid', uid).eq('statut', 'actif');
+          if (profileId) await cancelQ.eq('profile_id', profileId);
+          else await cancelQ;
 
           await supabase.from('abonnements').insert({
             uid,
+            profile_id: profileId,
             profil_type: 'eleveur',
             plan_code: plan,
             periodicite,
@@ -62,6 +66,21 @@ export async function POST(req: NextRequest) {
             updated_at: new Date().toISOString(),
           });
 
+          // Mettre à jour le plan sur le profil concerné ET sur users (profil principal)
+          if (profileId) {
+            await supabase.from('user_profiles').update({
+              plan_code: plan,
+              is_premium: plan === 'premium',
+              plan_until: dateFin,
+            }).eq('id', profileId);
+          } else {
+            // Pas de profil secondaire → mettre à jour le profil principal
+            await supabase.from('user_profiles').update({
+              plan_code: plan,
+              is_premium: plan === 'premium',
+              plan_until: dateFin,
+            }).eq('uid', uid).eq('is_main', true);
+          }
           await supabase.from('users').update({
             plan_code: plan,
             is_premium: plan === 'premium',
@@ -106,10 +125,21 @@ export async function POST(req: NextRequest) {
       case 'customer.subscription.deleted': {
         const sub = event.data.object as Stripe.Subscription;
         const uid = sub.metadata?.uid;
+        const profileId = sub.metadata?.profile_id ?? null;
         await supabase.from('abonnements')
           .update({ statut: 'annule', updated_at: new Date().toISOString() })
           .eq('stripe_subscription_id', sub.id);
         if (uid) {
+          // Remettre le plan à free sur le profil concerné
+          if (profileId) {
+            await supabase.from('user_profiles').update({
+              plan_code: 'free', is_premium: false, plan_until: null,
+            }).eq('id', profileId);
+          } else {
+            await supabase.from('user_profiles').update({
+              plan_code: 'free', is_premium: false, plan_until: null,
+            }).eq('uid', uid).eq('is_main', true);
+          }
           await supabase.from('users').update({ plan_code: 'free', is_premium: false }).eq('uid', uid);
         }
         break;
