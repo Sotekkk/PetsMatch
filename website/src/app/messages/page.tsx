@@ -101,6 +101,7 @@ function MessagesPageInner() {
   const [activeCategory, setActiveCategory] = useState<ConvCategorie>(null);
   const [mobileView, setMobileView] = useState<'list' | 'thread'>('list');
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [msgMenu, setMsgMenu] = useState<{ id: string; isMe: boolean } | null>(null);
   const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -293,6 +294,12 @@ function MessagesPageInner() {
       setSending(false);
       inputRef.current?.focus();
     }
+  }
+
+  async function deleteMessage(msgId: string) {
+    await supabase.from('messages').delete().eq('id', msgId);
+    setMessages(prev => prev.filter(m => m.id !== msgId));
+    setMsgMenu(null);
   }
 
   if (loading || !user) {
@@ -513,9 +520,12 @@ function MessagesPageInner() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+            <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1" onClick={() => setMsgMenu(null)}>
               {messages.length === 0 && (
                 <p className="text-center text-gray-400 text-sm py-8">Commencez la conversation !</p>
+              )}
+              {msgMenu && (
+                <div className="fixed inset-0 z-40" onClick={() => setMsgMenu(null)} />
               )}
               {messages.map((msg, i) => {
                 const isMe = msg.sender_id === user.uid;
@@ -523,15 +533,50 @@ function MessagesPageInner() {
                 const prevIso = i > 0 ? messages[i - 1].created_at : null;
                 const showDate = i === 0 || fmtDate(iso) !== fmtDate(prevIso);
                 const isLocation = msg.msg_type === 'location';
+                const isMenuOpen = msgMenu?.id === msg.id;
+
+                const dotsButton = (side: 'left' | 'right') => (
+                  <div className="relative flex-shrink-0 self-center" onClick={e => e.stopPropagation()}>
+                    <button
+                      onClick={() => setMsgMenu(isMenuOpen ? null : { id: msg.id, isMe })}
+                      className="w-7 h-7 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-all"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <circle cx="4" cy="10" r="1.5"/><circle cx="10" cy="10" r="1.5"/><circle cx="16" cy="10" r="1.5"/>
+                      </svg>
+                    </button>
+                    {isMenuOpen && (
+                      <div className={`absolute bottom-8 ${side === 'right' ? 'left-0' : 'right-0'} bg-white rounded-xl shadow-xl border border-gray-100 py-1 w-44 z-50`}>
+                        {msg.text && (
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(msg.text!); setMsgMenu(null); }}
+                            className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left"
+                          >
+                            <span>📋</span>Copier
+                          </button>
+                        )}
+                        {isMe && (
+                          <button
+                            onClick={() => deleteMessage(msg.id)}
+                            className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
+                          >
+                            <span>🗑️</span>Supprimer
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
 
                 return (
-                  <div key={msg.id}>
+                  <div key={msg.id} className="group">
                     {showDate && iso && (
                       <div className="flex justify-center my-3">
                         <span className="bg-gray-200 text-gray-500 text-xs px-3 py-1 rounded-full">{fmtDate(iso)}</span>
                       </div>
                     )}
-                    <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} mb-0.5`}>
+                    <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} items-end gap-1 mb-0.5`}>
+                      {isMe && dotsButton('left')}
                       <div className={`max-w-[75%] rounded-2xl text-sm ${
                         isMe ? 'bg-[#0C5C6C] text-white rounded-br-md' : 'bg-white text-[#1F2A2E] shadow-sm rounded-bl-md'
                       } ${isLocation || msg.image_url ? 'p-1' : 'px-4 py-2.5'}`}>
@@ -559,6 +604,7 @@ function MessagesPageInner() {
                           {isMe && msg.is_read && ' · Vu'}
                         </p>
                       </div>
+                      {!isMe && dotsButton('right')}
                     </div>
                   </div>
                 );
