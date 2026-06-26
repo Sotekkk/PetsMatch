@@ -5,7 +5,7 @@
 -- ── 1. Stats journalières par annonce ─────────────────────
 CREATE TABLE IF NOT EXISTS annonces_stats_daily (
   id           UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
-  annonce_id   UUID        NOT NULL REFERENCES annonces(id) ON DELETE CASCADE,
+  annonce_id   TEXT        NOT NULL REFERENCES annonces(id) ON DELETE CASCADE,
   date         DATE        NOT NULL DEFAULT CURRENT_DATE,
   vues         INT         NOT NULL DEFAULT 0,
   visiteurs    INT         NOT NULL DEFAULT 0, -- compteur sessions uniques (approximatif)
@@ -19,7 +19,7 @@ CREATE INDEX IF NOT EXISTS idx_stats_daily_annonce ON annonces_stats_daily(annon
 -- ── 2. Stats par chiot de portée ──────────────────────────
 CREATE TABLE IF NOT EXISTS animaux_portee_stats (
   id           UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
-  annonce_id   UUID        NOT NULL REFERENCES annonces(id) ON DELETE CASCADE,
+  annonce_id   TEXT        NOT NULL REFERENCES annonces(id) ON DELETE CASCADE,
   bebe_index   INT         NOT NULL,
   date         DATE        NOT NULL DEFAULT CURRENT_DATE,
   vues         INT         NOT NULL DEFAULT 0,
@@ -31,7 +31,7 @@ CREATE INDEX IF NOT EXISTS idx_portee_stats_annonce ON animaux_portee_stats(anno
 -- ── 3. Origine géographique des vues ──────────────────────
 CREATE TABLE IF NOT EXISTS annonces_views_geo (
   id           UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
-  annonce_id   UUID        NOT NULL REFERENCES annonces(id) ON DELETE CASCADE,
+  annonce_id   TEXT        NOT NULL REFERENCES annonces(id) ON DELETE CASCADE,
   departement  TEXT        NOT NULL DEFAULT 'inconnu',
   vues         INT         NOT NULL DEFAULT 0,
   updated_at   TIMESTAMPTZ DEFAULT NOW(),
@@ -54,9 +54,9 @@ CREATE POLICY views_geo_all    ON annonces_views_geo    USING (true) WITH CHECK 
 
 -- Incrémenter une vue annonce (appelée depuis le front)
 CREATE OR REPLACE FUNCTION increment_annonce_view(
-  p_annonce_id  UUID,
+  p_annonce_id  TEXT,
   p_departement TEXT DEFAULT 'inconnu',
-  p_unique      BOOLEAN DEFAULT false   -- true si première vue de la session
+  p_unique      BOOLEAN DEFAULT false
 )
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
@@ -82,7 +82,7 @@ $$;
 
 -- Incrémenter une vue chiot de portée
 CREATE OR REPLACE FUNCTION increment_portee_view(
-  p_annonce_id UUID,
+  p_annonce_id TEXT,
   p_bebe_index INT
 )
 RETURNS void LANGUAGE plpgsql AS $$
@@ -96,9 +96,9 @@ $$;
 
 -- Incrémenter favoris chiot de portée
 CREATE OR REPLACE FUNCTION increment_portee_favori(
-  p_annonce_id UUID,
+  p_annonce_id TEXT,
   p_bebe_index INT,
-  p_delta      INT DEFAULT 1  -- +1 pour like, -1 pour unlike
+  p_delta      INT DEFAULT 1
 )
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
