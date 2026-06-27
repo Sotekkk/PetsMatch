@@ -352,11 +352,20 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
   Widget _buildStatsRow() {
     if (!User_Info.isPro) {
       return Row(children: [
-        _StatCard(value: _animalCount.toString(), label: 'Animaux', icon: Icons.cruelty_free_outlined),
+        _StatCard(
+          value: _animalCount.toString(), label: 'Animaux', icon: Icons.cruelty_free_outlined,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnimauxPage())),
+        ),
         const SizedBox(width: 12),
-        _StatCard(value: _postCount.toString(), label: 'Annonces', icon: Icons.campaign_outlined),
+        _StatCard(
+          value: _postCount.toString(), label: 'Annonces', icon: Icons.campaign_outlined,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnnoncesPage())),
+        ),
         const SizedBox(width: 12),
-        _StatCard(value: 'Éleveur', label: 'Statut', icon: Icons.verified_outlined),
+        _StatCard(
+          value: 'Éleveur', label: 'Statut', icon: Icons.verified_outlined,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AbonnementPage())),
+        ),
       ]);
     }
     if (User_Info.catPro == 'veterinaire') {
@@ -827,30 +836,34 @@ class _StatCard extends StatelessWidget {
   final String value;
   final String label;
   final IconData icon;
+  final VoidCallback? onTap;
 
-  const _StatCard({required this.value, required this.label, required this.icon});
+  const _StatCard({required this.value, required this.label, required this.icon, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 6, offset: const Offset(0, 2))],
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: const Color(0xFF6E9E57), size: 22),
-            const SizedBox(height: 4),
-            Text(value,
-                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF1F2A2E))),
-            Text(label,
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
-          ],
-        ),
+    final card = Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 6, offset: const Offset(0, 2))],
       ),
+      child: Column(
+        children: [
+          Icon(icon, color: const Color(0xFF6E9E57), size: 22),
+          const SizedBox(height: 4),
+          Text(value,
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF1F2A2E))),
+          Text(label,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
+        ],
+      ),
+    );
+    return Expanded(
+      child: onTap != null
+          ? GestureDetector(onTap: onTap, child: card)
+          : card,
     );
   }
 }

@@ -164,17 +164,17 @@ export default function EleveurDashboard() {
 
         <div className="grid grid-cols-3 gap-3">
           {[
-            { value: animalCount, label: 'Animaux', icon: '🐾' },
-            { value: postCount,   label: 'Annonces', icon: '📋' },
-            { value: planConfig.badge + ' ' + planConfig.label, label: 'Plan', icon: null },
+            { value: animalCount, label: 'Animaux', icon: '🐾', href: '/mes-animaux' },
+            { value: postCount,   label: 'Annonces', icon: '📋', href: '/mes-annonces' },
+            { value: planConfig.badge + ' ' + planConfig.label, label: 'Plan', icon: null, href: '/abonnement' },
           ].map((s) => (
-            <div key={s.label} className="bg-white rounded-2xl p-4 flex flex-col items-center shadow-sm">
+            <Link key={s.label} href={s.href} className="bg-white rounded-2xl p-4 flex flex-col items-center shadow-sm hover:shadow-md transition-shadow">
               {s.icon && <span className="text-xl mb-1">{s.icon}</span>}
               <span className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
                 {s.value}
               </span>
               <span className="text-xs text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>{s.label}</span>
-            </div>
+            </Link>
           ))}
         </div>
 
