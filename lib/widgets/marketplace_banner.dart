@@ -4,8 +4,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/main.dart';
 
-const _kVetPlaceholder =
-    'https://images.unsplash.com/photo-1628009368231-7bb7cfcb0def?w=600&q=70&fit=crop';
+const _kPlaceholders = {
+  'assurance':   'https://images.unsplash.com/photo-1450778869180-41d0601e046e?w=600&q=70&fit=crop',
+  'sante':       'https://images.unsplash.com/photo-1628009368231-7bb7cfcb0def?w=600&q=70&fit=crop',
+  'veterinaire': 'https://images.unsplash.com/photo-1628009368231-7bb7cfcb0def?w=600&q=70&fit=crop',
+  'alimentation':'https://images.unsplash.com/photo-1601758124277-a7a9e4cc79e2?w=600&q=70&fit=crop',
+  'accessoire':  'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=600&q=70&fit=crop',
+  '_default':    'https://images.unsplash.com/photo-1516734212186-a967f81ad0d7?w=600&q=70&fit=crop',
+};
 
 /// Bannière rotative — affiche les partenaires marketplace actifs.
 /// Swipe manuel + rotation automatique toutes les 8s.
@@ -151,12 +157,11 @@ class _MarketplaceBannerState extends State<MarketplaceBanner> {
     return const Color(0xFF6E9E57);
   }
 
-  String? _heroImage(Map<String, dynamic> partner) {
+  String _heroImage(Map<String, dynamic> partner) {
     final logo = partner['logo_url'] as String?;
     if (logo != null && logo.isNotEmpty) return logo;
     final cat = partner['categorie'] as String? ?? '';
-    if (cat == 'sante' || cat == 'veterinaire') return _kVetPlaceholder;
-    return null;
+    return _kPlaceholders[cat] ?? _kPlaceholders['_default']!;
   }
 
   @override
@@ -225,7 +230,7 @@ class _MarketplaceBannerState extends State<MarketplaceBanner> {
 // ─── Carte ───────────────────────────────────────────────────────────────────
 
 class _BannerCard extends StatelessWidget {
-  final String? heroImage;
+  final String heroImage;
   final String nom;
   final String? desc;
   final Color accentColor;
@@ -267,11 +272,8 @@ class _BannerCard extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 // Image ou gradient
-                if (heroImage != null)
-                  Image.network(heroImage!, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _gradient())
-                else
-                  _gradient(),
+                Image.network(heroImage, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _gradient()),
 
                 // Vignette bas
                 Positioned.fill(
