@@ -219,7 +219,7 @@ export default function ProfilEleveurPage() {
 
       {/* Actions */}
       <div className="flex flex-col gap-3">
-        <Link href="/profil"
+        <Link href="/elevage/profil/edit"
           className="flex items-center justify-center gap-2 bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold text-sm py-3.5 rounded-2xl transition-colors shadow-sm">
           ✏️ Modifier mon profil
         </Link>
