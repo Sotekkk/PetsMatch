@@ -89,7 +89,7 @@ export default function MarketplaceBanner() {
       <div
         onClick={handleClick}
         className={`relative rounded-2xl overflow-hidden shadow-md cursor-pointer select-none transition-transform hover:scale-[1.01] active:scale-[0.99]`}
-        style={{ height: 130 }}
+        style={{ height: 175 }}
       >
         {/* Hero image / gradient */}
         {img ? (
