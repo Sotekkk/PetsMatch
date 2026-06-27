@@ -2,6 +2,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/particulier/first_page.dart';
 import 'package:PetsMatch/pages/eleveur/first_page.dart';
 import 'package:PetsMatch/pages/association/inscription_association_page.dart';
+import 'package:PetsMatch/pages/pro/restauration/inscription_restauration_pro_page.dart';
 import 'package:flutter/material.dart';
 
 class InscriptionChoicePage extends StatelessWidget {
@@ -84,6 +85,21 @@ class InscriptionChoicePage extends StatelessWidget {
               User_Info.isAssociation = true;
               Navigator.push(context,
                   MaterialPageRoute(builder: (_) => const RegisterAssociationFirstInfoPage()));
+            },
+          ),
+          const SizedBox(height: 14),
+          _RoleCard(
+            imagePath: 'assets/page/logo_professionnel.png',
+            title: 'Hébergement / Restauration',
+            subtitle: 'Hôtel, restaurant, café, gîte ou camping pet-friendly accueillant des animaux.',
+            color: const Color(0xFFFFF8E1),
+            onTap: () {
+              User_Info.isElevage    = false;
+              User_Info.isPro        = true;
+              User_Info.isAssociation = false;
+              User_Info.catPro       = 'restauration';
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const InscriptionRestaurationProPage()));
             },
           ),
         ]),

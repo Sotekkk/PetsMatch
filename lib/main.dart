@@ -363,6 +363,7 @@ class User_Info {
     const proTypes = {
       'veterinaire', 'para_medical', 'education', 'petsitter',
       'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+      'restauration',
     };
     isAssociation = type == 'association';
     isPro     = proTypes.contains(type);

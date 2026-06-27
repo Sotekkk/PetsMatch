@@ -5,6 +5,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/lieux/inscription_lieu_page.dart';
 import 'package:PetsMatch/pages/lieux/lieu_detail_page.dart';
 
@@ -166,6 +167,40 @@ class _MonEtablissementPageState extends State<MonEtablissementPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Seuls les profils restauration (et pension pour compatibilité) peuvent gérer des établissements
+    final allowed = User_Info.catPro == 'restauration' || User_Info.catPro == 'pension';
+    if (!allowed) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8F8F8),
+        appBar: AppBar(
+          backgroundColor: _teal,
+          foregroundColor: Colors.white,
+          title: const Text('Mon établissement',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.lock_outline, size: 64, color: Color(0xFF0C5C6C)),
+              const SizedBox(height: 16),
+              const Text(
+                'Fonctionnalité réservée',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'La gestion d\'établissements est réservée aux profils\nHébergement / Restauration.',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.5),
+                textAlign: TextAlign.center,
+              ),
+            ]),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       appBar: AppBar(

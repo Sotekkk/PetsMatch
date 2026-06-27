@@ -14,6 +14,10 @@ const NAF_PREFIXES: Record<string, string[]> = {
   promeneur:        ['9609', '9499'],
   photographe:      ['7420', '9609'],
   marechal_ferrant: ['0161', '2573', '0149'],
+  // Hébergement/Restauration pet-friendly
+  restauration:     ['5510', '5520', '5530', '5590', '5610', '5621', '5629', '5630', '9609'],
+  // 5510=hôtels, 5520=hébergement touristique, 5530=terrains camping, 5590=autres héb.,
+  // 5610=restaurants, 5621=traiteurs, 5629=autres restauration, 5630=débits de boissons
 };
 
 // ─── Normalisation texte ──────────────────────────────────────────────────────

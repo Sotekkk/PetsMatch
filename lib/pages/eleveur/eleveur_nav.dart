@@ -9,6 +9,7 @@ import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_associations_benevole.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/pages/eleveur/eleveur_home.dart';
+import 'package:PetsMatch/pages/pro/restauration/restauration_home_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
@@ -24,6 +25,7 @@ import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
+import 'package:PetsMatch/pages/pro/restauration/inscription_restauration_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
@@ -113,7 +115,9 @@ class _EleveurNavState extends State<EleveurNav> {
     1 => MessagePage(),
     2 => const NotificationsPage(),
     3 => const AgendaPage(),
-    _ => const EleveurHomePage(),
+    _ => User_Info.catPro == 'restauration'
+        ? const RestaurationHomePage()
+        : const EleveurHomePage(),
   };
 
   @override
@@ -480,7 +484,46 @@ class _EleveurNavState extends State<EleveurNav> {
                     ));
                   },
                 ),
-                if (User_Info.isPro) ...[
+                if (User_Info.isPro && User_Info.catPro == 'restauration') ...[
+                  const Divider(height: 24),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+                    child: Text('Espace hébergement / restauration',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                            fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
+                  ),
+                  _DrawerItem(
+                    icon: Icons.storefront_outlined,
+                    label: 'Mes établissements',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const MonEtablissementPage(),
+                      ));
+                    },
+                  ),
+                  _DrawerItem(
+                    icon: Icons.person_outline,
+                    label: 'Mon profil établissement',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const InscriptionRestaurationDetailPage(),
+                      ));
+                    },
+                  ),
+                  _DrawerItem(
+                    icon: Icons.workspace_premium_outlined,
+                    label: 'Mon abonnement',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const AbonnementPage(),
+                      ));
+                    },
+                  ),
+                ],
+                if (User_Info.isPro && User_Info.catPro != 'restauration') ...[
                   const Divider(height: 24),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),

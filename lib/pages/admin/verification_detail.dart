@@ -309,6 +309,44 @@ petsmatch.contact@gmail.com
                       data['descEntreprise'] ?? ''),
                   const SizedBox(height: 20),
 
+                  // Section spécifique hébergement/restauration
+                  if ((data['catPro'] ?? '') == 'restauration') ...[
+                    _SectionTitle('Hébergement / Restauration'),
+                    _InfoRow(Icons.storefront_outlined, 'Type établissement',
+                        data['typeRestauration'] ?? data['typeEtablissement'] ?? '—'),
+                    _InfoRow(Icons.place_outlined, 'Adresse établissement',
+                        data['adressePro'] ?? data['adresseEtablissement'] ?? '—'),
+                    _InfoRow(Icons.pets, 'Espèces acceptées',
+                        _formatList(data['especesAcceptees'])),
+                    _InfoRow(Icons.info_outline, 'Conditions animaux',
+                        data['conditionsAnimaux'] ?? '—'),
+                    if ((data['photosGalerie'] as List?)?.isNotEmpty == true) ...[
+                      const SizedBox(height: 8),
+                      Text('Photos du feed (${(data['photosGalerie'] as List).length})',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: 72,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: (data['photosGalerie'] as List).length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 6),
+                          itemBuilder: (_, i) {
+                            final url = (data['photosGalerie'] as List)[i].toString();
+                            return ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(url, width: 72, height: 72, fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                      width: 72, height: 72, color: Colors.grey.shade200,
+                                      child: const Icon(Icons.broken_image, color: Colors.grey))),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                  ],
+
                   // Vérification automatique
                   if (data['autoCheck'] != null) ...[
                     _SectionTitle('Vérification automatique'),
@@ -627,6 +665,12 @@ class _InfoRow extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatList(dynamic v) {
+  if (v == null) return '—';
+  if (v is List) return v.isEmpty ? '—' : v.join(', ');
+  return v.toString();
 }
 
 class _CheckRow extends StatelessWidget {
