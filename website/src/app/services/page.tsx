@@ -133,7 +133,7 @@ function SectionBlock({ section }: { section: ServiceSection }) {
 
 export default function ServicesPage() {
   const { userData } = useAuth();
-  const isParticulier = userData?.profile_type === 'particulier';
+  const isParticulier = userData?.profileType === 'particulier' || (!userData?.profileType && !userData?.isElevage && !userData?.isAssociation && !userData?.isPro);
 
   const communauteSection: ServiceSection = {
     id: 'communaute',
@@ -143,8 +143,8 @@ export default function ServicesPage() {
     colorLight: '#E0F7FA',
     items: [
       ...(isParticulier ? [{ id: 'petsfriends', label: 'PetsFriends', icon: '🐾', href: '/petfriends' }] : []),
-      { id: 'forum',      label: 'Forum communauté',  icon: '💬', soon: true },
-      { id: 'groupes',    label: 'Groupes',           icon: '👥', soon: true },
+      { id: 'forum',      label: 'Forum communauté',  icon: '💬', href: '/communaute/forum' },
+      { id: 'groupes',    label: 'Groupes',           icon: '👥', href: '/communaute/groupes' },
       { id: 'evenements', label: 'Événements locaux', icon: '📅', soon: true },
     ],
   };

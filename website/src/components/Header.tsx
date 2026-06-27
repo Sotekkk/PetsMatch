@@ -116,7 +116,7 @@ const MENU_ELEVEUR = [
     icon: '📁',
     items: [
       { href: '/elevage/contrat',               label: 'Mes Contrats',      icon: '📄', premium: true },
-      { href: '/mes-contrats',                  label: 'Mes Achats',         icon: '🛒' },
+      { href: '/mes-contrats',                  label: 'Mes Contrats reçus', icon: '📄' },
       { href: '/elevage/facturation',            label: 'Facturation',        icon: '🧾', premium: true },
     ],
   },

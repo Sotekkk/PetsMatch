@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
 import { uploadBlob } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
@@ -25,6 +26,7 @@ const BREED_FILES: Record<string, string> = {
 
 export default function DeclarerTrouvePage() {
   const { user, loading } = useAuth();
+  const activeProfileId = useActiveProfile();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -258,6 +260,7 @@ export default function DeclarerTrouvePage() {
         contact_telephone:          contactTel.trim() || null,
         contact_messagerie:         contactMsg,
         statut:                     'trouve',
+        ...(activeProfileId ? { profile_id: activeProfileId } : {}),
       });
       router.push('/animaux-perdus?tab=trouves');
     } catch (err) {

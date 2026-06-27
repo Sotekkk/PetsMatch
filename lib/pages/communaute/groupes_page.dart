@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'groupe_detail_page.dart';
 
 const _tealC = Color(0xFF00ACC1);
 
@@ -26,6 +27,7 @@ class _GroupesPageState extends State<GroupesPage>
 
   List<Map<String, dynamic>> _groupes = [];
   Set<String> _mesGroupes = {};
+  Map<String, int> _friendCountPerGroupe = {};
   bool _loading = true;
   late TabController _tabCtrl;
 
@@ -51,19 +53,48 @@ class _GroupesPageState extends State<GroupesPage>
           .order('created_at', ascending: false);
 
       Set<String> mes = {};
+      List<String> friendUids = [];
+      Map<String, int> friendCounts = {};
+
       if (_uid.isNotEmpty) {
+        // Mes appartenances
         final memData = await _supa
             .from('groupes_membres')
             .select('groupe_id')
             .eq('user_uid', _uid);
         mes = Set<String>.from(
             (memData as List).map((e) => e['groupe_id'].toString()));
+
+        // Mes amis
+        final friendsData = await _supa
+            .from('petfriends')
+            .select('uid_demandeur, uid_recepteur')
+            .or('uid_demandeur.eq.$_uid,uid_recepteur.eq.$_uid')
+            .eq('statut', 'accepte');
+        for (final f in (friendsData as List)) {
+          final other = f['uid_demandeur'] == _uid ? f['uid_recepteur'] : f['uid_demandeur'];
+          friendUids.add(other.toString());
+        }
+
+        // Combien d'amis dans chaque groupe
+        if (friendUids.isNotEmpty) {
+          final allMembers = await _supa
+              .from('groupes_membres')
+              .select('groupe_id, user_uid')
+              .inFilter('user_uid', friendUids)
+              .eq('statut', 'active');
+          for (final m in (allMembers as List)) {
+            final gid = m['groupe_id'].toString();
+            friendCounts[gid] = (friendCounts[gid] ?? 0) + 1;
+          }
+        }
       }
 
       if (mounted) {
         setState(() {
           _groupes = List<Map<String, dynamic>>.from(groupesData);
           _mesGroupes = mes;
+          _friendCountPerGroupe = friendCounts;
           _loading = false;
         });
       }
@@ -75,10 +106,12 @@ class _GroupesPageState extends State<GroupesPage>
   Future<void> _toggleMembership(String groupeId) async {
     if (_uid.isEmpty) return;
     final estMembre = _mesGroupes.contains(groupeId);
+    final groupe = _groupes.firstWhere((g) => g['id'].toString() == groupeId, orElse: () => {});
+    final isPrive = groupe['prive'] == true;
     setState(() {
       if (estMembre) {
         _mesGroupes.remove(groupeId);
-      } else {
+      } else if (!isPrive) {
         _mesGroupes.add(groupeId);
       }
     });
@@ -94,8 +127,14 @@ class _GroupesPageState extends State<GroupesPage>
           'groupe_id': groupeId,
           'user_uid': _uid,
           'role': 'membre',
+          'statut': isPrive ? 'pending' : 'active',
           'rejoint_at': DateTime.now().toIso8601String(),
         });
+        if (isPrive && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Demande envoyée — en attente d\'approbation')),
+          );
+        }
       }
     } catch (_) {
       setState(() {
@@ -203,7 +242,15 @@ class _GroupesPageState extends State<GroupesPage>
           return _GroupeCard(
             groupe: g,
             estMembre: _mesGroupes.contains(id),
+            friendCount: _friendCountPerGroupe[id] ?? 0,
             onToggle: _uid.isNotEmpty ? () => _toggleMembership(id) : null,
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => GroupeDetailPage(groupe: g)),
+              );
+              _load();
+            },
           );
         },
       ),
@@ -216,9 +263,17 @@ class _GroupesPageState extends State<GroupesPage>
 class _GroupeCard extends StatelessWidget {
   final Map<String, dynamic> groupe;
   final bool estMembre;
+  final int friendCount;
   final VoidCallback? onToggle;
+  final VoidCallback? onTap;
 
-  const _GroupeCard({required this.groupe, required this.estMembre, this.onToggle});
+  const _GroupeCard({
+    required this.groupe,
+    required this.estMembre,
+    this.friendCount = 0,
+    this.onToggle,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -228,7 +283,9 @@ class _GroupeCard extends StatelessWidget {
     final prive = groupe['prive'] == true;
     final typeLabel = _kGroupeTypesLabels[type] ?? type;
 
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -278,6 +335,17 @@ class _GroupeCard extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis),
           ],
+          if (friendCount > 0) ...[
+            const SizedBox(height: 8),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.people_outline, size: 14, color: _tealC),
+              const SizedBox(width: 4),
+              Text(
+                friendCount == 1 ? '1 ami dans ce groupe' : '$friendCount amis dans ce groupe',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _tealC, fontWeight: FontWeight.w600),
+              ),
+            ]),
+          ],
           if (onToggle != null) ...[
             const SizedBox(height: 10),
             Align(
@@ -306,6 +374,7 @@ class _GroupeCard extends StatelessWidget {
           ],
         ]),
       ),
+    ),
     );
   }
 }
