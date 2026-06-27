@@ -10,7 +10,6 @@ import { auth, db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { usePlan } from '@/lib/use-plan';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { ACTIVE_PROFILE_KEY, ACTIVE_PROFILE_TYPE_KEY, PROFILE_CHANGE_EVENT } from '@/hooks/useActiveProfile';
 
 interface Notif {
@@ -589,14 +588,30 @@ export default function Header() {
     window.location.href = dest;
   }
 
-  // ── Messages non lus ──────────────────────────────────────────────────────
+  // ── Messages non lus (Supabase) ───────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, 'conversations'), where('participants', 'array-contains', user.uid));
-    return onSnapshot(q, snap => {
-      const total = snap.docs.reduce((s, d) => s + ((d.data().unreadCount as Record<string, number>)?.[user.uid] ?? 0), 0);
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    async function fetchUnread() {
+      const { data } = await supabase
+        .from('conversations')
+        .select('unread_count')
+        .filter('participants', 'cs', `["${user!.uid}"]`);
+      if (!data) return;
+      const total = (data as { unread_count: Record<string, number> | null }[])
+        .reduce((s, c) => s + (c.unread_count?.[user!.uid] ?? 0), 0);
       setUnreadMessages(total);
-    }, () => {});
+    }
+
+    fetchUnread();
+
+    channel = supabase
+      .channel(`header_convs_${user.uid}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, () => fetchUnread())
+      .subscribe();
+
+    return () => { channel?.unsubscribe(); };
   }, [user]);
 
   // ── Notifications ─────────────────────────────────────────────────────────
