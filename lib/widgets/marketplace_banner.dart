@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/main.dart';
 
-/// Bannière contextuelle Marketplace (MKT03).
-/// Afficher dans les fiches animaux, feed, dashboard éleveur, etc.
-/// [espece] : 'chien', 'chat', 'equide', 'autre' — null = tous
-/// [placement] : 'fiche_animal', 'feed', 'carnet_sante', 'dashboard', 'onboarding'
+const _kVetPlaceholder =
+    'https://images.unsplash.com/photo-1628009368231-7bb7cfcb0def?w=600&q=70&fit=crop';
+
+/// Bannière rotative — affiche les partenaires marketplace actifs.
+/// Swipe manuel + rotation automatique toutes les 8s.
+/// Recharge un nouveau lot toutes les 40s.
 class MarketplaceBanner extends StatefulWidget {
   final String? espece;
   final String placement;
@@ -23,46 +26,99 @@ class MarketplaceBanner extends StatefulWidget {
 
 class _MarketplaceBannerState extends State<MarketplaceBanner> {
   final _supabase = Supabase.instance.client;
-  Map<String, dynamic>? _ad;
-  Map<String, dynamic>? _partner;
-  bool _dismissed = false;
+  late final PageController _pageController;
+
+  List<Map<String, dynamic>> _partners = [];
+  int _currentIndex = 0;
+
+  Timer? _slideTimer;
+  Timer? _reloadTimer;
 
   @override
   void initState() {
     super.initState();
-    _loadAd();
+    _pageController = PageController(viewportFraction: 0.92);
+    _loadPartners();
   }
 
-  Future<void> _loadAd() async {
-    try {
-      var query = _supabase
-          .from('marketplace_ads')
-          .select('*, marketplace_partners(*)')
-          .eq('type', 'banniere')
-          .eq('statut', 'actif');
+  @override
+  void dispose() {
+    _slideTimer?.cancel();
+    _reloadTimer?.cancel();
+    _pageController.dispose();
+    super.dispose();
+  }
 
-      if (widget.espece != null) {
-        query = query.contains('especes_cibles', [widget.espece!]);
+  Future<void> _loadPartners() async {
+    try {
+      final data = await _supabase
+          .from('marketplace_partners')
+          .select()
+          .eq('statut', 'actif')
+          .limit(20);
+
+      if (!mounted) return;
+
+      final raw = List<Map<String, dynamic>>.from(data as List);
+      raw.shuffle();
+      final partners = raw.take(5).toList();
+      if (partners.isEmpty) return;
+
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(0);
       }
 
-      final data = await query.limit(10);
-      if (data.isEmpty || !mounted) return;
-
-      final list = List<Map<String, dynamic>>.from(data);
-      list.shuffle();
-      final ad = list.first;
-      final partner = ad['marketplace_partners'] as Map<String, dynamic>?;
-
-      if (partner == null || !mounted) return;
       setState(() {
-        _ad = ad;
-        _partner = partner;
+        _partners = partners;
+        _currentIndex = 0;
       });
 
-      // Log impression
+      _logImpression(0);
+      _startTimers();
+    } catch (_) {}
+  }
+
+  void _startTimers() {
+    _slideTimer?.cancel();
+    _reloadTimer?.cancel();
+
+    if (_partners.length > 1) {
+      _slideTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+        if (!mounted || !_pageController.hasClients) return;
+        final next = (_currentIndex + 1) % _partners.length;
+        _pageController.animateToPage(
+          next,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+        );
+      });
+    }
+
+    _reloadTimer = Timer.periodic(const Duration(seconds: 40), (_) {
+      _slideTimer?.cancel();
+      _loadPartners();
+    });
+  }
+
+  void _resetSlideTimer() {
+    if (_partners.length <= 1) return;
+    _slideTimer?.cancel();
+    _slideTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      if (!mounted || !_pageController.hasClients) return;
+      final next = (_currentIndex + 1) % _partners.length;
+      _pageController.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  Future<void> _logImpression(int i) async {
+    if (i >= _partners.length) return;
+    try {
       await _supabase.from('marketplace_events').insert({
-        'ad_id': ad['id'],
-        'partner_id': partner['id'],
+        'partner_id': _partners[i]['id'],
         'user_id': User_Info.uid,
         'event_type': 'impression',
         'espece': widget.espece,
@@ -71,155 +127,233 @@ class _MarketplaceBannerState extends State<MarketplaceBanner> {
     } catch (_) {}
   }
 
-  Future<void> _onTap() async {
-    if (_ad == null || _partner == null) return;
+  Future<void> _onTap(int i) async {
+    if (i >= _partners.length) return;
     try {
       await _supabase.from('marketplace_events').insert({
-        'ad_id': _ad!['id'],
-        'partner_id': _partner!['id'],
+        'partner_id': _partners[i]['id'],
         'user_id': User_Info.uid,
         'event_type': 'clic',
         'espece': widget.espece,
         'region': User_Info.ville.isNotEmpty ? User_Info.ville : null,
       });
     } catch (_) {}
-
-    final url = _partner!['site_url'] as String?;
+    final url = _partners[i]['site_url'] as String?;
     if (url != null && url.isNotEmpty) {
       await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     }
   }
 
+  Color _accentColor(Map<String, dynamic> partner) {
+    final cat = partner['categorie'] as String? ?? '';
+    if (cat == 'assurance') return const Color(0xFF0C5C6C);
+    if (cat == 'sante' || cat == 'veterinaire') return const Color(0xFF2E86AB);
+    return const Color(0xFF6E9E57);
+  }
+
+  String? _heroImage(Map<String, dynamic> partner) {
+    final logo = partner['logo_url'] as String?;
+    if (logo != null && logo.isNotEmpty) return logo;
+    final cat = partner['categorie'] as String? ?? '';
+    if (cat == 'sante' || cat == 'veterinaire') return _kVetPlaceholder;
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_dismissed || _ad == null || _partner == null) return const SizedBox.shrink();
-
-    final logoUrl = _partner!['logo_url'] as String?;
-    final nom = _partner!['nom'] as String? ?? '';
-    final desc = _partner!['description'] as String?;
-    final categorie = _partner!['categorie'] as String? ?? 'boutique';
-    final isAssurance = categorie == 'assurance';
+    if (_partners.isEmpty) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: GestureDetector(
-        onTap: _onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.grey.shade200),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.07),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3))
-            ],
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        children: [
+          // ── Carrousel ───────────────────────────────────────────────────
+          SizedBox(
+            height: 150,
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: _partners.length,
+              physics: const ClampingScrollPhysics(),
+              onPageChanged: (i) {
+                setState(() => _currentIndex = i);
+                _logImpression(i);
+                _resetSlideTimer();
+              },
+              itemBuilder: (_, i) {
+                final p = _partners[i];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: _BannerCard(
+                    heroImage: _heroImage(p),
+                    nom: p['nom'] as String? ?? '',
+                    desc: p['description'] as String?,
+                    accentColor: _accentColor(p),
+                    isAssurance: (p['categorie'] as String?) == 'assurance',
+                    onTap: () => _onTap(i),
+                  ),
+                );
+              },
+            ),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+
+          // ── Dots ────────────────────────────────────────────────────────
+          if (_partners.length > 1) ...[
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(_partners.length, (i) {
+                final color = _accentColor(_partners[i]);
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: i == _currentIndex ? 22 : 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: i == _currentIndex ? color : Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                );
+              }),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Carte ───────────────────────────────────────────────────────────────────
+
+class _BannerCard extends StatelessWidget {
+  final String? heroImage;
+  final String nom;
+  final String? desc;
+  final Color accentColor;
+  final bool isAssurance;
+  final VoidCallback onTap;
+
+  const _BannerCard({
+    required this.heroImage,
+    required this.nom,
+    required this.desc,
+    required this.accentColor,
+    required this.isAssurance,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.10),
+              blurRadius: 16,
+              offset: const Offset(0, 5))
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Hero ──────────────────────────────────────────────────
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                // En-tête : logo + nom + badge "Publicité"
-                Row(
-                  children: [
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                          color: const Color(0xFFF0F7EC),
-                          borderRadius: BorderRadius.circular(14)),
-                      child: logoUrl != null && logoUrl.isNotEmpty
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(14),
-                              child: Image.network(logoUrl,
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (_, __, ___) => Icon(
-                                      isAssurance
-                                          ? Icons.shield_outlined
-                                          : Icons.storefront_outlined,
-                                      color: const Color(0xFF6E9E57),
-                                      size: 30)))
-                          : Icon(
-                              isAssurance
-                                  ? Icons.shield_outlined
-                                  : Icons.storefront_outlined,
-                              color: const Color(0xFF6E9E57),
-                              size: 30),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(nom,
-                              style: const TextStyle(
-                                  fontFamily: 'Galey',
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 15),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis),
-                          const SizedBox(height: 3),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                                color: Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(4)),
-                            child: Text('Publicité',
-                                style: TextStyle(
-                                    fontFamily: 'Galey',
-                                    fontSize: 10,
-                                    color: Colors.grey.shade500)),
-                          ),
-                        ],
+                // Image ou gradient
+                if (heroImage != null)
+                  Image.network(heroImage!, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _gradient())
+                else
+                  _gradient(),
+
+                // Vignette bas
+                Positioned.fill(
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Color(0xBB000000)],
+                        stops: [0.35, 1.0],
                       ),
                     ),
-                    GestureDetector(
-                      onTap: () => setState(() => _dismissed = true),
-                      child: Icon(Icons.close, size: 18, color: Colors.grey.shade400),
-                    ),
-                  ],
-                ),
-                // Description
-                if (desc != null && desc.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(desc,
-                      style: TextStyle(
-                          fontFamily: 'Galey',
-                          fontSize: 13,
-                          color: Colors.grey.shade700),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
-                ],
-                const SizedBox(height: 14),
-                // CTA pleine largeur
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _onTap,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: isAssurance
-                          ? const Color(0xFF0C5C6C)
-                          : const Color(0xFF6E9E57),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      textStyle: const TextStyle(
-                          fontFamily: 'Galey',
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700),
-                    ),
-                    child: Text(isAssurance ? 'Obtenir un devis' : 'Découvrir'),
                   ),
+                ),
+
+                // Badge pub
+                Positioned(
+                  top: 10,
+                  left: 12,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                        color: Colors.black38,
+                        borderRadius: BorderRadius.circular(5)),
+                    child: const Text('Publicité',
+                        style: TextStyle(
+                            fontFamily: 'Galey',
+                            fontSize: 10,
+                            color: Colors.white)),
+                  ),
+                ),
+
+                // Nom du partenaire
+                Positioned(
+                  bottom: 10,
+                  left: 14,
+                  right: 14,
+                  child: Text(nom,
+                      style: const TextStyle(
+                          fontFamily: 'Galey',
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18,
+                          color: Colors.white,
+                          shadows: [
+                            Shadow(
+                                color: Colors.black54,
+                                blurRadius: 6,
+                                offset: Offset(0, 1))
+                          ]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                 ),
               ],
             ),
           ),
-        ),
+
+          // ── Description ───────────────────────────────────────────
+          if (desc != null && desc!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              child: Text(desc!,
+                  style: TextStyle(
+                      fontFamily: 'Galey',
+                      fontSize: 12.5,
+                      height: 1.4,
+                      color: Colors.grey.shade600),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis),
+            ),
+        ],
       ),
-    );
+    ));
   }
+
+  Widget _gradient() => Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [accentColor, accentColor.withValues(alpha: 0.7)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+      );
 }

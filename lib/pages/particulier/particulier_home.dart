@@ -242,7 +242,9 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
                     _buildProfileIncompleteBanner(),
                     const SizedBox(height: 16),
                   ],
+                  const MarketplaceBanner(placement: 'dashboard'),
                   if (_animaux.isNotEmpty) ...[
+                    const SizedBox(height: 6),
                     _buildMesAnimauxSection(),
                     const SizedBox(height: 20),
                   ],
@@ -255,7 +257,6 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
                   _buildAnnoncesSection(),
                   const SizedBox(height: 24),
                   _buildAnimauxPerdusSection(),
-                  const MarketplaceBanner(placement: 'dashboard'),
                 ]),
               ),
             ),

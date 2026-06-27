@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import MarketplaceBanner from './MarketplaceBanner';
 
 interface Animal {
   id: string;
@@ -177,6 +178,9 @@ export default function ParticulierDashboard() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-8">
+        {/* Bannière partenaires marketplace */}
+        <MarketplaceBanner />
+
         {/* Mes Animaux */}
         {animaux.length > 0 && (
           <div>
