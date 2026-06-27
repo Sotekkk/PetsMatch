@@ -6,6 +6,7 @@ import 'package:PetsMatch/widgets/app_nav_drawer.dart';
 
 import 'lieu_detail_page.dart';
 import 'inscription_lieu_page.dart';
+import 'lieux_feed_page.dart';
 
 class LieuxPetFriendlyPage extends StatefulWidget {
   final String? filterCategorie; // 'hebergement' | 'restauration' | null = tous
@@ -135,6 +136,12 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
         title: const Text('Lieux Pet-Friendly',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.view_day_outlined),
+            tooltip: 'Vue feed',
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const LieuxFeedPage())),
+          ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.sort_rounded),
             onSelected: (v) {
