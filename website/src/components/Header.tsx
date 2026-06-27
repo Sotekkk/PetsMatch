@@ -47,7 +47,6 @@ const NAV_GUEST = [
 ];
 
 const NAV_ELEVEUR = [
-  { href: '/',                        label: 'Accueil' },
   { href: '/mes-animaux',             label: 'Mes Animaux' },
   { href: '/mes-annonces',            label: 'Mes Annonces' },
   { href: '/adoptions',    label: '💚 Adoptions' },
