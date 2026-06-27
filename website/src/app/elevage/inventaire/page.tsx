@@ -54,6 +54,14 @@ function fmtDate(d: string) {
   return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
+function pluralUnite(unite: string, qty: number): string {
+  if (qty <= 1) return unite;
+  const invariable = new Set(['kg', 'g', 'L', 'l', 'mL', 'ml', 'cl', 'dl', '%']);
+  if (invariable.has(unite)) return unite;
+  if (unite.endsWith('s') || unite.endsWith('x')) return unite;
+  return unite + 's';
+}
+
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export default function InventairePage() {
@@ -165,7 +173,7 @@ export default function InventairePage() {
       await supabase.from('notifications').insert({
         uid: user.uid, type: 'inventaire_alerte',
         title: `⚠️ Stock bas : ${item.nom}`,
-        body: `Il ne reste que ${newQte} ${item.unite} de ${item.nom}.`,
+        body: `Il ne reste que ${newQte} ${pluralUnite(item.unite, newQte)} de ${item.nom}.`,
         data: { itemId: item.id },
         read: false,
       });
@@ -231,7 +239,7 @@ export default function InventairePage() {
           <div className="space-y-1">
             {alertes.map(a => (
               <p key={a.id} className="text-xs text-amber-700">
-                <span className="font-semibold">{a.nom}</span> — {a.quantite} {a.unite} restant{a.quantite !== 1 ? 's' : ''}
+                <span className="font-semibold">{a.nom}</span> — {a.quantite} {pluralUnite(a.unite, a.quantite)} restant{a.quantite !== 1 ? 's' : ''}
               </p>
             ))}
           </div>
@@ -294,10 +302,10 @@ export default function InventairePage() {
                       {isLow && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold flex-shrink-0">⚠️ bas</span>}
                     </div>
                     <p className="text-sm font-semibold" style={{ color: isLow ? '#B45309' : cat.color }}>
-                      {item.quantite} {item.unite}
+                      {item.quantite} {pluralUnite(item.unite, item.quantite)}
                       {item.quantite_alerte !== null && (
                         <span className="text-xs text-gray-400 font-normal ml-1">
-                          · seuil {item.quantite_alerte} {item.unite}
+                          · seuil {item.quantite_alerte} {pluralUnite(item.unite, item.quantite_alerte)}
                         </span>
                       )}
                     </p>
@@ -350,7 +358,7 @@ export default function InventairePage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className={`text-sm font-bold ${m.type === 'consommation' ? 'text-red-600' : 'text-green-600'}`}>
-                            {m.type === 'consommation' ? '-' : '+'}{m.quantite} {detailItem.unite}
+                            {m.type === 'consommation' ? '-' : '+'}{m.quantite} {pluralUnite(detailItem.unite, m.quantite)}
                           </span>
                           <span className="text-xs text-gray-400">{m.auteur_nom}</span>
                         </div>
