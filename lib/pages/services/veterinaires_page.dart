@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/widgets/app_nav_drawer.dart';
 import 'package:PetsMatch/pages/services/service_list_page.dart';
 import 'package:PetsMatch/pages/animal_friendly/friendly_map_page.dart';
 import 'package:PetsMatch/pages/evenements/evenements_page.dart';
@@ -222,18 +223,11 @@ class SortiesPage extends StatelessWidget {
             builder: (_) => const FriendlyMapPage(filterCategory: 'Randonnée / Parc'))),
         ),
         _Section(
-          icon: Icons.restaurant_menu_outlined,
-          title: 'Cafés & restaurants',
-          description: 'Établissements acceptant les animaux',
+          icon: Icons.store_outlined,
+          title: 'Cafés, restaurants & hébergements',
+          description: 'Tous les établissements pet-friendly en France',
           onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(
-            builder: (_) => const LieuxPetFriendlyPage(filterCategorie: 'restauration'))),
-        ),
-        _Section(
-          icon: Icons.hotel_outlined,
-          title: 'Hôtels & hébergements',
-          description: 'Séjours pet-friendly partout en France',
-          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(
-            builder: (_) => const LieuxPetFriendlyPage(filterCategorie: 'hebergement'))),
+            builder: (_) => const LieuxPetFriendlyPage())),
         ),
         _Section(
           icon: Icons.event_outlined,
@@ -489,6 +483,7 @@ class _ServiceSubPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
+      endDrawer: const AppNavDrawer(),
       appBar: AppBar(
         backgroundColor: headerColor,
         foregroundColor: Colors.white,
@@ -506,6 +501,15 @@ class _ServiceSubPage extends StatelessWidget {
             color: Colors.white,
           ),
         ),
+        actions: [
+          Builder(
+            builder: (ctx) => IconButton(
+              icon: const Icon(Icons.menu_rounded),
+              tooltip: 'Menu',
+              onPressed: () => Scaffold.of(ctx).openEndDrawer(),
+            ),
+          ),
+        ],
       ),
       body: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 24, 16, 100),

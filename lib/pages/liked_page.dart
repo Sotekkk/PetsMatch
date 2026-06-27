@@ -5,9 +5,19 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
+import 'package:PetsMatch/pages/lieux/lieu_detail_page.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 
-// ── Modèle ────────────────────────────────────────────────────────────────────
+// ── Modèles ───────────────────────────────────────────────────────────────────
+
+class _PlaceFavori {
+  final String placeId;
+  final String nom;
+  final String ville;
+  final String? photoUrl;
+  final String? logoUrl;
+  const _PlaceFavori({required this.placeId, required this.nom, required this.ville, this.photoUrl, this.logoUrl});
+}
 
 class _SavedItem {
   final String annonceId;
@@ -47,8 +57,10 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
 
   List<_SavedItem> _favItems   = [];
   List<_SavedItem> _likeItems  = [];
+  List<_PlaceFavori> _placeItems = [];
   bool _loadingFavs   = false;
   bool _loadingLikes  = false;
+  bool _loadingPlaces = false;
   bool _loadedFavs    = false;
   bool _loadedLikes   = false;
 
@@ -68,6 +80,7 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
   Future<void> _initLoad() async {
     if (FirebaseAuth.instance.currentUser != null) {
       _loadTab('favoris');
+      _loadPlaces();
       return;
     }
     try {
@@ -75,7 +88,10 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
           .firstWhere((u) => u != null)
           .timeout(const Duration(seconds: 5));
     } catch (_) {}
-    if (mounted) _loadTab('favoris');
+    if (mounted) {
+      _loadTab('favoris');
+      _loadPlaces();
+    }
   }
 
   @override
@@ -199,6 +215,49 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
     }
   }
 
+  Future<void> _loadPlaces() async {
+    setState(() => _loadingPlaces = true);
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      if (uid.isEmpty) { setState(() { _loadingPlaces = false; }); return; }
+      final rows = await _supa
+          .from('place_favoris')
+          .select('place_id')
+          .eq('user_uid', uid);
+      final ids = (rows as List).map((r) => r['place_id'] as String).toList();
+      if (ids.isEmpty) {
+        if (mounted) setState(() { _placeItems = []; _loadingPlaces = false; });
+        return;
+      }
+      final places = await _supa
+          .from('petfriendly_places')
+          .select('id, nom, ville, banniere_url, photo_profil_url')
+          .inFilter('id', ids);
+      final items = (places as List).map((p) => _PlaceFavori(
+        placeId: p['id'] as String,
+        nom: p['nom'] as String? ?? '',
+        ville: p['ville'] as String? ?? '',
+        photoUrl: p['banniere_url'] as String?,
+        logoUrl: p['photo_profil_url'] as String?,
+      )).toList();
+      if (mounted) setState(() { _placeItems = items; _loadingPlaces = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loadingPlaces = false);
+    }
+  }
+
+  Future<void> _removePlace(String placeId) async {
+    setState(() => _placeItems.removeWhere((p) => p.placeId == placeId));
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      if (uid.isNotEmpty) {
+        await _supa.from('place_favoris').delete().eq('user_uid', uid).eq('place_id', placeId);
+      }
+    } catch (_) {
+      _loadPlaces();
+    }
+  }
+
   Future<void> _removeItem(_SavedItem item, String table) async {
     setState(() {
       if (table == 'favoris') {
@@ -264,7 +323,7 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
       body: TabBarView(
         controller: _tabCtrl,
         children: [
-          _buildTab(_favItems, _loadingFavs, 'favoris'),
+          _buildFavorisTab(),
           _buildTab(_likeItems, _loadingLikes, 'likes'),
         ],
       ),
@@ -292,6 +351,91 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
           onTap:    () => _openDetail(items[i]),
           onRemove: () => _removeItem(items[i], table),
         ),
+      ),
+    );
+  }
+
+  Widget _buildFavorisTab() {
+    final loading = _loadingFavs || _loadingPlaces;
+    if (loading && _favItems.isEmpty && _placeItems.isEmpty) {
+      return const Center(child: CircularProgressIndicator(color: _teal));
+    }
+    if (_favItems.isEmpty && _placeItems.isEmpty) {
+      return Center(
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.bookmark_border, size: 72, color: Color(0xFFDDE1E4)),
+          const SizedBox(height: 16),
+          const Text('Aucune sauvegarde',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 16, color: Color(0xFFADB5BD))),
+          const SizedBox(height: 8),
+          const Text('Sauvegarde des annonces ou des lieux\npour les retrouver ici.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFADB5BD))),
+        ]),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: () async { await Future.wait([_loadTab('favoris'), _loadPlaces()]); },
+      color: _teal,
+      child: CustomScrollView(
+        slivers: [
+          // ── Lieux sauvegardés ──
+          if (_placeItems.isNotEmpty) ...[
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(12, 12, 12, 6),
+                child: Text('Lieux pet-friendly',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 13, color: Color(0xFF6B7280))),
+              ),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (_, i) => Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+                  child: _PlaceFavoriCard(
+                    place: _placeItems[i],
+                    onTap: () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => LieuDetailPage(id: _placeItems[i].placeId))),
+                    onRemove: () => _removePlace(_placeItems[i].placeId),
+                  ),
+                ),
+                childCount: _placeItems.length,
+              ),
+            ),
+          ],
+          // ── Annonces sauvegardées ──
+          if (_favItems.isNotEmpty) ...[
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(12, 12, 12, 6),
+                child: Text('Annonces',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 13, color: Color(0xFF6B7280))),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: 0.75,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (_, i) => _SavedCard(
+                    item: _favItems[i],
+                    isFavori: true,
+                    onTap: () => _openDetail(_favItems[i]),
+                    onRemove: () => _removeItem(_favItems[i], 'favoris'),
+                  ),
+                  childCount: _favItems.length,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -436,6 +580,76 @@ class _SavedCard extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+// ── Card lieu favori ──────────────────────────────────────────────────────────
+
+class _PlaceFavoriCard extends StatelessWidget {
+  final _PlaceFavori place;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+  const _PlaceFavoriCard({required this.place, required this.onTap, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    const teal = Color(0xFF0C5C6C);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        height: 90,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))],
+        ),
+        child: Row(
+          children: [
+            // Image
+            ClipRRect(
+              borderRadius: const BorderRadius.horizontal(left: Radius.circular(14)),
+              child: SizedBox(
+                width: 90, height: 90,
+                child: place.photoUrl != null
+                    ? CachedNetworkImage(imageUrl: place.photoUrl!, fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => Container(color: teal, child: const Icon(Icons.store_outlined, color: Colors.white, size: 32)))
+                    : Container(color: teal, child: const Icon(Icons.store_outlined, color: Colors.white, size: 32)),
+              ),
+            ),
+            // Infos
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(place.nom,
+                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      const Icon(Icons.location_on_outlined, size: 13, color: teal),
+                      const SizedBox(width: 3),
+                      Expanded(child: Text(place.ville,
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          overflow: TextOverflow.ellipsis)),
+                    ]),
+                  ],
+                ),
+              ),
+            ),
+            // Bouton retirer
+            IconButton(
+              onPressed: onRemove,
+              icon: const Icon(Icons.bookmark_remove_outlined, color: Color(0xFF0C5C6C)),
+              tooltip: 'Retirer des favoris',
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

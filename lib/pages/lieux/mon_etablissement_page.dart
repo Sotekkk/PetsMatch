@@ -492,7 +492,6 @@ class _EditLieuPageState extends State<_EditLieuPage>
   // Hébergement
   late bool _animauxChambre;
   late int _fraisNuit;
-  late int _poidsMax;
   late int _nbAnimauxMax;
   late bool _espaceDetente;
 
@@ -540,7 +539,6 @@ class _EditLieuPageState extends State<_EditLieuPage>
     // Hébergement
     _animauxChambre = p['animaux_dans_chambre'] as bool? ?? true;
     _fraisNuit = p['frais_animal_nuit'] as int? ?? 0;
-    _poidsMax = p['poids_max_kg'] as int? ?? 0;
     _nbAnimauxMax = p['nb_animaux_max'] as int? ?? 2;
     _espaceDetente = p['espace_detente'] as bool? ?? false;
 
@@ -639,7 +637,6 @@ class _EditLieuPageState extends State<_EditLieuPage>
         payload.addAll({
           'animaux_dans_chambre': _animauxChambre,
           'frais_animal_nuit':    _fraisNuit > 0 ? _fraisNuit : null,
-          'poids_max_kg':         _poidsMax,
           'nb_animaux_max':       _nbAnimauxMax,
           'espace_detente':       _espaceDetente,
         });
@@ -985,11 +982,7 @@ class _EditLieuPageState extends State<_EditLieuPage>
           _BoolRow2('Animaux dans la chambre', _animauxChambre, (v) => setState(() => _animauxChambre = v)),
           _BoolRow2('Espace détente / jardin clôturé', _espaceDetente, (v) => setState(() => _espaceDetente = v)),
           const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: _IntField('Supplément/nuit (€)', _fraisNuit, (v) => setState(() => _fraisNuit = v))),
-            const SizedBox(width: 12),
-            Expanded(child: _IntField('Poids max (kg, 0=illimité)', _poidsMax, (v) => setState(() => _poidsMax = v))),
-          ]),
+          _IntField('Supplément/nuit (€)', _fraisNuit, (v) => setState(() => _fraisNuit = v)),
           const SizedBox(height: 8),
           _IntField('Nb animaux max / séjour', _nbAnimauxMax, (v) => setState(() => _nbAnimauxMax = v)),
         ] else ...[

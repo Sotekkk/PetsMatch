@@ -40,7 +40,6 @@ class ParticulierNav extends StatefulWidget {
 
 class _ParticulierNavState extends State<ParticulierNav> {
   int _selectedIndex = 0;
-  final _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _isEmploye = false;
   bool _isBenevole = false;
   bool _isFa = false;
@@ -85,7 +84,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
         if (_selectedIndex != 0) setState(() => _selectedIndex = 0);
       },
       child: Scaffold(
-      key: _scaffoldKey,
+      key: drawerKey,
       endDrawer: _buildDrawer(context),
       body: _tabContent(_selectedIndex),
       bottomNavigationBar: Container(
@@ -124,7 +123,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
                 _NavItem(
                   icon: Icons.menu, activeIcon: Icons.menu,
                   label: 'Menu', active: false,
-                  onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
+                  onTap: () => drawerKey.currentState?.openEndDrawer(),
                 ),
               ],
             ),
@@ -142,7 +141,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
       child: Column(
         children: [
           ProfileSwitcherHeader(
-            onClose: () => _scaffoldKey.currentState?.closeDrawer(),
+            onClose: () => drawerKey.currentState?.closeDrawer(),
             onEditTap: () {
               Navigator.pop(context);
               Navigator.push(context, MaterialPageRoute(
@@ -371,16 +370,18 @@ class _ParticulierNavState extends State<ParticulierNav> {
                     ),
                   ],
                 ),
-                const Divider(height: 16),
-                _DrawerItem(
-                  icon: Icons.store_outlined,
-                  label: 'Mon Établissement',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const MonEtablissementPage()));
-                  },
-                ),
+                if (User_Info.isPro) ...[
+                  const Divider(height: 16),
+                  _DrawerItem(
+                    icon: Icons.store_outlined,
+                    label: 'Mon Établissement',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MonEtablissementPage()));
+                    },
+                  ),
+                ],
                 const Divider(height: 16),
                 _DrawerItem(
                   icon: Icons.settings_outlined,

@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/app_nav_drawer.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -526,6 +527,7 @@ class _ServiceListPageState extends State<ServiceListPage> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
+      endDrawer: const AppNavDrawer(),
       appBar: AppBar(
         title: Text(widget.categoryLabel,
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
@@ -541,6 +543,13 @@ class _ServiceListPageState extends State<ServiceListPage> {
             icon: const Icon(Icons.map_outlined),
             tooltip: 'Vue carte',
             onPressed: () => setState(() => _showMap = true),
+          ),
+          Builder(
+            builder: (ctx) => IconButton(
+              icon: const Icon(Icons.menu_rounded),
+              tooltip: 'Menu',
+              onPressed: () => Scaffold.of(ctx).openEndDrawer(),
+            ),
           ),
         ],
       ),

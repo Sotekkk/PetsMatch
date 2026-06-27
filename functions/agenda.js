@@ -374,12 +374,12 @@ exports.sendMiseBasReminders = functions
 
         const paliers = [
             {days: 30, field: "reminder_j30_sent", label: "dans 30 jours", emoji: "🗓️"},
-            {days: 7,  field: "reminder_j7_sent",  label: "dans 7 jours",  emoji: "📅"},
-            {days: 3,  field: "reminder_j3_sent",  label: "dans 3 jours",  emoji: "⏳"},
-            {days: 1,  field: "reminder_j1_sent",  label: "demain",        emoji: "🐣"},
+            {days: 7, field: "reminder_j7_sent", label: "dans 7 jours", emoji: "📅"},
+            {days: 3, field: "reminder_j3_sent", label: "dans 3 jours", emoji: "⏳"},
+            {days: 1, field: "reminder_j1_sent", label: "demain", emoji: "🐣"},
         ];
 
-        for (const {days, field, label} of paliers) {
+        for (const {days, field, label, emoji} of paliers) {
             const target = new Date(now);
             target.setDate(target.getDate() + days);
             const dateStr = target.toISOString().split("T")[0]; // YYYY-MM-DD

@@ -262,6 +262,48 @@ exports.sendLikeNotification = functions
     });
 
 /**
+ * Callable: notifie le propriétaire d'un lieu quand quelqu'un l'ajoute en favori.
+ */
+exports.notifyPlaceFavori = functions
+    .region("europe-west1")
+    .https.onCall(async (data, context) => {
+        if (!context.auth) {
+            throw new functions.https.HttpsError("unauthenticated", "Auth required");
+        }
+
+        const {receiverUid, senderName, nomLieu, placeId} = data;
+        if (!receiverUid) return {sent: false, reason: "no_receiverUid"};
+
+        const userDoc = await admin.firestore().collection("users").doc(receiverUid).get();
+        const fcmToken = userDoc.exists ? userDoc.data().fcmToken : null;
+        if (!fcmToken) return {sent: false, reason: "no_fcmToken"};
+
+        const title = "⭐ Nouvel ajout en favori";
+        const body = `${senderName || "Quelqu'un"} a ajouté "${nomLieu || "votre établissement"}" à ses favoris !`;
+
+        try {
+            await admin.messaging().send({
+                token: fcmToken,
+                notification: {title, body},
+                data: {type: "place_favori", placeId: placeId || ""},
+                android: {
+                    priority: "high",
+                    notification: {channelId: "high_importance_channel", sound: "default"},
+                },
+                apns: {
+                    headers: {"apns-priority": "10"},
+                    payload: {aps: {alert: {title, body}, sound: "default", badge: 1}},
+                },
+            });
+            console.log(`notifyPlaceFavori: push envoyé à ${receiverUid}`);
+            return {sent: true};
+        } catch (e) {
+            console.error("notifyPlaceFavori FCM error:", e);
+            return {sent: false, reason: String(e)};
+        }
+    });
+
+/**
  * Callable: quand un animal est trouvé, notifie les propriétaires d'alertes perdues
  * de même espèce dans un rayon de 20 km.
  */

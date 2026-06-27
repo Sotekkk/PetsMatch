@@ -413,34 +413,34 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                   const SizedBox(height: 8),
                 ],
 
-                // ── Annonces ───────────────────────────────────────────────
-                Container(
-                  color: Colors.white,
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-                  child: Row(children: [
-                    const Text('Annonces', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1F2A2E))),
-                    if (_annonces.isNotEmpty) ...[
-                      const SizedBox(width: 6),
-                      Text('${_annonces.length}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
-                    ],
-                  ]),
-                ),
-
-                if (_loadingAnnonces)
-                  const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator(color: Color(0xFF0C5C6C))),
-                  )
-                else if (_annonces.isEmpty)
+                // ── Annonces (éleveurs uniquement) ────────────────────────
+                if (user.isElevage) ...[
                   Container(
                     color: Colors.white,
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                    child: const Text('Aucune annonce active pour le moment.', style: TextStyle(color: Colors.grey, fontFamily: 'Galey'), textAlign: TextAlign.center),
-                  )
-                else
-                  Container(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                    child: Row(children: [
+                      const Text('Annonces', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1F2A2E))),
+                      if (_annonces.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Text('${_annonces.length}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
+                      ],
+                    ]),
+                  ),
+                  if (_loadingAnnonces)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: CircularProgressIndicator(color: Color(0xFF0C5C6C))),
+                    )
+                  else if (_annonces.isEmpty)
+                    Container(
+                      color: Colors.white,
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                      child: const Text('Aucune annonce active pour le moment.', style: TextStyle(color: Colors.grey, fontFamily: 'Galey'), textAlign: TextAlign.center),
+                    )
+                  else
+                    Container(
                     color: Colors.white,
                     child: GridView.builder(
                       shrinkWrap: true,
@@ -545,6 +545,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                       },
                     ),
                   ),
+                ], // if (user.isElevage)
               ],
             ),
           ),

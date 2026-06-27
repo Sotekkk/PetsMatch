@@ -65,7 +65,6 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
   // Hébergement
   bool _animauxChambre  = true;
   int  _fraisNuit       = 0;
-  int  _poidsMax        = 0;
   int  _nbAnimauxMax    = 2;
   bool _espaceDetente   = false;
   int  _prixNuitDefaut  = 0;
@@ -240,7 +239,6 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
         payload.addAll({
           'animaux_dans_chambre': _animauxChambre,
           'frais_animal_nuit':    _fraisNuit > 0 ? _fraisNuit : null,
-          'poids_max_kg':         _poidsMax,
           'nb_animaux_max':       _nbAnimauxMax,
           'espace_detente':       _espaceDetente,
           'prix_nuit_defaut':     _prixNuitDefaut,
@@ -629,13 +627,8 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
           _BoolRow('Espace détente / jardin clôturé', _espaceDetente,
               (v) => setState(() => _espaceDetente = v)),
           const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: _FieldInt('Supplément/nuit (€)', _fraisNuit,
-                (v) => setState(() => _fraisNuit = v))),
-            const SizedBox(width: 12),
-            Expanded(child: _FieldInt('Poids max (kg, 0=illimité)', _poidsMax,
-                (v) => setState(() => _poidsMax = v))),
-          ]),
+          _FieldInt('Supplément/nuit (€)', _fraisNuit,
+              (v) => setState(() => _fraisNuit = v)),
           const SizedBox(height: 8),
           _FieldInt('Nb animaux max / séjour', _nbAnimauxMax,
               (v) => setState(() => _nbAnimauxMax = v)),
@@ -675,15 +668,6 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
-
-  String _sousLabel(String s) => const {
-    'hotel': 'Hôtel classique', 'hebergement_insolite': 'Hébergement insolite',
-    'gite': 'Gîte / Chambre d\'hôtes', 'camping': 'Camping',
-    'villa_location': 'Location saisonnière',
-    'cafe': 'Café / Salon de thé', 'restaurant': 'Restaurant',
-    'bar': 'Bar / Brasserie', 'fast_food': 'Restauration rapide',
-    'boulangerie': 'Boulangerie / Pâtisserie',
-  }[s] ?? s;
 
   String _capitalize(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
@@ -774,32 +758,6 @@ Widget _BoolRow(String label, bool value, ValueChanged<bool> onChanged) {
   );
 }
 
-class _CatChip extends StatelessWidget {
-  final String label, value, selected;
-  final ValueChanged<String> onTap;
-  const _CatChip(this.label, this.value, this.selected, this.onTap);
-
-  @override
-  Widget build(BuildContext context) {
-    const teal = Color(0xFF0C5C6C);
-    final active = selected == value;
-    return GestureDetector(
-      onTap: () => onTap(value),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: active ? teal : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: active ? teal : Colors.grey.shade300),
-        ),
-        child: Text(label, style: TextStyle(
-          fontSize: 13, fontWeight: FontWeight.w600,
-          color: active ? Colors.white : Colors.grey.shade700,
-        )),
-      ),
-    );
-  }
-}
 
 class _PhotoPicker extends StatelessWidget {
   final String label;

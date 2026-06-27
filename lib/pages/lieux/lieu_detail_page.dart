@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/utils/messaging_helper.dart';
 
 class LieuDetailPage extends StatefulWidget {
   final String id;
@@ -22,9 +26,8 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
   List<Map<String, dynamic>> _dispos = [];
   DateTime _dispoMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
   bool _loading = true;
-  bool _isLiked = false;
   bool _isFavori = false;
-  int _likeCount = 0;
+  bool _loadingChat = false;
 
   @override
   void initState() {
@@ -48,13 +51,30 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
           .order('created_at', ascending: false)
           .limit(20);
 
-      bool liked = false;
       bool favori = false;
       if (_uid != null) {
-        final l = await _supabase.from('place_likes').select('id').eq('place_id', widget.id).eq('user_uid', _uid).maybeSingle();
         final f = await _supabase.from('place_favoris').select('id').eq('place_id', widget.id).eq('user_uid', _uid).maybeSingle();
-        liked = l != null;
         favori = f != null;
+      }
+
+      // Noms des auteurs d'avis
+      final avisList = List<Map<String, dynamic>>.from(avis as List);
+      final uids = avisList.map((a) => a['user_uid'] as String?).whereType<String>().toSet();
+      if (uids.isNotEmpty) {
+        try {
+          final usersData = await _supabase.from('users')
+              .select('uid, firstname, lastname, is_elevage, name_elevage')
+              .inFilter('uid', uids.toList());
+          for (final u in (usersData as List)) {
+            final isElevage = u['is_elevage'] == true;
+            final name = isElevage && (u['name_elevage'] as String?)?.isNotEmpty == true
+                ? u['name_elevage'] as String
+                : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+            for (final a in avisList) {
+              if (a['user_uid'] == u['uid']) a['_user_nom'] = name.isEmpty ? 'Utilisateur' : name;
+            }
+          }
+        } catch (_) {}
       }
 
       List<Map<String, dynamic>> dispos = [];
@@ -73,11 +93,9 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
 
       setState(() {
         _lieu = Map<String, dynamic>.from(lieu as Map);
-        _avis = List<Map<String, dynamic>>.from(avis as List);
+        _avis = avisList;
         _dispos = dispos;
-        _isLiked = liked;
         _isFavori = favori;
-        _likeCount = (_lieu!['nb_likes'] as int? ?? 0);
         _loading = false;
       });
     } catch (_) {
@@ -85,28 +103,63 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
     }
   }
 
-  Future<void> _toggleLike() async {
-    if (_uid == null) return;
-    setState(() {
-      _isLiked = !_isLiked;
-      _likeCount += _isLiked ? 1 : -1;
-    });
-    if (_isLiked) {
-      await _supabase.from('place_likes').insert({'place_id': widget.id, 'user_uid': _uid});
-    } else {
-      await _supabase.from('place_likes').delete().eq('place_id', widget.id).eq('user_uid', _uid);
-    }
-    await _supabase.from('petfriendly_places').update({'nb_likes': _likeCount}).eq('id', widget.id);
-  }
-
   Future<void> _toggleFavori() async {
     if (_uid == null) return;
     setState(() => _isFavori = !_isFavori);
     if (_isFavori) {
       await _supabase.from('place_favoris').insert({'place_id': widget.id, 'user_uid': _uid});
+      // Notifier le propriétaire (sauf si c'est lui-même)
+      final ownerUid = _lieu?['uid_pro'] as String?;
+      if (ownerUid != null && ownerUid != _uid) {
+        try {
+          final me = await _supabase.from('users').select('firstname, lastname').eq('uid', _uid).maybeSingle();
+          final nom = me != null ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim() : 'Quelqu\'un';
+          final nomLieu = (_lieu?['name'] ?? _lieu?['nom'] ?? 'votre établissement').toString();
+          await _supabase.from('notifications').insert({
+            'uid': ownerUid,
+            'type': 'place_favori',
+            'title': '⭐ Nouvel ajout en favori',
+            'body': '$nom a ajouté $nomLieu à ses favoris !',
+            'data': {'fromUid': _uid, 'placeId': widget.id},
+            'read': false,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+          unawaited(FirebaseFunctions.instanceFor(region: 'europe-west1')
+              .httpsCallable('notifyPlaceFavori')
+              .call({
+                'receiverUid': ownerUid,
+                'senderName': nom,
+                'nomLieu': nomLieu,
+                'placeId': widget.id,
+              }));
+        } catch (_) {}
+      }
     } else {
       await _supabase.from('place_favoris').delete().eq('place_id', widget.id).eq('user_uid', _uid);
     }
+  }
+
+  Future<void> _openChat() async {
+    final uidPro = _lieu?['uid_pro'] as String?;
+    if (uidPro == null || _uid == null) return;
+    setState(() => _loadingChat = true);
+    try {
+      final convId = await MessagingHelper.openOrCreateConversation(
+        otherUid: uidPro,
+        categorie: 'communaute',
+      );
+      if (mounted) {
+        Navigator.push(context, MaterialPageRoute(
+            builder: (_) => ChatScreen(conversationId: convId, eleveurId: uidPro)));
+      }
+    } finally {
+      if (mounted) setState(() => _loadingChat = false);
+    }
+  }
+
+  Future<void> _callPhone(String number) async {
+    final uri = Uri(scheme: 'tel', path: number);
+    if (await canLaunchUrl(uri)) await launchUrl(uri);
   }
 
   Future<void> _openNavigation() async {
@@ -443,11 +496,12 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
     final horaires = lieu['horaires'] as Map<String, dynamic>?;
     final ouvert = _ouvertLabel();
 
-    const especeEmoji = {'chien':'🐶','chat':'🐱','cheval':'🐴','lapin':'🐰','oiseau':'🦜','nac':'🐾'};
-
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
-      body: CustomScrollView(
+      body: RefreshIndicator(
+        onRefresh: _load,
+        color: _teal,
+        child: CustomScrollView(
         slivers: [
           // Bannière
           SliverAppBar(
@@ -482,31 +536,12 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Nom + note + like
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(nom,
-                            style: const TextStyle(
-                              fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                              fontSize: 22, color: Color(0xFF1E2025),
-                            )),
-                      ),
-                      GestureDetector(
-                        onTap: _toggleLike,
-                        child: Column(
-                          children: [
-                            Icon(
-                              _isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                              color: _isLiked ? Colors.redAccent : Colors.grey,
-                              size: 26,
-                            ),
-                            Text('$_likeCount', style: const TextStyle(fontSize: 11)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                  // Nom
+                  Text(nom,
+                      style: const TextStyle(
+                        fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 22, color: Color(0xFF1E2025),
+                      )),
                   const SizedBox(height: 8),
                   if (ouvert.isNotEmpty) ...[
                     Text(ouvert, style: const TextStyle(fontSize: 13)),
@@ -540,7 +575,7 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
                         if (tel != null) ...[
                           const Divider(height: 16),
                           GestureDetector(
-                            onTap: () => launchUrl(Uri.parse('tel:$tel')),
+                            onTap: () => _callPhone(tel),
                             child: Row(children: [
                               const Icon(Icons.phone_outlined, color: _teal, size: 18),
                               const SizedBox(width: 8),
@@ -568,18 +603,51 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
                           ),
                         ],
                         const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _openNavigation,
-                            icon: const Icon(Icons.navigation_rounded, size: 18),
-                            label: const Text('Obtenir l\'itinéraire'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _teal,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        Row(
+                          children: [
+                            if (tel != null) ...[
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _callPhone(tel),
+                                  icon: const Icon(Icons.call_rounded, size: 18),
+                                  label: const Text('Appeler'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green.shade600,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            if (_uid != null && _uid != lieu['uid_pro']) ...[
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: _loadingChat ? null : _openChat,
+                                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                                  label: const Text('Message'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _teal,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _openNavigation,
+                                icon: const Icon(Icons.navigation_rounded, size: 18),
+                                label: const Text('Itinéraire'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF334155),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
                       ],
                     ),
@@ -593,13 +661,19 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8, runSpacing: 6,
-                      children: especes.map((e) => Chip(
-                        label: Text('${especeEmoji[e.toLowerCase()] ?? '🐾'} $e',
-                            style: const TextStyle(fontSize: 12)),
-                        backgroundColor: const Color(0xFFE8F5E9),
-                        side: BorderSide.none,
-                        padding: EdgeInsets.zero,
-                      )).toList(),
+                      children: especes.map((e) {
+                        const labels = {
+                          'chien': 'Chien', 'chat': 'Chat', 'cheval': 'Cheval',
+                          'lapin': 'Lapin', 'oiseau': 'Oiseau', 'nac': 'NAC',
+                        };
+                        return Chip(
+                          label: Text(labels[e.toLowerCase()] ?? e,
+                              style: const TextStyle(fontSize: 12)),
+                          backgroundColor: const Color(0xFFE8F5E9),
+                          side: BorderSide.none,
+                          padding: EdgeInsets.zero,
+                        );
+                      }).toList(),
                     ),
                     const SizedBox(height: 16),
                   ],
@@ -685,6 +759,7 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -765,10 +840,8 @@ class _PetInfoCard extends StatelessWidget {
     add('Animaux dans la chambre', lieu['animaux_dans_chambre']);
     final frais = lieu['frais_animal_nuit'];
     if (frais != null) add('Supplément / nuit', '${frais}€');
-    final poids = lieu['poids_max_kg'];
-    if (poids != null) add('Poids max', poids == 0 ? 'Illimité' : '${poids} kg');
     final nbMax = lieu['nb_animaux_max'];
-    if (nbMax != null) add('Animaux max / séjour', '$nbMax');
+    if (nbMax != null) add('Animaux max / séjour', nbMax == 0 ? 'Pas de limite' : '$nbMax');
     add('Espace détente animaux', lieu['espace_detente']);
 
     final equip = List<String>.from(lieu['equipements_fournis'] as List? ?? []);
@@ -834,7 +907,10 @@ class _AvisCard extends StatelessWidget {
               const Spacer(),
               Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade400),
             ]),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
+            Text(avis['_user_nom'] as String? ?? 'Anonyme',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
+            const SizedBox(height: 4),
             Text(commentaire,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -1017,11 +1093,14 @@ class _AvisDetailSheetState extends State<_AvisDetailSheet> {
               size: 22, color: const Color(0xFFFFA000),
             ))),
           ],
-          const SizedBox(height: 14),
+          const SizedBox(height: 6),
+          Text(avis['_user_nom'] as String? ?? 'Anonyme',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
+          const SizedBox(height: 10),
           Text(commentaire, style: const TextStyle(fontSize: 14, height: 1.6)),
           if (animalNom != null) ...[
             const SizedBox(height: 10),
-            Text('Avec $animalNom 🐾',
+            Text('Avec $animalNom',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
           ],
           if (dateVisite != null) ...[

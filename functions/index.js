@@ -25,6 +25,7 @@ exports.sendPushNotification = stripeFunctions.sendPushNotification;
 // Alertes perdus + likes + trouvés
 exports.notifyUsersNearLostAnimal = alertesFunctions.notifyUsersNearLostAnimal;
 exports.sendLikeNotification = alertesFunctions.sendLikeNotification;
+exports.notifyPlaceFavori = alertesFunctions.notifyPlaceFavori;
 exports.notifyNearFoundAnimal = alertesFunctions.notifyNearFoundAnimal;
 exports.notifyAnimalOwner = alertesFunctions.notifyAnimalOwner;
 

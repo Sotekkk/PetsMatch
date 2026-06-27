@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:PetsMatch/main.dart';
-import 'package:PetsMatch/pages/user_details_particulier.dart';
+import 'package:PetsMatch/pages/chat_profile_page.dart';
+import 'package:PetsMatch/pages/user_detail_page_feed.dart';
+import 'package:PetsMatch/pages/main_feed.dart' show UserSelected;
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -75,10 +77,9 @@ class _ChatScreenState extends State<ChatScreen> {
           .from('messages')
           .select()
           .eq('conversation_id', widget.conversationId)
-          .order('created_at');
+          .order('created_at', ascending: false);
       if (mounted) {
         setState(() => _messages = List<Map<String, dynamic>>.from(rows as List));
-        _scrollToBottom();
       }
     } catch (_) {}
   }
@@ -100,7 +101,7 @@ class _ChatScreenState extends State<ChatScreen> {
             if (mounted) {
               // Éviter les doublons (Realtime peut notifier notre propre INSERT)
               if (!_messages.any((m) => m['id'] == row['id'])) {
-                setState(() => _messages.add(row));
+                setState(() => _messages.insert(0, row));
                 _scrollToBottom();
               }
               if (row['sender_id'] != _uid) _markAsRead();
@@ -208,8 +209,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(_scrollController.position.maxScrollExtent,
+      if (_scrollController.hasClients && _scrollController.position.minScrollExtent == 0) {
+        _scrollController.animateTo(0,
             duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
       }
     });
@@ -220,30 +221,77 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<Map<String, dynamic>> _getUserInfo(String userId) async {
     try {
       final d = await _supa.from('users')
-          .select('firstname, lastname, profile_picture_url, is_elevage, is_pro, name_elevage, desc')
+          .select('firstname, lastname, profile_picture_url, is_elevage, is_pro, name_elevage')
           .eq('uid', userId).maybeSingle();
-      if (d == null) return {'name': 'Utilisateur', 'profilePictureUrl': null};
+      if (d == null) return {'name': 'Utilisateur', 'profilePictureUrl': '', 'uid': userId, 'isElevage': false, 'isPro': false};
       final isElevage = d['is_elevage'] == true;
+      final isPro = d['is_pro'] == true;
       final name = isElevage && (d['name_elevage'] as String?)?.isNotEmpty == true
           ? d['name_elevage'] as String
           : '${d['firstname'] ?? ''} ${d['lastname'] ?? ''}'.trim();
       return {
         'name': name.isEmpty ? 'Utilisateur' : name,
-        'profilePictureUrl': d['profile_picture_url'],
-        'description': d['desc'] ?? '',
+        'profilePictureUrl': d['profile_picture_url'] as String? ?? '',
+        'uid': userId,
+        'isElevage': isElevage,
+        'isPro': isPro,
       };
     } catch (_) {
-      return {'name': 'Utilisateur', 'profilePictureUrl': null};
+      return {'name': 'Utilisateur', 'profilePictureUrl': '', 'uid': userId, 'isElevage': false, 'isPro': false};
     }
   }
 
-  void _navigateToUser(Map<String, dynamic> userInfo) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => UserParticulierFeedDetails(
-      profilePictureUrl: userInfo['profilePictureUrl'],
-      description: userInfo['description'] ?? '',
-      adoptionProject: '',
-      name: userInfo['name'],
-    )));
+  Future<void> _navigateToUser(Map<String, dynamic> userInfo) async {
+    final uid = userInfo['uid'] as String;
+    final isElevage = userInfo['isElevage'] as bool? ?? false;
+    final isPro = userInfo['isPro'] as bool? ?? false;
+
+    if (isElevage || isPro) {
+      // Fetch full data for éleveur/pro profile page
+      try {
+        final d = await _supa.from('users').select(
+          'name_elevage, profile_picture_url_elevage, desc_entreprise, is_partenaire, '
+          'cat_pro, profession_pro, code_iso_elevage, numero_elevage, adress_elevage, '
+          'is_validate, is_elevage, is_pro, is_dog, is_cat, dog_breeds, cat_breeds, '
+          'ville_elevage, code_postal_elevage, pays_elevage, siret',
+        ).eq('uid', uid).maybeSingle();
+        final data = <String, dynamic>{
+          'nameElevage':             d?['name_elevage'] ?? '',
+          'profilePictureUrlElevage': d?['profile_picture_url_elevage'] ?? '',
+          'descEntreprise':          d?['desc_entreprise'] ?? '',
+          'isPartenaire':            d?['is_partenaire'] ?? false,
+          'catPro':                  d?['cat_pro'] ?? '',
+          'professionPro':           d?['profession_pro'] ?? '',
+          'codeISOElevage':          d?['code_iso_elevage'] ?? '',
+          'numeroElevage':           d?['numero_elevage'] ?? '',
+          'adressElevage':           d?['adress_elevage'] ?? '',
+          'isValidate':              d?['is_validate'] ?? false,
+          'isElevage':               d?['is_elevage'] ?? false,
+          'isPro':                   d?['is_pro'] ?? false,
+          'isDog':                   d?['is_dog'] ?? false,
+          'isCat':                   d?['is_cat'] ?? false,
+          'dogBreeds':               d?['dog_breeds'] ?? [],
+          'catBreeds':               d?['cat_breeds'] ?? [],
+          'villeElevage':            d?['ville_elevage'] ?? '',
+          'codePostalElevage':       d?['code_postal_elevage'] ?? '',
+          'paysElevage':             d?['pays_elevage'] ?? '',
+          'siret':                   d?['siret'] ?? '',
+        };
+        if (!mounted) return;
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => UserDetailPageFeed(user: UserSelected.fromMap(data, uid)),
+        ));
+      } catch (_) {
+        if (!mounted) return;
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ChatProfilePage(uid: uid),
+        ));
+      }
+    } else {
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => ChatProfilePage(uid: uid),
+      ));
+    }
   }
 
   // ── Images / localisation ─────────────────────────────────────────────────────
@@ -540,13 +588,15 @@ class _ChatScreenState extends State<ChatScreen> {
                   style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)))
               : ListView.builder(
                   controller: _scrollController,
+                  reverse: true,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   itemCount: _messages.length,
                   itemBuilder: (_, i) {
                     final msg  = _messages[i];
                     final ts   = msg['created_at']?.toString();
-                    final prevTs = i > 0 ? _messages[i-1]['created_at']?.toString() : null;
-                    final showDate = i == 0 || _formatDate(ts) != _formatDate(prevTs);
+                    // Avec reverse:true + ordre DESC, _messages[i+1] est plus ancien (visuellement au-dessus)
+                    final olderTs = i < _messages.length - 1 ? _messages[i+1]['created_at']?.toString() : null;
+                    final showDate = i == _messages.length - 1 || _formatDate(ts) != _formatDate(olderTs);
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [

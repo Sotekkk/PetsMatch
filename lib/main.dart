@@ -32,6 +32,7 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<ScaffoldState> drawerKey = GlobalKey<ScaffoldState>();
 
 void _handleNotifNavigation(Map<String, dynamic> data) {
   final ctx = navigatorKey.currentState;

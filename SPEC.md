@@ -191,6 +191,25 @@ src/
 
 **Cascade delete :** supprimer `users.uid` supprime tout en cascade.
 
+### Cloud Functions Firebase — push notifications (migration à prévoir)
+
+Toutes les notifications push sont actuellement envoyées via Firebase Cloud Functions (Node.js, `functions/`) qui lisent le `fcmToken` depuis Firestore puis appellent `admin.messaging().send()`. À terme, migrer vers **Supabase Edge Functions** (Deno/TypeScript) pour centraliser l'infra et supprimer la dépendance Firebase Functions.
+
+| Cloud Function | Déclencheur | Priorité migration |
+|---|---|---|
+| `sendLikeNotification` | Like sur annonce éleveur | Haute |
+| `notifyPlaceFavori` | Lieu ajouté en favori | Haute |
+| `notifyProNewRdv` | Nouvelle demande de RDV | Haute |
+| `sendRetardNotification` | RDV en retard | Moyenne |
+| `notifyEmployeeAdded` | Employé ajouté | Moyenne |
+| `notifyTacheAssignee` | Tâche assignée | Moyenne |
+| `notifyOwnerVetEntry` | Entrée vétérinaire animal | Moyenne |
+| `notifyNearFoundAnimal` | Animal trouvé à proximité | Basse |
+| `notifyAnimalOwner` | Propriétaire notifié (puce) | Basse |
+| `triggerVaccinationReminder` | Rappel vaccin | Basse |
+
+**Approche recommandée :** stocker le FCM token dans Supabase `users.fcm_token` (au lieu de Firestore), puis remplacer chaque Cloud Function par une Supabase Edge Function déclenchée via `supabase.functions.invoke()`.
+
 ### Firestore — collections
 
 | Collection | Usage |
