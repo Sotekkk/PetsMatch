@@ -1,8 +1,11 @@
+import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 
 const _tealC = Color(0xFF00ACC1);
 const _darkC = Color(0xFF1E2025);
@@ -245,15 +248,18 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
     final typeLabel = {'race': 'Race', 'region': 'Région', 'loisir': 'Loisir', 'autre': 'Autre'}[type] ?? type;
     final regles = (_groupe['regles'] as List?)?.cast<dynamic>() ?? [];
 
+    final bannerUrl = _groupe['photo_cover_url']?.toString();
+    final avatarUrl = _groupe['avatar_url']?.toString();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _tealC))
           : CustomScrollView(
               slivers: [
-                // Header
+                // Header avec bannière + avatar
                 SliverAppBar(
-                  expandedHeight: 140,
+                  expandedHeight: bannerUrl != null ? 200 : 140,
                   pinned: true,
                   backgroundColor: _tealC,
                   foregroundColor: Colors.white,
@@ -274,16 +280,43 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                             fontFamily: 'Galey',
                             fontWeight: FontWeight.w700,
                             fontSize: 16,
-                            color: Colors.white)),
-                    background: Container(
-                      color: _tealC,
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 40),
-                          child: Icon(Icons.group_rounded,
-                              size: 56, color: Colors.white.withValues(alpha: 0.3)),
-                        ),
-                      ),
+                            color: Colors.white,
+                            shadows: [Shadow(color: Colors.black38, blurRadius: 4)])),
+                    background: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Bannière
+                        if (bannerUrl != null)
+                          Image.network(bannerUrl, fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(color: _tealC))
+                        else
+                          Container(color: _tealC,
+                              child: Center(child: Icon(Icons.group_rounded,
+                                  size: 60, color: Colors.white.withValues(alpha: 0.2)))),
+                        // Dégradé bas pour lisibilité du titre
+                        Positioned(bottom: 0, left: 0, right: 0,
+                            child: Container(height: 60,
+                                decoration: const BoxDecoration(
+                                    gradient: LinearGradient(begin: Alignment.bottomCenter,
+                                        end: Alignment.topCenter,
+                                        colors: [Colors.black54, Colors.transparent])))),
+                        // Avatar du groupe
+                        if (avatarUrl != null)
+                          Positioned(
+                            bottom: 12, left: 16,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 3),
+                              ),
+                              child: CircleAvatar(
+                                radius: 30,
+                                backgroundImage: NetworkImage(avatarUrl),
+                                backgroundColor: _tealC,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -583,6 +616,22 @@ class _PostCard extends StatefulWidget {
 }
 
 class _PostCardState extends State<_PostCard> {
+  void _showFullImage(BuildContext ctx, String url) {
+    showDialog(
+      context: ctx,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: EdgeInsets.zero,
+        child: GestureDetector(
+          onTap: () => Navigator.pop(ctx),
+          child: InteractiveViewer(
+            child: Image.network(url, fit: BoxFit.contain),
+          ),
+        ),
+      ),
+    );
+  }
+
   static String _fmtDate(String iso) {
     try {
       final dt = DateTime.parse(iso).toLocal();
@@ -678,12 +727,31 @@ class _PostCardState extends State<_PostCard> {
               ),
           ]),
         ),
-        // Contenu
-        Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-          child: Text(contenu,
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: _darkC)),
-        ),
+        // Contenu texte
+        if (contenu.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+            child: Text(contenu,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: _darkC)),
+          ),
+        // Photo du post
+        if (widget.post['image_url'] != null) ...[
+          if (contenu.isEmpty) const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(0), bottomRight: Radius.circular(0)),
+            child: GestureDetector(
+              onTap: () => _showFullImage(context, widget.post['image_url'].toString()),
+              child: Image.network(
+                widget.post['image_url'].toString(),
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+        ],
         // Actions
         const Divider(height: 1, thickness: 0.5),
         Padding(
@@ -914,6 +982,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   final _supa = Supabase.instance.client;
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   final _ctrl = TextEditingController();
+  File? _imageFile;
   bool _saving = false;
 
   @override
@@ -922,15 +991,31 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
     super.dispose();
   }
 
+  Future<void> _pickImage() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+      maxWidth: 1200,
+    );
+    if (picked != null) setState(() => _imageFile = File(picked.path));
+  }
+
   Future<void> _publish() async {
     final text = _ctrl.text.trim();
-    if (text.isEmpty || _uid.isEmpty) return;
+    if (text.isEmpty && _imageFile == null) return;
+    if (_uid.isEmpty) return;
     setState(() => _saving = true);
     try {
+      String? imageUrl;
+      if (_imageFile != null) {
+        final path = 'groupes/posts/${widget.groupeId}/${_uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        imageUrl = await storage.uploadPhoto(_imageFile!, path, quality: 82);
+      }
       await _supa.from('groupe_posts').insert({
         'groupe_id': widget.groupeId,
         'auteur_uid': _uid,
         'contenu': text,
+        if (imageUrl != null) 'image_url': imageUrl,
         'created_at': DateTime.now().toIso8601String(),
       });
       if (mounted) Navigator.pop(context, true);
@@ -950,48 +1035,91 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
           color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       padding: EdgeInsets.only(
           left: 20, right: 20, top: 12, bottom: MediaQuery.of(context).viewInsets.bottom + 28),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-        const SizedBox(height: 16),
-        Row(children: [
-          const Expanded(
-              child: Text('Nouvelle publication',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18))),
-          IconButton(
-              icon: const Icon(Icons.close, size: 22, color: _greyC),
-              onPressed: () => Navigator.pop(context),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints()),
+      child: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          Row(children: [
+            const Expanded(
+                child: Text('Nouvelle publication',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18))),
+            IconButton(
+                icon: const Icon(Icons.close, size: 22, color: _greyC),
+                onPressed: () => Navigator.pop(context),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints()),
+          ]),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _ctrl,
+            autofocus: _imageFile == null,
+            maxLines: 5,
+            decoration: InputDecoration(
+              hintText: 'Partagez quelque chose avec le groupe…',
+              hintStyle: const TextStyle(fontFamily: 'Galey', color: _greyC),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _tealC, width: 1.5)),
+              contentPadding: const EdgeInsets.all(14),
+              filled: true,
+              fillColor: const Color(0xFFF8F8F8),
+            ),
+          ),
+          // Prévisualisation image sélectionnée
+          if (_imageFile != null) ...[
+            const SizedBox(height: 12),
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.file(_imageFile!, width: double.infinity, height: 200, fit: BoxFit.cover),
+                ),
+                Positioned(
+                  top: 8, right: 8,
+                  child: GestureDetector(
+                    onTap: () => setState(() => _imageFile = null),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                      child: const Icon(Icons.close, color: Colors.white, size: 18),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 14),
+          // Barre d'actions (photo)
+          Row(children: [
+            GestureDetector(
+              onTap: _pickImage,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                decoration: BoxDecoration(
+                    color: const Color(0xFFF8F8F8),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade300)),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.photo_outlined, size: 20, color: _tealC),
+                  SizedBox(width: 6),
+                  Text('Photo', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _tealC, fontWeight: FontWeight.w600)),
+                ]),
+              ),
+            ),
+            const Spacer(),
+            SizedBox(
+              child: FilledButton(
+                onPressed: _saving ? null : _publish,
+                style: FilledButton.styleFrom(
+                    backgroundColor: _tealC, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
+                child: _saving
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('Publier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              ),
+            ),
+          ]),
         ]),
-        const SizedBox(height: 16),
-        TextField(
-          controller: _ctrl,
-          autofocus: true,
-          maxLines: 6,
-          decoration: InputDecoration(
-            hintText: 'Partagez quelque chose avec le groupe…',
-            hintStyle: const TextStyle(fontFamily: 'Galey', color: _greyC),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _tealC, width: 1.5)),
-            contentPadding: const EdgeInsets.all(14),
-            filled: true,
-            fillColor: const Color(0xFFF8F8F8),
-          ),
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: _saving ? null : _publish,
-            style: FilledButton.styleFrom(
-                backgroundColor: _tealC, padding: const EdgeInsets.symmetric(vertical: 14)),
-            child: _saving
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Text('Publier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-          ),
-        ),
-      ]),
+      ),
     );
   }
 }
@@ -1021,10 +1149,16 @@ class _AdminSheetState extends State<_AdminSheet> with SingleTickerProviderState
   List<Map<String, dynamic>> _membres = [];
   bool _loadingMembres = true;
 
+  // Infos groupe
+  File? _avatarFile;
+  File? _bannerFile;
+  bool _uploadingAvatar = false;
+  bool _uploadingBanner = false;
+
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 3, vsync: this);
+    _tabCtrl = TabController(length: 4, vsync: this);
     final reglesRaw = widget.groupe['regles'] as List? ?? [];
     _regles = reglesRaw.map((r) => r.toString()).toList();
     _loadMembres();
@@ -1035,6 +1169,42 @@ class _AdminSheetState extends State<_AdminSheet> with SingleTickerProviderState
     _tabCtrl.dispose();
     _regleCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickAndUpload({required bool isAvatar}) async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+      maxWidth: isAvatar ? 400 : 1200,
+    );
+    if (picked == null) return;
+    final file = File(picked.path);
+    final groupeId = widget.groupe['id'].toString();
+    if (isAvatar) {
+      setState(() => _uploadingAvatar = true);
+      try {
+        final url = await storage.uploadPhoto(file, 'groupes/$groupeId/avatar.jpg', quality: 88);
+        await _supa.from('groupes').update({'avatar_url': url}).eq('id', groupeId);
+        if (mounted) {
+          setState(() { _avatarFile = file; _uploadingAvatar = false; });
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Photo de profil mise à jour !')));
+        }
+      } catch (e) {
+        if (mounted) setState(() => _uploadingAvatar = false);
+      }
+    } else {
+      setState(() => _uploadingBanner = true);
+      try {
+        final url = await storage.uploadPhoto(file, 'groupes/$groupeId/banner.jpg', quality: 82, maxDim: 1200);
+        await _supa.from('groupes').update({'photo_cover_url': url}).eq('id', groupeId);
+        if (mounted) {
+          setState(() { _bannerFile = file; _uploadingBanner = false; });
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bannière mise à jour !')));
+        }
+      } catch (e) {
+        if (mounted) setState(() => _uploadingBanner = false);
+      }
+    }
   }
 
   Future<void> _loadMembres() async {
@@ -1102,11 +1272,14 @@ class _AdminSheetState extends State<_AdminSheet> with SingleTickerProviderState
           labelColor: _tealC,
           unselectedLabelColor: _greyC,
           indicatorColor: _tealC,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13),
           tabs: const [
             Tab(text: 'Membres'),
             Tab(text: 'Demandes'),
             Tab(text: 'Règles'),
+            Tab(text: 'Photos'),
           ],
         ),
         const Divider(height: 1),
@@ -1117,6 +1290,7 @@ class _AdminSheetState extends State<_AdminSheet> with SingleTickerProviderState
               _buildMembresList(actifOnly: true),
               _buildMembresList(pendingOnly: true),
               _buildReglesTab(),
+              _buildPhotosTab(),
             ],
           ),
         ),
@@ -1273,5 +1447,97 @@ class _AdminSheetState extends State<_AdminSheet> with SingleTickerProviderState
         ]),
       ),
     ]);
+  }
+
+  Widget _buildPhotosTab() {
+    final currentAvatar = widget.groupe['avatar_url']?.toString();
+    final currentBanner = widget.groupe['photo_cover_url']?.toString();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Photo de profil du groupe
+        const Text('Photo de profil', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _darkC)),
+        const SizedBox(height: 12),
+        Row(children: [
+          // Avatar actuel ou sélectionné
+          CircleAvatar(
+            radius: 40,
+            backgroundColor: _tealC.withValues(alpha: 0.15),
+            backgroundImage: _avatarFile != null
+                ? FileImage(_avatarFile!) as ImageProvider
+                : (currentAvatar != null ? NetworkImage(currentAvatar) : null),
+            child: (_avatarFile == null && currentAvatar == null)
+                ? const Icon(Icons.group_rounded, size: 36, color: _tealC)
+                : null,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Photo carrée, visible sur la carte du groupe',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _greyC)),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _uploadingAvatar ? null : () => _pickAndUpload(isAvatar: true),
+                icon: _uploadingAvatar
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: _tealC))
+                    : const Icon(Icons.photo_camera_outlined, size: 18, color: _tealC),
+                label: Text(_uploadingAvatar ? 'Upload…' : 'Changer la photo',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _tealC)),
+                style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: _tealC),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8)),
+              ),
+            ]),
+          ),
+        ]),
+        const SizedBox(height: 28),
+
+        // Bannière
+        const Text('Bannière', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _darkC)),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: _uploadingBanner ? null : () => _pickAndUpload(isAvatar: false),
+          child: Container(
+            height: 130,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: _tealC.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: _tealC.withValues(alpha: 0.3), width: 1.5),
+            ),
+            clipBehavior: Clip.hardEdge,
+            child: _uploadingBanner
+                ? const Center(child: CircularProgressIndicator(color: _tealC))
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (_bannerFile != null)
+                        Image.file(_bannerFile!, fit: BoxFit.cover)
+                      else if (currentBanner != null)
+                        Image.network(currentBanner, fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                              color: Colors.black38, borderRadius: BorderRadius.circular(20)),
+                          child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.photo_outlined, color: Colors.white, size: 18),
+                            SizedBox(width: 6),
+                            Text('Changer la bannière',
+                                style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+                          ]),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text('Image panoramique affichée en haut de la page du groupe',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _greyC)),
+      ]),
+    );
   }
 }

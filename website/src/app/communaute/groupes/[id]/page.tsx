@@ -10,10 +10,12 @@ const TYPE_LABELS: Record<string, string> = { race: 'Race', region: 'Région', l
 interface Groupe {
   id: string; nom: string; description: string; type: string;
   prive: boolean; createur_uid: string; regles: string[];
+  avatar_url?: string; photo_cover_url?: string;
 }
 interface Post {
   id: string; groupe_id: string; auteur_uid: string; contenu: string;
   like_count: number; comment_count: number; epingle: boolean; created_at: string;
+  image_url?: string;
 }
 interface Commentaire {
   id: string; post_id: string; auteur_uid: string; contenu: string; created_at: string;
@@ -55,13 +57,20 @@ export default function GroupeDetailPage() {
   const [commenting, setCommenting] = useState(false);
   const [loadingComments, setLoadingComments] = useState(false);
 
+  // Post image state
+  const [postImage, setPostImage] = useState<File | null>(null);
+  const [postImagePreview, setPostImagePreview] = useState<string | null>(null);
+  const [uploadingImg, setUploadingImg] = useState(false);
+
   // Admin state
   const [showAdmin, setShowAdmin] = useState(false);
-  const [adminTab, setAdminTab] = useState<'membres' | 'demandes' | 'regles'>('membres');
+  const [adminTab, setAdminTab] = useState<'membres' | 'demandes' | 'regles' | 'photos'>('membres');
   const [membres, setMembres] = useState<{ user_uid: string; role: string; statut: string }[]>([]);
   const [editRegles, setEditRegles] = useState<string[]>([]);
   const [newRegle, setNewRegle] = useState('');
   const [savingRegles, setSavingRegles] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [bannerUploading, setBannerUploading] = useState(false);
 
   const isMember = membership?.statut === 'active';
   const isAdmin = membership?.role === 'admin' && isMember;
@@ -148,17 +157,42 @@ export default function GroupeDetailPage() {
     await supabase.from('groupe_posts').update({ like_count: posts.find(p => p.id === postId)!.like_count + delta }).eq('id', postId);
   }
 
+  async function uploadToStorage(file: File, path: string): Promise<string> {
+    const { error } = await supabase.storage.from('media').upload(path, file, {
+      contentType: 'image/jpeg', upsert: true,
+    });
+    if (error) throw error;
+    return supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
+  }
+
+  function selectPostImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPostImage(file);
+    setPostImagePreview(URL.createObjectURL(file));
+  }
+
   async function publishPost() {
-    if (!user?.uid || !newPost.trim() || !isMember) return;
+    if (!user?.uid || (!newPost.trim() && !postImage) || !isMember) return;
     setPosting(true);
+    setUploadingImg(!!postImage);
     try {
+      let imageUrl: string | undefined;
+      if (postImage) {
+        const path = `groupes/posts/${id}/${user.uid}_${Date.now()}.jpg`;
+        imageUrl = await uploadToStorage(postImage, path);
+        setUploadingImg(false);
+      }
       const { data } = await supabase.from('groupe_posts').insert({
         groupe_id: id, auteur_uid: user.uid, contenu: newPost.trim(),
+        image_url: imageUrl ?? null,
         created_at: new Date().toISOString(),
       }).select().single();
       if (data) setPosts(prev => [data as Post, ...prev]);
       setNewPost('');
-    } finally { setPosting(false); }
+      setPostImage(null);
+      setPostImagePreview(null);
+    } finally { setPosting(false); setUploadingImg(false); }
   }
 
   async function togglePin(post: Post) {
@@ -227,6 +261,28 @@ export default function GroupeDetailPage() {
     setSavingRegles(false);
   }
 
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !groupe) return;
+    setAvatarUploading(true);
+    try {
+      const url = await uploadToStorage(file, `groupes/${id}/avatar.jpg`);
+      await supabase.from('groupes').update({ avatar_url: url }).eq('id', id);
+      setGroupe(prev => prev ? { ...prev, avatar_url: url } : null);
+    } finally { setAvatarUploading(false); }
+  }
+
+  async function handleBannerUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !groupe) return;
+    setBannerUploading(true);
+    try {
+      const url = await uploadToStorage(file, `groupes/${id}/banner.jpg`);
+      await supabase.from('groupes').update({ photo_cover_url: url }).eq('id', id);
+      setGroupe(prev => prev ? { ...prev, photo_cover_url: url } : null);
+    } finally { setBannerUploading(false); }
+  }
+
   if (loading) return (
     <div className="flex justify-center items-center py-40">
       <div className="w-8 h-8 border-2 border-[#00ACC1] border-t-transparent rounded-full animate-spin" />
@@ -237,40 +293,57 @@ export default function GroupeDetailPage() {
 
   return (
     <div className="min-h-screen bg-[#F8F8F8]">
-      {/* Header */}
-      <div className="bg-[#00ACC1] text-white px-4 py-8">
-        <div className="max-w-2xl mx-auto">
-          <button onClick={() => router.back()} className="text-white/70 hover:text-white text-sm mb-4 flex items-center gap-1">
-            ← Retour
-          </button>
-          <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0 text-3xl">
-              {groupe.type === 'race' ? '🐾' : groupe.type === 'region' ? '📍' : groupe.type === 'loisir' ? '🎯' : '💬'}
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>{groupe.nom}</h1>
-                {groupe.prive && <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">🔒 Privé</span>}
-              </div>
-              <span className="inline-block text-xs bg-white/20 px-2 py-0.5 rounded-full mt-1">
-                {TYPE_LABELS[groupe.type] ?? groupe.type}
-              </span>
-              <p className="text-white/80 text-sm mt-2">
-                {membresCount} membre{membresCount > 1 ? 's' : ''}
-                {friendsCount > 0 && ` · ${friendsCount} ami${friendsCount > 1 ? 's' : ''}`}
-              </p>
-            </div>
-            {isAdmin && (
+      {/* Bannière */}
+      <div className="relative">
+        <div
+          className="h-44 bg-[#00ACC1]"
+          style={groupe.photo_cover_url ? {
+            backgroundImage: `url(${groupe.photo_cover_url})`,
+            backgroundSize: 'cover', backgroundPosition: 'center',
+          } : {}}
+        >
+          <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/50" />
+          <div className="absolute top-4 left-4">
+            <button onClick={() => router.back()} className="text-white/80 hover:text-white text-sm flex items-center gap-1 bg-black/20 px-3 py-1.5 rounded-full">
+              ← Retour
+            </button>
+          </div>
+          {isAdmin && (
+            <div className="absolute top-4 right-4">
               <button
                 onClick={() => { setShowAdmin(true); loadAdminMembres(); }}
-                className="p-2 bg-white/20 rounded-xl hover:bg-white/30 transition-colors"
+                className="text-white/80 hover:text-white bg-black/20 p-2 rounded-full"
               >
                 ⚙️
               </button>
-            )}
+            </div>
+          )}
+        </div>
+        {/* Avatar du groupe */}
+        <div className="max-w-2xl mx-auto px-4">
+          <div className="flex items-end gap-4 -mt-10 pb-4">
+            <div className="w-20 h-20 rounded-2xl border-4 border-white shadow-lg overflow-hidden bg-[#00ACC1] flex items-center justify-center flex-shrink-0">
+              {groupe.avatar_url
+                ? <img src={groupe.avatar_url} alt="" className="w-full h-full object-cover" />
+                : <span className="text-3xl">{groupe.type === 'race' ? '🐾' : groupe.type === 'region' ? '📍' : groupe.type === 'loisir' ? '🎯' : '💬'}</span>
+              }
+            </div>
+            <div className="flex-1 pb-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-xl font-bold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>{groupe.nom}</h1>
+                {groupe.prive && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">🔒 Privé</span>}
+              </div>
+              <span className="inline-block text-xs bg-[#E0F7FA] text-[#00ACC1] px-2 py-0.5 rounded-full mt-1 font-semibold">
+                {TYPE_LABELS[groupe.type] ?? groupe.type}
+              </span>
+              <p className="text-gray-500 text-sm mt-1">
+                {membresCount} membre{membresCount > 1 ? 's' : ''}
+                {friendsCount > 0 && <span className="text-[#00ACC1] font-semibold"> · {friendsCount} ami{friendsCount > 1 ? 's' : ''}</span>}
+              </p>
+            </div>
           </div>
           {groupe.description && (
-            <p className="text-white/80 text-sm mt-3">{groupe.description}</p>
+            <p className="text-gray-600 text-sm mt-2 pb-3">{groupe.description}</p>
           )}
         </div>
       </div>
@@ -321,14 +394,29 @@ export default function GroupeDetailPage() {
               className="w-full text-sm text-gray-700 resize-none focus:outline-none"
               style={{ fontFamily: 'Galey, sans-serif' }}
             />
-            <div className="flex justify-end mt-2">
+            {postImagePreview && (
+              <div className="relative mt-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={postImagePreview} alt="" className="w-full max-h-48 object-cover rounded-xl" />
+                <button
+                  onClick={() => { setPostImage(null); setPostImagePreview(null); }}
+                  className="absolute top-2 right-2 w-7 h-7 bg-black/60 text-white rounded-full flex items-center justify-center text-sm hover:bg-black/80"
+                >✕</button>
+              </div>
+            )}
+            <div className="flex items-center justify-between mt-3">
+              <label className="cursor-pointer flex items-center gap-1.5 text-gray-400 hover:text-[#00ACC1] text-sm transition-colors">
+                <span className="text-lg">📷</span>
+                <span style={{ fontFamily: 'Galey, sans-serif' }}>Photo</span>
+                <input type="file" accept="image/*" className="hidden" onChange={selectPostImage} />
+              </label>
               <button
                 onClick={publishPost}
-                disabled={posting || !newPost.trim()}
+                disabled={posting || (!newPost.trim() && !postImage)}
                 className="px-4 py-2 bg-[#00ACC1] text-white rounded-xl text-sm font-bold disabled:opacity-50"
                 style={{ fontFamily: 'Galey, sans-serif' }}
               >
-                {posting ? '…' : 'Publier'}
+                {uploadingImg ? '⬆️ Upload…' : posting ? '…' : 'Publier'}
               </button>
             </div>
           </div>
@@ -379,8 +467,18 @@ export default function GroupeDetailPage() {
                         </div>
                       )}
                     </div>
-                    <p className="text-sm text-[#1E2025] leading-relaxed" style={{ fontFamily: 'Galey, sans-serif' }}>{post.contenu}</p>
+                    {post.contenu && <p className="text-sm text-[#1E2025] leading-relaxed" style={{ fontFamily: 'Galey, sans-serif' }}>{post.contenu}</p>}
                   </div>
+                  {/* Photo du post */}
+                  {post.image_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={post.image_url}
+                      alt=""
+                      className="w-full max-h-96 object-cover cursor-pointer"
+                      onClick={() => window.open(post.image_url, '_blank')}
+                    />
+                  )}
                   <div className="border-t border-gray-100 flex">
                     <button
                       onClick={() => toggleLike(post.id)}
@@ -466,14 +564,14 @@ export default function GroupeDetailPage() {
               <button onClick={() => setShowAdmin(false)} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
             <div className="flex border-b border-gray-100">
-              {(['membres', 'demandes', 'regles'] as const).map(t => (
+              {(['membres', 'demandes', 'regles', 'photos'] as const).map(t => (
                 <button
                   key={t}
                   onClick={() => setAdminTab(t)}
-                  className={`flex-1 py-3 text-sm font-semibold transition-colors ${adminTab === t ? 'text-[#00ACC1] border-b-2 border-[#00ACC1]' : 'text-gray-500'}`}
+                  className={`flex-1 py-3 text-xs font-semibold transition-colors ${adminTab === t ? 'text-[#00ACC1] border-b-2 border-[#00ACC1]' : 'text-gray-500'}`}
                   style={{ fontFamily: 'Galey, sans-serif' }}
                 >
-                  {t === 'membres' ? 'Membres' : t === 'demandes' ? 'Demandes' : 'Règles'}
+                  {t === 'membres' ? 'Membres' : t === 'demandes' ? 'Demandes' : t === 'regles' ? 'Règles' : 'Photos'}
                 </button>
               ))}
             </div>
@@ -544,6 +642,46 @@ export default function GroupeDetailPage() {
                   >
                     {savingRegles ? 'Sauvegarde…' : 'Sauvegarder les règles'}
                   </button>
+                </div>
+              )}
+              {adminTab === 'photos' && (
+                <div className="p-4 flex flex-col gap-6">
+                  {/* Avatar */}
+                  <div>
+                    <p className="text-sm font-bold text-[#1E2025] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>Photo de profil du groupe</p>
+                    <div className="flex items-center gap-4">
+                      <div className="w-20 h-20 rounded-2xl border-2 border-gray-100 overflow-hidden bg-[#E0F7FA] flex items-center justify-center flex-shrink-0">
+                        {groupe?.avatar_url
+                          ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={groupe.avatar_url} alt="" className="w-full h-full object-cover" />
+                          : <span className="text-3xl">{groupe?.type === 'race' ? '🐾' : groupe?.type === 'region' ? '📍' : groupe?.type === 'loisir' ? '🎯' : '💬'}</span>
+                        }
+                      </div>
+                      <label className={`flex-1 flex items-center justify-center gap-2 py-3 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${avatarUploading ? 'border-gray-200 text-gray-300' : 'border-[#00ACC1]/40 text-[#00ACC1] hover:border-[#00ACC1] hover:bg-[#E0F7FA]/30'}`}>
+                        <span className="text-lg">📷</span>
+                        <span className="text-sm font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          {avatarUploading ? 'Upload en cours…' : 'Changer la photo'}
+                        </span>
+                        <input type="file" accept="image/*" className="hidden" disabled={avatarUploading} onChange={handleAvatarUpload} />
+                      </label>
+                    </div>
+                  </div>
+                  {/* Bannière */}
+                  <div>
+                    <p className="text-sm font-bold text-[#1E2025] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>Bannière du groupe</p>
+                    <div className="rounded-xl overflow-hidden h-28 bg-[#00ACC1] relative mb-3">
+                      {groupe?.photo_cover_url
+                        ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={groupe.photo_cover_url} alt="" className="w-full h-full object-cover" />
+                        : <div className="w-full h-full flex items-center justify-center text-white/40 text-sm">Aucune bannière</div>
+                      }
+                    </div>
+                    <label className={`flex items-center justify-center gap-2 py-3 border-2 border-dashed rounded-xl cursor-pointer transition-colors w-full ${bannerUploading ? 'border-gray-200 text-gray-300' : 'border-[#00ACC1]/40 text-[#00ACC1] hover:border-[#00ACC1] hover:bg-[#E0F7FA]/30'}`}>
+                      <span className="text-lg">🖼️</span>
+                      <span className="text-sm font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
+                        {bannerUploading ? 'Upload en cours…' : 'Changer la bannière'}
+                      </span>
+                      <input type="file" accept="image/*" className="hidden" disabled={bannerUploading} onChange={handleBannerUpload} />
+                    </label>
+                  </div>
                 </div>
               )}
             </div>
