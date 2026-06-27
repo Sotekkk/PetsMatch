@@ -108,12 +108,17 @@ async function sendPush(uid, title, body, data = {}) {
     }
 }
 
-// ─── Date helper ──────────────────────────────────────────────────────────────
+// ─── Date helper (heure locale Paris pour éviter les décalages UTC) ───────────
 
 function dateStr(daysFromNow) {
-    const d = new Date();
-    d.setDate(d.getDate() + daysFromNow);
-    return d.toISOString().slice(0, 10); // YYYY-MM-DD
+    // Utilise l'heure locale Paris pour que la date soit toujours la bonne
+    // même si le Cloud Scheduler tourne à minuit UTC (= 2h Paris en été)
+    const paris = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+    paris.setDate(paris.getDate() + daysFromNow);
+    const y = paris.getFullYear();
+    const m = String(paris.getMonth() + 1).padStart(2, "0");
+    const d = String(paris.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
 }
 
 // ─── Fonction principale ──────────────────────────────────────────────────────
@@ -179,6 +184,24 @@ exports.sendSanteReminders = functions
                         }]);
                     } catch (e) {
                         console.error(`notifications insert error (${table} ${row.id}):`, e.message);
+                    }
+
+                    // Tâche agenda à 8h le jour J uniquement
+                    if (palierKey === "j0") {
+                        try {
+                            await supabaseInsert("taches_elevage", [{
+                                uid_eleveur: uid,
+                                titre: `${emoji} ${label} — ${nomAnimal}`,
+                                date: targetDate,
+                                heure: "08:00",
+                                notes: produit !== label ? produit : null,
+                                statut: "a_faire",
+                                profil_source: animal.uid_eleveur ? "eleveur" : "particulier",
+                                animal_nom: nomAnimal,
+                            }]);
+                        } catch (e) {
+                            console.error(`taches_elevage insert error (${table} ${row.id}):`, e.message);
+                        }
                     }
 
                     // Dédup insert

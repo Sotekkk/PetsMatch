@@ -136,7 +136,9 @@ exports.sendChaleursNotifications = functions
     .pubsub.schedule("0 8 * * *")
     .timeZone("Europe/Paris")
     .onRun(async () => {
-        const now = new Date();
+        // Utilise l'heure locale Paris pour éviter les décalages UTC minuit
+        const now = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
         let sent = 0;
         let inApp = 0;
 
@@ -174,7 +176,6 @@ exports.sendChaleursNotifications = functions
             if (!interval) continue;
 
             const nextHeat = new Date(last.getTime() + interval * 86400000);
-            // Dart-compatible: Math.trunc = integer division towards zero (same as Duration.inDays)
             const diffMs = nextHeat.getTime() - now.getTime();
             const diff = Math.trunc(diffMs / 86400000);
 
@@ -233,6 +234,24 @@ exports.sendChaleursNotifications = functions
                 inApp++;
             } catch (e) {
                 console.error(`notifications insert error for animal ${animal.id}:`, e.message);
+            }
+
+            // Tâche agenda à 8h quand chaleurs aujourd'hui ou en retard
+            if (diff <= 0) {
+                try {
+                    await supabaseInsert("taches_elevage", [{
+                        uid_eleveur: animal.uid_eleveur,
+                        titre: title,
+                        date: todayStr,
+                        heure: "08:00",
+                        notes: body,
+                        statut: "a_faire",
+                        profil_source: "eleveur",
+                        animal_nom: animal.nom || null,
+                    }]);
+                } catch (e) {
+                    console.error(`taches_elevage insert error for animal ${animal.id}:`, e.message);
+                }
             }
 
             // Mark as sent (after push + notif, so a failure here won't block future runs)

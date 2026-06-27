@@ -369,20 +369,31 @@ exports.sendMiseBasReminders = functions
     .pubsub.schedule("0 8 * * *")
     .timeZone("Europe/Paris")
     .onRun(async () => {
-        const now = new Date();
+        // Utilise l'heure locale Paris pour le calcul de date
+        const parisNow = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Paris"}));
         let sent = 0;
 
         const paliers = [
-            {days: 30, field: "reminder_j30_sent", label: "dans 30 jours", emoji: "🗓️"},
-            {days: 7, field: "reminder_j7_sent", label: "dans 7 jours", emoji: "📅"},
-            {days: 3, field: "reminder_j3_sent", label: "dans 3 jours", emoji: "⏳"},
-            {days: 1, field: "reminder_j1_sent", label: "demain", emoji: "🐣"},
+            {days: 30, field: "reminder_j30_sent", label: "dans 30 jours", emoji: "🗓️", createTask: false},
+            {days: 7, field: "reminder_j7_sent", label: "dans 7 jours", emoji: "📅", createTask: false},
+            {days: 3, field: "reminder_j3_sent", label: "dans 3 jours", emoji: "⏳", createTask: false},
+            {days: 1, field: "reminder_j1_sent", label: "demain", emoji: "🐣", createTask: true},
         ];
 
-        for (const {days, field, label, emoji} of paliers) {
-            const target = new Date(now);
+        for (const {days, field, label, emoji, createTask} of paliers) {
+            const target = new Date(parisNow);
             target.setDate(target.getDate() + days);
-            const dateStr = target.toISOString().split("T")[0]; // YYYY-MM-DD
+            const y = target.getFullYear();
+            const mo = String(target.getMonth() + 1).padStart(2, "0");
+            const d = String(target.getDate()).padStart(2, "0");
+            const dateStr = `${y}-${mo}-${d}`;
+            // Date du jour de la mise-bas pour la tâche agenda
+            const miseBasDayTarget = new Date(parisNow);
+            miseBasDayTarget.setDate(miseBasDayTarget.getDate() + days);
+            const mbY = miseBasDayTarget.getFullYear();
+            const mbM = String(miseBasDayTarget.getMonth() + 1).padStart(2, "0");
+            const mbD = String(miseBasDayTarget.getDate()).padStart(2, "0");
+            const miseBasDate = `${mbY}-${mbM}-${mbD}`;
 
             const gestations = await supabaseSelect("gestations",
                 `gestation_confirmee=eq.true` +
@@ -420,6 +431,24 @@ exports.sendMiseBasReminders = functions
                     }]);
                 } catch (e) {
                     console.error(`notifications insert error for gestation ${g.id}:`, e.message);
+                }
+
+                // Tâche agenda à 8h le jour J-1 (veille de la mise-bas)
+                if (createTask) {
+                    try {
+                        await supabaseInsert("taches_elevage", [{
+                            uid_eleveur: animal.uid_eleveur,
+                            titre: `🐣 Préparer la maternité — ${animalNom}`,
+                            date: miseBasDate,
+                            heure: "08:00",
+                            notes: `Mise-bas prévue le ${miseBas}`,
+                            statut: "a_faire",
+                            profil_source: "eleveur",
+                            animal_nom: animalNom,
+                        }]);
+                    } catch (e) {
+                        console.error(`taches_elevage insert error for gestation ${g.id}:`, e.message);
+                    }
                 }
 
                 await supabasePatch("gestations", g.id, {[field]: true});
