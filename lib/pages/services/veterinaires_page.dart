@@ -308,8 +308,28 @@ class ProduitsPage extends StatelessWidget {
   }
 }
 
-class CommunautePage extends StatelessWidget {
+class CommunautePage extends StatefulWidget {
   const CommunautePage({super.key});
+  @override
+  State<CommunautePage> createState() => _CommunautePageState();
+}
+
+class _CommunautePageState extends State<CommunautePage> {
+  @override
+  void initState() {
+    super.initState();
+    User_Info.profileNotifier.addListener(_onProfileChange);
+  }
+
+  @override
+  void dispose() {
+    User_Info.profileNotifier.removeListener(_onProfileChange);
+    super.dispose();
+  }
+
+  void _onProfileChange() {
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
