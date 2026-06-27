@@ -183,7 +183,8 @@ function LikersModal({ annonceId, bebeIndex, mode, onClose }: {
       : base.is('bebe_index', null);
     filtered.order('created_at', { ascending: false }).then(async ({ data: rows }) => {
       if (!rows?.length) { setLoading(false); return; }
-      const uids = (rows as { user_uid: string }[]).map(r => r.user_uid);
+      // Dédupliquer par user_uid (un même compte peut avoir liké depuis plusieurs profils)
+      const uids = [...new Set((rows as { user_uid: string }[]).map(r => r.user_uid))];
       const { data: u } = await supabase.from('users')
         .select('uid, firstname, lastname, profile_picture_url').in('uid', uids);
       setUsers((u ?? []) as typeof users);
@@ -296,8 +297,9 @@ function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLi
     supabase.from('likes').select('user_uid').eq('annonce_id', annonceId).eq('bebe_index', index)
       .then(({ data: rows }) => {
         if (!rows) return;
-        setLikeCount(rows.length);
-        if (currentUser) setIsLiked(rows.some((r: { user_uid: string }) => r.user_uid === currentUser.uid));
+        const uniqueUids = [...new Set((rows as { user_uid: string }[]).map(r => r.user_uid))];
+        setLikeCount(uniqueUids.length);
+        if (currentUser) setIsLiked(uniqueUids.includes(currentUser.uid));
       });
   }, [annonceId, index, currentUser]);
 
@@ -310,17 +312,16 @@ function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLi
     setIsLiked(!wasLiked);
     setLikeCount(c => c + (wasLiked ? -1 : 1));
     try {
-      if (wasLiked) {
+      // Toujours supprimer d'abord pour éviter les doublons multi-profil
+      await supabase.from('likes')
+        .delete()
+        .eq('user_uid', currentUser.uid)
+        .eq('annonce_id', annonceId)
+        .eq('bebe_index', index);
+      if (!wasLiked) {
         await supabase.from('likes')
-          .delete()
-          .eq('user_uid', currentUser.uid)
-          .eq('annonce_id', annonceId)
-          .eq('bebe_index', index);
-      } else {
-        await supabase.from('likes')
-          .upsert({ user_uid: currentUser.uid, annonce_id: annonceId, bebe_index: index,
-            uid_eleveur: uidEleveur ?? null },
-            { onConflict: 'user_uid,annonce_id,bebe_key' });
+          .insert({ user_uid: currentUser.uid, annonce_id: annonceId, bebe_index: index,
+            uid_eleveur: uidEleveur ?? null });
       }
     } catch {
       setIsLiked(wasLiked);
@@ -481,13 +482,14 @@ export default function AnnonceDetailPage() {
         setLoading(false);
       }, () => setLoading(false));
 
-    // Charge les likes
+    // Charge les likes (dédupliquer par user_uid pour éviter les doublons multi-profil)
     supabase.from('likes').select('user_uid').eq('annonce_id', id).is('bebe_index', null)
       .then(({ data: rows }: { data: { user_uid: string }[] | null }) => {
         if (!rows) return;
-        setLikeCount(rows.length);
+        const uniqueUids = [...new Set(rows.map(r => r.user_uid))];
+        setLikeCount(uniqueUids.length);
         if (!user) return;
-        setIsLiked(rows.some(r => r.user_uid === user.uid));
+        setIsLiked(uniqueUids.includes(user.uid));
       });
     // Charge le nombre de favoris (pour le propriétaire seulement)
     if (user) {
@@ -586,11 +588,15 @@ export default function AnnonceDetailPage() {
     setIsLiked(!wasLiked);
     setLikeCount(c => c + (wasLiked ? -1 : 1));
     try {
-      if (wasLiked) {
-        await supabase.from('likes').delete()
-          .eq('user_uid', user.uid).eq('annonce_id', id!).is('bebe_index', null);
-      } else {
-        await supabase.from('likes').upsert({ user_uid: user.uid, annonce_id: id!, bebe_index: null, profile_type: 'particulier', ...(activeProfileId ? { profile_id: activeProfileId } : {}) });
+      // Toujours supprimer d'abord (supprime les doublons multi-profil éventuels)
+      await supabase.from('likes').delete()
+        .eq('user_uid', user.uid).eq('annonce_id', id!).is('bebe_index', null);
+      if (!wasLiked) {
+        await supabase.from('likes').insert({
+          user_uid: user.uid, annonce_id: id!, bebe_index: null,
+          profile_type: activeProfileId ? 'eleveur' : 'particulier',
+          ...(activeProfileId ? { profile_id: activeProfileId } : {}),
+        });
       }
       const { data: rows } = await supabase.from('likes').select('user_uid').eq('annonce_id', id!).is('bebe_index', null);
       if (rows) {

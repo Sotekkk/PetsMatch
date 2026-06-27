@@ -220,20 +220,22 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
           .isFilter('bebe_index', null);
       final all = List<Map<String, dynamic>>.from(rows);
       final myUid = FirebaseAuth.instance.currentUser?.uid;
-      final liked = myUid != null && all.any((r) => r['user_uid'] == myUid);
+      // Dédupliquer par user_uid (un compte peut avoir liké depuis plusieurs profils)
+      final uniqueUids = all.map((r) => r['user_uid'] as String).toSet().toList();
+      final liked = myUid != null && uniqueUids.contains(myUid);
 
       List<Map<String, dynamic>> likers = [];
-      if (myUid != null && all.isNotEmpty) {
-        final uids = all.map((r) => r['user_uid'] as String).take(5).toList();
+      if (myUid != null && uniqueUids.isNotEmpty) {
+        final sample = uniqueUids.take(5).toList();
         final users = await Supabase.instance.client
             .from('users')
             .select('uid, firstname, profile_picture_url')
-            .inFilter('uid', uids);
+            .inFilter('uid', sample);
         likers = List<Map<String, dynamic>>.from(users);
       }
 
       if (mounted) setState(() {
-        _likeCount = all.length;
+        _likeCount = uniqueUids.length;
         _isLiked   = liked;
         _likers    = likers;
       });
@@ -260,13 +262,13 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
       _likeCount = (_likeCount + (wasLiked ? -1 : 1)).clamp(0, 9999999);
     });
     try {
-      if (wasLiked) {
-        await Supabase.instance.client.from('likes').delete()
-            .eq('user_uid', uid)
-            .eq('annonce_id', widget.annonceId)
-            .isFilter('bebe_index', null);
-      } else {
-        await Supabase.instance.client.from('likes').upsert({
+      // Toujours supprimer d'abord (évite les doublons si l'utilisateur a liké depuis un autre profil)
+      await Supabase.instance.client.from('likes').delete()
+          .eq('user_uid', uid)
+          .eq('annonce_id', widget.annonceId)
+          .isFilter('bebe_index', null);
+      if (!wasLiked) {
+        await Supabase.instance.client.from('likes').insert({
           'user_uid':    uid,
           'annonce_id':  widget.annonceId,
           'bebe_index':  null,
@@ -821,13 +823,13 @@ class _BabyCardState extends State<_BabyCard> {
     final was = _isLiked;
     setState(() { _isLiked = !was; _likeCount = (_likeCount + (was ? -1 : 1)).clamp(0, 99999); });
     try {
-      if (was) {
-        await Supabase.instance.client.from('likes').delete()
-            .eq('user_uid', uid)
-            .eq('annonce_id', widget.annonceId)
-            .eq('bebe_index', widget.bebeIndex);
-      } else {
-        await Supabase.instance.client.from('likes').upsert({
+      // Toujours supprimer d'abord pour éviter les doublons multi-profil
+      await Supabase.instance.client.from('likes').delete()
+          .eq('user_uid', uid)
+          .eq('annonce_id', widget.annonceId)
+          .eq('bebe_index', widget.bebeIndex);
+      if (!was) {
+        await Supabase.instance.client.from('likes').insert({
           'user_uid': uid,
           'annonce_id': widget.annonceId,
           'bebe_index': widget.bebeIndex,
@@ -2078,8 +2080,10 @@ class _LikersSheetState extends State<_LikersSheet> {
       final rows = widget.bebeIndex != null
           ? await q.eq('bebe_index', widget.bebeIndex!).order('created_at', ascending: false)
           : await q.isFilter('bebe_index', null).order('created_at', ascending: false);
+      // Dédupliquer par user_uid (anti-doublon multi-profil)
       final uids = List<Map<String, dynamic>>.from(rows)
           .map((r) => r['user_uid'] as String)
+          .toSet()
           .toList();
       if (uids.isEmpty) {
         if (mounted) setState(() { _list = []; _loading = false; });
@@ -2216,8 +2220,10 @@ class _FavorisSheetState extends State<_FavorisSheet> {
           .eq('annonce_id', widget.annonceId)
           .isFilter('bebe_index', null)
           .order('created_at', ascending: false);
+      // Dédupliquer par user_uid (anti-doublon multi-profil)
       final uids = List<Map<String, dynamic>>.from(rows)
           .map((r) => r['user_uid'] as String)
+          .toSet()
           .toList();
       if (uids.isEmpty) {
         if (mounted) setState(() { _list = []; _loading = false; });
