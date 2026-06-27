@@ -204,10 +204,6 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
                         _buildStatsRow(),
-                        if (!User_Info.isPro) ...[
-                          const SizedBox(height: 12),
-                          _buildQuotaCard(context),
-                        ],
                         if (!User_Info.isProfileComplete()) ...[
                           const SizedBox(height: 16),
                           _buildProfileIncompleteBanner(context),
@@ -216,10 +212,6 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
                           const SizedBox(height: 16),
                           _buildAlerteBanner(context),
                         ],
-                        const SizedBox(height: 24),
-                        _buildSectionTitle('Accès rapide'),
-                        const SizedBox(height: 12),
-                        _buildQuickAccess(context),
                         const SizedBox(height: 8),
                         MarketplaceBanner(
                           espece: null,
