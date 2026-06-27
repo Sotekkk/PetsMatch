@@ -50,10 +50,8 @@ const NAV_ELEVEUR = [
   { href: '/mes-animaux',             label: 'Mes Animaux' },
   { href: '/mes-annonces',            label: 'Mes Annonces' },
   { href: '/abonnement',              label: 'Abonnement' },
-  { href: '/animaux-perdus',          label: 'Animaux perdus' },
   { href: '/services',                label: 'Services' },
   { href: '/marketplace',             label: 'Marketplace' },
-  { href: '/messages',                label: 'Messages' },
 ];
 
 // NAV spécifique profils pro secondaires (pas d'élevage)
