@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/widgets/pro_day_timeline.dart';
+import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 
 const _kTeal = Color(0xFF0C5C6C);
 
@@ -187,33 +188,33 @@ class _AgendaPageState extends State<AgendaPage> {
       dynamic d1;
       if (pid.isNotEmpty) {
         d1 = await _supa.from('taches_elevage')
-            .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
+            .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
             .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
             .eq('profile_id', pid);
         if ((d1 as List).isEmpty) {
           d1 = widget.isAssociation
               ? await _supa.from('taches_elevage')
-                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
+                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
                   .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
                   .eq('profil_source', 'association')
               : await _supa.from('taches_elevage')
-                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
+                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
                   .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
                   .or('profil_source.is.null,profil_source.eq.eleveur');
         }
       } else {
         d1 = widget.isAssociation
             ? await _supa.from('taches_elevage')
-                .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
+                .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
                 .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
                 .eq('profil_source', 'association')
             : await _supa.from('taches_elevage')
-                .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
+                .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
                 .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
                 .or('profil_source.is.null,profil_source.eq.eleveur');
       }
       final d2 = await _supa.from('taches_elevage')
-          .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes')
+          .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
           .eq('assigne_a', _uid).gte('date', from).lte('date', to);
       final seen = <dynamic>{};
       final all  = <Map<String, dynamic>>[];
@@ -2459,12 +2460,22 @@ class _AddProtocoleSheet extends StatefulWidget {
 
 class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
   final _labelCtrl  = TextEditingController();
-  final _animalCtrl = TextEditingController();
   String _typeActe = 'autre';
   String? _selectedEmployeUid;
+  List<Map<String, dynamic>> _selectedAnimaux = [];
   bool _saving = false;
 
-  @override void dispose() { _labelCtrl.dispose(); _animalCtrl.dispose(); super.dispose(); }
+  @override void dispose() { _labelCtrl.dispose(); super.dispose(); }
+
+  Future<void> _pickAnimaux() async {
+    final result = await AnimalPickerSheet.pickMany(
+      context,
+      uid: widget.uid,
+      current: _selectedAnimaux,
+      accentColor: const Color(0xFFD97706),
+    );
+    if (result != null && mounted) setState(() => _selectedAnimaux = result);
+  }
 
   Future<void> _save() async {
     if (_labelCtrl.text.trim().isEmpty) return;
@@ -2472,13 +2483,16 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
     final dateStr = DateFormat('yyyy-MM-dd').format(widget.day);
     final supa = Supabase.instance.client;
     final profileId = User_Info.activeProfileId;
+    final animalNom = _selectedAnimaux.isEmpty
+        ? null
+        : _selectedAnimaux.map((a) => a['nom']?.toString() ?? '').join(', ');
     await supa.from('plan_taches').insert({
       'uid_eleveur':   widget.uid,
       'label':         _labelCtrl.text.trim(),
       'date_prevue':   dateStr,
       'statut':        'a_faire',
       'type_acte':     _typeActe,
-      'animal_nom':    _animalCtrl.text.trim().isEmpty ? null : _animalCtrl.text.trim(),
+      'animal_nom':    animalNom,
       'profil_source': widget.profilSource,
       if (profileId.isNotEmpty) 'profile_id': profileId,
       'assigned_to':   _selectedEmployeUid,
@@ -2558,20 +2572,12 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
             )).toList(),
           ),
           const SizedBox(height: 12),
-          const Text('Animal concerné (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const Text('Animaux concernés (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
           const SizedBox(height: 6),
-          TextField(
-            controller: _animalCtrl,
-            textCapitalization: TextCapitalization.sentences,
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-            decoration: InputDecoration(
-              hintText: "Nom de l'animal…",
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: kOrange, width: 2)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            ),
+          AnimalPickerField(
+            selected: _selectedAnimaux,
+            onTap: _pickAnimaux,
+            accentColor: kOrange,
           ),
           if (widget.employes.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -2650,9 +2656,19 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
   final _notesCtrl = TextEditingController();
   TimeOfDay? _heure;
   String? _selectedEmployeUid;
+  List<Map<String, dynamic>> _selectedAnimaux = [];
   bool _saving = false;
 
   @override void dispose() { _titreCtrl.dispose(); _notesCtrl.dispose(); super.dispose(); }
+
+  Future<void> _pickAnimaux() async {
+    final result = await AnimalPickerSheet.pickMany(
+      context,
+      uid: widget.uid,
+      current: _selectedAnimaux,
+    );
+    if (result != null && mounted) setState(() => _selectedAnimaux = result);
+  }
 
   Future<void> _save() async {
     if (_titreCtrl.text.trim().isEmpty) return;
@@ -2663,6 +2679,9 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
         : null;
     final supa = Supabase.instance.client;
     final profileIdTache = User_Info.activeProfileId;
+    final animalNom = _selectedAnimaux.isEmpty
+        ? null
+        : _selectedAnimaux.map((a) => a['nom']?.toString() ?? '').join(', ');
     await supa.from('taches_elevage').insert({
       'uid_eleveur': widget.uid,
       'titre': _titreCtrl.text.trim(),
@@ -2674,6 +2693,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
       if (profileIdTache.isNotEmpty) 'profile_id': profileIdTache,
       'assigne_a': _selectedEmployeUid,
       'assignes_a': _selectedEmployeUid != null ? [_selectedEmployeUid] : null,
+      if (animalNom != null) 'animal_nom': animalNom,
     });
     if (_selectedEmployeUid != null) {
       try {
@@ -2768,6 +2788,13 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
                   borderSide: const BorderSide(color: _kTeal, width: 2)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
+          ),
+          const SizedBox(height: 12),
+          const Text('Animaux concernés (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          AnimalPickerField(
+            selected: _selectedAnimaux,
+            onTap: _pickAnimaux,
           ),
           if (widget.employes.isNotEmpty) ...[
             const SizedBox(height: 12),

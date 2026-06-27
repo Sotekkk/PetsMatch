@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 
 class RdvBookingPage extends StatefulWidget {
   final String proUid;
@@ -189,7 +190,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     try {
       final rows = await Supabase.instance.client
           .from('animaux')
-          .select('id, nom, espece')
+          .select('id, nom, espece, race, photo_url')
           .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid')
           .order('nom');
       if (mounted) {
@@ -891,35 +892,84 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   // ── Animal & notes sections ───────────────────────────────────────────────────
 
-  Widget _buildAnimalSection() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _sectionTitle('Pour quel animal ?'),
-      const SizedBox(height: 8),
-      if (_animaux.isEmpty)
-        Text('Aucun animal enregistré dans votre profil.',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500))
-      else
-        Wrap(
-          spacing: 8, runSpacing: 8,
-          children: [
-            _AnimalChip(
-              label: 'Aucun', icon: Icons.block_outlined,
-              selected: _selectedAnimal == null, color: widget.categoryColor,
-              onTap: () => setState(() => _selectedAnimal = null),
+  Widget _buildAnimalSection() {
+    final color = widget.categoryColor;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('Pour quel animal ?'),
+        const SizedBox(height: 8),
+        if (_animaux.isEmpty)
+          Text('Aucun animal enregistré dans votre profil.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500))
+        else
+          GestureDetector(
+            onTap: () async {
+              final result = await AnimalPickerSheet.pickOne(
+                context,
+                preloaded: _animaux,
+                current: _selectedAnimal,
+                accentColor: color,
+              );
+              if (mounted) setState(() => _selectedAnimal = result);
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(12),
+                color: Colors.white,
+              ),
+              child: Row(children: [
+                if (_selectedAnimal != null) ...[
+                  Builder(builder: (_) {
+                    final photoUrl = _selectedAnimal!['photo_url'] as String? ?? '';
+                    return Container(
+                      width: 32, height: 32,
+                      decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(8)),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: photoUrl.isNotEmpty
+                            ? Image.network(photoUrl, width: 32, height: 32, fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const Center(child: Text('🐾', style: TextStyle(fontSize: 14))))
+                            : const Center(child: Text('🐾', style: TextStyle(fontSize: 14))),
+                      ),
+                    );
+                  }),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                      Text(_selectedAnimal!['nom']?.toString() ?? '—',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: color)),
+                      if ((_selectedAnimal!['espece']?.toString() ?? '').isNotEmpty)
+                        Text(_selectedAnimal!['espece'].toString(),
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF888888))),
+                    ]),
+                  ),
+                ] else ...[
+                  Icon(Icons.pets_outlined, color: Colors.grey.shade400, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('Choisir un animal…',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500)),
+                  ),
+                ],
+                Icon(Icons.expand_more, color: Colors.grey.shade500, size: 20),
+              ]),
             ),
-            ..._animaux.map((a) => _AnimalChip(
-              label: a['nom']?.toString() ?? 'Sans nom',
-              subtitle: a['espece']?.toString() ?? '',
-              icon: Icons.pets,
-              selected: _selectedAnimal?['id'] == a['id'],
-              color: widget.categoryColor,
-              onTap: () => setState(() => _selectedAnimal = a),
-            )),
-          ],
-        ),
-    ],
-  );
+          ),
+        if (_selectedAnimal != null) ...[
+          const SizedBox(height: 6),
+          GestureDetector(
+            onTap: () => setState(() => _selectedAnimal = null),
+            child: Text('Supprimer la sélection',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500, decoration: TextDecoration.underline)),
+          ),
+        ],
+      ],
+    );
+  }
 
   Widget _buildNotesSection() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -995,49 +1045,3 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   }
 }
 
-// ── Animal chip ───────────────────────────────────────────────────────────────
-
-class _AnimalChip extends StatelessWidget {
-  final String label;
-  final String subtitle;
-  final IconData icon;
-  final bool selected;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _AnimalChip({
-    required this.label, required this.icon,
-    required this.selected, required this.color, required this.onTap,
-    this.subtitle = '',
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? color : Colors.white,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: selected ? color : const Color(0xFFDDDDDD)),
-          boxShadow: selected
-              ? [BoxShadow(color: color.withValues(alpha: 0.25), blurRadius: 6, offset: const Offset(0, 2))]
-              : [],
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 14, color: selected ? Colors.white : Colors.grey.shade500),
-          const SizedBox(width: 6),
-          Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
-              color: selected ? Colors.white : const Color(0xFF1E2025))),
-          if (subtitle.isNotEmpty) ...[
-            const SizedBox(width: 4),
-            Text('($subtitle)', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                color: selected ? Colors.white.withValues(alpha: 0.75) : Colors.grey.shade500)),
-          ],
-        ]),
-      ),
-    );
-  }
-}
