@@ -169,7 +169,10 @@ export default function HomeDashboard() {
     return <div className="flex items-center justify-center py-32"><div className="w-8 h-8 border-2 border-teal-700 border-t-transparent rounded-full animate-spin" /></div>;
   }
 
-  // Profil secondaire actif (pro) → ProDashboard avec son ID
+  // Profil secondaire actif particulier → ParticulierDashboard
+  if (activeProfile?.profile_type === 'particulier') return <ParticulierDashboard />;
+
+  // Profil secondaire actif (pro/eleveur) → ProDashboard avec son ID
   if (activeProfile) return <ProDashboard profile={activeProfile} profileId={activeProfileId} />;
 
   // Profil principal pro (vétérinaire, éducateur, pension, etc.) → ProDashboard sans profileId secondaire

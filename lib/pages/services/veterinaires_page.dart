@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/services/service_list_page.dart';
 import 'package:PetsMatch/pages/animal_friendly/friendly_map_page.dart';
 import 'package:PetsMatch/pages/evenements/evenements_page.dart';
@@ -6,6 +7,7 @@ import 'package:PetsMatch/pages/promenades/promenades_page.dart';
 import 'package:PetsMatch/pages/communaute/forum_page.dart';
 import 'package:PetsMatch/pages/communaute/groupes_page.dart';
 import 'package:PetsMatch/pages/lieux/lieux_pet_friendly_page.dart';
+import 'package:PetsMatch/pages/petfriends/petfriends_page.dart';
 
 class VeterinairesPag extends StatelessWidget {
   const VeterinairesPag({super.key});
@@ -306,16 +308,44 @@ class ProduitsPage extends StatelessWidget {
   }
 }
 
-class CommunautePage extends StatelessWidget {
+class CommunautePage extends StatefulWidget {
   const CommunautePage({super.key});
+  @override
+  State<CommunautePage> createState() => _CommunautePageState();
+}
+
+class _CommunautePageState extends State<CommunautePage> {
+  @override
+  void initState() {
+    super.initState();
+    User_Info.profileNotifier.addListener(_onProfileChange);
+  }
+
+  @override
+  void dispose() {
+    User_Info.profileNotifier.removeListener(_onProfileChange);
+    super.dispose();
+  }
+
+  void _onProfileChange() {
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
+    final isParticulier = User_Info.activeType == 'particulier';
     return _ServiceSubPage(
       title: 'Communauté',
       iconColor: const Color(0xFF00ACC1),
       headerColor: const Color(0xFF00ACC1),
       sections: [
+        if (isParticulier)
+          _Section(
+            icon: Icons.people_alt_outlined,
+            title: 'PetsFriends',
+            description: 'Connectez-vous avec d\'autres passionnés d\'animaux',
+            onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const PetFriendsPage())),
+          ),
         _Section(
           icon: Icons.forum_outlined,
           title: 'Forums',
@@ -339,17 +369,6 @@ class CommunautePage extends StatelessWidget {
           title: 'Événements locaux',
           description: 'Rencontres et activités près de chez vous',
           onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const EvenementsPage())),
-        ),
-        _Section(
-          icon: Icons.volunteer_activism_outlined,
-          title: 'Adoption & associations',
-          description: 'Animaux à adopter et refuges partenaires',
-          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ServiceListPage(
-            categoryLabel: 'Associations',
-            categoryColor: Color(0xFF00ACC1),
-            categoryIcon: Icons.volunteer_activism_outlined,
-            catProValues: ['association'],
-          ))),
         ),
       ],
     );

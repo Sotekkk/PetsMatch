@@ -13,7 +13,11 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "WebFetch(domain:www.vetocom.fr)",
-      "PowerShell(New-Item *)"
+      "PowerShell(New-Item *)",
+      "Bash(mkdir -p /Users/nabilksouri/Documents/Application/PetsMatch/lib/pages/lieux)"
+    ],
+    "additionalDirectories": [
+      "/Users/nabilksouri/Documents/Application/PetsMatch/lib/pages"
     ]
   }
 }
