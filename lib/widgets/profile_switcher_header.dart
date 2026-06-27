@@ -28,9 +28,8 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
     _loadProfiles();
   }
 
-  Future<void> _loadProfiles() async {
-    // Utilise les profils déjà chargés au login si disponibles
-    if (User_Info.availableProfiles.isNotEmpty) {
+  Future<void> _loadProfiles({bool forceRefresh = false}) async {
+    if (!forceRefresh && User_Info.availableProfiles.isNotEmpty) {
       if (mounted) setState(() { _profiles = User_Info.availableProfiles; _loading = false; });
       return;
     }
@@ -77,11 +76,15 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
     'particulier'      => 'Particulier',
     'eleveur'          => 'Éleveur',
     'association'      => 'Association',
+    'restauration'     => 'Hébergement / Restauration',
     'veterinaire'      => 'Vétérinaire',
     'para_medical'     => 'Para-médical',
+    'sante'            => 'Santé',
     'education'        => 'Éducation',
+    'garde'            => 'Garde',
     'petsitter'        => 'Pet-sitter',
     'pension'          => 'Pension',
+    'toilettage'       => 'Toilettage',
     'promeneur'        => 'Promeneur',
     'photographe'      => 'Photographe',
     'marechal_ferrant' => 'Maréchal-ferrant',
@@ -94,11 +97,15 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
     'particulier'      => Icons.person_outline,
     'eleveur'          => Icons.pets,
     'association'      => Icons.favorite_outline,
+    'restauration'     => Icons.restaurant_outlined,
     'veterinaire'      => Icons.local_hospital_outlined,
     'para_medical'     => Icons.self_improvement_outlined,
+    'sante'            => Icons.self_improvement_outlined,
     'education'        => Icons.psychology_outlined,
+    'garde'            => Icons.home_outlined,
     'petsitter'        => Icons.home_outlined,
     'pension'          => Icons.hotel_outlined,
+    'toilettage'       => Icons.content_cut,
     'promeneur'        => Icons.directions_walk_outlined,
     'photographe'      => Icons.camera_alt_outlined,
     'marechal_ferrant' => Icons.handyman_outlined,
@@ -108,19 +115,42 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
   };
 
   Future<void> _switchToProfile(Map<String, dynamic> profile) async {
-    Navigator.pop(context);
+    final type = profile['profile_type']?.toString() ?? '';
+    final statutPro = profile['statut_pro']?.toString() ?? '';
+    final verif = profile['verification_status']?.toString() ?? '';
+    final needsValidation = const {'restauration'}.contains(type);
+    final isApproved = statutPro == 'actif' || verif == 'approved';
+    if (needsValidation && !isApproved) {
+      Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Ce profil est en attente de validation par notre équipe (sous 48h).',
+              style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Color(0xFFFFA726),
+          duration: Duration(seconds: 4),
+        ));
+      }
+      return;
+    }
     final id = profile['id']?.toString() ?? '';
     if (User_Info.activeProfileId == id) return;
+    // Ferme le bottom sheet
+    if (Navigator.canPop(context)) Navigator.pop(context);
     User_Info.applyProfile(profile);
-    if (mounted) {
+    // Réinitialise drawerKey pour que le nouveau Scaffold parte avec un drawer fermé
+    // (sans ça, le GlobalKey transfère l'état "drawer ouvert" et freeze l'interface)
+    drawerKey = GlobalKey<ScaffoldState>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       navigatorKey.currentState?.pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => BottomNav()),
         (_) => false,
       );
-    }
+    });
   }
 
-  void _openSwitcherSheet() {
+  Future<void> _openSwitcherSheet() async {
+    await _loadProfiles(forceRefresh: true);
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -137,11 +167,33 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
           Navigator.pop(context);
           Navigator.push(context, MaterialPageRoute(
             builder: (_) => const AddProfilePage(),
-          )).then((_) => _loadProfiles());
+          )).then((_) => _loadProfiles(forceRefresh: true));
         },
         onDelete: (id) async {
+          final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Supprimer ce profil ?',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              content: const Text('Cette action est irréversible.',
+                  style: TextStyle(fontFamily: 'Galey')),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Annuler', style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Supprimer', style: TextStyle(color: Colors.white, fontFamily: 'Galey')),
+                ),
+              ],
+            ),
+          );
+          if (confirmed != true) return;
           await ProfileService.deleteProfile(id);
-          _loadProfiles();
+          User_Info.availableProfiles = [];
+          await _loadProfiles(forceRefresh: true);
         },
         typeLabel: _typeLabel,
         typeIcon: _typeIcon,
@@ -197,14 +249,16 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
                     children: [
                       const Icon(Icons.swap_horiz, color: Color(0xFFA7C79A), size: 13),
                       const SizedBox(width: 4),
-                      Text(
+                      Flexible(child: Text(
                         _currentRoleLabel,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                         style: const TextStyle(
                           color: Color(0xFFEEF5EA),
                           fontSize: 12,
                           fontFamily: 'Galey',
                         ),
-                      ),
+                      )),
                     ],
                   ),
                 ],

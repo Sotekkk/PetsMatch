@@ -78,6 +78,7 @@ class _EleveurNavState extends State<EleveurNav> {
   }
 
   Future<void> _checkOnboarding() async {
+    if (User_Info.catPro == 'restauration') return;
     final prefs = await SharedPreferences.getInstance();
     final done = prefs.getBool('onboarding_eleveur_done') ?? false;
     if (!done && mounted) {

@@ -27,6 +27,8 @@ const _profileTypes = [
       description: 'Élevage professionnel, reproduction', color: Color(0xFF6E9E57)),
   _ProfileTypeInfo(type: 'association', icon: Icons.favorite_outline, label: 'Association',
       description: 'Refuge, SPA, association de protection animale', color: Color(0xFF0C5C6C)),
+  _ProfileTypeInfo(type: 'restauration', icon: Icons.restaurant_outlined, label: 'Hébergement / Restauration',
+      description: 'Hôtel, restaurant, café, gîte ou camping pet-friendly', color: Color(0xFFFFA726)),
   _ProfileTypeInfo(type: 'veterinaire', icon: Icons.local_hospital_outlined, label: 'Vétérinaire',
       description: 'Clinique vétérinaire, soins médicaux', color: Color(0xFFE57373)),
   _ProfileTypeInfo(type: 'sante', icon: Icons.self_improvement_outlined, label: 'Santé',
@@ -120,7 +122,7 @@ class _TypePickerStep extends StatelessWidget {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1.1),
+              crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 0.95),
             itemCount: _profileTypes.length,
             itemBuilder: (_, i) {
               final t = _profileTypes[i];
@@ -218,6 +220,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
       'particulier'      => '${User_Info.firstname} ${User_Info.lastname}'.trim(),
       'eleveur'          => 'Mon élevage',
       'association'      => 'Mon association',
+      'restauration'     => 'Mon établissement',
       'veterinaire'      => 'Mon cabinet vétérinaire',
       'sante'            => 'Mon cabinet',
       'education'        => 'Mon activité éducation',
@@ -323,19 +326,20 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
 
   bool get _isProType => const {
     'veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage',
-    'photographe', 'marechal_ferrant',
+    'photographe', 'marechal_ferrant', 'restauration',
   }.contains(widget.typeInfo.type);
   bool get _isEleveurType => widget.typeInfo.type == 'eleveur';
   bool get _isAssociationType => widget.typeInfo.type == 'association';
   bool get _isParticulierType => widget.typeInfo.type == 'particulier';
+  bool get _isRestauration => widget.typeInfo.type == 'restauration';
   bool get _hasSiret => const {
     'veterinaire', 'sante', 'education', 'pension', 'toilettage',
-    'photographe', 'marechal_ferrant',
+    'photographe', 'marechal_ferrant', 'restauration',
   }.contains(widget.typeInfo.type);
   bool get _hasRayon => const {
     'veterinaire', 'sante', 'education', 'garde', 'toilettage',
     'photographe', 'marechal_ferrant',
-  }.contains(widget.typeInfo.type);
+  }.contains(widget.typeInfo.type); // restauration = lieu fixe, pas de rayon
   bool get _hasSubProfession => _subProfessions.containsKey(widget.typeInfo.type);
 
   Future<void> _save() async {
@@ -377,22 +381,44 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
     }
     if (_isProType) {
       data['cat_pro']            = type;
-      data['name_elevage']       = _nomCtrl.text.trim();
+      data['nom']                = _nomCtrl.text.trim();
       data['profession_pro']     = _subProfession ?? widget.typeInfo.label;
       data['siret']              = _siretCtrl.text.trim();
       data['rayon_intervention'] = _rayon;
       data['especes_acceptees']  = _especesAcceptees.toList();
     }
+    if (_isRestauration) {
+      // Champs spécifiques attendus par RestaurationHomePage
+      data['adresse_pro'] = _addressSearchCtrl.text.trim();
+      data['rue_pro']     = _rueCtrl.text.trim();
+      data['cp_pro']      = _cpCtrl.text.trim();
+      data['ville_pro']   = _villeCtrl.text.trim();
+      if (_lat != null) data['lat_pro'] = _lat;
+      if (_lng != null) data['lng_pro'] = _lng;
+      data['verification_status'] = 'pending';
+      data['statut_pro']          = 'en_attente';
+    }
 
     try {
       await ProfileService.upsertProfile(data);
-      final rows = await ProfileService.loadProfiles(uid);
-      final created = rows.firstWhere((r) => r['profile_type'] == type, orElse: () => data);
-      User_Info.applyProfile(created);
-      if (mounted) {
-        widget.onSaved();
-        navigatorKey.currentState?.pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => BottomNav()), (_) => false);
+      if (!mounted) return;
+      if (type == 'restauration') {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Profil créé ! En attente de validation par notre équipe.',
+              style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Color(0xFF6E9E57),
+          duration: Duration(seconds: 4),
+        ));
+        Navigator.pop(context, true);
+      } else {
+        final rows = await ProfileService.loadProfiles(uid);
+        final created = rows.firstWhere((r) => r['profile_type'] == type, orElse: () => data);
+        User_Info.applyProfile(created);
+        if (mounted) {
+          widget.onSaved();
+          navigatorKey.currentState?.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => BottomNav()), (_) => false);
+        }
       }
     } catch (e) {
       setState(() => _saving = false);
@@ -423,13 +449,17 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
                 ? 'Nom de l\'élevage'
                 : _isAssociationType
                     ? 'Nom de l\'association'
-                    : 'Nom du cabinet / établissement'),
+                    : _isRestauration
+                        ? 'Nom de l\'établissement'
+                        : 'Nom du cabinet / établissement'),
             _field(_nomCtrl,
                 _isEleveurType
                     ? 'Ex : Élevage du Moulin'
                     : _isAssociationType
                         ? 'Ex : SPA de Lyon, Refuge du Soleil…'
-                        : 'Ex : Cabinet Dupont',
+                        : _isRestauration
+                            ? 'Ex : Hôtel Le Charme, Café des Animaux…'
+                            : 'Ex : Cabinet Dupont',
                 required: _isEleveurType || _isProType || _isAssociationType),
           ],
 
@@ -498,7 +528,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
             child: _saving
                 ? const SizedBox(height: 20, width: 20,
                     child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Text('Créer le profil et basculer',
+                : const Text('Créer le profil',
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
           ),
           const SizedBox(height: 24),

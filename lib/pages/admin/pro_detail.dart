@@ -112,8 +112,36 @@ class _ProDetailState extends State<ProDetail> {
     if (confirmed != true || !mounted) return;
     setState(() => _saving = true);
     try {
-      await _updateSupa({'statut_pro': statut});
-      setState(() => _supaRow['statut_pro'] = statut);
+      final extraFields = statut == 'actif'
+          ? {'verification_status': 'approved'}
+          : statut == 'refuse'
+              ? {'verification_status': 'rejected'}
+              : <String, dynamic>{};
+      await _updateSupa({'statut_pro': statut, ...extraFields});
+      setState(() {
+        _supaRow['statut_pro'] = statut;
+        if (extraFields.containsKey('verification_status')) {
+          _supaRow['verification_status'] = extraFields['verification_status'];
+        }
+      });
+      // Notification in-app à l'utilisateur
+      if (statut == 'actif' || statut == 'refuse') {
+        final title = statut == 'actif' ? '✅ Profil validé !' : '❌ Profil refusé';
+        final body = statut == 'actif'
+            ? 'Votre profil a été validé. Vous pouvez maintenant l\'utiliser.'
+            : 'Votre demande de profil a été refusée. Contactez-nous pour plus d\'infos.';
+        try {
+          await _supa.from('notifications').insert({
+            'uid': widget.uid,
+            'type': 'profile_validation',
+            'title': title,
+            'body': body,
+            'data': {'profileType': _supaRow['profile_type'] ?? _supaRow['cat_pro'] ?? ''},
+            'read': false,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+        } catch (_) {}
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('Statut mis à jour : $statut',

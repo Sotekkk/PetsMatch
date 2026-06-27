@@ -4,6 +4,7 @@ import 'pro_detail.dart';
 
 const _kCatLabels = <String, String>{
   '': 'Tous',
+  'restauration': 'Hébergement / Restauration',
   'sante': 'Santé',
   'veterinaire': 'Vétérinaire',
   'education': 'Éducation',
@@ -153,7 +154,9 @@ class _ProListState extends State<ProList> {
           profileTableId: r['id']?.toString(),
           catPro: r['profile_type']?.toString() ?? r['cat_pro']?.toString() ?? '',
           statutPro: r['statut_pro']?.toString() ?? 'en_attente',
-          nameElevage: r['name_elevage']?.toString() ?? '',
+          nameElevage: r['nom']?.toString().isNotEmpty == true
+              ? r['nom']!.toString()
+              : r['name_elevage']?.toString() ?? r['profile_label']?.toString() ?? '',
           professionPro: r['profession_pro']?.toString() ?? '',
           especesAcceptees: List<String>.from(r['especes_acceptees'] ?? []),
           certifications: List.from(r['certifications'] ?? []),
