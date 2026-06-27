@@ -5,7 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/widgets/app_nav_drawer.dart';
 
 import 'lieu_detail_page.dart';
-import 'inscription_lieu_page.dart';
 import 'lieux_feed_page.dart';
 
 class LieuxPetFriendlyPage extends StatefulWidget {
@@ -162,17 +161,6 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
             ),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const InscriptionLieuPage()),
-        ),
-        backgroundColor: _teal,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add_business_rounded),
-        label: const Text('Référencer mon établissement',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
       ),
       body: Column(
         children: [
