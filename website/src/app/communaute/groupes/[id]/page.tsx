@@ -53,6 +53,7 @@ interface Post {
 }
 interface Commentaire {
   id: string; post_id: string; auteur_uid: string; contenu: string; created_at: string;
+  like_count?: number; image_url?: string;
 }
 interface Membership { role: string; statut: string; }
 
@@ -102,6 +103,12 @@ export default function GroupeDetailPage() {
 
   // Moderation error
   const [moderationError, setModerationError] = useState<string | null>(null);
+
+  // Comment likes + image
+  const [myCommentLikes, setMyCommentLikes] = useState<Set<string>>(new Set());
+  const [commentImage, setCommentImage] = useState<File | null>(null);
+  const [commentImagePreview, setCommentImagePreview] = useState<string | null>(null);
+  const [uploadingCommentImg, setUploadingCommentImg] = useState(false);
 
   // Post image state
   const [postImage, setPostImage] = useState<File | null>(null);
@@ -315,6 +322,16 @@ export default function GroupeDetailPage() {
       .eq('post_id', post.id).order('created_at');
     const commentsList = (data ?? []) as Commentaire[];
     setComments(commentsList);
+    setCommentImage(null);
+    setCommentImagePreview(null);
+
+    // Charger mes likes de commentaires
+    if (user?.uid && commentsList.length > 0) {
+      const cIds = commentsList.map(c => c.id);
+      const { data: clData } = await supabase.from('groupe_commentaire_likes')
+        .select('comment_id').eq('user_uid', user.uid).in('comment_id', cIds);
+      setMyCommentLikes(new Set((clData ?? []).map((l: { comment_id: string }) => l.comment_id)));
+    }
 
     // Load missing profiles for comment authors
     const missing = [...new Set(commentsList.map(c => c.auteur_uid))].filter(u => !userProfiles[u]);
@@ -331,14 +348,41 @@ export default function GroupeDetailPage() {
     setLoadingComments(false);
   }
 
+  async function toggleCommentLike(commentId: string) {
+    if (!user?.uid) return;
+    const liked = myCommentLikes.has(commentId);
+    setMyCommentLikes(prev => { const s = new Set(prev); liked ? s.delete(commentId) : s.add(commentId); return s; });
+    setComments(prev => prev.map(c => c.id === commentId ? { ...c, like_count: (c.like_count ?? 0) + (liked ? -1 : 1) } : c));
+    if (liked) {
+      await supabase.from('groupe_commentaire_likes').delete().eq('comment_id', commentId).eq('user_uid', user.uid);
+    } else {
+      await supabase.from('groupe_commentaire_likes').insert({ comment_id: commentId, user_uid: user.uid });
+    }
+    const updated = comments.find(c => c.id === commentId);
+    if (updated) {
+      await supabase.from('groupe_post_commentaires')
+        .update({ like_count: (updated.like_count ?? 0) + (liked ? -1 : 1) }).eq('id', commentId);
+    }
+  }
+
   async function sendComment() {
-    if (!user?.uid || !newComment.trim() || !openCommentPost) return;
-    const err = moderateContent(newComment.trim(), currentUserIsPro);
-    if (err) { alert(err); return; }
+    if (!user?.uid || (!newComment.trim() && !commentImage) || !openCommentPost) return;
+    if (newComment.trim()) {
+      const err = moderateContent(newComment.trim(), currentUserIsPro);
+      if (err) { alert(err); return; }
+    }
     setCommenting(true);
+    setUploadingCommentImg(!!commentImage);
     try {
+      let imageUrl: string | undefined;
+      if (commentImage) {
+        const path = `groupes/comments/${openCommentPost.id}/${user.uid}_${Date.now()}.jpg`;
+        imageUrl = await uploadToStorage(commentImage, path);
+        setUploadingCommentImg(false);
+      }
       const { data } = await supabase.from('groupe_post_commentaires').insert({
         post_id: openCommentPost.id, auteur_uid: user.uid, contenu: newComment.trim(),
+        image_url: imageUrl ?? null,
         created_at: new Date().toISOString(),
       }).select().single();
       if (data) setComments(prev => [...prev, data as Commentaire]);
@@ -346,7 +390,9 @@ export default function GroupeDetailPage() {
       await supabase.from('groupe_posts').update({ comment_count: newCount }).eq('id', openCommentPost.id);
       setPosts(prev => prev.map(p => p.id === openCommentPost.id ? { ...p, comment_count: newCount } : p));
       setNewComment('');
-    } finally { setCommenting(false); }
+      setCommentImage(null);
+      setCommentImagePreview(null);
+    } finally { setCommenting(false); setUploadingCommentImg(false); }
   }
 
   async function loadAdminMembres() {
@@ -678,6 +724,8 @@ export default function GroupeDetailPage() {
                     const isMe = c.auteur_uid === user?.uid;
                     const cProfile = userProfiles[c.auteur_uid];
                     const cName = profileName(cProfile, isMe);
+                    const cLiked = myCommentLikes.has(c.id);
+                    const cLikeCount = c.like_count ?? 0;
                     return (
                       <div key={c.id} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                         {!isMe && <ProfileAvatar profile={cProfile} size={28} />}
@@ -685,10 +733,36 @@ export default function GroupeDetailPage() {
                           {!isMe && (
                             <p className="text-[10px] text-gray-400 mb-0.5 px-1" style={{ fontFamily: 'Galey, sans-serif' }}>{cName}</p>
                           )}
-                          <div className={`px-3 py-2 rounded-2xl text-sm ${isMe ? 'bg-[#E0F7FA] text-[#1E2025] rounded-tr-sm' : 'bg-gray-100 text-[#1E2025] rounded-tl-sm'}`} style={{ fontFamily: 'Galey, sans-serif' }}>
-                            <p>{c.contenu}</p>
-                            <p className="text-xs text-gray-400 mt-1">{fmtDate(c.created_at)}</p>
-                          </div>
+                          {/* Bulle texte */}
+                          {c.contenu && (
+                            <div className={`px-3 py-2 rounded-2xl text-sm ${isMe ? 'bg-[#E0F7FA] text-[#1E2025] rounded-tr-sm' : 'bg-gray-100 text-[#1E2025] rounded-tl-sm'} ${c.image_url ? 'rounded-b-2xl' : ''}`} style={{ fontFamily: 'Galey, sans-serif' }}>
+                              <p>{c.contenu}</p>
+                              <p className="text-xs text-gray-400 mt-1">{fmtDate(c.created_at)}</p>
+                            </div>
+                          )}
+                          {/* Photo du commentaire */}
+                          {c.image_url && (
+                            <div className={c.contenu ? 'mt-1' : ''}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={c.image_url}
+                                alt=""
+                                className="max-w-full rounded-2xl cursor-pointer object-cover"
+                                style={{ maxHeight: 200 }}
+                                onClick={() => window.open(c.image_url, '_blank')}
+                              />
+                              {!c.contenu && <p className="text-xs text-gray-400 mt-1 px-1">{fmtDate(c.created_at)}</p>}
+                            </div>
+                          )}
+                          {/* Like commentaire */}
+                          <button
+                            onClick={() => toggleCommentLike(c.id)}
+                            className={`flex items-center gap-1 mt-1 text-xs px-1 transition-colors ${cLiked ? 'text-red-400' : 'text-gray-400 hover:text-red-400'}`}
+                            style={{ fontFamily: 'Galey, sans-serif' }}
+                          >
+                            {cLiked ? '❤️' : '🤍'}
+                            {cLikeCount > 0 && <span className="font-semibold">{cLikeCount}</span>}
+                          </button>
                         </div>
                       </div>
                     );
@@ -697,22 +771,41 @@ export default function GroupeDetailPage() {
               )}
             </div>
             {isMember && (
-              <div className="border-t border-gray-100 p-3 flex gap-2">
-                <input
-                  value={newComment}
-                  onChange={e => setNewComment(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendComment()}
-                  placeholder="Votre commentaire…"
-                  className="flex-1 bg-gray-50 rounded-full px-4 py-2 text-sm focus:outline-none border border-gray-200 focus:border-[#00ACC1]"
-                  style={{ fontFamily: 'Galey, sans-serif' }}
-                />
-                <button
-                  onClick={sendComment}
-                  disabled={commenting || !newComment.trim()}
-                  className="w-9 h-9 bg-[#00ACC1] rounded-full flex items-center justify-center text-white disabled:opacity-50"
-                >
-                  {commenting ? '…' : '➤'}
-                </button>
+              <div className="border-t border-gray-100 p-3 flex flex-col gap-2">
+                {commentImagePreview && (
+                  <div className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={commentImagePreview} alt="" className="w-full max-h-32 object-cover rounded-xl" />
+                    <button
+                      onClick={() => { setCommentImage(null); setCommentImagePreview(null); }}
+                      className="absolute top-1 right-1 w-6 h-6 bg-black/60 text-white rounded-full flex items-center justify-center text-xs hover:bg-black/80"
+                    >✕</button>
+                  </div>
+                )}
+                <div className="flex gap-2 items-center">
+                  <label className="cursor-pointer text-[#00ACC1] hover:text-[#0097A7] flex-shrink-0">
+                    <span className="text-xl">📷</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (f) { setCommentImage(f); setCommentImagePreview(URL.createObjectURL(f)); }
+                    }} />
+                  </label>
+                  <input
+                    value={newComment}
+                    onChange={e => setNewComment(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendComment()}
+                    placeholder="Votre commentaire…"
+                    className="flex-1 bg-gray-50 rounded-full px-4 py-2 text-sm focus:outline-none border border-gray-200 focus:border-[#00ACC1]"
+                    style={{ fontFamily: 'Galey, sans-serif' }}
+                  />
+                  <button
+                    onClick={sendComment}
+                    disabled={commenting || uploadingCommentImg || (!newComment.trim() && !commentImage)}
+                    className="w-9 h-9 bg-[#00ACC1] rounded-full flex items-center justify-center text-white disabled:opacity-50 flex-shrink-0"
+                  >
+                    {commenting || uploadingCommentImg ? '…' : '➤'}
+                  </button>
+                </div>
               </div>
             )}
           </div>

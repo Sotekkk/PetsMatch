@@ -962,6 +962,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   final _ctrl = TextEditingController();
   List<Map<String, dynamic>> _comments = [];
   Map<String, Map<String, dynamic>> _profiles = {};
+  Set<String> _myCommentLikes = {};
+  File? _imageFile;
   bool _loading = true;
   bool _sending = false;
 
@@ -1002,18 +1004,84 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       }
     }
 
+    // Mes likes sur les commentaires
+    Set<String> myLikes = {};
+    if (_uid.isNotEmpty && comments.isNotEmpty) {
+      final commentIds = comments.map((c) => c['id'].toString()).toList();
+      final likesData = await _supa
+          .from('groupe_commentaire_likes')
+          .select('comment_id')
+          .eq('user_uid', _uid)
+          .inFilter('comment_id', commentIds);
+      myLikes = Set<String>.from((likesData as List).map((l) => l['comment_id'].toString()));
+    }
+
     if (mounted) {
       setState(() {
         _comments = comments;
         _profiles = existingProfiles;
+        _myCommentLikes = myLikes;
         _loading = false;
       });
     }
   }
 
+  Future<void> _pickImage() async {
+    final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery, imageQuality: 82, maxWidth: 1200);
+    if (picked != null) setState(() => _imageFile = File(picked.path));
+  }
+
+  Future<void> _toggleCommentLike(String commentId) async {
+    if (_uid.isEmpty) return;
+    final liked = _myCommentLikes.contains(commentId);
+    setState(() {
+      if (liked) {
+        _myCommentLikes.remove(commentId);
+      } else {
+        _myCommentLikes.add(commentId);
+      }
+      final idx = _comments.indexWhere((c) => c['id'] == commentId);
+      if (idx != -1) {
+        final cur = (_comments[idx]['like_count'] ?? 0) as int;
+        _comments[idx] = Map<String, dynamic>.from(_comments[idx])
+          ..['like_count'] = cur + (liked ? -1 : 1);
+      }
+    });
+    try {
+      if (liked) {
+        await _supa.from('groupe_commentaire_likes').delete()
+            .eq('comment_id', commentId).eq('user_uid', _uid);
+      } else {
+        await _supa.from('groupe_commentaire_likes')
+            .insert({'comment_id': commentId, 'user_uid': _uid});
+      }
+      final updated = _comments.firstWhere((c) => c['id'] == commentId, orElse: () => {});
+      if (updated.isNotEmpty) {
+        await _supa.from('groupe_post_commentaires')
+            .update({'like_count': updated['like_count'] ?? 0}).eq('id', commentId);
+      }
+    } catch (_) {}
+  }
+
+  void _showFullImage(String url) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: EdgeInsets.zero,
+        child: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: InteractiveViewer(child: Image.network(url, fit: BoxFit.contain)),
+        ),
+      ),
+    );
+  }
+
   Future<void> _send() async {
     final text = _ctrl.text.trim();
-    if (text.isEmpty || _uid.isEmpty) return;
+    if (text.isEmpty && _imageFile == null) return;
+    if (_uid.isEmpty) return;
 
     final moderationError = _Moderator.validate(text, isPro: widget.isProOrElevage);
     if (moderationError != null) {
@@ -1026,10 +1094,16 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 
     setState(() => _sending = true);
     try {
+      String? imageUrl;
+      if (_imageFile != null) {
+        final path = 'groupes/comments/${widget.post['id']}/${_uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        imageUrl = await storage.uploadPhoto(_imageFile!, path, quality: 82);
+      }
       final inserted = await _supa.from('groupe_post_commentaires').insert({
         'post_id': widget.post['id'],
         'auteur_uid': _uid,
         'contenu': text,
+        if (imageUrl != null) 'image_url': imageUrl,
         'created_at': DateTime.now().toIso8601String(),
       }).select().single();
       await _supa.from('groupe_posts').update({
@@ -1039,6 +1113,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         setState(() {
           _comments.add(Map<String, dynamic>.from(inserted));
           _ctrl.clear();
+          _imageFile = null;
           _sending = false;
         });
       }
@@ -1078,13 +1153,26 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                       itemCount: _comments.length,
                       itemBuilder: (_, i) {
                         final c = _comments[i];
+                        final commentId = c['id']?.toString() ?? '';
                         final authorUid = c['auteur_uid']?.toString() ?? '';
                         final isMe = authorUid == _uid;
                         final profile = _profiles[authorUid];
                         final photoUrl = _profilePhoto(profile);
                         final name = _profileName(profile, isMe: isMe);
+                        final contenu = c['contenu']?.toString() ?? '';
+                        final imageUrl = c['image_url']?.toString();
+                        final likeCount = (c['like_count'] ?? 0) as int;
+                        final liked = _myCommentLikes.contains(commentId);
+                        final maxW = MediaQuery.of(context).size.width * 0.68;
+                        final bubbleRadius = BorderRadius.only(
+                          topLeft: const Radius.circular(16),
+                          topRight: const Radius.circular(16),
+                          bottomLeft: Radius.circular(isMe ? 16 : 4),
+                          bottomRight: Radius.circular(isMe ? 4 : 16),
+                        );
+
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.only(bottom: 12),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -1108,29 +1196,63 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                       Padding(
                                         padding: const EdgeInsets.only(bottom: 2, left: 2),
                                         child: Text(name,
-                                            style: const TextStyle(
-                                                fontFamily: 'Galey', fontSize: 11,
+                                            style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
                                                 color: _greyC, fontWeight: FontWeight.w600)),
                                       ),
-                                    Container(
-                                      constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.68),
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                      decoration: BoxDecoration(
-                                        color: isMe ? const Color(0xFFE0F7FA) : const Color(0xFFF0F0F0),
-                                        borderRadius: BorderRadius.only(
-                                          topLeft: const Radius.circular(16),
-                                          topRight: const Radius.circular(16),
-                                          bottomLeft: Radius.circular(isMe ? 16 : 4),
-                                          bottomRight: Radius.circular(isMe ? 4 : 16),
+                                    // Bulle texte
+                                    if (contenu.isNotEmpty)
+                                      Container(
+                                        constraints: BoxConstraints(maxWidth: maxW),
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: isMe ? const Color(0xFFE0F7FA) : const Color(0xFFF0F0F0),
+                                          borderRadius: imageUrl != null
+                                              ? const BorderRadius.all(Radius.circular(16))
+                                              : bubbleRadius,
+                                        ),
+                                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                          Text(contenu, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _darkC)),
+                                          const SizedBox(height: 2),
+                                          Text(_fmtDate(c['created_at'] ?? ''),
+                                              style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: _greyC)),
+                                        ]),
+                                      ),
+                                    // Photo du commentaire
+                                    if (imageUrl != null) ...[
+                                      if (contenu.isNotEmpty) const SizedBox(height: 4),
+                                      GestureDetector(
+                                        onTap: () => _showFullImage(imageUrl),
+                                        child: ClipRRect(
+                                          borderRadius: contenu.isEmpty ? bubbleRadius : BorderRadius.circular(12),
+                                          child: ConstrainedBox(
+                                            constraints: BoxConstraints(maxWidth: maxW),
+                                            child: Image.network(imageUrl, fit: BoxFit.cover,
+                                                errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+                                          ),
                                         ),
                                       ),
-                                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                        Text(c['contenu'] ?? '',
-                                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _darkC)),
-                                        const SizedBox(height: 2),
-                                        Text(_fmtDate(c['created_at'] ?? ''),
-                                            style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: _greyC)),
-                                      ]),
+                                    ],
+                                    // Bouton like
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4, left: 2, right: 2),
+                                      child: GestureDetector(
+                                        onTap: () => _toggleCommentLike(commentId),
+                                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                          Icon(
+                                            liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                            size: 14,
+                                            color: liked ? Colors.red : _greyC,
+                                          ),
+                                          if (likeCount > 0) ...[
+                                            const SizedBox(width: 3),
+                                            Text('$likeCount',
+                                                style: TextStyle(
+                                                    fontFamily: 'Galey', fontSize: 11,
+                                                    color: liked ? Colors.red : _greyC,
+                                                    fontWeight: FontWeight.w600)),
+                                          ],
+                                        ]),
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -1145,46 +1267,77 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         if (widget.isMember && _uid.isNotEmpty)
           Container(
             padding: EdgeInsets.only(
-                left: 16, right: 16, top: 10, bottom: MediaQuery.of(context).padding.bottom + 10),
-            decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: Color(0xFFEEEEEE)))),
-            child: Row(children: [
-              Expanded(
-                child: TextField(
-                  controller: _ctrl,
-                  decoration: InputDecoration(
-                    hintText: 'Votre commentaire…',
-                    hintStyle: const TextStyle(fontFamily: 'Galey', color: _greyC),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: Colors.grey.shade300)),
-                    enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: Colors.grey.shade300)),
-                    focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: const BorderSide(color: _tealC, width: 1.5)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    filled: true,
-                    fillColor: const Color(0xFFF8F8F8),
+                left: 12, right: 12, top: 10, bottom: MediaQuery.of(context).padding.bottom + 10),
+            decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFEEEEEE)))),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              // Prévisualisation image
+              if (_imageFile != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Stack(children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.file(_imageFile!, height: 100, width: double.infinity, fit: BoxFit.cover),
+                    ),
+                    Positioned(
+                      top: 4, right: 4,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _imageFile = null),
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                          child: const Icon(Icons.close, color: Colors.white, size: 14),
+                        ),
+                      ),
+                    ),
+                  ]),
+                ),
+              Row(children: [
+                GestureDetector(
+                  onTap: _pickImage,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4),
+                    child: Icon(Icons.photo_outlined, size: 26, color: _tealC),
                   ),
-                  maxLines: null,
                 ),
-              ),
-              const SizedBox(width: 10),
-              GestureDetector(
-                onTap: _sending ? null : _send,
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: const BoxDecoration(color: _tealC, shape: BoxShape.circle),
-                  child: _sending
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _ctrl,
+                    decoration: InputDecoration(
+                      hintText: 'Votre commentaire…',
+                      hintStyle: const TextStyle(fontFamily: 'Galey', color: _greyC),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide(color: Colors.grey.shade300)),
+                      enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide(color: Colors.grey.shade300)),
+                      focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: const BorderSide(color: _tealC, width: 1.5)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      filled: true,
+                      fillColor: const Color(0xFFF8F8F8),
+                    ),
+                    maxLines: null,
+                  ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _sending ? null : _send,
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: const BoxDecoration(color: _tealC, shape: BoxShape.circle),
+                    child: _sending
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                  ),
+                ),
+              ]),
             ]),
           ),
       ]),
