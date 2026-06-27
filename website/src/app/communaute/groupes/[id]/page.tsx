@@ -7,6 +7,40 @@ import { supabase } from '@/lib/supabase';
 
 const TYPE_LABELS: Record<string, string> = { race: 'Race', region: 'Région', loisir: 'Loisir', autre: 'Autre' };
 
+// ── Modération ────────────────────────────────────────────────────────────────
+const GROS_MOTS = ['merde', 'putain', 'connard', 'connasse', 'salope', 'pute', 'enculé', 'enculer', 'fdp', 'nique', 'niquer', 'ntm', 'bâtard', 'batard', 'chier', 'bite ', 'branleur', 'branler'];
+const COMMERCE_KW = ['prix :', 'prix:', 'tarif ', 'tarif:', '€', ' euro', 'paypal', 'virement', 'paiement', 'vend ', 'vends ', 'achète ', 'a vendre', 'à vendre', 'achat', 'solde', 'livraison gratuite'];
+const ADOPTION_KW = ['adoption', 'adopter', 'à donner', 'a donner', 'cherche preneur', 'cession', 'céder', 'ceder'];
+const TRANSACTION_KW = ['contrat de vente', 'contrat de cession', 'bon de commande'];
+
+function moderateContent(content: string, isPro: boolean): string | null {
+  const low = content.toLowerCase();
+  for (const w of GROS_MOTS) if (low.includes(w)) return 'Votre message contient un langage inapproprié.';
+  if (!isPro) {
+    for (const kw of COMMERCE_KW) if (low.includes(kw)) return 'Prix et transactions non autorisés dans les groupes communautaires. Seuls les professionnels peuvent publier des tarifs.';
+    for (const kw of ADOPTION_KW) if (low.includes(kw)) return 'Les propositions d\'adoption ou de cession ne sont pas autorisées ici.';
+    for (const kw of TRANSACTION_KW) if (low.includes(kw)) return 'Les transactions commerciales ne sont pas autorisées dans les groupes communautaires.';
+  }
+  return null;
+}
+
+interface UserProfile { uid: string; firstname?: string; lastname?: string; profile_picture_url?: string; is_elevage?: boolean; name_elevage?: string; is_pro?: boolean; }
+
+function profileName(p: UserProfile | undefined, isMe?: boolean): string {
+  if (isMe) return 'Moi';
+  if (!p) return 'Membre';
+  if (p.is_elevage && p.name_elevage) return p.name_elevage;
+  const n = `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim();
+  return n || 'Membre';
+}
+
+function ProfileAvatar({ profile, size = 36 }: { profile?: UserProfile; size?: number }) {
+  const photo = profile?.profile_picture_url;
+  return photo
+    ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={photo} alt="" style={{ width: size, height: size }} className="rounded-full object-cover flex-shrink-0" />
+    : <div style={{ width: size, height: size }} className="rounded-full bg-[#E0F7FA] flex items-center justify-center flex-shrink-0"><span style={{ fontSize: size * 0.5 }}>👤</span></div>;
+}
+
 interface Groupe {
   id: string; nom: string; description: string; type: string;
   prive: boolean; createur_uid: string; regles: string[];
@@ -56,6 +90,18 @@ export default function GroupeDetailPage() {
   const [newComment, setNewComment] = useState('');
   const [commenting, setCommenting] = useState(false);
   const [loadingComments, setLoadingComments] = useState(false);
+
+  // User profiles cache
+  const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
+  const [currentUserIsPro, setCurrentUserIsPro] = useState(false);
+
+  // Likes modal
+  const [likesModal, setLikesModal] = useState<string | null>(null); // postId
+  const [likers, setLikers] = useState<UserProfile[]>([]);
+  const [loadingLikers, setLoadingLikers] = useState(false);
+
+  // Moderation error
+  const [moderationError, setModerationError] = useState<string | null>(null);
 
   // Post image state
   const [postImage, setPostImage] = useState<File | null>(null);
@@ -114,6 +160,24 @@ export default function GroupeDetailPage() {
         const { data: likes } = await supabase.from('groupe_post_likes').select('post_id')
           .eq('user_uid', user.uid).in('post_id', pids);
         setMyLikes(new Set((likes ?? []).map((l: { post_id: string }) => l.post_id)));
+      }
+
+      // Load user profiles for post authors + current user
+      const authorUids = [...new Set([
+        ...(postsData ?? []).map((p: Post) => p.auteur_uid),
+        ...(user?.uid ? [user.uid] : []),
+      ])];
+      if (authorUids.length > 0) {
+        const { data: profiles } = await supabase
+          .from('users')
+          .select('uid, firstname, lastname, profile_picture_url, is_elevage, is_pro, name_elevage')
+          .in('uid', authorUids);
+        const map: Record<string, UserProfile> = {};
+        for (const p of (profiles ?? [])) map[p.uid] = p;
+        setUserProfiles(map);
+        if (user?.uid && map[user.uid]) {
+          setCurrentUserIsPro(map[user.uid].is_elevage === true || map[user.uid].is_pro === true);
+        }
       }
     } finally {
       setLoading(false);
@@ -174,6 +238,11 @@ export default function GroupeDetailPage() {
 
   async function publishPost() {
     if (!user?.uid || (!newPost.trim() && !postImage) || !isMember) return;
+    setModerationError(null);
+    if (newPost.trim()) {
+      const err = moderateContent(newPost.trim(), currentUserIsPro);
+      if (err) { setModerationError(err); return; }
+    }
     setPosting(true);
     setUploadingImg(!!postImage);
     try {
@@ -188,11 +257,38 @@ export default function GroupeDetailPage() {
         image_url: imageUrl ?? null,
         created_at: new Date().toISOString(),
       }).select().single();
-      if (data) setPosts(prev => [data as Post, ...prev]);
+      if (data) {
+        setPosts(prev => [data as Post, ...prev]);
+        if (user.uid && !userProfiles[user.uid]) {
+          const { data: me } = await supabase.from('users')
+            .select('uid, firstname, lastname, profile_picture_url, is_elevage, is_pro, name_elevage')
+            .eq('uid', user.uid).single();
+          if (me) setUserProfiles(prev => ({ ...prev, [user.uid]: me }));
+        }
+      }
       setNewPost('');
       setPostImage(null);
       setPostImagePreview(null);
     } finally { setPosting(false); setUploadingImg(false); }
+  }
+
+  async function openLikesModal(postId: string) {
+    setLikesModal(postId);
+    setLoadingLikers(true);
+    const { data: likesData } = await supabase.from('groupe_post_likes').select('user_uid').eq('post_id', postId);
+    const uids = (likesData ?? []).map((l: { user_uid: string }) => l.user_uid);
+    if (uids.length === 0) { setLikers([]); setLoadingLikers(false); return; }
+    const missing = uids.filter((u: string) => !userProfiles[u]);
+    const profiles = { ...userProfiles };
+    if (missing.length > 0) {
+      const { data: pd } = await supabase.from('users')
+        .select('uid, firstname, lastname, profile_picture_url, is_elevage, name_elevage')
+        .in('uid', missing);
+      for (const p of (pd ?? [])) profiles[p.uid] = p;
+      setUserProfiles(profiles);
+    }
+    setLikers(uids.map((uid: string) => profiles[uid] ?? { uid }));
+    setLoadingLikers(false);
   }
 
   async function togglePin(post: Post) {
@@ -217,12 +313,28 @@ export default function GroupeDetailPage() {
     setLoadingComments(true);
     const { data } = await supabase.from('groupe_post_commentaires').select('*')
       .eq('post_id', post.id).order('created_at');
-    setComments((data ?? []) as Commentaire[]);
+    const commentsList = (data ?? []) as Commentaire[];
+    setComments(commentsList);
+
+    // Load missing profiles for comment authors
+    const missing = [...new Set(commentsList.map(c => c.auteur_uid))].filter(u => !userProfiles[u]);
+    if (missing.length > 0) {
+      const { data: pd } = await supabase.from('users')
+        .select('uid, firstname, lastname, profile_picture_url, is_elevage, name_elevage')
+        .in('uid', missing);
+      if (pd) {
+        const newProfiles: Record<string, UserProfile> = {};
+        for (const p of pd) newProfiles[p.uid] = p;
+        setUserProfiles(prev => ({ ...prev, ...newProfiles }));
+      }
+    }
     setLoadingComments(false);
   }
 
   async function sendComment() {
     if (!user?.uid || !newComment.trim() || !openCommentPost) return;
+    const err = moderateContent(newComment.trim(), currentUserIsPro);
+    if (err) { alert(err); return; }
     setCommenting(true);
     try {
       const { data } = await supabase.from('groupe_post_commentaires').insert({
@@ -404,6 +516,9 @@ export default function GroupeDetailPage() {
                 >✕</button>
               </div>
             )}
+            {moderationError && (
+              <p className="text-xs text-red-500 mt-2 px-1" style={{ fontFamily: 'Galey, sans-serif' }}>{moderationError}</p>
+            )}
             <div className="flex items-center justify-between mt-3">
               <label className="cursor-pointer flex items-center gap-1.5 text-gray-400 hover:text-[#00ACC1] text-sm transition-colors">
                 <span className="text-lg">📷</span>
@@ -434,17 +549,17 @@ export default function GroupeDetailPage() {
               const isMe = post.auteur_uid === user?.uid;
               const liked = myLikes.has(post.id);
               const canDelete = isMe || isAdmin;
+              const profile = userProfiles[post.auteur_uid];
+              const displayName = profileName(profile, isMe);
 
               return (
                 <div key={post.id} className={`bg-white rounded-2xl shadow-sm border overflow-hidden ${post.epingle ? 'border-[#00ACC1]/40' : 'border-gray-100'}`}>
                   <div className="p-4">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="w-9 h-9 rounded-full bg-[#E0F7FA] flex items-center justify-center flex-shrink-0">
-                        <span className="text-lg">👤</span>
-                      </div>
+                      <ProfileAvatar profile={profile} size={36} />
                       <div className="flex-1">
                         <p className="text-sm font-bold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>
-                          {isMe ? 'Moi' : 'Membre'}
+                          {displayName}
                         </p>
                         <p className="text-xs text-gray-400">{fmtDate(post.created_at)}</p>
                       </div>
@@ -480,13 +595,24 @@ export default function GroupeDetailPage() {
                     />
                   )}
                   <div className="border-t border-gray-100 flex">
-                    <button
-                      onClick={() => toggleLike(post.id)}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm transition-colors ${liked ? 'text-red-500' : 'text-gray-500 hover:text-red-400'}`}
-                      style={{ fontFamily: 'Galey, sans-serif' }}
-                    >
-                      {liked ? '❤️' : '🤍'} {post.like_count > 0 ? post.like_count : 'J\'aime'}
-                    </button>
+                    <div className="flex-1 flex items-center justify-center">
+                      <button
+                        onClick={() => toggleLike(post.id)}
+                        className={`flex items-center gap-1.5 py-2.5 text-sm transition-colors ${liked ? 'text-red-500' : 'text-gray-500 hover:text-red-400'}`}
+                        style={{ fontFamily: 'Galey, sans-serif' }}
+                      >
+                        {liked ? '❤️' : '🤍'} J&apos;aime
+                      </button>
+                      {post.like_count > 0 && (
+                        <button
+                          onClick={() => openLikesModal(post.id)}
+                          className={`ml-1 text-sm font-semibold underline-offset-2 hover:underline transition-colors ${liked ? 'text-red-400' : 'text-gray-400 hover:text-gray-600'}`}
+                          style={{ fontFamily: 'Galey, sans-serif' }}
+                        >
+                          {post.like_count}
+                        </button>
+                      )}
+                    </div>
                     <div className="w-px bg-gray-100" />
                     <button
                       onClick={() => openComments(post)}
@@ -502,6 +628,36 @@ export default function GroupeDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Modal qui a liké */}
+      {likesModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center" onClick={() => setLikesModal(null)}>
+          <div className="bg-white rounded-t-2xl w-full max-w-lg max-h-[60vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h3 className="font-bold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>❤️ Personnes qui aiment</h3>
+              <button onClick={() => setLikesModal(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {loadingLikers ? (
+                <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-[#00ACC1] border-t-transparent rounded-full animate-spin" /></div>
+              ) : likers.length === 0 ? (
+                <p className="text-center text-gray-400 py-8" style={{ fontFamily: 'Galey, sans-serif' }}>Personne n&apos;a encore aimé</p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {likers.map((liker, i) => (
+                    <div key={liker.uid ?? i} className="flex items-center gap-3">
+                      <ProfileAvatar profile={liker} size={40} />
+                      <p className="font-semibold text-sm text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                        {profileName(liker)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal commentaires */}
       {openCommentPost && (
@@ -520,11 +676,19 @@ export default function GroupeDetailPage() {
                 <div className="flex flex-col gap-2">
                   {comments.map(c => {
                     const isMe = c.auteur_uid === user?.uid;
+                    const cProfile = userProfiles[c.auteur_uid];
+                    const cName = profileName(cProfile, isMe);
                     return (
-                      <div key={c.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm ${isMe ? 'bg-[#E0F7FA] text-[#1E2025]' : 'bg-gray-100 text-[#1E2025]'}`} style={{ fontFamily: 'Galey, sans-serif' }}>
-                          <p>{c.contenu}</p>
-                          <p className="text-xs text-gray-400 mt-1">{fmtDate(c.created_at)}</p>
+                      <div key={c.id} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                        {!isMe && <ProfileAvatar profile={cProfile} size={28} />}
+                        <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[72%]`}>
+                          {!isMe && (
+                            <p className="text-[10px] text-gray-400 mb-0.5 px-1" style={{ fontFamily: 'Galey, sans-serif' }}>{cName}</p>
+                          )}
+                          <div className={`px-3 py-2 rounded-2xl text-sm ${isMe ? 'bg-[#E0F7FA] text-[#1E2025] rounded-tr-sm' : 'bg-gray-100 text-[#1E2025] rounded-tl-sm'}`} style={{ fontFamily: 'Galey, sans-serif' }}>
+                            <p>{c.contenu}</p>
+                            <p className="text-xs text-gray-400 mt-1">{fmtDate(c.created_at)}</p>
+                          </div>
                         </div>
                       </div>
                     );

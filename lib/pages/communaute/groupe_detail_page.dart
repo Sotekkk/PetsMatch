@@ -12,6 +12,77 @@ const _darkC = Color(0xFF1E2025);
 const _greyC = Color(0xFF6F767B);
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helpers profil utilisateur
+// ─────────────────────────────────────────────────────────────────────────────
+
+String _profileName(Map<String, dynamic>? p, {bool isMe = false}) {
+  if (isMe) return 'Moi';
+  if (p == null) return 'Membre';
+  if (p['is_elevage'] == true) {
+    final ne = (p['name_elevage'] ?? '').toString();
+    if (ne.isNotEmpty) return ne;
+  }
+  final n = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+  return n.isNotEmpty ? n : 'Membre';
+}
+
+String? _profilePhoto(Map<String, dynamic>? p) =>
+    p?['profile_picture_url']?.toString();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modération du contenu
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _Moderator {
+  static const _grosMotsFR = [
+    'merde', 'putain', 'connard', 'connasse', 'salope', 'pute', 'enculé',
+    'enculer', 'fdp', 'nique', 'niquer', 'ntm', 'bâtard', 'batard',
+    'chier', 'bite ', 'branleur', 'branler',
+  ];
+
+  static const _commerceKw = [
+    'prix :', 'prix:', 'tarif ', 'tarif:', '€', ' euro', 'paypal',
+    'virement', 'paiement', 'vend ', 'vends ', 'achète ', 'a vendre',
+    'à vendre', 'achat', 'solde', 'livraison gratuite',
+  ];
+
+  static const _adoptionKw = [
+    'adoption', 'adopter', 'à donner', 'a donner',
+    'cherche preneur', 'cession', 'céder', 'ceder',
+  ];
+
+  static const _transactionKw = [
+    'contrat de vente', 'contrat de cession', 'bon de commande',
+  ];
+
+  /// null = OK, sinon message d'erreur à afficher.
+  static String? validate(String content, {bool isPro = false}) {
+    final low = content.toLowerCase();
+    for (final w in _grosMotsFR) {
+      if (low.contains(w)) return 'Votre message contient un langage inapproprié.';
+    }
+    if (!isPro) {
+      for (final kw in _commerceKw) {
+        if (low.contains(kw)) {
+          return 'Prix et transactions non autorisés dans les groupes communautaires.\nSeuls les professionnels peuvent publier des tarifs.';
+        }
+      }
+      for (final kw in _adoptionKw) {
+        if (low.contains(kw)) {
+          return 'Les propositions d\'adoption ou de cession ne sont pas autorisées ici.';
+        }
+      }
+      for (final kw in _transactionKw) {
+        if (low.contains(kw)) {
+          return 'Les transactions commerciales ne sont pas autorisées dans les groupes communautaires.';
+        }
+      }
+    }
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Page de détail d'un groupe
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -34,6 +105,8 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
   List<String> _friendsInGroup = [];
   bool _loading = true;
   int _membresCount = 0;
+  Map<String, Map<String, dynamic>> _userProfiles = {};
+  bool _currentUserIsPro = false;
 
   @override
   void initState() {
@@ -106,6 +179,27 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
         likes = Set<String>.from((likesData as List).map((l) => l['post_id'].toString()));
       }
 
+      // 7. Profils des auteurs + profil courant (pour modération)
+      final allUids = <String>{
+        if (_uid.isNotEmpty) _uid,
+        for (final p in (postsData as List)) p['auteur_uid'].toString(),
+      }.toList();
+      final profilesMap = <String, Map<String, dynamic>>{};
+      bool currentIsPro = false;
+      if (allUids.isNotEmpty) {
+        final profilesData = await _supa
+            .from('users')
+            .select('uid, firstname, lastname, profile_picture_url, is_elevage, is_pro, name_elevage')
+            .inFilter('uid', allUids);
+        for (final p in (profilesData as List)) {
+          profilesMap[p['uid'].toString()] = Map<String, dynamic>.from(p);
+        }
+        if (_uid.isNotEmpty && profilesMap.containsKey(_uid)) {
+          final me = profilesMap[_uid]!;
+          currentIsPro = me['is_elevage'] == true || me['is_pro'] == true;
+        }
+      }
+
       if (mounted) {
         setState(() {
           _myMembership = myMem;
@@ -113,6 +207,8 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
           _friendsInGroup = friendsInGroup;
           _posts = List<Map<String, dynamic>>.from(postsData);
           _myLikes = likes;
+          _userProfiles = profilesMap;
+          _currentUserIsPro = currentIsPro;
           _loading = false;
         });
       }
@@ -208,9 +304,21 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _CreatePostSheet(groupeId: _groupe['id'].toString()),
+      builder: (_) => _CreatePostSheet(
+        groupeId: _groupe['id'].toString(),
+        isProOrElevage: _currentUserIsPro,
+      ),
     );
     if (created == true) _load();
+  }
+
+  Future<void> _showLikes(String postId) async {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _LikesSheet(postId: postId, userProfiles: _userProfiles),
+    );
   }
 
   Future<void> _openComments(Map<String, dynamic> post) async {
@@ -219,7 +327,12 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _CommentsSheet(post: post, isMember: _isMember),
+      builder: (_) => _CommentsSheet(
+        post: post,
+        isMember: _isMember,
+        isProOrElevage: _currentUserIsPro,
+        userProfiles: _userProfiles,
+      ),
     );
     _load();
   }
@@ -436,11 +549,13 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                               isLiked: _myLikes.contains(_posts[i]['id']?.toString()),
                               isAdmin: _isAdmin,
                               myUid: _uid,
+                              userProfiles: _userProfiles,
                               onLike: () => _toggleLike(_posts[i]['id'].toString()),
                               onComment: () => _openComments(_posts[i]),
                               onPin: () => _togglePin(
                                   _posts[i]['id'].toString(), _posts[i]['epingle'] == true),
                               onDelete: () => _deletePost(_posts[i]['id'].toString()),
+                              onShowLikes: () => _showLikes(_posts[i]['id'].toString()),
                             ),
                           ),
                           childCount: _posts.length,
@@ -595,20 +710,24 @@ class _PostCard extends StatefulWidget {
   final bool isLiked;
   final bool isAdmin;
   final String myUid;
+  final Map<String, Map<String, dynamic>> userProfiles;
   final VoidCallback onLike;
   final VoidCallback onComment;
   final VoidCallback onPin;
   final VoidCallback onDelete;
+  final VoidCallback onShowLikes;
 
   const _PostCard({
     required this.post,
     required this.isLiked,
     required this.isAdmin,
     required this.myUid,
+    required this.userProfiles,
     required this.onLike,
     required this.onComment,
     required this.onPin,
     required this.onDelete,
+    required this.onShowLikes,
   });
 
   @override
@@ -658,6 +777,9 @@ class _PostCardState extends State<_PostCard> {
     final isMyPost = auteurUid == widget.myUid;
     final canDelete = isMyPost || widget.isAdmin;
     final canPin = widget.isAdmin;
+    final profile = widget.userProfiles[auteurUid];
+    final displayName = _profileName(profile, isMe: isMyPost);
+    final photoUrl = _profilePhoto(profile);
 
     return Container(
       decoration: BoxDecoration(
@@ -673,13 +795,16 @@ class _PostCardState extends State<_PostCard> {
           child: Row(children: [
             CircleAvatar(
               radius: 18,
+              backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
               backgroundColor: _tealC.withValues(alpha: 0.15),
-              child: const Icon(Icons.person_outline, size: 20, color: _tealC),
+              child: photoUrl == null
+                  ? const Icon(Icons.person_outline, size: 20, color: _tealC)
+                  : null,
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(isMyPost ? 'Moi' : 'Membre',
+                Text(displayName,
                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _darkC)),
                 Text(_fmtDate(date),
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _greyC)),
@@ -759,9 +884,20 @@ class _PostCardState extends State<_PostCard> {
           child: Row(children: [
             _actionBtn(
               icon: widget.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-              label: likeCount > 0 ? '$likeCount' : 'J\'aime',
+              label: 'J\'aime',
               color: widget.isLiked ? Colors.red : _greyC,
               onTap: widget.onLike,
+              badge: likeCount > 0
+                  ? GestureDetector(
+                      onTap: widget.onShowLikes,
+                      child: Text('$likeCount',
+                          style: TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 12,
+                              color: widget.isLiked ? Colors.red : _greyC,
+                              fontWeight: FontWeight.w600)),
+                    )
+                  : null,
             ),
             const SizedBox(width: 4),
             _actionBtn(
@@ -776,17 +912,26 @@ class _PostCardState extends State<_PostCard> {
     );
   }
 
-  Widget _actionBtn({required IconData icon, required String label, required Color color, required VoidCallback onTap}) {
+  Widget _actionBtn({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+    Widget? badge,
+  }) {
     return Expanded(
-      child: TextButton.icon(
-        onPressed: onTap,
-        icon: Icon(icon, size: 18, color: color),
-        label: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: color)),
-        style: TextButton.styleFrom(
-          foregroundColor: color,
-          padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        TextButton.icon(
+          onPressed: onTap,
+          icon: Icon(icon, size: 18, color: color),
+          label: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: color)),
+          style: TextButton.styleFrom(
+            foregroundColor: color,
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+          ),
         ),
-      ),
+        if (badge != null) ...[const SizedBox(width: 2), badge],
+      ]),
     );
   }
 }
@@ -798,7 +943,14 @@ class _PostCardState extends State<_PostCard> {
 class _CommentsSheet extends StatefulWidget {
   final Map<String, dynamic> post;
   final bool isMember;
-  const _CommentsSheet({required this.post, required this.isMember});
+  final bool isProOrElevage;
+  final Map<String, Map<String, dynamic>> userProfiles;
+  const _CommentsSheet({
+    required this.post,
+    required this.isMember,
+    required this.isProOrElevage,
+    required this.userProfiles,
+  });
 
   @override
   State<_CommentsSheet> createState() => _CommentsSheetState();
@@ -809,6 +961,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   final _ctrl = TextEditingController();
   List<Map<String, dynamic>> _comments = [];
+  Map<String, Map<String, dynamic>> _profiles = {};
   bool _loading = true;
   bool _sending = false;
 
@@ -830,9 +983,29 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         .select()
         .eq('post_id', widget.post['id'])
         .order('created_at');
+    final comments = List<Map<String, dynamic>>.from(data);
+
+    // Charger les profils manquants des commentateurs
+    final existingProfiles = Map<String, Map<String, dynamic>>.from(widget.userProfiles);
+    final missingUids = comments
+        .map((c) => c['auteur_uid'].toString())
+        .where((uid) => !existingProfiles.containsKey(uid))
+        .toSet()
+        .toList();
+    if (missingUids.isNotEmpty) {
+      final pd = await _supa
+          .from('users')
+          .select('uid, firstname, lastname, profile_picture_url, is_elevage, name_elevage')
+          .inFilter('uid', missingUids);
+      for (final p in (pd as List)) {
+        existingProfiles[p['uid'].toString()] = Map<String, dynamic>.from(p);
+      }
+    }
+
     if (mounted) {
       setState(() {
-        _comments = List<Map<String, dynamic>>.from(data);
+        _comments = comments;
+        _profiles = existingProfiles;
         _loading = false;
       });
     }
@@ -841,6 +1014,16 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   Future<void> _send() async {
     final text = _ctrl.text.trim();
     if (text.isEmpty || _uid.isEmpty) return;
+
+    final moderationError = _Moderator.validate(text, isPro: widget.isProOrElevage);
+    if (moderationError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(moderationError, style: const TextStyle(fontFamily: 'Galey')),
+            backgroundColor: const Color(0xFFD32F2F)),
+      );
+      return;
+    }
+
     setState(() => _sending = true);
     try {
       final inserted = await _supa.from('groupe_post_commentaires').insert({
@@ -895,22 +1078,65 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                       itemCount: _comments.length,
                       itemBuilder: (_, i) {
                         final c = _comments[i];
-                        final isMe = c['auteur_uid'] == _uid;
-                        return Align(
-                          alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                          child: Container(
-                            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: isMe ? const Color(0xFFE0F7FA) : const Color(0xFFF8F8F8),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(c['contenu'] ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _darkC)),
-                              const SizedBox(height: 2),
-                              Text(_fmtDate(c['created_at'] ?? ''), style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: _greyC)),
-                            ]),
+                        final authorUid = c['auteur_uid']?.toString() ?? '';
+                        final isMe = authorUid == _uid;
+                        final profile = _profiles[authorUid];
+                        final photoUrl = _profilePhoto(profile);
+                        final name = _profileName(profile, isMe: isMe);
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+                            children: [
+                              if (!isMe) ...[
+                                CircleAvatar(
+                                  radius: 16,
+                                  backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
+                                  backgroundColor: _tealC.withValues(alpha: 0.15),
+                                  child: photoUrl == null
+                                      ? const Icon(Icons.person_outline, size: 16, color: _tealC)
+                                      : null,
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              Flexible(
+                                child: Column(
+                                  crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                  children: [
+                                    if (!isMe)
+                                      Padding(
+                                        padding: const EdgeInsets.only(bottom: 2, left: 2),
+                                        child: Text(name,
+                                            style: const TextStyle(
+                                                fontFamily: 'Galey', fontSize: 11,
+                                                color: _greyC, fontWeight: FontWeight.w600)),
+                                      ),
+                                    Container(
+                                      constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.68),
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: isMe ? const Color(0xFFE0F7FA) : const Color(0xFFF0F0F0),
+                                        borderRadius: BorderRadius.only(
+                                          topLeft: const Radius.circular(16),
+                                          topRight: const Radius.circular(16),
+                                          bottomLeft: Radius.circular(isMe ? 16 : 4),
+                                          bottomRight: Radius.circular(isMe ? 4 : 16),
+                                        ),
+                                      ),
+                                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                        Text(c['contenu'] ?? '',
+                                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _darkC)),
+                                        const SizedBox(height: 2),
+                                        Text(_fmtDate(c['created_at'] ?? ''),
+                                            style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: _greyC)),
+                                      ]),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (isMe) const SizedBox(width: 4),
+                            ],
                           ),
                         );
                       },
@@ -972,7 +1198,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 
 class _CreatePostSheet extends StatefulWidget {
   final String groupeId;
-  const _CreatePostSheet({required this.groupeId});
+  final bool isProOrElevage;
+  const _CreatePostSheet({required this.groupeId, required this.isProOrElevage});
 
   @override
   State<_CreatePostSheet> createState() => _CreatePostSheetState();
@@ -1004,6 +1231,18 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
     final text = _ctrl.text.trim();
     if (text.isEmpty && _imageFile == null) return;
     if (_uid.isEmpty) return;
+
+    if (text.isNotEmpty) {
+      final err = _Moderator.validate(text, isPro: widget.isProOrElevage);
+      if (err != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(err, style: const TextStyle(fontFamily: 'Galey')),
+              backgroundColor: const Color(0xFFD32F2F)),
+        );
+        return;
+      }
+    }
+
     setState(() => _saving = true);
     try {
       String? imageUrl;
@@ -1120,6 +1359,115 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
           ]),
         ]),
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sheet : qui a liké
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LikesSheet extends StatefulWidget {
+  final String postId;
+  final Map<String, Map<String, dynamic>> userProfiles;
+  const _LikesSheet({required this.postId, required this.userProfiles});
+
+  @override
+  State<_LikesSheet> createState() => _LikesSheetState();
+}
+
+class _LikesSheetState extends State<_LikesSheet> {
+  final _supa = Supabase.instance.client;
+  List<Map<String, dynamic>> _likers = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final likes = await _supa
+        .from('groupe_post_likes')
+        .select('user_uid')
+        .eq('post_id', widget.postId);
+    final uids = (likes as List).map((l) => l['user_uid'].toString()).toList();
+    if (uids.isEmpty) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+
+    final profiles = Map<String, Map<String, dynamic>>.from(widget.userProfiles);
+    final missingUids = uids.where((u) => !profiles.containsKey(u)).toList();
+    if (missingUids.isNotEmpty) {
+      final pd = await _supa
+          .from('users')
+          .select('uid, firstname, lastname, profile_picture_url, is_elevage, name_elevage')
+          .inFilter('uid', missingUids);
+      for (final p in (pd as List)) {
+        profiles[p['uid'].toString()] = Map<String, dynamic>.from(p);
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _likers = uids.map((uid) => {'uid': uid, ...?profiles[uid]}).toList();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.5,
+      decoration: const BoxDecoration(
+          color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      child: Column(children: [
+        const SizedBox(height: 10),
+        Container(width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 12),
+        const Text('❤️ Personnes qui aiment',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        const Divider(height: 20),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator(color: _tealC))
+              : _likers.isEmpty
+                  ? const Center(
+                      child: Text('Personne n\'a encore aimé',
+                          style: TextStyle(fontFamily: 'Galey', color: _greyC)))
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _likers.length,
+                      itemBuilder: (_, i) {
+                        final liker = _likers[i];
+                        final name = _profileName(liker.isEmpty ? null : liker);
+                        final photoUrl = _profilePhoto(liker.isEmpty ? null : liker);
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Row(children: [
+                            CircleAvatar(
+                              radius: 22,
+                              backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
+                              backgroundColor: _tealC.withValues(alpha: 0.15),
+                              child: photoUrl == null
+                                  ? const Icon(Icons.person_outline, color: _tealC, size: 22)
+                                  : null,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(name,
+                                style: const TextStyle(
+                                    fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                                    fontSize: 14, color: _darkC)),
+                          ]),
+                        );
+                      },
+                    ),
+        ),
+      ]),
     );
   }
 }

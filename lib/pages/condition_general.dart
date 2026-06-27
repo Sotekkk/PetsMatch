@@ -470,6 +470,29 @@ III. Comportement et contenu autorisé
     Tout contenu ou comportement abusif signalé fera l’objet d’une modération sous 24 heures. Si la
     violation est confirmée, le contenu sera supprimé et l’utilisateur responsable banni définitivement.
 
+III-A. Règles spécifiques aux groupes communautaires
+
+  Les groupes PetsMatch sont des espaces d’échange entre passionnés d’animaux. À ce titre,
+  les publications et commentaires au sein des groupes sont soumis aux règles suivantes :
+
+  Contenu interdit pour tous les membres non-professionnels :
+    - Les gros mots et le langage offensant, vulgaire ou irrespectueux.
+    - Toute mention de prix, tarifs, montants ou transactions financières.
+    - Les propositions de vente, d’achat ou d’échange d’animaux ou de produits.
+    - Les annonces d’adoption, de cession ou de placement d’animaux.
+    - Toute forme de transaction commerciale ou de sollicitation financière.
+
+  Contenu autorisé pour les professionnels vérifiés (éleveurs, pros PetsMatch) :
+    - Les publications peuvent inclure des tarifs et informations commerciales
+      à condition de relever de leur activité professionnelle enregistrée sur PetsMatch.
+    - Les annonces professionnelles doivent respecter la législation en vigueur
+      (ICAD, LOA, réglementation de la vente d’animaux).
+
+  Modération automatique :
+    PetsMatch utilise un système de filtrage automatique des publications et commentaires.
+    Tout message contenant du contenu interdit sera bloqué avant publication.
+    Les infractions répétées peuvent entraîner l’exclusion du groupe ou la suspension du compte.
+
 IV. Signalement et modération
 
     - Chaque utilisateur peut signaler du contenu ou un autre utilisateur via les options prévues à cet
