@@ -171,6 +171,7 @@ function LikersModal({ annonceId, bebeIndex, mode, onClose }: {
   mode: 'likes' | 'favoris';
   onClose: () => void;
 }) {
+  const router = useRouter();
   const [users, setUsers] = useState<{ uid: string; firstname?: string; lastname?: string; profile_picture_url?: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -224,7 +225,9 @@ function LikersModal({ annonceId, bebeIndex, mode, onClose }: {
             </p>
           ) : (
             users.map(u => (
-              <div key={u.uid} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors">
+              <button key={u.uid}
+                onClick={() => { onClose(); router.push(`/profil/${u.uid}`); }}
+                className="w-full flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors text-left">
                 <div className="w-10 h-10 rounded-full bg-[#0C5C6C] flex items-center justify-center overflow-hidden flex-shrink-0">
                   {u.profile_picture_url ? (
                     <Image src={u.profile_picture_url} alt="" width={40} height={40} className="object-cover" unoptimized />
@@ -235,8 +238,10 @@ function LikersModal({ annonceId, bebeIndex, mode, onClose }: {
                 <span className="font-['Galey'] font-semibold text-sm text-[#1F2A2E] flex-1">
                   {[u.firstname, u.lastname].filter(Boolean).join(' ') || 'Utilisateur'}
                 </span>
-                <span className="text-sm">{icon}</span>
-              </div>
+                <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/>
+                </svg>
+              </button>
             ))
           )}
         </div>

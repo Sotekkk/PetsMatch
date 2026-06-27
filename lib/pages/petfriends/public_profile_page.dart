@@ -8,7 +8,8 @@ import 'package:PetsMatch/pages/petfriends/petfriend_chat_page.dart';
 
 class PublicProfilePage extends StatefulWidget {
   final String targetUid;
-  const PublicProfilePage({super.key, required this.targetUid});
+  final bool showMessageButton;
+  const PublicProfilePage({super.key, required this.targetUid, this.showMessageButton = true});
 
   @override
   State<PublicProfilePage> createState() => _PublicProfilePageState();
@@ -453,16 +454,18 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
 
     if (_relStatut == 'accepte') {
       return Column(mainAxisSize: MainAxisSize.min, children: [
-        FilledButton.icon(
-          onPressed: _openDm,
-          style: FilledButton.styleFrom(
-              backgroundColor: _green,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
-          icon: const Icon(Icons.chat_bubble_outline, size: 18),
-          label: const Text('Envoyer un message',
-              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        ),
-        const SizedBox(height: 8),
+        if (widget.showMessageButton) ...[
+          FilledButton.icon(
+            onPressed: _openDm,
+            style: FilledButton.styleFrom(
+                backgroundColor: _green,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
+            icon: const Icon(Icons.chat_bubble_outline, size: 18),
+            label: const Text('Envoyer un message',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(height: 8),
+        ],
         TextButton.icon(
           onPressed: _removeFriend,
           icon: const Icon(Icons.person_remove_outlined, size: 16, color: Colors.red),

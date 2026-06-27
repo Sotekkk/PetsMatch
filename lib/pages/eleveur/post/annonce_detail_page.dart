@@ -3,6 +3,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/association/association_detail_page.dart';
+import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
 import 'package:PetsMatch/pages/main_feed.dart' show UserSelected;
 import 'package:PetsMatch/pages/user_detail_page_feed.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
@@ -2167,7 +2168,16 @@ class _LikersSheetState extends State<_LikersSheet> {
                   title: Text(name.isNotEmpty ? name : 'Utilisateur',
                       style: const TextStyle(fontFamily: 'Galey',
                           fontWeight: FontWeight.w600, fontSize: 14)),
-                  trailing: const Icon(Icons.favorite, color: Colors.redAccent, size: 16),
+                  trailing: const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => PublicProfilePage(
+                        targetUid: u['uid'] as String,
+                        showMessageButton: false,
+                      ),
+                    ));
+                  },
                 );
               },
             ),
