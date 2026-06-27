@@ -143,8 +143,8 @@ export default function ServicesPage() {
     colorLight: '#E0F7FA',
     items: [
       ...(isParticulier ? [{ id: 'petsfriends', label: 'PetsFriends', icon: '🐾', href: '/petfriends' }] : []),
-      { id: 'forum',      label: 'Forum communauté',  icon: '💬', soon: true },
-      { id: 'groupes',    label: 'Groupes',           icon: '👥', soon: true },
+      { id: 'forum',      label: 'Forum communauté',  icon: '💬', href: '/communaute/forum' },
+      { id: 'groupes',    label: 'Groupes',           icon: '👥', href: '/communaute/groupes' },
       { id: 'evenements', label: 'Événements locaux', icon: '📅', soon: true },
     ],
   };
