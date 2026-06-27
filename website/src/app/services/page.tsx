@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useAuth } from '@/lib/auth-context';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -21,9 +22,9 @@ interface ServiceItem {
   soon?: boolean;
 }
 
-// ── Données ────────────────────────────────────────────────────────────────────
+// ── Données statiques ──────────────────────────────────────────────────────────
 
-const SECTIONS: ServiceSection[] = [
+const SECTIONS_BASE: ServiceSection[] = [
   {
     id: 'pole-sante',
     title: 'Pôle Santé',
@@ -79,19 +80,6 @@ const SECTIONS: ServiceSection[] = [
       { id: 'promos',    label: 'Bons plans & Promos',     icon: '🏷️', soon: true },
     ],
   },
-  {
-    id: 'communaute',
-    title: 'Communauté',
-    icon: '👥',
-    color: '#00ACC1',
-    colorLight: '#E0F7FA',
-    items: [
-      { id: 'forum',      label: 'Forum communauté',        icon: '💬', soon: true },
-      { id: 'groupes',    label: 'Groupes',                 icon: '👥', soon: true },
-      { id: 'evenements', label: 'Événements locaux',       icon: '📅', soon: true },
-      { id: 'adoption',   label: 'Adoption & Associations', icon: '🐾', soon: true },
-    ],
-  },
 ];
 
 // ── Composants ─────────────────────────────────────────────────────────────────
@@ -144,6 +132,25 @@ function SectionBlock({ section }: { section: ServiceSection }) {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function ServicesPage() {
+  const { userData } = useAuth();
+  const isParticulier = userData?.profile_type === 'particulier';
+
+  const communauteSection: ServiceSection = {
+    id: 'communaute',
+    title: 'Communauté',
+    icon: '👥',
+    color: '#00ACC1',
+    colorLight: '#E0F7FA',
+    items: [
+      ...(isParticulier ? [{ id: 'petsfriends', label: 'PetsFriends', icon: '🐾', href: '/petfriends' }] : []),
+      { id: 'forum',      label: 'Forum communauté',  icon: '💬', soon: true },
+      { id: 'groupes',    label: 'Groupes',           icon: '👥', soon: true },
+      { id: 'evenements', label: 'Événements locaux', icon: '📅', soon: true },
+    ],
+  };
+
+  const SECTIONS = [...SECTIONS_BASE, communauteSection];
+
   return (
     <div className="min-h-screen bg-[#F8F8F8]">
       {/* Hero */}
