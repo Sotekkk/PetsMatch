@@ -178,44 +178,6 @@ export default function EleveurDashboard() {
           ))}
         </div>
 
-        {/* Quota annonces */}
-        {!planLoading && (
-          <div className="bg-white rounded-2xl p-4 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-                Quota annonces
-              </p>
-              <Link href="/abonnement" className="text-xs text-[#0C5C6C] hover:underline">
-                {plan === 'free' ? 'Augmenter ↗' : 'Gérer'}
-              </Link>
-            </div>
-            {planConfig.maxAnnonces === -1 ? (
-              <p className="text-sm text-[#6E9E57] font-semibold">✓ Illimité</p>
-            ) : (
-              <>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs text-gray-500">{activeAnnonces} / {planConfig.maxAnnonces} annonces actives</span>
-                  {activeAnnonces >= planConfig.maxAnnonces && (
-                    <span className="text-xs font-semibold text-red-500">Limite atteinte</span>
-                  )}
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full transition-all ${activeAnnonces >= planConfig.maxAnnonces ? 'bg-red-400' : 'bg-[#6E9E57]'}`}
-                    style={{ width: `${Math.min(100, (activeAnnonces / planConfig.maxAnnonces) * 100)}%` }}
-                  />
-                </div>
-                {plan === 'free' && activeAnnonces >= planConfig.maxAnnonces && (
-                  <Link href="/abonnement"
-                    className="mt-2 block text-center text-xs font-semibold bg-[#0C5C6C] text-white py-2 rounded-xl hover:bg-[#094F5D] transition-colors">
-                    ⚡ Passer Pro pour plus d&apos;annonces
-                  </Link>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
         {mesAlertes.length > 0 && (
           <Link href="/mes-alertes"
             className="flex items-center gap-4 bg-amber-50 border border-amber-300 rounded-2xl p-4 hover:bg-amber-100 transition-colors">
@@ -233,38 +195,6 @@ export default function EleveurDashboard() {
             <span className="text-amber-400 text-lg">›</span>
           </Link>
         )}
-
-        <div>
-          <h2 className="text-lg font-bold text-[#1F2A2E] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>
-            Accès rapide
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {QUICK_LINKS.map((l) => {
-              const locked = l.pro && !planConfig.hasRegistres;
-              if (locked) {
-                return (
-                  <Link key={l.href} href="/abonnement"
-                    className="relative bg-gray-50 border border-dashed border-gray-200 rounded-2xl p-4 flex flex-col gap-2 hover:border-[#0C5C6C]/30 transition-colors opacity-70">
-                    <span className="text-2xl grayscale">{l.icon}</span>
-                    <span className="text-sm font-semibold text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
-                      {l.label}
-                    </span>
-                    <span className="absolute top-2 right-2 text-xs bg-[#0C5C6C] text-white px-1.5 py-0.5 rounded-full font-bold">Pro</span>
-                  </Link>
-                );
-              }
-              return (
-                <Link key={l.href} href={l.href}
-                  className={`${l.bg} border ${l.border} rounded-2xl p-4 flex flex-col gap-2 hover:shadow-md transition-shadow`}>
-                  <span className="text-2xl">{l.icon}</span>
-                  <span className={`text-sm font-semibold ${l.text}`} style={{ fontFamily: 'Galey, sans-serif' }}>
-                    {l.label}
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
 
         <div>
           <div className="flex items-center justify-between mb-3">
