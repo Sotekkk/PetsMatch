@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
 import { uploadBlob } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
@@ -47,6 +48,7 @@ function isValidEmail(c: string) {
 
 export default function DeclarerPerduPage() {
   const { user, loading } = useAuth();
+  const activeProfileId = useActiveProfile();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -281,6 +283,7 @@ export default function DeclarerPerduPage() {
         contact_messagerie: contactMessagerie,
         numero_alerte: numeroAlerte,
         statut: 'perdu',
+        ...(activeProfileId ? { profile_id: activeProfileId } : {}),
       });
       router.push('/mes-alertes?success=1');
     } catch (err) {

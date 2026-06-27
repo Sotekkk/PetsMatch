@@ -46,11 +46,15 @@ class _MesAlertesPageState extends State<MesAlertesPage>
     if (uid.isEmpty) { setState(() => _loading = false); return; }
     setState(() => _loading = true);
     try {
-      final data = await _supa
+      final activePid = User_Info.activeProfileId;
+      var alertesQ = _supa
           .from('alertes_perdus')
           .select()
-          .eq('uid_proprietaire', uid)
-          .order('created_at', ascending: false);
+          .eq('uid_proprietaire', uid);
+      if (activePid.isNotEmpty) {
+        alertesQ = alertesQ.or('profile_id.eq.$activePid,profile_id.is.null');
+      }
+      final data = await alertesQ.order('created_at', ascending: false);
       if (mounted) setState(() { _alertes = List<Map<String, dynamic>>.from(data); _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -61,11 +65,15 @@ class _MesAlertesPageState extends State<MesAlertesPage>
     final uid = User_Info.uid;
     if (uid.isEmpty) return;
     try {
-      final data = await _supa
+      final activePid = User_Info.activeProfileId;
+      var trouvesQ = _supa
           .from('animaux_trouves')
           .select()
-          .eq('user_uid', uid)
-          .order('created_at', ascending: false);
+          .eq('user_uid', uid);
+      if (activePid.isNotEmpty) {
+        trouvesQ = trouvesQ.or('profile_id.eq.$activePid,profile_id.is.null');
+      }
+      final data = await trouvesQ.order('created_at', ascending: false);
       if (mounted) setState(() => _trouves = List<Map<String, dynamic>>.from(data));
     } catch (_) {}
   }

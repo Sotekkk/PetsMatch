@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 // ─── Structure Supabase alertes_perdus ────────────────────────────────────────
@@ -49,6 +50,7 @@ function genNumero() {
 
 export default function MesAlertesPage() {
   const { user, loading } = useAuth();
+  const activeProfileId = useActiveProfile();
   const router = useRouter();
   const [alertes, setAlertes] = useState<Alerte[]>([]);
   const [fetching, setFetching] = useState(true);
@@ -63,18 +65,21 @@ export default function MesAlertesPage() {
   async function fetchAlertes() {
     if (!user) return;
     try {
-      const { data } = await supabase
+      let query = supabase
         .from('alertes_perdus')
         .select('*')
-        .eq('uid_proprietaire', user.uid)
-        .order('created_at', { ascending: false });
+        .eq('uid_proprietaire', user.uid);
+      if (activeProfileId) {
+        query = query.or(`profile_id.eq.${activeProfileId},profile_id.is.null`);
+      }
+      const { data } = await query.order('created_at', { ascending: false });
       setAlertes((data as Alerte[]) ?? []);
     } catch { /* ignore */ } finally {
       setFetching(false);
     }
   }
 
-  useEffect(() => { fetchAlertes(); }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchAlertes(); }, [user, activeProfileId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRetrouve(id: string) {
     await supabase.from('alertes_perdus').update({

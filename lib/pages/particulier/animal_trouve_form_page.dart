@@ -382,6 +382,7 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
           ...payload,
           'user_uid': User_Info.uid,
           'statut':   'trouve',
+          if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,
         }).select('id').single();
 
         // Notify nearby owners of lost animals (fire-and-forget)

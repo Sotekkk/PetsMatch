@@ -585,6 +585,7 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
         'contact_messagerie':      _contactMessagerie,
         'numero_alerte':           _numeroAlerte,
         'statut':                  'perdu',
+        if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,
       };
 
       String? newAlertId;
