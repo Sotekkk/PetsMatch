@@ -21,6 +21,7 @@ import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_en_accueil_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_associations_benevole.dart';
+import 'package:PetsMatch/pages/nature/natural_places_page.dart';
 import 'package:PetsMatch/pages/petfriends/petfriends_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
@@ -280,6 +281,11 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
             label: 'Mes Associations',
             onTap: () => _push(const MesAssociationsBenevole()),
           ),
+        _DrawerItem(
+          icon: Icons.forest_outlined,
+          label: 'Lieux Naturels',
+          onTap: () => _push(const NaturalPlacesPage()),
+        ),
         _DrawerItem(
           icon: Icons.people_outline,
           label: 'Mes PetFriends',

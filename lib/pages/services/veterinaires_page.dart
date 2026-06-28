@@ -9,6 +9,7 @@ import 'package:PetsMatch/pages/communaute/forum_page.dart';
 import 'package:PetsMatch/pages/communaute/groupes_page.dart';
 import 'package:PetsMatch/pages/lieux/lieux_pet_friendly_page.dart';
 import 'package:PetsMatch/pages/petfriends/petfriends_page.dart';
+import 'package:PetsMatch/pages/nature/natural_places_page.dart';
 
 class VeterinairesPag extends StatelessWidget {
   const VeterinairesPag({super.key});
@@ -363,6 +364,12 @@ class _CommunautePageState extends State<CommunautePage> {
           title: 'Événements locaux',
           description: 'Rencontres et activités près de chez vous',
           onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const EvenementsPage())),
+        ),
+        _Section(
+          icon: Icons.forest_outlined,
+          title: 'Lieux Naturels',
+          description: 'Forêts, plages, parcs & lacs pet-friendly près de chez vous',
+          onTap: (ctx) => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const NaturalPlacesPage())),
         ),
       ],
     );

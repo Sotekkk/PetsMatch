@@ -67,6 +67,8 @@ class _MessagePageState extends State<MessagePage> {
     return 'particulier';
   }
 
+  static bool _purgeRanThisSession = false;
+
   @override
   void initState() {
     super.initState();
@@ -74,6 +76,10 @@ class _MessagePageState extends State<MessagePage> {
     _loadBlockedUsers();
     _loadConversations();
     _subscribeRealtime();
+    if (!_purgeRanThisSession) {
+      _purgeRanThisSession = true;
+      _autoPurge();
+    }
   }
 
   @override
@@ -161,6 +167,86 @@ class _MessagePageState extends State<MessagePage> {
     _loadConversations();
   }
 
+  // Purge automatique via RPC Supabase (SECURITY DEFINER → bypass RLS).
+  // Puis nettoyage Storage des images supprimées.
+  Future<void> _autoPurge() async {
+    if (_uid.isEmpty) return;
+    final cutoff = DateTime.now().toUtc().subtract(const Duration(days: 90));
+    try {
+      // 1. Récupère les image_url à nettoyer avant suppression
+      final convRows = await _supa
+          .from('conversations')
+          .select('id, updated_at')
+          .filter('participants', 'cs', '["$_uid"]');
+
+      final expiredIds = <String>[];
+      final activeIds  = <String>[];
+      for (final conv in convRows as List) {
+        // Archive protection : si la colonne archived_for existe dans _convs déjà chargée, on s'en sert
+        final cached = _convs.firstWhere(
+          (c) => c['id']?.toString() == conv['id']?.toString(),
+          orElse: () => {},
+        );
+        final archivedFor = (cached['archived_for'] as Map?) ?? {};
+        if (archivedFor[_uid] == true) continue;
+
+        final updatedAt = DateTime.tryParse(conv['updated_at']?.toString() ?? '')?.toUtc();
+        if (updatedAt == null) continue;
+        if (updatedAt.isBefore(cutoff)) {
+          expiredIds.add(conv['id'].toString());
+        } else {
+          activeIds.add(conv['id'].toString());
+        }
+      }
+
+      // 2. Collecte les URLs images avant suppression (pour nettoyage Storage)
+      final allTargetIds = [...expiredIds, ...activeIds];
+      List imgRows = [];
+      if (allTargetIds.isNotEmpty) {
+        final q = _supa.from('messages').select('image_url, conversation_id, created_at')
+            .inFilter('conversation_id', allTargetIds)
+            .eq('msg_type', 'image')
+            .not('image_url', 'is', null);
+        imgRows = await q;
+      }
+
+      // 3. Appel RPC avec les IDs déjà filtrés côté Flutter (pas de référence à archived_for en SQL)
+      await _supa.rpc('purge_old_messages', params: {
+        'p_expired_conv_ids': expiredIds,
+        'p_active_conv_ids':  activeIds,
+        'p_cutoff':           cutoff.toIso8601String(),
+      });
+
+      // 4. Nettoie Storage : images des conv expirées + vieux msgs des conv actives
+      final toCleanUrls = (imgRows).where((r) {
+        final convId    = r['conversation_id']?.toString() ?? '';
+        final createdAt = DateTime.tryParse(r['created_at']?.toString() ?? '')?.toUtc();
+        if (expiredIds.contains(convId)) return true;
+        if (activeIds.contains(convId) && createdAt != null && createdAt.isBefore(cutoff)) return true;
+        return false;
+      }).map((r) => r['image_url'] as String?).whereType<String>().toList();
+
+      await _cleanStorageUrls(toCleanUrls);
+
+      if (mounted) _loadConversations();
+    } catch (e) {
+      debugPrint('[autoPurge] erreur: $e');
+    }
+  }
+
+  Future<void> _cleanStorageUrls(List<String> urls) async {
+    for (final url in urls) {
+      if (url.isEmpty) continue;
+      try {
+        final segments = Uri.parse(url).pathSegments;
+        final idx = segments.indexOf('media');
+        if (idx >= 0 && idx < segments.length - 1) {
+          await _supa.storage.from('media').remove([segments.sublist(idx + 1).join('/')]);
+        }
+      } catch (_) {}
+    }
+  }
+
   Future<Map<String, dynamic>> _getJsonb(String convId, String col) async {
     final row = await _supa.from('conversations')
         .select(col).eq('id', convId).maybeSingle();
@@ -190,7 +276,7 @@ class _MessagePageState extends State<MessagePage> {
               label: isPinned ? 'Désépingler' : 'Épingler', color: _teal,
               onTap: () async { Navigator.pop(ctx); await _togglePin(id, isPinned); }),
             _Option(icon: isArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
-              label: isArchived ? 'Désarchiver' : 'Archiver', color: Colors.blueGrey,
+              label: isArchived ? 'Désarchiver' : 'Archiver (conserve indéfiniment)', color: Colors.blueGrey,
               onTap: () async { Navigator.pop(ctx); await _toggleArchive(id, isArchived); }),
             _Option(icon: isMuted ? Icons.notifications_outlined : Icons.notifications_off_outlined,
               label: isMuted ? 'Réactiver les notifications' : 'Mettre en sourdine (8h)',
@@ -209,7 +295,7 @@ class _MessagePageState extends State<MessagePage> {
               onTap: () async {
                 Navigator.pop(ctx);
                 final ok = await _confirm(ctx, 'Supprimer la conversation',
-                    "Cette conversation sera supprimée de votre liste. L'autre participant peut toujours y accéder.");
+                    "Cette conversation sera supprimée de votre liste. L'autre participant peut toujours y accéder.\n\nRappel : les conversations non archivées sont supprimées automatiquement après 3 mois.");
                 if (ok) await _delete(id);
               }),
             const SizedBox(height: 12),
@@ -427,6 +513,10 @@ class _MessagePageState extends State<MessagePage> {
         final lastMsg = data['last_message']?.toString() ?? '';
         final updatedAt = data['updated_at']?.toString();
         final unreadMap = data['unread_count'] as Map? ?? {};
+        final updatedAtDt = DateTime.tryParse(updatedAt ?? '');
+        final daysOld = updatedAtDt != null ? DateTime.now().difference(updatedAtDt).inDays : 0;
+        final daysLeft = 90 - daysOld;
+        final isExpiringSoon = activeCat != '__archived__' && daysOld >= 60 && daysOld < 90;
         final unread  = (unreadMap[uid] as int?) ?? 0;
         final shown   = isMuted ? 0 : unread;
 
@@ -525,6 +615,22 @@ class _MessagePageState extends State<MessagePage> {
                         child: Text(_catBadgeLabel[cat]!,
                           style: TextStyle(fontFamily: 'Galey', fontSize: 10,
                               color: _catBadgeText[cat], fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                    if (isExpiringSoon) ...[
+                      const SizedBox(height: 5),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.orange.shade200),
+                        ),
+                        child: Text(
+                          '⏳ Supprimée dans ${daysLeft}j sans activité · Archiver pour conserver',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                              color: Colors.orange.shade800, fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ],
                   ])),
