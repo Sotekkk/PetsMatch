@@ -50,9 +50,11 @@ class AnimalFichePage extends StatefulWidget {
   final bool readOnly;
   final bool vetMode;
   final bool isAssociation;
+  final bool showReproTab;
   final int? initialTabIndex;
   final String? eleveurUidOverride;
   final String? rdvId;
+  final Set<String>? employePerms;
 
   const AnimalFichePage({
     super.key,
@@ -62,9 +64,11 @@ class AnimalFichePage extends StatefulWidget {
     this.readOnly = false,
     this.vetMode = false,
     this.isAssociation = false,
+    this.showReproTab = false,
     this.initialTabIndex,
     this.eleveurUidOverride,
     this.rdvId,
+    this.employePerms,
   });
 
   @override
@@ -170,13 +174,18 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       _uidAcquereur != null &&
       _uidAcquereur == FirebaseAuth.instance.currentUser?.uid;
 
+  bool _tabReadOnly(String perm) {
+    if (widget.readOnly) return true;
+    if (widget.employePerms == null) return false;
+    return !widget.employePerms!.contains(perm);
+  }
+
   int get _tabCount {
     if (widget.vetMode) return 5;
     if (widget.isAssociation) return 4;
     if (_statut == 'sorti' && !_isNewOwner) return 2; // ancien proprio : Identité + Documents
-    // Acquéreur ou animal présent : onglets selon le rôle
-    if (!User_Info.isElevage && !User_Info.isAssociation) return 5; // particulier : sans Repro
-    return 6; // éleveur : tous les onglets
+    if (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab) return 5; // particulier : sans Repro
+    return 6; // éleveur / employé élevage : tous les onglets
   }
 
   @override
@@ -1371,7 +1380,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               onPressed: () => showVetShareSheet(context, widget.animalId!),
             ),
           if (widget.animalId != null && !widget.vetMode
-              && !widget.readOnly
+              && !widget.readOnly && widget.eleveurUidOverride == null
               && _statut != 'decede' && _statut != 'cession_en_cours'
               && (_statut != 'sorti' || _uidAcquereur == FirebaseAuth.instance.currentUser?.uid))
             IconButton(
@@ -1436,7 +1445,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')]
                   : (_statut == 'sorti' && !_isNewOwner
                       ? const [Tab(text: 'Identité'), Tab(text: 'Documents')]
-                      : (!User_Info.isElevage && !User_Info.isAssociation
+                      : (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab
                           ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Documents')]
                           : const [Tab(text: 'Identité'), Tab(text: 'Documents'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')])),
         ),
@@ -1447,7 +1456,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             ? [
                 _IdentiteTab(this),
                 _CarnetSanteTab(animalId: widget.animalId, vetMode: true),
-                _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
+                _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly('write_repro')),
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
                 _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
               ]
@@ -1463,7 +1472,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                         _IdentiteTab(this),
                         _DocumentsTab(animalId: widget.animalId ?? ''),
                       ]
-                    : (!User_Info.isElevage && !User_Info.isAssociation
+                    : (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab
                         ? [
                             _IdentiteTab(this),
                             _CarnetSanteTab(animalId: widget.animalId),
@@ -1474,7 +1483,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                         : [
                             _IdentiteTab(this),
                             _DocumentsTab(animalId: widget.animalId ?? ''),
-                            _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom),
+                            _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly('write_repro')),
                             _CarnetSanteTab(animalId: widget.animalId),
                             _AlimentationTab(this),
                             _ConsultationsOwnerTab(animalId: widget.animalId),
@@ -3518,7 +3527,8 @@ class _SuiviReproTab extends StatelessWidget {
   final String espece;
   final String sexe;
   final int? intervalleChaleursCustom;
-  const _SuiviReproTab({this.animalId, required this.espece, required this.sexe, this.intervalleChaleursCustom});
+  final bool readOnly;
+  const _SuiviReproTab({this.animalId, required this.espece, required this.sexe, this.intervalleChaleursCustom, this.readOnly = false});
 
   @override
   Widget build(BuildContext context) {
@@ -3532,19 +3542,19 @@ class _SuiviReproTab extends StatelessWidget {
 
     final views = isMale
         ? [_ReproList(
-            animalId: animalId!, collection: 'saillies',
+            animalId: animalId!, collection: 'saillies', readOnly: readOnly,
             addBuilder: (ctx) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe),
             editBuilder: (ctx, d) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe, existing: d),
           )]
         : [
-            _ChaleursTab(animalId: animalId!, espece: espece, intervalleCustom: intervalleChaleursCustom),
+            _ChaleursTab(animalId: animalId!, espece: espece, intervalleCustom: intervalleChaleursCustom, readOnly: readOnly),
             _ReproList(
-              animalId: animalId!, collection: 'saillies',
+              animalId: animalId!, collection: 'saillies', readOnly: readOnly,
               addBuilder: (ctx) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe),
               editBuilder: (ctx, d) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe, existing: d),
             ),
             _ReproList(
-              animalId: animalId!, collection: 'gestations',
+              animalId: animalId!, collection: 'gestations', readOnly: readOnly,
               addBuilder: (ctx) => _AddGestationDialog(animalId: animalId!, espece: espece),
               editBuilder: (ctx, d) => _AddGestationDialog(animalId: animalId!, espece: espece, existing: d),
             ),
@@ -3574,7 +3584,8 @@ class _ReproList extends StatefulWidget {
   final String collection;
   final Widget Function(BuildContext) addBuilder;
   final Widget Function(BuildContext, Map<String, dynamic>)? editBuilder;
-  const _ReproList({required this.animalId, required this.collection, required this.addBuilder, this.editBuilder});
+  final bool readOnly;
+  const _ReproList({required this.animalId, required this.collection, required this.addBuilder, this.editBuilder, this.readOnly = false});
   @override
   State<_ReproList> createState() => _ReproListState();
 }
@@ -3681,7 +3692,7 @@ class _ReproListState extends State<_ReproList> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
-      floatingActionButton: FloatingActionButton.small(
+      floatingActionButton: widget.readOnly ? null : FloatingActionButton.small(
         onPressed: () async {
           await showDialog(context: context, builder: widget.addBuilder);
           _refresh();
@@ -3705,12 +3716,13 @@ class _ReproListState extends State<_ReproList> {
                     return _SimpleCard(
                       data: d,
                       collection: widget.collection,
+                      readOnly: widget.readOnly,
                       onDelete: () => _delete(id),
-                      onEdit: widget.editBuilder != null ? () async {
+                      onEdit: widget.readOnly || widget.editBuilder == null ? null : () async {
                         await showDialog(context: context, builder: (ctx) => widget.editBuilder!(ctx, d));
                         _refresh();
-                      } : null,
-                      onConfirmGestation: (isGestation && !alreadyConfirmed)
+                      },
+                      onConfirmGestation: (isGestation && !alreadyConfirmed && !widget.readOnly)
                           ? () => _confirmGestation(id)
                           : null,
                     );
@@ -3979,8 +3991,9 @@ class _SimpleCard extends StatelessWidget {
   final VoidCallback? onEdit;
   final String? collection;
   final VoidCallback? onConfirmGestation;
+  final bool readOnly;
   const _SimpleCard({required this.data, required this.onDelete, this.onEdit,
-      this.collection, this.onConfirmGestation});
+      this.collection, this.onConfirmGestation, this.readOnly = false});
 
   static const _labels = {
     'nom_partenaire':   'Partenaire',
@@ -4085,7 +4098,7 @@ class _SimpleCard extends StatelessWidget {
                 },
               ),
             ),
-          if (onEdit != null)
+          if (!readOnly && onEdit != null)
             TextButton.icon(
               onPressed: () { Navigator.pop(context); onEdit!(); },
               icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF6E9E57)),
@@ -4123,6 +4136,7 @@ class _SimpleCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: confirmee ? const Color(0xFFEEF5EA) : const Color(0xFFFFF3CD),
+
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: confirmee ? const Color(0xFF6E9E57) : const Color(0xFFFFCC02)),
                   ),
@@ -4138,8 +4152,10 @@ class _SimpleCard extends StatelessWidget {
             ]),
             Row(mainAxisSize: MainAxisSize.min, children: [
               const Icon(Icons.chevron_right, size: 18, color: Color(0xFFBDBDBD)),
-              const SizedBox(width: 4),
-              IconButton(icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red), onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+              if (!readOnly) ...[
+                const SizedBox(width: 4),
+                IconButton(icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red), onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+              ],
             ]),
           ]),
           ...data.entries
@@ -5607,7 +5623,8 @@ class _ChaleursTab extends StatefulWidget {
   final String animalId;
   final String espece;
   final int? intervalleCustom;
-  const _ChaleursTab({required this.animalId, required this.espece, this.intervalleCustom});
+  final bool readOnly;
+  const _ChaleursTab({required this.animalId, required this.espece, this.intervalleCustom, this.readOnly = false});
   @override State<_ChaleursTab> createState() => _ChaleursTabState();
 }
 
@@ -5703,7 +5720,7 @@ class _ChaleursTabState extends State<_ChaleursTab> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
-      floatingActionButton: FloatingActionButton.small(
+      floatingActionButton: widget.readOnly ? null : FloatingActionButton.small(
         backgroundColor: const Color(0xFF6E9E57),
         onPressed: () async {
           await showDialog(context: context, builder: (_) =>
@@ -5719,7 +5736,7 @@ class _ChaleursTabState extends State<_ChaleursTab> {
             _NextHeatBanner(nextHeat: nextHeat, espece: widget.espece),
           // Intervalle row
           GestureDetector(
-            onTap: _editIntervalle,
+            onTap: widget.readOnly ? null : _editIntervalle,
             child: Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -5751,8 +5768,9 @@ class _ChaleursTabState extends State<_ChaleursTab> {
             ..._data.map((d) => _SimpleCard(
               data: d,
               collection: 'chaleurs',
+              readOnly: widget.readOnly,
               onDelete: () => _delete(d['id']?.toString() ?? ''),
-              onEdit: () async {
+              onEdit: widget.readOnly ? null : () async {
                 await showDialog(context: context, builder: (_) =>
                     _AddChaleursDialog(animalId: widget.animalId, espece: widget.espece, intervalleCustom: _intervalleCustom, existing: d));
                 _load();

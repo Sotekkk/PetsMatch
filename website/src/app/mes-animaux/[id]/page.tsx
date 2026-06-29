@@ -707,9 +707,10 @@ interface SuiviReproTabProps {
   deleteRepro: (table: string, id: string) => Promise<void>;
   intervalleCustom: number | null;
   onSaveIntervalleCustom: (val: number | null) => Promise<void>;
+  readOnly?: boolean;
 }
 
-function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIdent, chaleurs, saillies, gestations, reproAdd, setReproAdd, savingRepro, saveRepro, saveSaillie, updateRepro, deleteRepro, intervalleCustom, onSaveIntervalleCustom }: SuiviReproTabProps) {
+function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIdent, chaleurs, saillies, gestations, reproAdd, setReproAdd, savingRepro, saveRepro, saveSaillie, updateRepro, deleteRepro, intervalleCustom, onSaveIntervalleCustom, readOnly = false }: SuiviReproTabProps) {
   const subtabs = isMale
     ? [{ key: 'saillies', label: 'Saillies' }]
     : [{ key: 'chaleurs', label: 'Chaleurs' }, { key: 'saillies', label: 'Saillies' }, { key: 'gestations', label: 'Gestations' }];
@@ -774,12 +775,12 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
           <div className="flex justify-between items-center">
             <h3 className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey,sans-serif' }}>Chaleurs</h3>
             <div className="flex gap-2">
-              <button onClick={() => { setIntervalInput(String(intervalleCustom ?? CHALEURS_INTERVAL[espece] ?? '')); setShowIntervalModal(true); }}
+              {!readOnly && <button onClick={() => { setIntervalInput(String(intervalleCustom ?? CHALEURS_INTERVAL[espece] ?? '')); setShowIntervalModal(true); }}
                 className="text-sm border border-[#0C5C6C] text-[#0C5C6C] font-semibold px-3 py-1.5 rounded-full hover:bg-[#0C5C6C]/10">
                 ⏱ Intervalle
-              </button>
-              <button onClick={() => { setReproAdd(reproAdd === 'chaleurs' ? null : 'chaleurs'); setEditId(null); }}
-                className="text-sm bg-[#0C5C6C] text-white font-semibold px-3 py-1.5 rounded-full hover:bg-[#094F5D]">+ Ajouter</button>
+              </button>}
+              {!readOnly && <button onClick={() => { setReproAdd(reproAdd === 'chaleurs' ? null : 'chaleurs'); setEditId(null); }}
+                className="text-sm bg-[#0C5C6C] text-white font-semibold px-3 py-1.5 rounded-full hover:bg-[#094F5D]">+ Ajouter</button>}
             </div>
           </div>
           {intervalleCustom != null && (
@@ -852,7 +853,7 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
                     {!!r.notes && <p className="text-xs text-gray-400">{String(r.notes)}</p>}
                     <p className="text-xs text-[#0C5C6C] mt-1">Modifier →</p>
                   </div>
-                  <button onClick={() => deleteRepro('chaleurs', r.id)} className="text-red-300 hover:text-red-500 text-lg">×</button>
+                  {!readOnly && <button onClick={() => deleteRepro('chaleurs', r.id)} className="text-red-300 hover:text-red-500 text-lg">×</button>}
                 </div>
               )}
             </div>
@@ -864,8 +865,8 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
         <div className="space-y-3">
           <div className="flex justify-between items-center">
             <h3 className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey,sans-serif' }}>Saillies</h3>
-            <button onClick={() => { setReproAdd(reproAdd === 'saillies' ? null : 'saillies'); setEditId(null); }}
-              className="text-sm bg-[#0C5C6C] text-white font-semibold px-3 py-1.5 rounded-full hover:bg-[#094F5D]">+ Ajouter</button>
+            {!readOnly && <button onClick={() => { setReproAdd(reproAdd === 'saillies' ? null : 'saillies'); setEditId(null); }}
+              className="text-sm bg-[#0C5C6C] text-white font-semibold px-3 py-1.5 rounded-full hover:bg-[#094F5D]">+ Ajouter</button>}
           </div>
           {reproAdd === 'saillies' && (
             <div className="bg-white rounded-2xl p-4 shadow-sm">
@@ -890,7 +891,7 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
                     {!!r.notes && <p className="text-xs text-gray-400">{String(r.notes)}</p>}
                     <p className="text-xs text-[#0C5C6C] mt-1">Modifier →</p>
                   </div>
-                  <button onClick={() => deleteRepro('saillies', r.id)} className="text-red-300 hover:text-red-500 text-lg">×</button>
+                  {!readOnly && <button onClick={() => deleteRepro('saillies', r.id)} className="text-red-300 hover:text-red-500 text-lg">×</button>}
                 </div>
               )}
             </div>
@@ -902,8 +903,8 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
         <div className="space-y-3">
           <div className="flex justify-between items-center">
             <h3 className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey,sans-serif' }}>Gestations</h3>
-            <button onClick={() => { setReproAdd(reproAdd === 'gestations' ? null : 'gestations'); setEditId(null); }}
-              className="text-sm bg-[#0C5C6C] text-white font-semibold px-3 py-1.5 rounded-full hover:bg-[#094F5D]">+ Ajouter</button>
+            {!readOnly && <button onClick={() => { setReproAdd(reproAdd === 'gestations' ? null : 'gestations'); setEditId(null); }}
+              className="text-sm bg-[#0C5C6C] text-white font-semibold px-3 py-1.5 rounded-full hover:bg-[#094F5D]">+ Ajouter</button>}
           </div>
           {reproAdd === 'gestations' && (
             <div className="bg-white rounded-2xl p-4 shadow-sm">
@@ -936,7 +937,7 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
                     {!!r.notes && <p className="text-xs text-gray-400">{String(r.notes)}</p>}
                     <p className="text-xs text-[#0C5C6C] mt-1">Modifier →</p>
                   </div>
-                  <button onClick={() => deleteRepro('gestations', r.id)} className="text-red-300 hover:text-red-500 text-lg">×</button>
+                  {!readOnly && <button onClick={() => deleteRepro('gestations', r.id)} className="text-red-300 hover:text-red-500 text-lg">×</button>}
                 </div>
               )}
             </div>
@@ -1114,6 +1115,8 @@ export default function AnimalFichePage() {
   const [gestations, setGestations] = useState<HealthRecord[]>([]);
   const [reproAdd, setReproAdd] = useState<string|null>(null);
   const [savingRepro, setSavingRepro] = useState(false);
+  const [isEmployeOfOwner, setIsEmployeOfOwner] = useState(false);
+  const [employePerms, setEmployePerms] = useState<string[]>([]);
 
   // ── État documents
   const [uploading, setUploading] = useState(false);
@@ -1133,9 +1136,43 @@ export default function AnimalFichePage() {
   const loadAnimal = useCallback(async () => {
     if (!user || isNew) return;
     const { data } = await supabase.from('animaux').select('*').eq('id', id).single();
-    if (data) { setAnimal(data as Animal); }
+    if (data) {
+      setAnimal(data as Animal);
+      if (data.uid_eleveur && data.uid_eleveur !== user.uid) {
+        // Cherche la relation employé en essayant d'abord par uid, puis par profile_id
+        let empRow: { id: string; eleveur_profile_id: string | null } | null = null;
+
+        const { data: r1 } = await supabase.from('employes')
+          .select('id, eleveur_profile_id')
+          .eq('uid_eleveur', data.uid_eleveur).eq('uid_employe', user.uid).eq('actif', true).maybeSingle();
+        empRow = r1 ?? null;
+
+        // Fallback : vérification par employe_profile_id (pour les lignes sans uid_employe)
+        if (!empRow && activeProfileId) {
+          const { data: allEmpRows } = await supabase.from('employes')
+            .select('id, eleveur_profile_id, uid_eleveur')
+            .eq('employe_profile_id', activeProfileId)
+            .eq('actif', true);
+          const matched = (allEmpRows ?? []).find(
+            (r: { uid_eleveur: string; eleveur_profile_id: string | null }) => r.uid_eleveur === data.uid_eleveur
+          );
+          empRow = matched ?? null;
+        }
+
+        if (empRow) {
+          setIsEmployeOfOwner(true);
+          if (empRow.eleveur_profile_id && activeProfileId) {
+            const { data: permsRows } = await supabase.from('employe_permissions')
+              .select('permission')
+              .eq('eleveur_profile_id', empRow.eleveur_profile_id)
+              .eq('employe_profile_id', activeProfileId);
+            setEmployePerms((permsRows ?? []).map((r: { permission: string }) => r.permission));
+          }
+        }
+      }
+    }
     setLoading(false);
-  }, [id, user, isNew]);
+  }, [id, user, isNew, activeProfileId]);
 
   const loadHealth = useCallback(async () => {
     if (!id || isNew) return;
@@ -1149,7 +1186,7 @@ export default function AnimalFichePage() {
   }, [id, isNew]);
 
   const loadRepro = useCallback(async () => {
-    if (!id || isNew || !isEleveur) return;
+    if (!id || isNew || (!isEleveur && !isEmployeOfOwner)) return;
     const [ch, sa, ge] = await Promise.all([
       supabase.from('chaleurs').select('*').eq('animal_id', id).order('date', { ascending: false }),
       supabase.from('saillies').select('*').eq('animal_id', id).order('date', { ascending: false }),
@@ -1158,7 +1195,7 @@ export default function AnimalFichePage() {
     setChaleurs((ch.data ?? []) as HealthRecord[]);
     setSaillies((sa.data ?? []) as HealthRecord[]);
     setGestations((ge.data ?? []) as HealthRecord[]);
-  }, [id, isNew, isEleveur]);
+  }, [id, isNew, isEleveur, isEmployeOfOwner]);
 
   const loadAlerte = useCallback(async () => {
     if (!id || isNew) return;
@@ -1612,13 +1649,17 @@ export default function AnimalFichePage() {
   const isAcquereur = !!user && user.uid === animal.uid_acquereur;
   // isOwner : propriétaire original OU acquéreur après cession confirmée
   const isOwner = !!user && (user.uid === animal.uid_eleveur || isAcquereur);
+  // canWrite : propriétaire OU employé avec write_animaux
+  const canWrite = isOwner || (isEmployeOfOwner && employePerms.includes('write_animaux'));
+  // canWriteSante : propriétaire OU employé avec write_sante (ou write_animaux)
+  const canWriteSante = isOwner || (isEmployeOfOwner && (employePerms.includes('write_sante') || employePerms.includes('write_animaux')));
   // isCede du point de vue de l'éleveur original (pas de l'acquéreur qui a les droits d'écriture)
   const isCede = (animal.statut === 'sorti' || animal.statut === 'decede') && !isAcquereur;
   const isOriginalBreeder = isEleveur && !!user && user.uid === animal.uid_eleveur;
   // Animal cédé vu par l'éleveur d'origine → lecture seule, juste Identité
   const tabs = (isCede && isOriginalBreeder && !isAcquereur)
     ? [{ key:'identite', label:'Identité' }, { key:'documents', label:'Documents' }]
-    : isEleveur
+    : (isEleveur || isEmployeOfOwner)
     ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet Santé' }, { key:'repro', label:'Suivi Repro' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }, { key:'documents', label:'Documents' }]
     : [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet de santé' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }, { key:'documents', label:'Documents' }];
 
@@ -1657,13 +1698,13 @@ export default function AnimalFichePage() {
                 🤝 Céder
               </button>
             )}
-            {isOwner && !isCede && animal.statut !== 'cession_en_cours' && (
+            {canWrite && !isCede && animal.statut !== 'cession_en_cours' && (
               <button onClick={() => setEditing(true)}
                 className="text-sm text-[#0C5C6C] font-semibold border border-[#0C5C6C]/30 rounded-full px-3 py-1.5 hover:bg-[#0C5C6C]/5">
                 Modifier
               </button>
             )}
-            {isEleveur && !isOwner && (
+            {(isEleveur || isEmployeOfOwner) && !canWrite && !isCede && (
               <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-3 py-1.5">
                 Lecture seule
               </span>
@@ -2373,7 +2414,7 @@ export default function AnimalFichePage() {
         <div className="space-y-3">
           {/* Vaccinations */}
           <HealthSection title="Vaccinations" icon="💉" color="#2196F3" count={health.vaccinations.length}
-            onAdd={()=>setAddOpen(addOpen==='vaccinations'?null:'vaccinations')}
+            onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='vaccinations'?null:'vaccinations') : undefined}
             addFormOpen={addOpen==='vaccinations'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
               onSave={d=>saveHealthRecord('vaccinations',d)}
@@ -2387,7 +2428,7 @@ export default function AnimalFichePage() {
 
           {/* Vermifuges */}
           <HealthSection title="Vermifuges" icon="🧪" color="#6E9E57" count={health.vermifuges.length}
-            onAdd={()=>setAddOpen(addOpen==='vermifuges'?null:'vermifuges')}
+            onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='vermifuges'?null:'vermifuges') : undefined}
             addFormOpen={addOpen==='vermifuges'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
               onSave={d=>saveHealthRecord('vermifuges',d)}
@@ -2401,7 +2442,7 @@ export default function AnimalFichePage() {
 
           {/* Antiparasitaires */}
           <HealthSection title="Antiparasitaires" icon="🛡️" color="#5B8648" count={health.antiparasitaires.length}
-            onAdd={()=>setAddOpen(addOpen==='antiparasitaires'?null:'antiparasitaires')}
+            onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='antiparasitaires'?null:'antiparasitaires') : undefined}
             addFormOpen={addOpen==='antiparasitaires'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
               onSave={d=>saveHealthRecord('antiparasitaires',d)}
@@ -2415,7 +2456,7 @@ export default function AnimalFichePage() {
 
           {/* Traitements */}
           <HealthSection title="Traitements" icon="💊" color="#8D6E63" count={health.traitements.length}
-            onAdd={()=>setAddOpen(addOpen==='traitements'?null:'traitements')}
+            onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='traitements'?null:'traitements') : undefined}
             addFormOpen={addOpen==='traitements'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
               onSave={d=>saveHealthRecord('traitements',d)}
@@ -2429,7 +2470,7 @@ export default function AnimalFichePage() {
 
           {/* Allergies */}
           <HealthSection title="Allergies" icon="⚠️" color="#E25C5C" count={health.allergies.length}
-            onAdd={()=>setAddOpen(addOpen==='allergies'?null:'allergies')}
+            onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='allergies'?null:'allergies') : undefined}
             addFormOpen={addOpen==='allergies'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
               onSave={d=>saveHealthRecord('allergies',d)}
@@ -2443,7 +2484,7 @@ export default function AnimalFichePage() {
 
           {/* Poids */}
           <HealthSection title="Courbe de poids" icon="⚖️" color="#5F9EAA" count={health.poids.length}
-            onAdd={()=>setAddOpen(addOpen==='poids'?null:'poids')}
+            onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='poids'?null:'poids') : undefined}
             addFormOpen={addOpen==='poids'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
               onSave={d=>saveHealthRecord('poids',d)}
@@ -2493,7 +2534,7 @@ export default function AnimalFichePage() {
 
           {/* Visites vétérinaires */}
           <HealthSection title="Visites vétérinaires" icon="🏥" color="#26A69A" count={health.visites.length}
-            onAdd={()=>setAddOpen(addOpen==='visites'?null:'visites')}
+            onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='visites'?null:'visites') : undefined}
             addFormOpen={addOpen==='visites'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
               onSave={d=>saveHealthRecord('visites',d)}
@@ -2543,8 +2584,8 @@ export default function AnimalFichePage() {
         </div>
       )}
 
-      {/* ── TAB SUIVI REPRO (éleveur) ─────────────────────────────────────── */}
-      {tab === 'repro' && isEleveur && (
+      {/* ── TAB SUIVI REPRO (éleveur + employé avec accès repro) ────────── */}
+      {tab === 'repro' && (isEleveur || isEmployeOfOwner) && (
         <SuiviReproTab
           isMale={isMale}
           espece={animal.espece ?? 'chien'}
@@ -2567,6 +2608,7 @@ export default function AnimalFichePage() {
             await supabase.from('animaux').update({ intervalle_chaleurs_jours: val }).eq('id', id ?? '');
             setAnimal(prev => ({ ...prev, intervalle_chaleurs_jours: val }));
           }}
+          readOnly={isEmployeOfOwner && !employePerms.includes('write_repro')}
         />
       )}
 

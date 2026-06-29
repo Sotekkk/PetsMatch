@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-06-26 — §15 messagerie Firestore→Supabase, §16 Lieux Pet-Friendly (PFP01-PFP40), fix profil éleveur Natacha  
+> Dernière mise à jour : 2026-06-29 — §5 permissions granulaires `employe_permissions` (write_animaux/sante/repro/planning/inventaire/notes) app+web, fix animaux bénévole/employé via `profile_id_proprio`  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -688,19 +688,28 @@ CREATE TABLE historique_lieux_hebergement (
 | `soigneur` | Ses animaux | Fiches animaux | Son planning | ❌ | ❌ | ❌ |
 | `benevole` | Ses animaux | Rapports basiques | Ses créneaux | ❌ | ❌ | ❌ |
 
-**Permissions JSONB (table `employes.permissions`) — ✅ Implémenté (2026-06-23)**
+**Permissions granulaires (table `employe_permissions`) — ✅ Implémenté (2026-06-29)**
 
-| Clé | Valeur | Effet |
-|-----|--------|-------|
-| `modifier_animaux` | `true` | Peut éditer les fiches animaux |
-| `modifier_animaux` | absent/false | Lecture seule sur les fiches animaux |
-| `gerer_taches` | `true` | Peut créer/modifier des tâches |
+Clés : `eleveur_profile_id` + `employe_profile_id` + `permission` (une ligne par permission accordée)
+
+| Permission | Effet App | Effet Web |
+|---|---|---|
+| `write_animaux` | `readOnly: false` sur fiche animal | Bouton "Modifier" identité visible |
+| `write_sante` | idem (inclus dans `write_animaux`) | Boutons `+` Carnet Santé actifs |
+| `write_repro` | Onglet Repro éditable (`_tabReadOnly`) | Onglet Repro éditable |
+| `write_planning` | Créer/modifier tâches | Créer/modifier tâches |
+| `write_inventaire` | Gérer inventaire | Gérer inventaire |
+| `write_notes` | Ajouter notes | Ajouter notes |
+
+**UI d'attribution des permissions :**
+- App mobile : bouton ⚙️ "Gérer les accès" sur chaque employé → bottom sheet avec toggles → écrit dans `employe_permissions`
+- Web : à implémenter dans `/elevage/employes`
 
 **Comportement implémenté :**
-- Employé : tap sur un animal dans `MesEmployeurs` → fiche en `readOnly: perms['modifier_animaux'] != true`
-- Bénévole : tap sur un animal dans `MesAssociations` → fiche en `readOnly: true` (toujours)
+- Employé : tap sur un animal dans `MesEmployeurs` → `readOnly = !perms.contains('write_animaux')`
+- Bénévole : animaux association dans `MesAssociations` → filtrés par `animaux_proprietes.profile_id_proprio = eleveur_profile_id`
 - Cession/Adoption : **bloquée** pour employés et bénévoles (bouton masqué)
-- Profil mixte : les animaux élevage et les animaux association sont séparés (filtre `is_association`)
+- Profil mixte : animaux élevage séparés des animaux association via `profile_id_proprio` dans `animaux_proprietes` (pas `is_association`)
 
 ### 5.3 Invitation et onboarding — ✅ Implémenté (in-app)
 
@@ -969,7 +978,7 @@ Phase 4 — Améliorations
 | PLAN02 | Planning chenil semaine | 🔜 | ✅ onglet chenil | 🔜 |
 | PLAN03 | Auto RDV → chambre | 🔜 | 🔜 | ❌ |
 | PLAN04 | Stats occupation | 🔜 | 🔜 | 🔜 |
-| EMP01 | Invitation employés | ✅ `employes_page` (onglets animaux/tâches, tap fiche readOnly) | ✅ `/employes` (exclut bénévoles, tap /mes-animaux/:id) | 🔜 |
+| EMP01 | Invitation + permissions employés | ✅ `employes_page` + `_PermissionsSheet` (table `employe_permissions`) | ✅ `/mes-animaux/:id` (canWrite, canWriteSante, write_repro) | ❌ UI permissions web à faire |
 | BEN01 | Gestion bénévoles | ✅ `mes_associations_benevole` (onglets animaux/tâches, tap readOnly) | ✅ `/mes-associations` (animaux cliquables → fiche) | ❌ |
 | EMP02 | Planning soigneurs | 🔜 | 🔜 | ❌ |
 | EMP03 | Affectation soigneurs | 🔜 | 🔜 | ❌ |

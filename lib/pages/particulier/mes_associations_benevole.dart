@@ -30,73 +30,133 @@ class _MesAssociationsBenevoleState extends State<MesAssociationsBenevole> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      final rows = await _supa.from('employes')
-          .select('uid_eleveur')
-          .eq('uid_employe', _uid).eq('type', 'benevole').eq('actif', true)
-          .order('created_at');
+      // Chercher par employe_profile_id (plus fiable), fallback uid_employe
+      final myProfileData = await _supa.from('user_profiles')
+          .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+      final myProfileId = myProfileData?['id'] as String?;
 
-      // Déduplique
+      List rows;
+      if (myProfileId != null) {
+        rows = await _supa.from('employes')
+            .select('uid_eleveur, eleveur_profile_id')
+            .eq('employe_profile_id', myProfileId).eq('type', 'benevole').eq('actif', true)
+            .order('created_at');
+      } else {
+        rows = await _supa.from('employes')
+            .select('uid_eleveur, eleveur_profile_id')
+            .eq('uid_employe', _uid).eq('type', 'benevole').eq('actif', true)
+            .order('created_at');
+      }
+
+      // Déduplique par uid_eleveur
       final seenUids = <String>{};
-      final uids = <String>[];
+      final empRows = <Map<String, dynamic>>[];
       for (final r in rows as List) {
         final uid = r['uid_eleveur'] as String;
-        if (seenUids.add(uid)) uids.add(uid);
+        if (seenUids.add(uid)) empRows.add(r as Map<String, dynamic>);
       }
-      if (uids.isEmpty) {
+      if (empRows.isEmpty) {
         if (mounted) setState(() { _assos = []; _loading = false; });
         return;
       }
 
-      const statutsActifs = ['disponible', 'en_soin', 'present'];
+      final uids = empRows.map((r) => r['uid_eleveur'] as String).toList();
+
       final pastStr   = DateTime.now().subtract(const Duration(days: 7)).toIso8601String().substring(0, 10);
       final futureStr = DateTime.now().add(const Duration(days: 90)).toIso8601String().substring(0, 10);
 
+      // eleveur_profile_id dans employes EST le profile_id_proprio à utiliser directement
+      final eleveurProfileIds = empRows
+          .map((r) => r['eleveur_profile_id'] as String?)
+          .whereType<String>().toList();
+      // Inverse : profile_id → uid_eleveur
+      final pidToUid = <String, String>{
+        for (final r in empRows)
+          if (r['eleveur_profile_id'] != null)
+            r['eleveur_profile_id'] as String: r['uid_eleveur'] as String,
+      };
+
+      // Profils pour les noms/avatars : query par ID direct
+      final profileByPid = <String, Map<String, dynamic>>{};
+      if (eleveurProfileIds.isNotEmpty) {
+        final pRows = await _supa.from('user_profiles')
+            .select('id, uid, name_elevage, profile_label, nom, avatar_url, ville')
+            .inFilter('id', eleveurProfileIds) as List;
+        for (final p in pRows) {
+          profileByPid[p['id'] as String] = p as Map<String, dynamic>;
+        }
+      }
+
+      final tachesAssigneFilter = myProfileId != null ? 'assigne_profile_id' : 'assigne_a';
+      final tachesAssigneValue  = myProfileId ?? _uid;
+      final planAssigneFilter   = myProfileId != null ? 'assigned_profile_id' : 'assigned_to';
+      final planAssigneValue    = myProfileId ?? _uid;
+
       final results = await Future.wait([
-        _supa.from('user_profiles')
-            .select('uid, name_elevage, profile_label, avatar_url, ville')
-            .inFilter('uid', uids).eq('profile_type', 'association'),
         _supa.from('users')
             .select('uid, firstname, lastname, name_elevage, profile_picture_url, ville')
             .inFilter('uid', uids),
-        _supa.from('animaux')
-            .select('id, nom, espece, race, photo_url, uid_eleveur')
-            .inFilter('uid_eleveur', uids).eq('is_association', true)
-            .inFilter('statut', statutsActifs).order('nom'),
         _supa.from('taches_elevage')
             .select('id, titre, date, statut, animal_id, uid_eleveur')
-            .inFilter('uid_eleveur', uids).eq('assigne_a', _uid).neq('statut', 'fait').order('date'),
+            .inFilter('uid_eleveur', uids).eq(tachesAssigneFilter, tachesAssigneValue).neq('statut', 'fait').order('date'),
         _supa.from('plan_taches')
             .select('id, label, date_prevue, statut, animal_id, uid_eleveur')
-            .inFilter('uid_eleveur', uids).eq('assigned_to', _uid).neq('statut', 'fait')
+            .inFilter('uid_eleveur', uids).eq(planAssigneFilter, planAssigneValue).neq('statut', 'fait')
             .gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue'),
       ]);
 
-      final secProfiles = results[0] as List;
-      final primaryUsers = results[1] as List;
-      final animaux     = results[2] as List;
-      final taches      = results[3] as List;
-      final planTaches  = results[4] as List;
+      final primaryUsers = results[0] as List;
+      final taches      = results[1] as List;
+      final planTaches  = results[2] as List;
 
-      final secMap = <String, Map<String, dynamic>>{
-        for (final p in secProfiles) p['uid'] as String: p as Map<String, dynamic>,
-      };
+      // Animaux : animaux_proprietes WHERE profile_id_proprio = eleveur_profile_id
+      final animalsByUid = <String, List<Map<String, dynamic>>>{};
+      if (eleveurProfileIds.isNotEmpty) {
+        final apRows = await _supa.from('animaux_proprietes')
+            .select('animal_id, profile_id_proprio')
+            .inFilter('profile_id_proprio', eleveurProfileIds)
+            .isFilter('date_fin', null) as List;
+        final animalIds = apRows.map((r) => r['animal_id']?.toString()).whereType<String>().toSet().toList();
+        if (animalIds.isNotEmpty) {
+          final animaux = await _supa.from('animaux')
+              .select('id, nom, espece, race, photo_url')
+              .inFilter('id', animalIds)
+              .not('statut', 'in', '("sorti","decede")')
+              .order('nom') as List;
+          for (final a in animaux) {
+            final animalId = a['id']?.toString();
+            final ap = apRows.firstWhere(
+              (r) => r['animal_id']?.toString() == animalId,
+              orElse: () => <String, dynamic>{},
+            );
+            final ownerUid = ap.isNotEmpty ? pidToUid[ap['profile_id_proprio'] as String?] : null;
+            if (ownerUid != null) {
+              animalsByUid.putIfAbsent(ownerUid, () => []).add(a as Map<String, dynamic>);
+            }
+          }
+        }
+      }
 
       final result = <Map<String, dynamic>>[];
-      for (final uid in uids) {
-        final sec = secMap[uid];
+      for (final r in empRows) {
+        final uid = r['uid_eleveur'] as String;
+        final pid = r['eleveur_profile_id'] as String?;
+        final sec = pid != null ? profileByPid[pid] : null;
         final pu = primaryUsers.firstWhere((u) => u['uid'] == uid, orElse: () => <String, dynamic>{}) as Map<String, dynamic>;
-        final nom = (sec != null
-            ? ((sec['name_elevage'] as String? ?? '').trim().isNotEmpty
-                ? sec['name_elevage'] as String
-                : (sec['profile_label'] as String? ?? ''))
-            : ((pu['name_elevage'] as String? ?? '').trim().isNotEmpty
-                ? pu['name_elevage'] as String
-                : '${pu['firstname'] ?? ''} ${pu['lastname'] ?? ''}'.trim()))
-            .trim();
+
+        final nom = ((sec?['profile_label'] as String? ?? '').trim().isNotEmpty
+            ? sec!['profile_label'] as String
+            : (sec?['nom'] as String? ?? '').trim().isNotEmpty
+                ? sec!['nom'] as String
+                : (sec?['name_elevage'] as String? ?? '').trim().isNotEmpty
+                    ? sec!['name_elevage'] as String
+                    : (pu['name_elevage'] as String? ?? '').trim().isNotEmpty
+                        ? pu['name_elevage'] as String
+                        : '${pu['firstname'] ?? ''} ${pu['lastname'] ?? ''}'.trim());
         final avatar = sec?['avatar_url'] as String? ?? pu['profile_picture_url'] as String?;
         final ville  = sec?['ville'] as String? ?? pu['ville'] as String?;
 
-        final anims = animaux.where((a) => a['uid_eleveur'] == uid).toList();
+        final anims = animalsByUid[uid] ?? [];
         final allTaches = [
           ...taches.where((t) => t['uid_eleveur'] == uid).map((t) => {...t, 'source': 'manuel', 'date': t['date']}),
           ...planTaches.where((t) => t['uid_eleveur'] == uid).map((t) => {...t, 'source': 'protocole', 'titre': t['label'] ?? 'Tâche', 'date': t['date_prevue']}),

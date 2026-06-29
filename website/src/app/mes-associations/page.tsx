@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 interface Animal {
   id: string;
@@ -27,6 +28,7 @@ interface Tache {
 
 interface Asso {
   uid: string;
+  eleveur_profile_id: string | null;
   nom: string;
   avatar: string | null;
   ville: string | null;
@@ -41,6 +43,7 @@ function formatDate(d: string) {
 
 export default function MesAssociationsPage() {
   const { user, loading: authLoading } = useAuth();
+  const profileId = useActiveProfile();
   const router = useRouter();
   const [assos, setAssos] = useState<Asso[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,48 +57,89 @@ export default function MesAssociationsPage() {
     if (!user) return;
     setLoading(true);
 
-    const { data: rows } = await supabase
-      .from('employes')
-      .select('uid_eleveur')
-      .eq('uid_employe', user.uid)
-      .eq('type', 'benevole')
-      .eq('actif', true);
+    // Chercher par employe_profile_id d'abord, fallback uid_employe
+    const empQ = profileId
+      ? supabase.from('employes').select('uid_eleveur, eleveur_profile_id').eq('employe_profile_id', profileId).eq('type', 'benevole').eq('actif', true)
+      : supabase.from('employes').select('uid_eleveur, eleveur_profile_id').eq('uid_employe', user.uid).eq('type', 'benevole').eq('actif', true);
+    const { data: rows } = await empQ;
 
     if (!rows || rows.length === 0) { setLoading(false); return; }
 
-    // Déduplique les uid_eleveur
-    const uids = [...new Set(rows.map(r => r.uid_eleveur as string))];
+    // Déduplique par uid_eleveur
+    const seen = new Set<string>();
+    const empRows = rows.filter(r => {
+      if (seen.has(r.uid_eleveur)) return false;
+      seen.add(r.uid_eleveur);
+      return true;
+    });
+
+    const uids = empRows.map(r => r.uid_eleveur as string);
+    // eleveur_profile_id dans employes EST le profile_id_proprio à utiliser directement
+    const eleveurProfileIds = empRows.map(r => r.eleveur_profile_id as string).filter(Boolean);
+    // Inverse : profile_id → uid_eleveur
+    const pidToUid: Record<string, string> = {};
+    empRows.forEach(r => { if (r.eleveur_profile_id) pidToUid[r.eleveur_profile_id] = r.uid_eleveur; });
 
     const past = new Date(); past.setDate(past.getDate() - 7);
     const future = new Date(); future.setDate(future.getDate() + 90);
     const pastStr   = past.toISOString().slice(0, 10);
     const futureStr = future.toISOString().slice(0, 10);
 
+    // Profils pour les noms/avatars : query par ID direct (pas par profile_type)
+    type ProfileRow = { id: string; uid: string; name_elevage: string | null; profile_label: string | null; nom: string | null; avatar_url: string | null; ville: string | null };
+    const profileByPid: Record<string, ProfileRow> = {};
+    if (eleveurProfileIds.length > 0) {
+      const { data: pRows } = await supabase.from('user_profiles')
+        .select('id, uid, name_elevage, profile_label, nom, avatar_url, ville')
+        .in('id', eleveurProfileIds) as unknown as { data: ProfileRow[] | null };
+      for (const p of pRows ?? []) { profileByPid[p.id] = p; }
+    }
+
+    type TacheRow = { id: string; titre: string; date: string; statut: string; animal_id: string | null; uid_eleveur: string };
+    type PlanRow  = { id: string; label: string | null; date_prevue: string; statut: string; animal_id: string | null; uid_eleveur: string };
+
     const [
-      { data: secProfiles },
       { data: primaryUsers },
-      { data: animaux },
       { data: tachesRaw },
       { data: planTachesRaw },
     ] = await Promise.all([
-      supabase.from('user_profiles')
-        .select('uid, name_elevage, profile_label, avatar_url, ville')
-        .in('uid', uids).eq('profile_type', 'association'),
-      supabase.from('users')
-        .select('uid, name_elevage, firstname, lastname, profile_picture_url, ville')
-        .in('uid', uids),
-      supabase.from('animaux')
-        .select('id, nom, espece, race, photo_url, uid_eleveur')
-        .in('uid_eleveur', uids).eq('is_association', true).in('statut', ['disponible', 'en_soin', 'present']).order('nom'),
-      supabase.from('taches_elevage')
-        .select('id, titre, date, statut, animal_id, uid_eleveur')
-        .in('uid_eleveur', uids).eq('assigne_a', user.uid).neq('statut', 'fait').order('date'),
-      supabase.from('plan_taches')
-        .select('id, label, date_prevue, statut, animal_id, uid_eleveur')
-        .in('uid_eleveur', uids).eq('assigned_to', user.uid).neq('statut', 'fait')
-        .gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue'),
+      supabase.from('users').select('uid, firstname, lastname, name_elevage, profile_picture_url, ville').in('uid', uids) as unknown as Promise<{ data: Record<string, unknown>[] | null }>,
+      (profileId
+        ? supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_profile_id', profileId).neq('statut', 'fait').order('date')
+        : supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_a', user.uid).neq('statut', 'fait').order('date')) as unknown as Promise<{ data: TacheRow[] | null }>,
+      (profileId
+        ? supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigned_profile_id', profileId).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue')
+        : supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigned_to', user.uid).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue')) as unknown as Promise<{ data: PlanRow[] | null }>,
     ]);
 
+    // Animaux : animaux_proprietes WHERE profile_id_proprio = eleveur_profile_id
+    type ApRow = { animal_id: string; profile_id_proprio: string };
+    type AnimalRow = { id: string; nom: string | null; espece: string | null; race: string | null; photo_url: string | null };
+    const animalsByUid: Record<string, AnimalRow[]> = {};
+    if (eleveurProfileIds.length > 0) {
+      const { data: apRows } = await supabase.from('animaux_proprietes')
+        .select('animal_id, profile_id_proprio')
+        .in('profile_id_proprio', eleveurProfileIds)
+        .is('date_fin', null) as unknown as { data: ApRow[] | null };
+      const animalIds = [...new Set((apRows ?? []).map(r => r.animal_id))];
+      if (animalIds.length > 0) {
+        const { data: animaux } = await supabase.from('animaux')
+          .select('id, nom, espece, race, photo_url')
+          .in('id', animalIds)
+          .not('statut', 'in', '(sorti,decede)')
+          .order('nom') as unknown as { data: AnimalRow[] | null };
+        for (const a of animaux ?? []) {
+          const ap = (apRows ?? []).find(r => r.animal_id === String(a.id));
+          const ownerUid = ap ? pidToUid[ap.profile_id_proprio] : undefined;
+          if (ownerUid) {
+            if (!animalsByUid[ownerUid]) animalsByUid[ownerUid] = [];
+            animalsByUid[ownerUid].push(a);
+          }
+        }
+      }
+    }
+
+    // Noms des animaux pour les tâches
     const animalIds = [
       ...(tachesRaw ?? []).map(t => t.animal_id),
       ...(planTachesRaw ?? []).map(t => t.animal_id),
@@ -106,23 +150,21 @@ export default function MesAssociationsPage() {
       animalNames = Object.fromEntries((anNames ?? []).map(a => [a.id, a.nom ?? 'Animal']));
     }
 
-    const secMap: Record<string, { nom: string; avatar: string | null; ville: string | null }> = {};
-    for (const p of (secProfiles ?? []) as Record<string, unknown>[]) {
-      const uid = p['uid'] as string;
-      const nom = ((p['name_elevage'] as string | undefined)?.trim() || (p['profile_label'] as string | undefined)?.trim()) || '';
-      secMap[uid] = {
-        nom: nom || 'Association',
-        avatar: (p['avatar_url'] as string | null) ?? null,
-        ville: (p['ville'] as string | null) ?? null,
-      };
-    }
+    const list: Asso[] = empRows.map(r => {
+      const uid = r.uid_eleveur as string;
+      const pid = r.eleveur_profile_id as string | null;
+      const profile = pid ? profileByPid[pid] : undefined;
+      const pu = (primaryUsers ?? []).find(u => u['uid'] === uid);
 
-    const list: Asso[] = uids.map(uid => {
-      const sec = secMap[uid];
-      const pu = (primaryUsers ?? []).find(u => u.uid === uid) as Record<string, unknown> | undefined;
-      const nom = sec?.nom || (pu ? `${(pu['firstname'] as string) ?? ''} ${(pu['lastname'] as string) ?? ''}`.trim() : '') || 'Association';
-      const avatar = sec?.avatar ?? (pu?.['profile_picture_url'] as string | null) ?? null;
-      const ville = sec?.ville ?? (pu?.['ville'] as string | null) ?? null;
+      const nom = (
+        profile?.profile_label?.trim() ||
+        profile?.nom?.trim() ||
+        profile?.name_elevage?.trim() ||
+        (pu ? `${pu['firstname'] ?? ''} ${pu['lastname'] ?? ''}`.trim() : '')
+      ) || 'Association';
+
+      const avatar = profile?.avatar_url ?? (pu?.['profile_picture_url'] as string | null) ?? null;
+      const ville = profile?.ville ?? (pu?.['ville'] as string | null) ?? null;
 
       const manuel: Tache[] = (tachesRaw ?? [])
         .filter(t => t.uid_eleveur === uid)
@@ -142,16 +184,12 @@ export default function MesAssociationsPage() {
         (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
       );
 
-      return {
-        uid, nom, avatar, ville,
-        animaux: (animaux ?? []).filter(a => a.uid_eleveur === uid),
-        taches,
-      };
+      return { uid, eleveur_profile_id: pid ?? null, nom, avatar, ville, animaux: animalsByUid[uid] ?? [], taches };
     });
 
     setAssos(list);
     setLoading(false);
-  }, [user]);
+  }, [user, profileId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -197,12 +235,12 @@ export default function MesAssociationsPage() {
         <div className="text-center py-24 text-gray-400">
           <p className="text-5xl mb-3">🏠</p>
           <p className="font-semibold text-gray-500">Aucune association</p>
-          <p className="text-sm mt-1">Vous n'êtes bénévole dans aucune association active.</p>
+          <p className="text-sm mt-1">Vous n&apos;êtes bénévole dans aucune association active.</p>
         </div>
       ) : (
         <div className="space-y-6">
           {assos.map(asso => (
-            <div key={asso.uid} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div key={asso.eleveur_profile_id ?? asso.uid} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
               {/* Header association */}
               <div className="flex items-center gap-3 p-4 border-b border-gray-50">
                 <div className="w-12 h-12 rounded-full bg-teal-50 overflow-hidden flex-shrink-0 relative">

@@ -42,7 +42,9 @@ import 'package:intl/intl.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart'
     show speciesColor, speciesIcon, speciesLabel, kSpeciesData;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/services/planning_service.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 
 // ─── Page principale ──────────────────────────────────────────────────────────
 
@@ -274,7 +276,6 @@ class _EmployesTabState extends State<_EmployesTab> {
                       nom: nom, photoUrl: photoUrl,
                       teal: widget.teal, dark: widget.dark,
                       employeId: e['id'].toString(),
-                      permissions: (e['permissions'] as Map<String, dynamic>?) ?? {},
                       onRevoquer: () => _revoquer(e['id'].toString(), nom, (e['user'] as Map<String, dynamic>?)?['uid'] as String?),
                       onPermissionsChanged: _load,
                     );
@@ -287,12 +288,11 @@ class _EmployesTabState extends State<_EmployesTab> {
 class _EmployeCard extends StatelessWidget {
   const _EmployeCard({required this.nom, required this.photoUrl,
       required this.teal, required this.dark, required this.onRevoquer,
-      required this.employeId, required this.permissions, required this.onPermissionsChanged});
+      required this.employeId, required this.onPermissionsChanged});
   final String nom, employeId;
   final String? photoUrl;
   final Color teal, dark;
   final VoidCallback onRevoquer;
-  final Map<String, dynamic> permissions;
   final VoidCallback onPermissionsChanged;
 
   @override
@@ -328,7 +328,6 @@ class _EmployeCard extends StatelessWidget {
               builder: (_) => _PermissionsSheet(
                 employeId: employeId,
                 nom: nom,
-                permissions: permissions,
                 teal: teal,
               ),
             );
@@ -350,36 +349,75 @@ class _EmployeCard extends StatelessWidget {
 
 class _PermissionsSheet extends StatefulWidget {
   final String employeId, nom;
-  final Map<String, dynamic> permissions;
   final Color teal;
-  const _PermissionsSheet({required this.employeId, required this.nom,
-      required this.permissions, required this.teal});
+  const _PermissionsSheet({required this.employeId, required this.nom, required this.teal});
   @override
   State<_PermissionsSheet> createState() => _PermissionsSheetState();
 }
 
+// Permissions disponibles : clé technique → libellé + icône
+const _kPerms = [
+  ('write_animaux',   Icons.pets_outlined,        'Modifier les animaux',    'Éditer fiches, photos, identité'),
+  ('write_sante',     Icons.medical_services_outlined, 'Carnet de santé',    'Vaccins, traitements, poids'),
+  ('write_repro',     Icons.favorite_border,       'Suivi reproducteur',      'Saillies, gestations, portées'),
+  ('write_planning',  Icons.calendar_month_outlined,'Planning & tâches',      'Créer et modifier les tâches'),
+  ('write_inventaire',Icons.inventory_2_outlined,  'Inventaire',              'Gérer les stocks et alertes'),
+  ('write_notes',     Icons.notes_outlined,         'Notes',                   'Ajouter des notes internes'),
+];
+
 class _PermissionsSheetState extends State<_PermissionsSheet> {
   final _supa = Supabase.instance.client;
-  late bool _modifierAnimaux;
-  late bool _gererTaches;
+  bool _loading = true;
   bool _saving = false;
+  String? _eleveurProfileId;
+  String? _employeProfileId;
+  final Set<String> _perms = {};
 
   @override
   void initState() {
     super.initState();
-    _modifierAnimaux = widget.permissions['modifier_animaux'] == true;
-    _gererTaches     = widget.permissions['gerer_taches']     == true;
+    _loadPerms();
+  }
+
+  Future<void> _loadPerms() async {
+    // Récupérer les IDs de profil depuis la ligne employes
+    final row = await _supa.from('employes')
+        .select('eleveur_profile_id, employe_profile_id')
+        .eq('id', widget.employeId)
+        .maybeSingle();
+    if (row == null || !mounted) return;
+    _eleveurProfileId = row['eleveur_profile_id'] as String?;
+    _employeProfileId = row['employe_profile_id'] as String?;
+    if (_eleveurProfileId == null || _employeProfileId == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    // Charger les permissions existantes
+    final rows = await _supa.from('employe_permissions')
+        .select('permission')
+        .eq('eleveur_profile_id', _eleveurProfileId!)
+        .eq('employe_profile_id', _employeProfileId!);
+    for (final r in rows as List) {
+      _perms.add(r['permission'] as String);
+    }
+    if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _save() async {
+    if (_eleveurProfileId == null || _employeProfileId == null) return;
     setState(() => _saving = true);
     try {
-      await _supa.from('employes').update({
-        'permissions': {
-          'modifier_animaux': _modifierAnimaux,
-          'gerer_taches':     _gererTaches,
-        },
-      }).eq('id', widget.employeId);
+      // Supprimer toutes les permissions existantes et réinsérer
+      await _supa.from('employe_permissions')
+          .delete()
+          .eq('eleveur_profile_id', _eleveurProfileId!)
+          .eq('employe_profile_id', _employeProfileId!);
+      if (_perms.isNotEmpty) {
+        await _supa.from('employe_permissions').insert([
+          for (final p in _perms)
+            {'eleveur_profile_id': _eleveurProfileId, 'employe_profile_id': _employeProfileId, 'permission': p},
+        ]);
+      }
       if (mounted) Navigator.pop(context);
     } catch (_) {
       if (mounted) setState(() => _saving = false);
@@ -401,41 +439,43 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
         Text('Accès de ${widget.nom}',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
         const SizedBox(height: 4),
-        const Text('Définissez ce que cet employé peut faire.',
+        const Text('Choisissez ce que cet employé peut modifier.',
             style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
-        const SizedBox(height: 16),
-        _PermSwitch(
-          icon: Icons.pets_outlined,
-          title: 'Modifier les fiches animaux',
-          subtitle: 'Peut éditer les informations, poids, santé',
-          value: _modifierAnimaux,
-          teal: widget.teal,
-          onChanged: (v) => setState(() => _modifierAnimaux = v),
-        ),
-        const Divider(height: 1, indent: 56),
-        _PermSwitch(
-          icon: Icons.task_alt,
-          title: 'Gérer les tâches',
-          subtitle: 'Peut créer et modifier ses propres tâches',
-          value: _gererTaches,
-          teal: widget.teal,
-          onChanged: (v) => setState(() => _gererTaches = v),
-        ),
-        const SizedBox(height: 20),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: _saving ? null : _save,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: widget.teal,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              padding: const EdgeInsets.symmetric(vertical: 14),
+        const SizedBox(height: 12),
+        if (_loading)
+          const Padding(padding: EdgeInsets.symmetric(vertical: 24), child: CircularProgressIndicator())
+        else if (_eleveurProfileId == null || _employeProfileId == null)
+          const Padding(padding: EdgeInsets.symmetric(vertical: 24),
+              child: Text('Profils non trouvés. Mettez à jour la fiche employé.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.red)))
+        else ...[
+          for (int i = 0; i < _kPerms.length; i++) ...[
+            if (i > 0) const Divider(height: 1, indent: 56),
+            _PermSwitch(
+              icon: _kPerms[i].$2,
+              title: _kPerms[i].$3,
+              subtitle: _kPerms[i].$4,
+              value: _perms.contains(_kPerms[i].$1),
+              teal: widget.teal,
+              onChanged: (v) => setState(() => v ? _perms.add(_kPerms[i].$1) : _perms.remove(_kPerms[i].$1)),
             ),
-            child: _saving
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Colors.white)),
+          ],
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _saving ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: widget.teal,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: _saving
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Colors.white)),
+            ),
           ),
-        ),
+        ],
       ]),
     );
   }
@@ -2520,7 +2560,8 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
 
   bool _loading = true;
   List<Map<String, dynamic>> _employeurs = [];
-  final Map<String, bool> _showAnimaux = {}; // uid → true=animaux false=taches
+  final Map<String, String> _tabState = {}; // uid → 'animaux'|'taches'|'inventaire'
+  Map<String, Set<String>> _permsMap = {}; // eleveur_profile_id → Set<permission>
 
   @override
   void initState() { super.initState(); _load(); }
@@ -2545,11 +2586,16 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
             .eq('uid_employe', _uid).eq('actif', true).order('created_at');
       }
 
-      // Déduplique et exclut les bénévoles
+      // Déduplique par uid_eleveur en préférant les lignes non-bénévole
+      final sortedRows = List<Map<String, dynamic>>.from(rows)
+        ..sort((a, b) {
+          final aB = a['type'] == 'benevole' ? 1 : 0;
+          final bB = b['type'] == 'benevole' ? 1 : 0;
+          return aB.compareTo(bB);
+        });
       final seenUids = <String>{};
       final emplois = <Map<String, dynamic>>[];
-      for (final r in rows) {
-        if (r['type'] == 'benevole') continue;
+      for (final r in sortedRows) {
         final uid = r['uid_eleveur'] as String;
         if (seenUids.add(uid)) emplois.add(r);
       }
@@ -2559,6 +2605,30 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
       }
 
       final uids = emplois.map((e) => e['uid_eleveur'] as String).toList();
+
+      // Collecter les profile IDs par uid — séparé employé vs bénévole
+      final allProfileIdsByUid = <String, List<String>>{};
+      final emploiProfileIdsByUid = <String, List<String>>{}; // non-bénévole uniquement
+      for (final r in sortedRows) {
+        final uid = r['uid_eleveur'] as String;
+        final pid = r['eleveur_profile_id'] as String?;
+        final isBenevole = r['type'] == 'benevole';
+        if (pid != null) {
+          allProfileIdsByUid.putIfAbsent(uid, () => []);
+          if (!allProfileIdsByUid[uid]!.contains(pid)) allProfileIdsByUid[uid]!.add(pid);
+          if (!isBenevole) {
+            emploiProfileIdsByUid.putIfAbsent(uid, () => []);
+            if (!emploiProfileIdsByUid[uid]!.contains(pid)) emploiProfileIdsByUid[uid]!.add(pid);
+          }
+        }
+      }
+      final profileIdToUid = <String, String>{};
+      allProfileIdsByUid.forEach((uid, pids) {
+        for (final pid in pids) profileIdToUid[pid] = uid;
+      });
+      final allProfileIds = allProfileIdsByUid.values.expand((e) => e).toList();
+      // Profils employé (non-bénévole) → pour animaux_proprietes
+      final emploiProfileIds = emploiProfileIdsByUid.values.expand((e) => e).toList();
       final pastStr   = DateTime.now().subtract(const Duration(days: 7)).toIso8601String().substring(0, 10);
       final futureStr = DateTime.now().add(const Duration(days: 90)).toIso8601String().substring(0, 10);
 
@@ -2574,7 +2644,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
             .inFilter('uid', uids),
         _supa.from('animaux')
             .select('id, nom, espece, race, photo_url, uid_eleveur')
-            .inFilter('uid_eleveur', uids).eq('statut', 'present').neq('is_association', true).order('nom'),
+            .inFilter('uid_eleveur', uids).eq('statut', 'present').order('nom'),
         _supa.from('taches_elevage')
             .select('id, titre, date, statut, animal_id, uid_eleveur')
             .inFilter('uid_eleveur', uids).eq(tachesAssigneFilter, tachesAssigneValue).neq('statut', 'fait').order('date'),
@@ -2589,19 +2659,68 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
       final taches     = results[2] as List;
       final planTaches = results[3] as List;
 
+      // Charger les permissions granulaires depuis employe_permissions
+      Map<String, Set<String>> permsMap = {};
+      if (myProfileId != null) {
+        final permsRows = await _supa.from('employe_permissions')
+            .select('eleveur_profile_id, permission')
+            .eq('employe_profile_id', myProfileId);
+        for (final r in permsRows as List) {
+          final eid = r['eleveur_profile_id'] as String;
+          final p   = r['permission'] as String;
+          permsMap.putIfAbsent(eid, () => {}).add(p);
+        }
+      }
+
+      // Animaux en accueil via profile_id_proprio — seulement profils employé (pas bénévole)
+      final assocAnimalsByUid = <String, List<Map<String, dynamic>>>{};
+      if (emploiProfileIds.isNotEmpty) {
+        final apRows = await _supa.from('animaux_proprietes')
+            .select('animal_id, profile_id_proprio')
+            .inFilter('profile_id_proprio', emploiProfileIds)
+            .isFilter('date_fin', null) as List;
+        final assocIds = apRows.map((r) => r['animal_id']?.toString()).whereType<String>().toSet().toList();
+        if (assocIds.isNotEmpty) {
+          final assocAnimaux = await _supa.from('animaux')
+              .select('id, nom, espece, race, photo_url, uid_eleveur')
+              .inFilter('id', assocIds)
+              .not('statut', 'in', '("sorti","decede")') as List;
+          for (final a in assocAnimaux) {
+            final animalId = a['id']?.toString();
+            final ap = apRows.firstWhere(
+              (r) => r['animal_id']?.toString() == animalId,
+              orElse: () => <String, dynamic>{},
+            );
+            final ownerUid = ap.isNotEmpty ? profileIdToUid[ap['profile_id_proprio'] as String?] : null;
+            if (ownerUid != null) {
+              assocAnimalsByUid.putIfAbsent(ownerUid, () => []).add(
+                Map<String, dynamic>.from(a as Map)..['uid_eleveur'] = ownerUid,
+              );
+            }
+          }
+        }
+      }
+
       final result = <Map<String, dynamic>>[];
       for (final e in emplois) {
         final uid = e['uid_eleveur'] as String;
         final u = users.firstWhere((u) => u['uid'] == uid, orElse: () => <String, dynamic>{});
         if ((u as Map).isEmpty) continue;
-        final anims = animaux.where((a) => a['uid_eleveur'] == uid).toList();
+        // Fusionner animaux réguliers + animaux association
+        final regularAnims = animaux.where((a) => a['uid_eleveur'] == uid).toList();
+        final assocAnims = assocAnimalsByUid[uid] ?? [];
+        final seenAnimalIds = <String>{};
+        final anims = [
+          ...regularAnims,
+          ...assocAnims,
+        ].where((a) => seenAnimalIds.add(a['id']?.toString() ?? '')).toList();
         final allTaches = [
           ...taches.where((t) => t['uid_eleveur'] == uid).map((t) => {...t, 'source': 'manuel', 'date': t['date']}),
           ...planTaches.where((t) => t['uid_eleveur'] == uid).map((t) => {...t, 'source': 'protocole', 'titre': t['label'] ?? 'Tâche', 'date': t['date_prevue']}),
         ]..sort((a, b) => (a['date'] as String).compareTo(b['date'] as String));
         result.add({...e, 'user': u, 'animaux': anims, 'taches': allTaches});
       }
-      if (mounted) setState(() { _employeurs = result; _loading = false; });
+      if (mounted) setState(() { _employeurs = result; _permsMap = permsMap; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -2655,27 +2774,33 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                         final uid = u['uid'] as String;
                         final nom = _nomEmployeur(u);
                         final photo = _photoEmployeur(u);
-                        final perms = (e['permissions'] as Map<String, dynamic>?) ?? {};
+                        final eleveurProfileId = e['eleveur_profile_id'] as String? ?? '';
+                        final perms = _permsMap[eleveurProfileId] ?? <String>{};
                         final animaux = e['animaux'] as List;
                         final taches  = e['taches'] as List;
-                        final showAnim = _showAnimaux[uid] ?? true;
+                        final activeTab = _tabState[uid] ?? 'animaux';
                         return _EmployeurExpandedCard(
                           uid: uid, nom: nom, photo: photo, teal: _teal, dark: _dark,
-                          showAnimaux: showAnim,
+                          activeTab: activeTab,
+                          eleveurProfileId: eleveurProfileId,
+                          perms: perms,
                           animaux: animaux.cast<Map<String, dynamic>>(),
                           taches: taches.cast<Map<String, dynamic>>(),
-                          onTabChange: (val) => setState(() => _showAnimaux[uid] = val),
+                          onTabChange: (val) => setState(() => _tabState[uid] = val),
                           onVoirProfil: () => Navigator.push(context, MaterialPageRoute(
                             builder: (_) => EmployeurDetailPage(
-                              eleveurUid: uid, eleveurNom: nom, permissions: perms,
+                              eleveurUid: uid, eleveurNom: nom,
+                              perms: perms, eleveurProfileId: eleveurProfileId,
                             ),
                           )),
                           onMarquerFait: _marquerFait,
                           onAnimalTap: (animal) => Navigator.push(context, MaterialPageRoute(
                             builder: (_) => AnimalFichePage(
                               animalId: animal['id'] as String?,
-                              readOnly: perms['modifier_animaux'] != true,
+                              readOnly: !perms.contains('write_animaux'),
                               eleveurUidOverride: uid,
+                              showReproTab: true,
+                              employePerms: perms,
                             ),
                           )),
                         );
@@ -2690,16 +2815,19 @@ class _EmployeurExpandedCard extends StatelessWidget {
   final String uid, nom;
   final String? photo;
   final Color teal, dark;
-  final bool showAnimaux;
+  final String activeTab; // 'animaux' | 'taches' | 'inventaire'
+  final String eleveurProfileId;
+  final Set<String> perms;
   final List<Map<String, dynamic>> animaux, taches;
-  final ValueChanged<bool> onTabChange;
+  final ValueChanged<String> onTabChange;
   final VoidCallback onVoirProfil;
   final Future<void> Function(Map<String, dynamic>) onMarquerFait;
   final void Function(Map<String, dynamic>) onAnimalTap;
 
   const _EmployeurExpandedCard({
     required this.uid, required this.nom, required this.photo,
-    required this.teal, required this.dark, required this.showAnimaux,
+    required this.teal, required this.dark, required this.activeTab,
+    required this.eleveurProfileId, required this.perms,
     required this.animaux, required this.taches,
     required this.onTabChange, required this.onVoirProfil, required this.onMarquerFait,
     required this.onAnimalTap,
@@ -2744,12 +2872,15 @@ class _EmployeurExpandedCard extends StatelessWidget {
         Container(
           decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
           child: Row(children: [
-            _tab(context, '🐾 Animaux (${animaux.length})', showAnimaux, () => onTabChange(true)),
-            _tab(context, '✅ Tâches (${taches.length})', !showAnimaux, () => onTabChange(false)),
+            _tab(context, '🐾 Animaux (${animaux.length})', activeTab == 'animaux', () => onTabChange('animaux')),
+            _tab(context, '✅ Tâches (${taches.length})', activeTab == 'taches', () => onTabChange('taches')),
+            _tab(context, '🗃️ Inventaire', activeTab == 'inventaire', () => onTabChange('inventaire')),
           ]),
         ),
         // Contenu
-        if (showAnimaux) _buildAnimaux() else _buildTaches(),
+        if (activeTab == 'animaux') _buildAnimaux()
+        else if (activeTab == 'taches') _buildTaches()
+        else _buildInventaire(context),
       ]),
     );
   }
@@ -2856,18 +2987,56 @@ class _EmployeurExpandedCard extends StatelessWidget {
       },
     );
   }
+
+  Widget _buildInventaire(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: GestureDetector(
+        onTap: eleveurProfileId.isNotEmpty ? () => Navigator.push(context, MaterialPageRoute(
+          builder: (_) => InventairePage(
+            eleveurProfileIdOverride: eleveurProfileId,
+            readOnly: !perms.contains('write_inventaire'),
+          ),
+        )) : null,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: teal.withOpacity(0.3)),
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Text('🗃️', style: const TextStyle(fontSize: 20)),
+            const SizedBox(width: 8),
+            Text(
+              perms.contains('write_inventaire')
+                  ? 'Voir et modifier l\'inventaire'
+                  : 'Voir l\'inventaire (lecture seule)',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                  fontSize: 14, color: teal),
+            ),
+            const SizedBox(width: 6),
+            Icon(Icons.arrow_forward_ios, size: 14, color: teal),
+          ]),
+        ),
+      ),
+    );
+  }
 }
 
 // ─── Page détail employeur (public — deep link depuis notifications) ───────────
 
 class EmployeurDetailPage extends StatefulWidget {
   final String eleveurUid, eleveurNom;
-  final Map<String, dynamic> permissions;
+  final Set<String> perms;
+  final String? eleveurProfileId;
   const EmployeurDetailPage({
     super.key,
     required this.eleveurUid,
     required this.eleveurNom,
-    this.permissions = const {},
+    this.perms = const {},
+    this.eleveurProfileId,
   });
   @override
   State<EmployeurDetailPage> createState() => _EmployeurDetailPageState();
@@ -2892,7 +3061,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this);
+    _tab = TabController(length: 3, vsync: this);
     _loadTaches();
     _loadPlanTaches();
   }
@@ -3078,7 +3247,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
           unselectedLabelColor: Colors.grey,
           indicatorColor: _teal,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
-          tabs: const [Tab(text: 'Mes Tâches'), Tab(text: 'Animaux')],
+          tabs: const [Tab(text: 'Mes Tâches'), Tab(text: 'Animaux'), Tab(text: 'Inventaire')],
         ),
       ),
       body: TabBarView(
@@ -3087,7 +3256,13 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
           _buildTachesTab(),
           _AnimauxEmployeTab(
             eleveurUid: widget.eleveurUid,
-            canEditAnimaux: widget.permissions['modifier_animaux'] == true,
+            canEditAnimaux: widget.perms.contains('write_animaux'),
+            perms: widget.perms,
+          ),
+          _InventaireEmployeTab(
+            eleveurProfileId: widget.eleveurProfileId ?? '',
+            eleveurUid: widget.eleveurUid,
+            canWrite: widget.perms.contains('write_inventaire'),
           ),
         ],
       ),
@@ -3143,7 +3318,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
   }
 
   Widget _buildTachesTab() {
-    final canGererTaches = widget.permissions['gerer_taches'] == true;
+    final canGererTaches = widget.perms.contains('write_taches');
     final uid = FirebaseAuth.instance.currentUser!.uid;
     final loading = _loadingTaches || _loadingPlanTaches;
     if (loading) return const Center(child: CircularProgressIndicator(color: _teal));
@@ -3378,7 +3553,8 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
 class _AnimauxEmployeTab extends StatefulWidget {
   final String eleveurUid;
   final bool canEditAnimaux;
-  const _AnimauxEmployeTab({required this.eleveurUid, this.canEditAnimaux = false});
+  final Set<String> perms;
+  const _AnimauxEmployeTab({required this.eleveurUid, this.canEditAnimaux = false, this.perms = const {}});
   @override
   State<_AnimauxEmployeTab> createState() => _AnimauxEmployeTabState();
 }
@@ -3544,6 +3720,7 @@ class _AnimauxEmployeTabState extends State<_AnimauxEmployeTab> {
               data: members[i],
               eleveurUid: widget.eleveurUid,
               canEdit: widget.canEditAnimaux,
+              perms: widget.perms,
             ),
           ),
         ]);
@@ -3684,10 +3861,109 @@ class _AnimauxEmployeTabState extends State<_AnimauxEmployeTab> {
                         data: filtered[i],
                         eleveurUid: widget.eleveurUid,
                         canEdit: widget.canEditAnimaux,
+                        perms: widget.perms,
                       ),
                     ),
         ),
       ]),
+    );
+  }
+}
+
+// ─── Onglet inventaire (vue employé) ─────────────────────────────────────────
+
+class _InventaireEmployeTab extends StatefulWidget {
+  final String eleveurProfileId;
+  final String eleveurUid;
+  final bool canWrite;
+  const _InventaireEmployeTab({
+    required this.eleveurProfileId,
+    required this.eleveurUid,
+    this.canWrite = false,
+  });
+  @override
+  State<_InventaireEmployeTab> createState() => _InventaireEmployeTabState();
+}
+
+class _InventaireEmployeTabState extends State<_InventaireEmployeTab> {
+  static const _teal = Color(0xFF0C5C6C);
+  static const _bg   = Color(0xFFF8F8F6);
+
+  final _supa = Supabase.instance.client;
+  bool _loading = true;
+  List<Map<String, dynamic>> _items = [];
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+    try {
+      final rows = widget.eleveurProfileId.isNotEmpty
+          ? await _supa.from('inventaire_items').select().eq('eleveur_profile_id', widget.eleveurProfileId).order('categorie').order('nom')
+          : await _supa.from('inventaire_items').select().eq('uid_eleveur', widget.eleveurUid).order('categorie').order('nom');
+      if (mounted) setState(() { _items = List<Map<String, dynamic>>.from(rows); _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
+    return Scaffold(
+      backgroundColor: _bg,
+      floatingActionButton: widget.canWrite ? FloatingActionButton.extended(
+        backgroundColor: _teal,
+        icon: const Icon(Icons.edit, color: Colors.white),
+        label: const Text('Gérer', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
+        onPressed: () => Navigator.push(context, MaterialPageRoute(
+          builder: (_) => InventairePage(
+            eleveurProfileIdOverride: widget.eleveurProfileId.isNotEmpty ? widget.eleveurProfileId : null,
+            eleveurUidOverride: widget.eleveurUid,
+            readOnly: false,
+          ),
+        )).then((_) => _load()),
+      ) : null,
+      body: _items.isEmpty
+          ? const Center(
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Text('📦', style: TextStyle(fontSize: 40)),
+                SizedBox(height: 12),
+                Text('Inventaire vide', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Colors.grey)),
+              ]))
+          : RefreshIndicator(
+              onRefresh: _load, color: _teal,
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: _items.length,
+                itemBuilder: (_, i) {
+                  final item = _items[i];
+                  final qte   = (item['quantite'] as num?)?.toDouble() ?? 0;
+                  final unite = item['unite'] as String? ?? '';
+                  final cat   = item['categorie'] as String? ?? 'autre';
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6)],
+                    ),
+                    child: Row(children: [
+                      const SizedBox(width: 8),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(item['nom'] as String? ?? '',
+                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                        Text('$cat · $qte $unite',
+                            style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      ])),
+                    ]),
+                  );
+                },
+              ),
+            ),
     );
   }
 }
@@ -4165,7 +4441,8 @@ class _EmployeAnimalCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final String eleveurUid;
   final bool canEdit;
-  const _EmployeAnimalCard({required this.data, required this.eleveurUid, this.canEdit = false});
+  final Set<String> perms;
+  const _EmployeAnimalCard({required this.data, required this.eleveurUid, this.canEdit = false, this.perms = const {}});
 
   @override
   Widget build(BuildContext context) {
@@ -4185,6 +4462,8 @@ class _EmployeAnimalCard extends StatelessWidget {
           animalId: animalId,
           readOnly: !canEdit,
           eleveurUidOverride: canEdit ? eleveurUid : null,
+          showReproTab: true,
+          employePerms: perms.isNotEmpty ? perms : null,
         ),
       )),
       child: Container(
