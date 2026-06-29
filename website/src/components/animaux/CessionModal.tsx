@@ -37,6 +37,7 @@ interface CessionData {
 interface Props {
   animal: Animal;
   uid: string;
+  profileId?: string | null;
   eleveurInfo: EleveurInfo;
   onClose: () => void;
   onCeded: () => void;
@@ -60,7 +61,7 @@ function fmtDate(s?: string) {
   return new Date(s).toLocaleDateString('fr-FR');
 }
 
-export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCeded, isReCession = false }: Props) {
+export default function CessionModal({ animal, uid, profileId, eleveurInfo, onClose, onCeded, isReCession = false }: Props) {
   const [step, setStep] = useState<'acquéreur' | 'details' | 'documents'>('acquéreur');
 
   // Acquéreur
@@ -314,6 +315,7 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
       await supabase.from('registre_mouvements').insert({
         animal_id:             animal.id,
         uid_eleveur:           uid,
+        ...(profileId ? { eleveur_profile_id: profileId } : {}),
         type:                  'sortie',
         date_mouvement:        dateCession,
         motif:                 'cession',
@@ -323,9 +325,13 @@ export default function CessionModal({ animal, uid, eleveurInfo, onClose, onCede
       });
       // Entrée pour l'acquéreur s'il a un compte éleveur ou association
       if (acqUid && (qualite === 'eleveur' || qualite === 'refuge')) {
+        const { data: acqProfRow } = await supabase.from('user_profiles')
+          .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
+        const acqProfileId = (acqProfRow as { id: string } | null)?.id ?? null;
         await supabase.from('registre_mouvements').insert({
           animal_id:         animal.id,
           uid_eleveur:       acqUid,
+          ...(acqProfileId ? { eleveur_profile_id: acqProfileId } : {}),
           type:              'entree',
           date_mouvement:    dateCession,
           motif:             'cession',

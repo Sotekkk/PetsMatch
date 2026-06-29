@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { loadBreeds } from '@/lib/breeds';
 import HealthSection from '@/components/animaux/HealthSection';
 import CessionModal from '@/components/animaux/CessionModal';
@@ -1054,6 +1055,7 @@ function WeightChartSVG({ data, isJuvenile, dateNaissance }: {
 export default function AnimalFichePage() {
   const { id } = useParams<{ id: string }>();
   const { user, userData } = useAuth();
+  const activeProfileId = useActiveProfile();
   const router = useRouter();
   const isEleveur = userData?.isElevage === true;
   // isOwner = l'utilisateur est bien le propriétaire de cet animal (pas juste un employé)
@@ -1102,8 +1104,8 @@ export default function AnimalFichePage() {
   const [savingDoc, setSavingDoc] = useState(false);
   const [vetNames, setVetNames] = useState<Record<string,string>>({});
 
-  // ── Accès vétérinaires (vet_access_grants)
-  const [vetAcces, setVetAcces] = useState<{id:string;vet_id:string;vet_nom:string;status:string;granted_at?:string}[]>([]);
+  // ── Accès vétérinaires (animal_access)
+  const [vetAcces, setVetAcces] = useState<{id:string;pro_profile_id:string;vet_nom:string;statut:string;granted_at?:string}[]>([]);
   const [vetAccesSaving, setVetAccesSaving] = useState<string|null>(null);
 
   // ── État repro
@@ -1171,16 +1173,22 @@ export default function AnimalFichePage() {
       supabase.from('ordonnances').select('*').eq('animal_id', id).order('date', { ascending: false }),
       supabase.from('radios').select('*').eq('animal_id', id).order('date', { ascending: false }),
       supabase.from('comptes_rendus').select('*').eq('animal_id', id).order('date', { ascending: false }),
-      supabase.from('vet_access_grants').select('id, vet_id, status, granted_at').eq('animal_id', id).neq('status', 'revoked'),
+      supabase.from('animal_access').select('id, pro_profile_id, statut, granted_at').eq('animal_id', id).neq('statut', 'revoked'),
     ]);
     const allDocs = [...(ord.data ?? []), ...(rad.data ?? []), ...(cr.data ?? [])] as HealthRecord[];
     setOrdonnances((ord.data ?? []) as HealthRecord[]);
     setRadios((rad.data ?? []) as HealthRecord[]);
     setCrs((cr.data ?? []) as HealthRecord[]);
     // Résoudre les noms des vétérinaires (docs + accès)
-    const grantRows = (grants.data ?? []) as {id:string;vet_id:string;status:string;granted_at?:string}[];
-    const vetIds = grantRows.map(g => g.vet_id).filter(Boolean);
-    const proUids = [...new Set([...allDocs.map(d => d.pro_uid as string).filter(Boolean), ...vetIds])];
+    const grantRows = (grants.data ?? []) as {id:string;pro_profile_id:string;statut:string;granted_at?:string}[];
+    const proProfileIds = grantRows.map(g => g.pro_profile_id).filter(Boolean);
+    let profileUidMap: Record<string,string> = {};
+    if (proProfileIds.length > 0) {
+      const { data: profiles } = await supabase.from('user_profiles').select('id, uid').in('id', proProfileIds);
+      (profiles ?? []).forEach((p: {id:string;uid:string}) => { profileUidMap[p.id] = p.uid; });
+    }
+    const vetUids = Object.values(profileUidMap);
+    const proUids = [...new Set([...allDocs.map(d => d.pro_uid as string).filter(Boolean), ...vetUids])];
     const names: Record<string,string> = {};
     if (proUids.length > 0) {
       const { data: users } = await supabase.from('users').select('uid, firstname, lastname').in('uid', proUids);
@@ -1190,7 +1198,7 @@ export default function AnimalFichePage() {
       });
       setVetNames(names);
     }
-    setVetAcces(grantRows.map(g => ({ ...g, vet_nom: names[g.vet_id] ?? 'Vétérinaire' })));
+    setVetAcces(grantRows.map(g => ({ ...g, vet_nom: names[profileUidMap[g.pro_profile_id]] ?? 'Vétérinaire' })));
   }, [id, isNew]);
 
   const loadMouvements = useCallback(async () => {
@@ -1270,8 +1278,8 @@ export default function AnimalFichePage() {
   async function approveVetAcces(grantId: string) {
     setVetAccesSaving(grantId);
     try {
-      await supabase.from('vet_access_grants').update({ status: 'active', granted_at: new Date().toISOString() }).eq('id', grantId);
-      setVetAcces(prev => prev.map(g => g.id === grantId ? { ...g, status: 'active', granted_at: new Date().toISOString() } : g));
+      await supabase.from('animal_access').update({ statut: 'active', granted_at: new Date().toISOString() }).eq('id', grantId);
+      setVetAcces(prev => prev.map(g => g.id === grantId ? { ...g, statut: 'active', granted_at: new Date().toISOString() } : g));
     } finally { setVetAccesSaving(null); }
   }
 
@@ -1279,7 +1287,7 @@ export default function AnimalFichePage() {
     if (!confirm('Révoquer l\'accès de ce vétérinaire au carnet de santé ?')) return;
     setVetAccesSaving(grantId);
     try {
-      await supabase.from('vet_access_grants').update({ status: 'revoked' }).eq('id', grantId);
+      await supabase.from('animal_access').update({ statut: 'revoked' }).eq('id', grantId);
       setVetAcces(prev => prev.filter(g => g.id !== grantId));
     } finally { setVetAccesSaving(null); }
   }
@@ -2325,13 +2333,13 @@ export default function AnimalFichePage() {
                       Dr. {g.vet_nom}
                     </p>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      g.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                      g.statut === 'active' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                     }`}>
-                      {g.status === 'active' ? 'Accès accordé' : 'En attente de validation'}
+                      {g.statut === 'active' ? 'Accès accordé' : 'En attente de validation'}
                     </span>
                   </div>
                   <div className="flex gap-2">
-                    {g.status === 'demande' && (
+                    {g.statut === 'pending' && (
                       <button
                         onClick={() => approveVetAcces(g.id)}
                         disabled={vetAccesSaving === g.id}
@@ -2341,7 +2349,7 @@ export default function AnimalFichePage() {
                         {vetAccesSaving === g.id ? '…' : '✓ Approuver'}
                       </button>
                     )}
-                    {g.status === 'active' && (
+                    {g.statut === 'active' && (
                       <button
                         onClick={() => revokeVetAcces(g.id)}
                         disabled={vetAccesSaving === g.id}
@@ -2717,6 +2725,7 @@ export default function AnimalFichePage() {
                   const payload: Record<string,string> = {
                     animal_id: id as string, uid_eleveur: user.uid,
                     type: mvtForm.type, date_mouvement: mvtForm.date,
+                    ...(activeProfileId ? { eleveur_profile_id: activeProfileId } : {}),
                   };
                   if (mvtForm.motif) payload.motif = mvtForm.motif;
                   if (mvtForm.type==='entree') {

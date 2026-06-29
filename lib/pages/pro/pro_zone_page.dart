@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 
 const _kTeal = Color(0xFF0C5C6C);
 
@@ -84,6 +85,7 @@ class _ProZonePageState extends State<ProZonePage> {
         'centre_lat': centre?.latitude,
         'centre_lng': centre?.longitude,
         'updated_at': DateTime.now().toIso8601String(),
+        if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
       }, onConflict: 'pro_uid');
 
       // Sync rayon dans users

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/lib/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ function pluralUnite(unite: string, qty: number): string {
 export default function InventairePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const profileId = useActiveProfile();
 
   const [items,      setItems]      = useState<Item[]>([]);
   const [loading,    setLoading]    = useState(true);
@@ -85,15 +87,17 @@ export default function InventairePage() {
   const loadItems = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const { data } = await supabase
-      .from('inventaire_items')
-      .select('*')
-      .eq('uid_eleveur', user.uid)
-      .order('categorie')
-      .order('nom');
+    const pid = profileId || null;
+    let q = supabase.from('inventaire_items').select('*').order('categorie').order('nom');
+    if (pid) {
+      q = q.eq('eleveur_profile_id', pid) as typeof q;
+    } else {
+      q = q.eq('uid_eleveur', user.uid) as typeof q;
+    }
+    const { data } = await q;
     setItems((data ?? []) as Item[]);
     setLoading(false);
-  }, [user]);
+  }, [user, profileId]);
 
   useEffect(() => { loadItems(); }, [loadItems]);
 
@@ -125,7 +129,7 @@ export default function InventairePage() {
     setMvtLoading(false);
   }
 
-  async function createCommandeTask(nom: string, uid: string) {
+  async function createCommandeTask(nom: string, uid: string, pid: string | null) {
     const label = `Commander : ${nom}`;
     const today = new Date().toISOString().split('T')[0];
     const { data: existing } = await supabase
@@ -138,6 +142,7 @@ export default function InventairePage() {
     if (existing) return;
     await supabase.from('plan_taches').insert({
       uid_eleveur: uid,
+      ...(pid ? { eleveur_profile_id: pid } : {}),
       label,
       type_acte: 'commande',
       date_prevue: today,
@@ -159,8 +164,10 @@ export default function InventairePage() {
     const delta = type === 'consommation' ? -qte : qte;
     const newQte = Math.max(0, item.quantite + delta);
 
+    const pid = profileId || null;
     await supabase.from('inventaire_mouvements').insert({
       item_id: item.id, uid_eleveur: user.uid, uid_auteur: user.uid,
+      ...(pid ? { eleveur_profile_id: pid, auteur_profile_id: pid } : {}),
       type, quantite: qte, note: note || null,
     });
     await supabase.from('inventaire_items')
@@ -177,7 +184,7 @@ export default function InventairePage() {
         data: { itemId: item.id },
         read: false,
       });
-      await createCommandeTask(item.nom, user.uid);
+      await createCommandeTask(item.nom, user.uid, pid);
     }
 
     loadItems();
@@ -379,6 +386,7 @@ export default function InventairePage() {
         <ItemFormModal
           item={editItem}
           uid={user!.uid}
+          profileId={profileId || null}
           onClose={() => { setShowForm(false); setEditItem(null); }}
           onSaved={loadItems}
         />
@@ -466,9 +474,10 @@ function QuickMvt({ item, type, onLog }: {
 
 // ── Formulaire article ────────────────────────────────────────────────────────
 
-function ItemFormModal({ item, uid, onClose, onSaved }: {
+function ItemFormModal({ item, uid, profileId, onClose, onSaved }: {
   item: Item | null;
   uid: string;
+  profileId: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -489,6 +498,7 @@ function ItemFormModal({ item, uid, onClose, onSaved }: {
     setSaving(true);
     const payload = {
       uid_eleveur: uid,
+      ...(profileId ? { eleveur_profile_id: profileId } : {}),
       nom: nom.trim(),
       categorie: cat,
       unite,

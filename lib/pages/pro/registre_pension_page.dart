@@ -51,8 +51,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       final pid = User_Info.activeProfileId;
       var qEntrees = _supa.from('pension_entrees').select().eq('pro_uid', _uid);
       qEntrees = qEntrees.eq('pro_profile_id', pid);
-      var qAcces = _supa.from('pension_acces').select('animal_id').eq('pro_uid', _uid).eq('statut', 'approved');
-      qAcces = qAcces.eq('pro_profile_id', pid);
+      var qAcces = _supa.from('animal_access').select('animal_id').eq('pro_profile_id', pid).eq('statut', 'active');
       final results = await Future.wait([
         qEntrees.order('date_entree', ascending: false),
         qAcces,
@@ -220,19 +219,24 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
         }
       }
 
-      // Propriétaire depuis pension_acces si accès approuvé
+      // Propriétaire depuis animal_access si accès actif
       if (found != null) {
         final animalId = found['id'] as String;
-        // owner_uid depuis animaux directement
         ownerUid = (found['uid_eleveur'] ?? found['uid_proprietaire'])?.toString();
         try {
-          final acces = await _supa.from('pension_acces')
-              .select('owner_uid')
-              .eq('pro_uid', _uid)
+          final pid = User_Info.activeProfileId;
+          final acces = await _supa.from('animal_access')
+              .select('granted_by_profile_id')
+              .eq('pro_profile_id', pid)
               .eq('animal_id', animalId)
-              .eq('statut', 'approved')
+              .eq('statut', 'active')
               .maybeSingle();
-          final approvedUid = acces?['owner_uid'] as String? ?? '';
+          final ownerProfileId = acces?['granted_by_profile_id'] as String? ?? '';
+          // Récupérer uid depuis user_profiles
+          final ownerProfileData = ownerProfileId.isNotEmpty
+              ? await _supa.from('user_profiles').select('uid').eq('id', ownerProfileId).maybeSingle()
+              : null;
+          final approvedUid = ownerProfileData?['uid'] as String? ?? '';
           if (approvedUid.isNotEmpty) {
             ownerUid = approvedUid;
             final doc = await FirebaseFirestore.instance
@@ -314,9 +318,10 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
         ),
       );
       if (revoke == true && mounted) {
-        await _supa.from('pension_acces')
-            .delete()
-            .eq('pro_uid', _uid)
+        final pid = User_Info.activeProfileId;
+        await _supa.from('animal_access')
+            .update({'statut': 'revoked', 'revoked_at': DateTime.now().toUtc().toIso8601String()})
+            .eq('pro_profile_id', pid)
             .eq('animal_id', animalId);
       }
     }
@@ -1604,6 +1609,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
     try {
       await _supa.from('pension_entrees').insert({
         'pro_uid':              _uid,
+        'pro_profile_id':       User_Info.activeProfileId,
         'animal_nom':           _nomCtrl.text.trim(),
         'espece':               _especeCtrl.text.trim().toLowerCase(),
         'race':                 _raceCtrl.text.trim(),
@@ -1665,25 +1671,31 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
 
       if (animalId == null || ownerUid == null || ownerUid.isEmpty) return;
 
+      // Résoudre profile IDs
+      final pid = User_Info.activeProfileId;
+      final ownerProfile = await _supa.from('user_profiles')
+          .select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
+      final ownerProfileId = ownerProfile?['id'] as String?;
+      if (pid.isEmpty || ownerProfileId == null) return;
+
       // Vérifier si accès déjà existant
-      final existing = await _supa.from('pension_acces')
+      final existing = await _supa.from('animal_access')
           .select('id, statut')
-          .eq('pro_uid', _uid)
+          .eq('pro_profile_id', pid)
           .eq('animal_id', animalId)
           .maybeSingle();
-      if (existing != null) return; // déjà pending ou approved
+      if (existing != null) return;
 
       final pensionNom = User_Info.nameElevage.isNotEmpty
           ? User_Info.nameElevage
           : '${User_Info.firstname} ${User_Info.lastname}'.trim();
 
-      await _supa.from('pension_acces').insert({
-        'pro_uid':    _uid,
-        'animal_id':  animalId,
-        'owner_uid':  ownerUid,
-        'statut':     'pending',
-        'pro_nom':    pensionNom,
-        'animal_nom': animalNom,
+      await _supa.from('animal_access').insert({
+        'pro_profile_id':        pid,
+        'animal_id':             animalId,
+        'granted_by_profile_id': ownerProfileId,
+        'permissions':           ['read_basic', 'read_alimentation', 'write_notes'],
+        'statut':                'pending',
       });
 
       await _supa.from('notifications').insert({
@@ -1903,29 +1915,36 @@ class _AccessRequestSheetState extends State<_AccessRequestSheet> {
       final animalId  = widget.animal['id']?.toString()  ?? '';
       final animalNom = widget.animal['nom']?.toString()  ?? 'Animal';
 
+      final proProfile = await widget.supa.from('user_profiles')
+          .select('id').eq('uid', widget.pensionUid).eq('is_main', true).maybeSingle();
+      final proProfileId = proProfile?['id'] as String?;
+      final ownerProfile = await widget.supa.from('user_profiles')
+          .select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
+      final ownerProfileId = ownerProfile?['id'] as String?;
+      if (proProfileId == null || ownerProfileId == null) throw Exception('Profils introuvables');
+
       final existing = await widget.supa
-          .from('pension_acces')
+          .from('animal_access')
           .select('id,statut')
-          .eq('pro_uid', widget.pensionUid)
+          .eq('pro_profile_id', proProfileId)
           .eq('animal_id', animalId)
           .maybeSingle();
 
       if (existing != null) {
         final statut = existing['statut'] as String? ?? '';
-        if (statut == 'approved') { widget.onAlreadyApproved(animalId, animalNom); return; }
-        if (statut == 'pending')  { widget.onAlreadyPending(animalNom);  return; }
-        await widget.supa.from('pension_acces').update({
+        if (statut == 'active')  { widget.onAlreadyApproved(animalId, animalNom); return; }
+        if (statut == 'pending') { widget.onAlreadyPending(animalNom);  return; }
+        await widget.supa.from('animal_access').update({
           'statut': 'pending',
-          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
         }).eq('id', existing['id']);
       } else {
-        await widget.supa.from('pension_acces').insert({
-          'pro_uid':    widget.pensionUid,
-          'animal_id':  animalId,
-          'owner_uid':  ownerUid,
-          'statut':     'pending',
-          'pro_nom':    widget.pensionNom,
-          'animal_nom': animalNom,
+        await widget.supa.from('animal_access').insert({
+          'pro_profile_id':        proProfileId,
+          'animal_id':             animalId,
+          'granted_by_profile_id': ownerProfileId,
+          'permissions':           ['read_basic', 'read_alimentation', 'write_notes'],
+          'statut':                'pending',
         });
       }
 

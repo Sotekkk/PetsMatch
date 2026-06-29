@@ -113,9 +113,11 @@ class _PromenadesPageState extends State<PromenadePage> {
             .eq('promenade_id', id)
             .eq('user_uid', _uid);
       } else {
+        final pid = User_Info.activeProfileId;
         await _supa.from('promenades_participants').insert({
           'promenade_id': id,
           'user_uid': _uid,
+          if (pid != null) 'user_profile_id': pid,
           'statut': 'en_attente',
           'rejoint_at': DateTime.now().toIso8601String(),
         });
@@ -683,8 +685,10 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
     _formKey.currentState!.save();
     setState(() => _saving = true);
     try {
+      final pid = User_Info.activeProfileId;
       await _supa.from('promenades').insert({
         'organisateur_uid': _uid,
+        if (pid != null) 'organisateur_profile_id': pid,
         'titre': _titre,
         'lieu_rdv': _lieuCtrl.text.trim(),
         'description': _description,

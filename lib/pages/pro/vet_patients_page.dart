@@ -62,13 +62,13 @@ class _VetPatientsPageState extends State<VetPatientsPage>
     if (vetUid == null) { setState(() => _loading = false); return; }
     try {
       final pid = User_Info.activeProfileId;
-      var gq = Supabase.instance.client
-          .from('vet_access_grants')
-          .select('id, animal_id, granted_at, status')
-          .eq('vet_id', vetUid)
-          .neq('status', 'revoked');
-      gq = gq.eq('pro_profile_id', pid);
-      final grants = await gq.order('granted_at', ascending: false);
+      if (pid.isEmpty) { setState(() => _loading = false); return; }
+      final grants = await Supabase.instance.client
+          .from('animal_access')
+          .select('id, animal_id, granted_at, statut')
+          .eq('pro_profile_id', pid)
+          .neq('statut', 'revoked')
+          .order('granted_at', ascending: false);
 
       final animalIds = (grants as List)
           .map((g) => g['animal_id']?.toString())
@@ -89,7 +89,7 @@ class _VetPatientsPageState extends State<VetPatientsPage>
         for (final g in (grants as List))
           if (g['animal_id'] != null) g['animal_id'].toString(): {
             'granted_at': (g['granted_at'] ?? '').toString(),
-            'status': (g['status'] ?? 'demande').toString(),
+            'status': (g['statut'] ?? 'pending').toString(),
             'grant_id': (g['id'] ?? '').toString(),
           }
       };
@@ -98,7 +98,7 @@ class _VetPatientsPageState extends State<VetPatientsPage>
         final m = Map<String, dynamic>.from(a as Map);
         final info = grantsMap[a['id']?.toString()] ?? {};
         m['granted_at'] = info['granted_at'] ?? '';
-        m['grant_status'] = info['status'] ?? 'demande';
+        m['grant_status'] = info['status'] ?? 'pending';
         m['grant_id'] = info['grant_id'] ?? '';
         return m;
       }).toList();
@@ -148,8 +148,8 @@ class _VetPatientsPageState extends State<VetPatientsPage>
       ),
     );
     if (confirm != true || !mounted) return;
-    await Supabase.instance.client.from('vet_access_grants')
-        .update({'status': 'revoked', 'revoked_at': DateTime.now().toUtc().toIso8601String()})
+    await Supabase.instance.client.from('animal_access')
+        .update({'statut': 'revoked', 'revoked_at': DateTime.now().toUtc().toIso8601String()})
         .eq('id', grantId);
     _loadPatients();
   }

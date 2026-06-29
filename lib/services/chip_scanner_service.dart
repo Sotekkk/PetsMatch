@@ -596,16 +596,23 @@ class _VetResultSheetState extends State<_VetResultSheet> {
       return;
     }
     try {
-      final row = await Supabase.instance.client
-          .from('vet_access_grants')
-          .select('status')
-          .eq('vet_id', vetUid)
-          .eq('animal_id', animalId)
-          .neq('status', 'revoked')
-          .limit(1)
-          .maybeSingle();
+      final vetProfile = await Supabase.instance.client.from('user_profiles')
+          .select('id').eq('uid', vetUid).eq('is_main', true).maybeSingle();
+      final vetProfileId = vetProfile?['id'] as String?;
+      String? status;
+      if (vetProfileId != null) {
+        final row = await Supabase.instance.client
+            .from('animal_access')
+            .select('statut')
+            .eq('pro_profile_id', vetProfileId)
+            .eq('animal_id', animalId)
+            .neq('statut', 'revoked')
+            .limit(1)
+            .maybeSingle();
+        status = row?['statut'] as String?;
+      }
       if (mounted) setState(() {
-        _existingStatus = row?['status'] as String?;
+        _existingStatus = status;
         _loadingStatus = false;
       });
     } catch (_) {
@@ -622,14 +629,20 @@ class _VetResultSheetState extends State<_VetResultSheet> {
 
     setState(() => _saving = true);
     try {
-      await Supabase.instance.client.from('vet_access_grants').upsert({
-        'vet_id':     vetUid,
-        'owner_id':   ownerId,
-        'animal_id':  animal['id']?.toString(),
-        'status':     'demande',
-        'granted_at': DateTime.now().toUtc().toIso8601String(),
-        'revoked_at': null,
-      }, onConflict: 'vet_id,animal_id');
+      final vetProfile = await Supabase.instance.client.from('user_profiles')
+          .select('id').eq('uid', vetUid).eq('is_main', true).maybeSingle();
+      final vetProfileId = vetProfile?['id'] as String?;
+      final ownerProfile = await Supabase.instance.client.from('user_profiles')
+          .select('id').eq('uid', ownerId).eq('is_main', true).maybeSingle();
+      final ownerProfileId = ownerProfile?['id'] as String?;
+      if (vetProfileId == null || ownerProfileId == null) throw Exception('Profils introuvables');
+      await Supabase.instance.client.from('animal_access').upsert({
+        'pro_profile_id':        vetProfileId,
+        'granted_by_profile_id': ownerProfileId,
+        'animal_id':             animal['id']?.toString(),
+        'permissions':           ['read_basic', 'read_health', 'write_health'],
+        'statut':                'pending',
+      }, onConflict: 'animal_id,pro_profile_id');
       // Récupérer le nom de la structure ou du vétérinaire
       String vetNom = '';
       bool isClinic = false;

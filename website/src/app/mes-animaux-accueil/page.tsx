@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 interface Animal {
   id: string;
@@ -31,6 +32,7 @@ interface FaInfo {
 
 export default function MesAnimauxAccueilPage() {
   const { user } = useAuth();
+  const profileId = useActiveProfile();
   const [fa, setFa] = useState<FaInfo | null>(null);
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,12 +40,10 @@ export default function MesAnimauxAccueilPage() {
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const { data: faRows } = await supabase
-        .from('familles_accueil')
-        .select('id, prenom, nom, capacite_max, association_uid')
-        .eq('fa_uid', user.uid)
-        .eq('actif', true)
-        .limit(1);
+      const faQ = profileId
+        ? supabase.from('familles_accueil').select('id, prenom, nom, capacite_max, association_uid').eq('fa_profile_id', profileId).eq('actif', true).limit(1)
+        : supabase.from('familles_accueil').select('id, prenom, nom, capacite_max, association_uid').eq('fa_uid', user.uid).eq('actif', true).limit(1);
+      const { data: faRows } = await faQ;
       if (!faRows || faRows.length === 0) { setLoading(false); return; }
       const faData = faRows[0] as FaInfo;
       setFa(faData);
@@ -56,7 +56,7 @@ export default function MesAnimauxAccueilPage() {
       setAnimaux(anim ?? []);
       setLoading(false);
     })();
-  }, [user]);
+  }, [user, profileId]);
 
   if (loading) {
     return (

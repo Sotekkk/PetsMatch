@@ -941,6 +941,7 @@ export default function MesAnimauxPage() {
       <CessionModal
         animal={cederAnimal}
         uid={user.uid}
+        profileId={activeProfileId || null}
         eleveurInfo={{ nom: nomElevage || user.email || 'Éleveur', adresse: adresseElevage, email: user.email ?? '' }}
         isReCession={cederAnimal.uid_eleveur !== user.uid && cederAnimal.uid_acquereur === user.uid}
         onClose={() => setCederAnimal(null)}
@@ -1049,6 +1050,7 @@ function PorteeSoinModal({ animals, uid, onClose }: {
         await supabase.from('registre_sanitaire').insert({
           id:          `rs_${entryId}`,
           uid_eleveur: uid,
+          ...(activeProfileId ? { eleveur_profile_id: activeProfileId } : {}),
           animal_id:   animal.id,
           animal_nom:  animal.nom ?? '',
           espece:      animal.espece ?? '',

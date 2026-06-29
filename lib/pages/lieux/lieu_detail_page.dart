@@ -28,6 +28,7 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
   bool _loading = true;
   bool _isFavori = false;
   bool _loadingChat = false;
+  String? _profileId;
 
   @override
   void initState() {
@@ -53,7 +54,13 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
 
       bool favori = false;
       if (_uid != null) {
-        final f = await _supabase.from('place_favoris').select('id').eq('place_id', widget.id).eq('user_uid', _uid).maybeSingle();
+        if (_profileId == null) {
+          final row = await _supabase.from('user_profiles').select('id').eq('uid', _uid!).eq('is_main', true).maybeSingle();
+          _profileId = row?['id'] as String?;
+        }
+        final filterCol = _profileId != null ? 'user_profile_id' : 'user_uid';
+        final filterVal = _profileId ?? _uid!;
+        final f = await _supabase.from('place_favoris').select('id').eq('place_id', widget.id).eq(filterCol, filterVal).maybeSingle();
         favori = f != null;
       }
 
@@ -107,7 +114,11 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
     if (_uid == null) return;
     setState(() => _isFavori = !_isFavori);
     if (_isFavori) {
-      await _supabase.from('place_favoris').insert({'place_id': widget.id, 'user_uid': _uid});
+      await _supabase.from('place_favoris').insert({
+        'place_id': widget.id,
+        'user_uid': _uid,
+        if (_profileId != null) 'user_profile_id': _profileId,
+      });
       // Notifier le propriétaire (sauf si c'est lui-même)
       final ownerUid = _lieu?['uid_pro'] as String?;
       if (ownerUid != null && ownerUid != _uid) {
@@ -1022,10 +1033,14 @@ class _AvisDetailSheetState extends State<_AvisDetailSheet> {
     }
     setState(() => _saving = true);
     try {
+      final profileRow = await Supabase.instance.client
+          .from('user_profiles').select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
+      final userProfileId = profileRow?['id'] as String?;
       await Supabase.instance.client.from('petfriendly_review_contests').insert({
         'review_id': widget.avis['id'],
         'place_id': widget.avis['place_id'],
         'user_uid': widget.uid,
+        if (userProfileId != null) 'user_profile_id': userProfileId,
         'motif': _reportCtrl.text.trim(),
         'type': type,
       });
@@ -1344,9 +1359,13 @@ class _AvisFormState extends State<_AvisForm> {
     }
     setState(() => _saving = true);
     try {
+      final profileRow = await Supabase.instance.client
+          .from('user_profiles').select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
+      final userProfileId = profileRow?['id'] as String?;
       await Supabase.instance.client.from('petfriendly_reviews').insert({
         'place_id': widget.placeId,
         'user_uid': widget.uid,
+        if (userProfileId != null) 'user_profile_id': userProfileId,
         'note': _note,
         'note_accueil': _noteAccueil,
         'commentaire': _commentCtrl.text.trim(),

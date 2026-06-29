@@ -193,6 +193,10 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     if (uid == null) return;
     setState(() => _saving = true);
     try {
+      final profileRow = await Supabase.instance.client
+          .from('user_profiles').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+      final profileId = profileRow?['id'] as String?;
+
       final id = DateTime.now().millisecondsSinceEpoch.toString();
 
       String? logoUrl;
@@ -213,6 +217,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
 
       final payload = <String, dynamic>{
         'uid_pro':         uid,
+        if (profileId != null) 'pro_profile_id': profileId,
         'nom':             _nomCtrl.text.trim(),
         'categorie':       _categorie,
         'sous_categorie':  _sousCategorie,

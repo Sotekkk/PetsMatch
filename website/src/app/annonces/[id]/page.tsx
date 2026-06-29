@@ -438,12 +438,44 @@ export default function AnnonceDetailPage() {
     const key = `vue_tracked_${id}`;
     const isUnique = !sessionStorage.getItem(key);
     if (isUnique) sessionStorage.setItem(key, '1');
-    fetch('/api/annonces/stats', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ annonceId: id, unique: isUnique }),
-    }).catch(() => {});
-  }, [id]);
+
+    const doTrack = (extra: Record<string, unknown> = {}) => {
+      fetch('/api/annonces/stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ annonceId: id, unique: isUnique, ...extra }),
+      }).catch(() => {});
+    };
+
+    if (activeProfileId) {
+      // Utilisateur connecté — l'API résoudra le département depuis son profil
+      doTrack({ profileId: activeProfileId });
+    } else if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+      // Anonyme — géolocalisation navigateur → département
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          try {
+            const { latitude, longitude } = pos.coords;
+            const r = await fetch(
+              `https://api-adresse.data.gouv.fr/reverse/?lon=${longitude}&lat=${latitude}`,
+              { cache: 'no-store' }
+            );
+            const d = await r.json();
+            // context = "75, Paris, Île-de-France" — on prend le code département
+            const context: string = d.features?.[0]?.properties?.context ?? '';
+            const dept = context.split(',')[0]?.trim() ?? 'inconnu';
+            doTrack({ departement: dept });
+          } catch {
+            doTrack();
+          }
+        },
+        () => doTrack(), // géoloc refusée ou timeout
+        { timeout: 5000, maximumAge: 600000 }
+      );
+    } else {
+      doTrack();
+    }
+  }, [id, activeProfileId]);
 
   useEffect(() => {
     if (!id) return;

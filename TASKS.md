@@ -20,6 +20,7 @@
 
 | # | Tâche | Priorité | Repo | Fichiers probables |
 |---|---|---|---|---|
+| ~~INFRA01~~ | ~~**Migration UUID profile_id sur tables métier** — ajout colonne `*_profile_id UUID` (nullable, FK `user_profiles`) sur `rdv`, `registre_mouvements`, `registre_sanitaire`, `taches_elevage`, `tache_commentaires`, `visites`, `vet_consultations`, `zones_intervention`. Backfill via `is_main=true`. INSERTs mis à jour app + web. Migration `vet_access_grants` → `animal_access` sur les 3 pages web mes-patients.~~ | ~~Haute~~ | ~~App + Web + Supabase~~ | ✅ Terminé 2026-06-29 — 8 migrations SQL + 10+ fichiers app/web. Voir §12 specs pour le détail. |
 | A01b | CAPTCHA anti-robot sur les formulaires de connexion et d'inscription | Haute | App + Web | `login_page.dart`, `inscription/page.tsx` |
 | A01c | Connexion avec Google (OAuth) | Haute | App + Web | `login_page.dart`, `inscription/page.tsx` |
 | A09 | Suivi repro — saillie extérieure : accès infos mâle (photo, nom, puce, race) depuis éleveur externe | Moyenne | App + Web | À créer `suivi_repro.dart` + table `saillie_acces` |

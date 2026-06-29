@@ -50,6 +50,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   List<Map<String, dynamic>> _crs    = [];
   List<Map<String, dynamic>> _ordos  = [];
   bool _loadingDocs = true;
+  String? _proProfileId;
 
   @override
   void initState() {
@@ -118,17 +119,22 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       List crs, ordos;
       final vetUid = FirebaseAuth.instance.currentUser?.uid ?? '';
       final aid = animalId ?? '';
+      if (_proProfileId == null && vetUid.isNotEmpty) {
+        final row = await _supa.from('user_profiles').select('id').eq('uid', vetUid).eq('is_main', true).maybeSingle();
+        _proProfileId = row?['id'] as String?;
+      }
+      final proFilter  = _proProfileId != null ? 'pro_profile_id' : 'pro_uid';
+      final proValue   = _proProfileId ?? vetUid;
       if (rdvId != null) {
         crs   = await _supa.from('comptes_rendus').select().eq('rdv_id', rdvId).order('created_at');
-        // Ordonnances liées au rdv OU ajoutées depuis la fiche animal (sans rdv_id)
         ordos = await _supa.from('ordonnances').select()
-            .eq('animal_id', aid).eq('pro_uid', vetUid)
+            .eq('animal_id', aid).eq(proFilter, proValue)
             .order('date_emit', ascending: false);
       } else {
         crs   = await _supa.from('comptes_rendus').select()
-            .eq('animal_id', aid).eq('pro_uid', vetUid).order('created_at');
+            .eq('animal_id', aid).eq(proFilter, proValue).order('created_at');
         ordos = await _supa.from('ordonnances').select()
-            .eq('animal_id', aid).eq('pro_uid', vetUid).order('created_at');
+            .eq('animal_id', aid).eq(proFilter, proValue).order('created_at');
       }
       if (mounted) {
         setState(() {
@@ -211,10 +217,17 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       final name   = '${DateTime.now().millisecondsSinceEpoch}.${_ordoFile!.path.split('.').last}';
       final docUrl = await uploadDocument(_ordoFile!, 'ordonnances/$proUid/$name');
       final today  = DateTime.now();
+      String? ownerProfileId;
+      if (ownerUid != null) {
+        final row = await _supa.from('user_profiles').select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
+        ownerProfileId = row?['id'] as String?;
+      }
       await _supa.from('ordonnances').insert({
         'pro_uid'  : proUid,
+        if (_proProfileId != null) 'pro_profile_id': _proProfileId,
         'animal_id': animalId,
         'owner_uid': ownerUid,
+        if (ownerProfileId != null) 'owner_profile_id': ownerProfileId,
         if (rdvId != null) 'rdv_id': rdvId,
         'doc_url'  : docUrl,
         'date_emit': '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}',

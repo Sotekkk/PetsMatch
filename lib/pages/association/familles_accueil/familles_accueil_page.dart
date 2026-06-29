@@ -30,12 +30,20 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final data = await _supa
-          .from('familles_accueil')
-          .select('*, animaux(id, nom, photo_url, statut)')
-          .eq('association_uid', uid)
-          .eq('actif', true)
-          .order('nom');
+      final profRow = await _supa.from('user_profiles')
+          .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+      final assocProfileId = profRow?['id'] as String?;
+
+      final data = assocProfileId != null
+          ? await _supa.from('familles_accueil')
+              .select('*, animaux(id, nom, photo_url, statut)')
+              .eq('association_profile_id', assocProfileId)
+              .eq('actif', true).order('nom')
+          : await _supa.from('familles_accueil')
+              .select('*, animaux(id, nom, photo_url, statut)')
+              .eq('association_uid', uid)
+              .eq('actif', true).order('nom');
+
       if (mounted) {
         setState(() {
           _fa = List<Map<String, dynamic>>.from(data as List);
@@ -354,6 +362,7 @@ class _FaSheetState extends State<_FaSheet> {
   List<Map<String, dynamic>> _userResults = [];
   bool _loadingUsers = false;
   String? _linkedUid;
+  String? _linkedProfileId;
 
   final _prenomCtrl  = TextEditingController();
   final _nomCtrl     = TextEditingController();
@@ -388,6 +397,7 @@ class _FaSheetState extends State<_FaSheet> {
     _notesCtrl.text   = d['notes'] ?? '';
     _capaciteMax      = d['capacite_max'] ?? 1;
     _linkedUid        = d['fa_uid'] as String?;
+    _linkedProfileId  = d['fa_profile_id'] as String?;
     if (_linkedUid != null) {
       _searchCtrl.text = '${d['prenom'] ?? ''} ${d['nom'] ?? ''}'.trim();
     }
@@ -438,9 +448,13 @@ class _FaSheetState extends State<_FaSheet> {
     setState(() => _userResults = res);
   }
 
-  void _selectUser(Map<String, dynamic> u) {
+  Future<void> _selectUser(Map<String, dynamic> u) async {
+    final profRow = await _supa.from('user_profiles')
+        .select('id').eq('uid', u['uid'] as String).eq('is_main', true).maybeSingle();
+    if (!mounted) return;
     setState(() {
-      _linkedUid = u['uid'] as String?;
+      _linkedUid        = u['uid'] as String?;
+      _linkedProfileId  = profRow?['id'] as String?;
       _prenomCtrl.text  = u['firstname']  as String? ?? '';
       _nomCtrl.text     = u['lastname']   as String? ?? '';
       _emailCtrl.text   = u['email']      as String? ?? '';
@@ -492,8 +506,16 @@ class _FaSheetState extends State<_FaSheet> {
     if (uid == null) return;
     if (_prenomCtrl.text.trim().isEmpty || _nomCtrl.text.trim().isEmpty) return;
     try {
-      final payload = {
+      String? assocProfileId;
+      if (!_isEdit) {
+        final profRow = await _supa.from('user_profiles')
+            .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+        assocProfileId = profRow?['id'] as String?;
+      }
+
+      final payload = <String, dynamic>{
         'fa_uid':      _linkedUid,
+        if (_linkedProfileId != null) 'fa_profile_id': _linkedProfileId,
         'prenom':      _prenomCtrl.text.trim(),
         'nom':         _nomCtrl.text.trim(),
         'email':       _emailCtrl.text.trim().isEmpty   ? null : _emailCtrl.text.trim(),
@@ -511,6 +533,7 @@ class _FaSheetState extends State<_FaSheet> {
         await _supa.from('familles_accueil').insert({
           ...payload,
           'association_uid': uid,
+          if (assocProfileId != null) 'association_profile_id': assocProfileId,
           'actif': true,
         });
       }
@@ -621,7 +644,7 @@ class _FaSheetState extends State<_FaSheet> {
                         style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green)),
                     const Spacer(),
                     GestureDetector(
-                      onTap: () => setState(() { _linkedUid = null; _searchCtrl.clear(); }),
+                      onTap: () => setState(() { _linkedUid = null; _linkedProfileId = null; _searchCtrl.clear(); }),
                       child: const Text('Délier',
                           style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
                     ),

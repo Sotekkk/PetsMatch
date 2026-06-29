@@ -91,11 +91,21 @@ class _ProClientsPageState extends State<ProClientsPage>
     try {
       final supa = Supabase.instance.client;
 
-      // Accès accordés via animal_acces_pro
+      // Profil pro actif
+      final proProfile = await supa.from('user_profiles')
+          .select('id').eq('uid', proUid).eq('is_main', true).maybeSingle();
+      final proProfileId = proProfile?['id'] as String?;
+
+      // Accès accordés via animal_access
+      if (proProfileId == null) {
+        if (mounted) setState(() { _animals = []; _loading = false; });
+        return;
+      }
       final grants = await supa
-          .from('animal_acces_pro')
-          .select('animal_id, granted_at, owner_uid')
-          .eq('pro_uid', proUid)
+          .from('animal_access')
+          .select('animal_id, granted_at, granted_by_profile_id')
+          .eq('pro_profile_id', proProfileId)
+          .eq('statut', 'active')
           .order('granted_at', ascending: false);
 
       // Compléter avec les animaux des RDVs qui n'ont pas encore d'accès accordé
@@ -110,7 +120,7 @@ class _ProClientsPageState extends State<ProClientsPage>
       final Map<String, Map<String, dynamic>> seen = {};
       for (final g in grants as List) {
         final id = g['animal_id']?.toString();
-        if (id != null) seen[id] = {'animal_id': id, 'owner_uid': g['owner_uid'], 'granted_at': g['granted_at']};
+        if (id != null) seen[id] = {'animal_id': id, 'granted_by_profile_id': g['granted_by_profile_id'], 'granted_at': g['granted_at']};
       }
       for (final r in rdvAnimals as List) {
         final id = r['animal_id']?.toString();
@@ -130,24 +140,24 @@ class _ProClientsPageState extends State<ProClientsPage>
           .select('id, nom, espece, race, sexe, photo_url, date_naissance, uid_eleveur')
           .inFilter('id', animalIds);
 
-      // Noms des propriétaires
-      final ownerUids = seen.values
-          .map((e) => e['owner_uid'] as String?)
+      // Noms des propriétaires depuis user_profiles (granted_by_profile_id)
+      final ownerProfileIds = seen.values
+          .map((e) => e['granted_by_profile_id'] as String?)
           .whereType<String>()
           .toSet()
           .toList();
       Map<String, String> ownerNames = {};
-      if (ownerUids.isNotEmpty) {
-        final users = await supa
-            .from('users')
-            .select('uid, firstname, lastname, name_elevage')
-            .inFilter('uid', ownerUids);
-        for (final u in users) {
-          final uid = u['uid'] as String;
+      if (ownerProfileIds.isNotEmpty) {
+        final profiles = await supa
+            .from('user_profiles')
+            .select('id, firstname, lastname, name_elevage')
+            .inFilter('id', ownerProfileIds);
+        for (final u in profiles) {
+          final pid = u['id'] as String;
           final name = (u['name_elevage'] as String?)?.isNotEmpty == true
               ? u['name_elevage'] as String
               : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
-          ownerNames[uid] = name.isNotEmpty ? name : 'Propriétaire';
+          ownerNames[pid] = name.isNotEmpty ? name : 'Propriétaire';
         }
       }
 
@@ -156,10 +166,11 @@ class _ProClientsPageState extends State<ProClientsPage>
           _animals = (animals as List).map<Map<String, dynamic>>((a) {
             final anId = a['id']?.toString() ?? '';
             final extra = seen[anId] ?? {};
+            final ownerPid = extra['granted_by_profile_id'] as String?;
             return {
               ...a,
-              '_owner_uid': extra['owner_uid'] ?? a['uid_eleveur'],
-              '_owner_name': ownerNames[extra['owner_uid'] ?? a['uid_eleveur'] ?? ''] ?? 'Propriétaire',
+              '_owner_profile_id': ownerPid,
+              '_owner_name': ownerNames[ownerPid ?? ''] ?? 'Propriétaire',
               '_granted_at': extra['granted_at'],
             };
           }).toList();

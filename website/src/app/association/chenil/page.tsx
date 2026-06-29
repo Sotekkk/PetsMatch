@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -200,9 +201,10 @@ function EnclosCard({
 
 // ── Modal enclos (ajout / édition) ────────────────────────────────────────────
 
-function EnclosModal({ enclos, uid, isAssociation, onClose, onSaved }: {
+function EnclosModal({ enclos, uid, profileId, isAssociation, onClose, onSaved }: {
   enclos: Enclos | null;
   uid: string;
+  profileId: string | null;
   isAssociation: boolean;
   onClose: () => void;
   onSaved: (e: Enclos) => void;
@@ -217,7 +219,13 @@ function EnclosModal({ enclos, uid, isAssociation, onClose, onSaved }: {
     ev.preventDefault();
     if (!nom.trim()) return;
     setSaving(true);
-    const payload = { nom: nom.trim(), type, capacite, notes: notes.trim() || null, uid_eleveur: uid, is_association: isAssociation };
+    const payload = {
+      nom: nom.trim(), type, capacite,
+      notes: notes.trim() || null,
+      uid_eleveur: uid,
+      profile_id: profileId ?? null,
+      is_association: isAssociation,
+    };
     if (enclos) {
       const { data } = await supabase.from('enclos_chenil').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', enclos.id).select().single();
       if (data) onSaved(data as Enclos);
@@ -288,6 +296,7 @@ const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
 export default function ChenilWebPage() {
   const { user } = useAuth();
+  const activeProfileId = useActiveProfile();
   const [enclos, setEnclos] = useState<Enclos[]>([]);
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -298,8 +307,12 @@ export default function ChenilWebPage() {
 
   const load = useCallback(async () => {
     if (!user) return;
+    let enclosQuery = supabase.from('enclos_chenil').select('*').eq('is_association', true).order('nom');
+    enclosQuery = (activeProfileId
+      ? enclosQuery.eq('profile_id', activeProfileId)
+      : enclosQuery.eq('uid_eleveur', user.uid)) as typeof enclosQuery;
     const [{ data: enc }, { data: ani }] = await Promise.all([
-      supabase.from('enclos_chenil').select('*').eq('uid_eleveur', user.uid).eq('is_association', true).order('nom'),
+      enclosQuery,
       supabase.from('animaux').select('id, nom, espece, photo_url, statut, enclos_id, date_entree, date_sortie')
         .eq('uid_eleveur', user.uid).eq('is_association', true).order('nom'),
     ]);
@@ -514,6 +527,7 @@ export default function ChenilWebPage() {
         <EnclosModal
           enclos={editEnclos === 'new' ? null : editEnclos}
           uid={user?.uid ?? ''}
+          profileId={activeProfileId}
           isAssociation={true}
           onClose={() => setEditEnclos(null)}
           onSaved={handleSaved}

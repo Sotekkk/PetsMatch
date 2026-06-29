@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -779,6 +780,7 @@ function BenevoleCard({ b, uid: _uid, isOpen, onToggleOpen, onToggle, onEdit, on
 function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
   uid: string; assigneeUid: string; assigneeName: string; onClose: () => void;
 }) {
+  const activeProfileId = useActiveProfile();
   const today = new Date().toISOString().split('T')[0];
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [enclos, setEnclos] = useState<Enclos[]>([]);
@@ -805,6 +807,7 @@ function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
     setSaving(true);
     const payload: Record<string, unknown> = {
       uid_eleveur: uid,
+      ...(activeProfileId ? { eleveur_profile_id: activeProfileId } : {}),
       titre: form.titre.trim(),
       date: form.date,
       statut: 'a_faire',

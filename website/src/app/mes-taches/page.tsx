@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useProfileSource } from '@/hooks/useActiveProfile';
+import { useProfileSource, useActiveProfile } from '@/hooks/useActiveProfile';
 
 interface Task {
   id: string;
@@ -22,6 +22,7 @@ export default function MesTachesPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const profilSource = useProfileSource();
+  const profileId = useActiveProfile();
   const [taches, setTaches] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDone, setShowDone] = useState(false);
@@ -35,7 +36,12 @@ export default function MesTachesPage() {
     if (!user) return;
     setLoading(true);
     try {
-      const q = supabase.from('taches_elevage').select('*').eq('assigne_a', user.uid).order('date');
+      let q = supabase.from('taches_elevage').select('*').order('date');
+      if (profileId) {
+        q = q.eq('assigne_profile_id', profileId) as typeof q;
+      } else {
+        q = q.eq('assigne_a', user.uid) as typeof q;
+      }
       const { data: rows } = await (profilSource === 'association'
         ? q.eq('profil_source', 'association')
         : q.or('profil_source.is.null,profil_source.eq.eleveur'));
@@ -61,7 +67,7 @@ export default function MesTachesPage() {
     } finally {
       setLoading(false);
     }
-  }, [user, profilSource]);
+  }, [user, profilSource, profileId]);
 
   useEffect(() => { load(); }, [load]);
 

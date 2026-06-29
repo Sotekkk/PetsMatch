@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 interface Animal { id: string; nom: string; espece?: string; race?: string; statut?: string; photo_url?: string }
 
@@ -44,6 +45,7 @@ const EMPTY_FORM = {
 
 export default function FamillesAccueilWebPage() {
   const { user } = useAuth();
+  const profileId = useActiveProfile();
   const [fas, setFas] = useState<FA[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -65,15 +67,18 @@ export default function FamillesAccueilWebPage() {
 
   const load = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from('familles_accueil')
+    let q = supabase.from('familles_accueil')
       .select('*, animaux(id, nom, espece, race, statut, photo_url)')
-      .eq('association_uid', user.uid)
-      .eq('actif', true)
-      .order('nom');
+      .eq('actif', true).order('nom');
+    if (profileId) {
+      q = q.eq('association_profile_id', profileId) as typeof q;
+    } else {
+      q = q.eq('association_uid', user.uid) as typeof q;
+    }
+    const { data } = await q;
     setFas(data ?? []);
     setLoading(false);
-  }, [user]);
+  }, [user, profileId]);
 
   const loadUsers = useCallback(async () => {
     if (!user) return;
@@ -163,7 +168,12 @@ export default function FamillesAccueilWebPage() {
     if (editingFa) {
       await supabase.from('familles_accueil').update(payload).eq('id', editingFa.id);
     } else {
-      await supabase.from('familles_accueil').insert({ ...payload, association_uid: user.uid, actif: true });
+      await supabase.from('familles_accueil').insert({
+        ...payload,
+        association_uid: user.uid,
+        ...(profileId ? { association_profile_id: profileId } : {}),
+        actif: true,
+      });
     }
     resetForm();
     setSaving(false);

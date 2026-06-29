@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 const SPECIES_EMOJI: Record<string, string> = {
   chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐰',
@@ -51,6 +52,7 @@ function formatDate(d: string) {
 
 export default function MesEmployeursPage() {
   const { user, loading: authLoading } = useAuth();
+  const profileId = useActiveProfile();
   const router = useRouter();
   const [employers, setEmployers] = useState<Employer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,11 +66,10 @@ export default function MesEmployeursPage() {
     if (!user) return;
     setLoading(true);
 
-    const { data: rows } = await supabase
-      .from('employes')
-      .select('uid_eleveur, permissions, type')
-      .eq('uid_employe', user.uid)
-      .eq('actif', true);
+    const empQ = profileId
+      ? supabase.from('employes').select('uid_eleveur, permissions, type').eq('employe_profile_id', profileId).eq('actif', true)
+      : supabase.from('employes').select('uid_eleveur, permissions, type').eq('uid_employe', user.uid).eq('actif', true);
+    const { data: rows } = await empQ;
 
     if (!rows || rows.length === 0) { setLoading(false); return; }
 
@@ -102,20 +103,12 @@ export default function MesEmployeursPage() {
         .eq('statut', 'present')
         .or('is_association.is.null,is_association.eq.false')
         .order('nom'),
-      supabase.from('taches_elevage')
-        .select('id, titre, date, statut, animal_id, uid_eleveur')
-        .in('uid_eleveur', uids)
-        .eq('assigne_a', user.uid)
-        .neq('statut', 'fait')
-        .order('date'),
-      supabase.from('plan_taches')
-        .select('id, label, date_prevue, statut, animal_id, uid_eleveur')
-        .in('uid_eleveur', uids)
-        .eq('assigned_to', user.uid)
-        .neq('statut', 'fait')
-        .gte('date_prevue', pastStr)
-        .lte('date_prevue', futureStr)
-        .order('date_prevue'),
+      (profileId
+        ? supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_profile_id', profileId).neq('statut', 'fait').order('date')
+        : supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_a', user.uid).neq('statut', 'fait').order('date')),
+      (profileId
+        ? supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigned_profile_id', profileId).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue')
+        : supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigned_to', user.uid).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue')),
     ]);
 
     // Résoudre les noms d'animaux
@@ -161,7 +154,7 @@ export default function MesEmployeursPage() {
 
     setEmployers(list);
     setLoading(false);
-  }, [user]);
+  }, [user, profileId]);
 
   useEffect(() => { load(); }, [load]);
 

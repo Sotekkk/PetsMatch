@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -307,6 +308,7 @@ export default function PromenadeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const activeProfileId = useActiveProfile();
 
   const [promenade, setPromenade] = useState<Promenade | null>(null);
   const [organizer, setOrganizer] = useState<UserProfile | null>(null);
@@ -366,9 +368,11 @@ export default function PromenadeDetailPage() {
     if (!user) return;
     setSaving(true);
     try {
+      const pid = activeProfileId || null;
       await supabase.from('promenades_participants').insert({
         promenade_id: id,
         user_uid: user.uid,
+        ...(pid ? { user_profile_id: pid } : {}),
         statut: 'en_attente',
         rejoint_at: new Date().toISOString(),
       });

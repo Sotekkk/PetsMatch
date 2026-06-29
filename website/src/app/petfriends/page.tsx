@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 interface FriendRow {
   relId: string;
@@ -49,6 +50,7 @@ function Avatar({ url, name, size = 48 }: { url?: string; name?: string; size?: 
 export default function PetFriendsPage() {
   const { user } = useAuth();
   const myUid = user?.uid ?? '';
+  const activeProfileId = useActiveProfile();
   const router = useRouter();
   const [tab, setTab] = useState<'friends' | 'requests' | 'groupes'>('friends');
 
@@ -171,8 +173,17 @@ export default function PetFriendsPage() {
   }
 
   async function sendRequest(targetUid: string) {
+    const myPid = activeProfileId || null;
+    let tgPid: string | null = null;
+    if (targetUid) {
+      const { data: tgRow } = await supabase.from('user_profiles').select('id').eq('uid', targetUid).eq('is_main', true).maybeSingle();
+      tgPid = tgRow?.id ?? null;
+    }
     await supabase.from('petfriends').insert({
-      uid_demandeur: myUid, uid_recepteur: targetUid,
+      uid_demandeur: myUid,
+      ...(myPid ? { demandeur_profile_id: myPid } : {}),
+      uid_recepteur: targetUid,
+      ...(tgPid ? { recepteur_profile_id: tgPid } : {}),
       statut: 'en_attente', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     });
     const { data: me } = await supabase.from('users').select('firstname, lastname').eq('uid', myUid).maybeSingle();

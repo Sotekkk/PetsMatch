@@ -5,6 +5,7 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -93,6 +94,7 @@ function ProDetailContent() {
   const profileTableId = searchParams.get('profileId') ?? undefined;
   const router = useRouter();
   const { user } = useAuth();
+  const activeProfileId = useActiveProfile();
 
   const [pro, setPro] = useState<ProData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -208,6 +210,7 @@ function ProDetailContent() {
         motif: premiereVisite !== null ? `${motifLabel}${premiereVisite ? ' (1ère visite)' : ''}` : motifLabel,
         notes: notes || null,
         pro_profile_id: pro.profileTableId || null,
+        ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
       });
       await supabase.from('creneaux_pro').update({ statut: 'reserve' })
         .eq('pro_uid', pro.uid)

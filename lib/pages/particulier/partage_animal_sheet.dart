@@ -42,6 +42,7 @@ class _PartageAnimalSheetState extends State<_PartageAnimalSheet> {
   bool _loading = true;
   List<Map<String, dynamic>> _liens = [];
   String? _newToken;
+  String? _profileId;
 
   @override
   void initState() {
@@ -54,11 +55,17 @@ class _PartageAnimalSheetState extends State<_PartageAnimalSheet> {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) return;
+      if (_profileId == null) {
+        final row = await _supa.from('user_profiles').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+        _profileId = row?['id'] as String?;
+      }
+      final filterCol = _profileId != null ? 'partageur_profile_id' : 'uid_partageur';
+      final filterVal = _profileId ?? uid;
       final data = await _supa
           .from('partage_animal')
           .select()
           .eq('animal_id', widget.animalId)
-          .eq('uid_partageur', uid)
+          .eq(filterCol, filterVal)
           .eq('actif', true)
           .gt('expire_at', DateTime.now().toIso8601String())
           .order('created_at', ascending: false);
@@ -84,6 +91,7 @@ class _PartageAnimalSheetState extends State<_PartageAnimalSheet> {
           .insert({
             'animal_id': widget.animalId,
             'uid_partageur': uid,
+            if (_profileId != null) 'partageur_profile_id': _profileId,
             'expire_at': expireAt.toIso8601String(),
             'actif': true,
           })

@@ -50,6 +50,7 @@ class InventairePage extends StatefulWidget {
 class _InventairePageState extends State<InventairePage> {
   final _supa = Supabase.instance.client;
   final _uid  = FirebaseAuth.instance.currentUser!.uid;
+  String? _profileId;
 
   bool _loading = true;
   List<Map<String, dynamic>> _items = [];
@@ -62,12 +63,18 @@ class _InventairePageState extends State<InventairePage> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      final rows = await _supa
-          .from('inventaire_items')
-          .select()
-          .eq('uid_eleveur', _uid)
-          .order('categorie')
-          .order('nom');
+      if (_profileId == null) {
+        final profileRow = await _supa
+            .from('user_profiles')
+            .select('id')
+            .eq('uid', _uid)
+            .eq('is_main', true)
+            .maybeSingle();
+        if (profileRow != null) _profileId = profileRow['id'] as String?;
+      }
+      final rows = _profileId != null
+          ? await _supa.from('inventaire_items').select().eq('eleveur_profile_id', _profileId!).order('categorie').order('nom')
+          : await _supa.from('inventaire_items').select().eq('uid_eleveur', _uid).order('categorie').order('nom');
       if (mounted) setState(() {
         _items = List<Map<String, dynamic>>.from(rows);
         _loading = false;
@@ -93,6 +100,8 @@ class _InventairePageState extends State<InventairePage> {
         'item_id': item['id'],
         'uid_eleveur': _uid,
         'uid_auteur': _uid,
+        if (_profileId != null) 'eleveur_profile_id': _profileId,
+        if (_profileId != null) 'auteur_profile_id': _profileId,
         'type': type,
         'quantite': delta.abs(),
         'note': null,
@@ -145,6 +154,7 @@ class _InventairePageState extends State<InventairePage> {
 
     await _supa.from('plan_taches').insert({
       'uid_eleveur': _uid,
+      if (_profileId != null) 'eleveur_profile_id': _profileId,
       'label': label,
       'type_acte': 'commande',
       'date_prevue': today,
@@ -198,7 +208,7 @@ class _InventairePageState extends State<InventairePage> {
               await showModalBottomSheet(
                 context: context, isScrollControlled: true,
                 backgroundColor: Colors.transparent,
-                builder: (_) => _ItemFormSheet(uid: _uid, onSaved: _load),
+                builder: (_) => _ItemFormSheet(uid: _uid, profileId: _profileId, onSaved: _load),
               );
             },
           ),
@@ -288,6 +298,7 @@ class _InventairePageState extends State<InventairePage> {
         else
           ...(_displayed.map((item) => _ItemCard(
             item: item,
+            profileId: _profileId,
             onTap: () => showModalBottomSheet(
               context: context, isScrollControlled: true,
               backgroundColor: Colors.transparent,
@@ -296,7 +307,7 @@ class _InventairePageState extends State<InventairePage> {
             onEdit: () => showModalBottomSheet(
               context: context, isScrollControlled: true,
               backgroundColor: Colors.transparent,
-              builder: (_) => _ItemFormSheet(uid: _uid, item: item, onSaved: _load),
+              builder: (_) => _ItemFormSheet(uid: _uid, profileId: _profileId, item: item, onSaved: _load),
             ),
             onDelta: (delta) => _quickDelta(item, delta),
             onCreateTask: _createCommandeTask,
@@ -339,6 +350,7 @@ class _CatChip extends StatelessWidget {
 
 class _ItemCard extends StatelessWidget {
   final Map<String, dynamic> item;
+  final String? profileId;
   final VoidCallback onTap;
   final VoidCallback onEdit;
   final void Function(double delta) onDelta;
@@ -346,6 +358,7 @@ class _ItemCard extends StatelessWidget {
 
   const _ItemCard({
     required this.item,
+    this.profileId,
     required this.onTap,
     required this.onEdit,
     required this.onDelta,
@@ -471,6 +484,7 @@ class _ItemCard extends StatelessWidget {
       builder: (_) => _QuickMvtSheet(
         item: item, type: type,
         uid: FirebaseAuth.instance.currentUser!.uid,
+        profileId: profileId,
         onSaved: () {},
         onAlerte: type == 'consommation' ? () => onCreateTask(item) : null,
       ),
@@ -510,9 +524,10 @@ class _QuickMvtSheet extends StatefulWidget {
   final Map<String, dynamic> item;
   final String type;
   final String uid;
+  final String? profileId;
   final VoidCallback onSaved;
   final VoidCallback? onAlerte;
-  const _QuickMvtSheet({required this.item, required this.type, required this.uid, required this.onSaved, this.onAlerte});
+  const _QuickMvtSheet({required this.item, required this.type, required this.uid, this.profileId, required this.onSaved, this.onAlerte});
   @override
   State<_QuickMvtSheet> createState() => _QuickMvtSheetState();
 }
@@ -567,6 +582,8 @@ class _QuickMvtSheetState extends State<_QuickMvtSheet> {
         'item_id': widget.item['id'],
         'uid_eleveur': widget.uid,
         'uid_auteur': widget.uid,
+        if (widget.profileId != null) 'eleveur_profile_id': widget.profileId,
+        if (widget.profileId != null) 'auteur_profile_id': widget.profileId,
         'type': widget.type,
         'quantite': qte,
         'note': _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
@@ -840,9 +857,10 @@ class _ItemDetailSheetState extends State<_ItemDetailSheet> {
 
 class _ItemFormSheet extends StatefulWidget {
   final String uid;
+  final String? profileId;
   final Map<String, dynamic>? item;
   final VoidCallback onSaved;
-  const _ItemFormSheet({required this.uid, this.item, required this.onSaved});
+  const _ItemFormSheet({required this.uid, this.profileId, this.item, required this.onSaved});
   @override
   State<_ItemFormSheet> createState() => _ItemFormSheetState();
 }
@@ -900,6 +918,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     try {
       final payload = {
         'uid_eleveur': widget.uid,
+        if (widget.profileId != null) 'eleveur_profile_id': widget.profileId,
         'nom': _nomCtrl.text.trim(),
         'categorie': _cat,
         'unite': _unite,

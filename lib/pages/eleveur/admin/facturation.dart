@@ -111,7 +111,14 @@ class _FacturationPageState extends State<FacturationPage> {
   Future<List<Map<String, dynamic>>> _load() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return [];
-    final q = _supa.from('factures').select().eq('uid_eleveur', uid);
+    final profileData = await _supa.from('user_profiles')
+        .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+    final profileId = profileData?['id'] as String?;
+
+    dynamic q = profileId != null
+        ? _supa.from('factures').select().eq('profile_id', profileId)
+        : _supa.from('factures').select().eq('uid_eleveur', uid);
+
     final rows = widget.isAssociation
         ? await q.eq('profil_source', 'association').order('created_at', ascending: false)
         : await q.or('profil_source.is.null,profil_source.eq.eleveur').order('created_at', ascending: false);
@@ -383,6 +390,7 @@ class CreerFacturePage extends StatefulWidget {
 class _CreerFacturePageState extends State<CreerFacturePage> {
   final _formKey = GlobalKey<FormState>();
   bool _saving = false;
+  String? _profileId; // résolu dans _loadUserData
 
   // Émetteur
   final _nomEmetteur = TextEditingController();
@@ -432,11 +440,16 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     // Profil depuis Firestore (source de vérité pour les infos élevage)
     final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
     final d = doc.data() ?? {};
+    // Résoudre profile_id
+    final profileData = await Supabase.instance.client.from('user_profiles')
+        .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+    final profileId = profileData?['id'] as String?;
+    _profileId = profileId;
     // Dernier numéro de facture depuis Supabase
-    final rows = await Supabase.instance.client
-        .from('factures')
-        .select('numero_facture')
-        .eq('uid_eleveur', uid)
+    final q = Supabase.instance.client.from('factures').select('numero_facture');
+    final rows = await (profileId != null
+            ? q.eq('profile_id', profileId)
+            : q.eq('uid_eleveur', uid))
         .order('numero_facture', ascending: false)
         .limit(1);
     final last = rows.isEmpty ? 0 : ((rows.first['numero_facture'] as num?) ?? 0).toInt();
@@ -493,6 +506,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
       await Supabase.instance.client.from('factures').insert({
         'id':                  _uuid(),
         'uid_eleveur':         uid,
+        if (_profileId != null) 'profile_id': _profileId,
         'profil_source':       (User_Info.activeType == 'association' || User_Info.isAssociation) ? 'association' : 'eleveur',
         'numero_facture':      d['numeroFacture'],
         'date_facture':        _frToIso(d['dateFacture']),

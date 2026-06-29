@@ -28,13 +28,18 @@ class _AnimauxEnAccueilPageState extends State<AnimauxEnAccueilPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
+      final profRow = await _supa.from('user_profiles')
+          .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+      final profileId = profRow?['id'] as String?;
+
       // Trouver la fiche FA liée à cet utilisateur
-      final faRows = await _supa
-          .from('familles_accueil')
-          .select('id, prenom, nom, association_uid, capacite_max')
-          .eq('fa_uid', uid)
-          .eq('actif', true)
-          .limit(1);
+      final faRows = profileId != null
+          ? await _supa.from('familles_accueil')
+              .select('id, prenom, nom, association_uid, capacite_max')
+              .eq('fa_profile_id', profileId).eq('actif', true).limit(1)
+          : await _supa.from('familles_accueil')
+              .select('id, prenom, nom, association_uid, capacite_max')
+              .eq('fa_uid', uid).eq('actif', true).limit(1);
       if ((faRows as List).isEmpty) {
         if (mounted) setState(() => _loading = false);
         return;

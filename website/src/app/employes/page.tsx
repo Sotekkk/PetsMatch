@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -82,6 +83,7 @@ function Avatar({ src, nom, size = 40 }: { src?: string | null; nom: string; siz
 export default function EmployesPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const profileId = useActiveProfile();
   const [tab, setTab] = useState<'equipe' | 'taches'>('equipe');
 
   useEffect(() => {
@@ -117,14 +119,16 @@ export default function EmployesPage() {
         ))}
       </div>
 
-      {tab === 'equipe' ? <EquipeTab uid={user.uid} /> : <TachesTab uid={user.uid} />}
+      {tab === 'equipe'
+        ? <EquipeTab uid={user.uid} profileId={profileId || null} />
+        : <TachesTab uid={user.uid} profileId={profileId || null} />}
     </div>
   );
 }
 
 // ── Tab Équipe ────────────────────────────────────────────────────────────────
 
-function EquipeTab({ uid }: { uid: string }) {
+function EquipeTab({ uid, profileId }: { uid: string; profileId: string | null }) {
   const [employes, setEmployes] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -133,11 +137,16 @@ function EquipeTab({ uid }: { uid: string }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: rows } = await supabase
-        .from('employes').select('*').eq('uid_eleveur', uid).eq('actif', true)
+      let empQ = supabase.from('employes').select('*').eq('actif', true)
         .or('type.is.null,type.neq.benevole')
         .or('profil_source.is.null,profil_source.eq.eleveur')
         .order('created_at');
+      if (profileId) {
+        empQ = empQ.eq('eleveur_profile_id', profileId) as typeof empQ;
+      } else {
+        empQ = empQ.eq('uid_eleveur', uid) as typeof empQ;
+      }
+      const { data: rows } = await empQ;
 
       const result: Employee[] = [];
       for (const e of (rows ?? [])) {
@@ -150,7 +159,7 @@ function EquipeTab({ uid }: { uid: string }) {
     } finally {
       setLoading(false);
     }
-  }, [uid]);
+  }, [uid, profileId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -222,7 +231,7 @@ function EquipeTab({ uid }: { uid: string }) {
         Ajouter un employé
       </button>
 
-      {showAdd && <AddEmployeModal uid={uid} onClose={() => { setShowAdd(false); load(); }} />}
+      {showAdd && <AddEmployeModal uid={uid} profileId={profileId} onClose={() => { setShowAdd(false); load(); }} />}
       {showPerms && <PermissionsModal emp={showPerms} onClose={() => { setShowPerms(null); load(); }} />}
     </>
   );
@@ -230,7 +239,7 @@ function EquipeTab({ uid }: { uid: string }) {
 
 // ── Modal ajouter un employé ─────────────────────────────────────────────────
 
-function AddEmployeModal({ uid, onClose }: { uid: string; onClose: () => void }) {
+function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: string | null; onClose: () => void }) {
   const [query, setQuery] = useState('');
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [results, setResults] = useState<UserProfile[]>([]);
@@ -285,7 +294,11 @@ function AddEmployeModal({ uid, onClose }: { uid: string; onClose: () => void })
         await supabase.from('employes').update({ actif: true }).eq('id', existing.id);
       } else {
         await supabase.from('employes').insert({
-          uid_employe: u.uid, uid_eleveur: uid, actif: true, profil_source: 'eleveur',
+          uid_employe: u.uid,
+          uid_eleveur: uid,
+          ...(profileId ? { eleveur_profile_id: profileId } : {}),
+          actif: true,
+          profil_source: 'eleveur',
         });
       }
       // Notification in-app
@@ -407,7 +420,7 @@ function PermissionsModal({ emp, onClose }: { emp: Employee; onClose: () => void
 
 // ── Tab Tâches ────────────────────────────────────────────────────────────────
 
-function TachesTab({ uid }: { uid: string }) {
+function TachesTab({ uid, profileId }: { uid: string; profileId: string | null }) {
   const [taches, setTaches] = useState<Task[]>([]);
   const [employes, setEmployes] = useState<{ uid: string; nom: string }[]>([]);
   const [animaux, setAnimaux] = useState<Animal[]>([]);
@@ -419,9 +432,15 @@ function TachesTab({ uid }: { uid: string }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const tachesQ = profileId
+        ? supabase.from('taches_elevage').select('*').eq('eleveur_profile_id', profileId).order('date')
+        : supabase.from('taches_elevage').select('*').eq('uid_eleveur', uid).order('date');
+      const empsQ = profileId
+        ? supabase.from('employes').select('*').eq('eleveur_profile_id', profileId).eq('actif', true).or('type.is.null,type.neq.benevole')
+        : supabase.from('employes').select('*').eq('uid_eleveur', uid).eq('actif', true).or('type.is.null,type.neq.benevole');
       const [{ data: tachesRaw }, { data: empsRaw }, { data: animauxRaw }] = await Promise.all([
-        supabase.from('taches_elevage').select('*').eq('uid_eleveur', uid).order('date'),
-        supabase.from('employes').select('*').eq('uid_eleveur', uid).eq('actif', true).or('type.is.null,type.neq.benevole'),
+        tachesQ,
+        empsQ,
         supabase.from('animaux').select('id, nom').eq('uid_eleveur', uid).order('nom'),
       ]);
 
@@ -449,7 +468,7 @@ function TachesTab({ uid }: { uid: string }) {
     } finally {
       setLoading(false);
     }
-  }, [uid]);
+  }, [uid, profileId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -541,6 +560,7 @@ function TachesTab({ uid }: { uid: string }) {
       {(showCreate || editTask) && (
         <TaskModal
           uid={uid}
+          profileId={profileId}
           task={editTask ?? undefined}
           employes={employes}
           animaux={animaux}
@@ -554,9 +574,10 @@ function TachesTab({ uid }: { uid: string }) {
 // ── Modal tâche (créer / modifier) ───────────────────────────────────────────
 
 function TaskModal({
-  uid, task, employes, animaux, onClose,
+  uid, profileId, task, employes, animaux, onClose,
 }: {
   uid: string;
+  profileId: string | null;
   task?: Task;
   employes: { uid: string; nom: string }[];
   animaux: Animal[];
@@ -576,6 +597,7 @@ function TaskModal({
       titre: titre.trim(),
       date,
       uid_eleveur: uid,
+      ...(profileId ? { eleveur_profile_id: profileId } : {}),
       assigne_a: assigneA || null,
       animal_id: animalId || null,
       notes: notes.trim() || null,

@@ -10,7 +10,10 @@ class PlanningService {
 
   // ── Charger les templates ────────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> loadTemplates(String uid, {String? type}) async {
-    var q = _supa.from('plan_templates').select('*, plan_template_etapes(*)').eq('uid_eleveur', uid);
+    final profileId = User_Info.activeProfileId;
+    final filterCol = profileId != null ? 'eleveur_profile_id' : 'uid_eleveur';
+    final filterVal = profileId ?? uid;
+    var q = _supa.from('plan_templates').select('*, plan_template_etapes(*)').eq(filterCol, filterVal);
     if (type != null) q = q.eq('type', type);
     if (_profilSource == 'association') {
       q = q.eq('profil_source', 'association');
@@ -36,6 +39,7 @@ class PlanningService {
   }) async {
     final row = await _supa.from('plan_templates').insert({
       'uid_eleveur':     uid,
+      if (User_Info.activeProfileId != null) 'eleveur_profile_id': User_Info.activeProfileId,
       'nom':             nom,
       'type':            type,
       'cible_type':      cibleType,
@@ -290,6 +294,7 @@ class PlanningService {
     final row = await _supa.from('plans_actifs').insert({
       'template_id':      template['id'],
       'uid_eleveur':      uid,
+      if (User_Info.activeProfileId != null) 'eleveur_profile_id': User_Info.activeProfileId,
       'type_declencheur': template['reference_event'] ?? 'manuel',
       'date_reference':   dateReference.toIso8601String().split('T').first,
       'profil_source':    _profilSource,
@@ -421,6 +426,7 @@ class PlanningService {
     'plan_id':         planId,
     'etape_id':        etape['id'],
     'uid_eleveur':     uid,
+    if (User_Info.activeProfileId != null) 'eleveur_profile_id': User_Info.activeProfileId,
     'profil_source':   _profilSource,
     if (animalId != null) 'animal_id': animalId,
     if (animalNom != null && animalNom.isNotEmpty) 'animal_nom': animalNom,

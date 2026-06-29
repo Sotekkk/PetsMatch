@@ -107,9 +107,12 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
     if (_uid.isEmpty) return;
     setState(() => _saving = true);
     try {
+      final profileRow = await _supa.from('user_profiles').select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+      final pid = profileRow?['id'] as String?;
       await _supa.from('promenades_participants').insert({
         'promenade_id': widget.promenadeId,
         'user_uid': _uid,
+        if (pid != null) 'user_profile_id': pid,
         'statut': 'en_attente',
         'rejoint_at': DateTime.now().toIso8601String(),
       });

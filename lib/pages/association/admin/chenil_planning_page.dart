@@ -47,13 +47,26 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
     if (uid == null) return;
     setState(() => _loading = true);
     try {
+      // Récupérer le profile_id du profil association actif
+      final profileData = await _supa.from('user_profiles')
+          .select('id')
+          .eq('uid', uid)
+          .eq('profile_type', 'association')
+          .eq('is_main', true)
+          .maybeSingle();
+      final profileId = profileData?['id'] as String?;
+
+      var enclosQuery = _supa
+          .from('enclos_chenil')
+          .select('id, nom, type, capacite, dernier_nettoyage, notes')
+          .eq('is_association', true)
+          .order('nom');
+      enclosQuery = profileId != null
+          ? enclosQuery.eq('profile_id', profileId)
+          : enclosQuery.eq('uid_eleveur', uid);
+
       final results = await Future.wait([
-        _supa
-            .from('enclos_chenil')
-            .select('id, nom, type, capacite, dernier_nettoyage, notes')
-            .eq('uid_eleveur', uid)
-            .eq('is_association', true)
-            .order('nom'),
+        enclosQuery,
         _supa
             .from('animaux')
             .select('id, nom, espece, photo_url, statut, date_entree, date_sortie, enclos_id')
@@ -96,13 +109,22 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
     if (data == null || !mounted) return;
 
     try {
+      final profileData = await _supa.from('user_profiles')
+          .select('id')
+          .eq('uid', uid)
+          .eq('profile_type', 'association')
+          .eq('is_main', true)
+          .maybeSingle();
+      final profileId = profileData?['id'] as String?;
+
       await _supa.from('enclos_chenil').insert({
-        'uid_eleveur':   uid,
+        'uid_eleveur':    uid,
+        'profile_id':     profileId,
         'is_association': true,
-        'nom':           data['nom'],
-        'type':          data['type'],
-        'capacite':      data['capacite'],
-        'notes':         data['notes']?.isNotEmpty == true ? data['notes'] : null,
+        'nom':            data['nom'],
+        'type':           data['type'],
+        'capacite':       data['capacite'],
+        'notes':          data['notes']?.isNotEmpty == true ? data['notes'] : null,
       }).select();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

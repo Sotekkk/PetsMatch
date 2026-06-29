@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -179,6 +180,7 @@ function PromenadesCard({
 
 function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const { user } = useAuth();
+  const activeProfileId = useActiveProfile();
 
   const [titre, setTitre] = useState('');
   const [lieu, setLieu] = useState('');
@@ -254,8 +256,10 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
     }
     setSaving(true); setError('');
     try {
+      const pid = activeProfileId || null;
       const row: Record<string, unknown> = {
         organisateur_uid: user!.uid,
+        ...(pid ? { organisateur_profile_id: pid } : {}),
         titre: titre.trim(),
         lieu_rdv: lieu.trim(),
         description: description.trim() || null,
@@ -454,6 +458,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
 export default function PromenadePage() {
   const { user } = useAuth();
+  const activeProfileId = useActiveProfile();
   const router = useRouter();
 
   const [promenades, setPromenades] = useState<Promenade[]>([]);
@@ -509,8 +514,11 @@ export default function PromenadePage() {
         await supabase.from('promenades_participants')
           .delete().eq('promenade_id', id).eq('user_uid', user.uid);
       } else {
+        const pid = activeProfileId || null;
         await supabase.from('promenades_participants').insert({
-          promenade_id: id, user_uid: user.uid,
+          promenade_id: id,
+          user_uid: user.uid,
+          ...(pid ? { user_profile_id: pid } : {}),
           statut: 'en_attente', rejoint_at: new Date().toISOString(),
         });
         // Notifier l'organisateur

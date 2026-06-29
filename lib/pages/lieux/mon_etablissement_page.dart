@@ -25,6 +25,7 @@ class _MonEtablissementPageState extends State<MonEtablissementPage> {
 
   List<Map<String, dynamic>> _places = [];
   bool _loading = true;
+  String? _profileId;
 
   @override
   void initState() {
@@ -35,10 +36,16 @@ class _MonEtablissementPageState extends State<MonEtablissementPage> {
   Future<void> _load() async {
     if (_uid == null) return;
     try {
+      if (_profileId == null) {
+        final row = await _supabase.from('user_profiles').select('id').eq('uid', _uid!).eq('is_main', true).maybeSingle();
+        _profileId = row?['id'] as String?;
+      }
+      final filterCol = _profileId != null ? 'pro_profile_id' : 'uid_pro';
+      final filterVal = _profileId ?? _uid!;
       final data = await _supabase
           .from('petfriendly_places')
           .select()
-          .eq('uid_pro', _uid)
+          .eq(filterCol, filterVal)
           .order('created_at', ascending: false);
       setState(() {
         _places = List<Map<String, dynamic>>.from(data as List);

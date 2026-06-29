@@ -4,15 +4,32 @@ import { supabase } from '@/lib/supabase';
 // POST /api/annonces/stats — tracker une vue
 export async function POST(req: NextRequest) {
   try {
-    const { annonceId, bebeIndex, departement, unique: isUnique } = await req.json() as {
-      annonceId: string; bebeIndex?: number; departement?: string; unique?: boolean;
+    const { annonceId, bebeIndex, departement, unique: isUnique, profileId } = await req.json() as {
+      annonceId: string; bebeIndex?: number; departement?: string; unique?: boolean; profileId?: string;
     };
     if (!annonceId) return NextResponse.json({ error: 'annonceId requis' }, { status: 400 });
+
+    // Résolution du département
+    let dept = departement ?? 'inconnu';
+    if (profileId && dept === 'inconnu') {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('departement, code_postal')
+        .eq('id', profileId)
+        .maybeSingle();
+      if (profile?.departement) {
+        dept = profile.departement;
+      } else if (profile?.code_postal) {
+        const cp = (profile.code_postal as string).replace(/\s/g, '');
+        // DOM-TOM : 97x → 3 chiffres, métropole : 2 chiffres
+        dept = cp.startsWith('97') ? cp.substring(0, 3) : cp.substring(0, 2);
+      }
+    }
 
     // Vue de l'annonce
     await supabase.rpc('increment_annonce_view', {
       p_annonce_id:  annonceId,
-      p_departement: departement ?? 'inconnu',
+      p_departement: dept || 'inconnu',
       p_unique:      isUnique ?? false,
     });
 

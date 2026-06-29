@@ -12,12 +12,18 @@ Future<void> showVetShareSheet(BuildContext context, String animalId) async {
   final uid = FirebaseAuth.instance.currentUser?.uid;
   if (uid == null) return;
 
+  final profileRow = await Supabase.instance.client
+      .from('user_profiles').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+  final profileId = profileRow?['id'] as String?;
+
   final now = DateTime.now().toUtc();
+  final filterCol = profileId != null ? 'owner_profile_id' : 'owner_id';
+  final filterVal = profileId ?? uid;
   final rows = await Supabase.instance.client
       .from('partage_tokens')
       .select('token')
       .eq('animal_id', animalId)
-      .eq('owner_id', uid)
+      .eq(filterCol, filterVal)
       .gt('expires_at', now.toIso8601String())
       .order('created_at', ascending: false)
       .limit(1);
@@ -26,23 +32,27 @@ Future<void> showVetShareSheet(BuildContext context, String animalId) async {
 
   final list = rows as List;
   if (list.isNotEmpty) {
-    _openDialog(context, list.first['token'] as String, animalId, uid, isExisting: true);
+    _openDialog(context, list.first['token'] as String, animalId, uid, profileId: profileId, isExisting: true);
   } else {
-    await _generateAndOpen(context, animalId, uid);
+    await _generateAndOpen(context, animalId, uid, profileId: profileId);
   }
 }
 
-Future<void> _generateAndOpen(BuildContext context, String animalId, String uid) async {
+Future<void> _generateAndOpen(BuildContext context, String animalId, String uid, {String? profileId}) async {
   try {
     final expiresAt = DateTime.now().toUtc().add(const Duration(hours: 72));
     final data = await Supabase.instance.client
         .from('partage_tokens')
-        .insert({'animal_id': animalId, 'owner_id': uid,
-                 'expires_at': expiresAt.toIso8601String()})
+        .insert({
+          'animal_id': animalId,
+          'owner_id': uid,
+          if (profileId != null) 'owner_profile_id': profileId,
+          'expires_at': expiresAt.toIso8601String(),
+        })
         .select('token')
         .single();
     if (context.mounted) {
-      _openDialog(context, data['token'] as String, animalId, uid, isExisting: false);
+      _openDialog(context, data['token'] as String, animalId, uid, profileId: profileId, isExisting: false);
     }
   } catch (e) {
     if (context.mounted) {
@@ -54,7 +64,7 @@ Future<void> _generateAndOpen(BuildContext context, String animalId, String uid)
   }
 }
 
-void _openDialog(BuildContext context, String token, String animalId, String uid, {required bool isExisting}) {
+void _openDialog(BuildContext context, String token, String animalId, String uid, {String? profileId, required bool isExisting}) {
   showDialog(
     context: context,
     builder: (_) => _VetShareDialog(
@@ -62,7 +72,7 @@ void _openDialog(BuildContext context, String token, String animalId, String uid
       isExisting: isExisting,
       onNewToken: () async {
         Navigator.pop(context);
-        await _generateAndOpen(context, animalId, uid);
+        await _generateAndOpen(context, animalId, uid, profileId: profileId);
       },
     ),
   );

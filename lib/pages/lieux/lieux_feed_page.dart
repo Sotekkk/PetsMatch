@@ -280,11 +280,14 @@ class _LieuCardState extends State<_LieuCard> {
     if (uid.isEmpty) return;
     final id = widget.lieu['id']?.toString() ?? '';
     try {
+      final pid = User_Info.activeProfileId;
+      final filterCol = pid != null ? 'user_profile_id' : 'user_uid';
+      final filterVal = pid ?? uid;
       final r = await _supa
           .from('place_favoris')
           .select('id')
           .eq('place_id', id)
-          .eq('user_uid', uid)
+          .eq(filterCol, filterVal)
           .maybeSingle();
       if (mounted) setState(() => _saved = r != null);
     } catch (_) {}
@@ -297,8 +300,13 @@ class _LieuCardState extends State<_LieuCard> {
     setState(() { _saved = newVal; _loadingSave = true; });
     final id = widget.lieu['id']?.toString() ?? '';
     try {
+      final pid = User_Info.activeProfileId;
       if (newVal) {
-        await _supa.from('place_favoris').insert({'place_id': id, 'user_uid': uid});
+        await _supa.from('place_favoris').insert({
+          'place_id': id,
+          'user_uid': uid,
+          if (pid != null) 'user_profile_id': pid,
+        });
       } else {
         await _supa.from('place_favoris').delete().eq('place_id', id).eq('user_uid', uid);
       }

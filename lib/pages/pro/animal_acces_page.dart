@@ -39,12 +39,18 @@ class _AnimalAccesPageState extends State<AnimalAccesPage> {
     final proUid = FirebaseAuth.instance.currentUser?.uid;
     if (proUid == null) { setState(() => _loading = false); return; }
 
+    // Récupérer le profile_id du pro
+    final proProfile = await _supa.from('user_profiles')
+        .select('id').eq('uid', proUid).eq('is_main', true).maybeSingle();
+    final proProfileId = proProfile?['id'] as String?;
+
     try {
-      final acces = await _supa
-          .from('animal_acces_pro')
+      if (proProfileId == null) { setState(() => _loading = false); return; }
+      final acces = await _supa.from('animal_access')
           .select()
           .eq('animal_id', widget.animalId)
-          .eq('pro_uid', proUid)
+          .eq('pro_profile_id', proProfileId)
+          .eq('statut', 'active')
           .maybeSingle();
 
       if (acces != null) {
@@ -67,12 +73,27 @@ class _AnimalAccesPageState extends State<AnimalAccesPage> {
     if (proUid == null) return;
     setState(() => _requesting = true);
     try {
-      await _supa.from('animal_acces_pro').upsert({
-        'animal_id': widget.animalId,
-        'pro_uid': proUid,
-        'owner_uid': widget.ownerUid,
-        'granted_at': DateTime.now().toIso8601String(),
-      });
+      // Profil pro actif
+      final proProfile = await _supa.from('user_profiles')
+          .select('id').eq('uid', proUid).eq('is_main', true).maybeSingle();
+      final proProfileId = proProfile?['id'] as String?;
+
+      // Profil propriétaire depuis animaux_proprietes
+      final ownerData = await _supa.from('animaux_proprietes')
+          .select('uid_proprio, profile_id_proprio')
+          .eq('animal_id', widget.animalId)
+          .maybeSingle();
+      final ownerProfileId = ownerData?['profile_id_proprio'] as String?;
+      final ownerUid = ownerData?['uid_proprio'] as String? ?? widget.ownerUid;
+
+      if (proProfileId == null || ownerProfileId == null) throw Exception('Profils introuvables');
+      await _supa.from('animal_access').upsert({
+        'animal_id':             widget.animalId,
+        'pro_profile_id':        proProfileId,
+        'granted_by_profile_id': ownerProfileId,
+        'permissions':           ['read_basic', 'write_notes'],
+        'statut':                'pending',
+      }, onConflict: 'animal_id,pro_profile_id');
       await _check();
     } catch (e) {
       if (mounted) {

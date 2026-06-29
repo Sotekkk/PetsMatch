@@ -1029,22 +1029,35 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     if (animalId == null || animalId.isEmpty || clientUid == null || proUid == null) return;
     try {
       final supa = Supabase.instance.client;
-      if (User_Info.catPro == 'veterinaire') {
-        await supa.from('vet_access_grants').upsert({
-          'vet_id':      proUid,
-          'animal_id':   animalId,
-          'owner_uid':   clientUid,
-          'status':      'active',
-          'granted_at':  DateTime.now().toIso8601String(),
-        }, onConflict: 'vet_id,animal_id');
-      } else {
-        await supa.from('animal_acces_pro').upsert({
-          'pro_uid':    proUid,
-          'animal_id':  animalId,
-          'owner_uid':  clientUid,
-          'granted_at': DateTime.now().toIso8601String(),
-        }, onConflict: 'animal_id,pro_uid');
-      }
+
+      // Profil pro actif
+      final proProfile = await supa.from('user_profiles')
+          .select('id').eq('uid', proUid).eq('is_main', true).maybeSingle();
+      final proProfileId = proProfile?['id'] as String?;
+      if (proProfileId == null) return;
+
+      // Profil propriétaire depuis animaux_proprietes
+      final ownerData = await supa.from('animaux_proprietes')
+          .select('profile_id_proprio')
+          .eq('animal_id', animalId)
+          .maybeSingle();
+      final ownerProfileId = ownerData?['profile_id_proprio'] as String?;
+      if (ownerProfileId == null) return;
+
+      final permissions = User_Info.catPro == 'veterinaire'
+          ? ['read_basic', 'read_health', 'write_health']
+          : User_Info.catPro == 'pension'
+              ? ['read_basic', 'read_alimentation', 'write_notes']
+              : ['read_basic', 'write_notes'];
+
+      await supa.from('animal_access').upsert({
+        'animal_id':             animalId,
+        'pro_profile_id':        proProfileId,
+        'granted_by_profile_id': ownerProfileId,
+        'permissions':           permissions,
+        'statut':                'active',
+        'granted_at':            DateTime.now().toIso8601String(),
+      }, onConflict: 'animal_id,pro_profile_id');
     } catch (_) {}
   }
 

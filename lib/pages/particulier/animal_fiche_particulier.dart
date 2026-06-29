@@ -137,10 +137,11 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     if (_animalId == null) return;
     try {
       final rows = await _supa
-          .from('pension_acces')
-          .select('id, pro_uid, pro_nom, created_at')
+          .from('animal_access')
+          .select('id, pro_profile_id, created_at, permissions')
           .eq('animal_id', _animalId!)
-          .eq('statut', 'approved');
+          .eq('statut', 'active')
+          .contains('permissions', ['write_notes']);
       if (mounted) setState(() => _pensionAcces = List<Map<String, dynamic>>.from(rows));
     } catch (_) {}
   }
@@ -170,7 +171,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       ),
     );
     if (confirm == true && mounted) {
-      await _supa.from('pension_acces').delete().eq('id', accesId);
+      await _supa.from('animal_access').update({'statut': 'revoked', 'revoked_at': DateTime.now().toUtc().toIso8601String()}).eq('id', accesId);
       _loadPensionAcces();
     }
   }

@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -261,6 +262,7 @@ ${sectionsHtml}
 
 export default function PlanningPage() {
   const { user, loading } = useAuth();
+  const profileId = useActiveProfile();
   const router = useRouter();
   const pathname = usePathname();
   const profilSource = pathname.startsWith('/association') ? 'association' : 'eleveur';
@@ -315,27 +317,37 @@ export default function PlanningPage() {
   const loadTaches = useCallback(async () => {
     if (!user) return;
     setLoadingData(true);
-    const q = supabase.from('plan_taches')
+    let q = supabase.from('plan_taches')
       .select('*, plans_actifs(reference_label)')
-      .eq('uid_eleveur', user.uid).eq('date_prevue', selectedDate)
+      .eq('date_prevue', selectedDate)
       .not('statut', 'eq', 'fait').order('date_prevue');
+    if (profileId) {
+      q = q.eq('eleveur_profile_id', profileId) as typeof q;
+    } else {
+      q = q.eq('uid_eleveur', user.uid) as typeof q;
+    }
     const { data, error } = await (profilSource === 'association'
       ? q.eq('profil_source', 'association')
       : q.or('profil_source.is.null,profil_source.eq.eleveur'));
     if (error) console.error('[plan_taches]', error.message, error.details);
     setTaches((data ?? []) as Tache[]);
     setLoadingData(false);
-  }, [user, selectedDate, profilSource]);
+  }, [user, selectedDate, profilSource, profileId]);
 
   const loadTemplates = useCallback(async () => {
     if (!user) return;
-    const q = supabase.from('plan_templates').select('*, plan_template_etapes(*)')
-      .eq('uid_eleveur', user.uid).order('created_at', { ascending: false });
+    let q = supabase.from('plan_templates').select('*, plan_template_etapes(*)')
+      .order('created_at', { ascending: false });
+    if (profileId) {
+      q = q.eq('eleveur_profile_id', profileId) as typeof q;
+    } else {
+      q = q.eq('uid_eleveur', user.uid) as typeof q;
+    }
     const { data } = await (profilSource === 'association'
       ? q.eq('profil_source', 'association')
       : q.or('profil_source.is.null,profil_source.eq.eleveur'));
     setTemplates((data ?? []) as Template[]);
-  }, [user, profilSource]);
+  }, [user, profilSource, profileId]);
 
   const loadMonth = useCallback(async () => {
     if (!user) return;
@@ -343,12 +355,16 @@ export default function PlanningPage() {
     const first = new Date(focusedMonth); first.setDate(1);
     const last  = new Date(focusedMonth.getFullYear(), focusedMonth.getMonth() + 1, 0);
     const fmt = (d: Date) => d.toISOString().split('T')[0];
-    const qMonth = supabase.from('plan_taches')
+    let qMonth = supabase.from('plan_taches')
       .select('date_prevue, type_acte, statut')
-      .eq('uid_eleveur', user.uid)
       .gte('date_prevue', fmt(first))
       .lte('date_prevue', fmt(last))
       .not('statut', 'eq', 'fait');
+    if (profileId) {
+      qMonth = qMonth.eq('eleveur_profile_id', profileId) as typeof qMonth;
+    } else {
+      qMonth = qMonth.eq('uid_eleveur', user.uid) as typeof qMonth;
+    }
     const { data } = await (profilSource === 'association'
       ? qMonth.eq('profil_source', 'association')
       : qMonth.or('profil_source.is.null,profil_source.eq.eleveur'));
@@ -365,7 +381,7 @@ export default function PlanningPage() {
     setTasksByDate(byDate);
     setOverdueSet(overdue);
     setMonthLoading(false);
-  }, [user, focusedMonth]);
+  }, [user, focusedMonth, profileId]);
 
   useEffect(() => { if (user) { loadTaches(); loadTemplates(); } }, [user, loadTaches, loadTemplates]);
   useEffect(() => { if (user && view === 'mois') loadMonth(); }, [user, view, loadMonth]);
@@ -444,12 +460,12 @@ export default function PlanningPage() {
       )}
 
       {showTemplateForm && (
-        <TemplateFormModal existing={editingTemplate} uid={user.uid} profilSource={profilSource}
+        <TemplateFormModal existing={editingTemplate} uid={user.uid} profileId={profileId || null} profilSource={profilSource}
           onClose={() => { setShowTemplateForm(false); setEditingTemplate(null); }}
           onSaved={() => { setShowTemplateForm(false); setEditingTemplate(null); loadTemplates(); }} />
       )}
       {applyingTemplate && (
-        <ApplyModal template={applyingTemplate} uid={user.uid} profilSource={profilSource}
+        <ApplyModal template={applyingTemplate} uid={user.uid} profileId={profileId || null} profilSource={profilSource}
           onClose={() => setApplyingTemplate(null)}
           onApplied={() => { setApplyingTemplate(null); loadTaches(); setView('jour'); }} />
       )}
@@ -840,8 +856,8 @@ function newEtape(): Etape {
   };
 }
 
-function TemplateFormModal({ existing, uid, profilSource = 'eleveur', onClose, onSaved }: {
-  existing: Template | null; uid: string; profilSource?: string; onClose: () => void; onSaved: () => void;
+function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur', onClose, onSaved }: {
+  existing: Template | null; uid: string; profileId: string | null; profilSource?: string; onClose: () => void; onSaved: () => void;
 }) {
   const [nom, setNom] = useState(existing?.nom ?? '');
   const [type, setType] = useState(existing?.type ?? 'sanitaire');
@@ -903,7 +919,7 @@ function TemplateFormModal({ existing, uid, profilSource = 'eleveur', onClose, o
         if (ep.length > 0) await supabase.from('plan_template_etapes').insert(ep.map(e => ({ ...e, template_id: existing.id })));
       } else {
         const { data: row } = await supabase.from('plan_templates')
-          .insert({ uid_eleveur: uid, type, profil_source: profilSource, ...templatePayload }).select('id').single();
+          .insert({ uid_eleveur: uid, ...(profileId ? { eleveur_profile_id: profileId } : {}), type, profil_source: profilSource, ...templatePayload }).select('id').single();
         if (row && ep.length > 0) await supabase.from('plan_template_etapes').insert(ep.map(e => ({ ...e, template_id: row.id })));
       }
       onSaved();
@@ -1195,8 +1211,8 @@ function EtapeForm({ index, etape, cibleType, refEvent, onChange, onRemove }: {
 
 // ── Modale appliquer ──────────────────────────────────────────────────────────
 
-function ApplyModal({ template, uid, profilSource = 'eleveur', onClose, onApplied }: {
-  template: Template; uid: string; profilSource?: string; onClose: () => void; onApplied: () => void;
+function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClose, onApplied }: {
+  template: Template; uid: string; profileId: string | null; profilSource?: string; onClose: () => void; onApplied: () => void;
 }) {
   const [dateRef, setDateRef] = useState(toISODate(new Date()));
   const [animalId, setAnimalId] = useState('');
@@ -1256,7 +1272,9 @@ function ApplyModal({ template, uid, profilSource = 'eleveur', onClose, onApplie
       let totalTaches = 0;
       for (const target of targets) {
         const { data: planRow } = await supabase.from('plans_actifs').insert({
-          template_id: template.id, uid_eleveur: uid,
+          template_id: template.id,
+          uid_eleveur: uid,
+          ...(profileId ? { eleveur_profile_id: profileId } : {}),
           type_declencheur: template.reference_event ?? 'manuel',
           date_reference: target.date_base,
           reference_id: target.animal_id ?? null,
@@ -1276,6 +1294,7 @@ function ApplyModal({ template, uid, profilSource = 'eleveur', onClose, onApplie
           const labelBase = [etape.type_acte, etape.produit, etape.dosage ? `(${etape.dosage})` : ''].filter(Boolean).join(' ');
           const common = {
             plan_id: planRow.id, etape_id: etape.id, uid_eleveur: uid,
+            ...(profileId ? { eleveur_profile_id: profileId } : {}),
             animal_id: target.animal_id ?? null,
             animal_nom: target.animal_nom ?? null,
             type_acte: etape.type_acte || null,

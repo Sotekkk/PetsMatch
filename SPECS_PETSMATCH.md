@@ -1780,3 +1780,48 @@ Permet d'identifier le profil principal par un UUID (comme les profils secondair
 Les notifications sont partagées entre tous les profils d'un même compte.
 Chaque notification porte un `profile_type` et `profile_id` pour indiquer à quel profil elle est destinée.
 La cloche s'allume sur tous les profils. En cliquant sur une notif d'un autre profil, l'app propose de basculer.
+
+### Migration UUID profile_id sur tables métier (juin 2026)
+
+**Objectif :** tracer chaque donnée métier vers l'UUID profil (`user_profiles.id`) en plus du Firebase UID existant, pour préparer un filtrage RLS fiable par profil et la suppression progressive des dépendances UID Firebase dans les requêtes métier.
+
+**Convention :** colonnes ajoutées **nullable** (`ON DELETE SET NULL`). Coexistent avec les colonnes `uid_*` / `vet_id` / `pro_uid` existantes — aucune rupture de contrat.
+
+**Tables migrées :**
+
+| Table | Colonne ajoutée | Remplace | Migration SQL |
+|---|---|---|---|
+| `rdv` | `client_profile_id UUID` | `client_uid` | `migration_rdv_profile_id.sql` |
+| `registre_mouvements` | `eleveur_profile_id UUID` | `uid_eleveur` | `migration_registres_profile_id.sql` |
+| `registre_sanitaire` | `eleveur_profile_id UUID` | `uid_eleveur` | `migration_registres_profile_id.sql` |
+| `taches_elevage` | `eleveur_profile_id UUID` | `uid_eleveur` | `migration_taches_commentaires_profile_id.sql` |
+| `tache_commentaires` | `auteur_profile_id UUID` | `uid_auteur` | `migration_taches_commentaires_profile_id.sql` |
+| `visites` | `vet_profile_id UUID` | `vet_id` | `migration_visites_vet_consultations_profile_id.sql` |
+| `vet_consultations` | `vet_profile_id UUID` | `vet_id` | `migration_visites_vet_consultations_profile_id.sql` |
+| `zones_intervention` | `pro_profile_id UUID` | `pro_uid` | `migration_zones_intervention_profile_id.sql` |
+
+**Migration `vet_access_grants` → `animal_access` :** les pages web `mes-patients/`, `mes-patients/[id]/`, `mes-animaux/[id]/` lisent et écrivent dans `animal_access` (`pro_profile_id`, `statut`) au lieu de `vet_access_grants` (`vet_id`, `status`). Mapping statuts : `'demande'` → `'pending'`.
+
+**Pattern INSERT Flutter (utilisateur courant) :**
+```dart
+if (User_Info.activeProfileId.isNotEmpty) 'col_profile_id': User_Info.activeProfileId,
+```
+
+**Pattern INSERT Web :**
+```tsx
+...(activeProfileId ? { col_profile_id: activeProfileId } : {})
+```
+
+**Résolution UID tiers → profile_id (Flutter) :**
+```dart
+final profRow = await supa.from('user_profiles')
+    .select('id').eq('uid', tierceUid).eq('is_main', true).maybeSingle();
+final profileId = profRow?['id'] as String?;
+```
+
+**Résolution UID tiers → profile_id (Web) :**
+```tsx
+const { data: profRow } = await supabase.from('user_profiles')
+  .select('id').eq('uid', tierceUid).eq('is_main', true).maybeSingle();
+const profileId = (profRow as { id: string } | null)?.id ?? null;
+```

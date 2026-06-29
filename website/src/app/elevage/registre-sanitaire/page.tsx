@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { usePlan } from '@/lib/use-plan';
 
 interface Acte {
@@ -36,6 +37,7 @@ const TYPE_COLORS: Record<string, string> = {
 
 export default function RegistreSanitairePage() {
   const { user, loading } = useAuth();
+  const activeProfileId = useActiveProfile();
   const { config: planConfig, loading: planLoading } = usePlan();
   const router = useRouter();
   const pathname = usePathname();
@@ -272,12 +274,12 @@ export default function RegistreSanitairePage() {
       )}
 
       {/* Formulaire nouvel acte */}
-      {showForm && <NouvelActeForm uid={user.uid} profilSource={profilSource} onClose={() => setShowForm(false)} onSaved={(acte) => { setActes((prev) => [acte, ...prev]); setShowForm(false); }} />}
+      {showForm && <NouvelActeForm uid={user.uid} profileId={activeProfileId || null} profilSource={profilSource} onClose={() => setShowForm(false)} onSaved={(acte) => { setActes((prev) => [acte, ...prev]); setShowForm(false); }} />}
     </div>
   );
 }
 
-function NouvelActeForm({ uid, profilSource = 'eleveur', onClose, onSaved }: { uid: string; profilSource?: string; onClose: () => void; onSaved: (a: Acte) => void }) {
+function NouvelActeForm({ uid, profileId, profilSource = 'eleveur', onClose, onSaved }: { uid: string; profileId?: string | null; profilSource?: string; onClose: () => void; onSaved: (a: Acte) => void }) {
   const [animaux, setAnimaux] = useState<{ id: string; nom: string; espece: string; sexe: string; identification: string; date_naissance: string }[]>([]);
   const [animalId, setAnimalId] = useState('');
   const [typeActe, setTypeActe] = useState('');
@@ -302,6 +304,7 @@ function NouvelActeForm({ uid, profilSource = 'eleveur', onClose, onSaved }: { u
     const id = Date.now().toString();
     const { error: err } = await supabase.from('registre_sanitaire').insert({
       id, uid_eleveur: uid,
+      ...(profileId ? { eleveur_profile_id: profileId } : {}),
       animal_nom: animal?.nom ?? '',
       espece: animal?.espece ?? '',
       date_naissance: animal?.date_naissance ?? null,

@@ -28,7 +28,7 @@ interface Owner {
   ville: string | null; code_postal: string | null;
   is_elevage: boolean | null; is_pro: boolean | null;
 }
-interface Grant { id: string; status: string; vet_id: string; }
+interface Grant { id: string; statut: string; pro_profile_id: string; }
 interface VaccinEntry {
   id: string; vaccin: string; date: string;
   date_rappel: string | null; lot: string | null; veterinaire: string | null; source: string | null;
@@ -174,10 +174,10 @@ export default function PatientDetailPage() {
   const isPensionType = PENSION_TYPES.has(catPro);
   const isVet = catPro === 'veterinaire' || catPro === 'sante';
   const hasWriteAccess = isVet
-    ? (grant?.status === 'active' || grant?.status === 'active_write')
-    : grant?.status === 'active_write';
-  const writeRequested = grant?.status === 'write_requested';
-  const isPending = grant?.status === 'demande';
+    ? (grant?.statut === 'active' || grant?.statut === 'active_write')
+    : grant?.statut === 'active_write';
+  const writeRequested = grant?.statut === 'write_requested';
+  const isPending = grant?.statut === 'pending';
 
   const TABS: string[] = isPensionType
     ? ['Identité', 'Santé', 'Alimentation', 'Propriétaire']
@@ -187,12 +187,12 @@ export default function PatientDetailPage() {
 
   // Load data
   useEffect(() => {
-    if (!user || !animalId) return;
+    if (!user || !animalId || !activeProfileId) return;
     async function load() {
       const [animalRes, grantRes] = await Promise.all([
         supabase.from('animaux').select('*').eq('id', animalId).single(),
-        supabase.from('vet_access_grants').select('id, status, vet_id')
-          .eq('vet_id', user!.uid).eq('animal_id', animalId).maybeSingle(),
+        supabase.from('animal_access').select('id, statut, pro_profile_id')
+          .eq('pro_profile_id', activeProfileId).eq('animal_id', animalId).maybeSingle(),
       ]);
       const a = animalRes.data as Animal | null;
       setAnimal(a);
@@ -241,7 +241,7 @@ export default function PatientDetailPage() {
       setLoading(false);
     }
     load();
-  }, [user, animalId]);
+  }, [user, animalId, activeProfileId]);
 
   async function saveForm() {
     if (!user?.uid || !animalId) return;
@@ -254,7 +254,7 @@ export default function PatientDetailPage() {
         const { data } = await supabase.from('vaccinations').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setVaccins((data ?? []) as VaccinEntry[]);
       } else if (addingType === 'visite') {
-        await supabase.from('visites').insert({ ...base, date: formDate, motif: formMotif.trim() || null, diagnostic: formDiag.trim() || null, notes: formNotes.trim() || null });
+        await supabase.from('visites').insert({ ...base, ...(activeProfileId ? { vet_profile_id: activeProfileId } : {}), date: formDate, motif: formMotif.trim() || null, diagnostic: formDiag.trim() || null, notes: formNotes.trim() || null });
         const { data } = await supabase.from('visites').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setVisites((data ?? []) as VisiteEntry[]);
       } else if (addingType === 'traitement') {
@@ -263,7 +263,21 @@ export default function PatientDetailPage() {
         setTraitements((data ?? []) as TraitementEntry[]);
       } else if (addingType === 'ordonnance') {
         const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
-        await supabase.from('ordonnances').insert({ animal_id: animalId, pro_uid: user.uid, owner_uid: ownerUid, date_emit: formDate, notes: formNotes.trim() || null });
+        let ownerProfileId: string | null = null;
+        if (ownerUid) {
+          const { data: ownerProfile } = await supabase.from('user_profiles').select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
+          ownerProfileId = ownerProfile?.id ?? null;
+        }
+        const pid = activeProfileId || null;
+        await supabase.from('ordonnances').insert({
+          animal_id: animalId,
+          pro_uid: user.uid,
+          ...(pid ? { pro_profile_id: pid } : {}),
+          owner_uid: ownerUid,
+          ...(ownerProfileId ? { owner_profile_id: ownerProfileId } : {}),
+          date_emit: formDate,
+          notes: formNotes.trim() || null,
+        });
         const { data } = await supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date_emit', { ascending: false });
         setOrdonnances((data ?? []) as Ordonnance[]);
       } else if (addingType === 'radio') {
@@ -301,8 +315,8 @@ export default function PatientDetailPage() {
   async function requestWriteAccess() {
     if (!user || !grant || !animal) return;
     setRequestingWrite(true);
-    await supabase.from('vet_access_grants').update({ status: 'write_requested' }).eq('id', grant.id);
-    setGrant(g => g ? { ...g, status: 'write_requested' } : g);
+    await supabase.from('animal_access').update({ statut: 'write_requested' }).eq('id', grant.id);
+    setGrant(g => g ? { ...g, statut: 'write_requested' } : g);
     const ownerUid = animal.uid_proprietaire ?? animal.uid_eleveur;
     if (ownerUid) {
       await supabase.from('notifications').insert({

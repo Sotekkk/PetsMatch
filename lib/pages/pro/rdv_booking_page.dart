@@ -3,6 +3,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 
 class RdvBookingPage extends StatefulWidget {
   final String proUid;
@@ -394,6 +395,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         'pro_uid':        widget.proUid,
         'pro_profile_id': widget.proProfileId ?? '',
         'client_uid': uid,
+        if (User_Info.activeProfileId != null) 'client_profile_id': User_Info.activeProfileId,
         if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
         'date_heure': dateHeure.toIso8601String(),
         'motif':      motif,

@@ -186,8 +186,16 @@ class _PetFriendsPageState extends State<PetFriendsPage>
 
   Future<void> _sendRequest(String targetUid) async {
     try {
+      final myPRow = await _supa.from('user_profiles').select('id').eq('uid', _myUid).eq('is_main', true).maybeSingle();
+      final myProfileId = myPRow?['id'] as String?;
+      final tgPRow = await _supa.from('user_profiles').select('id').eq('uid', targetUid).eq('is_main', true).maybeSingle();
+      final targetProfileId = tgPRow?['id'] as String?;
       await _supa.from('petfriends').insert({
-        'uid_demandeur': _myUid, 'uid_recepteur': targetUid, 'statut': 'en_attente',
+        'uid_demandeur': _myUid,
+        if (myProfileId != null) 'demandeur_profile_id': myProfileId,
+        'uid_recepteur': targetUid,
+        if (targetProfileId != null) 'recepteur_profile_id': targetProfileId,
+        'statut': 'en_attente',
         'created_at': DateTime.now().toIso8601String(), 'updated_at': DateTime.now().toIso8601String(),
       });
       final me = await _supa.from('users').select('firstname, lastname').eq('uid', _myUid).maybeSingle();

@@ -107,6 +107,7 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
   int _membresCount = 0;
   Map<String, Map<String, dynamic>> _userProfiles = {};
   bool _currentUserIsPro = false;
+  String? _profileId;
 
   @override
   void initState() {
@@ -125,12 +126,16 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
       // 2. Mon appartenance
       Map<String, dynamic>? myMem;
       if (_uid.isNotEmpty) {
-        final memData = await _supa
-            .from('groupes_membres')
-            .select('role, statut')
-            .eq('groupe_id', _groupe['id'])
-            .eq('user_uid', _uid)
-            .maybeSingle();
+        if (_profileId == null) {
+          final profRow = await _supa.from('user_profiles')
+              .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+          _profileId = profRow?['id'] as String?;
+        }
+        final memData = _profileId != null
+            ? await _supa.from('groupes_membres').select('role, statut')
+                .eq('groupe_id', _groupe['id']).eq('profile_id', _profileId!).maybeSingle()
+            : await _supa.from('groupes_membres').select('role, statut')
+                .eq('groupe_id', _groupe['id']).eq('user_uid', _uid).maybeSingle();
         myMem = memData != null ? Map<String, dynamic>.from(memData) : null;
       }
 
@@ -171,11 +176,12 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
       Set<String> likes = {};
       if (_uid.isNotEmpty && (postsData as List).isNotEmpty) {
         final postIds = postsData.map((p) => p['id'].toString()).toList();
-        final likesData = await _supa
-            .from('groupe_post_likes')
-            .select('post_id')
-            .eq('user_uid', _uid)
-            .inFilter('post_id', postIds);
+        final likesQuery = _profileId != null
+            ? _supa.from('groupe_post_likes').select('post_id')
+                .eq('profile_id', _profileId!).inFilter('post_id', postIds)
+            : _supa.from('groupe_post_likes').select('post_id')
+                .eq('user_uid', _uid).inFilter('post_id', postIds);
+        final likesData = await likesQuery;
         likes = Set<String>.from((likesData as List).map((l) => l['post_id'].toString()));
       }
 
@@ -238,6 +244,7 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
       await _supa.from('groupes_membres').insert({
         'groupe_id': _groupe['id'],
         'user_uid': _uid,
+        if (_profileId != null) 'profile_id': _profileId,
         'role': 'membre',
         'statut': statut,
         'rejoint_at': DateTime.now().toIso8601String(),
@@ -268,7 +275,11 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
             .eq('post_id', postId).eq('user_uid', _uid);
         await _supa.from('groupe_posts').update({'like_count': (_posts.firstWhere((p) => p['id'] == postId)['like_count'] ?? 0)}).eq('id', postId);
       } else {
-        await _supa.from('groupe_post_likes').insert({'post_id': postId, 'user_uid': _uid});
+        await _supa.from('groupe_post_likes').insert({
+          'post_id': postId,
+          'user_uid': _uid,
+          if (_profileId != null) 'profile_id': _profileId,
+        });
         await _supa.from('groupe_posts').update({'like_count': (_posts.firstWhere((p) => p['id'] == postId)['like_count'] ?? 0)}).eq('id', postId);
       }
     } catch (_) {}
@@ -963,6 +974,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   List<Map<String, dynamic>> _comments = [];
   Map<String, Map<String, dynamic>> _profiles = {};
   Set<String> _myCommentLikes = {};
+  String? _profileId;
   File? _imageFile;
   bool _loading = true;
   bool _sending = false;
@@ -980,6 +992,13 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   }
 
   Future<void> _load() async {
+    // Résolution profile_id une seule fois
+    if (_profileId == null && _uid.isNotEmpty) {
+      final profRow = await _supa.from('user_profiles')
+          .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+      _profileId = profRow?['id'] as String?;
+    }
+
     final data = await _supa
         .from('groupe_post_commentaires')
         .select()
@@ -1008,11 +1027,12 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     Set<String> myLikes = {};
     if (_uid.isNotEmpty && comments.isNotEmpty) {
       final commentIds = comments.map((c) => c['id'].toString()).toList();
-      final likesData = await _supa
-          .from('groupe_commentaire_likes')
-          .select('comment_id')
-          .eq('user_uid', _uid)
-          .inFilter('comment_id', commentIds);
+      final likesQuery = _profileId != null
+          ? _supa.from('groupe_commentaire_likes').select('comment_id')
+              .eq('profile_id', _profileId!).inFilter('comment_id', commentIds)
+          : _supa.from('groupe_commentaire_likes').select('comment_id')
+              .eq('user_uid', _uid).inFilter('comment_id', commentIds);
+      final likesData = await likesQuery;
       myLikes = Set<String>.from((likesData as List).map((l) => l['comment_id'].toString()));
     }
 
@@ -1053,8 +1073,11 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         await _supa.from('groupe_commentaire_likes').delete()
             .eq('comment_id', commentId).eq('user_uid', _uid);
       } else {
-        await _supa.from('groupe_commentaire_likes')
-            .insert({'comment_id': commentId, 'user_uid': _uid});
+        await _supa.from('groupe_commentaire_likes').insert({
+          'comment_id': commentId,
+          'user_uid': _uid,
+          if (_profileId != null) 'profile_id': _profileId,
+        });
       }
       final updated = _comments.firstWhere((c) => c['id'] == commentId, orElse: () => {});
       if (updated.isNotEmpty) {
@@ -1102,6 +1125,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       final inserted = await _supa.from('groupe_post_commentaires').insert({
         'post_id': widget.post['id'],
         'auteur_uid': _uid,
+        if (_profileId != null) 'auteur_profile_id': _profileId,
         'contenu': text,
         if (imageUrl != null) 'image_url': imageUrl,
         'created_at': DateTime.now().toIso8601String(),
@@ -1403,9 +1427,14 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
         final path = 'groupes/posts/${widget.groupeId}/${_uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
         imageUrl = await storage.uploadPhoto(_imageFile!, path, quality: 82);
       }
+      final profRow = await _supa.from('user_profiles')
+          .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+      final profileId = profRow?['id'] as String?;
+
       await _supa.from('groupe_posts').insert({
         'groupe_id': widget.groupeId,
         'auteur_uid': _uid,
+        if (profileId != null) 'auteur_profile_id': profileId,
         'contenu': text,
         if (imageUrl != null) 'image_url': imageUrl,
         'created_at': DateTime.now().toIso8601String(),

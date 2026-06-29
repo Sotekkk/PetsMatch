@@ -123,22 +123,22 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       setUpcomingRdvs((upRes.data ?? []) as UpcomingRdv[]);
       setLostAnimals((lostRes.data ?? []) as LostAnimal[]);
 
-      // Accès animaux clients — pour TOUS les types de pros
-      {
+      // Accès animaux clients — table animal_access unifiée
+      if (profileId) {
         const { data: grantRows } = await supabase
-          .from('vet_access_grants')
-          .select('id, animal_id, status')
-          .eq('vet_id', uid)
-          .in('status', ['active', 'active_write'])
+          .from('animal_access')
+          .select('id, animal_id, statut')
+          .eq('pro_profile_id', profileId)
+          .eq('statut', 'active')
           .limit(6);
         if (grantRows && grantRows.length > 0) {
-          const ids = grantRows.map(g => g.animal_id).filter(Boolean);
+          const ids = grantRows.map((g: { animal_id: string }) => g.animal_id).filter(Boolean);
           const { data: animalRows } = await supabase
             .from('animaux')
             .select('id, nom, espece, race, photo_url')
             .in('id', ids);
-          const animalMap = new Map((animalRows ?? []).map(a => [a.id, a]));
-          setPatients(grantRows.map(g => ({ ...g, animal: animalMap.get(g.animal_id) ?? null })) as unknown as Patient[]);
+          const animalMap = new Map((animalRows ?? []).map((a: { id: string }) => [a.id, a]));
+          setPatients(grantRows.map((g: { id: string; animal_id: string; statut: string }) => ({ ...g, animal: animalMap.get(g.animal_id) ?? null })) as unknown as Patient[]);
         }
       }
 

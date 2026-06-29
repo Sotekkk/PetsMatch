@@ -73,8 +73,17 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
     if (uid == null) return;
     final supa = Supabase.instance.client;
 
+    // Résoudre le profile_id particulier de l'utilisateur connecté
+    final particulierProfile = await supa.from('user_profiles')
+        .select('id').eq('uid', uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+    final particulierProfileId = particulierProfile?['id'] as String?;
+
+    final employsQuery = particulierProfileId != null
+        ? supa.from('employes').select('id, type').eq('employe_profile_id', particulierProfileId).eq('actif', true)
+        : supa.from('employes').select('id, type').eq('uid_employe', uid).eq('actif', true);
+
     final futures = <Future>[
-      supa.from('employes').select('id, type').eq('uid_employe', uid).eq('actif', true),
+      employsQuery,
       if (!User_Info.isElevage)
         supa.from('familles_accueil').select('id').eq('fa_uid', uid).eq('actif', true).limit(1),
     ];

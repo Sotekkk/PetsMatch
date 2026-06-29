@@ -97,11 +97,19 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final rows = await Supabase.instance.client
-          .from('chenil_boxes')
-          .select('nom')
-          .eq('association_uid', uid)
-          .order('nom');
+      final supa = Supabase.instance.client;
+      final profileData = await supa.from('user_profiles')
+          .select('id')
+          .eq('uid', uid)
+          .eq('is_main', true)
+          .maybeSingle();
+      final profileId = profileData?['id'] as String?;
+
+      var q = supa.from('chenil_boxes').select('nom').order('nom');
+      q = profileId != null
+          ? q.eq('profile_id', profileId)
+          : q.eq('association_uid', uid);
+      final rows = await q;
       final boxNames = (rows as List).map((r) => r['nom']?.toString() ?? '').where((n) => n.isNotEmpty).toList();
       if (mounted && boxNames.isNotEmpty) {
         setState(() {

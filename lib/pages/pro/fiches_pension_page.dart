@@ -80,11 +80,18 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
     setState(() => _loading = true);
     try {
       // Accès approuvés + owner_uid pour récupérer le profil du proprio
+      final proProfile = await _supa.from('user_profiles')
+          .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+      final proProfileId = proProfile?['id'] as String?;
+      if (proProfileId == null) {
+        if (mounted) setState(() { _items = []; _loading = false; });
+        return;
+      }
       final acces = await _supa
-          .from('pension_acces')
-          .select('animal_id, animal_nom, owner_uid, created_at')
-          .eq('pro_uid', _uid)
-          .eq('statut', 'approved')
+          .from('animal_access')
+          .select('animal_id, granted_by_profile_id, created_at')
+          .eq('pro_profile_id', proProfileId)
+          .eq('statut', 'active')
           .order('created_at', ascending: false);
 
       final ids = (acces as List).map((a) => a['animal_id'] as String).toList();

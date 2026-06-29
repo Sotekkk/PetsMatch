@@ -145,8 +145,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
 
     try {
       if (User_Info.catPro == 'veterinaire') {
-        final patients = await pf(supa.from('vet_access_grants')
-            .select('id').eq('vet_id', uid).eq('status', 'active'));
+        final patients = await pf(supa.from('animal_access')
+            .select('id').eq('pro_profile_id', pid).eq('statut', 'active'));
         final rdvToday = await pf(supa.from('rdv').select('id')
             .eq('pro_uid', uid)
             .gte('date_heure', todayStart)
@@ -157,8 +157,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
           _rdvTodayCount = (rdvToday as List).length;
         });
       } else if (User_Info.catPro == 'pension') {
-        final pensionnaires = await pf(supa.from('pension_acces')
-            .select('id').eq('pro_uid', uid).eq('statut', 'approved'));
+        final pensionnaires = await pf(supa.from('animal_access')
+            .select('id').eq('pro_profile_id', pid).eq('statut', 'active'));
         final rdvToday = await pf(supa.from('rdv').select('id')
             .eq('pro_uid', uid)
             .gte('date_heure', todayStart)

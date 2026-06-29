@@ -27,7 +27,7 @@ interface Animal {
 interface Grant {
   id: string;
   animal_id: number;
-  status: string;
+  statut: string;
   granted_at: string;
   animal: Animal | null;
 }
@@ -65,13 +65,13 @@ export default function MesPatientsPage() {
   }, [activeProfileId, userData]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !activeProfileId) return;
     async function load() {
       const { data: grantRows, error: grantErr } = await supabase
-        .from('vet_access_grants')
-        .select('id, animal_id, status, granted_at')
-        .eq('vet_id', user!.uid)
-        .neq('status', 'revoked')
+        .from('animal_access')
+        .select('id, animal_id, statut, granted_at')
+        .eq('pro_profile_id', activeProfileId)
+        .neq('statut', 'revoked')
         .order('granted_at', { ascending: false });
 
       if (grantErr) {
@@ -83,7 +83,7 @@ export default function MesPatientsPage() {
         return;
       }
       if (!grantRows || grantRows.length === 0) {
-        console.log('[mes-patients] no grants for uid:', user!.uid);
+        console.log('[mes-patients] no grants for profile:', activeProfileId);
         setLoading(false);
         return;
       }
@@ -105,7 +105,7 @@ export default function MesPatientsPage() {
       setLoading(false);
     }
     load();
-  }, [user]);
+  }, [user, activeProfileId]);
 
   if (!user) return (
     <div className="min-h-screen flex items-center justify-center text-gray-400 text-sm">

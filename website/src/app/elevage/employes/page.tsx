@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -86,6 +87,7 @@ function dateLabel(d: string): string {
 
 export default function EmployesPage() {
   const { user, loading } = useAuth();
+  const profileId = useActiveProfile();
   const router = useRouter();
   const [tab, setTab] = useState<'employes' | 'taches'>('taches');
   const [employes, setEmployes] = useState<Employe[]>([]);
@@ -103,8 +105,13 @@ export default function EmployesPage() {
     setLoadingData(true);
     try {
       // Employés
-      const { data: empsRaw } = await supabase.from('employes')
-        .select('id,uid_employe').eq('uid_eleveur', user.uid).eq('actif', true);
+      let empQ = supabase.from('employes').select('id,uid_employe').eq('actif', true);
+      if (profileId) {
+        empQ = empQ.eq('eleveur_profile_id', profileId) as typeof empQ;
+      } else {
+        empQ = empQ.eq('uid_eleveur', user.uid) as typeof empQ;
+      }
+      const { data: empsRaw } = await empQ;
       const empsData: Employe[] = [];
       const uidToNom: Record<string, string> = {};
       for (const e of empsRaw ?? []) {
@@ -125,8 +132,13 @@ export default function EmployesPage() {
       setEmployes(empsData);
 
       // Tâches manuelles
-      const { data: tm } = await supabase.from('taches_elevage')
-        .select('id,titre,date,statut,assigne_a,notes').eq('uid_eleveur', user.uid).order('date');
+      let tmQ = supabase.from('taches_elevage').select('id,titre,date,statut,assigne_a,notes').order('date');
+      if (profileId) {
+        tmQ = tmQ.eq('eleveur_profile_id', profileId) as typeof tmQ;
+      } else {
+        tmQ = tmQ.eq('uid_eleveur', user.uid) as typeof tmQ;
+      }
+      const { data: tm } = await tmQ;
       const tachesResolved = (tm ?? []).map(t => ({
         ...t,
         assigne_nom: t.assigne_a ? (uidToNom[t.assigne_a] ?? 'Employé') : undefined,
@@ -136,15 +148,14 @@ export default function EmployesPage() {
       // Tâches protocole — à faire (J-7 → J+90) + terminées (30j)
       const pastStr   = toDateStr(new Date(Date.now() - 7 * 86400000));
       const futureStr = toDateStr(new Date(Date.now() + 90 * 86400000));
+      const ptFilter = profileId
+        ? (q: ReturnType<typeof supabase.from>) => (q as ReturnType<typeof supabase.from>).eq('eleveur_profile_id', profileId)
+        : (q: ReturnType<typeof supabase.from>) => (q as ReturnType<typeof supabase.from>).eq('uid_eleveur', user.uid);
       const [{ data: pt1 }, { data: pt2 }] = await Promise.all([
-        supabase.from('plan_taches')
-          .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to')
-          .eq('uid_eleveur', user.uid).not('statut', 'eq', 'fait')
-          .gte('date_prevue', pastStr).lte('date_prevue', futureStr).limit(2000),
-        supabase.from('plan_taches')
-          .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to')
-          .eq('uid_eleveur', user.uid).eq('statut', 'fait')
-          .gte('date_prevue', pastStr).limit(500),
+        ptFilter(supabase.from('plan_taches').select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to'))
+          .not('statut', 'eq', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).limit(2000),
+        ptFilter(supabase.from('plan_taches').select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to'))
+          .eq('statut', 'fait').gte('date_prevue', pastStr).limit(500),
       ]);
       const seen = new Set<string>();
       const allPt = [...(pt1 ?? []), ...(pt2 ?? [])].filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
@@ -155,7 +166,7 @@ export default function EmployesPage() {
       setPlanTaches(ptResolved);
     } catch (_) {}
     setLoadingData(false);
-  }, [user]);
+  }, [user, profileId]);
 
   useEffect(() => { if (user) load(); }, [user, load]);
 

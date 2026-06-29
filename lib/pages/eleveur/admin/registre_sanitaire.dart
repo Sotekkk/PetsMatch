@@ -63,6 +63,7 @@ class RegistreHelper {
       await supa.from('registre_sanitaire').insert({
         'id':             id,
         'uid_eleveur':    uid,
+        if (User_Info.activeProfileId != null) 'eleveur_profile_id': User_Info.activeProfileId,
         'animal_id':      animalId,
         'animal_nom':     (d['nom'] ?? '') as String,
         'espece':         (d['espece'] ?? '') as String,
@@ -959,6 +960,7 @@ class _NouvelActePageState extends State<_NouvelActePage> {
       await Supabase.instance.client.from('registre_sanitaire').insert({
         'id':             id,
         'uid_eleveur':    _uid,
+        if (User_Info.activeProfileId != null) 'eleveur_profile_id': User_Info.activeProfileId,
         'animal_nom':     _animalNom,
         'espece':         _espece,
         'date_naissance': _dateNaissanceStr,

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 const TYPE_LABELS: Record<string, string> = {
   race: 'Race',
@@ -40,6 +41,7 @@ interface CreateGroupeData {
 
 export default function GroupesPage() {
   const { user } = useAuth();
+  const profileId = useActiveProfile();
   const [groupes, setGroupes] = useState<Groupe[]>([]);
   const [mesGroupes, setMesGroupes] = useState<Set<string>>(new Set());
   const [pendingGroupes, setPendingGroupes] = useState<Set<string>>(new Set());
@@ -68,10 +70,13 @@ export default function GroupesPage() {
 
       if (user?.uid) {
         // Mes appartenances
-        const { data: memData } = await supabase
-          .from('groupes_membres')
-          .select('groupe_id, statut')
-          .eq('user_uid', user.uid);
+        let memQuery = supabase.from('groupes_membres').select('groupe_id, statut');
+        if (profileId) {
+          memQuery = memQuery.eq('profile_id', profileId) as typeof memQuery;
+        } else {
+          memQuery = memQuery.eq('user_uid', user.uid) as typeof memQuery;
+        }
+        const { data: memData } = await memQuery;
         for (const m of memData ?? []) {
           if (m.statut === 'active') mes.add(m.groupe_id);
           if (m.statut === 'pending') pending.add(m.groupe_id);
@@ -107,7 +112,7 @@ export default function GroupesPage() {
     } finally {
       setLoading(false);
     }
-  }, [user?.uid]);
+  }, [user?.uid, profileId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -124,7 +129,11 @@ export default function GroupesPage() {
     } else {
       const statut = groupe.prive ? 'pending' : 'active';
       await supabase.from('groupes_membres').insert({
-        groupe_id: groupe.id, user_uid: user.uid, role: 'membre', statut,
+        groupe_id: groupe.id,
+        user_uid: user.uid,
+        ...(profileId ? { profile_id: profileId } : {}),
+        role: 'membre',
+        statut,
         rejoint_at: new Date().toISOString(),
       });
       if (groupe.prive) {
@@ -141,6 +150,7 @@ export default function GroupesPage() {
     try {
       const { data: inserted } = await supabase.from('groupes').insert({
         createur_uid: user.uid,
+        ...(profileId ? { createur_profile_id: profileId } : {}),
         nom: createData.nom.trim(),
         description: createData.description.trim(),
         type: createData.type,
@@ -151,7 +161,11 @@ export default function GroupesPage() {
 
       if (inserted) {
         await supabase.from('groupes_membres').insert({
-          groupe_id: inserted.id, user_uid: user.uid, role: 'admin', statut: 'active',
+          groupe_id: inserted.id,
+          user_uid: user.uid,
+          ...(profileId ? { profile_id: profileId } : {}),
+          role: 'admin',
+          statut: 'active',
           rejoint_at: new Date().toISOString(),
         });
         setMesGroupes(prev => new Set([...prev, inserted.id]));

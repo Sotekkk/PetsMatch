@@ -29,6 +29,7 @@ class _GroupesPageState extends State<GroupesPage>
   Set<String> _mesGroupes = {};
   Map<String, int> _friendCountPerGroupe = {};
   bool _loading = true;
+  String? _profileId;
   late TabController _tabCtrl;
 
   @override
@@ -57,11 +58,17 @@ class _GroupesPageState extends State<GroupesPage>
       Map<String, int> friendCounts = {};
 
       if (_uid.isNotEmpty) {
+        // Résolution profile_id (une seule fois)
+        if (_profileId == null) {
+          final profRow = await _supa.from('user_profiles')
+              .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+          _profileId = profRow?['id'] as String?;
+        }
+
         // Mes appartenances
-        final memData = await _supa
-            .from('groupes_membres')
-            .select('groupe_id')
-            .eq('user_uid', _uid);
+        final memData = _profileId != null
+            ? await _supa.from('groupes_membres').select('groupe_id').eq('profile_id', _profileId!)
+            : await _supa.from('groupes_membres').select('groupe_id').eq('user_uid', _uid);
         mes = Set<String>.from(
             (memData as List).map((e) => e['groupe_id'].toString()));
 
@@ -126,6 +133,7 @@ class _GroupesPageState extends State<GroupesPage>
         await _supa.from('groupes_membres').insert({
           'groupe_id': groupeId,
           'user_uid': _uid,
+          if (_profileId != null) 'profile_id': _profileId,
           'role': 'membre',
           'statut': isPrive ? 'pending' : 'active',
           'rejoint_at': DateTime.now().toIso8601String(),
@@ -404,8 +412,13 @@ class _CreateGroupeSheetState extends State<_CreateGroupeSheet> {
     _formKey.currentState!.save();
     setState(() => _saving = true);
     try {
+      final profRow = await _supa.from('user_profiles')
+          .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+      final profileId = profRow?['id'] as String?;
+
       final inserted = await _supa.from('groupes').insert({
         'createur_uid': _uid,
+        if (profileId != null) 'createur_profile_id': profileId,
         'nom': _nom,
         'description': _description,
         'type': _type,
@@ -417,6 +430,7 @@ class _CreateGroupeSheetState extends State<_CreateGroupeSheet> {
       await _supa.from('groupes_membres').insert({
         'groupe_id': inserted['id'],
         'user_uid': _uid,
+        if (profileId != null) 'profile_id': profileId,
         'role': 'admin',
         'rejoint_at': DateTime.now().toIso8601String(),
       });

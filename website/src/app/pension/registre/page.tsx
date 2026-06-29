@@ -80,9 +80,9 @@ export default function RegistrePensionPage() {
     if (!user) return;
     setLoading(true);
     let qEnt = supabase.from('pension_entrees').select('*').eq('pro_uid', user.uid).order('date_entree', { ascending: false });
-    qEnt = (qEnt as any).eq('pro_profile_id', activeProfileId);
+    if (activeProfileId) qEnt = qEnt.eq('pro_profile_id', activeProfileId) as typeof qEnt;
     let qAcc = supabase.from('pension_acces').select('animal_id').eq('pro_uid', user.uid).eq('statut', 'approved');
-    qAcc = (qAcc as any).eq('pro_profile_id', activeProfileId);
+    if (activeProfileId) qAcc = qAcc.eq('pro_profile_id', activeProfileId) as typeof qAcc;
     const [{ data: ent }, { data: acc }] = await Promise.all([qEnt, qAcc]);
     setEntrees((ent ?? []) as PensionEntree[]);
 
@@ -251,6 +251,7 @@ export default function RegistrePensionPage() {
       {showForm && (
         <EntreeModal
           proUid={user.uid}
+          proProfileId={activeProfileId || null}
           onClose={() => setShowForm(false)}
           onSaved={() => { setShowForm(false); load(); }}
         />
@@ -258,6 +259,7 @@ export default function RegistrePensionPage() {
       {editEntree && (
         <EntreeModal
           proUid={user.uid}
+          proProfileId={activeProfileId || null}
           entree={editEntree}
           onClose={() => setEditEntree(null)}
           onSaved={() => { setEditEntree(null); load(); }}
@@ -389,8 +391,9 @@ function EntreeCard({ entree, animalId, onEdit, onSorti }: {
 
 // ── Modal ajout / édition ────────────────────────────────────────────────────
 
-function EntreeModal({ proUid, entree, onClose, onSaved }: {
+function EntreeModal({ proUid, proProfileId, entree, onClose, onSaved }: {
   proUid: string;
+  proProfileId: string | null;
   entree?: PensionEntree;
   onClose: () => void;
   onSaved: () => void;
@@ -422,6 +425,7 @@ function EntreeModal({ proUid, entree, onClose, onSaved }: {
     setError('');
     const payload = {
       pro_uid:              proUid,
+      ...(proProfileId ? { pro_profile_id: proProfileId } : {}),
       animal_nom:           form.animal_nom.trim(),
       espece:               form.espece.trim().toLowerCase() || null,
       race:                 form.race.trim() || null,

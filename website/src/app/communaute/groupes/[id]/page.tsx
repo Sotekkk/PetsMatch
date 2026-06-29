@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 const TYPE_LABELS: Record<string, string> = { race: 'Race', region: 'Région', loisir: 'Loisir', autre: 'Autre' };
 
@@ -73,6 +74,7 @@ function fmtDate(iso: string) {
 export default function GroupeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const profileId = useActiveProfile();
   const router = useRouter();
 
   const [groupe, setGroupe] = useState<Groupe | null>(null);
@@ -144,8 +146,10 @@ export default function GroupeDetailPage() {
 
       let mem: Membership | null = null;
       if (user?.uid) {
-        const { data: myMem } = await supabase.from('groupes_membres').select('role, statut')
-          .eq('groupe_id', id).eq('user_uid', user.uid).maybeSingle();
+        const memQ = profileId
+          ? supabase.from('groupes_membres').select('role, statut').eq('groupe_id', id).eq('profile_id', profileId)
+          : supabase.from('groupes_membres').select('role, statut').eq('groupe_id', id).eq('user_uid', user.uid);
+        const { data: myMem } = await memQ.maybeSingle();
         mem = myMem as Membership | null;
 
         // Amis dans le groupe
@@ -164,8 +168,10 @@ export default function GroupeDetailPage() {
 
       if (user?.uid && postsData && postsData.length > 0) {
         const pids = postsData.map((p: Post) => p.id);
-        const { data: likes } = await supabase.from('groupe_post_likes').select('post_id')
-          .eq('user_uid', user.uid).in('post_id', pids);
+        const likesQ = profileId
+          ? supabase.from('groupe_post_likes').select('post_id').eq('profile_id', profileId).in('post_id', pids)
+          : supabase.from('groupe_post_likes').select('post_id').eq('user_uid', user.uid).in('post_id', pids);
+        const { data: likes } = await likesQ;
         setMyLikes(new Set((likes ?? []).map((l: { post_id: string }) => l.post_id)));
       }
 
@@ -189,7 +195,7 @@ export default function GroupeDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [id, user?.uid, router]);
+  }, [id, user?.uid, profileId, router]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -202,7 +208,11 @@ export default function GroupeDetailPage() {
     } else {
       const statut = groupe.prive ? 'pending' : 'active';
       await supabase.from('groupes_membres').insert({
-        groupe_id: id, user_uid: user.uid, role: 'membre', statut,
+        groupe_id: id,
+        user_uid: user.uid,
+        ...(profileId ? { profile_id: profileId } : {}),
+        role: 'membre',
+        statut,
         rejoint_at: new Date().toISOString(),
       });
       setMembership({ role: 'membre', statut });
@@ -223,7 +233,11 @@ export default function GroupeDetailPage() {
     if (liked) {
       await supabase.from('groupe_post_likes').delete().eq('post_id', postId).eq('user_uid', user.uid);
     } else {
-      await supabase.from('groupe_post_likes').insert({ post_id: postId, user_uid: user.uid });
+      await supabase.from('groupe_post_likes').insert({
+        post_id: postId,
+        user_uid: user.uid,
+        ...(profileId ? { profile_id: profileId } : {}),
+      });
     }
     await supabase.from('groupe_posts').update({ like_count: posts.find(p => p.id === postId)!.like_count + delta }).eq('id', postId);
   }
@@ -260,7 +274,10 @@ export default function GroupeDetailPage() {
         setUploadingImg(false);
       }
       const { data } = await supabase.from('groupe_posts').insert({
-        groupe_id: id, auteur_uid: user.uid, contenu: newPost.trim(),
+        groupe_id: id,
+        auteur_uid: user.uid,
+        ...(profileId ? { auteur_profile_id: profileId } : {}),
+        contenu: newPost.trim(),
         image_url: imageUrl ?? null,
         created_at: new Date().toISOString(),
       }).select().single();
@@ -328,8 +345,10 @@ export default function GroupeDetailPage() {
     // Charger mes likes de commentaires
     if (user?.uid && commentsList.length > 0) {
       const cIds = commentsList.map(c => c.id);
-      const { data: clData } = await supabase.from('groupe_commentaire_likes')
-        .select('comment_id').eq('user_uid', user.uid).in('comment_id', cIds);
+      const clQ = profileId
+        ? supabase.from('groupe_commentaire_likes').select('comment_id').eq('profile_id', profileId).in('comment_id', cIds)
+        : supabase.from('groupe_commentaire_likes').select('comment_id').eq('user_uid', user.uid).in('comment_id', cIds);
+      const { data: clData } = await clQ;
       setMyCommentLikes(new Set((clData ?? []).map((l: { comment_id: string }) => l.comment_id)));
     }
 
@@ -356,7 +375,11 @@ export default function GroupeDetailPage() {
     if (liked) {
       await supabase.from('groupe_commentaire_likes').delete().eq('comment_id', commentId).eq('user_uid', user.uid);
     } else {
-      await supabase.from('groupe_commentaire_likes').insert({ comment_id: commentId, user_uid: user.uid });
+      await supabase.from('groupe_commentaire_likes').insert({
+        comment_id: commentId,
+        user_uid: user.uid,
+        ...(profileId ? { profile_id: profileId } : {}),
+      });
     }
     const updated = comments.find(c => c.id === commentId);
     if (updated) {
@@ -381,7 +404,10 @@ export default function GroupeDetailPage() {
         setUploadingCommentImg(false);
       }
       const { data } = await supabase.from('groupe_post_commentaires').insert({
-        post_id: openCommentPost.id, auteur_uid: user.uid, contenu: newComment.trim(),
+        post_id: openCommentPost.id,
+        auteur_uid: user.uid,
+        ...(profileId ? { auteur_profile_id: profileId } : {}),
+        contenu: newComment.trim(),
         image_url: imageUrl ?? null,
         created_at: new Date().toISOString(),
       }).select().single();

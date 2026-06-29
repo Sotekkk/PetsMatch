@@ -27,6 +27,8 @@ class _EvenementsPageState extends State<EvenementsPage> {
   final _supa = Supabase.instance.client;
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
+  String? _profileId; // profile_id actif (user_profiles.id)
+
   List<Map<String, dynamic>> _evenements = [];
   Set<String> _mesInscriptions = {};
   bool _loading = true;
@@ -41,6 +43,13 @@ class _EvenementsPageState extends State<EvenementsPage> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
+      // Résoudre le profile_id une fois
+      if (_uid.isNotEmpty && _profileId == null) {
+        final pd = await _supa.from('user_profiles')
+            .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+        _profileId = pd?['id'] as String?;
+      }
+
       final evData = await _supa
           .from('evenements')
           .select()
@@ -49,7 +58,14 @@ class _EvenementsPageState extends State<EvenementsPage> {
           .order('date_debut');
 
       Set<String> inscriptions = {};
-      if (_uid.isNotEmpty) {
+      if (_profileId != null) {
+        final insData = await _supa
+            .from('evenements_inscrits')
+            .select('evenement_id')
+            .eq('profile_id', _profileId!);
+        inscriptions = Set<String>.from(
+            (insData as List).map((e) => e['evenement_id'].toString()));
+      } else if (_uid.isNotEmpty) {
         final insData = await _supa
             .from('evenements_inscrits')
             .select('evenement_id')
@@ -82,16 +98,17 @@ class _EvenementsPageState extends State<EvenementsPage> {
     });
     try {
       if (estInscrit) {
-        await _supa
-            .from('evenements_inscrits')
-            .delete()
-            .eq('evenement_id', evId)
-            .eq('user_uid', _uid);
+        var q = _supa.from('evenements_inscrits').delete().eq('evenement_id', evId);
+        q = _profileId != null
+            ? q.eq('profile_id', _profileId!)
+            : q.eq('user_uid', _uid);
+        await q;
       } else {
         await _supa.from('evenements_inscrits').insert({
           'evenement_id': evId,
-          'user_uid': _uid,
-          'inscrit_at': DateTime.now().toIso8601String(),
+          'user_uid':     _uid,
+          'profile_id':   _profileId,
+          'inscrit_at':   DateTime.now().toIso8601String(),
         });
       }
     } catch (_) {

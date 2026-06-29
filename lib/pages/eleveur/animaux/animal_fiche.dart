@@ -206,25 +206,25 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     if (widget.animalId == null) return;
     try {
       final grants = await _supa
-          .from('vet_access_grants')
-          .select('id, vet_id, status, granted_at')
+          .from('animal_access')
+          .select('id, pro_profile_id, statut, granted_at')
           .eq('animal_id', widget.animalId!)
-          .neq('status', 'revoked');
-      final vetIds = (grants as List).map((g) => g['vet_id']?.toString()).whereType<String>().toList();
-      final vetNames = <String, String>{};
-      if (vetIds.isNotEmpty) {
-        final users = await _supa.from('users')
-            .select('uid, firstname, lastname')
-            .inFilter('uid', vetIds);
-        for (final u in users as List) {
-          final uid = u['uid']?.toString() ?? '';
+          .neq('statut', 'revoked');
+      final profileIds = (grants as List).map((g) => g['pro_profile_id']?.toString()).whereType<String>().toList();
+      final proNames = <String, String>{};
+      if (profileIds.isNotEmpty) {
+        final profiles = await _supa.from('user_profiles')
+            .select('id, firstname, lastname')
+            .inFilter('id', profileIds);
+        for (final u in profiles as List) {
+          final pid = u['id']?.toString() ?? '';
           final nom = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
-          vetNames[uid] = nom.isNotEmpty ? nom : 'Vétérinaire';
+          proNames[pid] = nom.isNotEmpty ? nom : 'Vétérinaire';
         }
       }
       final list = (grants as List).map((g) {
         final m = Map<String, dynamic>.from(g as Map);
-        m['vet_nom'] = vetNames[g['vet_id']?.toString()] ?? 'Vétérinaire';
+        m['vet_nom'] = proNames[g['pro_profile_id']?.toString()] ?? 'Professionnel';
         return m;
       }).toList();
       if (mounted) setState(() => _vetAcces = list);
@@ -233,8 +233,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
   Future<void> _approveVetAcces(String grantId) async {
     try {
-      await _supa.from('vet_access_grants').update({
-        'status': 'active',
+      await _supa.from('animal_access').update({
+        'statut': 'active',
         'granted_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', grantId);
       _loadVetAcces();
@@ -243,8 +243,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
   Future<void> _revokeVetAcces(String grantId) async {
     try {
-      await _supa.from('vet_access_grants').update({
-        'status': 'revoked',
+      await _supa.from('animal_access').update({
+        'statut': 'revoked',
         'revoked_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', grantId);
       _loadVetAcces();
@@ -278,10 +278,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     if (widget.animalId == null) return;
     try {
       final rows = await _supa
-          .from('pension_acces')
-          .select('id, pro_uid, pro_nom, created_at')
+          .from('animal_access')
+          .select('id, pro_profile_id, created_at, permissions')
           .eq('animal_id', widget.animalId!)
-          .eq('statut', 'approved');
+          .eq('statut', 'active')
+          .contains('permissions', ['write_notes']);
       if (mounted) setState(() => _pensionAcces = List<Map<String, dynamic>>.from(rows));
     } catch (_) {}
   }
@@ -513,6 +514,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   await _supa.from('registre_mouvements').insert({
                     'animal_id':    widget.animalId,
                     'uid_eleveur':  uid,
+                    if (User_Info.activeProfileId != null) 'eleveur_profile_id': User_Info.activeProfileId,
                     'type':         type,
                     'date_mouvement': date.toIso8601String().split('T').first,
                     if (motif.isNotEmpty) 'motif': motif,
@@ -579,7 +581,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       ),
     );
     if (confirm == true && mounted) {
-      await _supa.from('pension_acces').delete().eq('id', accesId);
+      await _supa.from('animal_access').update({'statut': 'revoked', 'revoked_at': DateTime.now().toUtc().toIso8601String()}).eq('id', accesId);
       _loadPensionAcces();
     }
   }
@@ -954,6 +956,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         await _supa.from('registre_mouvements').insert({
           'animal_id':             widget.animalId,
           'uid_eleveur':           currentUid,
+          if (User_Info.activeProfileId != null) 'eleveur_profile_id': User_Info.activeProfileId,
           'type':                  'sortie',
           'date_mouvement':        dateCession,
           'motif':                 'cession',
@@ -963,9 +966,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         });
         // Entrée pour l'acquéreur (éleveur ou association uniquement)
         if (isAcqEleveur || isAcqAsso) {
+          final acqProfRow = await _supa.from('user_profiles')
+              .select('id').eq('uid', uidAcq!).eq('is_main', true).maybeSingle();
+          final acqProfileId = acqProfRow?['id'] as String?;
           await _supa.from('registre_mouvements').insert({
             'animal_id':           widget.animalId,
             'uid_eleveur':         uidAcq,
+            if (acqProfileId != null) 'eleveur_profile_id': acqProfileId,
             'type':                'entree',
             'date_mouvement':      dateCession,
             'motif':               'cession',
@@ -5233,6 +5240,12 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
     if (_isVaccin && _vaccin.text.trim().isEmpty) return false;
     final supa = Supabase.instance.client;
     final visiteId = DateTime.now().microsecondsSinceEpoch.toString();
+    String? vetProfileId;
+    if (widget.vetId != null) {
+      final profRow = await supa.from('user_profiles')
+          .select('id').eq('uid', widget.vetId!).eq('is_main', true).maybeSingle();
+      vetProfileId = profRow?['id'] as String?;
+    }
     await supa.from('visites').insert({
       'id': visiteId, 'animal_id': widget.animalId,
       'motif': _motif, 'veterinaire': _veto.text.trim(),
@@ -5240,6 +5253,7 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
       'diagnostic': _diag.text.trim(), 'notes': _notes.text.trim(),
       'source': widget.source,
       if (widget.vetId != null) 'vet_id': widget.vetId,
+      if (vetProfileId != null) 'vet_profile_id': vetProfileId,
     });
     if (_isVaccin) {
       final vacId = (DateTime.now().microsecondsSinceEpoch + 1).toString();
@@ -9114,6 +9128,7 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
   List<Map<String, dynamic>> _crs        = [];
   List<Map<String, dynamic>> _ordos      = [];
   List<Map<String, dynamic>> _santeEntries = [];
+  String? _vetProfileId;
   // ID de session — lie toutes les entrées ajoutées pendant cette visite
   late final String _sessionVisiteRef;
 
@@ -9127,13 +9142,19 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
   Future<void> _load() async {
     if (widget.animalId == null) { setState(() => _loading = false); return; }
     final vetUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (_vetProfileId == null && vetUid.isNotEmpty) {
+      final row = await _supa.from('user_profiles').select('id').eq('uid', vetUid).eq('is_main', true).maybeSingle();
+      _vetProfileId = row?['id'] as String?;
+    }
+    final proFilter = _vetProfileId != null ? 'pro_profile_id' : 'pro_uid';
+    final proValue  = _vetProfileId ?? vetUid;
     try {
       final results = await Future.wait([
         _supa.from('comptes_rendus').select()
-            .eq('animal_id', widget.animalId!).eq('pro_uid', vetUid)
+            .eq('animal_id', widget.animalId!).eq(proFilter, proValue)
             .order('created_at', ascending: false),
         _supa.from('ordonnances').select()
-            .eq('animal_id', widget.animalId!).eq('pro_uid', vetUid)
+            .eq('animal_id', widget.animalId!).eq(proFilter, proValue)
             .order('created_at', ascending: false),
         _supa.from('vaccinations').select()
             .eq('animal_id', widget.animalId!)
@@ -9243,6 +9264,7 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
       case 'ordo':
         dialog = _VetAddOrdoDialog(
             animalId: widget.animalId!, vetUid: vetUid, vetName: vetName,
+            vetProfileId: _vetProfileId,
             ownerUid: widget.ownerUid, rdvId: widget.rdvId);
         break;
       case 'radio':
@@ -10144,12 +10166,16 @@ class _VetAddVisiteDialogState extends State<_VetAddVisiteDialog> {
     setState(() => _saving = true);
     try {
       final id = DateTime.now().microsecondsSinceEpoch.toString();
+      final profRow = await Supabase.instance.client.from('user_profiles')
+          .select('id').eq('uid', widget.vetUid).eq('is_main', true).maybeSingle();
+      final vetProfileId = profRow?['id'] as String?;
       await Supabase.instance.client.from('visites').insert({
         'id': id, 'animal_id': widget.animalId,
         'motif': _motif, 'veterinaire': widget.vetName,
         'date': _date!.toIso8601String().substring(0, 10),
         'diagnostic': _diag.text.trim(), 'notes': _notes.text.trim(),
         'source': 'veterinaire', 'vet_id': widget.vetUid,
+        if (vetProfileId != null) 'vet_profile_id': vetProfileId,
         'visite_ref': widget.visiteRef,
         if (widget.rdvId != null) 'rdv_id': widget.rdvId!,
       });
@@ -10232,9 +10258,9 @@ class _VetAddVisiteDialogState extends State<_VetAddVisiteDialog> {
 
 class _VetAddOrdoDialog extends StatefulWidget {
   final String animalId, vetUid, vetName;
-  final String? ownerUid, rdvId;
+  final String? ownerUid, rdvId, vetProfileId;
   const _VetAddOrdoDialog({required this.animalId, required this.vetUid,
-      required this.vetName, this.ownerUid, this.rdvId});
+      required this.vetName, this.vetProfileId, this.ownerUid, this.rdvId});
   @override State<_VetAddOrdoDialog> createState() => _VetAddOrdoDialogState();
 }
 class _VetAddOrdoDialogState extends State<_VetAddOrdoDialog> {
@@ -10266,10 +10292,17 @@ class _VetAddOrdoDialogState extends State<_VetAddOrdoDialog> {
       final name  = '${DateTime.now().millisecondsSinceEpoch}.pdf';
       final url   = await uploadDocument(_pdfFile!, 'ordonnances/${widget.vetUid}/$name');
       final today = _date;
+      String? ownerProfileId;
+      if (widget.ownerUid != null) {
+        final row = await Supabase.instance.client.from('user_profiles').select('id').eq('uid', widget.ownerUid!).eq('is_main', true).maybeSingle();
+        ownerProfileId = row?['id'] as String?;
+      }
       await Supabase.instance.client.from('ordonnances').insert({
         'pro_uid':   widget.vetUid,
+        if (widget.vetProfileId != null) 'pro_profile_id': widget.vetProfileId,
         'animal_id': widget.animalId,
         if (widget.ownerUid != null) 'owner_uid': widget.ownerUid,
+        if (ownerProfileId != null) 'owner_profile_id': ownerProfileId,
         if (widget.rdvId != null) 'rdv_id': widget.rdvId!,
         'doc_url':   url,
         'date_emit': '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}',

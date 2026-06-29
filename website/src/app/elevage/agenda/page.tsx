@@ -123,6 +123,7 @@ function AddTacheModal({ selectedDate, uid, profilSource, activeProfileId, emplo
       heure: heure || null, notes: notes.trim() || null,
       statut: 'a_faire', profil_source: profilSource,
       profile_id: activeProfileId || null,
+      eleveur_profile_id: activeProfileId || null,
       assigne_a: assigneUid, assignes_a: assigneUid ? [assigneUid] : null,
     });
     if (assigneUid) {
