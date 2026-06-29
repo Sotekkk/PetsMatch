@@ -44,7 +44,18 @@ interface Employe {
   uid_employe: string;
   nom: string;
   photo?: string | null;
+  employeProfileId?: string | null;
+  eleveurProfileId?: string | null;
 }
+
+const PERMS_LIST = [
+  { key: 'write_animaux',    label: 'Modifier les animaux',  desc: 'Éditer fiches, photos, identité' },
+  { key: 'write_sante',      label: 'Carnet de santé',       desc: 'Vaccins, traitements, poids' },
+  { key: 'write_repro',      label: 'Suivi reproducteur',    desc: 'Saillies, gestations, portées' },
+  { key: 'write_planning',   label: 'Planning & tâches',     desc: 'Créer et modifier les tâches' },
+  { key: 'write_inventaire', label: 'Inventaire',            desc: 'Gérer les stocks et alertes' },
+  { key: 'write_notes',      label: 'Notes',                 desc: 'Ajouter des notes internes' },
+] as const;
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -97,6 +108,10 @@ export default function EmployesPage() {
   const [showDone, setShowDone] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ label: string; onConfirm: () => void } | null>(null);
   const [protoModal, setProtoModal] = useState<ProtoGroupe | null>(null);
+  const [permsModal, setPermsModal] = useState<Employe | null>(null);
+  const [permsData, setPermsData] = useState<Set<string>>(new Set());
+  const [permsLoading, setPermsLoading] = useState(false);
+  const [permsSaving, setPermsSaving] = useState(false);
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
 
@@ -105,7 +120,7 @@ export default function EmployesPage() {
     setLoadingData(true);
     try {
       // Employés
-      let empQ = supabase.from('employes').select('id,uid_employe').eq('actif', true);
+      let empQ = supabase.from('employes').select('id,uid_employe,employe_profile_id,eleveur_profile_id').eq('actif', true);
       if (profileId) {
         empQ = empQ.eq('eleveur_profile_id', profileId) as typeof empQ;
       } else {
@@ -126,6 +141,8 @@ export default function EmployesPage() {
             uid_employe: e.uid_employe,
             nom,
             photo: u.is_elevage ? u.profile_picture_url_elevage : u.profile_picture_url,
+            employeProfileId: e.employe_profile_id as string | null,
+            eleveurProfileId: e.eleveur_profile_id as string | null,
           });
         }
       }
@@ -169,6 +186,40 @@ export default function EmployesPage() {
   }, [user, profileId]);
 
   useEffect(() => { if (user) load(); }, [user, load]);
+
+  const openPerms = useCallback(async (e: Employe) => {
+    setPermsModal(e);
+    setPermsLoading(true);
+    setPermsData(new Set());
+    if (e.employeProfileId && e.eleveurProfileId) {
+      const { data } = await supabase.from('employe_permissions')
+        .select('permission')
+        .eq('eleveur_profile_id', e.eleveurProfileId)
+        .eq('employe_profile_id', e.employeProfileId);
+      setPermsData(new Set((data ?? []).map((r: { permission: string }) => r.permission)));
+    }
+    setPermsLoading(false);
+  }, []);
+
+  const savePerms = useCallback(async () => {
+    if (!permsModal?.employeProfileId || !permsModal?.eleveurProfileId) return;
+    setPermsSaving(true);
+    await supabase.from('employe_permissions')
+      .delete()
+      .eq('eleveur_profile_id', permsModal.eleveurProfileId)
+      .eq('employe_profile_id', permsModal.employeProfileId);
+    if (permsData.size > 0) {
+      await supabase.from('employe_permissions').insert(
+        [...permsData].map(p => ({
+          eleveur_profile_id: permsModal.eleveurProfileId,
+          employe_profile_id: permsModal.employeProfileId,
+          permission: p,
+        }))
+      );
+    }
+    setPermsSaving(false);
+    setPermsModal(null);
+  }, [permsModal, permsData]);
 
   const deleteManuel = useCallback(async (t: TacheManuelle) => {
     await supabase.from('taches_elevage').delete().eq('id', t.id);
@@ -279,6 +330,17 @@ export default function EmployesPage() {
                 }
               </div>
               <span className="flex-1 font-semibold text-gray-800 text-sm">{e.nom}</span>
+              <button
+                onClick={() => openPerms(e)}
+                title="Gérer les accès"
+                className="p-2 rounded-xl hover:bg-teal-50 text-gray-400 hover:text-teal-600 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
             </div>
           ))}
         </div>
@@ -495,6 +557,78 @@ export default function EmployesPage() {
                 Fermer
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal permissions employé */}
+      {permsModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center sm:items-center p-4"
+             onClick={e => { if (e.target === e.currentTarget) setPermsModal(null); }}>
+          <div className="bg-white rounded-2xl w-full max-w-md">
+            <div className="p-5 border-b flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-teal-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                {permsModal.photo
+                  ? <img src={permsModal.photo} alt={permsModal.nom} className="w-full h-full object-cover" />
+                  : <span className="text-teal-600 font-bold text-sm">{permsModal.nom[0]?.toUpperCase()}</span>
+                }
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-gray-800 text-sm">Accès de {permsModal.nom}</h3>
+                <p className="text-xs text-gray-400">Choisissez ce que cet employé peut modifier</p>
+              </div>
+              <button onClick={() => setPermsModal(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+            </div>
+
+            <div className="p-5">
+              {permsLoading ? (
+                <div className="flex justify-center py-8">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-teal-600" />
+                </div>
+              ) : !permsModal.employeProfileId || !permsModal.eleveurProfileId ? (
+                <p className="text-center text-sm text-red-500 py-6">
+                  Profils non liés — mettez à jour la fiche employé depuis l&apos;app.
+                </p>
+              ) : (
+                <div className="space-y-0 divide-y divide-gray-50">
+                  {PERMS_LIST.map(({ key, label, desc }) => (
+                    <div key={key} className="flex items-center gap-3 py-3.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800">{label}</p>
+                        <p className="text-xs text-gray-400">{desc}</p>
+                      </div>
+                      <button
+                        onClick={() => setPermsData(prev => {
+                          const next = new Set(prev);
+                          next.has(key) ? next.delete(key) : next.add(key);
+                          return next;
+                        })}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
+                          permsData.has(key) ? 'bg-teal-500' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                          permsData.has(key) ? 'translate-x-6' : 'translate-x-1'
+                        }`} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {!permsLoading && permsModal.employeProfileId && (
+              <div className="px-5 pb-5 flex gap-3">
+                <button onClick={() => setPermsModal(null)}
+                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 font-medium">
+                  Annuler
+                </button>
+                <button onClick={savePerms} disabled={permsSaving}
+                  className="flex-1 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50">
+                  {permsSaving ? 'Enregistrement…' : 'Enregistrer'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
