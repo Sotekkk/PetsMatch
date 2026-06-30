@@ -315,20 +315,25 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
 
       if (src == 'association') {
         try {
+          // Sans filtre profile_type (RLS bloque) → filtre client-side
           final profiles = await Supabase.instance.client
               .from('user_profiles')
-              .select('name_elevage, profile_label, avatar_url, ville')
-              .eq('uid', uid)
-              .eq('profile_type', 'association');
+              .select('id, profile_type, nom, profile_label, avatar_url, ville')
+              .eq('uid', uid);
           final list = profiles as List;
-          if (list.isNotEmpty) {
-            final p = list.first as Map<String, dynamic>;
-            final n = (p['name_elevage'] as String?)?.trim();
+          final p = list.firstWhere(
+            (r) => (r['profile_type'] as String?) == 'association',
+            orElse: () => list.isNotEmpty ? list.first : null,
+          ) as Map<String, dynamic>?;
+          if (p != null) {
+            final n     = (p['nom'] as String?)?.trim();
             final label = (p['profile_label'] as String?)?.trim();
             final assoName = (n?.isNotEmpty == true) ? n! : (label?.isNotEmpty == true ? label! : null);
             if (assoName != null) normalized['nameElevage'] = assoName;
             if ((p['avatar_url'] as String?)?.isNotEmpty == true) normalized['profilePictureUrlElevage'] = p['avatar_url'];
             if ((p['ville'] as String?)?.isNotEmpty == true) normalized['villeElevage'] = p['ville'];
+            // Stocker le profile_id pour bypass RLS dans AssociationDetailPage
+            if ((p['id'] as String?)?.isNotEmpty == true) normalized['assoProfileId'] = p['id'];
           }
         } catch (_) {}
       }
@@ -1567,6 +1572,8 @@ class _EleveurCard extends StatelessWidget {
   final bool isAssociation;
   const _EleveurCard({this.eleveurData, required this.uidEleveur, this.isAssociation = false});
 
+  String? get _assoProfileId => eleveurData?['assoProfileId'] as String?;
+
   @override
   Widget build(BuildContext context) {
     if (eleveurData == null) return const SizedBox.shrink();
@@ -1578,10 +1585,11 @@ class _EleveurCard extends StatelessWidget {
       if (isAssociation) {
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => AssociationDetailPage(
-            uid: uidEleveur,
-            name: name,
-            avatar: photoUrl ?? '',
-            ville: ville,
+            uid:       uidEleveur,
+            profileId: _assoProfileId,
+            name:      name,
+            avatar:    photoUrl ?? '',
+            ville:     ville,
           ),
         ));
       } else {
