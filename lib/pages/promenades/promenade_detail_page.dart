@@ -123,7 +123,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
     try {
       final rawMsgs = await _supa
           .from('promenades_messages')
-          .select('id, user_uid, message, created_at, user_profile_id')
+          .select('id, user_uid, message, image_url, created_at, user_profile_id')
           .eq('promenade_id', widget.promenadeId)
           .order('created_at');
       final List<Map<String, dynamic>> msgs = [];

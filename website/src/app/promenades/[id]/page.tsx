@@ -410,7 +410,9 @@ export default function PromenadeDetailPage() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'promenades_messages',
         filter: `promenade_id=eq.${id}` }, () => loadMessages())
       .subscribe();
-    return () => { msgChannelRef.current?.unsubscribe(); };
+    // Polling fallback toutes les 5s si Realtime ne déclenche pas (table pas encore en publication)
+    const poll = setInterval(() => loadMessages(), 5000);
+    return () => { msgChannelRef.current?.unsubscribe(); clearInterval(poll); };
   }, [id, loadMessages]);
 
   // ── Envoi message texte ─────────────────────────────────────────────────────

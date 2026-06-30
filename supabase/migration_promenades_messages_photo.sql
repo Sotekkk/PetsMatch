@@ -33,3 +33,6 @@ CREATE POLICY "prom_photos_select" ON storage.objects
 DROP POLICY IF EXISTS "prom_photos_delete" ON storage.objects;
 CREATE POLICY "prom_photos_delete" ON storage.objects
   FOR DELETE USING (bucket_id = 'promenades-photos');
+
+-- ── Activer Realtime sur promenades_messages (nécessaire pour auto-refresh web) ─
+ALTER PUBLICATION supabase_realtime ADD TABLE promenades_messages;
