@@ -92,7 +92,10 @@ class AgendaPage extends StatefulWidget {
   final VoidCallback? onBack;
   final bool isAssociation;
   final bool isParticulier;
-  const AgendaPage({super.key, this.onBack, this.isAssociation = false, this.isParticulier = false});
+  // UUID du profil particulier passé explicitement depuis ParticulierNav
+  // pour éviter la contamination cross-profil en mode preview
+  final String? particulierProfileId;
+  const AgendaPage({super.key, this.onBack, this.isAssociation = false, this.isParticulier = false, this.particulierProfileId});
   @override
   State<AgendaPage> createState() => _AgendaPageState();
 }
@@ -168,16 +171,11 @@ class _AgendaPageState extends State<AgendaPage> {
     final from = DateTime(_focusedMonth.year, _focusedMonth.month - 1, 1).toUtc();
     final to   = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0, 23, 59, 59).toUtc();
 
-    // En mode particulier, User_Info.activeProfileId peut être l'UUID d'un autre profil
-    // (éleveur, asso) si on est en mode preview. Il faut résoudre l'UUID particulier explicitement.
-    String pid;
-    if (widget.isParticulier) {
-      final partProfile = await _supa.from('user_profiles')
-          .select('id').eq('uid', _uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
-      pid = (partProfile?['id'] as String?) ?? '';
-    } else {
-      pid = User_Info.activeProfileId ?? '';
-    }
+    // En mode particulier, utiliser l'UUID particulier passé depuis ParticulierNav
+    // (User_Info.activeProfileId peut être l'UUID d'un autre profil en mode preview)
+    final pid = widget.isParticulier
+        ? (widget.particulierProfileId ?? '')
+        : (User_Info.activeProfileId ?? '');
 
     try {
       // Filtre strict par profil actif ; inclut les événements legacy (pro_profile_id = '')
@@ -255,10 +253,11 @@ class _AgendaPageState extends State<AgendaPage> {
                 .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
                 .or('profil_source.is.null,profil_source.eq.eleveur');
       }
-      // Tâches assignées à cet utilisateur (particulier) — utiliser profile_id si disponible
-      final myParticulierProfile = await _supa.from('user_profiles')
-          .select('id').eq('uid', _uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
-      final myParticulierProfileId = myParticulierProfile?['id'] as String?;
+      // Tâches assignées à cet utilisateur — UUID particulier passé depuis ParticulierNav ou résolu depuis la BDD
+      final myParticulierProfileId = widget.isParticulier
+          ? widget.particulierProfileId
+          : ((await _supa.from('user_profiles')
+                .select('id').eq('uid', _uid).eq('profile_type', 'particulier').limit(1).maybeSingle())?['id'] as String?);
       final d2 = myParticulierProfileId != null
           ? await _supa.from('taches_elevage')
               .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
