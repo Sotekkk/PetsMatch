@@ -167,10 +167,20 @@ class _AgendaPageState extends State<AgendaPage> {
     if (_events.isEmpty) setState(() => _loading = true);
     final from = DateTime(_focusedMonth.year, _focusedMonth.month - 1, 1).toUtc();
     final to   = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0, 23, 59, 59).toUtc();
-    final pid  = User_Info.activeProfileId ?? '';
+
+    // En mode particulier, User_Info.activeProfileId peut être l'UUID d'un autre profil
+    // (éleveur, asso) si on est en mode preview. Il faut résoudre l'UUID particulier explicitement.
+    String pid;
+    if (widget.isParticulier) {
+      final partProfile = await _supa.from('user_profiles')
+          .select('id').eq('uid', _uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+      pid = (partProfile?['id'] as String?) ?? '';
+    } else {
+      pid = User_Info.activeProfileId ?? '';
+    }
+
     try {
       // Filtre strict par profil actif ; inclut les événements legacy (pro_profile_id = '')
-      // uniquement si ce profil est le profil principal, pour éviter la contamination inter-profil.
       final data = await _supa
           .from('agenda_events')
           .select()
