@@ -266,7 +266,9 @@ class _AgendaPageState extends State<AgendaPage> {
       // ── Tâches protocole (plan_taches) ───────────────────────────────────
       try {
         dynamic p1;
-        if (pid.isNotEmpty) {
+        if (isParticulier) {
+          p1 = <dynamic>[];
+        } else if (pid.isNotEmpty) {
           p1 = await _supa.from('plan_taches')
               .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
               .eq('uid_eleveur', _uid)
@@ -298,7 +300,7 @@ class _AgendaPageState extends State<AgendaPage> {
                   .gte('date_prevue', from).lte('date_prevue', to)
                   .or('profil_source.is.null,profil_source.eq.eleveur');
         }
-        // plan_taches assignées à cet utilisateur — utiliser assigned_profile_id si disponible
+        // plan_taches assignées à cet utilisateur — assigned_profile_id (UUID) prioritaire sur assigned_to (UID Firebase)
         dynamic p2;
         if (myParticulierProfileId != null) {
           p2 = await _supa.from('plan_taches')
@@ -306,15 +308,20 @@ class _AgendaPageState extends State<AgendaPage> {
               .eq('assigned_profile_id', myParticulierProfileId)
               .gte('date_prevue', from).lte('date_prevue', to);
         } else {
-          final p2q = _supa.from('plan_taches')
+          final p2base = _supa.from('plan_taches')
               .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
               .eq('assigned_to', _uid)
               .gte('date_prevue', from).lte('date_prevue', to);
-          p2 = pid.isNotEmpty
-              ? await p2q.eq('profile_id', pid)
-              : (widget.isAssociation
-                  ? await p2q.eq('profil_source', 'association')
-                  : await p2q.or('profil_source.is.null,profil_source.eq.eleveur'));
+          // En mode particulier on ne filtre pas par profil éleveur
+          if (isParticulier) {
+            p2 = await p2base;
+          } else if (pid.isNotEmpty) {
+            p2 = await p2base.eq('profile_id', pid);
+          } else {
+            p2 = widget.isAssociation
+                ? await p2base.eq('profil_source', 'association')
+                : await p2base.or('profil_source.is.null,profil_source.eq.eleveur');
+          }
         }
         final seenPlan = <dynamic>{};
         for (final t in [...(p1 as List), ...(p2 as List)]) {
