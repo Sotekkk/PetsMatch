@@ -61,8 +61,8 @@ class _LoginPageState extends State<LoginPage> {
       Widget dest = User_Info.isValidate || User_Info.isAdmin
           ? BottomNav()
           : VerificationRegistrationPage();
-      Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => dest));
+      Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => dest), (route) => false);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       setState(() {

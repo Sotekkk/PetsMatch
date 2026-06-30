@@ -2,6 +2,8 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/admin/admin_panel.dart';
 import 'package:PetsMatch/pages/association/association_nav.dart';
 import 'package:PetsMatch/pages/eleveur/eleveur_nav.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_asso.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_eleveur.dart';
 import 'package:PetsMatch/pages/particulier/particulier_nav.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
@@ -10,6 +12,7 @@ import 'package:PetsMatch/pages/main_feed.dart';
 import 'package:PetsMatch/pages/particulier/user_feed.dart';
 import 'package:PetsMatch/pages/eleveur/user_elevage_feed.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:PetsMatch/utils.dart';
 import 'package:flutter/material.dart';
@@ -39,6 +42,114 @@ class _BottomNavState extends State<BottomNav> {
         _previewRole == 'particulier' ||
         (_previewRole.isEmpty && !User_Info.isElevage && !User_Info.isPro)
       );
+
+  @override
+  void initState() {
+    super.initState();
+    _checkOnboarding();
+  }
+
+  Future<void> _checkOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    final assoProfiles   = User_Info.availableProfiles.where((p) => p['profile_type'] == 'association').toList();
+    final eleveurProfiles = User_Info.availableProfiles.where((p) => p['profile_type'] == 'eleveur' || p['profile_type'] == 'pro').toList();
+
+    final hasAsso   = assoProfiles.isNotEmpty || User_Info.isAssociation;
+    final hasEleveur = eleveurProfiles.isNotEmpty || User_Info.isElevage || User_Info.isPro;
+
+    final assoDone   = prefs.getBool('onboarding_asso_done') ?? false;
+    final eleveurDone = prefs.getBool('onboarding_eleveur_done') ?? false;
+
+    final needsAsso   = hasAsso && !assoDone;
+    final needsEleveur = hasEleveur && !eleveurDone;
+
+    if (!needsAsso && !needsEleveur) return;
+    if (!mounted) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Multi-profil : proposer le choix
+      if (needsAsso && needsEleveur) {
+        _showOnboardingChoice(prefs);
+      } else if (needsAsso) {
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => const OnboardingAssoPage(),
+          fullscreenDialog: true,
+        ));
+      } else if (needsEleveur) {
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => const OnboardingEleveurPage(),
+          fullscreenDialog: true,
+        ));
+      }
+    });
+  }
+
+  void _showOnboardingChoice(SharedPreferences prefs) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 36, height: 4, decoration: BoxDecoration(
+              color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 20),
+            const Text('Bienvenue sur PetsMatch !',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 20, color: Color(0xFF1F2A2E))),
+            const SizedBox(height: 6),
+            Text('Quel espace voulez-vous découvrir en premier ?',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500)),
+            const SizedBox(height: 24),
+            _OnboardingChoiceCard(
+              icon: Icons.favorite_outlined,
+              color: const Color(0xFF0C5C6C),
+              title: 'Espace Association',
+              subtitle: 'Refuge, adoptions, équipe, familles d\'accueil',
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const OnboardingAssoPage(),
+                  fullscreenDialog: true,
+                ));
+              },
+            ),
+            const SizedBox(height: 12),
+            _OnboardingChoiceCard(
+              icon: Icons.home_work_outlined,
+              color: const Color(0xFF6E9E57),
+              title: 'Espace Éleveur',
+              subtitle: 'Animaux, annonces, planning, documents',
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const OnboardingEleveurPage(),
+                  fullscreenDialog: true,
+                ));
+              },
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () async {
+                await prefs.setBool('onboarding_asso_done', true);
+                await prefs.setBool('onboarding_eleveur_done', true);
+                if (context.mounted) Navigator.pop(context);
+              },
+              child: Text('Passer', style: TextStyle(
+                  fontFamily: 'Galey', color: Colors.grey.shade400, fontSize: 13)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _getPage(int index) {
     switch (index) {
@@ -343,6 +454,54 @@ class _BottomNavState extends State<BottomNav> {
             backgroundColor: Colors.transparent,
             type: BottomNavigationBarType.fixed,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OnboardingChoiceCard extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _OnboardingChoiceCard({
+    required this.icon, required this.color, required this.title,
+    required this.subtitle, required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withAlpha(20),
+          border: Border.all(color: color.withAlpha(80)),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48, height: 48,
+              decoration: BoxDecoration(color: color.withAlpha(30), shape: BoxShape.circle),
+              child: Icon(icon, color: color, size: 26),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 15, color: color)),
+                const SizedBox(height: 2),
+                Text(subtitle, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    color: Colors.grey.shade600)),
+              ]),
+            ),
+            Icon(Icons.chevron_right, color: color),
+          ],
         ),
       ),
     );

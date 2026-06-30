@@ -74,22 +74,8 @@ class _EleveurNavState extends State<EleveurNav> {
     super.initState();
     _checkIsEmploye();
     _loadPlan();
-    _checkOnboarding();
   }
 
-  Future<void> _checkOnboarding() async {
-    if (User_Info.catPro == 'restauration') return;
-    final prefs = await SharedPreferences.getInstance();
-    final done = prefs.getBool('onboarding_eleveur_done') ?? false;
-    if (!done && mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => const OnboardingEleveurPage(),
-          fullscreenDialog: true,
-        ));
-      });
-    }
-  }
 
   Future<void> _checkIsEmploye() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
