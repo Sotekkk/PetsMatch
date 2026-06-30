@@ -7,6 +7,7 @@ import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,15 @@ interface Participant {
   user_uid: string;
   statut: string;
   rejoint_at: string;
+  user?: { firstname?: string; lastname?: string; profile_picture_url?: string };
+}
+
+interface PrMessage {
+  id: string;
+  user_uid: string;
+  message: string | null;
+  image_url: string | null;
+  created_at: string;
   user?: { firstname?: string; lastname?: string; profile_picture_url?: string };
 }
 
@@ -317,6 +327,16 @@ export default function PromenadeDetailPage() {
   const [saving, setSaving] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+
+  // Discussion
+  const [messages, setMessages] = useState<PrMessage[]>([]);
+  const [msgText, setMsgText] = useState('');
+  const [sendingMsg, setSendingMsg] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const msgEndRef = useRef<HTMLDivElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const msgChannelRef = useRef<RealtimeChannel | null>(null);
 
   const isOrganizer = promenade?.organisateur_uid === user?.uid;
   const myParticipation = participants.find(p => p.user_uid === user?.uid);
@@ -363,6 +383,106 @@ export default function PromenadeDetailPage() {
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // ── Chargement messages ─────────────────────────────────────────────────────
+
+  const loadMessages = useCallback(async () => {
+    const { data: rawMsgs } = await supabase
+      .from('promenades_messages')
+      .select('id, user_uid, message, image_url, created_at')
+      .eq('promenade_id', id)
+      .order('created_at');
+    if (!rawMsgs || rawMsgs.length === 0) { setMessages([]); return; }
+    const uids = [...new Set(rawMsgs.map((m: { user_uid: string }) => m.user_uid))];
+    const { data: users } = await supabase.from('users')
+      .select('uid, firstname, lastname, profile_picture_url').in('uid', uids);
+    const uMap: Record<string, UserProfile> = {};
+    (users ?? []).forEach((u: UserProfile) => { uMap[u.uid] = u; });
+    setMessages(rawMsgs.map((m: PrMessage) => ({ ...m, user: uMap[m.user_uid] })));
+    setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+  }, [id]);
+
+  useEffect(() => {
+    loadMessages();
+    msgChannelRef.current?.unsubscribe();
+    msgChannelRef.current = supabase
+      .channel(`prom_msgs_${id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'promenades_messages',
+        filter: `promenade_id=eq.${id}` }, () => loadMessages())
+      .subscribe();
+    return () => { msgChannelRef.current?.unsubscribe(); };
+  }, [id, loadMessages]);
+
+  // ── Envoi message texte ─────────────────────────────────────────────────────
+
+  async function sendMessage() {
+    if ((!msgText.trim()) || !user || sendingMsg) return;
+    setSendingMsg(true);
+    try {
+      const pid = activeProfileId || null;
+      await supabase.from('promenades_messages').insert({
+        promenade_id: id,
+        user_uid: user.uid,
+        ...(pid ? { user_profile_id: pid } : {}),
+        message: msgText.trim(),
+        created_at: new Date().toISOString(),
+      });
+      setMsgText('');
+      await notifyParticipantsMsg(msgText.trim(), null);
+    } finally {
+      setSendingMsg(false);
+    }
+  }
+
+  // ── Envoi photo ─────────────────────────────────────────────────────────────
+
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    setUploadingPhoto(true);
+    try {
+      const ext = file.name.split('.').pop() ?? 'jpg';
+      const path = `${id}/${Date.now()}_${user.uid}.${ext}`;
+      const { error } = await supabase.storage.from('promenades-photos').upload(path, file);
+      if (error) throw error;
+      const { data: pub } = supabase.storage.from('promenades-photos').getPublicUrl(path);
+      const pid = activeProfileId || null;
+      await supabase.from('promenades_messages').insert({
+        promenade_id: id,
+        user_uid: user.uid,
+        ...(pid ? { user_profile_id: pid } : {}),
+        image_url: pub.publicUrl,
+        created_at: new Date().toISOString(),
+      });
+      await notifyParticipantsMsg(null, pub.publicUrl);
+    } finally {
+      setUploadingPhoto(false);
+      if (photoInputRef.current) photoInputRef.current.value = '';
+    }
+  }
+
+  // ── Notifier les participants ────────────────────────────────────────────────
+
+  async function notifyParticipantsMsg(text: string | null, _imageUrl: string | null) {
+    if (!user || !promenade) return;
+    const { data: me } = await supabase.from('users')
+      .select('firstname, lastname').eq('uid', user.uid).maybeSingle();
+    const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
+    const body = text ? `${nom} : ${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`
+                      : `${nom} a partagé une photo`;
+    const toNotify = participants.filter(p => p.statut === 'accepte' && p.user_uid !== user.uid);
+    for (const part of toNotify) {
+      await supabase.from('notifications').insert({
+        uid: part.user_uid,
+        type: 'promenade_message',
+        title: `💬 ${promenade.titre}`,
+        body,
+        data: { promenadeId: id },
+        read: false,
+        created_at: new Date().toISOString(),
+      });
+    }
+  }
 
   async function join() {
     if (!user) return;
@@ -489,14 +609,18 @@ export default function PromenadeDetailPage() {
         <h1 className="font-bold text-base truncate flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>
           {promenade.titre}
         </h1>
-        {isOrganizer && (
-          <div className="flex items-center gap-2 shrink-0">
-            <button onClick={() => setShowEdit(true)}
-              className="text-white/80 hover:text-white text-xl" title="Modifier">✏️</button>
-            <button onClick={() => setConfirmDelete(true)}
-              className="text-white/80 hover:text-white text-xl" title="Supprimer">🗑</button>
-          </div>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={() => setShowShare(true)}
+            className="text-white/80 hover:text-white text-xl" title="Partager">📤</button>
+          {isOrganizer && (
+            <>
+              <button onClick={() => setShowEdit(true)}
+                className="text-white/80 hover:text-white text-xl" title="Modifier">✏️</button>
+              <button onClick={() => setConfirmDelete(true)}
+                className="text-white/80 hover:text-white text-xl" title="Supprimer">🗑</button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-5 flex flex-col gap-4 pb-28">
@@ -584,6 +708,114 @@ export default function PromenadeDetailPage() {
           </div>
         )}
 
+        {/* ── Discussion ──────────────────────────────────────────────────── */}
+        {(() => {
+          const myStatut = participants.find(p => p.user_uid === user?.uid)?.statut ?? '';
+          const canWrite = isOrganizer || myStatut === 'accepte';
+          const canRead  = canWrite || myStatut === 'en_attente';
+          if (!canRead) return null;
+          return (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <p className="font-bold text-[14px]">Discussion du groupe</p>
+                {messages.length > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-white bg-[#2E7D5E]">
+                    {messages.length}
+                  </span>
+                )}
+              </div>
+
+              {/* Liste des messages */}
+              <div className="flex flex-col gap-3 max-h-80 overflow-y-auto mb-3 pr-1">
+                {messages.length === 0 && (
+                  <p className="text-center text-gray-400 text-[13px] py-4">
+                    Aucun message pour l&apos;instant. Soyez le premier !
+                  </p>
+                )}
+                {messages.map(m => {
+                  const isMe = m.user_uid === user?.uid;
+                  const nom = [m.user?.firstname, m.user?.lastname].filter(Boolean).join(' ') || 'Utilisateur';
+                  const ts = m.created_at
+                    ? new Date(m.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                    : '';
+                  return (
+                    <div key={m.id} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : ''}`}>
+                      <Avatar url={m.user?.profile_picture_url} name={m.user?.firstname} size={32} />
+                      <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} flex-1 min-w-0`}>
+                        {!isMe && (
+                          <span className="text-[11px] font-bold text-[#2E7D5E] mb-0.5">{nom}</span>
+                        )}
+                        {m.image_url && (
+                          <a href={m.image_url} target="_blank" rel="noopener noreferrer" className="mb-1">
+                            <Image src={m.image_url} alt="photo" width={180} height={180}
+                              className="rounded-xl object-cover max-w-[180px]" unoptimized />
+                          </a>
+                        )}
+                        {m.message && (
+                          <div className={`px-3 py-2 rounded-2xl text-[13px] max-w-[80%] break-words ${
+                            isMe ? 'bg-[#2E7D5E]/10 text-[#1F2A2E] rounded-tr-md' : 'bg-gray-100 text-[#1F2A2E] rounded-tl-md'
+                          }`}>
+                            {m.message}
+                          </div>
+                        )}
+                        <span className="text-[10px] text-gray-400 mt-0.5">{ts}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={msgEndRef} />
+              </div>
+
+              {/* Saisie */}
+              {canWrite ? (
+                <div className="flex items-end gap-2 border-t border-gray-100 pt-3">
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handlePhotoUpload}
+                  />
+                  <button
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={uploadingPhoto}
+                    className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center shrink-0 transition-colors"
+                    title="Envoyer une photo">
+                    {uploadingPhoto
+                      ? <div className="w-4 h-4 border-2 border-[#2E7D5E] border-t-transparent rounded-full animate-spin" />
+                      : <span className="text-lg">📷</span>}
+                  </button>
+                  <textarea
+                    value={msgText}
+                    onChange={e => setMsgText(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                    placeholder="Écrire un message…"
+                    rows={1}
+                    className="flex-1 bg-gray-100 rounded-2xl px-3 py-2 text-[13px] resize-none focus:outline-none focus:ring-2 focus:ring-[#2E7D5E]/30"
+                    style={{ minHeight: '36px', maxHeight: '100px' }}
+                  />
+                  <button
+                    onClick={sendMessage}
+                    disabled={!msgText.trim() || sendingMsg}
+                    className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-colors disabled:opacity-40"
+                    style={{ backgroundColor: '#2E7D5E' }}>
+                    {sendingMsg
+                      ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      : <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                        </svg>}
+                  </button>
+                </div>
+              ) : (
+                <div className="border-t border-gray-100 pt-3 flex items-center gap-2 text-[12px] text-gray-400">
+                  <span>🔒</span>
+                  <span>En attente d&apos;acceptation pour pouvoir écrire</span>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* Demandes en attente (organisateur seulement) */}
         {isOrganizer && pending.length > 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
@@ -621,6 +853,55 @@ export default function PromenadeDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Modal partage */}
+      {showShare && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowShare(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <p className="font-bold text-[15px]">Partager cette promenade</p>
+              <button onClick={() => setShowShare(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                {
+                  emoji: '💬', label: 'WhatsApp', color: '#25D366',
+                  action: () => {
+                    const url = window.location.href;
+                    const txt = `Rejoins notre promenade "${promenade.titre}" 🐕\n📍 ${promenade.lieu_rdv}\n🗓 ${fmtDate(promenade.date_heure)}\n\n${url}`;
+                    window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`, '_blank');
+                    setShowShare(false);
+                  }
+                },
+                {
+                  emoji: '📘', label: 'Facebook', color: '#1877F2',
+                  action: () => {
+                    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`, '_blank');
+                    setShowShare(false);
+                  }
+                },
+                {
+                  emoji: '🔗', label: 'Copier', color: '#6E9E57',
+                  action: () => {
+                    navigator.clipboard.writeText(window.location.href);
+                    setShowShare(false);
+                  }
+                },
+              ].map(btn => (
+                <button key={btn.label} onClick={btn.action}
+                  className="flex flex-col items-center gap-2 py-3 px-2 rounded-xl hover:bg-gray-50 transition-colors">
+                  <div className="w-12 h-12 rounded-full flex items-center justify-center text-2xl"
+                    style={{ backgroundColor: btn.color + '20' }}>
+                    {btn.emoji}
+                  </div>
+                  <span className="text-[12px] font-semibold text-gray-600">{btn.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation suppression */}
       {confirmDelete && (

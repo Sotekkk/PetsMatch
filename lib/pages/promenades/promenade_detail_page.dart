@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:PetsMatch/main.dart' show getApiKey, User_Info;
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
@@ -7,6 +8,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_webservice/places.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -35,6 +37,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
 
   final _msgCtrl = TextEditingController();
   bool _sendingMsg = false;
+  bool _uploadingPhoto = false;
 
   bool get _isOrganizer =>
       _promenade?['organisateur_uid']?.toString() == _uid;
@@ -341,9 +344,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
     if (txt.isEmpty || _uid.isEmpty) return;
     setState(() => _sendingMsg = true);
     try {
-      final profileRow = await _supa.from('user_profiles')
-          .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
-      final pid = profileRow?['id'] as String?;
+      final pid = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
       await _supa.from('promenades_messages').insert({
         'promenade_id':   widget.promenadeId,
         'user_uid':       _uid,
@@ -352,6 +353,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         'created_at':     DateTime.now().toIso8601String(),
       });
       _msgCtrl.clear();
+      await _notifyGroupMessage(txt, null);
       await _loadMessages();
     } catch (e) {
       if (mounted) {
@@ -361,6 +363,66 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
     } finally {
       if (mounted) setState(() => _sendingMsg = false);
     }
+  }
+
+  Future<void> _sendPhoto() async {
+    if (_uid.isEmpty) return;
+    final picker = ImagePicker();
+    final xfile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 75);
+    if (xfile == null) return;
+    setState(() => _uploadingPhoto = true);
+    try {
+      final file = File(xfile.path);
+      final ext  = xfile.path.split('.').last;
+      final path = '${widget.promenadeId}/${DateTime.now().millisecondsSinceEpoch}_$_uid.$ext';
+      await _supa.storage.from('promenades-photos').upload(path, file);
+      final imageUrl = _supa.storage.from('promenades-photos').getPublicUrl(path);
+      final pid = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      await _supa.from('promenades_messages').insert({
+        'promenade_id': widget.promenadeId,
+        'user_uid':     _uid,
+        if (pid != null) 'user_profile_id': pid,
+        'image_url':    imageUrl,
+        'created_at':   DateTime.now().toIso8601String(),
+      });
+      await _notifyGroupMessage(null, imageUrl);
+      await _loadMessages();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Erreur upload : $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
+  }
+
+  Future<void> _notifyGroupMessage(String? text, String? imageUrl) async {
+    if (_uid.isEmpty || _promenade == null) return;
+    try {
+      final me = await _supa.from('users')
+          .select('firstname, lastname').eq('uid', _uid).maybeSingle();
+      final nom = me != null
+          ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim()
+          : 'Quelqu\'un';
+      final body = text != null
+          ? '$nom : ${text.length > 60 ? text.substring(0, 60) + '…' : text}'
+          : '$nom a partagé une photo';
+      final toNotify = _participants
+          .where((p) => p['statut'].toString() == 'accepte' && p['user_uid'].toString() != _uid)
+          .toList();
+      for (final part in toNotify) {
+        await _supa.from('notifications').insert({
+          'uid':        part['user_uid'].toString(),
+          'type':       'promenade_message',
+          'title':      '💬 ${_promenade!['titre']}',
+          'body':       body,
+          'data':       {'promenadeId': widget.promenadeId},
+          'read':       false,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _openEdit() async {
@@ -788,8 +850,22 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
                                   bottomRight: const Radius.circular(12),
                                 ),
                               ),
-                              child: Text(m['message']?.toString() ?? '',
-                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                              child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (m['image_url'] != null)
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: CachedNetworkImage(
+                                      imageUrl: m['image_url'].toString(),
+                                      width: 180, fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                if (m['message'] != null)
+                                  Text(m['message']?.toString() ?? '',
+                                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                              ],
+                            ),
                             ),
                           ],
                         ),
@@ -803,6 +879,20 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
               const SizedBox(height: 8),
               if (_uid.isNotEmpty && (myStatut == 'accepte' || _isOrganizer))
                 Row(children: [
+                  // Bouton photo
+                  GestureDetector(
+                    onTap: _uploadingPhoto ? null : _sendPhoto,
+                    child: Container(
+                      width: 38, height: 38,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100, shape: BoxShape.circle),
+                      child: _uploadingPhoto
+                          ? const Padding(padding: EdgeInsets.all(10),
+                              child: CircularProgressIndicator(strokeWidth: 2, color: _green))
+                          : const Icon(Icons.photo_camera_outlined, size: 20, color: _green),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: TextField(
                       controller: _msgCtrl,
