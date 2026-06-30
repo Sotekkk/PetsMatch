@@ -178,17 +178,29 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
       // Profil secondaire association — son nom > name_elevage > nom/prénom
       String? assoLabel;
       try {
-        final profiles = await Supabase.instance.client
-            .from('user_profiles')
-            .select('name_elevage, profile_label')
-            .eq('uid', uid)
-            .eq('profile_type', 'association');
-        final list = profiles as List;
-        if (list.isNotEmpty) {
-          final p = list.first as Map<String, dynamic>;
-          final nameEl = (p['name_elevage'] as String?)?.trim();
-          final label  = (p['profile_label'] as String?)?.trim();
-          assoLabel = (nameEl?.isNotEmpty == true) ? nameEl : label;
+        // Query par activeProfileId (UUID direct, bypass RLS) ou par uid sans filtre profile_type
+        final activeId = User_Info.activeProfileId;
+        Map<String, dynamic>? assoRow;
+        if (activeId.isNotEmpty) {
+          assoRow = await Supabase.instance.client
+              .from('user_profiles')
+              .select('nom, profile_label')
+              .eq('id', activeId)
+              .maybeSingle();
+        } else {
+          final list = await Supabase.instance.client
+              .from('user_profiles')
+              .select('nom, profile_label, profile_type')
+              .eq('uid', uid) as List;
+          assoRow = list.firstWhere(
+            (r) => (r['profile_type'] as String?) == 'association',
+            orElse: () => list.isNotEmpty ? list.first : null,
+          ) as Map<String, dynamic>?;
+        }
+        if (assoRow != null) {
+          final n     = (assoRow['nom'] as String?)?.trim();
+          final label = (assoRow['profile_label'] as String?)?.trim();
+          assoLabel = (n?.isNotEmpty == true) ? n : label;
         }
       } catch (_) {}
 

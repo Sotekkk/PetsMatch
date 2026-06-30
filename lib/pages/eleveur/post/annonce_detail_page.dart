@@ -298,12 +298,18 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
             .update({'vues': currentVues + 1})
             .eq('id', widget.annonceId).catchError((_) {});
       }
-      if (!_eleveurLoaded && uid != null) { _eleveurLoaded = true; _loadEleveur(uid, profilSource: row['profil_source']?.toString()); }
+      if (!_eleveurLoaded && uid != null) {
+        _eleveurLoaded = true;
+        _loadEleveur(uid,
+          profilSource: row['profil_source']?.toString(),
+          profileId: row['profile_id']?.toString(),
+        );
+      }
       if (mounted) setState(() => _annonceData = data);
     } catch (_) {}
   }
 
-  Future<void> _loadEleveur(String uid, {String? profilSource}) async {
+  Future<void> _loadEleveur(String uid, {String? profilSource, String? profileId}) async {
     try {
       final row = await Supabase.instance.client
           .from('users').select().eq('uid', uid).single();
@@ -315,16 +321,25 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
 
       if (src == 'association') {
         try {
-          // Sans filtre profile_type (RLS bloque) → filtre client-side
-          final profiles = await Supabase.instance.client
-              .from('user_profiles')
-              .select('id, profile_type, nom, profile_label, avatar_url, ville')
-              .eq('uid', uid);
-          final list = profiles as List;
-          final p = list.firstWhere(
-            (r) => (r['profile_type'] as String?) == 'association',
-            orElse: () => list.isNotEmpty ? list.first : null,
-          ) as Map<String, dynamic>?;
+          Map<String, dynamic>? p;
+          if (profileId != null && profileId.isNotEmpty) {
+            // Query directe par profile UUID (bypass RLS) — profile_id stocké dans l'annonce
+            p = await Supabase.instance.client
+                .from('user_profiles')
+                .select('id, nom, profile_label, avatar_url, ville')
+                .eq('id', profileId)
+                .maybeSingle();
+          } else {
+            // Fallback : query par uid sans filtre profile_type, filtre client-side
+            final profiles = await Supabase.instance.client
+                .from('user_profiles')
+                .select('id, profile_type, nom, profile_label, avatar_url, ville')
+                .eq('uid', uid) as List;
+            p = profiles.firstWhere(
+              (r) => (r['profile_type'] as String?) == 'association',
+              orElse: () => profiles.isNotEmpty ? profiles.first : null,
+            ) as Map<String, dynamic>?;
+          }
           if (p != null) {
             final n     = (p['nom'] as String?)?.trim();
             final label = (p['profile_label'] as String?)?.trim();
@@ -332,7 +347,6 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
             if (assoName != null) normalized['nameElevage'] = assoName;
             if ((p['avatar_url'] as String?)?.isNotEmpty == true) normalized['profilePictureUrlElevage'] = p['avatar_url'];
             if ((p['ville'] as String?)?.isNotEmpty == true) normalized['villeElevage'] = p['ville'];
-            // Stocker le profile_id pour bypass RLS dans AssociationDetailPage
             if ((p['id'] as String?)?.isNotEmpty == true) normalized['assoProfileId'] = p['id'];
           }
         } catch (_) {}
