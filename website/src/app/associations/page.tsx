@@ -17,6 +17,7 @@ const AssociationsMap = dynamic(() => import('@/components/AssociationsMap'), {
 });
 
 interface Asso {
+  id: string;
   uid: string;
   name: string;
   avatar?: string;
@@ -35,32 +36,35 @@ export default function AssociationsPage() {
 
   useEffect(() => {
     Promise.all([
+      // user_profiles : profile_type='association' — on ne sélectionne PAS name_elevage
+      // (cette colonne n'existe pas dans user_profiles, cause "not in schema cache")
       supabase.from('user_profiles')
-        .select('uid, name_elevage, profile_label, avatar_url, banner_url, ville, description, latitude, longitude')
+        .select('id, uid, nom, profile_label, avatar_url, banner_url, ville, description, lat, lng')
         .eq('profile_type', 'association')
-        .order('name_elevage'),
+        .order('nom'),
       supabase.from('users')
         .select('uid, name_elevage, firstname, lastname, photo_profil_elevage, photo_url, banner_url, ville_elevage, ville, description_elevage, latitude, longitude')
-        .eq('is_association', true)
-        .then(r => r), // primary accounts
+        .eq('is_association', true),
     ]).then(([{ data: profiles }, { data: primary }]) => {
       const list: Asso[] = [];
       const seenUids = new Set<string>();
 
       for (const p of (profiles ?? []) as Record<string, unknown>[]) {
         const uid = p['uid'] as string ?? '';
+        const id  = p['id']  as string ?? uid;
         seenUids.add(uid);
-        const nameEl = (p['name_elevage'] as string | undefined)?.trim() ?? '';
-        const label  = (p['profile_label'] as string | undefined)?.trim() ?? '';
+        const nom   = (p['nom']          as string | undefined)?.trim() ?? '';
+        const label = (p['profile_label'] as string | undefined)?.trim() ?? '';
         list.push({
+          id,
           uid,
-          name:        nameEl || label || 'Association',
+          name:        nom || label || 'Association',
           avatar:      (p['avatar_url'] as string | undefined) ?? undefined,
           banner:      (p['banner_url'] as string | undefined) ?? undefined,
           ville:       (p['ville'] as string | undefined)?.trim() ?? undefined,
           description: (p['description'] as string | undefined)?.trim() ?? undefined,
-          lat:         (p['latitude'] as number | undefined) ?? undefined,
-          lng:         (p['longitude'] as number | undefined) ?? undefined,
+          lat:         (p['lat'] as number | undefined) ?? undefined,
+          lng:         (p['lng'] as number | undefined) ?? undefined,
         });
       }
 
@@ -74,6 +78,7 @@ export default function AssociationsPage() {
         const avatar = ((u['photo_profil_elevage'] as string | undefined) || (u['photo_url'] as string | undefined)) ?? undefined;
         const banner = (u['banner_url'] as string | undefined) ?? undefined;
         list.push({
+          id: uid,
           uid, name, avatar, banner, ville,
           description: (u['description_elevage'] as string | undefined)?.trim() ?? undefined,
           lat: (u['latitude'] as number | undefined) ?? undefined,
@@ -190,7 +195,7 @@ function AssoCard({ asso: a }: { asso: Asso }) {
         {a.description && (
           <p className="text-gray-500 text-xs mt-2 line-clamp-2 font-galey">{a.description}</p>
         )}
-        <Link href={`/associations/${a.uid}`}
+        <Link href={`/associations/${a.id}`}
           className="mt-3 w-full block text-center text-sm bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-medium py-2 rounded-xl transition-colors font-galey">
           Voir le profil
         </Link>

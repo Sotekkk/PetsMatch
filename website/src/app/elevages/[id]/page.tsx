@@ -134,7 +134,55 @@ export default function EleveurProfilePage() {
   useEffect(() => {
     if (!id) return;
 
-    // Charge les annonces en parallèle
+    const isProfileUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+    if (isProfileUUID) {
+      // UUID de profil : query user_profiles directement (bypass RLS)
+      supabase.from('user_profiles')
+        .select('uid, nom, firstname, lastname, avatar_url, banner_url, ville, especes_elevees, desc_entreprise, lat, lng, statut_pro, siret, is_premium, phone_number, site_web, instagram, facebook, pays, is_validate')
+        .eq('id', id).maybeSingle()
+        .then(({ data: p }) => {
+          if (!p) { setNotFound(true); setLoading(false); return; }
+          const pr = p as Record<string, unknown>;
+          const firebaseUid = pr['uid'] as string;
+          let especes: { espece: string; races: string[] }[] = [];
+          const rawEsp = pr['especes_elevees'];
+          if (typeof rawEsp === 'string') {
+            try { especes = JSON.parse(rawEsp); } catch { especes = []; }
+          } else if (Array.isArray(rawEsp)) { especes = rawEsp; }
+          setEleveur({
+            uid: firebaseUid,
+            name: (pr['nom'] as string | null)?.trim()
+                  || `${pr['firstname'] ?? ''} ${pr['lastname'] ?? ''}`.trim()
+                  || 'Élevage',
+            description: (pr['desc_entreprise'] as string) || '',
+            photo: (pr['avatar_url'] as string) || '',
+            banner: (pr['banner_url'] as string) || '',
+            ville: (pr['ville'] as string) || '',
+            pays: (pr['pays'] as string) || '',
+            especesList: especes.map(e => ({ espece: e.espece, races: e.races ?? [] })),
+            siret: (pr['siret'] as string) || '',
+            statutPro: (pr['statut_pro'] as string) || '',
+            isPremium: !!(pr['is_premium']),
+            isValidate: !!(pr['is_validate']),
+            telephone: (pr['phone_number'] as string) || '',
+            siteWeb: (pr['site_web'] as string) || '',
+            facebook: (pr['facebook'] as string) || '',
+            instagram: (pr['instagram'] as string) || '',
+          });
+          // Charge les annonces par Firebase UID
+          supabase.from('annonces')
+            .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, statut')
+            .eq('uid_eleveur', firebaseUid).eq('statut', 'disponible')
+            .or('profil_source.is.null,profil_source.neq.association')
+            .order('created_at', { ascending: false })
+            .then(({ data }) => setAnnonces((data ?? []) as Annonce[]));
+          setLoading(false);
+        });
+      return;
+    }
+
+    // Firebase UID : comportement historique (Firestore en priorité, Supabase en fallback)
     supabase
       .from('annonces')
       .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, statut')
@@ -144,29 +192,19 @@ export default function EleveurProfilePage() {
       .order('created_at', { ascending: false })
       .then(({ data }) => setAnnonces((data ?? []) as Annonce[]));
 
-    // Firestore en priorité (données complètes), Supabase en fallback
     getDoc(doc(db, 'users', id)).then(snap => {
       if (snap.exists()) {
         setEleveur(fromFirestore(id, snap.data() as Record<string, unknown>));
         setLoading(false);
         return;
       }
-      // Fallback Supabase
-      return supabase
-        .from('users')
-        .select('*')
-        .eq('uid', id)
-        .maybeSingle()
+      return supabase.from('users').select('*').eq('uid', id).maybeSingle()
         .then(({ data }) => {
-          if (data) {
-            setEleveur(fromSupabase(id, data as Record<string, unknown>));
-          } else {
-            setNotFound(true);
-          }
+          if (data) setEleveur(fromSupabase(id, data as Record<string, unknown>));
+          else setNotFound(true);
           setLoading(false);
         });
     }).catch(() => {
-      // Si Firestore échoue (App Check, etc.), tente Supabase
       supabase.from('users').select('*').eq('uid', id).maybeSingle()
         .then(({ data }) => {
           if (data) setEleveur(fromSupabase(id, data as Record<string, unknown>));

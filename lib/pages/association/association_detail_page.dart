@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 class AssociationDetailPage extends StatefulWidget {
   final String uid;
+  final String? profileId;
   final String name;
   final String avatar;
   final String ville;
@@ -17,6 +18,7 @@ class AssociationDetailPage extends StatefulWidget {
   const AssociationDetailPage({
     super.key,
     required this.uid,
+    this.profileId,
     required this.name,
     required this.avatar,
     required this.ville,
@@ -51,9 +53,25 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
 
   Future<void> _load() async {
     try {
+      // Profil association : query par id si disponible (bypass RLS), sinon par uid + filtre client
+      Map<String, dynamic>? assoProfile;
+      if (widget.profileId != null) {
+        assoProfile = await _supa.from('user_profiles')
+            .select('nom, profile_label, description, desc_entreprise, avatar_url, banner_url, ville, phone, telephone, site_web')
+            .eq('id', widget.profileId!)
+            .maybeSingle();
+      } else {
+        final rows = await _supa.from('user_profiles')
+            .select('nom, profile_label, description, desc_entreprise, avatar_url, banner_url, ville, phone, telephone, site_web, profile_type')
+            .eq('uid', widget.uid) as List;
+        assoProfile = rows.firstWhere(
+          (r) => (r['profile_type'] as String?) == 'association',
+          orElse: () => rows.isNotEmpty ? rows.first : null,
+        ) as Map<String, dynamic>?;
+      }
+
       final results = await Future.wait([
         _supa.from('users').select('description_elevage').eq('uid', widget.uid).maybeSingle(),
-        // Animaux : filtre is_association si possible, sinon tous les animaux statut disponible
         _supa.from('animaux')
             .select('id,nom,espece,race,sexe,statut,date_naissance,photo_url')
             .eq('uid_eleveur', widget.uid)
@@ -65,23 +83,16 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
             .eq('profil_source', 'association')
             .eq('statut', 'disponible')
             .order('created_at', ascending: false),
-        // Profil association : nom + description + avatar + ville + téléphone
-        _supa.from('user_profiles')
-            .select('name_elevage, profile_label, description, desc_entreprise, avatar_url, ville, phone, telephone, site_web')
-            .eq('uid', widget.uid)
-            .eq('profile_type', 'association')
-            .maybeSingle(),
       ]);
 
-      final userRow    = results[0] as Map<String, dynamic>?;
-      final animaux    = results[1] as List;
-      final annonces   = results[2] as List;
-      final assoProfile = results[3] as Map<String, dynamic>?;
+      final userRow  = results[0] as Map<String, dynamic>?;
+      final animaux  = results[1] as List;
+      final annonces = results[2] as List;
 
-      // Nom réel de l'association (priorité : user_profiles.name_elevage)
-      final nameEl = (assoProfile?['name_elevage'] as String?)?.trim();
+      // Nom réel de l'association (priorité : user_profiles.nom puis profile_label)
+      final nom    = (assoProfile?['nom'] as String?)?.trim();
       final label  = (assoProfile?['profile_label'] as String?)?.trim();
-      final freshName = (nameEl?.isNotEmpty == true) ? nameEl!
+      final freshName = (nom?.isNotEmpty == true) ? nom!
           : (label?.isNotEmpty == true) ? label!
           : widget.name;
 

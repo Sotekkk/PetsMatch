@@ -409,6 +409,7 @@ export default function AnnonceDetailPage() {
   const [annonce, setAnnonce] = useState<Annonce | null>(null);
   const [pro, setPro] = useState<ProData | null>(null);
   const [assoData, setAssoData] = useState<AssoData | null>(null);
+  const [assoProfileId, setAssoProfileId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [imgIdx, setImgIdx] = useState(0);
   const [sending, setSending] = useState(false);
@@ -485,21 +486,23 @@ export default function AnnonceDetailPage() {
         setAnnonce(data as Annonce);
         if (data.uid_eleveur) {
           if (data.profil_source === 'association') {
-            // Charge le profil association depuis user_profiles (secondaire) avec fallback users
+            // Charge le profil association — query sans profile_type (RLS bloque) + filter client-side
             Promise.all([
               supabase.from('user_profiles')
-                .select('profile_label, name_elevage, avatar_url, ville')
-                .eq('uid', data.uid_eleveur).eq('profile_type', 'association').maybeSingle(),
+                .select('id, profile_type, nom, profile_label, avatar_url, ville')
+                .eq('uid', data.uid_eleveur),
               supabase.from('users')
                 .select('name_elevage, profile_picture_url_elevage, ville_elevage')
                 .eq('uid', data.uid_eleveur).maybeSingle(),
-            ]).then(([{ data: sp }, { data: u }]) => {
-              type SP = { profile_label?: string; name_elevage?: string; avatar_url?: string; ville?: string };
+            ]).then(([{ data: allProfiles }, { data: u }]) => {
+              type SP = { id?: string; profile_type?: string; nom?: string; profile_label?: string; avatar_url?: string; ville?: string };
               type U  = { name_elevage?: string; profile_picture_url_elevage?: string; ville_elevage?: string };
-              const s = sp as SP | null;
-              const r = u  as U  | null;
+              const profiles = (allProfiles ?? []) as SP[];
+              const s = profiles.find(p => p.profile_type === 'association') ?? null;
+              const r = u as U | null;
+              if (s?.id) setAssoProfileId(s.id);
               setAssoData({
-                nom:    s?.name_elevage?.trim() || s?.profile_label?.trim() || r?.name_elevage || data.nom_eleveur || 'Association',
+                nom:    s?.nom?.trim() || s?.profile_label?.trim() || r?.name_elevage || data.nom_eleveur || 'Association',
                 avatar: s?.avatar_url || r?.profile_picture_url_elevage || '',
                 ville:  s?.ville || r?.ville_elevage || data.ville_eleveur || '',
               });
@@ -913,7 +916,7 @@ export default function AnnonceDetailPage() {
               <h2 className="font-['Galey'] font-bold text-sm text-teal-700 uppercase tracking-wide mb-3">💚 L'association</h2>
               <div className="flex items-center gap-3">
                 {annonce.uid_eleveur ? (
-                  <Link href={`/associations/${annonce.uid_eleveur}`} className="w-12 h-12 rounded-full bg-teal-50 overflow-hidden flex-shrink-0 relative block hover:opacity-90 transition-opacity">
+                  <Link href={`/associations/${assoProfileId ?? annonce.uid_eleveur}`} className="w-12 h-12 rounded-full bg-teal-50 overflow-hidden flex-shrink-0 relative block hover:opacity-90 transition-opacity">
                     {assoData.avatar ? (
                       <Image src={assoData.avatar} alt={assoData.nom} fill className="object-cover" sizes="64px" unoptimized />
                     ) : (
@@ -925,7 +928,7 @@ export default function AnnonceDetailPage() {
                 )}
                 <div className="flex-1 min-w-0">
                   {annonce.uid_eleveur ? (
-                    <Link href={`/associations/${annonce.uid_eleveur}`} className="font-['Galey'] font-bold text-[#1E2025] hover:text-teal-700 transition-colors block truncate">
+                    <Link href={`/associations/${assoProfileId ?? annonce.uid_eleveur}`} className="font-['Galey'] font-bold text-[#1E2025] hover:text-teal-700 transition-colors block truncate">
                       {assoData.nom}
                     </Link>
                   ) : (
@@ -937,7 +940,7 @@ export default function AnnonceDetailPage() {
                 </div>
                 {annonce.uid_eleveur && (
                   <div className="flex flex-col gap-2 flex-shrink-0">
-                    <Link href={`/associations/${annonce.uid_eleveur}`}
+                    <Link href={`/associations/${assoProfileId ?? annonce.uid_eleveur}`}
                       className="text-xs font-semibold text-teal-700 border border-teal-600 px-3 py-1.5 rounded-xl hover:bg-teal-700 hover:text-white transition-colors text-center">
                       Voir le profil
                     </Link>

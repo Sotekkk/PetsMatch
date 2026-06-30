@@ -30,11 +30,12 @@ class _AssociationsListPageState extends State<AssociationsListPage> {
 
   Future<void> _load() async {
     try {
+      // name_elevage n'existe pas dans user_profiles → utiliser nom + profile_label
       final profiles = await Supabase.instance.client
           .from('user_profiles')
-          .select('id,uid,profile_label,name_elevage,avatar_url,profile_type,ville,latitude,longitude')
+          .select('id,uid,nom,profile_label,avatar_url,profile_type,ville,latitude,longitude')
           .eq('profile_type', 'association')
-          .order('name_elevage');
+          .order('nom');
 
       List<Map<String, dynamic>> primary = [];
       try {
@@ -47,18 +48,20 @@ class _AssociationsListPageState extends State<AssociationsListPage> {
       final list = <Map<String, dynamic>>[];
 
       for (final p in profiles as List) {
-        final uid    = p['uid']?.toString() ?? '';
-        final nameEl = (p['name_elevage'] as String?)?.trim() ?? '';
-        final label  = (p['profile_label'] as String?)?.trim() ?? '';
-        final name   = nameEl.isNotEmpty ? nameEl : (label.isNotEmpty ? label : 'Association');
+        final uid       = p['uid']?.toString() ?? '';
+        final profileId = p['id']?.toString() ?? '';
+        final nom       = (p['nom'] as String?)?.trim() ?? '';
+        final label     = (p['profile_label'] as String?)?.trim() ?? '';
+        final name      = nom.isNotEmpty ? nom : (label.isNotEmpty ? label : 'Association');
         list.add({
-          'uid':    uid,
-          'name':   name,
-          'avatar': p['avatar_url']?.toString() ?? '',
-          'ville':  (p['ville'] as String?)?.trim() ?? '',
-          'lat':    p['latitude'] as double?,
-          'lng':    p['longitude'] as double?,
-          'source': 'profile',
+          'uid':        uid,
+          'profile_id': profileId,
+          'name':       name,
+          'avatar':     p['avatar_url']?.toString() ?? '',
+          'ville':      (p['ville'] as String?)?.trim() ?? '',
+          'lat':        p['latitude'] as double?,
+          'lng':        p['longitude'] as double?,
+          'source':     'profile',
         });
       }
 
@@ -97,10 +100,11 @@ class _AssociationsListPageState extends State<AssociationsListPage> {
     if (uid.isEmpty) return;
     Navigator.push(ctx, MaterialPageRoute(
       builder: (_) => AssociationDetailPage(
-        uid:    uid,
-        name:   asso['name']?.toString()   ?? 'Association',
-        avatar: asso['avatar']?.toString() ?? '',
-        ville:  asso['ville']?.toString()  ?? '',
+        uid:       uid,
+        profileId: asso['profile_id']?.toString(),
+        name:      asso['name']?.toString()   ?? 'Association',
+        avatar:    asso['avatar']?.toString() ?? '',
+        ville:     asso['ville']?.toString()  ?? '',
       ),
     ));
   }

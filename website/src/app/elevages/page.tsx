@@ -18,21 +18,14 @@ const ElevagesMap = dynamic(() => import('@/components/ElevagesMap'), {
 });
 
 interface Eleveur {
+  id: string;
   uid: string;
-  firstname?: string;
-  lastname?: string;
-  name_elevage?: string;
-  profile_picture_url?: string;
-  profile_picture_url_elevage?: string;
-  banner_url?: string;
-  ville_elevage?: string;
+  name: string;
+  photo?: string;
+  banner?: string;
   ville?: string;
-  especes_elevees?: { espece: string; races?: string[] }[];
-  is_dog?: boolean;
-  is_cat?: boolean;
-  dog_breeds?: string[];
-  cat_breeds?: string[];
-  desc_entreprise?: string;
+  especes?: { espece: string; races?: string[] }[];
+  desc?: string;
   lat?: number;
   lng?: number;
   statut_pro?: string;
@@ -47,12 +40,7 @@ const ESPECE_LABEL: Record<string, string> = {
 };
 
 function especesOf(e: Eleveur): string[] {
-  if (e.especes_elevees && e.especes_elevees.length > 0)
-    return e.especes_elevees.map(x => x.espece.toLowerCase());
-  const list: string[] = [];
-  if (e.is_dog) list.push('chien');
-  if (e.is_cat) list.push('chat');
-  return list;
+  return (e.especes ?? []).map(x => x.espece.toLowerCase());
 }
 
 export default function ElevagesPage() {
@@ -63,13 +51,42 @@ export default function ElevagesPage() {
   const [view, setView] = useState<'liste' | 'carte'>('liste');
 
   useEffect(() => {
-    supabase
-      .from('users')
-      .select('uid, firstname, lastname, name_elevage, profile_picture_url, profile_picture_url_elevage, banner_url, ville_elevage, ville, especes_elevees, is_dog, is_cat, dog_breeds, cat_breeds, desc_entreprise, lat, lng, statut_pro, siret, is_premium')
-      .eq('is_elevage', true)
+    // Tout depuis user_profiles — especes_elevees, lat, lng sont disponibles
+    supabase.from('user_profiles')
+      .select('id, uid, nom, firstname, lastname, avatar_url, banner_url, ville, especes_elevees, desc_entreprise, lat, lng, statut_pro, siret, is_premium')
+      .eq('profile_type', 'eleveur')
       .eq('is_validate', true)
-      .then(({ data }) => {
-        setEleveurs((data ?? []) as Eleveur[]);
+      .eq('is_main', true)
+      .order('nom')
+      .then(({ data: profiles }) => {
+        const list: Eleveur[] = (profiles ?? []).map(p => {
+          const pr = p as Record<string, unknown>;
+          let especes: { espece: string; races?: string[] }[] = [];
+          const rawEsp = pr['especes_elevees'];
+          if (typeof rawEsp === 'string') {
+            try { especes = JSON.parse(rawEsp); } catch { especes = []; }
+          } else if (Array.isArray(rawEsp)) {
+            especes = rawEsp as { espece: string; races?: string[] }[];
+          }
+          return {
+            id:        pr['id']  as string,
+            uid:       pr['uid'] as string,
+            name:      (pr['nom'] as string | null)?.trim()
+                       || `${pr['firstname'] ?? ''} ${pr['lastname'] ?? ''}`.trim()
+                       || 'Élevage',
+            photo:     (pr['avatar_url'] as string | null) ?? undefined,
+            banner:    (pr['banner_url'] as string | null) ?? undefined,
+            ville:     (pr['ville'] as string | null)?.trim() ?? undefined,
+            especes,
+            desc:      (pr['desc_entreprise'] as string | null)?.trim() ?? undefined,
+            lat:       (pr['lat'] as number | null) ?? undefined,
+            lng:       (pr['lng'] as number | null) ?? undefined,
+            statut_pro:(pr['statut_pro'] as string | null) ?? undefined,
+            siret:     (pr['siret'] as string | null) ?? undefined,
+            is_premium:!!(pr['is_premium']),
+          };
+        });
+        setEleveurs(list);
         setLoading(false);
       });
   }, []);
@@ -77,24 +94,18 @@ export default function ElevagesPage() {
   const filtered = eleveurs.filter(e => {
     const esps = especesOf(e);
     if (filtre !== 'tous' && !esps.includes(filtre)) return false;
-    const name = e.name_elevage ?? `${e.firstname ?? ''} ${e.lastname ?? ''}`.trim();
-    const ville = e.ville_elevage ?? e.ville ?? '';
-    const races = [
-      ...((e.dog_breeds ?? []) as string[]),
-      ...((e.cat_breeds ?? []) as string[]),
-      ...(e.especes_elevees?.flatMap(x => x.races ?? []) ?? []),
-    ];
-    if (search && !`${name} ${ville} ${races.join(' ')}`.toLowerCase().includes(search.toLowerCase())) return false;
+    const races = (e.especes ?? []).flatMap(x => x.races ?? []);
+    if (search && !`${e.name} ${e.ville ?? ''} ${races.join(' ')}`.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
   const withCoords: EleveurMapItem[] = filtered
     .filter(e => e.lat != null && e.lng != null)
     .map(e => ({
-      id: e.uid,
-      name: (e.name_elevage ?? `${e.firstname ?? ''} ${e.lastname ?? ''}`.trim()) || 'Élevage',
-      photo: e.profile_picture_url_elevage ?? e.profile_picture_url,
-      ville: e.ville_elevage ?? e.ville,
+      id: e.id,
+      name: e.name,
+      photo: e.photo,
+      ville: e.ville,
       especes: especesOf(e),
       lat: e.lat!,
       lng: e.lng!,
@@ -166,7 +177,7 @@ export default function ElevagesPage() {
         <div className="text-center py-20 text-gray-400">Aucun élevage trouvé</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filtered.map(e => <EleveurCard key={e.uid} eleveur={e} />)}
+          {filtered.map(e => <EleveurCard key={e.id} eleveur={e} />)}
         </div>
       )}
 
@@ -193,36 +204,32 @@ export default function ElevagesPage() {
 }
 
 function EleveurCard({ eleveur: e }: { eleveur: Eleveur }) {
-  const name = (e.name_elevage ?? `${e.firstname ?? ''} ${e.lastname ?? ''}`.trim()) || 'Élevage';
-  const photo = e.profile_picture_url_elevage ?? e.profile_picture_url;
-  const banner = e.banner_url;
-  const ville = e.ville_elevage ?? e.ville;
   const esps = especesOf(e);
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
       <div className="relative h-36 bg-[#EEF5EA]">
-        {banner ? (
+        {e.banner ? (
           <>
-            <Image src={banner} alt={name} fill className="object-cover" />
-            {photo && (
+            <Image src={e.banner} alt={e.name} fill className="object-cover" unoptimized />
+            {e.photo && (
               <div className="absolute bottom-2 left-3 w-10 h-10 rounded-full border-2 border-white overflow-hidden shadow-sm bg-[#EEF5EA]">
-                <Image src={photo} alt={name} fill className="object-cover" />
+                <Image src={e.photo} alt={e.name} fill className="object-cover" unoptimized />
               </div>
             )}
           </>
-        ) : photo ? (
-          <Image src={photo} alt={name} fill className="object-cover" />
+        ) : e.photo ? (
+          <Image src={e.photo} alt={e.name} fill className="object-cover" unoptimized />
         ) : (
           <span className="absolute inset-0 flex items-center justify-center text-5xl">🏡</span>
         )}
       </div>
       <div className="p-4">
         <div className="flex items-start gap-2 mb-0.5">
-          <h3 className="font-bold text-[#1F2A2E] text-base truncate flex-1">{name}</h3>
+          <h3 className="font-bold text-[#1F2A2E] text-base truncate flex-1">{e.name}</h3>
           <VerificationBadge level={getBadgeLevel({ statutPro: e.statut_pro, siret: e.siret, isPremium: e.is_premium })} size="sm" />
         </div>
-        {ville && <p className="text-gray-400 text-sm">📍 {ville}</p>}
+        {e.ville && <p className="text-gray-400 text-sm">📍 {e.ville}</p>}
         {esps.length > 0 && (
           <div className="flex gap-1 flex-wrap mt-2">
             {esps.slice(0, 3).map(esp => (
@@ -232,10 +239,10 @@ function EleveurCard({ eleveur: e }: { eleveur: Eleveur }) {
             ))}
           </div>
         )}
-        {e.desc_entreprise && (
-          <p className="text-gray-500 text-xs mt-2 line-clamp-2">{e.desc_entreprise}</p>
+        {e.desc && (
+          <p className="text-gray-500 text-xs mt-2 line-clamp-2">{e.desc}</p>
         )}
-        <Link href={`/elevages/${e.uid}`}
+        <Link href={`/elevages/${e.id}`}
           className="mt-3 w-full block text-center text-sm bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-medium py-2 rounded-xl transition-colors">
           Voir le profil
         </Link>

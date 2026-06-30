@@ -53,52 +53,51 @@ export default function AssociationProfilePage() {
   useEffect(() => {
     if (!id) return;
 
-    Promise.all([
-      // Profil association — query sans filtre profile_type (RLS bloque) puis on filtre côté client
-      supabase.from('user_profiles')
-        .select('id, profile_type, profile_label, nom, avatar_url, banner_url, ville, description, desc_entreprise, phone, telephone, site_web, instagram, facebook')
-        .eq('uid', id),
-      // Fallback : users table
-      supabase.from('users')
-        .select('name_elevage, profile_picture_url_elevage, banner_url, ville_elevage, description_elevage, phone')
-        .eq('uid', id).maybeSingle(),
-      // Annonces
-      supabase.from('annonces')
-        .select('id, titre, espece, race, photos, ville_eleveur')
-        .eq('uid_eleveur', id).eq('profil_source', 'association').eq('statut', 'disponible')
-        .order('created_at', { ascending: false }),
-      // Animaux
-      supabase.from('animaux')
-        .select('id, nom, espece, race, statut, photo_url')
-        .eq('uid_eleveur', id).eq('is_association', true).eq('statut', 'disponible')
-        .order('nom'),
-    ]).then(([{ data: allProfiles }, { data: userRow }, { data: ann }, { data: anim }]) => {
-      type SecProfile = { id?: string; profile_type?: string; profile_label?: string; nom?: string; avatar_url?: string; banner_url?: string; ville?: string; description?: string; desc_entreprise?: string; phone?: string; telephone?: string; site_web?: string; instagram?: string; facebook?: string };
-      // Filtre côté client sur profile_type='association' (évite RLS sur filtre serveur)
-      const profiles = (allProfiles ?? []) as SecProfile[];
-      const sp = profiles.find(p => p.profile_type === 'association') ?? profiles[0] ?? null;
-      const nom = (sp?.nom?.trim() || sp?.profile_label?.trim())
-        ?? (userRow as { name_elevage?: string } | null)?.name_elevage ?? 'Association';
-      const avatar = sp?.avatar_url
-        ?? (userRow as { profile_picture_url_elevage?: string } | null)?.profile_picture_url_elevage ?? '';
-      const banner = sp?.banner_url
-        ?? (userRow as { banner_url?: string } | null)?.banner_url ?? undefined;
-      const ville = sp?.ville
-        ?? (userRow as { ville_elevage?: string } | null)?.ville_elevage ?? '';
-      const description = (sp?.desc_entreprise || sp?.description)
-        ?? (userRow as { description_elevage?: string } | null)?.description_elevage ?? '';
-      const telephone = sp?.phone || sp?.telephone
-        || (userRow as { phone?: string } | null)?.phone || '';
+    // Détecte si l'id est un UUID de profil Supabase (36 chars avec tirets)
+    // ou un Firebase UID (alphanumérique sans tirets)
+    const isProfileUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-      setProfile({ uid: id, nom, avatar, banner, ville, description,
-        telephone: telephone || undefined,
-        site_web: sp?.site_web,
-        instagram: sp?.instagram,
-        facebook: sp?.facebook,
+    type SecProfile = { id?: string; uid?: string; profile_type?: string; profile_label?: string; nom?: string; avatar_url?: string; banner_url?: string; ville?: string; description?: string; desc_entreprise?: string; phone?: string; telephone?: string; site_web?: string; instagram?: string; facebook?: string };
+
+    const profileQ = isProfileUUID
+      // UUID de profil : query directe par id (bypass RLS, le profil est connu)
+      ? supabase.from('user_profiles')
+          .select('id, uid, profile_type, profile_label, nom, avatar_url, banner_url, ville, description, desc_entreprise, phone, telephone, site_web, instagram, facebook')
+          .eq('id', id).maybeSingle().then(r => ({ data: r.data ? [r.data] : [], uid: (r.data as SecProfile | null)?.uid ?? id }))
+      // Firebase UID : query par uid sans filtre profile_type (filtre côté client)
+      : supabase.from('user_profiles')
+          .select('id, uid, profile_type, profile_label, nom, avatar_url, banner_url, ville, description, desc_entreprise, phone, telephone, site_web, instagram, facebook')
+          .eq('uid', id).then(r => ({ data: r.data ?? [], uid: id }));
+
+    profileQ.then(({ data: allProfiles, uid: ownerUid }) => {
+      const profiles = allProfiles as SecProfile[];
+      const sp = profiles.find(p => p.profile_type === 'association') ?? profiles[0] ?? null;
+      const firebaseUid = ownerUid;
+
+      Promise.all([
+        supabase.from('users').select('name_elevage, profile_picture_url_elevage, banner_url, ville_elevage, description_elevage, phone').eq('uid', firebaseUid).maybeSingle(),
+        supabase.from('annonces').select('id, titre, espece, race, photos, ville_eleveur').eq('uid_eleveur', firebaseUid).eq('profil_source', 'association').eq('statut', 'disponible').order('created_at', { ascending: false }),
+        supabase.from('animaux').select('id, nom, espece, race, statut, photo_url').eq('uid_eleveur', firebaseUid).eq('is_association', true).eq('statut', 'disponible').order('nom'),
+      ]).then(([{ data: userRow }, { data: ann }, { data: anim }]) => {
+        const nom = (sp?.nom?.trim() || sp?.profile_label?.trim())
+          ?? (userRow as { name_elevage?: string } | null)?.name_elevage ?? 'Association';
+        const avatar = sp?.avatar_url
+          ?? (userRow as { profile_picture_url_elevage?: string } | null)?.profile_picture_url_elevage ?? '';
+        const banner = sp?.banner_url
+          ?? (userRow as { banner_url?: string } | null)?.banner_url ?? undefined;
+        const ville = sp?.ville ?? (userRow as { ville_elevage?: string } | null)?.ville_elevage ?? '';
+        const description = (sp?.desc_entreprise || sp?.description)
+          ?? (userRow as { description_elevage?: string } | null)?.description_elevage ?? '';
+        const telephone = sp?.phone || sp?.telephone || (userRow as { phone?: string } | null)?.phone || '';
+
+        setProfile({ uid: firebaseUid, nom, avatar, banner, ville, description,
+          telephone: telephone || undefined,
+          site_web: sp?.site_web, instagram: sp?.instagram, facebook: sp?.facebook,
+        });
+        setAnnonces((ann ?? []) as Annonce[]);
+        setAnimaux((anim ?? []) as Animal[]);
+        setLoading(false);
       });
-      setAnnonces((ann ?? []) as Annonce[]);
-      setAnimaux((anim ?? []) as Animal[]);
-      setLoading(false);
     });
   }, [id]);
 

@@ -277,7 +277,7 @@ export default function MesAssociationsPage() {
                   <p className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{asso.nom}</p>
                   {asso.ville && <p className="text-xs text-gray-400">📍 {asso.ville}</p>}
                 </div>
-                <Link href={`/associations/${asso.uid}`}
+                <Link href={`/associations/${asso.eleveur_profile_id ?? asso.uid}`}
                   className="text-xs font-semibold text-teal-700 border border-teal-600 px-3 py-1.5 rounded-xl hover:bg-teal-700 hover:text-white transition-colors flex-shrink-0">
                   Voir le profil
                 </Link>
