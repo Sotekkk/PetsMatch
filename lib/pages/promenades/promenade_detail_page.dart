@@ -101,13 +101,28 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         }
       }
 
-      // Messages / commentaires
+      if (mounted) {
+        setState(() {
+          _promenade = Map<String, dynamic>.from(p);
+          _organizer = org != null ? Map<String, dynamic>.from(org) : null;
+          _participants = parts;
+          _loading = false;
+        });
+      }
+      // Messages en try séparé : la table peut ne pas encore exister
+      _loadMessages();
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadMessages() async {
+    try {
       final rawMsgs = await _supa
           .from('promenades_messages')
           .select('id, user_uid, message, created_at, user_profile_id')
           .eq('promenade_id', widget.promenadeId)
           .order('created_at');
-
       final List<Map<String, dynamic>> msgs = [];
       if ((rawMsgs as List).isNotEmpty) {
         final msgUids = rawMsgs.map((m) => m['user_uid'].toString()).toSet().toList();
@@ -119,19 +134,8 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
           msgs.add({...Map<String, dynamic>.from(m), 'user': msgUsersMap[m['user_uid'].toString()]});
         }
       }
-
-      if (mounted) {
-        setState(() {
-          _promenade = Map<String, dynamic>.from(p);
-          _organizer = org != null ? Map<String, dynamic>.from(org) : null;
-          _participants = parts;
-          _messages = msgs;
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
+      if (mounted) setState(() => _messages = msgs);
+    } catch (_) {}
   }
 
   Future<void> _join() async {
@@ -348,7 +352,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         'created_at':     DateTime.now().toIso8601String(),
       });
       _msgCtrl.clear();
-      await _load();
+      await _loadMessages();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)

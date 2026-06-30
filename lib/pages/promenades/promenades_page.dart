@@ -710,7 +710,7 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
     setState(() => _saving = true);
     try {
       final pid = User_Info.activeProfileId;
-      await _supa.from('promenades').insert({
+      final result = await _supa.from('promenades').insert({
         'organisateur_uid': _uid,
         if (pid != null) 'organisateur_profile_id': pid,
         'titre': _titre,
@@ -727,7 +727,24 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
         'espece': _espece,
         'toutes_races': _toutesRaces,
         if (!_toutesRaces && _racesCtrl.text.trim().isNotEmpty) 'races': _racesCtrl.text.trim(),
-      });
+      }).select('id').single();
+      // Ajouter l'événement dans l'agenda de l'organisateur
+      try {
+        final promenadeId = result['id']?.toString();
+        if (promenadeId != null) {
+          await _supa.from('agenda_events').insert({
+            'uid':            _uid,
+            'titre':          _titre,
+            'type':           'promenade',
+            'date_debut':     _dateHeure.toUtc().toIso8601String(),
+            'notes':          _lieuCtrl.text.trim().isNotEmpty
+                ? 'RDV : ${_lieuCtrl.text.trim()}'
+                : null,
+            'pro_profile_id': pid ?? '',
+            'promenade_id':   promenadeId,
+          });
+        }
+      } catch (_) {}
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {

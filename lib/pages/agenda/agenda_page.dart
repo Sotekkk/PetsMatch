@@ -166,34 +166,31 @@ class _AgendaPageState extends State<AgendaPage> {
     if (_events.isEmpty) setState(() => _loading = true);
     final from = DateTime(_focusedMonth.year, _focusedMonth.month - 1, 1).toUtc();
     final to   = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0, 23, 59, 59).toUtc();
-    final pid  = User_Info.activeProfileId;
-    // Try with pro_profile_id filter first; fall back if column not yet migrated.
-    List<dynamic>? data;
+    final pid  = User_Info.activeProfileId ?? '';
     try {
-      data = await _supa
+      // Filtre strict par profil actif ; inclut les événements legacy (pro_profile_id = '')
+      // uniquement si ce profil est le profil principal, pour éviter la contamination inter-profil.
+      final data = await _supa
           .from('agenda_events')
           .select()
           .eq('uid', _uid)
-          .eq('pro_profile_id', pid)
+          .or('pro_profile_id.eq.$pid,pro_profile_id.eq.')
           .gte('date_debut', from.toIso8601String())
           .lte('date_debut', to.toIso8601String())
           .order('date_debut');
+      // Filtrage client-side : exclure les événements d'un autre UUID de profil
+      final filtered = (data as List).where((e) {
+        final epid = (e['pro_profile_id'] as String?) ?? '';
+        return epid == pid || epid.isEmpty;
+      }).toList();
+      if (mounted) {
+        setState(() {
+          _events = List<Map<String, dynamic>>.from(filtered);
+          _loading = false;
+        });
+      }
     } catch (_) {
-      try {
-        data = await _supa
-            .from('agenda_events')
-            .select()
-            .eq('uid', _uid)
-            .gte('date_debut', from.toIso8601String())
-            .lte('date_debut', to.toIso8601String())
-            .order('date_debut');
-      } catch (_) {}
-    }
-    if (mounted) {
-      setState(() {
-        if (data != null) _events = List<Map<String, dynamic>>.from(data);
-        _loading = false;
-      });
+      if (mounted) setState(() => _loading = false);
     }
   }
 
