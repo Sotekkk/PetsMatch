@@ -724,8 +724,20 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
 
             // ── Commentaires / discussion ─────────────────────────────────
             _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Discussion',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+              Row(children: [
+                const Text('Discussion',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                if (_messages.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(color: _green, borderRadius: BorderRadius.circular(20)),
+                    child: Text('${_messages.length}',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                            color: Colors.white, fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ]),
               const SizedBox(height: 10),
               if (_messages.isEmpty)
                 Padding(
@@ -786,10 +798,10 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
                   ),
                 );
               }),
-              if (_uid.isNotEmpty && (myStatut == 'accepte' || _isOrganizer)) ...[
-                const SizedBox(height: 8),
-                const Divider(height: 1),
-                const SizedBox(height: 8),
+              const SizedBox(height: 8),
+              const Divider(height: 1),
+              const SizedBox(height: 8),
+              if (_uid.isNotEmpty && (myStatut == 'accepte' || _isOrganizer))
                 Row(children: [
                   Expanded(
                     child: TextField(
@@ -824,13 +836,20 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
                           : const Icon(Icons.send_rounded, color: Colors.white, size: 18),
                     ),
                   ),
-                ]),
-              ] else if (_uid.isNotEmpty && myStatut != 'accepte' && !_isOrganizer)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text('Réservé aux participants acceptés.',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                          color: Colors.grey.shade400)),
+                ])
+              else
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                      color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
+                  child: Row(children: [
+                    Icon(Icons.lock_outline, size: 14, color: Colors.grey.shade400),
+                    const SizedBox(width: 8),
+                    Text(myStatut == 'en_attente'
+                        ? 'En attente d\'acceptation pour pouvoir écrire'
+                        : 'Rejoignez cette promenade pour participer à la discussion',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+                  ]),
                 ),
             ])),
             const SizedBox(height: 10),

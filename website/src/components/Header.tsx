@@ -73,6 +73,7 @@ const NAV_VET = [
 const NAV_PARTICULIER = [
   { href: '/',                     label: 'Accueil' },
   { href: '/mes-animaux',          label: 'Mes Animaux' },
+  { href: '/agenda',               label: 'Agenda' },
   { href: '/annonces',             label: 'Annonces' },
   { href: '/adoptions', label: '💚 Adoptions' },
   { href: '/animaux-perdus',       label: 'Animaux perdus' },
@@ -294,6 +295,7 @@ const MENU_PARTICULIER = [
       { href: '/profil',              label: 'Mon Profil',         icon: '👤' },
       { href: '/mes-animaux',         label: 'Mes Animaux',        icon: '🐾' },
       { href: '/mes-animaux-acquis',  label: 'Mes Animaux Acquis', icon: '🤝' },
+      { href: '/agenda',              label: 'Mon Agenda',         icon: '🗓️' },
       { href: '/mes-taches',          label: 'Mes tâches',         icon: '✅' },
     ],
   },

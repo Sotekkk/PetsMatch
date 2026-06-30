@@ -210,8 +210,13 @@ class _AgendaPageState extends State<AgendaPage> {
     try {
       // ── Tâches manuelles ─────────────────────────────────────────────────
       final pid = User_Info.activeProfileId;
+      // Un profil particulier ne possède pas de tâches élevage (évite la contamination cross-profil)
+      final isParticulier = User_Info.activeType == 'particulier'
+          || (!User_Info.isElevage && !User_Info.isAssociation && !User_Info.isPro);
       dynamic d1;
-      if (pid.isNotEmpty) {
+      if (isParticulier) {
+        d1 = <dynamic>[];
+      } else if (pid.isNotEmpty) {
         d1 = await _supa.from('taches_elevage')
             .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
             .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
