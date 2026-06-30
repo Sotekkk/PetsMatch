@@ -12,6 +12,7 @@ import 'package:PetsMatch/pages/main_feed.dart';
 import 'package:PetsMatch/pages/particulier/user_feed.dart';
 import 'package:PetsMatch/pages/eleveur/user_elevage_feed.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:PetsMatch/utils.dart';
@@ -26,6 +27,31 @@ class _BottomNavState extends State<BottomNav> {
   int _selectedIndex = 0;
   // '' = rôles réels, 'eleveur', 'pro', 'particulier'
   String _previewRole = '';
+
+  // Change le profil affiché ET met à jour User_Info.activeProfileId/activeType
+  // pour que toutes les pages (agenda, etc.) voient le bon profil sans paramètre supplémentaire.
+  void _switchPreviewRole(String role) {
+    setState(() {
+      _previewRole = role;
+      _selectedIndex = 0;
+    });
+    final profiles = User_Info.availableProfiles;
+    if (role.isEmpty) {
+      // Restaurer le profil principal
+      final main = profiles.firstWhere(
+        (p) => p['is_main'] == true,
+        orElse: () => profiles.isNotEmpty ? profiles.first : <String, dynamic>{},
+      );
+      if (main.isNotEmpty) User_Info.applyProfile(main);
+    } else {
+      // Trouver le profil correspondant au rôle sélectionné
+      final match = profiles.firstWhere(
+        (p) => (p['profile_type'] as String? ?? '') == role,
+        orElse: () => <String, dynamic>{},
+      );
+      if (match.isNotEmpty) User_Info.applyProfile(match);
+    }
+  }
 
   bool get _asAssociation =>
       _previewRole == 'association' ||
@@ -50,11 +76,17 @@ class _BottomNavState extends State<BottomNav> {
   }
 
   Future<void> _checkOnboarding() async {
+    // Charger les profils Supabase si pas encore fait (cas app restart sans LoginPage)
+    if (User_Info.availableProfiles.isEmpty) {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) await User_Info.loadProfiles(uid);
+    }
+
     final prefs = await SharedPreferences.getInstance();
-    final assoProfiles   = User_Info.availableProfiles.where((p) => p['profile_type'] == 'association').toList();
+    final assoProfiles    = User_Info.availableProfiles.where((p) => p['profile_type'] == 'association').toList();
     final eleveurProfiles = User_Info.availableProfiles.where((p) => p['profile_type'] == 'eleveur' || p['profile_type'] == 'pro').toList();
 
-    final hasAsso   = assoProfiles.isNotEmpty || User_Info.isAssociation;
+    final hasAsso    = assoProfiles.isNotEmpty || User_Info.isAssociation;
     final hasEleveur = eleveurProfiles.isNotEmpty || User_Info.isElevage || User_Info.isPro;
 
     final assoDone   = prefs.getBool('onboarding_asso_done') ?? false;
@@ -222,10 +254,7 @@ class _BottomNavState extends State<BottomNav> {
               active: _previewRole == 'association',
               onTap: () {
                 Navigator.pop(context);
-                setState(() {
-                  _previewRole = _previewRole == 'association' ? '' : 'association';
-                  _selectedIndex = 0;
-                });
+                _switchPreviewRole(_previewRole == 'association' ? '' : 'association');
               },
             ),
             _PreviewTile(
@@ -234,10 +263,7 @@ class _BottomNavState extends State<BottomNav> {
               active: _previewRole == 'eleveur',
               onTap: () {
                 Navigator.pop(context);
-                setState(() {
-                  _previewRole = _previewRole == 'eleveur' ? '' : 'eleveur';
-                  _selectedIndex = 0;
-                });
+                _switchPreviewRole(_previewRole == 'eleveur' ? '' : 'eleveur');
               },
             ),
             _PreviewTile(
@@ -246,10 +272,7 @@ class _BottomNavState extends State<BottomNav> {
               active: _previewRole == 'pro',
               onTap: () {
                 Navigator.pop(context);
-                setState(() {
-                  _previewRole = _previewRole == 'pro' ? '' : 'pro';
-                  _selectedIndex = 0;
-                });
+                _switchPreviewRole(_previewRole == 'pro' ? '' : 'pro');
               },
             ),
             _PreviewTile(
@@ -258,10 +281,7 @@ class _BottomNavState extends State<BottomNav> {
               active: _previewRole == 'particulier',
               onTap: () {
                 Navigator.pop(context);
-                setState(() {
-                  _previewRole = _previewRole == 'particulier' ? '' : 'particulier';
-                  _selectedIndex = 0;
-                });
+                _switchPreviewRole(_previewRole == 'particulier' ? '' : 'particulier');
               },
             ),
 
@@ -273,10 +293,7 @@ class _BottomNavState extends State<BottomNav> {
                     style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
                 onTap: () {
                   Navigator.pop(context);
-                  setState(() {
-                    _previewRole = '';
-                    _selectedIndex = 0;
-                  });
+                  _switchPreviewRole('');
                 },
               ),
             ],
