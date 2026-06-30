@@ -54,84 +54,64 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
 
   Future<void> _load() async {
     try {
-      // 1. Profil association — query par id (UUID direct, bypass RLS)
-      Map<String, dynamic>? assoProfile;
+      // 1. Profil association depuis user_profiles
+      Map<String, dynamic>? p;
       if (widget.profileId != null) {
-        assoProfile = await _supa.from('user_profiles')
-            .select('uid, nom, profile_label, description, desc_entreprise, avatar_url, banner_url, ville, phone, telephone, phone_number, site_web, instagram, facebook')
+        p = await _supa.from('user_profiles')
+            .select('nom, profile_label, desc_entreprise, description, avatar_url, banner_url, ville, phone, telephone, site_web')
             .eq('id', widget.profileId!)
             .maybeSingle();
       } else {
-        final rows = await _supa.from('user_profiles')
-            .select('uid, nom, profile_label, description, desc_entreprise, avatar_url, banner_url, ville, phone, telephone, phone_number, site_web, instagram, facebook, profile_type')
-            .eq('uid', widget.uid) as List;
-        assoProfile = rows.firstWhere(
-          (r) => (r['profile_type'] as String?) == 'association',
+        final rows = (await _supa.from('user_profiles')
+            .select('nom, profile_label, desc_entreprise, description, avatar_url, banner_url, ville, phone, telephone, site_web, profile_type')
+            .eq('uid', widget.uid)) as List;
+        p = rows.firstWhere(
+          (r) => r['profile_type'] == 'association',
           orElse: () => rows.isNotEmpty ? rows.first : null,
         ) as Map<String, dynamic>?;
       }
 
-      // 2. Fallback users + annonces + animaux en parallèle (identique au web)
-      final results = await Future.wait([
-        _supa.from('users')
-            .select('name_elevage, profile_picture_url_elevage, banner_url, ville_elevage, description_elevage, phone')
-            .eq('uid', widget.uid).maybeSingle(),
-        _supa.from('annonces')
-            .select('id,titre,espece,race,sexe,photos,statut,ville_eleveur,nom_eleveur,date_naissance_animal,profil_source')
-            .eq('uid_eleveur', widget.uid)
-            .eq('profil_source', 'association')
-            .eq('statut', 'disponible')
-            .order('created_at', ascending: false),
-        _supa.from('animaux')
-            .select('id,nom,espece,race,sexe,statut,date_naissance,photo_url')
-            .eq('uid_eleveur', widget.uid)
-            .eq('is_association', true)
-            .eq('statut', 'disponible')
-            .order('nom'),
-      ]);
+      // 2. Annonces de l'association
+      final annoncesRes = await _supa.from('annonces')
+          .select('id,titre,espece,race,photos,ville_eleveur')
+          .eq('uid_eleveur', widget.uid)
+          .eq('profil_source', 'association')
+          .eq('statut', 'disponible')
+          .order('created_at', ascending: false);
 
-      final userRow  = results[0] as Map<String, dynamic>?;
-      final annonces = results[1] as List;
-      final animaux  = results[2] as List;
-
-      // Nom (identique au web : nom > profile_label > users.name_elevage)
-      final nom   = (assoProfile?['nom'] as String?)?.trim();
-      final label = (assoProfile?['profile_label'] as String?)?.trim();
-      final freshName = (nom?.isNotEmpty == true) ? nom!
-          : (label?.isNotEmpty == true) ? label!
-          : (userRow?['name_elevage'] as String?)?.trim() ?? widget.name;
-
-      // Description
-      String desc = ((assoProfile?['desc_entreprise'] ?? assoProfile?['description']) as String?)?.trim() ?? '';
-      if (desc.isEmpty) desc = userRow?['description_elevage']?.toString().trim() ?? '';
-
-      // Téléphone
-      final phone = (assoProfile?['phone'] ?? assoProfile?['telephone'] ?? assoProfile?['phone_number']
-          ?? userRow?['phone'])?.toString().trim() ?? '';
-
-      final siteWeb = assoProfile?['site_web']?.toString().trim() ?? '';
+      // 3. Animaux via animaux_proprietes (profile_id_proprio = id association dans user_profiles)
+      List animaux = [];
+      if (widget.profileId != null) {
+        final apRows = (await _supa.from('animaux_proprietes')
+            .select('animal_id')
+            .eq('profile_id_proprio', widget.profileId!)) as List;
+        final ids = apRows.map((r) => r['animal_id']?.toString()).whereType<String>().toList();
+        if (ids.isNotEmpty) {
+          animaux = await _supa.from('animaux')
+              .select('id,nom,espece,race,statut,date_naissance,photo_url')
+              .inFilter('id', ids)
+              .eq('statut', 'disponible');
+        }
+      }
 
       if (mounted) {
         setState(() {
-          _loadedName   = freshName;
-          _loadedAvatar = (assoProfile?['avatar_url'] as String?)?.trim()
-              ?? (userRow?['profile_picture_url_elevage'] as String?)?.trim()
-              ?? widget.avatar;
-          _loadedBanner = (assoProfile?['banner_url'] as String?)?.trim()
-              ?? (userRow?['banner_url'] as String?)?.trim()
-              ?? '';
-          _loadedVille  = (assoProfile?['ville'] as String?)?.trim()
-              ?? (userRow?['ville_elevage'] as String?)?.trim()
-              ?? widget.ville;
-          _description  = desc;
-          _phone        = phone;
-          _siteWeb      = siteWeb;
+          _loadedName   = (p?['nom'] as String?)?.trim().isNotEmpty == true
+              ? (p!['nom'] as String).trim()
+              : (p?['profile_label'] as String?)?.trim() ?? widget.name;
+          _loadedAvatar = (p?['avatar_url'] as String?)?.trim() ?? widget.avatar;
+          _loadedBanner = (p?['banner_url'] as String?)?.trim() ?? '';
+          _loadedVille  = (p?['ville'] as String?)?.trim() ?? widget.ville;
+          _description  = ((p?['desc_entreprise'] ?? p?['description']) as String?)?.trim() ?? '';
+          _phone        = (p?['phone'] ?? p?['telephone'])?.toString().trim() ?? '';
+          _siteWeb      = (p?['site_web'] as String?)?.trim() ?? '';
           _animaux      = List<Map<String, dynamic>>.from(animaux);
-          _annonces     = List<Map<String, dynamic>>.from(annonces);
+          _annonces     = List<Map<String, dynamic>>.from(annoncesRes);
           _loading      = false;
         });
       }
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('AssociationDetailPage._load error: $e\n$st');
       if (mounted) setState(() => _loading = false);
     }
   }
