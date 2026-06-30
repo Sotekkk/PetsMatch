@@ -37,6 +37,7 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
   String _description  = '';
   String _loadedName   = '';
   String _loadedAvatar = '';
+  String _loadedBanner = '';
   String _loadedVille  = '';
   String _phone        = '';
   String _siteWeb      = '';
@@ -57,12 +58,12 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
       Map<String, dynamic>? assoProfile;
       if (widget.profileId != null) {
         assoProfile = await _supa.from('user_profiles')
-            .select('nom, profile_label, description, desc_entreprise, avatar_url, banner_url, ville, phone, telephone, site_web')
+            .select('nom, profile_label, description, desc_entreprise, avatar_url, banner_url, ville, phone, telephone, phone_number, site_web')
             .eq('id', widget.profileId!)
             .maybeSingle();
       } else {
         final rows = await _supa.from('user_profiles')
-            .select('nom, profile_label, description, desc_entreprise, avatar_url, banner_url, ville, phone, telephone, site_web, profile_type')
+            .select('nom, profile_label, description, desc_entreprise, avatar_url, banner_url, ville, phone, telephone, phone_number, site_web, profile_type')
             .eq('uid', widget.uid) as List;
         assoProfile = rows.firstWhere(
           (r) => (r['profile_type'] as String?) == 'association',
@@ -72,11 +73,6 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
 
       final results = await Future.wait([
         _supa.from('users').select('description_elevage').eq('uid', widget.uid).maybeSingle(),
-        _supa.from('animaux')
-            .select('id,nom,espece,race,sexe,statut,date_naissance,photo_url')
-            .eq('uid_eleveur', widget.uid)
-            .eq('statut', 'disponible')
-            .order('nom'),
         _supa.from('annonces')
             .select('id,titre,espece,race,sexe,photos,statut,ville_eleveur,nom_eleveur,date_naissance_animal,profil_source')
             .eq('uid_eleveur', widget.uid)
@@ -86,8 +82,30 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
       ]);
 
       final userRow  = results[0] as Map<String, dynamic>?;
-      final animaux  = results[1] as List;
-      final annonces = results[2] as List;
+      final annonces = results[1] as List;
+
+      // Animaux via animaux_proprietes (profileId) ou uid_eleveur selon ce qui est disponible
+      List animaux = [];
+      if (widget.profileId != null) {
+        final apRows = await _supa.from('animaux_proprietes')
+            .select('animal_id')
+            .eq('profile_id_proprio', widget.profileId!)
+            .isFilter('date_fin', null);
+        final ids = (apRows as List).map((r) => r['animal_id']?.toString()).whereType<String>().toList();
+        if (ids.isNotEmpty) {
+          animaux = await _supa.from('animaux')
+              .select('id,nom,espece,race,sexe,statut,date_naissance,photo_url')
+              .inFilter('id', ids)
+              .eq('statut', 'disponible')
+              .order('nom');
+        }
+      } else {
+        animaux = await _supa.from('animaux')
+            .select('id,nom,espece,race,sexe,statut,date_naissance,photo_url')
+            .eq('uid_eleveur', widget.uid)
+            .eq('statut', 'disponible')
+            .order('nom');
+      }
 
       // Nom réel de l'association (priorité : user_profiles.nom puis profile_label)
       final nom    = (assoProfile?['nom'] as String?)?.trim();
@@ -100,7 +118,7 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
       String desc = ((assoProfile?['desc_entreprise'] ?? assoProfile?['description']) as String?)?.trim() ?? '';
       if (desc.isEmpty) desc = userRow?['description_elevage']?.toString() ?? '';
 
-      final phone = (assoProfile?['phone'] ?? assoProfile?['telephone'])?.toString().trim() ?? '';
+      final phone = (assoProfile?['phone'] ?? assoProfile?['telephone'] ?? assoProfile?['phone_number'])?.toString().trim() ?? '';
       final siteWeb = assoProfile?['site_web']?.toString().trim() ?? '';
 
       final filteredAnimaux = List<Map<String, dynamic>>.from(animaux);
@@ -109,6 +127,7 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
         setState(() {
           _loadedName   = freshName;
           _loadedAvatar = (assoProfile?['avatar_url'] as String?)?.trim() ?? widget.avatar;
+          _loadedBanner = (assoProfile?['banner_url'] as String?)?.trim() ?? '';
           _loadedVille  = (assoProfile?['ville'] as String?)?.trim() ?? widget.ville;
           _description  = desc;
           _phone   = phone;
@@ -171,15 +190,33 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Color(0xFF0C5C6C), Color(0xFF6E9E57)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                  if (_loadedBanner.isNotEmpty)
+                    CachedNetworkImage(
+                      imageUrl: _loadedBanner,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF0C5C6C), Color(0xFF6E9E57)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF0C5C6C), Color(0xFF6E9E57)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
                       ),
                     ),
-                  ),
+                  // Overlay sombre pour lisibilité du texte sur la bannière
+                  if (_loadedBanner.isNotEmpty)
+                    Container(color: Colors.black.withValues(alpha: 0.35)),
                   Positioned(
                     bottom: 20,
                     left: 20,
