@@ -152,7 +152,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         'user_uid': _uid,
         if (pid != null) 'user_profile_id': pid,
         'statut': 'en_attente',
-        'rejoint_at': DateTime.now().toIso8601String(),
+        'rejoint_at': DateTime.now().toUtc().toIso8601String(),
       });
       await _notifyOrganizer();
       await _load();
@@ -210,7 +210,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         'body': '$nom veut rejoindre "${p['titre']}"',
         'data': {'promenadeId': widget.promenadeId, 'fromUid': _uid},
         'read': false,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
     } catch (_) {}
   }
@@ -249,7 +249,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         'body': 'Votre demande pour "$titre" a été acceptée !',
         'data': {'promenadeId': widget.promenadeId},
         'read': false,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
     } catch (_) {}
     _load();
@@ -269,7 +269,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         'body': 'Votre demande pour "${_promenade!['titre']}" n\'a pas été retenue.',
         'data': {'promenadeId': widget.promenadeId},
         'read': false,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
     } catch (_) {}
     _load();
@@ -323,7 +323,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
             'body': 'La promenade "$titre"${dateStr.isNotEmpty ? ' du $dateStr' : ''} a été annulée par l\'organisateur.',
             'data': {'promenadeId': widget.promenadeId},
             'read': false,
-            'created_at': DateTime.now().toIso8601String(),
+            'created_at': DateTime.now().toUtc().toIso8601String(),
           });
         } catch (_) {}
       }
@@ -350,7 +350,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         'user_uid':       _uid,
         if (pid != null) 'user_profile_id': pid,
         'message':        txt,
-        'created_at':     DateTime.now().toIso8601String(),
+        // created_at omis → DEFAULT NOW() PostgreSQL (UTC garanti, évite le décalage +2h)
       });
       _msgCtrl.clear();
       await _notifyGroupMessage(txt, null);
@@ -383,7 +383,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         'user_uid':     _uid,
         if (pid != null) 'user_profile_id': pid,
         'image_url':    imageUrl,
-        'created_at':   DateTime.now().toIso8601String(),
+        // created_at omis → DEFAULT NOW() PostgreSQL (UTC garanti)
       });
       await _notifyGroupMessage(null, imageUrl);
       await _loadMessages();
@@ -419,7 +419,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
           'body':       body,
           'data':       {'promenadeId': widget.promenadeId},
           'read':       false,
-          'created_at': DateTime.now().toIso8601String(),
+          'created_at': DateTime.now().toUtc().toIso8601String(),
         });
       }
     } catch (_) {}
@@ -447,7 +447,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
                 'body': body,
                 'data': {'promenadeId': widget.promenadeId},
                 'read': false,
-                'created_at': DateTime.now().toIso8601String(),
+                'created_at': DateTime.now().toUtc().toIso8601String(),
               });
             } catch (_) {}
           }
