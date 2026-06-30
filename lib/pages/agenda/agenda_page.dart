@@ -91,7 +91,8 @@ Color _colorFor(Map<String, dynamic> e) {
 class AgendaPage extends StatefulWidget {
   final VoidCallback? onBack;
   final bool isAssociation;
-  const AgendaPage({super.key, this.onBack, this.isAssociation = false});
+  final bool isParticulier;
+  const AgendaPage({super.key, this.onBack, this.isAssociation = false, this.isParticulier = false});
   @override
   State<AgendaPage> createState() => _AgendaPageState();
 }
@@ -211,7 +212,8 @@ class _AgendaPageState extends State<AgendaPage> {
       // ── Tâches manuelles ─────────────────────────────────────────────────
       final pid = User_Info.activeProfileId;
       // Un profil particulier ne possède pas de tâches élevage (évite la contamination cross-profil)
-      final isParticulier = User_Info.activeType == 'particulier'
+      final isParticulier = widget.isParticulier
+          || User_Info.activeType == 'particulier'
           || (!User_Info.isElevage && !User_Info.isAssociation && !User_Info.isPro);
       dynamic d1;
       if (isParticulier) {
