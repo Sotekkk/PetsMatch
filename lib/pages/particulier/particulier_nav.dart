@@ -43,7 +43,6 @@ class _ParticulierNavState extends State<ParticulierNav> {
   bool _isEmploye = false;
   bool _isBenevole = false;
   bool _isFa = false;
-  String? _particulierProfileId;
 
   static const _teal = Color(0xFF0C5C6C);
   static const _dark = Color(0xFF1F2A2E);
@@ -61,26 +60,19 @@ class _ParticulierNavState extends State<ParticulierNav> {
     final results = await Future.wait([
       supa.from('employes').select('id, type').eq('uid_employe', uid).eq('actif', true),
       supa.from('familles_accueil').select('id').eq('fa_uid', uid).eq('actif', true).limit(1),
-      supa.from('user_profiles').select('id').eq('uid', uid).eq('profile_type', 'particulier').limit(1),
     ]);
     final employes = results[0] as List;
-    final partProfiles = results[2] as List;
     if (mounted) setState(() {
       _isEmploye  = employes.any((e) => e['type'] != 'benevole');
       _isBenevole = employes.any((e) => e['type'] == 'benevole');
       _isFa       = (results[1] as List).isNotEmpty;
-      _particulierProfileId = partProfiles.isNotEmpty ? partProfiles.first['id'] as String? : null;
     });
   }
 
   Widget _tabContent(int index) => switch (index) {
         1 => MessagePage(),
         2 => const NotificationsPage(),
-        3 => AgendaPage(
-              onBack: () => setState(() => _selectedIndex = 0),
-              isParticulier: true,
-              particulierProfileId: _particulierProfileId,
-            ),
+        3 => AgendaPage(onBack: () => setState(() => _selectedIndex = 0), isParticulier: true),
         _ => const ParticulierHomePage(),
       };
 

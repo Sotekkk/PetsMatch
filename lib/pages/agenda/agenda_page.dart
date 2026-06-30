@@ -92,10 +92,7 @@ class AgendaPage extends StatefulWidget {
   final VoidCallback? onBack;
   final bool isAssociation;
   final bool isParticulier;
-  // UUID du profil particulier passé explicitement depuis ParticulierNav
-  // pour éviter la contamination cross-profil en mode preview
-  final String? particulierProfileId;
-  const AgendaPage({super.key, this.onBack, this.isAssociation = false, this.isParticulier = false, this.particulierProfileId});
+  const AgendaPage({super.key, this.onBack, this.isAssociation = false, this.isParticulier = false});
   @override
   State<AgendaPage> createState() => _AgendaPageState();
 }
@@ -171,11 +168,9 @@ class _AgendaPageState extends State<AgendaPage> {
     final from = DateTime(_focusedMonth.year, _focusedMonth.month - 1, 1).toUtc();
     final to   = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0, 23, 59, 59).toUtc();
 
-    // En mode particulier, utiliser l'UUID particulier passé depuis ParticulierNav
-    // (User_Info.activeProfileId peut être l'UUID d'un autre profil en mode preview)
-    final pid = widget.isParticulier
-        ? (widget.particulierProfileId ?? '')
-        : (User_Info.activeProfileId ?? '');
+    // User_Info.activeProfileId est toujours correct : applyProfile() est appelé
+    // dans _switchPreviewRole() avant le rebuild, donc le bon UUID est déjà en place.
+    final pid = User_Info.activeProfileId;
 
     try {
       // Filtre strict par profil actif ; inclut les événements legacy (pro_profile_id = '')
@@ -218,11 +213,9 @@ class _AgendaPageState extends State<AgendaPage> {
     final to   = '${toDate.year}-${toDate.month.toString().padLeft(2, '0')}-${toDate.day.toString().padLeft(2, '0')}';
     try {
       // ── Tâches manuelles ─────────────────────────────────────────────────
+      // activeProfileId et activeType sont toujours corrects grâce à applyProfile() dans _switchPreviewRole()
       final pid = User_Info.activeProfileId;
-      // Un profil particulier ne possède pas de tâches élevage (évite la contamination cross-profil)
-      final isParticulier = widget.isParticulier
-          || User_Info.activeType == 'particulier'
-          || (!User_Info.isElevage && !User_Info.isAssociation && !User_Info.isPro);
+      final isParticulier = widget.isParticulier || User_Info.activeType == 'particulier';
       dynamic d1;
       if (isParticulier) {
         d1 = <dynamic>[];
@@ -253,15 +246,12 @@ class _AgendaPageState extends State<AgendaPage> {
                 .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
                 .or('profil_source.is.null,profil_source.eq.eleveur');
       }
-      // Tâches assignées à cet utilisateur — UUID particulier passé depuis ParticulierNav ou résolu depuis la BDD
-      final myParticulierProfileId = widget.isParticulier
-          ? widget.particulierProfileId
-          : ((await _supa.from('user_profiles')
-                .select('id').eq('uid', _uid).eq('profile_type', 'particulier').limit(1).maybeSingle())?['id'] as String?);
-      final d2 = myParticulierProfileId != null
+      // Tâches assignées à cet utilisateur — activeProfileId = UUID du profil actif (correct après applyProfile)
+      final myProfileId = pid.isNotEmpty ? pid : null;
+      final d2 = myProfileId != null
           ? await _supa.from('taches_elevage')
               .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
-              .eq('assigne_profile_id', myParticulierProfileId).gte('date', from).lte('date', to)
+              .eq('assigne_profile_id', myProfileId).gte('date', from).lte('date', to)
           : await _supa.from('taches_elevage')
               .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
               .eq('assigne_a', _uid).gte('date', from).lte('date', to);
@@ -309,28 +299,18 @@ class _AgendaPageState extends State<AgendaPage> {
                   .gte('date_prevue', from).lte('date_prevue', to)
                   .or('profil_source.is.null,profil_source.eq.eleveur');
         }
-        // plan_taches assignées à cet utilisateur — assigned_profile_id (UUID) prioritaire sur assigned_to (UID Firebase)
+        // plan_taches assignées à cet utilisateur — activeProfileId = UUID du profil actif
         dynamic p2;
-        if (myParticulierProfileId != null) {
+        if (myProfileId != null) {
           p2 = await _supa.from('plan_taches')
               .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
-              .eq('assigned_profile_id', myParticulierProfileId)
+              .eq('assigned_profile_id', myProfileId)
               .gte('date_prevue', from).lte('date_prevue', to);
         } else {
-          final p2base = _supa.from('plan_taches')
+          p2 = await _supa.from('plan_taches')
               .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
               .eq('assigned_to', _uid)
               .gte('date_prevue', from).lte('date_prevue', to);
-          // En mode particulier on ne filtre pas par profil éleveur
-          if (isParticulier) {
-            p2 = await p2base;
-          } else if (pid.isNotEmpty) {
-            p2 = await p2base.eq('profile_id', pid);
-          } else {
-            p2 = widget.isAssociation
-                ? await p2base.eq('profil_source', 'association')
-                : await p2base.or('profil_source.is.null,profil_source.eq.eleveur');
-          }
         }
         final seenPlan = <dynamic>{};
         for (final t in [...(p1 as List), ...(p2 as List)]) {
