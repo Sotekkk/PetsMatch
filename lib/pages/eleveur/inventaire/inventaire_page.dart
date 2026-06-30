@@ -42,7 +42,15 @@ String _plural(String unite, double qty) {
 // ── Page principale ─────────────────────────────────────────────────────────────
 
 class InventairePage extends StatefulWidget {
-  const InventairePage({super.key});
+  final String? eleveurProfileIdOverride;
+  final String? eleveurUidOverride;
+  final bool readOnly;
+  const InventairePage({
+    super.key,
+    this.eleveurProfileIdOverride,
+    this.eleveurUidOverride,
+    this.readOnly = false,
+  });
   @override
   State<InventairePage> createState() => _InventairePageState();
 }
@@ -63,7 +71,9 @@ class _InventairePageState extends State<InventairePage> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      if (_profileId == null) {
+      if (widget.eleveurProfileIdOverride != null) {
+        _profileId = widget.eleveurProfileIdOverride;
+      } else if (_profileId == null) {
         final profileRow = await _supa
             .from('user_profiles')
             .select('id')
@@ -72,9 +82,10 @@ class _InventairePageState extends State<InventairePage> {
             .maybeSingle();
         if (profileRow != null) _profileId = profileRow['id'] as String?;
       }
+      final effectiveUid = widget.eleveurUidOverride ?? _uid;
       final rows = _profileId != null
           ? await _supa.from('inventaire_items').select().eq('eleveur_profile_id', _profileId!).order('categorie').order('nom')
-          : await _supa.from('inventaire_items').select().eq('uid_eleveur', _uid).order('categorie').order('nom');
+          : await _supa.from('inventaire_items').select().eq('uid_eleveur', effectiveUid).order('categorie').order('nom');
       if (mounted) setState(() {
         _items = List<Map<String, dynamic>>.from(rows);
         _loading = false;
@@ -202,16 +213,17 @@ class _InventairePageState extends State<InventairePage> {
         title: const Text('📦 Inventaire',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: _dark)),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add, color: _teal),
-            onPressed: () async {
-              await showModalBottomSheet(
-                context: context, isScrollControlled: true,
-                backgroundColor: Colors.transparent,
-                builder: (_) => _ItemFormSheet(uid: _uid, profileId: _profileId, onSaved: _load),
-              );
-            },
-          ),
+          if (!widget.readOnly)
+            IconButton(
+              icon: const Icon(Icons.add, color: _teal),
+              onPressed: () async {
+                await showModalBottomSheet(
+                  context: context, isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => _ItemFormSheet(uid: widget.eleveurUidOverride ?? _uid, profileId: _profileId, onSaved: _load),
+                );
+              },
+            ),
         ],
       ),
       body: _loading
@@ -302,15 +314,15 @@ class _InventairePageState extends State<InventairePage> {
             onTap: () => showModalBottomSheet(
               context: context, isScrollControlled: true,
               backgroundColor: Colors.transparent,
-              builder: (_) => _ItemDetailSheet(item: item, uid: _uid, onChanged: _load),
+              builder: (_) => _ItemDetailSheet(item: item, uid: widget.eleveurUidOverride ?? _uid, onChanged: _load),
             ),
-            onEdit: () => showModalBottomSheet(
+            onEdit: widget.readOnly ? null : () => showModalBottomSheet(
               context: context, isScrollControlled: true,
               backgroundColor: Colors.transparent,
-              builder: (_) => _ItemFormSheet(uid: _uid, profileId: _profileId, item: item, onSaved: _load),
+              builder: (_) => _ItemFormSheet(uid: widget.eleveurUidOverride ?? _uid, profileId: _profileId, item: item, onSaved: _load),
             ),
-            onDelta: (delta) => _quickDelta(item, delta),
-            onCreateTask: _createCommandeTask,
+            onDelta: widget.readOnly ? null : (delta) => _quickDelta(item, delta),
+            onCreateTask: widget.readOnly ? null : _createCommandeTask,
           ))),
       ]),
     );
@@ -352,17 +364,17 @@ class _ItemCard extends StatelessWidget {
   final Map<String, dynamic> item;
   final String? profileId;
   final VoidCallback onTap;
-  final VoidCallback onEdit;
-  final void Function(double delta) onDelta;
-  final void Function(Map<String, dynamic>) onCreateTask;
+  final VoidCallback? onEdit;
+  final void Function(double delta)? onDelta;
+  final void Function(Map<String, dynamic>)? onCreateTask;
 
   const _ItemCard({
     required this.item,
     this.profileId,
     required this.onTap,
-    required this.onEdit,
-    required this.onDelta,
-    required this.onCreateTask,
+    this.onEdit,
+    this.onDelta,
+    this.onCreateTask,
   });
 
   @override
@@ -432,45 +444,41 @@ class _ItemCard extends StatelessWidget {
                   ),
                 ]),
               ),
-              // Bouton édition
-              GestureDetector(
-                onTap: onEdit,
-                child: Container(
-                  width: 32, height: 32,
-                  decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
-                  child: const Center(child: Text('✏️', style: TextStyle(fontSize: 14))),
+              if (onEdit != null)
+                GestureDetector(
+                  onTap: onEdit,
+                  child: Container(
+                    width: 32, height: 32,
+                    decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
+                    child: const Center(child: Text('✏️', style: TextStyle(fontSize: 14))),
+                  ),
                 ),
-              ),
             ]),
             const SizedBox(height: 10),
-            // Boutons ±1 et ±custom
-            Row(children: [
-              // −1 direct
-              _DeltaBtn(label: '−1', color: Colors.red.shade400, onTap: () => onDelta(-1)),
-              const SizedBox(width: 6),
-              // −N personnalisé
-              _DeltaBtn(label: '−', color: Colors.red.shade300, onTap: () => _showSheet(context, 'consommation')),
-              const Spacer(),
-              // Historique
-              GestureDetector(
-                onTap: onTap,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _teal.withOpacity(0.07),
-                    borderRadius: BorderRadius.circular(8),
+            // Boutons ±1 et ±custom (masqués en lecture seule)
+            if (onDelta != null)
+              Row(children: [
+                _DeltaBtn(label: '−1', color: Colors.red.shade400, onTap: () => onDelta!(-1)),
+                const SizedBox(width: 6),
+                _DeltaBtn(label: '−', color: Colors.red.shade300, onTap: () => _showSheet(context, 'consommation')),
+                const Spacer(),
+                GestureDetector(
+                  onTap: onTap,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _teal.withOpacity(0.07),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text('📋 Historique',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _teal)),
                   ),
-                  child: const Text('📋 Historique',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _teal)),
                 ),
-              ),
-              const Spacer(),
-              // +N personnalisé
-              _DeltaBtn(label: '+', color: _green.withOpacity(0.7), onTap: () => _showSheet(context, 'restock')),
-              const SizedBox(width: 6),
-              // +1 direct
-              _DeltaBtn(label: '+1', color: _green, onTap: () => onDelta(1)),
-            ]),
+                const Spacer(),
+                _DeltaBtn(label: '+', color: _green.withOpacity(0.7), onTap: () => _showSheet(context, 'restock')),
+                const SizedBox(width: 6),
+                _DeltaBtn(label: '+1', color: _green, onTap: () => onDelta!(1)),
+              ]),
           ]),
         ),
       ),
@@ -486,7 +494,7 @@ class _ItemCard extends StatelessWidget {
         uid: FirebaseAuth.instance.currentUser!.uid,
         profileId: profileId,
         onSaved: () {},
-        onAlerte: type == 'consommation' ? () => onCreateTask(item) : null,
+        onAlerte: type == 'consommation' && onCreateTask != null ? () => onCreateTask!(item) : null,
       ),
     );
   }

@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_linux
   flutter_localization
+  flutter_timezone
   gtk
   open_file_linux
   printing

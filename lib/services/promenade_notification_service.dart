@@ -68,21 +68,21 @@ Future<void> schedulePromenadeReminders({
   try {
     if (j1.isAfter(now)) {
       await flutterLocalNotificationsPlugin.zonedSchedule(
-        _idJ1(promenadeId),
-        'Promenade demain !',
-        '$titre — rendez-vous demain à ${_fmtHeure(dateHeure)}',
-        tz.TZDateTime.from(j1, tz.local),
-        _kDetails,
+        id: _idJ1(promenadeId),
+        title: 'Promenade demain !',
+        body: '$titre — rendez-vous demain à ${_fmtHeure(dateHeure)}',
+        scheduledDate: tz.TZDateTime.from(j1, tz.local),
+        notificationDetails: _kDetails,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       );
     }
     if (h1.isAfter(now)) {
       await flutterLocalNotificationsPlugin.zonedSchedule(
-        _idH1(promenadeId),
-        'Promenade dans 1 heure !',
-        '$titre — départ à ${_fmtHeure(dateHeure)}',
-        tz.TZDateTime.from(h1, tz.local),
-        _kDetails,
+        id: _idH1(promenadeId),
+        title: 'Promenade dans 1 heure !',
+        body: '$titre — départ à ${_fmtHeure(dateHeure)}',
+        scheduledDate: tz.TZDateTime.from(h1, tz.local),
+        notificationDetails: _kDetails,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       );
     }
@@ -94,8 +94,8 @@ Future<void> schedulePromenadeReminders({
 
 /// Annule les rappels d'une promenade (désinscription ou annulation).
 Future<void> cancelPromenadeReminders(String promenadeId) async {
-  await flutterLocalNotificationsPlugin.cancel(_idJ1(promenadeId));
-  await flutterLocalNotificationsPlugin.cancel(_idH1(promenadeId));
+  await flutterLocalNotificationsPlugin.cancel(id: _idJ1(promenadeId));
+  await flutterLocalNotificationsPlugin.cancel(id: _idH1(promenadeId));
   final prefs = await SharedPreferences.getInstance();
   await prefs.remove(_prefKey(promenadeId));
 }

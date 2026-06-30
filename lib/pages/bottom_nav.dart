@@ -27,30 +27,35 @@ class _BottomNavState extends State<BottomNav> {
   int _selectedIndex = 0;
   // '' = rôles réels, 'eleveur', 'pro', 'particulier'
   String _previewRole = '';
+  // Vrai seulement si le switch vient du tiroir BottomNav (affiche le bandeau).
+  // Faux si le switch vient du ProfileSwitcherHeader (switch réel, pas besoin du bandeau).
+  bool _fromDrawerSwitch = false;
 
   // Change le profil affiché ET met à jour User_Info.activeProfileId/activeType
   // pour que toutes les pages (agenda, etc.) voient le bon profil sans paramètre supplémentaire.
   void _switchPreviewRole(String role) {
     setState(() {
       _previewRole = role;
+      _fromDrawerSwitch = role.isNotEmpty;
       _selectedIndex = 0;
     });
     final profiles = User_Info.availableProfiles;
+    print('[SWITCH] role=$role availableProfiles=${profiles.map((p) => "${p['profile_type']}:${p['id']}").toList()}');
     if (role.isEmpty) {
-      // Restaurer le profil principal
       final main = profiles.firstWhere(
         (p) => p['is_main'] == true,
         orElse: () => profiles.isNotEmpty ? profiles.first : <String, dynamic>{},
       );
       if (main.isNotEmpty) User_Info.applyProfile(main);
     } else {
-      // Trouver le profil correspondant au rôle sélectionné
       final match = profiles.firstWhere(
         (p) => (p['profile_type'] as String? ?? '') == role,
         orElse: () => <String, dynamic>{},
       );
+      print('[SWITCH] match found=${match.isNotEmpty} id=${match["id"]}');
       if (match.isNotEmpty) User_Info.applyProfile(match);
     }
+    print('[SWITCH] after applyProfile: activeType=${User_Info.activeType} activeProfileId=${User_Info.activeProfileId}');
   }
 
   bool get _asAssociation =>
@@ -72,6 +77,19 @@ class _BottomNavState extends State<BottomNav> {
   @override
   void initState() {
     super.initState();
+    // Quand BottomNav est recréé après un switch de profil (pushAndRemoveUntil),
+    // User_Info.activeType indique déjà le bon profil — on en déduit _previewRole
+    // pour que le bon sous-nav s'affiche immédiatement.
+    final at = User_Info.activeType;
+    if (at == 'association') {
+      _previewRole = 'association';
+    } else if (at == 'particulier') {
+      _previewRole = 'particulier';
+    } else if (at.isNotEmpty) {
+      // eleveur, pro, pension, photographe, etc.
+      _previewRole = 'eleveur';
+    }
+    // '' → comportement par défaut (isAssociation / isElevage de Firebase)
     _checkOnboarding();
   }
 
@@ -335,7 +353,7 @@ class _BottomNavState extends State<BottomNav> {
       return Stack(
         children: [
           AssociationNav(onAdminTap: User_Info.isAdmin ? _showAdminMenu : null),
-          if (_previewRole == 'association') _previewBanner('Association'),
+          if (_fromDrawerSwitch && _previewRole == 'association') _previewBanner('Association'),
         ],
       );
     }
@@ -345,7 +363,7 @@ class _BottomNavState extends State<BottomNav> {
       return Stack(
         children: [
           EleveurNav(onAdminTap: User_Info.isAdmin ? _showAdminMenu : null),
-          if (_previewRole == 'eleveur') _previewBanner('Éleveur'),
+          if (_fromDrawerSwitch && _previewRole == 'eleveur') _previewBanner('Éleveur'),
         ],
       );
     }
@@ -355,7 +373,7 @@ class _BottomNavState extends State<BottomNav> {
       return Stack(
         children: [
           ParticulierNav(onAdminTap: User_Info.isAdmin ? _showAdminMenu : null),
-          if (_previewRole == 'particulier') _previewBanner('Particulier'),
+          if (_fromDrawerSwitch && _previewRole == 'particulier') _previewBanner('Particulier'),
         ],
       );
     }

@@ -117,6 +117,22 @@ class _AgendaPageState extends State<AgendaPage> {
     _load();
     _loadTasks();
     _loadEmployes();
+    // Rechargement automatique quand le profil actif change (ex: switcher d'avatar)
+    User_Info.profileNotifier.addListener(_onProfileChanged);
+  }
+
+  void _onProfileChanged() {
+    if (!mounted) return;
+    setState(() {}); // rebuild immédiat → _canShowTasks() filtre les tâches visibles
+    _load();
+    _loadTasks();
+    _loadEmployes();
+  }
+
+  @override
+  void dispose() {
+    User_Info.profileNotifier.removeListener(_onProfileChanged);
+    super.dispose();
   }
 
   Future<void> _loadEmployes() async {
@@ -168,23 +184,37 @@ class _AgendaPageState extends State<AgendaPage> {
     final from = DateTime(_focusedMonth.year, _focusedMonth.month - 1, 1).toUtc();
     final to   = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0, 23, 59, 59).toUtc();
 
-    // User_Info.activeProfileId est toujours correct : applyProfile() est appelé
-    // dans _switchPreviewRole() avant le rebuild, donc le bon UUID est déjà en place.
     final pid = User_Info.activeProfileId;
+    print('[AGENDA _load] isParticulier=${widget.isParticulier} isAssociation=${widget.isAssociation} activeType=${User_Info.activeType} pid=$pid uid=$_uid');
 
+    final isParticulierMode = widget.isParticulier || User_Info.activeType == 'particulier';
     try {
-      // Filtre strict par profil actif ; inclut les événements legacy (pro_profile_id = '')
-      final data = await _supa
-          .from('agenda_events')
-          .select()
-          .eq('uid', _uid)
-          .or('pro_profile_id.eq.$pid,pro_profile_id.eq.')
-          .gte('date_debut', from.toIso8601String())
-          .lte('date_debut', to.toIso8601String())
-          .order('date_debut');
+      // Particulier : filtre strict par profile_id uniquement (pas de legacy éleveur).
+      // Autres profils : inclut aussi les events legacy sans profile_id.
+      final dynamic data;
+      if (isParticulierMode && pid.isNotEmpty) {
+        data = await _supa
+            .from('agenda_events')
+            .select()
+            .eq('uid', _uid)
+            .eq('pro_profile_id', pid)
+            .gte('date_debut', from.toIso8601String())
+            .lte('date_debut', to.toIso8601String())
+            .order('date_debut');
+      } else {
+        data = await _supa
+            .from('agenda_events')
+            .select()
+            .eq('uid', _uid)
+            .or('pro_profile_id.eq.$pid,pro_profile_id.eq.')
+            .gte('date_debut', from.toIso8601String())
+            .lte('date_debut', to.toIso8601String())
+            .order('date_debut');
+      }
       // Filtrage client-side : exclure les événements d'un autre UUID de profil
       final filtered = (data as List).where((e) {
         final epid = (e['pro_profile_id'] as String?) ?? '';
+        if (isParticulierMode && pid.isNotEmpty) return epid == pid;
         return epid == pid || epid.isEmpty;
       }).toList();
       if (mounted) {
@@ -208,18 +238,19 @@ class _AgendaPageState extends State<AgendaPage> {
   }).toList();
 
   Future<void> _loadTasks() async {
+    // Les tâches (taches_elevage / plan_taches) sont une feature éleveur/association uniquement.
+    // Un particulier n'en a pas — on vide et on sort immédiatement.
+    if (widget.isParticulier || User_Info.activeType == 'particulier') {
+      if (mounted) setState(() { _tasks = []; });
+      return;
+    }
     final from = '${_focusedMonth.year}-${(_focusedMonth.month - 1).clamp(1, 12).toString().padLeft(2, '0')}-01';
     final toDate = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0);
     final to   = '${toDate.year}-${toDate.month.toString().padLeft(2, '0')}-${toDate.day.toString().padLeft(2, '0')}';
     try {
-      // ── Tâches manuelles ─────────────────────────────────────────────────
-      // activeProfileId et activeType sont toujours corrects grâce à applyProfile() dans _switchPreviewRole()
       final pid = User_Info.activeProfileId;
-      final isParticulier = widget.isParticulier || User_Info.activeType == 'particulier';
       dynamic d1;
-      if (isParticulier) {
-        d1 = <dynamic>[];
-      } else if (pid.isNotEmpty) {
+      if (pid.isNotEmpty) {
         d1 = await _supa.from('taches_elevage')
             .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
             .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
@@ -246,7 +277,7 @@ class _AgendaPageState extends State<AgendaPage> {
                 .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
                 .or('profil_source.is.null,profil_source.eq.eleveur');
       }
-      // Tâches assignées à cet utilisateur — activeProfileId = UUID du profil actif (correct après applyProfile)
+      // Tâches assignées à cet utilisateur
       final myProfileId = pid.isNotEmpty ? pid : null;
       final d2 = myProfileId != null
           ? await _supa.from('taches_elevage')
@@ -265,9 +296,7 @@ class _AgendaPageState extends State<AgendaPage> {
       // ── Tâches protocole (plan_taches) ───────────────────────────────────
       try {
         dynamic p1;
-        if (isParticulier) {
-          p1 = <dynamic>[];
-        } else if (pid.isNotEmpty) {
+        if (pid.isNotEmpty) {
           p1 = await _supa.from('plan_taches')
               .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
               .eq('uid_eleveur', _uid)
@@ -307,6 +336,7 @@ class _AgendaPageState extends State<AgendaPage> {
               .eq('assigned_profile_id', myProfileId)
               .gte('date_prevue', from).lte('date_prevue', to);
         } else {
+          // mode particulier ou profil sans UUID : filtre par uid Firebase
           p2 = await _supa.from('plan_taches')
               .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
               .eq('assigned_to', _uid)
@@ -354,11 +384,28 @@ class _AgendaPageState extends State<AgendaPage> {
           }
         } catch (_) {}
       }
+      print('[AGENDA _loadTasks] RESULT: ${all.length} tâches. Titres: ${all.map((t) => t['titre'] ?? t['label']).toList()}');
       if (mounted) setState(() => _tasks = all);
-    } catch (_) {}
+    } catch (e) {
+      print('[AGENDA _loadTasks] ERREUR: $e');
+    }
+  }
+
+  // Retourne true si le profil actif est un profil éleveur ou association qui peut voir les tâches.
+  // Évite de dépendre de User_Info.activeType (peut être incorrect si profile_type est null en BDD).
+  bool _canShowTasks() {
+    if (widget.isParticulier) return false;
+    final pid = User_Info.activeProfileId;
+    if (pid.isEmpty) return true; // profil principal sans UUID = charge par défaut
+    return User_Info.availableProfiles.any((p) {
+      if (p['id']?.toString() != pid) return false;
+      final t = p['profile_type']?.toString() ?? '';
+      return t == 'eleveur' || t == 'association';
+    });
   }
 
   List<Map<String, dynamic>> _tasksForDay(DateTime day) {
+    if (!_canShowTasks()) return [];
     final key = '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
     return _tasks.where((t) => (t['date'] ?? '').toString().startsWith(key)).toList();
   }
@@ -2139,7 +2186,11 @@ class _AddEventSheetState extends State<_AddEventSheet> {
   @override
   void initState() {
     super.initState();
-    _dateDebut = widget.initialDate;
+    // Si l'heure n'est pas définie (minuit = sélection depuis calendrier), on met 8h par défaut.
+    final d = widget.initialDate;
+    _dateDebut = (d.hour == 0 && d.minute == 0)
+        ? DateTime(d.year, d.month, d.day, 8, 0)
+        : d;
     final types = _typesForProfile();
     _type = types.contains('autre') ? 'autre' : types.last;
   }
@@ -2699,7 +2750,7 @@ class _AddTacheSheet extends StatefulWidget {
 class _AddTacheSheetState extends State<_AddTacheSheet> {
   final _titreCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
-  TimeOfDay? _heure;
+  TimeOfDay _heure = const TimeOfDay(hour: 8, minute: 0);
   String? _selectedEmployeUid;
   List<Map<String, dynamic>> _selectedAnimaux = [];
   bool _saving = false;
@@ -2719,9 +2770,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
     if (_titreCtrl.text.trim().isEmpty) return;
     setState(() => _saving = true);
     final dateStr = DateFormat('yyyy-MM-dd').format(widget.day);
-    final heureStr = _heure != null
-        ? '${_heure!.hour.toString().padLeft(2, '0')}:${_heure!.minute.toString().padLeft(2, '0')}'
-        : null;
+    final heureStr = '${_heure.hour.toString().padLeft(2, '0')}:${_heure.minute.toString().padLeft(2, '0')}';
     final supa = Supabase.instance.client;
     final profileIdTache = User_Info.activeProfileId;
     final animalNom = _selectedAnimaux.isEmpty
@@ -2801,7 +2850,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
           const SizedBox(height: 6),
           GestureDetector(
             onTap: () async {
-              final t = await showTimePicker(context: context, initialTime: _heure ?? TimeOfDay.now());
+              final t = await showTimePicker(context: context, initialTime: _heure);
               if (t != null && mounted) setState(() => _heure = t);
             },
             child: Container(
@@ -2812,9 +2861,8 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                _heure != null ? _heure!.format(context) : 'Sélectionner une heure',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 14,
-                    color: _heure != null ? const Color(0xFF1E2025) : Colors.grey.shade500),
+                _heure.format(context),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025)),
               ),
             ),
           ),
@@ -2917,7 +2965,7 @@ class _EditTacheSheet extends StatefulWidget {
 class _EditTacheSheetState extends State<_EditTacheSheet> {
   late final TextEditingController _titreCtrl;
   late final TextEditingController _notesCtrl;
-  TimeOfDay? _heure;
+  TimeOfDay _heure = const TimeOfDay(hour: 8, minute: 0);
   String? _selectedEmployeUid;
   bool _saving = false;
 
@@ -2930,7 +2978,7 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
     final h = widget.tache['heure'] as String?;
     if (h != null && h.length >= 5) {
       final parts = h.split(':');
-      _heure = TimeOfDay(hour: int.tryParse(parts[0]) ?? 0, minute: int.tryParse(parts[1]) ?? 0);
+      _heure = TimeOfDay(hour: int.tryParse(parts[0]) ?? 8, minute: int.tryParse(parts[1]) ?? 0);
     }
   }
 
@@ -2939,9 +2987,7 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
   Future<void> _save() async {
     if (_titreCtrl.text.trim().isEmpty) return;
     setState(() => _saving = true);
-    final heureStr = _heure != null
-        ? '${_heure!.hour.toString().padLeft(2, '0')}:${_heure!.minute.toString().padLeft(2, '0')}'
-        : null;
+    final heureStr = '${_heure.hour.toString().padLeft(2, '0')}:${_heure.minute.toString().padLeft(2, '0')}';
     final supa = Supabase.instance.client;
     final prevAssigne = widget.tache['assigne_a'] as String?;
     final newAssigne = _selectedEmployeUid;
@@ -3011,7 +3057,7 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
           const SizedBox(height: 6),
           GestureDetector(
             onTap: () async {
-              final t = await showTimePicker(context: context, initialTime: _heure ?? TimeOfDay.now());
+              final t = await showTimePicker(context: context, initialTime: _heure);
               if (t != null && mounted) setState(() => _heure = t);
             },
             child: Container(
@@ -3022,9 +3068,8 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                _heure != null ? _heure!.format(context) : 'Sélectionner une heure',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 14,
-                    color: _heure != null ? const Color(0xFF1E2025) : Colors.grey.shade500),
+                _heure.format(context),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025)),
               ),
             ),
           ),

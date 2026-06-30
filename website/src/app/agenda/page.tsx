@@ -424,24 +424,23 @@ export default function AgendaPage() {
       setEvents(list);
     }
 
-    // Charger les tâches du mois (manuel + protocole)
+    // Charger les tâches du mois — vue particulier : uniquement les tâches assignées à l'utilisateur
     const taskFrom = new Date(focusedMonth.year, focusedMonth.month - 1, 1).toISOString().slice(0, 10);
     const taskTo   = new Date(focusedMonth.year, focusedMonth.month + 2, 0).toISOString().slice(0, 10);
 
     const { data: manuelData } = await supabase
       .from('taches_elevage')
       .select('id,titre,date,statut,uid_eleveur,assigne_a')
-      .or(`uid_eleveur.eq.${uid},assigne_a.eq.${uid}`)
+      .eq('assigne_a', uid)
       .gte('date', taskFrom).lte('date', taskTo);
     const manuelTasks: Task[] = ((manuelData ?? []) as { id: string; titre: string; date: string; statut: string; uid_eleveur: string; assigne_a: string | null }[]).map(t => ({ ...t, _source: 'manuel' as const, etape_id: null }));
 
-    const [p1Res, p2Res] = await Promise.all([
-      supabase.from('plan_taches').select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id').eq('uid_eleveur', uid).gte('date_prevue', taskFrom).lte('date_prevue', taskTo),
+    const [p2Res] = await Promise.all([
       supabase.from('plan_taches').select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id').eq('assigned_to', uid).gte('date_prevue', taskFrom).lte('date_prevue', taskTo),
     ]);
     const seenProto = new Set<string>();
     const protoTasks: Task[] = [];
-    for (const t of [...(p1Res.data ?? []), ...(p2Res.data ?? [])]) {
+    for (const t of [...(p2Res.data ?? [])]) {
       const pt = t as { id: string; label: string; date_prevue: string; statut: string; assigned_to: string | null; uid_eleveur: string; type_acte?: string; animal_nom?: string; etape_id?: string | null };
       if (seenProto.has(pt.id)) continue;
       seenProto.add(pt.id);

@@ -105,10 +105,10 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           .maybeSingle();
       final profileId = profileData?['id'] as String?;
 
-      var q = supa.from('chenil_boxes').select('nom').order('nom');
-      q = profileId != null
-          ? q.eq('profile_id', profileId)
-          : q.eq('association_uid', uid);
+      final qBase = supa.from('chenil_boxes').select('nom');
+      final q = profileId != null
+          ? qBase.eq('profile_id', profileId).order('nom')
+          : qBase.eq('association_uid', uid).order('nom');
       final rows = await q;
       final boxNames = (rows as List).map((r) => r['nom']?.toString() ?? '').where((n) => n.isNotEmpty).toList();
       if (mounted && boxNames.isNotEmpty) {

@@ -329,9 +329,9 @@ class User_Info {
 
   static void applyProfile(Map<String, dynamic> p) {
     activeProfileId = p['id']?.toString() ?? '';
-    profileNotifier.value = activeProfileId;
     final type = p['profile_type']?.toString() ?? '';
     activeType = type.isNotEmpty ? type : primaryType;
+    profileNotifier.value = activeProfileId; // après activeType pour que les listeners voient le bon type
 
     // Contact
     final fn = p['firstname']?.toString() ?? '';

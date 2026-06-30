@@ -56,14 +56,13 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
           .maybeSingle();
       final profileId = profileData?['id'] as String?;
 
-      var enclosQuery = _supa
+      final _enclosBase = _supa
           .from('enclos_chenil')
           .select('id, nom, type, capacite, dernier_nettoyage, notes')
-          .eq('is_association', true)
-          .order('nom');
-      enclosQuery = profileId != null
-          ? enclosQuery.eq('profile_id', profileId)
-          : enclosQuery.eq('uid_eleveur', uid);
+          .eq('is_association', true);
+      final enclosQuery = profileId != null
+          ? _enclosBase.eq('profile_id', profileId).order('nom')
+          : _enclosBase.eq('uid_eleveur', uid).order('nom');
 
       final results = await Future.wait([
         enclosQuery,

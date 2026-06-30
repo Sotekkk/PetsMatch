@@ -1034,7 +1034,7 @@ class _AvisDetailSheetState extends State<_AvisDetailSheet> {
     setState(() => _saving = true);
     try {
       final profileRow = await Supabase.instance.client
-          .from('user_profiles').select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
+          .from('user_profiles').select('id').eq('uid', widget.uid ?? '').eq('is_main', true).maybeSingle();
       final userProfileId = profileRow?['id'] as String?;
       await Supabase.instance.client.from('petfriendly_review_contests').insert({
         'review_id': widget.avis['id'],
@@ -1360,7 +1360,7 @@ class _AvisFormState extends State<_AvisForm> {
     setState(() => _saving = true);
     try {
       final profileRow = await Supabase.instance.client
-          .from('user_profiles').select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
+          .from('user_profiles').select('id').eq('uid', widget.uid ?? '').eq('is_main', true).maybeSingle();
       final userProfileId = profileRow?['id'] as String?;
       await Supabase.instance.client.from('petfriendly_reviews').insert({
         'place_id': widget.placeId,

@@ -3658,14 +3658,20 @@ class _ReproListState extends State<_ReproList> {
 
         final existing = await supa.from('agenda_events')
             .select('id').eq('gestation_id', id).maybeSingle();
+        // Stocke à 08h00 UTC pour affichage correct en France (évite minuit UTC = 02h00 local)
+        final datePrevueAt8 = datePrevue != null
+            ? DateTime(DateTime.parse(datePrevue).year, DateTime.parse(datePrevue).month,
+                       DateTime.parse(datePrevue).day, 8, 0).toUtc().toIso8601String()
+            : null;
         final eventData = {
-          'uid':          uid,
-          'titre':        'Mise-bas prévue — $animalNom',
-          'type':         'mise_bas',
-          'date_debut':   datePrevue,
-          'animal_id':    int.tryParse(widget.animalId),
-          'notes':        'Gestation confirmée',
-          'gestation_id': id,
+          'uid':            uid,
+          'titre':          'Mise-bas prévue — $animalNom',
+          'type':           'mise_bas',
+          'date_debut':     datePrevueAt8 ?? datePrevue,
+          'animal_id':      int.tryParse(widget.animalId),
+          'notes':          'Gestation confirmée',
+          'gestation_id':   id,
+          'pro_profile_id': User_Info.activeProfileId,
         };
         if (existing != null) {
           await supa.from('agenda_events').update(eventData).eq('id', existing['id']);
@@ -5906,12 +5912,15 @@ Future<void> _scheduleRappelAgenda({
       final nom = a?['nom'] as String?;
       if (nom != null && nom.isNotEmpty) finalTitre = '$titre ($nom)';
     } catch (_) {}
+    // Stocke à 08h00 UTC pour affichage correct en France (évite minuit UTC = 02h00 local)
+    final dateAt8 = DateTime(dateRappel.year, dateRappel.month, dateRappel.day, 8, 0).toUtc();
     await Supabase.instance.client.from('agenda_events').insert({
-      'uid':        uid,
-      'titre':      finalTitre,
-      'type':       'medication',
-      'date_debut': dateRappel.toIso8601String(),
-      'animal_id':  int.tryParse(animalId),
+      'uid':            uid,
+      'titre':          finalTitre,
+      'type':           'medication',
+      'date_debut':     dateAt8.toIso8601String(),
+      'animal_id':      int.tryParse(animalId),
+      'pro_profile_id': User_Info.activeProfileId,
     });
   } catch (_) {}
 }
@@ -10612,11 +10621,12 @@ Future<void> _scheduleTraitementDailyReminders({
   final end = DateTime(dateFin.year, dateFin.month, dateFin.day);
   while (!day.isAfter(end)) {
     events.add({
-      'uid':        uid,
-      'titre':      titre,
-      'type':       'medication',
-      'date_debut': DateTime(day.year, day.month, day.day, 8, 0).toIso8601String(),
-      'animal_id':  int.tryParse(animalId),
+      'uid':            uid,
+      'titre':          titre,
+      'type':           'medication',
+      'date_debut':     DateTime(day.year, day.month, day.day, 8, 0).toUtc().toIso8601String(),
+      'animal_id':      int.tryParse(animalId),
+      'pro_profile_id': User_Info.activeProfileId,
     });
     day = day.add(const Duration(days: 1));
   }
