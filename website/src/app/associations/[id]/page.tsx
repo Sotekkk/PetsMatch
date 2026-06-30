@@ -54,10 +54,10 @@ export default function AssociationProfilePage() {
     if (!id) return;
 
     Promise.all([
-      // Profil secondaire association
+      // Profil association — query sans filtre profile_type (RLS bloque) puis on filtre côté client
       supabase.from('user_profiles')
-        .select('profile_label, name_elevage, avatar_url, ville, description, desc_entreprise, phone, telephone, site_web, instagram, facebook')
-        .eq('uid', id).eq('profile_type', 'association').maybeSingle(),
+        .select('id, profile_type, profile_label, nom, avatar_url, banner_url, ville, description, desc_entreprise, phone, telephone, site_web, instagram, facebook')
+        .eq('uid', id),
       // Fallback : users table
       supabase.from('users')
         .select('name_elevage, profile_picture_url_elevage, banner_url, ville_elevage, description_elevage, phone')
@@ -72,10 +72,12 @@ export default function AssociationProfilePage() {
         .select('id, nom, espece, race, statut, photo_url')
         .eq('uid_eleveur', id).eq('is_association', true).eq('statut', 'disponible')
         .order('nom'),
-    ]).then(([{ data: secProfile }, { data: userRow }, { data: ann }, { data: anim }]) => {
-      type SecProfile = { profile_label?: string; name_elevage?: string; avatar_url?: string; banner_url?: string; ville?: string; description?: string; desc_entreprise?: string; phone?: string; telephone?: string; site_web?: string; instagram?: string; facebook?: string };
-      const sp = secProfile as SecProfile | null;
-      const nom = (sp?.name_elevage?.trim() || sp?.profile_label?.trim())
+    ]).then(([{ data: allProfiles }, { data: userRow }, { data: ann }, { data: anim }]) => {
+      type SecProfile = { id?: string; profile_type?: string; profile_label?: string; nom?: string; avatar_url?: string; banner_url?: string; ville?: string; description?: string; desc_entreprise?: string; phone?: string; telephone?: string; site_web?: string; instagram?: string; facebook?: string };
+      // Filtre côté client sur profile_type='association' (évite RLS sur filtre serveur)
+      const profiles = (allProfiles ?? []) as SecProfile[];
+      const sp = profiles.find(p => p.profile_type === 'association') ?? profiles[0] ?? null;
+      const nom = (sp?.nom?.trim() || sp?.profile_label?.trim())
         ?? (userRow as { name_elevage?: string } | null)?.name_elevage ?? 'Association';
       const avatar = sp?.avatar_url
         ?? (userRow as { profile_picture_url_elevage?: string } | null)?.profile_picture_url_elevage ?? '';

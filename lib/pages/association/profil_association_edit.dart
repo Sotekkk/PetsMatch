@@ -75,7 +75,7 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
       final p = list.isNotEmpty ? list.first as Map<String, dynamic> : null;
 
       if (p != null) {
-        final nomElevage = (p['name_elevage'] as String?)?.trim() ?? '';
+        final nomProfil  = (p['nom'] as String?)?.trim() ?? '';
         final label      = (p['profile_label'] as String?)?.trim() ?? '';
 
         // ACACED extrait du JSONB certifications
@@ -84,7 +84,7 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
 
         setState(() {
           _secondaryProfileId = p['id']?.toString();
-          _nomCtrl.text         = nomElevage.isNotEmpty ? nomElevage : label;
+          _nomCtrl.text         = nomProfil.isNotEmpty ? nomProfil : label;
           _responsableCtrl.text = p['profession_pro']?.toString() ?? '';
           _rnaCtrl.text         = p['ordre_veterinaire']?.toString() ?? '';
           _siretCtrl.text       = p['siret']?.toString() ?? '';
@@ -160,7 +160,7 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
       final data = <String, dynamic>{
         'uid':              uid,
         'profile_type':     'association',
-        'name_elevage':     nom,
+        'nom':              nom,
         'profile_label':    nom,
         'profession_pro':   _responsableCtrl.text.trim().isEmpty ? null : _responsableCtrl.text.trim(),
         'ordre_veterinaire': _rnaCtrl.text.trim().isEmpty ? null : _rnaCtrl.text.trim(),

@@ -85,14 +85,36 @@ export default function MesAssociationsPage() {
     const pastStr   = past.toISOString().slice(0, 10);
     const futureStr = future.toISOString().slice(0, 10);
 
-    // Profils pour les noms/avatars : query par ID direct (pas par profile_type)
-    type ProfileRow = { id: string; uid: string; name_elevage: string | null; profile_label: string | null; nom: string | null; avatar_url: string | null; ville: string | null };
+    // Profils pour les noms/avatars
+    type ProfileRow = { id: string; uid: string; profile_type?: string | null; nom: string | null; profile_label: string | null; avatar_url: string | null; ville: string | null };
     const profileByPid: Record<string, ProfileRow> = {};
+
+    // 1. Query par ID direct (lignes employes avec eleveur_profile_id rempli)
     if (eleveurProfileIds.length > 0) {
       const { data: pRows } = await supabase.from('user_profiles')
-        .select('id, uid, name_elevage, profile_label, nom, avatar_url, ville')
+        .select('id, uid, profile_type, nom, profile_label, avatar_url, ville')
         .in('id', eleveurProfileIds) as unknown as { data: ProfileRow[] | null };
       for (const p of pRows ?? []) { profileByPid[p.id] = p; }
+    }
+
+    // 2. Fallback : lignes sans eleveur_profile_id → chercher le profil association par uid
+    const missingUids = empRows.filter(r => !r.eleveur_profile_id).map(r => r.uid_eleveur as string).filter(Boolean);
+    if (missingUids.length > 0) {
+      const { data: fbRows } = await supabase.from('user_profiles')
+        .select('id, uid, profile_type, nom, profile_label, avatar_url, ville')
+        .in('uid', missingUids) as unknown as { data: (ProfileRow & { profile_type?: string })[] | null };
+      for (const p of (fbRows ?? [])) {
+        // Prendre le profil association, sinon le premier disponible
+        const uid = p.uid;
+        const existing = Object.values(profileByPid).find(x => x.uid === uid);
+        if (!existing || p.profile_type === 'association') {
+          profileByPid[p.id] = p;
+          pidToUid[p.id] = uid;
+          // Patcher empRow.eleveur_profile_id en mémoire pour que animaux_proprietes fonctionne
+          const empRow = empRows.find(r => r.uid_eleveur === uid && !r.eleveur_profile_id);
+          if (empRow) (empRow as Record<string, unknown>).eleveur_profile_id = p.id;
+        }
+      }
     }
 
     type TacheRow = { id: string; titre: string; date: string; statut: string; animal_id: string | null; uid_eleveur: string };
@@ -113,13 +135,15 @@ export default function MesAssociationsPage() {
     ]);
 
     // Animaux : animaux_proprietes WHERE profile_id_proprio = eleveur_profile_id
+    // Utilise tous les profile IDs connus (originaux + patchés via fallback)
+    const allKnownProfileIds = Object.keys(pidToUid);
     type ApRow = { animal_id: string; profile_id_proprio: string };
     type AnimalRow = { id: string; nom: string | null; espece: string | null; race: string | null; photo_url: string | null };
     const animalsByUid: Record<string, AnimalRow[]> = {};
-    if (eleveurProfileIds.length > 0) {
+    if (allKnownProfileIds.length > 0) {
       const { data: apRows } = await supabase.from('animaux_proprietes')
         .select('animal_id, profile_id_proprio')
-        .in('profile_id_proprio', eleveurProfileIds)
+        .in('profile_id_proprio', allKnownProfileIds)
         .is('date_fin', null) as unknown as { data: ApRow[] | null };
       const animalIds = [...new Set((apRows ?? []).map(r => r.animal_id))];
       if (animalIds.length > 0) {
@@ -157,9 +181,8 @@ export default function MesAssociationsPage() {
       const pu = (primaryUsers ?? []).find(u => u['uid'] === uid);
 
       const nom = (
-        profile?.profile_label?.trim() ||
         profile?.nom?.trim() ||
-        profile?.name_elevage?.trim() ||
+        profile?.profile_label?.trim() ||
         (pu ? `${pu['firstname'] ?? ''} ${pu['lastname'] ?? ''}`.trim() : '')
       ) || 'Association';
 
