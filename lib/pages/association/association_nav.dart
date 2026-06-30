@@ -29,9 +29,11 @@ import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/association/profil_association_edit.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_asso.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class AssociationNav extends StatefulWidget {
@@ -46,6 +48,25 @@ class _AssociationNavState extends State<AssociationNav> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   static const _dark = Color(0xFF1F2A2E);
+
+  @override
+  void initState() {
+    super.initState();
+    _checkOnboarding();
+  }
+
+  Future<void> _checkOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    final done = prefs.getBool('onboarding_asso_done') ?? false;
+    if (!done && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => const OnboardingAssoPage(),
+          fullscreenDialog: true,
+        ));
+      });
+    }
+  }
 
   Widget _tabContent(int index) => switch (index) {
     1 => MessagePage(),
