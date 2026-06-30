@@ -110,18 +110,19 @@ async function fetchTachesPersonne(uid_employe: string, uid_eleveur: string): Pr
 export default function EquipeWebPage() {
   const { user } = useAuth();
   const uid = user?.uid ?? '';
+  const profileId = useActiveProfile();
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold font-galey text-teal-800 mb-6">Équipe</h1>
-      <EquipeUnifiee uid={uid} />
+      <EquipeUnifiee uid={uid} profileId={profileId} />
     </div>
   );
 }
 
 // ── Vue unifiée équipe ────────────────────────────────────────────────────────
 
-function EquipeUnifiee({ uid }: { uid: string }) {
+function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | null }) {
   const [membres, setMembres] = useState<MembreEquipe[]>([]);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -139,12 +140,14 @@ function EquipeUnifiee({ uid }: { uid: string }) {
     setLoading(true);
     setDbError(null);
     try {
-      const { data: rows, error } = await supabase
-        .from('employes').select('*')
-        .eq('uid_eleveur', uid)
-        .eq('actif', true)
-        .or('profil_source.eq.association,profil_source.is.null')
-        .order('created_at');
+      // Requête par eleveur_profile_id si disponible, sinon uid_eleveur
+      let q = supabase.from('employes').select('*').eq('actif', true).eq('profil_source', 'association').order('created_at');
+      if (profileId) {
+        q = q.eq('eleveur_profile_id', profileId) as typeof q;
+      } else {
+        q = q.eq('uid_eleveur', uid) as typeof q;
+      }
+      const { data: rows, error } = await q;
 
       if (error) { setDbError(`${error.message} (${error.code})`); setLoading(false); return; }
 
@@ -159,16 +162,31 @@ function EquipeUnifiee({ uid }: { uid: string }) {
         let taches: Tache[] = [];
 
         if (row.uid_employe) {
+          // 1. Cherche dans users (table principale)
           const { data: u } = await supabase.from('users')
             .select('firstname, lastname, name_elevage, is_elevage, profile_picture_url, profile_picture_url_elevage, phone_number')
             .eq('uid', row.uid_employe).maybeSingle();
           const p = u as Omit<UserProfile, 'uid'> | null;
-          const fullNom = p?.is_elevage
-            ? (p.name_elevage?.trim() || 'Élevage')
-            : `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim() || 'Utilisateur';
+
+          let fullNom = p?.is_elevage
+            ? (p.name_elevage?.trim() || '')
+            : `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim();
+
+          // 2. Fallback user_profiles si nom vide (particuliers qui ont leur info dans user_profiles)
+          if (!fullNom) {
+            const { data: up } = await supabase.from('user_profiles')
+              .select('nom, name_elevage, profile_label, avatar_url')
+              .eq('uid', row.uid_employe)
+              .eq('is_main', true)
+              .maybeSingle();
+            fullNom = up?.profile_label?.trim() || up?.nom?.trim() || up?.name_elevage?.trim() || '';
+            if (!photo && up?.avatar_url) photo = up.avatar_url;
+          }
+
+          if (!fullNom) fullNom = isBenevole ? 'Bénévole' : 'Employé';
           prenom = fullNom.split(' ')[0] ?? fullNom;
           nom = fullNom.split(' ').slice(1).join(' ') || '';
-          photo = (p?.is_elevage ? p.profile_picture_url_elevage : p?.profile_picture_url) ?? null;
+          if (!photo) photo = (p?.is_elevage ? p?.profile_picture_url_elevage : p?.profile_picture_url) ?? null;
           taches = await fetchTachesPersonne(row.uid_employe, uid);
         }
 
@@ -186,7 +204,7 @@ function EquipeUnifiee({ uid }: { uid: string }) {
     } finally {
       setLoading(false);
     }
-  }, [uid]);
+  }, [uid, profileId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -198,6 +216,7 @@ function EquipeUnifiee({ uid }: { uid: string }) {
       uid_eleveur: uid, prenom: form.prenom.trim(), nom: form.nom.trim(),
       email: form.email.trim() || null, telephone: form.telephone.trim() || null,
       notes: form.notes.trim() || null, actif: true, type: 'benevole', profil_source: 'association',
+      ...(profileId ? { eleveur_profile_id: profileId } : {}),
     });
     setSaving(false);
     if (error) { alert(`Erreur: ${error.message}`); return; }
@@ -355,8 +374,8 @@ function EquipeUnifiee({ uid }: { uid: string }) {
         </div>
       )}
 
-      {showAddEmploye && <AddPetsMatchModal uid={uid} type="employe" onClose={() => { setShowAddEmploye(false); load(); }} />}
-      {showAddBenevole && <AddPetsMatchModal uid={uid} type="benevole" onClose={() => { setShowAddBenevole(false); load(); }} />}
+      {showAddEmploye && <AddPetsMatchModal uid={uid} eleveurProfileId={profileId} type="employe" onClose={() => { setShowAddEmploye(false); load(); }} />}
+      {showAddBenevole && <AddPetsMatchModal uid={uid} eleveurProfileId={profileId} type="benevole" onClose={() => { setShowAddBenevole(false); load(); }} />}
       {editing && (
         editing.type === 'benevole'
           ? <EditBenevoleModal benevole={{ ...editing, id: editing.id, prenom: editing.prenom, nom: editing.nom, actif: editing.actif }} onClose={() => { setEditing(null); load(); }} />
@@ -484,7 +503,7 @@ function EmployesTab({ uid }: { uid: string }) {
         + Inviter un employé
       </button>
 
-      {showAdd && <AddPetsMatchModal uid={uid} type="employe" onClose={() => { setShowAdd(false); load(); }} />}
+      {showAdd && <AddPetsMatchModal uid={uid} eleveurProfileId={null} type="employe" onClose={() => { setShowAdd(false); load(); }} />}
       {editing && <EditEmployeModal employe={editing} onClose={() => { setEditing(null); load(); }} />}
       {assigning && (
         <AssignTaskModal uid={uid} assigneeUid={assigning.uid_employe} assigneeName={assigning.nom}
@@ -683,7 +702,7 @@ function BenevolesTab({ uid }: { uid: string }) {
         </div>
       )}
 
-      {showPetsMatch && <AddPetsMatchModal uid={uid} type="benevole" onClose={() => { setShowPetsMatch(false); load(); }} />}
+      {showPetsMatch && <AddPetsMatchModal uid={uid} eleveurProfileId={null} type="benevole" onClose={() => { setShowPetsMatch(false); load(); }} />}
       {editing && <EditBenevoleModal benevole={editing} onClose={() => { setEditing(null); load(); }} />}
       {assigning && assigning.uid_employe && (
         <AssignTaskModal uid={uid}
@@ -920,7 +939,7 @@ function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
 
 // ── Modal recherche PetsMatch (employé ou bénévole) ───────────────────────────
 
-function AddPetsMatchModal({ uid, type, onClose }: { uid: string; type: 'employe' | 'benevole'; onClose: () => void }) {
+function AddPetsMatchModal({ uid, eleveurProfileId, type, onClose }: { uid: string; eleveurProfileId: string | null; type: 'employe' | 'benevole'; onClose: () => void }) {
   const [query, setQuery] = useState('');
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [results, setResults] = useState<UserProfile[]>([]);
@@ -958,6 +977,7 @@ function AddPetsMatchModal({ uid, type, onClose }: { uid: string; type: 'employe
           profil_source: 'association',
           type: type === 'benevole' ? 'benevole' : null,
           telephone: u.phone_number || null,
+          ...(eleveurProfileId ? { eleveur_profile_id: eleveurProfileId } : {}),
         });
       }
       await supabase.from('notifications').insert({
