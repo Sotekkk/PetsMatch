@@ -19,6 +19,7 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
+import 'package:PetsMatch/services/promenade_notification_service.dart';
 import 'firebase_options.dart';
 
 const AndroidNotificationChannel channel = AndroidNotificationChannel(
@@ -56,6 +57,8 @@ Future<void> setupNotifications() async {
       .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
+  // Canal dédié aux rappels de promenades
+  await setupPromenadeNotificationChannel();
 }
 
 bool isRequestingPermission = false;

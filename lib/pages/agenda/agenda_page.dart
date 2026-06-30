@@ -20,6 +20,7 @@ const _kTypeLabel = {
   'formation':  'Formation',
   'reunion':    'Réunion',
   'absence':    'Absence',
+  'promenade':  'Promenade',
   'autre':      'Autre',
 };
 
@@ -31,6 +32,7 @@ const _kTypeIcon = {
   'formation':  '📚',
   'reunion':    '🤝',
   'absence':    '🏖️',
+  'promenade':  '🐾',
   'autre':      '📅',
 };
 
@@ -42,6 +44,7 @@ const _kTypeColor = {
   'formation':  Color(0xFF7B1FA2),
   'reunion':    Color(0xFF0288D1),
   'absence':    Color(0xFF78909C),
+  'promenade':  Color(0xFF2E7D5E),
   'autre':      Color(0xFF9E9E9E),
 };
 

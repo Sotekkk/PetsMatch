@@ -1,7 +1,8 @@
 import 'dart:async';
 
-import 'package:PetsMatch/main.dart' show getApiKey;
+import 'package:PetsMatch/main.dart' show getApiKey, User_Info;
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
+import 'package:PetsMatch/services/promenade_notification_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -28,8 +29,12 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
   Map<String, dynamic>? _promenade;
   Map<String, dynamic>? _organizer;
   List<Map<String, dynamic>> _participants = [];
+  List<Map<String, dynamic>> _messages = [];
   bool _loading = true;
   bool _saving = false;
+
+  final _msgCtrl = TextEditingController();
+  bool _sendingMsg = false;
 
   bool get _isOrganizer =>
       _promenade?['organisateur_uid']?.toString() == _uid;
@@ -49,6 +54,12 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _msgCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -90,11 +101,31 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         }
       }
 
+      // Messages / commentaires
+      final rawMsgs = await _supa
+          .from('promenades_messages')
+          .select('id, user_uid, message, created_at, user_profile_id')
+          .eq('promenade_id', widget.promenadeId)
+          .order('created_at');
+
+      final List<Map<String, dynamic>> msgs = [];
+      if ((rawMsgs as List).isNotEmpty) {
+        final msgUids = rawMsgs.map((m) => m['user_uid'].toString()).toSet().toList();
+        final msgUsers = await _supa.from('users')
+            .select('uid, firstname, lastname, profile_picture_url')
+            .inFilter('uid', msgUids);
+        final msgUsersMap = {for (final u in (msgUsers as List)) u['uid'].toString(): u};
+        for (final m in rawMsgs) {
+          msgs.add({...Map<String, dynamic>.from(m), 'user': msgUsersMap[m['user_uid'].toString()]});
+        }
+      }
+
       if (mounted) {
         setState(() {
           _promenade = Map<String, dynamic>.from(p);
           _organizer = org != null ? Map<String, dynamic>.from(org) : null;
           _participants = parts;
+          _messages = msgs;
           _loading = false;
         });
       }
@@ -137,6 +168,15 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
           .delete()
           .eq('promenade_id', widget.promenadeId)
           .eq('user_uid', _uid);
+      // Supprimer l'événement agenda lié
+      try {
+        await _supa.from('agenda_events')
+            .delete()
+            .eq('promenade_id', widget.promenadeId)
+            .eq('uid', _uid);
+      } catch (_) {}
+      // Annuler les notifications locales
+      await cancelPromenadeReminders(widget.promenadeId);
       await _load();
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -174,12 +214,32 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         .update({'statut': 'accepte'})
         .eq('promenade_id', widget.promenadeId)
         .eq('user_uid', userUid);
+    final titre = _promenade!['titre']?.toString() ?? 'Promenade';
+    final dateHeure = _promenade!['date_heure']?.toString() ?? '';
+    final lieu = _promenade!['lieu_rdv']?.toString() ?? '';
+    // Récupérer le profile_id du participant accepté
+    final partRow = await _supa.from('promenades_participants')
+        .select('user_profile_id').eq('promenade_id', widget.promenadeId)
+        .eq('user_uid', userUid).maybeSingle();
+    final partProfileId = partRow?['user_profile_id'] as String?;
+    // Ajouter l'événement dans l'agenda du participant
+    try {
+      await _supa.from('agenda_events').insert({
+        'uid':          userUid,
+        'titre':        titre,
+        'type':         'promenade',
+        'date_debut':   dateHeure,
+        'notes':        lieu.isNotEmpty ? 'RDV : $lieu' : null,
+        'pro_profile_id': partProfileId ?? '',
+        'promenade_id': widget.promenadeId,
+      });
+    } catch (_) {}
     try {
       await _supa.from('notifications').insert({
         'uid': userUid,
         'type': 'promenade_accepte',
         'title': 'Participation confirmée',
-        'body': 'Votre demande pour "${_promenade!['titre']}" a été acceptée !',
+        'body': 'Votre demande pour "$titre" a été acceptée !',
         'data': {'promenadeId': widget.promenadeId},
         'read': false,
         'created_at': DateTime.now().toIso8601String(),
@@ -269,6 +329,33 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Erreur : $e')));
       }
+    }
+  }
+
+  Future<void> _sendMessage() async {
+    final txt = _msgCtrl.text.trim();
+    if (txt.isEmpty || _uid.isEmpty) return;
+    setState(() => _sendingMsg = true);
+    try {
+      final profileRow = await _supa.from('user_profiles')
+          .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+      final pid = profileRow?['id'] as String?;
+      await _supa.from('promenades_messages').insert({
+        'promenade_id':   widget.promenadeId,
+        'user_uid':       _uid,
+        if (pid != null) 'user_profile_id': pid,
+        'message':        txt,
+        'created_at':     DateTime.now().toIso8601String(),
+      });
+      _msgCtrl.clear();
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _sendingMsg = false);
     }
   }
 
@@ -630,6 +717,119 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
               ])),
               const SizedBox(height: 10),
             ],
+
+            // ── Commentaires / discussion ─────────────────────────────────
+            _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Discussion',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+              const SizedBox(height: 10),
+              if (_messages.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text('Aucun message pour l\'instant.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+                ),
+              ..._messages.map((m) {
+                final u = m['user'] as Map?;
+                final nom = '${u?['firstname'] ?? ''} ${u?['lastname'] ?? ''}'.trim();
+                final isMe = m['user_uid'].toString() == _uid;
+                final ts = m['created_at'] != null
+                    ? DateFormat('dd/MM · HH:mm').format(
+                        DateTime.parse(m['created_at'].toString()).toLocal())
+                    : '';
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+                    children: [
+                      if (!isMe) ...[
+                        _avatar(u?['profile_picture_url']?.toString(), 16),
+                        const SizedBox(width: 8),
+                      ],
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                          children: [
+                            Row(mainAxisSize: MainAxisSize.min, children: [
+                              if (!isMe)
+                                Text(nom.isEmpty ? 'Utilisateur' : nom,
+                                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                                        fontWeight: FontWeight.w700, color: _green)),
+                              if (!isMe) const SizedBox(width: 6),
+                              Text(ts, style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                                  color: Colors.grey.shade400)),
+                            ]),
+                            const SizedBox(height: 3),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isMe ? _green.withValues(alpha: 0.12) : Colors.grey.shade100,
+                                borderRadius: BorderRadius.only(
+                                  topLeft: Radius.circular(isMe ? 12 : 0),
+                                  topRight: Radius.circular(isMe ? 0 : 12),
+                                  bottomLeft: const Radius.circular(12),
+                                  bottomRight: const Radius.circular(12),
+                                ),
+                              ),
+                              child: Text(m['message']?.toString() ?? '',
+                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              if (_uid.isNotEmpty && (myStatut == 'accepte' || _isOrganizer)) ...[
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _msgCtrl,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                      maxLines: null,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        hintText: 'Écrire un message…',
+                        hintStyle: TextStyle(fontFamily: 'Galey',
+                            color: Colors.grey.shade400, fontSize: 13),
+                        filled: true,
+                        fillColor: Colors.grey.shade50,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            borderSide: BorderSide.none),
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: _sendingMsg ? null : _sendMessage,
+                    child: Container(
+                      width: 40, height: 40,
+                      decoration: const BoxDecoration(color: _green, shape: BoxShape.circle),
+                      child: _sendingMsg
+                          ? const Padding(padding: EdgeInsets.all(10),
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Icon(Icons.send_rounded, color: Colors.white, size: 18),
+                    ),
+                  ),
+                ]),
+              ] else if (_uid.isNotEmpty && myStatut != 'accepte' && !_isOrganizer)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text('Réservé aux participants acceptés.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                          color: Colors.grey.shade400)),
+                ),
+            ])),
+            const SizedBox(height: 10),
           ],
         ),
       ),

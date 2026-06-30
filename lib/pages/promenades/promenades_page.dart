@@ -1,7 +1,8 @@
 import 'dart:async';
 
-import 'package:PetsMatch/main.dart' show getApiKey;
+import 'package:PetsMatch/main.dart' show getApiKey, User_Info;
 import 'package:PetsMatch/pages/promenades/promenade_detail_page.dart';
+import 'package:PetsMatch/services/promenade_notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_webservice/places.dart';
@@ -90,8 +91,31 @@ class _PromenadesPageState extends State<PromenadePage> {
           _loading = false;
         });
       }
+      // Programmer les rappels locaux pour les promenades acceptées à venir
+      _scheduleAcceptedReminders(List<Map<String, dynamic>>.from(promData), participations);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _scheduleAcceptedReminders(
+      List<Map<String, dynamic>> promenades,
+      Map<String, String> participations,
+  ) {
+    for (final p in promenades) {
+      final id = p['id'].toString();
+      if (participations[id] != 'accepte') continue;
+      final dateStr = p['date_heure']?.toString();
+      if (dateStr == null) continue;
+      try {
+        final date = DateTime.parse(dateStr).toLocal();
+        if (date.isBefore(DateTime.now())) continue;
+        schedulePromenadeReminders(
+          promenadeId: id,
+          titre: p['titre']?.toString() ?? 'Promenade',
+          dateHeure: date,
+        );
+      } catch (_) {}
     }
   }
 
