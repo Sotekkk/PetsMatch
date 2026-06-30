@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/petfriends/petfriend_chat_page.dart';
 
 class PublicProfilePage extends StatefulWidget {
@@ -242,6 +243,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
           if ((otherData?['profile_picture_url'] as String?)?.isNotEmpty == true) 'photo': otherData!['profile_picture_url']},
       };
 
+      final pid = User_Info.activeProfileId;
       final created = await _supa.from('conversations').insert({
         'type':              'direct',
         'participants':      [_myUid, widget.targetUid],
@@ -250,6 +252,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
         'last_message':      '',
         'unread_count':      {_myUid: 0, widget.targetUid: 0},
         'updated_at':        DateTime.now().toIso8601String(),
+        if (pid.isNotEmpty) 'pro_profile_id': pid,
       }).select('id').single();
       convId = created['id'].toString();
     }

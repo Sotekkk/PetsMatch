@@ -1731,6 +1731,7 @@ class _BottomBarState extends State<_BottomBar> {
       final convId = await MessagingHelper.openOrCreateConversation(
         otherUid: widget.uidEleveur,
         categorie: 'annonces',
+        myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
       );
       if (mounted) Navigator.push(context, MaterialPageRoute(
           builder: (_) => ChatScreen(

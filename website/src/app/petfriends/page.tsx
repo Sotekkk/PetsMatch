@@ -246,6 +246,7 @@ export default function PetFriendsPage() {
         last_message: '',
         unread_count: { [myUid]: 0, [friendRow.uid]: 0 },
         updated_at: new Date().toISOString(),
+        ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}),
       }).select('id').single();
       convId = created!.id;
     }

@@ -124,6 +124,7 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
       final convId = await MessagingHelper.openOrCreateConversation(
         otherUid: widget.uid,
         categorie: 'communaute',
+        myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
       );
       if (!mounted) return;
       Navigator.push(context, MaterialPageRoute(

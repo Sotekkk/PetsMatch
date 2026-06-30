@@ -4627,6 +4627,7 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
       final convId = await MessagingHelper.openOrCreateConversation(
         otherUid: ownerUid,
         categorie: 'services',
+        myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
       );
       if (mounted) {
         Navigator.push(context, MaterialPageRoute(

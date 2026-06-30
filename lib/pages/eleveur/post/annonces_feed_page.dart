@@ -585,6 +585,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
       final convId = await MessagingHelper.openOrCreateConversation(
         otherUid: item.uidEleveur!,
         categorie: 'annonces',
+        myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
       );
       if (mounted) {
         Navigator.push(context, MaterialPageRoute(

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useActiveProfile, ACTIVE_PROFILE_TYPE_KEY, PROFILE_CHANGE_EVENT } from '@/hooks/useActiveProfile';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 type ConvCategorie = 'animaux-perdus' | 'annonces' | 'communaute' | 'contact-elevage' | 'service-professionnel' | '__archived__' | null;
@@ -86,6 +86,7 @@ function fmtDate(iso: string | null): string {
 function MessagesPageInner() {
   const { user, userData, loading } = useAuth();
   const activeProfileId = useActiveProfile();
+  const [activeProfileType, setActiveProfileType] = useState('');
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -111,6 +112,14 @@ function MessagesPageInner() {
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
   }, [loading, user, router]);
+
+  // Suivre le type de profil actif pour filtrer les conversations non-taguées
+  useEffect(() => {
+    const read = () => setActiveProfileType(localStorage.getItem(ACTIVE_PROFILE_TYPE_KEY) ?? '');
+    read();
+    window.addEventListener(PROFILE_CHANGE_EVENT, read);
+    return () => window.removeEventListener(PROFILE_CHANGE_EVENT, read);
+  }, []);
 
   // Bloquer les utilisateurs depuis Supabase
   useEffect(() => {
@@ -325,7 +334,9 @@ function MessagesPageInner() {
       if (activeProfileId) {
         const isMePro      = conv.pro_profile_id === activeProfileId;
         const isMeConsumer = conv.consumer_profile_id === activeProfileId;
-        const isUntagged   = !conv.pro_profile_id && !conv.consumer_profile_id;
+        // Conversations sans profil : visibles uniquement pour le profil éleveur principal
+        const isEleveurProfile = activeProfileType !== 'particulier' && activeProfileType !== 'association';
+        const isUntagged   = !conv.pro_profile_id && !conv.consumer_profile_id && isEleveurProfile;
         if (!isMePro && !isMeConsumer && !isUntagged) return false;
       } else {
         const proIsMyProfile      = conv.pro_profile_id && userProfileIds.includes(conv.pro_profile_id);

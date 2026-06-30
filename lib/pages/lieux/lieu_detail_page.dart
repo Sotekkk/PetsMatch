@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 
@@ -158,6 +159,7 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
       final convId = await MessagingHelper.openOrCreateConversation(
         otherUid: uidPro,
         categorie: 'communaute',
+        myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
       );
       if (mounted) {
         Navigator.push(context, MaterialPageRoute(

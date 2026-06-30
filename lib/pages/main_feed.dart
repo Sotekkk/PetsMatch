@@ -846,6 +846,7 @@ class _PostWidgetState extends State<PostWidget> {
     final convId = await MessagingHelper.openOrCreateConversation(
       otherUid: eleveurId,
       categorie: 'annonces',
+      myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
     );
     if (mounted) {
       Navigator.push(
