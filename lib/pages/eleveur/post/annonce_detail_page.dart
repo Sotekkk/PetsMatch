@@ -298,12 +298,15 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
             .update({'vues': currentVues + 1})
             .eq('id', widget.annonceId).catchError((_) {});
       }
+      final profilSource = row['profil_source']?.toString();
+      final profileId    = row['profile_id']?.toString();
+
       if (!_eleveurLoaded && uid != null) {
         _eleveurLoaded = true;
-        _loadEleveur(uid,
-          profilSource: row['profil_source']?.toString(),
-          profileId: row['profile_id']?.toString(),
-        );
+        _loadEleveur(uid, profilSource: profilSource, profileId: profileId);
+      } else if (uid != null && profilSource == 'association' && profileId != null && profileId.isNotEmpty) {
+        // initState a appelé _loadEleveur sans profile_id → recharger avec le bon UUID
+        _loadEleveur(uid, profilSource: profilSource, profileId: profileId);
       }
       if (mounted) setState(() => _annonceData = data);
     } catch (_) {}
