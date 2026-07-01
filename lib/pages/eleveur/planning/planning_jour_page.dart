@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/services/planning_pdf_service.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 
 class PlanningJourPage extends StatefulWidget {
   final DateTime? initialDate;
@@ -44,7 +45,10 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
     if (_uid == null) return;
     try {
       final supa = Supabase.instance.client;
-      final empsRaw = await supa.from('employes').select().eq('uid_eleveur', _uid!).eq('actif', true);
+      final pid = User_Info.activeProfileId;
+      var query = supa.from('employes').select().eq('uid_eleveur', _uid!).eq('actif', true);
+      if (pid.isNotEmpty) query = query.eq('profil_id_pro', pid);
+      final empsRaw = await query;
       final List<Map<String, dynamic>> result = [];
       for (final e in empsRaw) {
         final u = await supa.from('users')

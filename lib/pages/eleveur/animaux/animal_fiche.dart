@@ -664,13 +664,15 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     final anId = widget.animalId;
     if (uid == null || anId == null) return;
     try {
+      final pid = User_Info.activeProfileId;
       final res = await _supa.from('documents_animaux').insert({
-        'animal_id':   anId,
-        'uid_eleveur': uid,
-        'type':        type,
-        'titre':       '${type == 'contrat_vente' ? 'Contrat de vente' : 'Contrat de réservation'} — ${_nomCtrl.text.trim()}',
-        'statut':      'brouillon',
-        'metadata':    <String, dynamic>{},
+        'animal_id':    anId,
+        'uid_eleveur':  uid,
+        if (pid.isNotEmpty) 'pro_profile_id': pid,
+        'type':         type,
+        'titre':        '${type == 'contrat_vente' ? 'Contrat de vente' : 'Contrat de réservation'} — ${_nomCtrl.text.trim()}',
+        'statut':       'brouillon',
+        'metadata':     <String, dynamic>{},
       }).select('token').single();
       final token = res['token'] as String;
       const baseUrl = kSiteBaseUrl;
@@ -696,12 +698,17 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final males = await _supa.from('animaux')
+      final pid = User_Info.activeProfileId;
+      var maleQ = _supa.from('animaux')
           .select('id, nom, identification, race, photo_url')
-          .eq('uid_eleveur', uid).eq('sexe', 'male').order('nom');
-      final femelles = await _supa.from('animaux')
+          .eq('uid_eleveur', uid).eq('sexe', 'male');
+      if (pid.isNotEmpty) maleQ = maleQ.eq('profile_id', pid);
+      final males = await maleQ.order('nom');
+      var femelleQ = _supa.from('animaux')
           .select('id, nom, identification, race, photo_url, date_naissance')
-          .eq('uid_eleveur', uid).eq('sexe', 'femelle').order('nom');
+          .eq('uid_eleveur', uid).eq('sexe', 'femelle');
+      if (pid.isNotEmpty) femelleQ = femelleQ.eq('profile_id', pid);
+      final femelles = await femelleQ.order('nom');
       if (mounted) setState(() {
         _mesMales = List<Map<String, dynamic>>.from(males);
         _mesFemelles = List<Map<String, dynamic>>.from(femelles);
