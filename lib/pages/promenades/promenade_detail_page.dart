@@ -789,7 +789,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
               Row(children: [
                 const Text('Discussion',
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
-                if (_messages.isNotEmpty) ...[
+                if (_uid.isNotEmpty && _messages.isNotEmpty) ...[
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -801,6 +801,22 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
                 ],
               ]),
               const SizedBox(height: 10),
+              if (_uid.isEmpty) ...[
+                // Non connecté → accès bloqué
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+                  alignment: Alignment.center,
+                  child: Column(children: [
+                    Icon(Icons.lock_outline, size: 32, color: Colors.grey.shade400),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Connectez-vous pour voir la discussion',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500),
+                    ),
+                  ]),
+                ),
+              ] else ...[
               if (_messages.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -941,6 +957,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
                         style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
                   ]),
                 ),
+              ], // else (connecté)
             ])),
             const SizedBox(height: 10),
           ],

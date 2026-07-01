@@ -58,11 +58,9 @@ class _LoginPageState extends State<LoginPage> {
       saveFcmTokenToFirestore().catchError((_) {});
 
       if (!mounted) return;
-      Widget dest = User_Info.isValidate || User_Info.isAdmin
-          ? BottomNav()
-          : VerificationRegistrationPage();
-      Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => dest), (route) => false);
+      // Retour à la racine : AuthWrapper gère le routing via authStateChanges()
+      // (évite l'écran noir de la transition pushAndRemoveUntil)
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       setState(() {

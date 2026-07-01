@@ -1,201 +1,371 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useAuth } from '@/lib/auth-context';
+import Image from 'next/image';
+import { supabase } from '@/lib/supabase';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface ServiceSection {
-  id: string;
-  title: string;
-  icon: string;
-  color: string;
-  colorLight: string;
-  items: ServiceItem[];
-}
-
-interface ServiceItem {
-  id: string;
+interface AnnuaireCategory {
+  slug: string;
   label: string;
   icon: string;
-  href?: string;
-  soon?: boolean;
+  color: string;
+  catValues?: string;
+  hasSubcats: boolean;
+}
+
+interface VerifiedPro {
+  id: string;
+  uid: string;
+  nom: string;
+  profile_type: string;
+  avatar_url?: string;
+  ville_pro?: string;
+  accept_new_clients?: boolean;
 }
 
 // ── Données statiques ──────────────────────────────────────────────────────────
 
-const SECTIONS_BASE: ServiceSection[] = [
-  {
-    id: 'pole-sante',
-    title: 'Pôle Santé',
-    icon: '🏥',
-    color: '#6E9E57',
-    colorLight: '#E8F5E9',
-    items: [
-      { id: 'vet',      label: 'Vétérinaires',          icon: '🩺', href: '/services/carte?cat=veterinaire&view=list' },
-      { id: 'urgence',  label: 'Urgences vétérinaires', icon: '🚨', href: '/services/carte?cat=veterinaire&view=list' },
-      { id: 'osteo',    label: 'Ostéopathes',           icon: '🖐️', href: '/services/carte?cat=sante&view=list' },
-      { id: 'kine',     label: 'Kinésithérapeutes',     icon: '💪', href: '/services/carte?cat=sante&view=list' },
-      { id: 'naturo',   label: 'Naturopathes',          icon: '🌿', href: '/services/carte?cat=sante&view=list' },
-      { id: 'assurance',label: 'Assurances animaux',    icon: '🛡️', soon: true },
-    ],
-  },
-  {
-    id: 'education-garde',
-    title: 'Éducation & Garde',
-    icon: '🎓',
-    color: '#EF6C00',
-    colorLight: '#FFF3E0',
-    items: [
-      { id: 'educ',    label: 'Éducateurs / Comportementalistes', icon: '🎓', href: '/services/carte?cat=education&view=list' },
-      { id: 'petsit',  label: 'Pet sitter / Promeneurs',         icon: '🏠', href: '/services/carte?cat=garde&view=list' },
-      { id: 'pension', label: 'Pension pour animaux',            icon: '🏡', href: '/services/carte?cat=garde&view=list' },
-    ],
-  },
-  {
-    id: 'sorties',
-    title: 'Sorties & Voyages',
-    icon: '🧭',
-    color: '#1E88E5',
-    colorLight: '#E3F2FD',
-    items: [
-      { id: 'all',        label: 'Tous les lieux',         icon: '🗺️', href: '/animal-friendly' },
-      { id: 'hotels',     label: 'Hôtels & Hébergements', icon: '🏨', href: '/animal-friendly' },
-      { id: 'restau',     label: 'Restaurants & Cafés',   icon: '🍽️', href: '/animal-friendly' },
-      { id: 'parcs',      label: 'Parcs & Espaces verts', icon: '🌳', href: '/animal-friendly' },
-      { id: 'evenements', label: 'Événements',            icon: '📅', soon: true },
-      { id: 'promenades', label: 'Promenades collectives',icon: '🦮', href: '/promenades' },
-    ],
-  },
-  {
-    id: 'marketplace',
-    title: 'Marketplace',
-    icon: '🛍️',
-    color: '#8E24AA',
-    colorLight: '#F3E5F5',
-    items: [
-      { id: 'boutiques', label: 'Boutiques & Accessoires', icon: '🏪', href: '/services/carte?cat=referencement&view=list' },
-      { id: 'petfood',   label: 'Petfood & Alimentation',  icon: '🥩', href: '/services/carte?cat=referencement&view=list' },
-      { id: 'createurs', label: 'Créateurs pour animaux',  icon: '🎨', href: '/services/carte?cat=referencement&view=list' },
-      { id: 'promos',    label: 'Bons plans & Promos',     icon: '🏷️', soon: true },
-    ],
-  },
+const CATEGORIES: AnnuaireCategory[] = [
+  { slug: 'sante',        label: 'Santé\n& bien-être',         icon: '🏥', color: '#2E7D5E', hasSubcats: true },
+  { slug: 'education',    label: 'Éducation\n& comportement',  icon: '🎓', color: '#E65100', hasSubcats: true },
+  { slug: 'garde',        label: 'Garde\n& hébergement',       icon: '🏠', color: '#F57C00', hasSubcats: true },
+  { slug: 'toilettage',   label: 'Toilettage\n& soins',        icon: '✂️', color: '#C62828', catValues: 'toilettage', hasSubcats: false },
+  { slug: 'alimentation', label: 'Alimentation',               icon: '🥩', color: '#1565C0', hasSubcats: true },
+  { slug: 'transport',    label: 'Transport',                  icon: '🚗', color: '#00838F', hasSubcats: true },
+  { slug: 'photographes', label: 'Photographes',               icon: '📷', color: '#AD1457', catValues: 'photographe', hasSubcats: false },
+  { slug: 'boutiques',    label: 'Boutiques\n& Créateurs',     icon: '🛍️', color: '#6A1B9A', hasSubcats: true },
+  { slug: 'assurances',   label: 'Assurances\n& juridique',    icon: '🛡️', color: '#1E3A5F', catValues: 'assurance', hasSubcats: false },
 ];
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function labelForType(type: string): string {
+  switch (type) {
+    case 'sante': case 'veterinaire': return 'Santé & bien-être';
+    case 'osteo':                     return 'Ostéopathe';
+    case 'kine':                      return 'Kinésithérapeute';
+    case 'marechal_ferrant':          return 'Maréchal-ferrant';
+    case 'dentiste_equin':            return 'Dentiste équin';
+    case 'education': case 'educateur': return 'Éducateur';
+    case 'comportementaliste':        return 'Comportementaliste';
+    case 'pension':                   return 'Pension';
+    case 'pet_sitter': case 'garde':  return 'Pet-sitter';
+    case 'promeneur':                 return 'Promeneur';
+    case 'toilettage': case 'toiletteur': return 'Toilettage & soins';
+    case 'alimentation': case 'animalerie': return 'Animalerie';
+    case 'nutrition': case 'nutritionniste': return 'Nutritionniste';
+    case 'transport': case 'taxi_animalier': case 'vtc': return 'Transport';
+    case 'ambulance_vet':             return 'Ambulance vétérinaire';
+    case 'photographe':               return 'Photographe';
+    case 'boutique':                  return 'Boutique';
+    case 'artisan': case 'createur':  return 'Créateur & artisan';
+    case 'assurance':                 return 'Assurance';
+    case 'juridique':                 return 'Juridique';
+    default:                          return 'Professionnel';
+  }
+}
+
+function colorForType(type: string): string {
+  switch (type) {
+    case 'sante': case 'veterinaire': case 'osteo': case 'kine': return '#2E7D5E';
+    case 'marechal_ferrant': case 'dentiste_equin':               return '#558B2F';
+    case 'education': case 'educateur':                           return '#E65100';
+    case 'comportementaliste':                                    return '#BF360C';
+    case 'pension': case 'pet_sitter': case 'garde': case 'promeneur': return '#F57C00';
+    case 'toilettage': case 'toiletteur':                         return '#C62828';
+    case 'alimentation': case 'animalerie': case 'nutrition':     return '#1565C0';
+    case 'transport': case 'taxi_animalier': case 'vtc':          return '#00838F';
+    case 'ambulance_vet':                                         return '#C62828';
+    case 'photographe':                                           return '#AD1457';
+    case 'boutique': case 'artisan': case 'createur':             return '#6A1B9A';
+    case 'assurance': case 'juridique':                           return '#1E3A5F';
+    default:                                                      return '#0C5C6C';
+  }
+}
 
 // ── Composants ─────────────────────────────────────────────────────────────────
 
-function ServiceCard({ item, color }: { item: ServiceItem; color: string }) {
-  const content = (
-    <div className="flex items-center gap-3 px-4 py-3.5 bg-white rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all group cursor-pointer">
-      <span className="text-2xl w-8 flex-shrink-0 text-center">{item.icon}</span>
-      <span className="text-sm font-medium text-gray-800 flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>
-        {item.label}
+function CategoryTile({ cat, onClick }: { cat: AnnuaireCategory; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 flex flex-col items-center gap-2 hover:shadow-md hover:border-gray-200 transition-all text-center"
+    >
+      <div
+        className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl relative"
+        style={{ backgroundColor: cat.color + '18' }}
+      >
+        <span>{cat.icon}</span>
+        {cat.hasSubcats && (
+          <span
+            className="absolute top-0.5 right-0.5 w-3 h-3 rounded-full flex items-center justify-center text-white text-[6px] font-bold"
+            style={{ backgroundColor: cat.color }}
+          >
+            ›
+          </span>
+        )}
+      </div>
+      <span
+        className="text-[11px] font-semibold text-[#1E2025] leading-tight whitespace-pre-line"
+        style={{ fontFamily: 'Galey, sans-serif' }}
+      >
+        {cat.label}
       </span>
-      {item.soon ? (
-        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400 flex-shrink-0">
-          Bientôt
-        </span>
-      ) : (
-        <svg className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-        </svg>
-      )}
-    </div>
+    </button>
   );
-
-  if (item.href && !item.soon) {
-    return <Link href={item.href}>{content}</Link>;
-  }
-  return <div onClick={item.soon ? undefined : undefined}>{content}</div>;
 }
 
-function SectionBlock({ section }: { section: ServiceSection }) {
+function ProCard({ pro }: { pro: VerifiedPro }) {
+  const typeColor = colorForType(pro.profile_type);
+  const label = labelForType(pro.profile_type);
+  const acceptNew = pro.accept_new_clients !== false;
+
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-      {/* Header */}
-      <div className="px-5 py-4 flex items-center gap-3" style={{ backgroundColor: section.colorLight }}>
-        <span className="text-2xl">{section.icon}</span>
-        <h2 className="font-bold text-base" style={{ fontFamily: 'Galey, sans-serif', color: section.color }}>
-          {section.title}
-        </h2>
+    <Link
+      href={`/profil/${pro.uid}`}
+      className="flex-shrink-0 w-40 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow block"
+    >
+      {/* Photo */}
+      <div
+        className="relative w-full overflow-hidden"
+        style={{ height: 108, backgroundColor: typeColor + '18' }}
+      >
+        {pro.avatar_url ? (
+          <Image src={pro.avatar_url} alt={pro.nom || label} fill className="object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-3xl" style={{ opacity: 0.3 }}>
+            🏪
+          </div>
+        )}
+        <div className="absolute bottom-2 left-2">
+          <span
+            className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+            style={{
+              backgroundColor: acceptNew ? '#2E7D5E22' : '#F5730022',
+              color: acceptNew ? '#2E7D5E' : '#E65100',
+            }}
+          >
+            {acceptNew ? 'Ouvert' : 'Sur RDV'}
+          </span>
+        </div>
       </div>
-      {/* Items */}
-      <div className="p-4 flex flex-col gap-2">
-        {section.items.map((item) => (
-          <ServiceCard key={item.id} item={item} color={section.color} />
-        ))}
+      {/* Infos */}
+      <div className="p-2.5">
+        <p
+          className="text-[13px] font-bold text-[#1E2025] truncate"
+          style={{ fontFamily: 'Galey, sans-serif' }}
+        >
+          {pro.nom || label}
+        </p>
+        <p className="text-[11px] text-gray-400 truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+          {label}
+        </p>
+        {pro.ville_pro && (
+          <div className="flex items-center gap-1 mt-1">
+            <span className="text-[10px] text-gray-300">📍</span>
+            <span className="text-[10px] text-gray-400 truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+              {pro.ville_pro}
+            </span>
+          </div>
+        )}
       </div>
-    </div>
+    </Link>
   );
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function ServicesPage() {
-  const { userData } = useAuth();
-  const isParticulier = userData?.profileType === 'particulier' || (!userData?.profileType && !userData?.isElevage && !userData?.isAssociation && !userData?.isPro);
+  const router = useRouter();
+  const [query, setQuery] = useState('');
+  const [pros, setPros] = useState<VerifiedPro[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const communauteSection: ServiceSection = {
-    id: 'communaute',
-    title: 'Communauté',
-    icon: '👥',
-    color: '#00ACC1',
-    colorLight: '#E0F7FA',
-    items: [
-      ...(isParticulier ? [{ id: 'petsfriends', label: 'PetsFriends', icon: '🐾', href: '/petfriends' }] : []),
-      { id: 'forum',      label: 'Forum communauté',  icon: '💬', href: '/communaute/forum' },
-      { id: 'groupes',    label: 'Groupes',           icon: '👥', href: '/communaute/groupes' },
-      { id: 'evenements', label: 'Événements locaux', icon: '📅', soon: true },
-    ],
-  };
+  useEffect(() => {
+    (async () => {
+      try {
+        // Source 1 : user_profiles (profils pro V2 — priorité)
+        const { data: profilesData } = await supabase
+          .from('user_profiles')
+          .select('id, uid, nom, profile_type, avatar_url, ville_pro, accept_new_clients')
+          .in('statut_pro', ['actif', 'validated'])
+          .not('profile_type', 'in', '(eleveur,association)')
+          .order('updated_at', { ascending: false })
+          .limit(20);
 
-  const SECTIONS = [...SECTIONS_BASE, communauteSection];
+        // Source 2 : users (anciens profils pros — fallback si pas dans user_profiles)
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('uid, name_elevage, firstname, cat_pro, profile_picture_url, profile_picture_url_elevage, ville, ville_elevage, accept_new_clients')
+          .eq('is_elevage', false)
+          .eq('is_pro', true)
+          .not('cat_pro', 'in', '(eleveur,association)')
+          .order('name_elevage')
+          .limit(20);
+
+        // Fusion — user_profiles en priorité, users en fallback si uid absent
+        const seenUids = new Set<string>();
+        const merged: VerifiedPro[] = [];
+
+        for (const row of (profilesData ?? [])) {
+          if (!seenUids.has(row.uid)) {
+            seenUids.add(row.uid);
+            merged.push(row as VerifiedPro);
+          }
+        }
+        for (const row of (usersData ?? [])) {
+          if (!seenUids.has(row.uid)) {
+            seenUids.add(row.uid);
+            merged.push({
+              id: row.uid,
+              uid: row.uid,
+              nom: row.name_elevage || row.firstname || '',
+              profile_type: row.cat_pro || '',
+              avatar_url: row.profile_picture_url_elevage || row.profile_picture_url || undefined,
+              ville_pro: row.ville_elevage || row.ville || undefined,
+              accept_new_clients: row.accept_new_clients ?? true,
+            });
+          }
+        }
+
+        setPros(merged.slice(0, 12));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const q = query.trim();
+    router.push(
+      q ? `/services/carte?q=${encodeURIComponent(q)}&view=list` : '/services/carte?view=list'
+    );
+  }
+
+  function handleCategoryClick(cat: AnnuaireCategory) {
+    if (cat.hasSubcats) {
+      router.push(`/services/${cat.slug}`);
+    } else {
+      router.push(`/services/carte?cat=${cat.catValues}&view=list`);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-[#F8F8F8]">
-      {/* Hero */}
-      <div className="bg-[#0C5C6C] text-white px-4 py-10">
-        <div className="max-w-2xl mx-auto text-center">
-          <p className="text-4xl mb-3">🐾</p>
-          <h1 className="text-2xl font-bold mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
-            Services pour vos animaux
+
+      {/* ── En-tête teal ──────────────────────────────────────────────────── */}
+      <div className="bg-[#0C5C6C] text-white px-4 py-6">
+        <div className="max-w-3xl mx-auto">
+          <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Annuaire des professionnels
           </h1>
-          <p className="text-white/70 text-sm">
-            Trouvez vétérinaires, éducateurs, pet sitters et bien plus près de chez vous.
+          <p className="text-white/70 text-sm mt-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Trouvez le professionnel idéal pour votre animal
           </p>
         </div>
       </div>
 
-      {/* Accès carte */}
-      <div className="max-w-3xl mx-auto px-4 pt-6 pb-0">
-        <Link href="/services/carte"
-          className="flex items-center gap-3 bg-white rounded-xl border border-[#0C5C6C]/20 px-5 py-3.5 hover:shadow-md transition-shadow group">
-          <span className="text-2xl">🗺️</span>
-          <div className="flex-1">
-            <p className="font-bold text-sm text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>Carte des professionnels</p>
-            <p className="text-xs text-gray-400">Vétérinaires, éducateurs, garderies… près de chez vous</p>
+      <div className="max-w-3xl mx-auto px-4">
+
+        {/* ── Barre de recherche ─────────────────────────────────────────── */}
+        <div className="-mt-5 mb-6">
+          <form onSubmit={handleSearch}>
+            <div className="bg-white rounded-2xl shadow-md flex items-center px-4 gap-3 h-12">
+              <span className="text-gray-400">🔍</span>
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Rechercher un professionnel…"
+                className="flex-1 outline-none text-sm text-gray-700 bg-transparent placeholder-gray-400"
+                style={{ fontFamily: 'Galey, sans-serif' }}
+              />
+              {query && (
+                <button
+                  type="submit"
+                  className="text-[#0C5C6C] text-sm font-semibold"
+                  style={{ fontFamily: 'Galey, sans-serif' }}
+                >
+                  Rechercher
+                </button>
+              )}
+            </div>
+          </form>
+        </div>
+
+        {/* ── Catégories ─────────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-[17px] font-bold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Catégories
+          </h2>
+          <button
+            onClick={() => router.push('/services/carte?view=list')}
+            className="text-[13px] text-gray-400 font-semibold flex items-center gap-1"
+            style={{ fontFamily: 'Galey, sans-serif' }}
+          >
+            Voir tout <span>›</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2.5 mb-8">
+          {CATEGORIES.map((cat) => (
+            <CategoryTile key={cat.slug} cat={cat} onClick={() => handleCategoryClick(cat)} />
+          ))}
+        </div>
+
+        {/* ── Professionnels vérifiés ────────────────────────────────────── */}
+        <h2 className="text-[17px] font-bold text-[#1E2025] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Professionnels vérifiés
+        </h2>
+
+        {loading ? (
+          <div className="h-48 flex items-center justify-center">
+            <div className="w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
           </div>
-          <svg className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
-        </Link>
-      </div>
-
-      {/* Grid sections */}
-      <div className="max-w-3xl mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-        {SECTIONS.map((section) => (
-          <SectionBlock key={section.id} section={section} />
-        ))}
-      </div>
-
-      {/* Footer note */}
-      <div className="max-w-3xl mx-auto px-4 pb-12">
-        <div className="bg-[#E0F2FE] rounded-xl px-5 py-4 flex items-start gap-3">
-          <span className="text-lg flex-shrink-0">ℹ️</span>
-          <p className="text-sm text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>
-            Vous êtes un professionnel ? Créez votre profil pro dans les paramètres de l&apos;application pour apparaître dans l&apos;annuaire.
+        ) : pros.length === 0 ? (
+          <p className="text-sm text-gray-400 mb-8" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Aucun professionnel disponible pour le moment.
           </p>
+        ) : (
+          <div
+            className="flex gap-3 pb-3 mb-6"
+            style={{ overflowX: 'auto', scrollbarWidth: 'none' }}
+          >
+            {pros.map((pro) => (
+              <ProCard key={pro.id} pro={pro} />
+            ))}
+          </div>
+        )}
+
+        {/* ── Bannière vérification ──────────────────────────────────────── */}
+        <div
+          className="mb-10 rounded-2xl px-4 py-4 flex items-start gap-3"
+          style={{
+            backgroundColor: 'rgba(12,92,108,0.07)',
+            border: '1px solid rgba(12,92,108,0.15)',
+          }}
+        >
+          <div
+            className="w-11 h-11 flex-shrink-0 rounded-full flex items-center justify-center text-xl"
+            style={{ backgroundColor: 'rgba(12,92,108,0.10)' }}
+          >
+            ✅
+          </div>
+          <div>
+            <p className="text-sm font-bold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>
+              Des professionnels vérifiés
+            </p>
+            <p className="text-xs text-gray-600 mt-0.5" style={{ fontFamily: 'Galey, sans-serif' }}>
+              Tous les professionnels de notre annuaire sont vérifiés par notre équipe.
+            </p>
+          </div>
         </div>
+
       </div>
     </div>
   );

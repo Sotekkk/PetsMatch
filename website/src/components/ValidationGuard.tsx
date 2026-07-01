@@ -22,6 +22,8 @@ const PUBLIC_PATHS = [
   '/services',
   '/animal-friendly',
   '/marketplace',
+  '/communaute',
+  '/promenades',
 ];
 
 function isPublicPath(pathname: string): boolean {

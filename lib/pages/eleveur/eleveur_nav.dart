@@ -24,6 +24,7 @@ import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
+import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
 import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
 import 'package:PetsMatch/pages/pro/restauration/inscription_restauration_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
@@ -453,11 +454,21 @@ class _EleveurNavState extends State<EleveurNav> {
                   ),
                 _DrawerItem(
                   icon: Icons.storefront_outlined,
-                  label: 'Services',
+                  label: 'Annuaire professionnel',
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(
                       builder: (_) => const ServicesPage(),
+                    ));
+                  },
+                ),
+                _DrawerItem(
+                  icon: Icons.groups_outlined,
+                  label: 'Communauté',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const CommunauteHubPage(),
                     ));
                   },
                 ),

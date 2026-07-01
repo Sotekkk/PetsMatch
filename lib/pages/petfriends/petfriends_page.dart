@@ -399,7 +399,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
                 ),
               ],
             ])),
-            const Tab(text: 'Groupes'),
+            const Tab(text: 'Conversations'),
           ],
         ),
       ),

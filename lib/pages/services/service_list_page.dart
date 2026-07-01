@@ -16,6 +16,7 @@ class ServiceListPage extends StatefulWidget {
   final IconData categoryIcon;
   final List<String> catProValues;
   final List<String>? professionValues;
+  final String? searchQuery;
 
   const ServiceListPage({
     super.key,
@@ -24,6 +25,7 @@ class ServiceListPage extends StatefulWidget {
     required this.categoryIcon,
     required this.catProValues,
     this.professionValues,
+    this.searchQuery,
   });
 
   @override
@@ -62,50 +64,70 @@ class _ServiceListPageState extends State<ServiceListPage> {
   @override
   void initState() {
     super.initState();
+    if (widget.searchQuery != null && widget.searchQuery!.isNotEmpty) {
+      _search = widget.searchQuery!;
+    }
     _loadPros();
   }
 
   Future<void> _loadPros() async {
     try {
+      final hasFilter = widget.catProValues.isNotEmpty;
+
+      // Exclure éleveurs et associations (ont leur propre espace dédié)
+      const _excluded = '(eleveur,association)';
+
       // Primary profiles from users table
-      final primaryRows = await _supa
-          .from('users')
-          .select()
-          .inFilter('cat_pro', widget.catProValues)
-          .order('name_elevage');
+      // is_elevage = false : les éleveurs ont leur espace dédié
+      final dynamic primaryRows = hasFilter
+          ? await _supa
+              .from('users')
+              .select()
+              .inFilter('cat_pro', widget.catProValues)
+              .eq('is_elevage', false)
+              .order('name_elevage')
+          : await _supa
+              .from('users')
+              .select()
+              .eq('is_elevage', false)
+              .not('cat_pro', 'in', _excluded)
+              .order('name_elevage');
 
       // Secondary profiles from user_profiles table (only validated ones)
-      // Wrapped in its own try/catch: if statut_pro column doesn't exist yet,
-      // primary pros still load correctly.
       List<dynamic> secondaryRows = [];
       try {
-        secondaryRows = await _supa
-            .from('user_profiles')
-            .select()
-            .inFilter('profile_type', widget.catProValues)
-            .eq('statut_pro', 'actif');
+        secondaryRows = hasFilter
+            ? await _supa
+                .from('user_profiles')
+                .select()
+                .inFilter('profile_type', widget.catProValues)
+                .inFilter('statut_pro', ['actif', 'validated'])
+            : await _supa
+                .from('user_profiles')
+                .select()
+                .inFilter('statut_pro', ['actif', 'validated'])
+                .not('profile_type', 'in', _excluded);
       } catch (_) {}
 
+      // Secondaires d'abord : si un uid a un profil user_profiles (plus précis),
+      // il prend la priorité sur la ligne users (qui peut avoir cat_pro générique).
       final seenUids = <String>{};
       final merged = <Map<String, dynamic>>[];
 
-      for (final row in (primaryRows as List)) {
-        final uid = row['uid']?.toString() ?? '';
-        if (seenUids.add(uid)) merged.add(Map<String, dynamic>.from(row));
-      }
-
       for (final row in (secondaryRows as List)) {
         final uid = row['uid']?.toString() ?? '';
-        if (!seenUids.add(uid)) continue; // already shown as primary
+        if (!seenUids.add(uid)) continue;
+        final nomVal = row['nom'] ?? row['name_elevage'] ?? '';
+        final villeVal = row['ville_pro'] ?? row['ville'] ?? '';
         merged.add({
           'uid': uid,
-          '_profile_table_id': row['id']?.toString(), // UUID for secondary routing
-          'name_elevage': row['name_elevage'] ?? '',
+          '_profile_table_id': row['id']?.toString(),
+          'name_elevage': nomVal,
           'firstname': row['firstname'] ?? '',
           'cat_pro': row['profile_type'] ?? row['cat_pro'] ?? '',
           'profession_pro': row['profession_pro'] ?? '',
-          'ville': row['ville'] ?? '',
-          'ville_elevage': row['ville'] ?? '',
+          'ville': villeVal,
+          'ville_elevage': villeVal,
           'profile_picture_url': row['avatar_url'] ?? '',
           'profile_picture_url_elevage': row['avatar_url'] ?? '',
           'lat': row['latitude'] ?? row['lat'],
@@ -128,12 +150,23 @@ class _ServiceListPageState extends State<ServiceListPage> {
         });
       }
 
+      // Primaires : on ajoute uniquement les uids pas encore couverts par un profil secondaire
+      for (final row in (primaryRows as List)) {
+        final uid = row['uid']?.toString() ?? '';
+        if (!seenUids.add(uid)) continue;
+        merged.add(Map<String, dynamic>.from(row));
+      }
+
       if (mounted) {
         setState(() {
           _pros = merged;
           _filtered = merged;
           _loading = false;
         });
+        // Si une recherche est pré-remplie (depuis la page annuaire), appliquer les filtres
+        if (_search.isNotEmpty && mounted) {
+          _applyFilters();
+        }
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);

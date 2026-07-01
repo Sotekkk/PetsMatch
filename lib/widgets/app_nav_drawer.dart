@@ -10,6 +10,7 @@ import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
+import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
@@ -307,8 +308,13 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
         ),
         _DrawerItem(
           icon: Icons.storefront_outlined,
-          label: 'Services',
+          label: 'Annuaire professionnel',
           onTap: () => _push(const ServicesPage()),
+        ),
+        _DrawerItem(
+          icon: Icons.groups_outlined,
+          label: 'Communauté',
+          onTap: () => _push(const CommunauteHubPage()),
         ),
         _DrawerItem(
           icon: Icons.local_offer_outlined,
@@ -485,8 +491,13 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
           ),
         _DrawerItem(
           icon: Icons.storefront_outlined,
-          label: 'Services',
+          label: 'Annuaire professionnel',
           onTap: () => _push(const ServicesPage()),
+        ),
+        _DrawerItem(
+          icon: Icons.groups_outlined,
+          label: 'Communauté',
+          onTap: () => _push(const CommunauteHubPage()),
         ),
         _DrawerItem(
           icon: Icons.local_offer_outlined,

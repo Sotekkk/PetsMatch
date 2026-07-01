@@ -1,0 +1,132 @@
+'use client';
+
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
+
+// ── Items communauté ───────────────────────────────────────────────────────────
+
+interface CommunauteItem {
+  label: string;
+  subtitle: string;
+  icon: string;
+  color: string;
+  href: string;
+  authRequired: boolean;
+}
+
+const ITEMS: CommunauteItem[] = [
+  {
+    label: 'Balades canines',
+    subtitle: 'Organisez ou rejoignez des balades collectives',
+    icon: '🦮',
+    color: '#2E7D5E',
+    href: '/promenades',
+    authRequired: false,
+  },
+  {
+    label: 'Forum',
+    subtitle: 'Échangez avec la communauté sur tous les sujets',
+    icon: '💬',
+    color: '#1565C0',
+    href: '/communaute/forum',
+    authRequired: false,
+  },
+  {
+    label: 'Groupes',
+    subtitle: 'Rejoignez des groupes par espèce, race ou région',
+    icon: '👥',
+    color: '#6A1B9A',
+    href: '/communaute/groupes',
+    authRequired: false,
+  },
+  {
+    label: 'Lieux Pet-Friendly',
+    subtitle: 'Restaurants, hôtels, parcs acceptant les animaux',
+    icon: '🗺️',
+    color: '#00838F',
+    href: '/animal-friendly',
+    authRequired: false,
+  },
+  {
+    label: 'PetsFriends',
+    subtitle: 'Rencontrez d\'autres propriétaires près de chez vous',
+    icon: '🐾',
+    color: '#AD1457',
+    href: '/petfriends',
+    authRequired: true,
+  },
+];
+
+// ── Page ───────────────────────────────────────────────────────────────────────
+
+export default function CommunautePage() {
+  const { user } = useAuth();
+  const router = useRouter();
+
+  function handleClick(item: CommunauteItem, e: React.MouseEvent) {
+    if (item.authRequired && !user) {
+      e.preventDefault();
+      router.push('/connexion');
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-[#F8F8F8]">
+
+      {/* ── En-tête teal ────────────────────────────────────────────────── */}
+      <div className="bg-[#0C5C6C] text-white px-4 py-6">
+        <div className="max-w-2xl mx-auto">
+          <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Communauté
+          </h1>
+          <p className="text-white/70 text-sm mt-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Rejoignez la communauté des passionnés d&apos;animaux
+          </p>
+        </div>
+      </div>
+
+      {/* ── Items ─────────────────────────────────────────────────────────── */}
+      <div className="max-w-2xl mx-auto px-4 py-6 flex flex-col gap-3">
+        {ITEMS.map((item) => {
+          const needsAuth = item.authRequired && !user;
+          return (
+            <Link
+              key={item.label}
+              href={item.href}
+              onClick={(e) => handleClick(item, e)}
+              className="bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-4 flex items-center gap-4 hover:shadow-md hover:border-gray-200 transition-all"
+            >
+              {/* Icône */}
+              <div
+                className="w-12 h-12 flex-shrink-0 rounded-xl flex items-center justify-center text-2xl"
+                style={{ backgroundColor: item.color + '18' }}
+              >
+                {item.icon}
+              </div>
+              {/* Texte */}
+              <div className="flex-1 min-w-0">
+                <p className="text-[14px] font-bold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {item.label}
+                </p>
+                <p className="text-[12px] text-gray-400 mt-0.5" style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {item.subtitle}
+                </p>
+              </div>
+              {/* Badges */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {needsAuth && (
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">
+                    Connexion requise
+                  </span>
+                )}
+                <span className="text-gray-300">›</span>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+
+    </div>
+  );
+}

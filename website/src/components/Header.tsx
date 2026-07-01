@@ -41,7 +41,8 @@ const NAV_GUEST = [
   { href: '/elevages',       label: 'Élevages' },
   { href: '/associations',   label: 'Associations' },
   { href: '/animaux-perdus', label: 'Animaux perdus' },
-  { href: '/services',       label: 'Services' },
+  { href: '/services',       label: 'Annuaire' },
+  { href: '/communaute',     label: 'Communauté' },
   { href: '/marketplace',    label: 'Marketplace' },
 ];
 
@@ -49,7 +50,8 @@ const NAV_ELEVEUR = [
   { href: '/mes-animaux',             label: 'Mes Animaux' },
   { href: '/mes-annonces',            label: 'Mes Annonces' },
   { href: '/abonnement',              label: 'Abonnement' },
-  { href: '/services',                label: 'Services' },
+  { href: '/services',                label: 'Annuaire' },
+  { href: '/communaute',              label: 'Communauté' },
   { href: '/marketplace',             label: 'Marketplace' },
 ];
 
@@ -58,7 +60,8 @@ const NAV_PRO = [
   { href: '/',                     label: 'Accueil' },
   { href: '/adoptions', label: '💚 Adoptions' },
   { href: '/agenda',               label: 'Agenda' },
-  { href: '/services',             label: 'Services' },
+  { href: '/services',             label: 'Annuaire' },
+  { href: '/communaute',           label: 'Communauté' },
   { href: '/messages',             label: 'Messages' },
 ];
 
@@ -77,7 +80,8 @@ const NAV_PARTICULIER = [
   { href: '/annonces',             label: 'Annonces' },
   { href: '/adoptions', label: '💚 Adoptions' },
   { href: '/animaux-perdus',       label: 'Animaux perdus' },
-  { href: '/services',             label: 'Services' },
+  { href: '/services',             label: 'Annuaire' },
+  { href: '/communaute',           label: 'Communauté' },
   { href: '/marketplace',          label: 'Marketplace' },
   { href: '/messages',             label: 'Messages' },
 ];
@@ -135,10 +139,11 @@ const MENU_ELEVEUR = [
     ],
   },
   {
-    section: 'Services',
-    icon: '🏥',
+    section: 'Annuaire & Communauté',
+    icon: '🔎',
     items: [
-      { href: '/services', label: 'Annuaire des services', icon: '🔎' },
+      { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
+      { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
     ],
   },
 ];
@@ -164,11 +169,12 @@ const MENU_VET = [
     ],
   },
   {
-    section: 'Services',
+    section: 'Annuaire & Communauté',
     icon: '🔎',
     items: [
-      { href: '/services',    label: 'Annuaire des pros', icon: '🔎' },
-      { href: '/marketplace', label: 'Marketplace',       icon: '🛍️' },
+      { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
+      { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
+      { href: '/marketplace', label: 'Marketplace',                 icon: '🛍️' },
     ],
   },
 ];
@@ -194,11 +200,12 @@ const MENU_PRO = [
     ],
   },
   {
-    section: 'Services',
+    section: 'Annuaire & Communauté',
     icon: '🔎',
     items: [
-      { href: '/services',     label: 'Annuaire des pros', icon: '🔎' },
-      { href: '/marketplace',  label: 'Marketplace',       icon: '🛍️' },
+      { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
+      { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
+      { href: '/marketplace', label: 'Marketplace',                 icon: '🛍️' },
     ],
   },
 ];
@@ -216,10 +223,11 @@ const MENU_PENSION = [
     ],
   },
   {
-    section: 'Services',
-    icon: '🏥',
+    section: 'Annuaire & Communauté',
+    icon: '🔎',
     items: [
-      { href: '/services', label: 'Annuaire des services', icon: '🔎' },
+      { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
+      { href: '/communaute', label: 'Communauté',                  icon: '👥' },
     ],
   },
 ];
@@ -278,11 +286,12 @@ const MENU_ASSOCIATION = [
     ],
   },
   {
-    section: 'Services',
-    icon: '🏥',
+    section: 'Annuaire & Communauté',
+    icon: '🔎',
     items: [
-      { href: '/services',    label: 'Annuaire des services', icon: '🔎' },
-      { href: '/marketplace', label: 'Marketplace',           icon: '🛍️' },
+      { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
+      { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
+      { href: '/marketplace', label: 'Marketplace',                 icon: '🛍️' },
     ],
   },
 ];
@@ -325,10 +334,11 @@ const MENU_PARTICULIER = [
     ],
   },
   {
-    section: 'Services',
-    icon: '🏥',
+    section: 'Annuaire & Communauté',
+    icon: '🔎',
     items: [
-      { href: '/services', label: 'Annuaire des services', icon: '🔎' },
+      { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
+      { href: '/communaute', label: 'Communauté',                  icon: '👥' },
     ],
   },
 ];

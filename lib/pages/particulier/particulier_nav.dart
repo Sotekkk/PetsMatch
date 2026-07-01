@@ -11,6 +11,7 @@ import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
+import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
 import 'package:PetsMatch/pages/particulier/particulier_home.dart';
 import 'package:PetsMatch/pages/particulier/user_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
@@ -340,10 +341,18 @@ class _ParticulierNavState extends State<ParticulierNav> {
                 ),
                 _DrawerItem(
                   icon: Icons.storefront_outlined,
-                  label: 'Services',
+                  label: 'Annuaire professionnel',
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const ServicesPage()));
+                  },
+                ),
+                _DrawerItem(
+                  icon: Icons.groups_outlined,
+                  label: 'Communauté',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunauteHubPage()));
                   },
                 ),
                 _DrawerItem(
