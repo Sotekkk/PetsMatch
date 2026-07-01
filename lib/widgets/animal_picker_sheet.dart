@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AnimalPickerSheet extends StatefulWidget {
   final String? uid;
+  final String? profileId;
   final List<Map<String, dynamic>>? preloaded;
   final bool multiSelect;
   final List<Map<String, dynamic>> initialSelected;
@@ -18,6 +19,7 @@ class AnimalPickerSheet extends StatefulWidget {
   const AnimalPickerSheet({
     super.key,
     this.uid,
+    this.profileId,
     this.preloaded,
     this.multiSelect = false,
     this.initialSelected = const [],
@@ -28,6 +30,7 @@ class AnimalPickerSheet extends StatefulWidget {
   static Future<Map<String, dynamic>?> pickOne(
     BuildContext context, {
     String? uid,
+    String? profileId,
     List<Map<String, dynamic>>? preloaded,
     Map<String, dynamic>? current,
     Color accentColor = const Color(0xFF0C5C6C),
@@ -38,6 +41,7 @@ class AnimalPickerSheet extends StatefulWidget {
       backgroundColor: Colors.transparent,
       builder: (_) => AnimalPickerSheet(
         uid: uid,
+        profileId: profileId,
         preloaded: preloaded,
         multiSelect: false,
         initialSelected: current != null ? [current] : [],
@@ -52,6 +56,7 @@ class AnimalPickerSheet extends StatefulWidget {
   static Future<List<Map<String, dynamic>>?> pickMany(
     BuildContext context, {
     String? uid,
+    String? profileId,
     List<Map<String, dynamic>>? preloaded,
     List<Map<String, dynamic>> current = const [],
     Color accentColor = const Color(0xFF0C5C6C),
@@ -62,6 +67,7 @@ class AnimalPickerSheet extends StatefulWidget {
       backgroundColor: Colors.transparent,
       builder: (_) => AnimalPickerSheet(
         uid: uid,
+        profileId: profileId,
         preloaded: preloaded,
         multiSelect: true,
         initialSelected: current,
@@ -98,11 +104,13 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
     }
     try {
       final uid = widget.uid!;
-      final rows = await Supabase.instance.client
+      final pid = widget.profileId;
+      var q = Supabase.instance.client
           .from('animaux')
           .select('id, nom, espece, race, photo_url')
-          .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid')
-          .order('nom');
+          .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid');
+      if (pid != null && pid.isNotEmpty) q = q.eq('profile_id', pid);
+      final rows = await q.order('nom');
       if (mounted) {
         setState(() {
           _animaux = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();

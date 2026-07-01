@@ -1216,20 +1216,24 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
 }) {
   const [dateRef, setDateRef] = useState(toISODate(new Date()));
   const [animalId, setAnimalId] = useState('');
-  const [animaux, setAnimaux] = useState<{ id: string; nom: string; espece?: string }[]>([]);
+  const [showPicker, setShowPicker] = useState(false);
+  const [animaux, setAnimaux] = useState<{ id: string; nom: string; espece?: string; photo_url?: string | null }[]>([]);
   const [saving, setSaving] = useState(false);
 
   const cibleType = template.cible_type;
   const isBebes = cibleType === 'bebes';
   const needsAnimal = cibleType === 'individuel';
   const showDate = cibleType !== 'bebes' && cibleType !== 'gestantes';
+  const selectedAnimal = animaux.find(a => a.id === animalId);
 
   useEffect(() => {
     if (!needsAnimal) return;
-    const q = supabase.from('animaux').select('id, nom, espece').eq('uid_eleveur', uid).order('nom');
+    let q = supabase.from('animaux').select('id, nom, espece, photo_url').eq('uid_eleveur', uid);
+    if (profileId) q = q.eq('profile_id', profileId) as typeof q;
     (profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false'))
-      .then(({ data }) => setAnimaux((data ?? []) as { id: string; nom: string; espece?: string }[]));
-  }, [uid, needsAnimal, profilSource]);
+      .order('nom')
+      .then(({ data }) => setAnimaux((data ?? []) as { id: string; nom: string; espece?: string; photo_url?: string | null }[]));
+  }, [uid, needsAnimal, profilSource, profileId]);
 
   const apply = async () => {
     if (needsAnimal && !animalId) { alert('Sélectionnez un animal'); return; }
@@ -1252,6 +1256,7 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
         const sixMoisAgo = toISODate(addDays(new Date(), -183));
         let q = supabase.from('animaux').select('id, nom, date_naissance').eq('uid_eleveur', uid).gte('date_naissance', sixMoisAgo);
         if (template.espece) q = q.eq('espece', template.espece);
+        if (profileId) q = q.eq('profile_id', profileId) as typeof q;
         q = profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false') as typeof q;
         const { data: babies } = await q;
         for (const b of (babies ?? []) as { id: string; nom: string; date_naissance: string | null }[]) {
@@ -1262,6 +1267,7 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
         if (template.espece) q = q.eq('espece', template.espece);
         if (cibleType === 'males') q = q.eq('sexe', 'male');
         if (cibleType === 'femelles') q = q.eq('sexe', 'femelle');
+        if (profileId) q = q.eq('profile_id', profileId) as typeof q;
         q = profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false') as typeof q;
         const { data: all } = await q;
         for (const a of (all ?? []) as { id: string; nom: string }[]) {
@@ -1359,11 +1365,49 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
           {needsAnimal && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Animal</label>
-              <select value={animalId} onChange={e => setAnimalId(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500">
-                <option value="">— Choisir —</option>
-                {animaux.map(a => <option key={a.id} value={a.id}>{a.nom} ({a.espece})</option>)}
-              </select>
+              <div className="relative">
+                <button type="button" onClick={() => setShowPicker(v => !v)}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 border border-gray-200 rounded-xl text-sm hover:border-green-500 focus:outline-none focus:border-green-500 bg-white">
+                  {selectedAnimal ? (
+                    <>
+                      <div className="w-7 h-7 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
+                        {selectedAnimal.photo_url
+                          ? <img src={selectedAnimal.photo_url} alt="" className="w-full h-full object-cover" />
+                          : <span className="text-sm">🐾</span>}
+                      </div>
+                      <span className="font-medium text-gray-800 flex-1 text-left">{selectedAnimal.nom}</span>
+                      <span className="text-xs text-gray-400">{selectedAnimal.espece}</span>
+                    </>
+                  ) : (
+                    <span className="text-gray-400 flex-1 text-left">— Choisir un animal —</span>
+                  )}
+                  <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {showPicker && (
+                  <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                    {animaux.length === 0
+                      ? <p className="text-sm text-gray-400 text-center py-4">Aucun animal</p>
+                      : animaux.map(a => (
+                        <button key={a.id} type="button"
+                          onClick={() => { setAnimalId(a.id); setShowPicker(false); }}
+                          className="w-full flex items-center gap-3 px-3 py-2 hover:bg-green-50 text-left border-b border-gray-50 last:border-0 transition-colors">
+                          <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
+                            {a.photo_url
+                              ? <img src={a.photo_url} alt="" className="w-full h-full object-cover" />
+                              : <span className="text-sm">🐾</span>}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-gray-800 truncate">{a.nom}</p>
+                            {a.espece && <p className="text-xs text-gray-400">{a.espece}</p>}
+                          </div>
+                        </button>
+                      ))
+                    }
+                  </div>
+                )}
+              </div>
             </div>
           )}
           {showDate && (

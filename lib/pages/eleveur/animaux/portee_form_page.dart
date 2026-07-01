@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
@@ -143,11 +145,14 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
 
     // Animaux existants de l'éleveur
     try {
-      final rows = await _supa
+      final pid = User_Info.activeProfileId;
+      var q = _supa
           .from('animaux')
-          .select('id, nom, sexe, espece, race, identification, date_naissance')
+          .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url')
           .eq('uid_eleveur', uid)
           .or('statut.is.null,statut.eq.present');
+      if (pid.isNotEmpty) q = q.eq('profile_id', pid);
+      final rows = await q;
       if (mounted) setState(() {
         _animauxExistants = List<Map<String, dynamic>>.from(rows as List);
         _loading = false;
@@ -1004,12 +1009,28 @@ class _AnimalPickerSheetState extends State<_AnimalPickerSheet> {
             controller: scroll,
             itemCount: _filtered.length,
             itemBuilder: (_, i) {
-              final a   = _filtered[i];
-              final nom  = a['nom']  as String? ?? 'Sans nom';
-              final race = a['race'] as String? ?? '';
+              final a        = _filtered[i];
+              final nom      = a['nom']  as String? ?? 'Sans nom';
+              final race     = a['race'] as String? ?? '';
+              final photoUrl = a['photo_url'] as String? ?? '';
               return ListTile(
-                leading: CircleAvatar(backgroundColor: _teal.withValues(alpha: 0.1),
-                    child: const Icon(Icons.pets, color: _teal, size: 18)),
+                leading: Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: _teal.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: photoUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: photoUrl,
+                            width: 44, height: 44, fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => const Center(child: Text('🐾', style: TextStyle(fontSize: 18))),
+                          )
+                        : const Center(child: Text('🐾', style: TextStyle(fontSize: 18))),
+                  ),
+                ),
                 title: Text(nom, style: const TextStyle(fontFamily: 'Galey',
                     fontWeight: FontWeight.w600, fontSize: 14)),
                 subtitle: race.isNotEmpty ? Text(race, style: const TextStyle(

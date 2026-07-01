@@ -2564,9 +2564,11 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
   @override void dispose() { _labelCtrl.dispose(); super.dispose(); }
 
   Future<void> _pickAnimaux() async {
+    final pid = User_Info.activeProfileId;
     final result = await AnimalPickerSheet.pickMany(
       context,
       uid: widget.uid,
+      profileId: pid.isNotEmpty ? pid : null,
       current: _selectedAnimaux,
       accentColor: const Color(0xFFD97706),
     );
@@ -2758,9 +2760,11 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
   @override void dispose() { _titreCtrl.dispose(); _notesCtrl.dispose(); super.dispose(); }
 
   Future<void> _pickAnimaux() async {
+    final pid = User_Info.activeProfileId;
     final result = await AnimalPickerSheet.pickMany(
       context,
       uid: widget.uid,
+      profileId: pid.isNotEmpty ? pid : null,
       current: _selectedAnimaux,
     );
     if (result != null && mounted) setState(() => _selectedAnimaux = result);

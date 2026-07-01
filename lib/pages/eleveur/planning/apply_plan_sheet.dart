@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/planning_service.dart';
 
 class ApplyPlanSheet extends StatefulWidget {
@@ -69,8 +71,10 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
     try {
       final supa = Supabase.instance.client;
       final espece = widget.template['espece'] as String?;
-      var q = supa.from('animaux').select('id, nom, espece, sexe').eq('uid_eleveur', widget.uid);
+      final pid = User_Info.activeProfileId;
+      var q = supa.from('animaux').select('id, nom, espece, sexe, photo_url').eq('uid_eleveur', widget.uid);
       if (espece != null && espece.isNotEmpty) q = q.eq('espece', espece);
+      if (pid.isNotEmpty) q = q.eq('profile_id', pid);
       final rows = await q.order('nom');
       if (mounted) {
         setState(() {
@@ -224,15 +228,33 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
                         itemCount: _filteredAnimaux.length,
                         separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (_, i) {
-                          final a  = _filteredAnimaux[i];
-                          final id = a['id'] as String;
-                          final sexe = a['sexe']?.toString() ?? '';
+                          final a        = _filteredAnimaux[i];
+                          final id       = a['id'] as String;
+                          final sexe     = a['sexe']?.toString() ?? '';
                           final sexeLabel = sexe == 'male' ? '♂' : sexe == 'femelle' ? '♀' : '';
+                          final photoUrl = a['photo_url'] as String? ?? '';
                           return CheckboxListTile(
                             value: _selectedIds.contains(id),
                             onChanged: (v) => setState(() {
                               if (v == true) { _selectedIds.add(id); } else { _selectedIds.remove(id); }
                             }),
+                            secondary: Container(
+                              width: 36, height: 36,
+                              decoration: BoxDecoration(
+                                color: _green.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: photoUrl.isNotEmpty
+                                    ? CachedNetworkImage(
+                                        imageUrl: photoUrl,
+                                        width: 36, height: 36, fit: BoxFit.cover,
+                                        errorWidget: (_, __, ___) => const Center(child: Text('🐾', style: TextStyle(fontSize: 15))),
+                                      )
+                                    : const Center(child: Text('🐾', style: TextStyle(fontSize: 15))),
+                              ),
+                            ),
                             title: Text('${a['nom'] ?? ''} $sexeLabel',
                                 style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
                             subtitle: Text(a['espece']?.toString() ?? '',

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { triggerAutoProtocoles } from '@/lib/planning-service';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { loadBreeds } from '@/lib/breeds';
 import { uploadBlob } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
@@ -66,6 +67,7 @@ function tUrl(url: string) {
 
 export default function PorteePage() {
   const { user, userData } = useAuth();
+  const activeProfileId = useActiveProfile();
   const router   = useRouter();
 
   // Champs communs
@@ -122,13 +124,14 @@ export default function PorteePage() {
   async function loadMaleAnimals() {
     if (!user) return;
     setLoadingMales(true);
-    const { data } = await supabase.from('animaux')
+    let qm = supabase.from('animaux')
       .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url')
       .eq('uid_eleveur', user.uid)
       .eq('espece', espece)
       .eq('sexe', 'male')
-      .or('statut.is.null,statut.eq.present')
-      .order('nom');
+      .or('statut.is.null,statut.eq.present');
+    if (activeProfileId) qm = qm.eq('profile_id', activeProfileId) as typeof qm;
+    const { data } = await qm.order('nom');
     setMyMales((data ?? []) as ExistingAnimal[]);
     setLoadingMales(false);
   }
@@ -136,13 +139,14 @@ export default function PorteePage() {
   async function loadFemelleAnimals() {
     if (!user) return;
     setLoadingFemelles(true);
-    const { data } = await supabase.from('animaux')
+    let qf = supabase.from('animaux')
       .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url')
       .eq('uid_eleveur', user.uid)
       .eq('espece', espece)
       .eq('sexe', 'femelle')
-      .or('statut.is.null,statut.eq.present')
-      .order('nom');
+      .or('statut.is.null,statut.eq.present');
+    if (activeProfileId) qf = qf.eq('profile_id', activeProfileId) as typeof qf;
+    const { data } = await qf.order('nom');
     setMyFemelles((data ?? []) as ExistingAnimal[]);
     setLoadingFemelles(false);
   }
