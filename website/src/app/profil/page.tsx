@@ -284,7 +284,7 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
         if (!data) { setLoading(false); return; }
         const r = data as Record<string, unknown>;
         setProfileLabel((r.profile_label as string) ?? '');
-        setNomAsso((r.name_elevage as string) ?? '');
+        setNomAsso(((r.nom ?? r.name_elevage) as string) ?? '');
         setNomResponsable((r.profession_pro as string) ?? '');
         setRna((r.ordre_veterinaire as string) ?? '');
         setSiret((r.siret as string) ?? '');
@@ -328,7 +328,7 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
 
       const payload: Record<string, unknown> = {
         profile_label:     profileLabel.trim() || nomAsso.trim(),
-        name_elevage:      nomAsso.trim(),
+        nom:               nomAsso.trim(),
         profession_pro:    nomResponsable.trim(),
         ordre_veterinaire: rna.trim(),
         siret:             siret.trim(),
@@ -652,6 +652,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [phone, setPhone] = useState('');
   const [rayon, setRayon] = useState(20);
   const [acceptNewClients, setAcceptNewClients] = useState(true);
+  const [urgences24h, setUrgences24h] = useState(false);
   const [siret, setSiret] = useState('');
   const [rue, setRue] = useState('');
   const [ville, setVille] = useState('');
@@ -671,7 +672,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         if (!row) { setLoading(false); return; }
         const r = row as Record<string, unknown>;
         setData(r as unknown as ProProfileData);
-        setNomStructure((r.name_elevage as string) ?? '');
+        setNomStructure(((r.nom ?? r.name_elevage) as string) ?? '');
         setProfileLabel((r.profile_label as string) ?? '');
         setProfession((r.profession_pro as string) ?? '');
         setDescription(((r.desc_entreprise ?? r.description) as string) ?? '');
@@ -682,6 +683,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         setPhone((r.phone as string) ?? '');
         setRayon(((r.rayon_intervention as number) ?? 20));
         setAcceptNewClients((r.accept_new_clients as boolean) ?? true);
+        setUrgences24h((r.urgences_24h as boolean) ?? false);
         setSiret((r.siret as string) ?? '');
         setRue((r.rue as string) ?? '');
         setVille((r.ville as string) ?? '');
@@ -714,7 +716,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   async function handleSave() {
     setSaving(true);
     const payload: Record<string, unknown> = {
-      name_elevage: nomStructure.trim(),
+      nom:           nomStructure.trim(),
       profile_label: profileLabel.trim(),
       profession_pro: profession.trim(),
       desc_entreprise: description.trim(),
@@ -725,6 +727,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       phone: phone.trim(),
       rayon_intervention: rayon,
       accept_new_clients: acceptNewClients,
+      ...(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire' ? { urgences_24h: urgences24h } : {}),
       siret: siret.trim(),
       rue: rue.trim(),
       ville: ville.trim(),
@@ -832,6 +835,28 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
               <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${acceptNewClients ? 'left-5' : 'left-0.5'}`} />
             </button>
           </div>
+
+          {/* Toggle urgences 24h — vétérinaires uniquement */}
+          {(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire') && (
+            <div
+              className="flex items-center justify-between py-2 px-3 rounded-xl"
+              style={{
+                backgroundColor: urgences24h ? 'rgba(230,81,0,0.06)' : 'transparent',
+                border: urgences24h ? '1px solid rgba(230,81,0,0.25)' : '1px solid transparent',
+              }}
+            >
+              <div>
+                <p className="text-sm font-medium" style={{ color: urgences24h ? '#E65100' : '#1F2A2E' }}>
+                  ⚠️ Urgences 24h/24
+                </p>
+                <p className="text-xs text-gray-400">Affiché comme vétérinaire de garde disponible en urgence</p>
+              </div>
+              <button type="button" onClick={() => setUrgences24h(v => !v)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${urgences24h ? 'bg-[#E65100]' : 'bg-gray-200'}`}>
+                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${urgences24h ? 'left-5' : 'left-0.5'}`} />
+              </button>
+            </div>
+          )}
         </Card>
 
         {/* Adresse */}

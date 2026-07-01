@@ -57,6 +57,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   double? _lng;
 
   bool _acceptNewClients = true;
+  bool _urgences24h = false;
   String _catPro = '';
   String _siret = '';
   String _ordreVeterinaire = '';
@@ -135,7 +136,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         final isSecondary = widget.secondaryProfileId != null;
         _photoUrl  = isSecondary ? row['avatar_url'] as String? : row['profile_picture_url_elevage'] as String?;
         _bannerUrl = row['banner_url'] as String?;
-        _nomStructureCtrl.text = row['name_elevage']    ?? User_Info.nameElevage;
+        _nomStructureCtrl.text = (row['nom'] ?? row['name_elevage']) ?? User_Info.nameElevage;
         _professionCtrl.text   = row['profession_pro']  ?? User_Info.professionPro;
         _descCtrl.text         = isSecondary
             ? (row['desc_entreprise'] ?? row['description'] ?? User_Info.descEntreprise)
@@ -146,6 +147,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         _facebookCtrl.text     = row['facebook']        ?? '';
         _rayonKm               = (row['rayon_intervention'] as num?)?.toInt() ?? 20;
         _acceptNewClients      = row['accept_new_clients'] ?? true;
+        _urgences24h           = row['urgences_24h'] ?? false;
 
         if (isSecondary) {
           _lat = (row['latitude'] as num?)?.toDouble() ?? (row['lat'] as num?)?.toDouble();
@@ -168,6 +170,14 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         }
         _addressSearchCtrl.text = [_rueCtrl.text, _cpCtrl.text, _villeCtrl.text]
             .where((s) => s.isNotEmpty).join(', ');
+
+        // Auto-géocode si les coordonnées sont manquantes mais l'adresse est connue
+        if (_lat == null && _lng == null && _addressSearchCtrl.text.isNotEmpty) {
+          try {
+            final locs = await geo.locationFromAddress(_addressSearchCtrl.text);
+            if (locs.isNotEmpty) { _lat = locs.first.latitude; _lng = locs.first.longitude; }
+          } catch (_) {}
+        }
 
         if (row['especes_acceptees'] is List) {
           _especesAcceptees = List<String>.from(row['especes_acceptees']);
@@ -337,7 +347,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       if (widget.secondaryProfileId != null) {
         // ── Profil secondaire → user_profiles ─────────────────────────────────
         await _supa.from('user_profiles').update({
-          'name_elevage':       _nomStructureCtrl.text.trim(),
+          'nom':                _nomStructureCtrl.text.trim(),
           'profession_pro':     _professionCtrl.text.trim(),
           'desc_entreprise':    _descCtrl.text.trim(),
           'tarifs':             _tarifsCtrl.text.trim(),
@@ -349,6 +359,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'horaires':           horairesMap,
           'certifications':     _certifications,
           'accept_new_clients': _acceptNewClients,
+          if (_catPro == 'veterinaire') 'urgences_24h': _urgences24h,
           'cat_pro':            _catPro,
           'is_pro':             true,
           'durees_motifs':      _dureesMotifs,
@@ -548,6 +559,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     const SizedBox(height: 16),
                   ],
                   _acceptClientsToggle(),
+
+                  if (_catPro == 'veterinaire') ...[
+                    const SizedBox(height: 12),
+                    _urgences24hToggle(),
+                  ],
 
                   // ── Espèces ───────────────────────────────────────────────
                   const SizedBox(height: 24),
@@ -1050,6 +1066,37 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           value: _acceptNewClients,
           onChanged: (v) => setState(() => _acceptNewClients = v),
           activeThumbColor: const Color(0xFF6E9E57),
+        ),
+      ]),
+    );
+  }
+
+  Widget _urgences24hToggle() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: _urgences24h ? const Color(0xFFFFF3E0) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: _urgences24h ? Border.all(color: const Color(0xFFE65100).withValues(alpha: 0.35)) : null,
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      child: Row(children: [
+        Icon(Icons.emergency_rounded,
+            color: _urgences24h ? const Color(0xFFE65100) : Colors.grey, size: 20),
+        const SizedBox(width: 12),
+        const Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Urgences 24h/24',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+            Text('Affiché comme vétérinaire de garde disponible en urgence',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+          ]),
+        ),
+        Switch(
+          value: _urgences24h,
+          onChanged: (v) => setState(() => _urgences24h = v),
+          activeColor: const Color(0xFFE65100),
+          activeThumbColor: Colors.white,
         ),
       ]),
     );
