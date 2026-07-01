@@ -18,6 +18,6 @@ CREATE INDEX IF NOT EXISTS idx_cessions_acq_profile   ON cessions(acquereur_prof
 UPDATE cessions c
 SET pro_profile_id = up.id
 FROM user_profiles up
-WHERE up.firebase_uid = c.uid_eleveur
+WHERE up.uid = c.uid_eleveur
   AND up.is_main = true
   AND c.pro_profile_id IS NULL;
