@@ -92,6 +92,7 @@ class _CessionSheetState extends State<CessionSheet> {
           .from('documents_animaux')
           .select('id, type, titre, url, statut, created_at, metadata')
           .eq('animal_id', animalId)
+          .eq('uid_eleveur', widget.uid)
           .inFilter('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession'])
           .order('created_at', ascending: false);
       if (mounted) {
@@ -213,10 +214,12 @@ class _CessionSheetState extends State<CessionSheet> {
       final nomAnimal  = widget.animal['nom'] as String? ?? '';
       final acqNom     = _nomCtrl.text.trim();
 
+      final pid = User_Info.activeProfileId;
       // Créer ou récupérer le doc dans documents_animaux
       final res = await _supa.from('documents_animaux').insert({
         'animal_id':   animalId,
         'uid_eleveur': widget.uid,
+        if (pid.isNotEmpty) 'pro_profile_id': pid,
         'type':        type,
         'titre':       '$titreLabel — $nomAnimal',
         'statut':      'brouillon',
@@ -267,10 +270,12 @@ class _CessionSheetState extends State<CessionSheet> {
       final contratUrl     = _contratUrl ?? _selectedContrat?['url'] as String?;
       final certificatUrl  = _certificatUrl ?? _selectedCertificat?['url'] as String?;
 
+      final cedantProfileId = User_Info.activeProfileId;
       // 1. Créer l'enregistrement de cession (sans transférer la fiche)
       final row = await _supa.from('cessions').insert({
         'animal_id':          widget.animal['id'],
         'uid_eleveur':        widget.uid,
+        if (cedantProfileId.isNotEmpty) 'pro_profile_id': cedantProfileId,
         'uid_acquereur':      _foundUser?['uid'],
         'email_acquereur':    _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
         'nom_acquereur':      _nomCtrl.text.trim(),
