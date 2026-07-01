@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/services/service_detail_page.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/widgets/verification_badge.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Page annuaire — liste des professionnels d'une catégorie.
 class ServiceListPage extends StatefulWidget {
@@ -456,6 +457,115 @@ class _ServiceListPageState extends State<ServiceListPage> {
     );
   }
 
+  // ── Bannière urgences vétérinaires ────────────────────────────────────────
+
+  Widget _buildUrgencesVetBanner() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF3E0),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFFF6F00).withValues(alpha: 0.35)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // En-tête
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6F00).withValues(alpha: 0.10),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.emergency_rounded, color: Color(0xFFE65100), size: 18),
+                  SizedBox(width: 8),
+                  Text('Urgences vétérinaires 24h/24',
+                      style: TextStyle(
+                          fontFamily: 'Galey',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          color: Color(0xFFE65100))),
+                ],
+              ),
+            ),
+            // Ligne n° national
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.phone_outlined, size: 16, color: Color(0xFFE65100)),
+                  const SizedBox(width: 8),
+                  const Text('3115',
+                      style: TextStyle(
+                          fontFamily: 'Galey',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: Color(0xFFE65100))),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text('— Vétérinaire de garde national',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                  ),
+                  GestureDetector(
+                    onTap: () async {
+                      final uri = Uri(scheme: 'tel', path: '3115');
+                      try { await _launchUri(uri); } catch (_) {}
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE65100),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text('Appeler',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Lien vétérinaire de garde Paris
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 2, 14, 12),
+              child: GestureDetector(
+                onTap: () async {
+                  final uri = Uri.parse('https://www.veterinaire-de-garde-paris.fr');
+                  try { await _launchUri(uri); } catch (_) {}
+                },
+                child: Row(
+                  children: [
+                    const Icon(Icons.open_in_new_rounded, size: 13, color: Color(0xFF0C5C6C)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text('Vétérinaire de garde Paris',
+                          style: const TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF0C5C6C),
+                              decoration: TextDecoration.underline)),
+                    ),
+                    Text('veterinaire-de-garde-paris.fr',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade400)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _launchUri(Uri uri) async {
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
   // ── Vue carte plein écran ─────────────────────────────────────────────────
 
   Widget _buildMapView() {
@@ -589,6 +699,10 @@ class _ServiceListPageState extends State<ServiceListPage> {
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(child: _buildFiltersBar()),
+
+          // Bannière urgences vétérinaires
+          if (widget.catProValues.contains('veterinaire'))
+            SliverToBoxAdapter(child: _buildUrgencesVetBanner()),
 
           if (_loading)
             const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: Color(0xFF6E9E57))))
@@ -792,6 +906,7 @@ class _ProCard extends StatelessWidget {
     final accept     = pro['accept_new_clients'] ?? true;
     final especes    = pro['especes_acceptees'];
     final especeList = especes is List ? List<String>.from(especes) : <String>[];
+    final urgences24h = pro['urgences_24h'] == true;
 
     return GestureDetector(
       onTap: onTap,
@@ -834,6 +949,21 @@ class _ProCard extends StatelessWidget {
                 Row(children: [
                   Expanded(child: Text(nom.toString(),
                       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1E2025)))),
+                  if (urgences24h) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE65100).withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.emergency_rounded, size: 11, color: Color(0xFFE65100)),
+                        SizedBox(width: 3),
+                        Text('24h/24', style: TextStyle(fontFamily: 'Galey', fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFFE65100))),
+                      ]),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                   VerificationBadge(
                     level: getVerificationLevel(
                       statutPro: pro['statut_pro']?.toString(),

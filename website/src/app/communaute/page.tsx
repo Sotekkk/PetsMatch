@@ -125,6 +125,58 @@ export default function CommunautePage() {
             </Link>
           );
         })}
+
+        {/* ── SOS Maltraitance ───────────────────────────────────────────── */}
+        <div
+          className="rounded-2xl overflow-hidden"
+          style={{ border: '1px solid rgba(198,40,40,0.25)', backgroundColor: '#FCE4EC' }}
+        >
+          {/* En-tête */}
+          <div
+            className="px-4 py-2.5 flex items-center gap-2"
+            style={{ backgroundColor: 'rgba(198,40,40,0.09)' }}
+          >
+            <span className="text-base">⚠️</span>
+            <p className="text-[13px] font-bold" style={{ fontFamily: 'Galey, sans-serif', color: '#C62828' }}>
+              Signalement maltraitance animale
+            </p>
+          </div>
+
+          {/* Numéro 3677 */}
+          <div className="px-4 pt-3 pb-2 flex items-center gap-3">
+            <div className="flex-1 flex items-center gap-2">
+              <span className="text-base">📞</span>
+              <span className="text-[18px] font-bold" style={{ fontFamily: 'Galey, sans-serif', color: '#C62828' }}>
+                3677
+              </span>
+              <span className="text-[12px] text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
+                — SOS Maltraitance Animale
+              </span>
+            </div>
+            <a
+              href="tel:3677"
+              className="text-[11px] font-bold text-white px-3 py-1.5 rounded-full flex-shrink-0"
+              style={{ backgroundColor: '#C62828', fontFamily: 'Galey, sans-serif' }}
+            >
+              Appeler
+            </a>
+          </div>
+
+          {/* Lien formulaire */}
+          <div className="px-4 pb-3">
+            <a
+              href="https://3677.fr/formulaire-de-signalement"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[12px] font-semibold flex items-center gap-1.5"
+              style={{ fontFamily: 'Galey, sans-serif', color: '#0C5C6C', textDecoration: 'underline' }}
+            >
+              <span className="text-[11px]">↗</span>
+              Formulaire de signalement en ligne
+            </a>
+          </div>
+        </div>
+
       </div>
 
     </div>

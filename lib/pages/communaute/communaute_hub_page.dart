@@ -7,6 +7,7 @@ import 'package:PetsMatch/pages/evenements/evenements_page.dart';
 import 'package:PetsMatch/pages/lieux/lieux_pet_friendly_page.dart';
 import 'package:PetsMatch/pages/petfriends/petfriends_page.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const _teal = Color(0xFF0C5C6C);
 const _bg = Color(0xFFF8F8F8);
@@ -164,6 +165,14 @@ class CommunauteHubPage extends StatelessWidget {
                     section: _sections[i],
                     onTap: () => _navigate(ctx, _sections[i]),
                   ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // ── SOS Maltraitance ──────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _SosMaltraitanceCard(),
                 ),
 
                 const SizedBox(height: 30),
@@ -376,6 +385,107 @@ class _LoginPromptSheet extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── SOS Maltraitance card ─────────────────────────────────────────────────────
+
+class _SosMaltraitanceCard extends StatelessWidget {
+  const _SosMaltraitanceCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFCE4EC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFC62828).withValues(alpha: 0.30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFC62828).withValues(alpha: 0.10),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+            ),
+            child: const Row(children: [
+              Icon(Icons.warning_amber_rounded, color: Color(0xFFC62828), size: 18),
+              SizedBox(width: 8),
+              Text('Signalement maltraitance animale',
+                  style: TextStyle(
+                      fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: Color(0xFFC62828))),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+            child: Row(children: [
+              const Icon(Icons.phone_outlined, size: 16, color: Color(0xFFC62828)),
+              const SizedBox(width: 8),
+              const Text('3677',
+                  style: TextStyle(
+                      fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: Color(0xFFC62828))),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text('— SOS Maltraitance Animale',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+              ),
+              GestureDetector(
+                onTap: () async {
+                  try {
+                    await launchUrl(Uri(scheme: 'tel', path: '3677'),
+                        mode: LaunchMode.externalApplication);
+                  } catch (_) {}
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC62828),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text('Appeler',
+                      style: TextStyle(
+                          fontFamily: 'Galey',
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
+                ),
+              ),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 2, 14, 12),
+            child: GestureDetector(
+              onTap: () async {
+                try {
+                  await launchUrl(
+                      Uri.parse('https://3677.fr/formulaire-de-signalement'),
+                      mode: LaunchMode.externalApplication);
+                } catch (_) {}
+              },
+              child: const Row(children: [
+                Icon(Icons.open_in_new_rounded, size: 13, color: Color(0xFF0C5C6C)),
+                SizedBox(width: 6),
+                Text('Formulaire de signalement en ligne',
+                    style: TextStyle(
+                        fontFamily: 'Galey',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF0C5C6C),
+                        decoration: TextDecoration.underline)),
+              ]),
+            ),
+          ),
+        ],
       ),
     );
   }
