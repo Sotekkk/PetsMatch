@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -342,8 +341,6 @@ function RdvCard({ rdv, tab, onAccepter, onRefuser, onAnnuler, onTerminer, onDel
 export default function PensionRdvPage() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
-  const activeProfileId = useActiveProfile();
-
   const [activeTab, setActiveTab] = useState<'demandes' | 'a_venir' | 'historique'>('demandes');
   const [rdvs, setRdvs] = useState<Rdv[]>([]);
   const [fetching, setFetching] = useState(true);
@@ -363,18 +360,10 @@ export default function PensionRdvPage() {
     if (!user) return;
     setFetching(true);
     try {
-      // Chercher le profil pension directement en BDD plutôt que de dépendre du localStorage
-      const { data: profileRow } = await supabase
-        .from('user_profiles')
-        .select('id')
-        .eq('uid', user.uid)
-        .eq('profile_type', 'pension')
-        .maybeSingle();
-      const proProfileId = profileRow?.id ?? activeProfileId;
-
-      let q = supabase.from('rdv').select('*').eq('pro_uid', user.uid).order('date_heure', { ascending: true });
-      if (proProfileId) q = (q as any).eq('pro_profile_id', proProfileId);
-      const { data } = await q;
+      // Filtre uniquement par pro_uid — la page est déjà réservée aux pensions (isPension)
+      const { data } = await supabase.from('rdv').select('*')
+        .eq('pro_uid', user.uid)
+        .order('date_heure', { ascending: true });
 
       const list = (data ?? []) as Rdv[];
       const clientUids = [...new Set(list.map(r => r.client_uid).filter(Boolean))];
@@ -415,7 +404,7 @@ export default function PensionRdvPage() {
         visitCount: visitCounts[r.client_uid] ?? 0,
       })));
     } catch { /* ignore */ } finally { setFetching(false); }
-  }, [user, activeProfileId]);
+  }, [user]);
 
   useEffect(() => { fetchRdvs(); }, [fetchRdvs]);
 
