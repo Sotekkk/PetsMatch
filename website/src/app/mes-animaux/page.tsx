@@ -932,6 +932,7 @@ export default function MesAnimauxPage() {
       <PorteeSoinModal
         animals={soinPorteeAnimals}
         uid={user?.uid ?? ''}
+        activeProfileId={activeProfileId ?? null}
         onClose={() => setSoinPorteeAnimals(null)}
       />
     )}
@@ -972,9 +973,10 @@ const ACTE_TYPES = [
   { value: 'autre',           label: 'Autre',               emoji: '📋' },
 ];
 
-function PorteeSoinModal({ animals, uid, onClose }: {
+function PorteeSoinModal({ animals, uid, activeProfileId, onClose }: {
   animals: Animal[];
   uid: string;
+  activeProfileId: string | null;
   onClose: () => void;
 }) {
   const [typeActe, setTypeActe]       = useState('vermifuge');
