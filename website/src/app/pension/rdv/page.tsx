@@ -339,7 +339,7 @@ function RdvCard({ rdv, tab, onAccepter, onRefuser, onAnnuler, onTerminer, onDel
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export default function PensionRdvPage() {
-  const { user, userData, loading } = useAuth();
+  const { user, userData, loading, availableProfiles } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'demandes' | 'a_venir' | 'historique'>('demandes');
   const [rdvs, setRdvs] = useState<Rdv[]>([]);
@@ -349,8 +349,10 @@ export default function PensionRdvPage() {
   const [modalRefuser, setModalRefuser]   = useState<Rdv | null>(null);
   const [modalAnnuler, setModalAnnuler]   = useState<Rdv | null>(null);
 
-  const isPension = userData?.isPro && userData?.catPro === 'pension';
-  const proName   = userData?.nameElevage ?? userData?.firstname ?? 'La pension';
+  // Vérifie si l'utilisateur a AU MOINS un profil pension (peu importe le profil actif)
+  const pensionProfile = availableProfiles.find(p => p.profile_type === 'pension');
+  const isPension = !!(pensionProfile ?? (userData?.isPro && userData?.catPro === 'pension'));
+  const proName   = (pensionProfile?.nom as string | null) ?? userData?.nameElevage ?? userData?.firstname ?? 'La pension';
 
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
