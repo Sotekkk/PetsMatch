@@ -1,5 +1,5 @@
+import 'dart:convert';
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/main.dart';
@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ─────────────────────────────────────────────────────────────
@@ -127,6 +128,31 @@ class _FacturationPageState extends State<FacturationPage> {
 
   void _refresh() => setState(() => _future = _load());
 
+  Future<void> _exportCsv(List<Map<String, dynamic>> docs) async {
+    if (docs.isEmpty) return;
+    String esc(Object? v) => '"${(v?.toString() ?? '').replaceAll('"', '""')}"';
+    final header = ['Numéro', 'Date', 'Client', 'Email', 'Statut', 'Total HT', 'Total TVA', 'Total TTC', 'Échéance'];
+    final rows = docs.map((d) => [
+      d['numeroFacture'],
+      d['dateFacture'],
+      d['nomClient'],
+      d['emailClient'],
+      d['statut'] == 'payee' ? 'Payée' : d['statut'] == 'annulee' ? 'Annulée' : 'Émise',
+      (d['totalHT'] ?? 0.0).toStringAsFixed(2),
+      (d['totalTVA'] ?? 0.0).toStringAsFixed(2),
+      (d['totalTTC'] ?? 0.0).toStringAsFixed(2),
+      d['dateEcheance'],
+    ]);
+    final csv = [header, ...rows].map((r) => r.map(esc).join(';')).join('\r\n');
+    final bytes = utf8.encode('﻿$csv');
+    final xFile = XFile.fromData(
+      Uint8List.fromList(bytes),
+      mimeType: 'text/csv',
+      name: 'factures_${DateTime.now().millisecondsSinceEpoch}.csv',
+    );
+    await Share.shareXFiles([xFile], subject: 'Export factures PetsMatch');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -136,6 +162,16 @@ class _FacturationPageState extends State<FacturationPage> {
         foregroundColor: Colors.white,
         title: const Text('Mes Factures',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.ios_share_outlined),
+            tooltip: 'Exporter (CSV)',
+            onPressed: () async {
+              final docs = await _future;
+              if (docs.isNotEmpty) _exportCsv(docs);
+            },
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: _green,

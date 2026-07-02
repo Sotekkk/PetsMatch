@@ -132,6 +132,31 @@ export default function FacturationPage() {
   const filtered = filtreStatut === 'tous' ? factures : factures.filter((f) => (f.statut ?? 'emise') === filtreStatut);
   const totalEmises = factures.filter((f) => (f.statut ?? 'emise') === 'emise').reduce((s, f) => s + (f.total_ttc ?? 0), 0);
 
+  function exportCsv() {
+    const header = ['Numéro', 'Date', 'Client', 'Email', 'Statut', 'Total HT', 'Total TVA', 'Total TTC', "Date d'échéance"];
+    const rows = filtered.map(f => [
+      f.numero_facture ?? '',
+      isoToFr(f.date_facture),
+      `${f.prenom_client ?? ''} ${f.nom_client ?? ''}`.trim(),
+      f.email_client ?? '',
+      STATUT_LABEL[f.statut ?? 'emise'],
+      (f.total_ht ?? 0).toFixed(2),
+      (f.total_tva ?? 0).toFixed(2),
+      (f.total_ttc ?? 0).toFixed(2),
+      isoToFr(f.date_echeance),
+    ]);
+    const csv = [header, ...rows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(';'))
+      .join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `factures_${today()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-10">
       <div className="flex items-center justify-between mb-6">
@@ -143,10 +168,17 @@ export default function FacturationPage() {
             {totalEmises > 0 && ` · ${totalEmises.toFixed(2)} € en attente`}
           </p>
         </div>
-        <button onClick={() => setShowForm(true)}
-          className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2">
-          + Nouvelle facture
-        </button>
+        <div className="flex gap-2">
+          <button onClick={exportCsv} disabled={filtered.length === 0}
+            className="border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2"
+            title="Export CSV — compatible avec la plupart des logiciels comptables">
+            ⬇️ Exporter (CSV)
+          </button>
+          <button onClick={() => setShowForm(true)}
+            className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2">
+            + Nouvelle facture
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-2 flex-wrap mb-6">

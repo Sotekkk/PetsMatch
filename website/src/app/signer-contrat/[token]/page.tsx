@@ -8,6 +8,7 @@ import {
   AnimalContrat, DataContrat, EleveurContrat,
 } from '@/lib/contrat-vente';
 import { generateContratAdoptionHTML } from '@/lib/contrat-adoption';
+import { generateContratHebergementHTML } from '@/lib/contrat-pension';
 import { useAuth } from '@/lib/auth-context';
 
 const supabase = createClient(
@@ -31,6 +32,7 @@ type DocStatut = 'brouillon' | 'en_attente' | 'signe' | 'archive' | 'partielleme
 interface DocRow {
   id: string;
   animal_id: string;
+  pension_entree_id?: string;
   uid_eleveur: string;
   type: string;
   titre: string;
@@ -137,7 +139,29 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       };
 
       let generatedHtml = '';
-      if (data.type === 'contrat_adoption') {
+      if (data.type === 'contrat_hebergement') {
+        const { data: entree } = await supabase
+          .from('pension_entrees')
+          .select('animal_nom, espece, race, proprietaire_nom, proprietaire_contact, date_entree, date_sortie_prevue')
+          .eq('id', data.pension_entree_id)
+          .maybeSingle();
+        generatedHtml = generateContratHebergementHTML(
+          entree ?? { animal_nom: meta.acquereur_nom ?? '' },
+          {
+            nom: elvNom,
+            adresse: profil?.adress_elevage ?? profil?.adress ?? '',
+            email: profil?.email ?? '',
+            tel: elvTel,
+            siret: profil?.siret ?? '',
+          },
+          {
+            tarifNuit: meta.tarif_nuit,
+            arrhesPourcentage: meta.arrhes_pourcentage ? Number(meta.arrhes_pourcentage) : undefined,
+            logementNom: meta.logement_nom,
+            notes: meta.notes,
+          },
+        );
+      } else if (data.type === 'contrat_adoption') {
         const assoInfo = {
           nom: meta.asso_nom ?? elvNom,
           adresse: meta.asso_adresse ?? profil?.adress_elevage ?? '',

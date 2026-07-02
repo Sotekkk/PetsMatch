@@ -9,6 +9,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
@@ -364,6 +366,55 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
   }
 
   // ── Générer contrat PDF ───────────────────────────────────────────────────
+
+  Future<void> _genererContratSignature(Map<String, dynamic> e) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      // Réutilise un contrat existant pour ce séjour si déjà créé.
+      final existing = await _supa
+          .from('documents_animaux')
+          .select('token')
+          .eq('pension_entree_id', e['id'])
+          .eq('type', 'contrat_hebergement')
+          .maybeSingle();
+
+      String? token = existing?['token'] as String?;
+      if (token == null) {
+        final row = await _supa.from('documents_animaux').insert({
+          'uid_eleveur': uid,
+          'pension_entree_id': e['id'],
+          'type': 'contrat_hebergement',
+          'titre': 'Contrat d\'hébergement — ${e['animal_nom'] ?? ''}',
+          'statut': 'en_attente',
+          'metadata': {
+            'logement_nom': null,
+          },
+        }).select('token').single();
+        token = row['token'] as String?;
+      } else {
+        await _supa.from('documents_animaux')
+            .update({'statut': 'en_attente'})
+            .eq('pension_entree_id', e['id'])
+            .eq('type', 'contrat_hebergement');
+      }
+      if (token == null) return;
+      final url = '$kSiteBaseUrl/signer-contrat/$token';
+      if (mounted) {
+        await Clipboard.setData(ClipboardData(text: url));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Lien de signature copié — envoyez-le au propriétaire',
+              style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: _teal,
+        ));
+      }
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (e2) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e2')));
+      }
+    }
+  }
 
   Future<void> _genererContrat(Map<String, dynamic> e) async {
     final pdf      = pw.Document();
@@ -889,6 +940,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                         onTap: () => _openEdit(e),
                         onLongPress: () => _supprimerEntree(e),
                         onContrat: () => _genererContrat(e),
+                        onSignature: () => _genererContratSignature(e),
                         onFicheTap: animalId != null ? () => Navigator.push(context, MaterialPageRoute(
                           builder: (_) => AnimalFichePensionPage(
                             animalId: animalId,
@@ -967,6 +1019,7 @@ class _PensionCard extends StatelessWidget {
   final VoidCallback? onFicheTap;
   final VoidCallback? onSorti;
   final VoidCallback? onContrat;
+  final VoidCallback? onSignature;
   final VoidCallback? onFacture;
 
   static const _teal  = Color(0xFF0C5C6C);
@@ -981,6 +1034,7 @@ class _PensionCard extends StatelessWidget {
     this.onFicheTap,
     this.onSorti,
     this.onContrat,
+    this.onSignature,
     this.onFacture,
   });
 
@@ -1112,7 +1166,7 @@ class _PensionCard extends StatelessWidget {
                   ],
                 ]),
                 // Boutons d'action
-                if (onSorti != null || onContrat != null || onFacture != null) ...[
+                if (onSorti != null || onContrat != null || onSignature != null || onFacture != null) ...[
                   const SizedBox(height: 8),
                   Row(mainAxisAlignment: MainAxisAlignment.end, children: [
                     if (onContrat != null)
@@ -1129,7 +1183,23 @@ class _PensionCard extends StatelessWidget {
                           minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                       ),
-                    if (onContrat != null && (onSorti != null || onFacture != null))
+                    if (onContrat != null && (onSignature != null || onSorti != null || onFacture != null))
+                      const SizedBox(width: 8),
+                    if (onSignature != null)
+                      OutlinedButton.icon(
+                        onPressed: onSignature,
+                        icon: const Icon(Icons.draw_outlined, size: 14),
+                        label: const Text('Signature en ligne',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF0C5C6C),
+                          side: const BorderSide(color: Color(0xFF0C5C6C)),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                    if (onSignature != null && (onSorti != null || onFacture != null))
                       const SizedBox(width: 8),
                     if (onFacture != null)
                       OutlinedButton.icon(
