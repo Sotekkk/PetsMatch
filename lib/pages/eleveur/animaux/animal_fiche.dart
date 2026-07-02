@@ -6766,6 +6766,7 @@ class _AlimentationTabState extends State<_AlimentationTab> {
           _marqueId          = res['marque_id'] as String?;
           _marqueNom         = res['marque'] ?? '';
           _gammeNom          = res['gamme']  ?? '';
+          _pctCroquMix = (res['mixte_ratio_croq'] as num?)?.toDouble() ?? 70;
           _pctMuscles = (res['pourcentage_muscles'] as num?)?.toDouble() ?? 70;
           _pctAbats   = (res['pourcentage_abats']   as num?)?.toDouble() ?? 10;
           _pctOs      = (res['pourcentage_os']       as num?)?.toDouble() ?? 10;
@@ -6785,6 +6786,7 @@ class _AlimentationTabState extends State<_AlimentationTab> {
               if (parts.length >= 8 && parts[7].isNotEmpty) _typeMixte2 = parts[7];
               if (parts.length >= 9) _densitePateeCtrl.text   = parts[8];
               if (parts.length >= 10) _densiteGranCtrl.text   = parts[9];
+              if (parts.length >= 11) _pctCroquMix = double.tryParse(parts[10]) ?? _pctCroquMix;
             }
           }
           _modeCalculateur = false;
@@ -7048,9 +7050,10 @@ class _AlimentationTabState extends State<_AlimentationTab> {
         'pourcentage_abats':   _pctAbats,
         'pourcentage_os':      _pctOs,
         'pourcentage_legumes': _pctLegumes,
+        'mixte_ratio_croq':    _pctCroquMix.round(),
         'notes': '${_pctFoinMix.round()}|${_pctGranulesMix.round()}|${_pctCompMix.round()}|$_nbRepas'
                  '|${_mixteSepareParRepas?1:0}|${_doseManCtrl.text}|${_doseManCtrl2.text}'
-                 '|$_typeMixte2|${_densitePateeCtrl.text}|${_densiteGranCtrl.text}',
+                 '|$_typeMixte2|${_densitePateeCtrl.text}|${_densiteGranCtrl.text}|${_pctCroquMix.round()}',
         'updated_at':          DateTime.now().toIso8601String(),
       };
       if (_existing != null) {
