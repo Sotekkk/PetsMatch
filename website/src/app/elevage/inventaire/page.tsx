@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/lib/hooks/useActiveProfile';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
