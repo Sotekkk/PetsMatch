@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -164,6 +165,10 @@ const ESPECE_LABEL: Record<string, string> = {
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export default function FeedPage() {
+  return <Suspense fallback={null}><FeedPageContent /></Suspense>;
+}
+
+function FeedPageContent() {
   const { user, userData, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
