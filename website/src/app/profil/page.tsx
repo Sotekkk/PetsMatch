@@ -719,6 +719,13 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
 
 const ESPECES_PRO = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'NAC', 'Autre'];
 
+const LOGEMENT_TYPES = [
+  { value: 'box', label: 'Box' },
+  { value: 'enclos', label: 'Enclos' },
+  { value: 'chatterie', label: 'Chatterie' },
+  { value: 'cage', label: 'Cage' },
+];
+
 const JOURS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
 const MOTIFS_LABELS: Record<string, Record<string, string>> = {
@@ -798,6 +805,8 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [horaires, setHoraires] = useState<Record<string, string>>({});
   const [certifications, setCertifications] = useState<{ nom: string; numero: string }[]>([]);
   const [durees, setDurees] = useState<Record<string, number>>({});
+  const [tarifsLogements, setTarifsLogements] = useState<Record<string, number>>({});
+  const [arrhesPourcentage, setArrhesPourcentage] = useState(0);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const avatarRef = useRef<HTMLInputElement>(null);
@@ -845,6 +854,10 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         } else {
           setDurees(DEFAULT_DUREES[cat] ?? { autre: 30 });
         }
+        if (r.tarifs_logements && typeof r.tarifs_logements === 'object') {
+          setTarifsLogements(r.tarifs_logements as Record<string, number>);
+        }
+        setArrhesPourcentage(((r.arrhes_pourcentage as number) ?? 0));
         setLoading(false);
       });
   }, [profileId]);
@@ -873,6 +886,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       horaires,
       certifications,
       durees_motifs: durees,
+      ...((data?.profile_type ?? data?.cat_pro) === 'pension'
+        ? { tarifs_logements: tarifsLogements, arrhes_pourcentage: arrhesPourcentage }
+        : {}),
     };
 
     if (avatarFile) {
@@ -1078,6 +1094,30 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                 </div>
               ))}
             </div>
+          </Card>
+        )}
+
+        {/* Tarifs pension */}
+        {catPro === 'pension' && (
+          <Card title="Tarifs par type de logement (€/nuit)">
+            <p className="text-xs text-gray-400 mb-3">Laissez à 0 les types de logement que vous n&apos;utilisez pas.</p>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              {LOGEMENT_TYPES.map(({ value, label }) => (
+                <div key={value}>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">{label}</label>
+                  <input type="number" min={0} step={1}
+                    value={tarifsLogements[value] ?? 0}
+                    onChange={e => setTarifsLogements(t => ({ ...t, [value]: Number(e.target.value) }))}
+                    className={inputCls} />
+                </div>
+              ))}
+            </div>
+            <Field label="Pourcentage d'arrhes demandé à la réservation">
+              <input type="number" min={0} max={100}
+                value={arrhesPourcentage}
+                onChange={e => setArrhesPourcentage(Math.min(100, Math.max(0, Number(e.target.value))))}
+                className={inputCls} />
+            </Field>
           </Card>
         )}
 

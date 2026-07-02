@@ -217,9 +217,14 @@ const MENU_PENSION = [
     items: [
       { href: '/pension/registre',  label: 'Registre pension',     icon: '📋' },
       { href: '/pension/demandes',  label: 'Demandes d\'accès',    icon: '🔑' },
+      { href: '/pension/chenil',    label: 'Logements / Chenil',   icon: '🏘️' },
       { href: '/mes-rdv',           label: 'Gestion des RDV',      icon: '🗓️' },
       { href: '/pro/creneaux',      label: 'Mes créneaux',         icon: '⏰' },
       { href: '/agenda',            label: 'Mon agenda',           icon: '📅' },
+      { href: '/elevage/inventaire',label: 'Inventaire',           icon: '📦' },
+      { href: '/mes-taches',        label: 'Mes tâches',           icon: '✅' },
+      { href: '/employes',          label: 'Mes employés',         icon: '👥' },
+      { href: '/elevage/facturation',label: 'Facturation',          icon: '🧾' },
     ],
   },
   {

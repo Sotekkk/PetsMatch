@@ -68,6 +68,13 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   // Durées par type de prestation (en minutes)
   Map<String, int> _dureesMotifs = {};
 
+  // Pension : tarifs par type de logement (€/nuit) + % d'arrhes
+  Map<String, int> _tarifsLogements = {};
+  int _arrhesPourcentage = 0;
+  static const _logementTypes = [
+    ('box', 'Box'), ('enclos', 'Enclos'), ('chatterie', 'Chatterie'), ('cage', 'Cage'),
+  ];
+
   static const _defaultDureesByCatPro = <String, Map<String, int>>{
     'veterinaire': {'consultation': 30, 'vaccination': 20, 'bilan': 45, 'urgence': 60, 'chirurgie': 120, 'autre': 30},
     'pension':     {'visite': 30, 'arrivee': 60, 'depart': 30, 'autre': 30},
@@ -191,6 +198,12 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           _dureesMotifs = Map<String, int>.from(
               _defaultDureesByCatPro[cat] ?? {'consultation': 30, 'autre': 30});
         }
+        if (row['tarifs_logements'] is Map) {
+          _tarifsLogements = Map<String, int>.from(
+            (row['tarifs_logements'] as Map).map((k, v) =>
+                MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)));
+        }
+        _arrhesPourcentage = (row['arrhes_pourcentage'] as num?)?.toInt() ?? 0;
         if (row['horaires'] is Map) {
           for (final j in _jours) {
             final txt = (row['horaires'][j] ?? '').toString();
@@ -363,6 +376,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'cat_pro':            _catPro,
           'is_pro':             true,
           'durees_motifs':      _dureesMotifs,
+          if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
+          if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           'rue':                _rueCtrl.text.trim(),
           'ville':              _villeCtrl.text.trim(),
           'code_postal':        _cpCtrl.text.trim(),
@@ -399,6 +414,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'cat_pro':              _catPro,
           'is_pro':               true,
           'durees_motifs':        _dureesMotifs,
+          if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
+          if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           'rue_elevage':          _rueCtrl.text.trim(),
           'ville_elevage':        _villeCtrl.text.trim(),
           'code_postal_elevage':  _cpCtrl.text.trim(),
@@ -619,6 +636,88 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                         ),
                       ]),
                     )),
+                  ],
+
+                  // ── Tarifs pension ────────────────────────────────────────
+                  if (_catPro == 'pension') ...[
+                    const SizedBox(height: 24),
+                    _sectionTitle('Tarifs par type de logement (€/nuit)'),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Laissez à 0 les types de logement que vous n\'utilisez pas.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                    const SizedBox(height: 12),
+                    ..._logementTypes.map((t) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(children: [
+                        Expanded(child: Text(t.$2,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                                fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 90,
+                          child: TextFormField(
+                            initialValue: (_tarifsLogements[t.$1] ?? 0).toString(),
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                            decoration: InputDecoration(
+                              suffixText: '€',
+                              suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                              filled: true, fillColor: Colors.white,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+                            ),
+                            onChanged: (val) {
+                              final v = int.tryParse(val);
+                              if (v != null && v >= 0) {
+                                setState(() => _tarifsLogements = {..._tarifsLogements, t.$1: v});
+                              }
+                            },
+                          ),
+                        ),
+                      ]),
+                    )),
+                    const SizedBox(height: 12),
+                    Row(children: [
+                      const Expanded(child: Text('Pourcentage d\'arrhes demandé à la réservation',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                              fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 90,
+                        child: TextFormField(
+                          initialValue: _arrhesPourcentage.toString(),
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                          decoration: InputDecoration(
+                            suffixText: '%',
+                            suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                            filled: true, fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+                          ),
+                          onChanged: (val) {
+                            final v = int.tryParse(val);
+                            if (v != null && v >= 0 && v <= 100) {
+                              setState(() => _arrhesPourcentage = v);
+                            }
+                          },
+                        ),
+                      ),
+                    ]),
                   ],
 
                   // ── Horaires ──────────────────────────────────────────────

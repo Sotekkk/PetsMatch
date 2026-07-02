@@ -4,6 +4,7 @@ import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
+import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_associations_benevole.dart';
@@ -32,6 +33,7 @@ import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
+import 'package:PetsMatch/pages/pro/pension_chenil_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
@@ -597,6 +599,48 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
+                  if (User_Info.catPro == 'pension') ...[
+                    _DrawerItem(
+                      icon: Icons.home_work_outlined,
+                      label: 'Logements / Chenil',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PensionChenilPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.inventory_2_outlined,
+                      label: 'Inventaire',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const InventairePage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.event_note_outlined,
+                      label: 'Protocoles / Tâches',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PlanTemplateListPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.groups_outlined,
+                      label: 'Mes Employés',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const EmployesPage(),
+                        ));
+                      },
+                    ),
+                  ],
                 ],
                 const Divider(height: 24),
                 _DrawerItem(
