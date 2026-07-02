@@ -7,6 +7,7 @@ import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -475,6 +476,8 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
                           Navigator.push(context, MaterialPageRoute(builder: (_) => const CertificatsEngagementPage(isAssociation: true)))),
                       _QuickAction('Planning chenil', Icons.calendar_month_outlined, _teal, onTap: () =>
                           Navigator.push(context, MaterialPageRoute(builder: (_) => const ChenilPlanningPage()))),
+                      _QuickAction('RDV visites', Icons.event_available_outlined, Colors.pink, onTap: () =>
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage()))),
                       _QuickAction('Contrat d\'adoption', Icons.handshake_outlined, const Color(0xFF00695C), onTap: () =>
                           Navigator.push(context, MaterialPageRoute(builder: (_) => const ContratAdoptionPage()))),
                       _QuickAction('Employés & Bénévoles', Icons.badge_outlined, Colors.purple, onTap: () =>

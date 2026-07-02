@@ -3,6 +3,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/association/association_detail_page.dart';
+import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
 import 'package:PetsMatch/pages/main_feed.dart' show UserSelected;
 import 'package:PetsMatch/pages/user_detail_page_feed.dart';
@@ -513,6 +514,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                 annonceId: widget.annonceId,
                 data: data,
                 uidEleveur: (data['uidEleveur'] as String?) ?? '',
+                eleveurData: _eleveurData,
               ),
             ),
           ]),
@@ -1679,9 +1681,11 @@ class _BottomBar extends StatefulWidget {
   final String annonceId;
   final Map<String, dynamic> data;
   final String uidEleveur;
+  final Map<String, dynamic>? eleveurData;
   const _BottomBar({
     required this.isOwner, required this.annonceId,
     required this.data, required this.uidEleveur,
+    this.eleveurData,
   });
   @override
   State<_BottomBar> createState() => _BottomBarState();
@@ -1715,6 +1719,37 @@ class _BottomBarState extends State<_BottomBar> {
       backgroundColor: Colors.transparent,
       builder: (_) => _ShareSheet(text: lines.join('\n'), url: annonceUrl, nom: displayTitle),
     );
+  }
+
+  Future<void> _openRdvVisite() async {
+    final data = widget.data;
+    final photos = List<String>.from(data['photos'] ?? []);
+    final espece = (data['espece'] as String?) ?? '';
+    final race   = (data['race'] as String?) ?? '';
+    final titre  = (data['titre'] as String?) ?? '';
+    final displayTitle = titre.isNotEmpty ? titre : race.isNotEmpty ? race : espece;
+    final animalId = data['animal_id']?.toString();
+    final proName = (widget.eleveurData?['nameElevage'] as String?)?.isNotEmpty == true
+        ? widget.eleveurData!['nameElevage'] as String
+        : 'L\'association';
+
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => RdvBookingPage(
+        proUid: widget.uidEleveur,
+        proName: proName,
+        categoryColor: _green,
+        isAssociation: true,
+        proProfileId: widget.eleveurData?['assoProfileId'] as String?,
+        visiteAnimal: animalId != null && animalId.isNotEmpty
+            ? {
+                'id': animalId,
+                'nom': displayTitle,
+                'espece': espece,
+                'photo_url': photos.isNotEmpty ? photos.first : '',
+              }
+            : null,
+      ),
+    ));
   }
 
   Future<void> _openChat() async {
@@ -1786,6 +1821,25 @@ class _BottomBarState extends State<_BottomBar> {
                         ]),
                 ),
         ),
+        if (!widget.isOwner &&
+            widget.data['profil_source'] == 'association' &&
+            widget.data['typeVente'] == 'adoption') ...[
+          const SizedBox(width: 10),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _openRdvVisite,
+              icon: const Icon(Icons.favorite_border, size: 18, color: _green),
+              label: const Text('RDV visite',
+                  style: TextStyle(fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700, fontSize: 14, color: _green)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: _green),
+                minimumSize: const Size(0, 50),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(width: 10),
         SizedBox(
           height: 50, width: 50,

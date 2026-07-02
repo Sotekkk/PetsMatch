@@ -11,6 +11,7 @@ import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/pages/association/admin/contrat_adoption_page.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
@@ -176,6 +177,16 @@ class _AssociationNavState extends State<AssociationNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const ChenilPlanningPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'RDV visites d\'adoption',
+                      icon: Icons.event_available_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const ProAgendaPage(),
                         ));
                       },
                     ),

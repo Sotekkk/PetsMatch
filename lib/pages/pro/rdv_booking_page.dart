@@ -11,8 +11,10 @@ class RdvBookingPage extends StatefulWidget {
   final Color categoryColor;
   final bool isPension;
   final bool isVet;
+  final bool isAssociation;
   final String? preselectedAnimalId;
   final String? proProfileId; // user_profiles.id si profil secondaire
+  final Map<String, dynamic>? visiteAnimal; // animal de l'association à visiter (id, nom, espece, photo_url)
 
   const RdvBookingPage({
     super.key,
@@ -21,8 +23,10 @@ class RdvBookingPage extends StatefulWidget {
     required this.categoryColor,
     this.isPension = false,
     this.isVet = false,
+    this.isAssociation = false,
     this.preselectedAnimalId,
     this.proProfileId,
+    this.visiteAnimal,
   });
 
   @override
@@ -82,7 +86,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     'cours_individuel': 'Cours individuel', 'cours_collectif': 'Cours collectif',
     'evaluation': 'Évaluation', 'bain': 'Bain',
     'toilettage_complet': 'Toilettage complet', 'coupe': 'Coupe',
-    'seance': 'Séance', 'autre': 'Autre',
+    'seance': 'Séance', 'visite_adoption': 'Visite pour adoption', 'autre': 'Autre',
   };
   static const _motifIcons = <String, IconData>{
     'consultation': Icons.medical_services_outlined,
@@ -104,6 +108,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     'toilettage_complet': Icons.content_cut_outlined,
     'coupe': Icons.content_cut_outlined,
     'seance': Icons.self_improvement_outlined,
+    'visite_adoption': Icons.favorite_border,
     'autre': Icons.more_horiz_outlined,
   };
   static const _defaultDureesByCatPro = <String, Map<String, int>>{
@@ -159,6 +164,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   }
 
   Future<void> _loadProProfile() async {
+    if (widget.isAssociation) {
+      _dureesMotifs = {'visite_adoption': 30, 'autre': 30};
+      _selectedMotifKey = 'visite_adoption';
+      return;
+    }
     try {
       final row = await Supabase.instance.client
           .from('users')
@@ -186,6 +196,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   // ── Animal loading ────────────────────────────────────────────────────────────
 
   Future<void> _loadAnimaux() async {
+    if (widget.isAssociation) {
+      _selectedAnimal = widget.visiteAnimal;
+      return;
+    }
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
@@ -491,7 +505,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                         ? 'La pension vous confirmera l\'heure exacte de votre RDV.'
                         : widget.isVet
                             ? 'Le vétérinaire confirmera votre rendez-vous.'
-                            : 'Le professionnel confirmera votre rendez-vous.',
+                            : widget.isAssociation
+                                ? 'L\'association confirmera votre rendez-vous de visite.'
+                                : 'Le professionnel confirmera votre rendez-vous.',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
                     textAlign: TextAlign.center,
                   )),
@@ -512,6 +528,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     child: Row(children: [
       Icon(widget.isPension ? Icons.home_work_outlined
           : widget.isVet ? Icons.medical_services_outlined
+          : widget.isAssociation ? Icons.favorite_border
           : Icons.person_outlined,
           color: widget.categoryColor, size: 20),
       const SizedBox(width: 10),
@@ -896,6 +913,49 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   Widget _buildAnimalSection() {
     final color = widget.categoryColor;
+    if (widget.isAssociation) {
+      if (_selectedAnimal == null) return const SizedBox.shrink();
+      final photoUrl = _selectedAnimal!['photo_url'] as String? ?? '';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle('Animal à visiter'),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              border: Border.all(color: color.withValues(alpha: 0.3)),
+              borderRadius: BorderRadius.circular(12),
+              color: color.withValues(alpha: 0.06),
+            ),
+            child: Row(children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(8)),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: photoUrl.isNotEmpty
+                      ? Image.network(photoUrl, width: 36, height: 36, fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Center(child: Text('🐾', style: TextStyle(fontSize: 15))))
+                      : const Center(child: Text('🐾', style: TextStyle(fontSize: 15))),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  Text(_selectedAnimal!['nom']?.toString() ?? '—',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: color)),
+                  if ((_selectedAnimal!['espece']?.toString() ?? '').isNotEmpty)
+                    Text(_selectedAnimal!['espece'].toString(),
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF888888))),
+                ]),
+              ),
+            ]),
+          ),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
