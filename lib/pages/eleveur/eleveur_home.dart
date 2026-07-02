@@ -21,6 +21,7 @@ import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
+import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
@@ -371,11 +372,20 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
     }
     if (User_Info.catPro == 'pension') {
       return Row(children: [
-        _StatCard(value: _pensionnairesCount.toString(), label: 'Pensionnaires', icon: Icons.pets),
+        _StatCard(
+          value: _pensionnairesCount.toString(), label: 'Pensionnaires', icon: Icons.pets,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RegistrePensionPage())),
+        ),
         const SizedBox(width: 12),
-        _StatCard(value: _rdvTodayCount.toString(), label: 'RDV aujourd\'hui', icon: Icons.calendar_today_outlined),
+        _StatCard(
+          value: _rdvTodayCount.toString(), label: 'RDV aujourd\'hui', icon: Icons.calendar_today_outlined,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AgendaPage(initialViewMode: 1))),
+        ),
         const SizedBox(width: 12),
-        _StatCard(value: 'Pension', label: 'Statut', icon: Icons.verified_outlined),
+        _StatCard(
+          value: 'Pension', label: 'Statut', icon: Icons.verified_outlined,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AbonnementPage())),
+        ),
       ]);
     }
     return Row(children: [

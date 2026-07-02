@@ -57,6 +57,43 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
   Future<void> _scanPuce() async {
     final chip = await ChipScannerService.showScanner(context);
     if (chip == null || chip.isEmpty || !mounted) return;
+    _matchAndOpen(chip);
+  }
+
+  Future<void> _enterPuceManually() async {
+    final ctrl = TextEditingController();
+    final chip = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Saisir le numéro de puce',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          style: const TextStyle(fontFamily: 'Galey'),
+          decoration: const InputDecoration(
+            hintText: 'Ex : 250269812345678',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            style: ElevatedButton.styleFrom(backgroundColor: _purple, foregroundColor: Colors.white),
+            child: const Text('Valider'),
+          ),
+        ],
+      ),
+    );
+    if (chip == null || chip.trim().isEmpty || !mounted) return;
+    _matchAndOpen(chip);
+  }
+
+  void _matchAndOpen(String chip) {
     final normalized = chip.replaceAll(RegExp(r'[\s\-]'), '');
     final match = _items.where((item) {
       final p = (item.puce ?? '').replaceAll(RegExp(r'[\s\-]'), '');
@@ -182,6 +219,11 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
             icon: const Icon(Icons.sensors_rounded),
             tooltip: 'Scanner une puce',
             onPressed: _scanPuce,
+          ),
+          IconButton(
+            icon: const Icon(Icons.keyboard_outlined),
+            tooltip: 'Saisir la puce manuellement',
+            onPressed: _enterPuceManually,
           ),
           IconButton(
             icon: Icon(_showSearch ? Icons.search_off_rounded : Icons.search_rounded),

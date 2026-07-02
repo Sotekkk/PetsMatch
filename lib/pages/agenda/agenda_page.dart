@@ -92,7 +92,8 @@ class AgendaPage extends StatefulWidget {
   final VoidCallback? onBack;
   final bool isAssociation;
   final bool isParticulier;
-  const AgendaPage({super.key, this.onBack, this.isAssociation = false, this.isParticulier = false});
+  final int initialViewMode; // 0 = mois, 1 = jour, 2 = liste
+  const AgendaPage({super.key, this.onBack, this.isAssociation = false, this.isParticulier = false, this.initialViewMode = 0});
   @override
   State<AgendaPage> createState() => _AgendaPageState();
 }
@@ -106,7 +107,7 @@ class _AgendaPageState extends State<AgendaPage> {
   List<Map<String, dynamic>> _employes = [];
   bool _loading = true;
   // 0 = mois, 1 = jour, 2 = liste
-  int _viewMode = 0;
+  late int _viewMode = widget.initialViewMode;
   DateTime _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
   DateTime? _selectedDay;
 
