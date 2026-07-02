@@ -114,7 +114,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   int? _intervalleChaleursCustom;
 
   // ── Registre Entrée / Sortie
-  String    _statut           = 'present'; // éleveur: present|sorti|decede  asso: en_soin|disponible|en_fa|adopte|transfere|decede
+  String    _statut           = 'present'; // éleveur: present|sorti|decede  asso: en_soin|disponible|adopte|transfere|decede (en_fa = fa_id renseigné, indépendant du statut)
   DateTime? _dateEntree;
   final _provenanceNomCtrl     = TextEditingController();
   String    _provenanceQualite = ''; // 'naissance' | 'eleveur' | 'particulier' | 'refuge' | 'importation' | 'autre'
@@ -2606,7 +2606,6 @@ class _IdentiteTab extends StatelessWidget {
                   ? [
                       ('en_soin',    'En soin',   Colors.orange),
                       ('disponible', 'Disponible',Color(0xFF6E9E57)),
-                      ('en_fa',      'En FA',     Colors.purple),
                       ('adopte',     'Adopté',    Color(0xFF0C5C6C)),
                       ('transfere',  'Transféré', Colors.blue),
                       ('decede',     'Décédé',    Colors.redAccent),

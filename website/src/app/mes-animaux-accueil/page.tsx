@@ -51,8 +51,7 @@ export default function MesAnimauxAccueilPage() {
       const { data: anim } = await supabase
         .from('animaux')
         .select('id, nom, espece, race, sexe, statut, photo_url, description, date_entree, vaccines, vermifuge, identification, sterilise')
-        .eq('fa_id', faData.id)
-        .eq('statut', 'en_fa');
+        .eq('fa_id', faData.id);
       setAnimaux(anim ?? []);
       setLoading(false);
     })();

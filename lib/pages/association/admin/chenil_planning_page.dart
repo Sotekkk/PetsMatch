@@ -358,7 +358,6 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
     final statuts = [
       ('en_soin', 'En soin', Colors.orange),
       ('disponible', 'Disponible', _green),
-      ('en_fa', 'En FA', Colors.purple),
       ('adopte', 'Adopté', _teal),
       ('transfere', 'Transféré', Colors.blue),
     ];

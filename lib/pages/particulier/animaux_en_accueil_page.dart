@@ -49,8 +49,7 @@ class _AnimauxEnAccueilPageState extends State<AnimauxEnAccueilPage> {
       final data = await _supa
           .from('animaux')
           .select('id, nom, espece, race, sexe, statut, photo_url, date_entree, date_naissance, description, vaccines, vermifuge, identification, sterilise')
-          .eq('fa_id', fa['id'])
-          .eq('statut', 'en_fa');
+          .eq('fa_id', fa['id']);
       if (mounted) setState(() {
         _fa = fa;
         _animaux = List<Map<String, dynamic>>.from(data as List);

@@ -32,7 +32,7 @@ export default function AssociationDashboard() {
   useEffect(() => {
     if (!user) return;
     Promise.all([
-      supabase.from('animaux').select('statut').eq('uid_eleveur', user.uid).eq('is_association', true),
+      supabase.from('animaux').select('statut, fa_id').eq('uid_eleveur', user.uid).eq('is_association', true),
       supabase.from('employes').select('id').eq('uid_eleveur', user.uid).eq('actif', true).eq('type', 'benevole'),
       supabase.from('animaux').select('id, nom, espece, photo_url, statut')
         .eq('uid_eleveur', user.uid).eq('is_association', true).order('created_at', { ascending: false }).limit(6),
@@ -42,7 +42,7 @@ export default function AssociationDashboard() {
         total: list.length,
         enSoin: list.filter((a: { statut: string }) => a.statut === 'en_soin').length,
         disponible: list.filter((a: { statut: string }) => a.statut === 'disponible').length,
-        enFa: list.filter((a: { statut: string }) => a.statut === 'en_fa').length,
+        enFa: list.filter((a: { fa_id: string | null }) => !!a.fa_id).length,
         adopte: list.filter((a: { statut: string }) => a.statut === 'adopte').length,
         benevoles: (benvl ?? []).length,
       });
