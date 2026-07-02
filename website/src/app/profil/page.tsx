@@ -236,6 +236,15 @@ const inputCls = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm f
 
 // ── Association profile edit ──────────────────────────────────────────────────
 
+const ESPECES_ACCUEIL = [
+  { value: 'chien',  label: '🐶 Chien' },
+  { value: 'chat',   label: '🐱 Chat' },
+  { value: 'cheval', label: '🐴 Cheval' },
+  { value: 'lapin',  label: '🐰 Lapin' },
+  { value: 'oiseau', label: '🦜 Oiseau' },
+  { value: 'nac',    label: '🦎 NAC' },
+];
+
 function AssociationEdit({ profileId, uid }: { profileId: string; uid: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -260,6 +269,10 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
   const [siteWeb, setSiteWeb]               = useState('');
   const [instagram, setInstagram]           = useState('');
   const [facebook, setFacebook]             = useState('');
+  const [email, setEmail]                   = useState('');
+  const [agrementPrefectoral, setAgrementPrefectoral] = useState('');
+  const [capaciteAccueil, setCapaciteAccueil] = useState('');
+  const [especesAccueillies, setEspecesAccueillies] = useState<Set<string>>(new Set());
 
   // Photos
   const [avatarFile, setAvatarFile]         = useState<File | null>(null);
@@ -275,14 +288,31 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
   const [siretDocUrl, setSiretDocUrl]       = useState<string | null>(null);
   const [acacedDocFile, setAcacedDocFile]   = useState<File | null>(null);
   const [acacedDocUrl, setAcacedDocUrl]     = useState<string | null>(null);
+  const [statutsDocFile, setStatutsDocFile] = useState<File | null>(null);
+  const [statutsDocUrl, setStatutsDocUrl]   = useState<string | null>(null);
+  const [arretePrefDocFile, setArretePrefDocFile] = useState<File | null>(null);
+  const [arretePrefDocUrl, setArretePrefDocUrl]   = useState<string | null>(null);
   const siretDocRef = useRef<HTMLInputElement>(null);
   const acacedDocRef = useRef<HTMLInputElement>(null);
+  const statutsDocRef = useRef<HTMLInputElement>(null);
+  const arretePrefDocRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     supabase.from('user_profiles').select('*').eq('id', profileId).single()
-      .then(({ data }) => {
+      .then(async ({ data }) => {
         if (!data) { setLoading(false); return; }
         const r = data as Record<string, unknown>;
+
+        // Données saisies à l'onboarding (agrément, capacité, espèces, email) —
+        // stockées sur users, jamais recopiées automatiquement sur user_profiles.
+        let onboarding: Record<string, unknown> | null = null;
+        if (r.uid) {
+          const { data: u } = await supabase.from('users')
+            .select('agrement_prefectoral, capacite_accueil, especes_accueillies, email')
+            .eq('uid', r.uid as string).maybeSingle();
+          onboarding = u as Record<string, unknown> | null;
+        }
+
         setProfileLabel((r.profile_label as string) ?? '');
         setNomAsso(((r.nom ?? r.name_elevage) as string) ?? '');
         setNomResponsable((r.profession_pro as string) ?? '');
@@ -293,6 +323,7 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
         const acaCert = certs.find(c => c.nom === 'ACACED');
         if (acaCert) { setAcaced(acaCert.numero ?? ''); setAcacedDate(acaCert.date_obtention ?? ''); }
         setDescription(((r.desc_entreprise ?? r.description) as string) ?? '');
+        setEmail(((r.email_contact ?? onboarding?.email) as string) ?? '');
         setPhone((r.phone as string) ?? '');
         setRue((r.rue as string) ?? '');
         setVille((r.ville as string) ?? '');
@@ -301,8 +332,15 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
         setSiteWeb((r.site_web as string) ?? '');
         setInstagram((r.instagram as string) ?? '');
         setFacebook((r.facebook as string) ?? '');
+        setAgrementPrefectoral(((r.agrement_prefectoral ?? onboarding?.agrement_prefectoral) as string) ?? '');
+        setCapaciteAccueil(((r.capacite_accueil ?? onboarding?.capacite_accueil) as number | undefined)?.toString() ?? '');
+        setEspecesAccueillies(new Set(
+          ((r.especes_accueil as string[] | undefined) ?? (onboarding?.especes_accueillies as string[] | undefined) ?? [])
+        ));
         setSiretDocUrl((r.kbis_url as string) ?? null);
         setAcacedDocUrl((r.acaced_doc_url as string) ?? null);
+        setStatutsDocUrl((r.statuts_url as string) ?? null);
+        setArretePrefDocUrl((r.arrete_prefectoral_url as string) ?? null);
         setAvatarPreview((r.avatar_url as string) ?? null);
         setCurrentBanner((r.banner_url as string) ?? null);
         setLoading(false);
@@ -334,6 +372,7 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
         siret:             siret.trim(),
         certifications:    certs,
         desc_entreprise:   description.trim(),
+        email_contact:     email.trim(),
         phone:             phone.trim(),
         rue:               rue.trim(),
         ville:             ville.trim(),
@@ -342,6 +381,9 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
         site_web:          siteWeb.trim(),
         instagram:         instagram.trim(),
         facebook:          facebook.trim(),
+        agrement_prefectoral: agrementPrefectoral.trim() || null,
+        capacite_accueil:     capaciteAccueil.trim() ? parseInt(capaciteAccueil, 10) : null,
+        especes_accueil:      Array.from(especesAccueillies),
       };
 
       if (avatarFile) {
@@ -379,6 +421,26 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
           const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
           payload.acaced_doc_url = pub.publicUrl;
           setAcacedDocUrl(pub.publicUrl);
+        }
+      }
+      if (statutsDocFile) {
+        const ext = statutsDocFile.name.split('.').pop() ?? 'pdf';
+        const path = `documents/${uid}/asso_statuts.${ext}`;
+        const { data: up } = await supabase.storage.from('petsmatch').upload(path, statutsDocFile, { upsert: true });
+        if (up) {
+          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          payload.statuts_url = pub.publicUrl;
+          setStatutsDocUrl(pub.publicUrl);
+        }
+      }
+      if (arretePrefDocFile) {
+        const ext = arretePrefDocFile.name.split('.').pop() ?? 'pdf';
+        const path = `documents/${uid}/asso_arrete_prefectoral.${ext}`;
+        const { data: up } = await supabase.storage.from('petsmatch').upload(path, arretePrefDocFile, { upsert: true });
+        if (up) {
+          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          payload.arrete_prefectoral_url = pub.publicUrl;
+          setArretePrefDocUrl(pub.publicUrl);
         }
       }
 
@@ -472,6 +534,37 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
             <Field label="Téléphone">
               <input value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} placeholder="06 12 34 56 78" />
             </Field>
+            <Field label="Email de contact">
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} placeholder="contact@monassociation.fr" />
+            </Field>
+          </Card>
+
+          <Card title="Accueil des animaux">
+            <Field label="Capacité d'accueil">
+              <input type="number" min={0} value={capaciteAccueil} onChange={e => setCapaciteAccueil(e.target.value)}
+                className={inputCls} placeholder="Nombre d'animaux" />
+            </Field>
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-1.5">Espèces accueillies</p>
+              <div className="flex flex-wrap gap-2">
+                {ESPECES_ACCUEIL.map(({ value, label }) => {
+                  const sel = especesAccueillies.has(value);
+                  return (
+                    <button key={value} type="button"
+                      onClick={() => setEspecesAccueillies(prev => {
+                        const next = new Set(prev);
+                        if (sel) next.delete(value); else next.add(value);
+                        return next;
+                      })}
+                      className={`px-3.5 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                        sel ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200'
+                      }`}>
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </Card>
 
           <Card title="Identifiants officiels">
@@ -501,6 +594,49 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
             <Field label="Numéro RNA">
               <input value={rna} onChange={e => setRna(e.target.value)} className={inputCls} placeholder="W123456789" />
             </Field>
+            <Field label="N° agrément préfectoral">
+              <input value={agrementPrefectoral} onChange={e => setAgrementPrefectoral(e.target.value)} className={inputCls} placeholder="Ex : 75-2024-001" />
+            </Field>
+            <div className="mb-3">
+              <p className="text-xs font-medium text-gray-500 mb-1">Statuts de l&apos;association</p>
+              {statutsDocUrl && !statutsDocFile && (
+                <a href={statutsDocUrl} target="_blank" rel="noopener" className="text-xs text-[#0C5C6C] underline block mb-1">📄 Document actuel</a>
+              )}
+              {statutsDocFile ? (
+                <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                  <span className="text-green-600 text-sm">✓</span>
+                  <span className="text-xs text-green-700 flex-1 truncate">{statutsDocFile.name}</span>
+                  <button type="button" onClick={() => statutsDocRef.current?.click()} className="text-xs text-[#0C5C6C] font-medium hover:underline">Changer</button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => statutsDocRef.current?.click()}
+                  className="w-full border-2 border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-xl py-2.5 text-sm text-gray-400 hover:text-[#0C5C6C] transition-colors">
+                  📎 Joindre les statuts (image ou PDF)
+                </button>
+              )}
+              <input ref={statutsDocRef} type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) setStatutsDocFile(f); e.target.value = ''; }} />
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-1">Arrêté préfectoral</p>
+              {arretePrefDocUrl && !arretePrefDocFile && (
+                <a href={arretePrefDocUrl} target="_blank" rel="noopener" className="text-xs text-[#0C5C6C] underline block mb-1">📄 Document actuel</a>
+              )}
+              {arretePrefDocFile ? (
+                <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                  <span className="text-green-600 text-sm">✓</span>
+                  <span className="text-xs text-green-700 flex-1 truncate">{arretePrefDocFile.name}</span>
+                  <button type="button" onClick={() => arretePrefDocRef.current?.click()} className="text-xs text-[#0C5C6C] font-medium hover:underline">Changer</button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => arretePrefDocRef.current?.click()}
+                  className="w-full border-2 border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-xl py-2.5 text-sm text-gray-400 hover:text-[#0C5C6C] transition-colors">
+                  📎 Joindre l&apos;arrêté préfectoral (image ou PDF)
+                </button>
+              )}
+              <input ref={arretePrefDocRef} type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) setArretePrefDocFile(f); e.target.value = ''; }} />
+            </div>
           </Card>
 
           <Card title="ACACED">

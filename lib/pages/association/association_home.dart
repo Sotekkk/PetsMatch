@@ -2,6 +2,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/association/admin/chenil_planning_page.dart';
 import 'package:PetsMatch/pages/association/admin/contrat_adoption_page.dart';
 import 'package:PetsMatch/pages/association/animaux/mes_animaux_asso.dart';
+import 'package:PetsMatch/pages/association/equipe/equipe_page.dart';
 import 'package:PetsMatch/pages/association/familles_accueil/familles_accueil_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
@@ -238,11 +239,14 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      _StatCard('En FA', _nbEnFa, Icons.home_outlined, Colors.purple),
+                      _StatCard('En FA', _nbEnFa, Icons.home_outlined, Colors.purple, onTap: () =>
+                          Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const MesAnimauxAssoPage(initialFilterStatut: 'en_fa')))),
                       const SizedBox(width: 10),
                       _StatCard('Adoptés', _nbAdoptes, Icons.celebration_outlined, const Color(0xFF00695C)),
                       const SizedBox(width: 10),
-                      _StatCard('Bénévoles', _nbBenevoles, Icons.volunteer_activism_outlined, _teal),
+                      _StatCard('Équipe', _nbBenevoles, Icons.volunteer_activism_outlined, _teal, onTap: () =>
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const EquipePage()))),
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -500,38 +504,42 @@ class _StatCard extends StatelessWidget {
   final int value;
   final IconData icon;
   final Color color;
+  final VoidCallback? onTap;
 
-  const _StatCard(this.label, this.value, this.icon, this.color);
+  const _StatCard(this.label, this.value, this.icon, this.color, {this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 6, offset: const Offset(0, 2))],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 6, offset: const Offset(0, 2))],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: color, size: 16),
               ),
-              child: Icon(icon, color: color, size: 16),
-            ),
-            const SizedBox(height: 8),
-            Text('$value',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                    fontSize: 20, color: color)),
-            Text(label,
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey),
-                maxLines: 1, overflow: TextOverflow.ellipsis),
-          ],
+              const SizedBox(height: 8),
+              Text('$value',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 20, color: color)),
+              Text(label,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
+          ),
         ),
       ),
     );

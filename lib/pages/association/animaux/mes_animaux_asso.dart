@@ -9,7 +9,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class MesAnimauxAssoPage extends StatefulWidget {
-  const MesAnimauxAssoPage({super.key});
+  final String initialFilterStatut;
+  const MesAnimauxAssoPage({super.key, this.initialFilterStatut = 'tous'});
   @override
   State<MesAnimauxAssoPage> createState() => _MesAnimauxAssoPageState();
 }
@@ -24,7 +25,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
   List<Map<String, dynamic>> _filtered = [];
   List<Map<String, dynamic>> _animauxRecus = [];
   bool _loading = true;
-  String _filterStatut = 'tous';
+  late String _filterStatut = widget.initialFilterStatut;
   String _search = '';
 
   static const _statuts = [
