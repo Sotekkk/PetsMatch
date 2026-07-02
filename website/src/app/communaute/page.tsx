@@ -49,6 +49,14 @@ const ITEMS: CommunauteItem[] = [
     authRequired: false,
   },
   {
+    label: 'Lieux Naturels',
+    subtitle: 'Plages, lacs, parcs & forêts accessibles avec vos animaux',
+    icon: '🌲',
+    color: '#2E7D32',
+    href: '/lieux-naturels',
+    authRequired: false,
+  },
+  {
     label: 'PetsFriends',
     subtitle: 'Rencontrez d\'autres propriétaires près de chez vous',
     icon: '🐾',
