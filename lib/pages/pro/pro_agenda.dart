@@ -87,13 +87,21 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<void> _loadRdvs() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) { setState(() => _loading = false); return; }
-    final pid = User_Info.activeProfileId;
+    // Si le profil actif est vide, utiliser le premier profil pro disponible
+    String pid = User_Info.activeProfileId;
+    if (pid.isEmpty && User_Info.availableProfiles.isNotEmpty) {
+      final proProfile = User_Info.availableProfiles.firstWhere(
+        (p) => p['profile_type'] != 'particulier',
+        orElse: () => User_Info.availableProfiles.first,
+      );
+      pid = proProfile['id']?.toString() ?? '';
+    }
     try {
       var q = Supabase.instance.client
           .from('rdv')
           .select()
           .eq('pro_uid', uid);
-      q = q.eq('pro_profile_id', pid);
+      if (pid.isNotEmpty) q = q.eq('pro_profile_id', pid);
       final rows = await q.order('date_heure', ascending: true);
 
       // Load client names in batch
@@ -1127,17 +1135,25 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<void> _loadCreneaux() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final pid = User_Info.activeProfileId;
+    String pid = User_Info.activeProfileId;
+    if (pid.isEmpty && User_Info.availableProfiles.isNotEmpty) {
+      final proProfile = User_Info.availableProfiles.firstWhere(
+        (p) => p['profile_type'] != 'particulier',
+        orElse: () => User_Info.availableProfiles.first,
+      );
+      pid = proProfile['id']?.toString() ?? '';
+    }
     final weekEnd = _weekStart.add(const Duration(days: 6));
     try {
-      final rows = await Supabase.instance.client
+      var creneauxQ = Supabase.instance.client
           .from('creneaux_pro')
           .select()
           .eq('pro_uid', uid)
           .inFilter('statut', ['disponible', 'bloque'])
           .gte('date', _weekStart.toIso8601String().substring(0, 10))
-          .lte('date', weekEnd.toIso8601String().substring(0, 10))
-          .eq('pro_profile_id', pid);
+          .lte('date', weekEnd.toIso8601String().substring(0, 10));
+      if (pid.isNotEmpty) creneauxQ = creneauxQ.eq('pro_profile_id', pid);
+      final rows = await creneauxQ;
 
       if (!mounted) return;
       setState(() {

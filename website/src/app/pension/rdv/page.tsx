@@ -363,8 +363,17 @@ export default function PensionRdvPage() {
     if (!user) return;
     setFetching(true);
     try {
+      // Chercher le profil pension directement en BDD plutôt que de dépendre du localStorage
+      const { data: profileRow } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('uid', user.uid)
+        .eq('profile_type', 'pension')
+        .maybeSingle();
+      const proProfileId = profileRow?.id ?? activeProfileId;
+
       let q = supabase.from('rdv').select('*').eq('pro_uid', user.uid).order('date_heure', { ascending: true });
-      q = (q as any).eq('pro_profile_id', activeProfileId);
+      if (proProfileId) q = (q as any).eq('pro_profile_id', proProfileId);
       const { data } = await q;
 
       const list = (data ?? []) as Rdv[];
