@@ -2,7 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
+import type { NaturalPlaceMapItem } from '@/components/NaturalPlacesMap';
+
+const NaturalPlacesMap = dynamic(() => import('@/components/NaturalPlacesMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full bg-gray-100 rounded-2xl">
+      <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
+    </div>
+  ),
+});
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -64,6 +75,7 @@ export default function LieuxNaturelsPage() {
   const [catFilter, setCatFilter] = useState('tous');
   const [search, setSearch] = useState('');
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [view, setView] = useState<'liste' | 'carte'>('liste');
 
   async function loadPlaces() {
     setLoading(true);
@@ -101,6 +113,9 @@ export default function LieuxNaturelsPage() {
       return da - db;
     });
   }
+  const withCoords: NaturalPlaceMapItem[] = filtered.filter(
+    (p): p is NaturalPlace & { lat: number; lng: number } => p.lat != null && p.lng != null,
+  );
 
   return (
     <div className="min-h-screen bg-[#F5F5F0]">
@@ -155,9 +170,42 @@ export default function LieuxNaturelsPage() {
           ))}
         </div>
 
+        {/* Compteur + toggle vue */}
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>
+            {loading ? '…' : `${filtered.length} lieu${filtered.length > 1 ? 'x' : ''}`}
+          </p>
+          <div className="flex bg-gray-100 rounded-xl p-1">
+            <button
+              onClick={() => setView('liste')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${view === 'liste' ? 'bg-white text-[#1F2A2E] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              style={{ fontFamily: 'Galey, sans-serif' }}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+              </svg>
+              Liste
+            </button>
+            <button
+              onClick={() => setView('carte')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${view === 'carte' ? 'bg-white text-[#1F2A2E] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              style={{ fontFamily: 'Galey, sans-serif' }}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+              </svg>
+              Carte
+            </button>
+          </div>
+        </div>
+
         {loading ? (
           <div className="flex justify-center py-20">
             <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : view === 'carte' ? (
+          <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm" style={{ height: '65vh' }}>
+            <NaturalPlacesMap places={withCoords} />
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-20 flex flex-col items-center gap-3">
