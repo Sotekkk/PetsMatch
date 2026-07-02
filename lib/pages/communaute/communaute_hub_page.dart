@@ -5,6 +5,7 @@ import 'package:PetsMatch/pages/communaute/forum_page.dart';
 import 'package:PetsMatch/pages/communaute/groupes_page.dart';
 import 'package:PetsMatch/pages/evenements/evenements_page.dart';
 import 'package:PetsMatch/pages/lieux/lieux_pet_friendly_page.dart';
+import 'package:PetsMatch/pages/nature/natural_places_page.dart';
 import 'package:PetsMatch/pages/petfriends/petfriends_page.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -49,6 +50,13 @@ class CommunauteHubPage extends StatelessWidget {
       label: 'Lieux Pet-Friendly',
       subtitle: 'Restaurants, hôtels & parcs qui accueillent vos animaux',
       color: Color(0xFFF57C00),
+      requiresAuth: false,
+    ),
+    _CommunauteSection(
+      icon: Icons.forest_outlined,
+      label: 'Lieux Naturels',
+      subtitle: 'Plages, lacs, parcs & forêts accessibles avec vos animaux',
+      color: Color(0xFF2E7D32),
       requiresAuth: false,
     ),
     _CommunauteSection(
@@ -215,6 +223,9 @@ class CommunauteHubPage extends StatelessWidget {
         break;
       case 'Lieux Pet-Friendly':
         page = const LieuxPetFriendlyPage();
+        break;
+      case 'Lieux Naturels':
+        page = const NaturalPlacesPage();
         break;
       case 'PetFriends':
         page = const PetFriendsPage();
