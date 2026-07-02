@@ -128,7 +128,7 @@ export default function HomeDashboard() {
   const activeProfileId = useActiveProfile();
   const router = useRouter();
   const [activeProfile, setActiveProfile] = useState<{
-    id: string; profile_type: string; nom: string; avatar_url: string | null; cat_pro: string;
+    id: string; profile_type: string; nom: string; avatar_url: string | null; cat_pro: string; is_main: boolean;
   } | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
 
@@ -139,7 +139,7 @@ export default function HomeDashboard() {
       return;
     }
     supabase.from('user_profiles')
-      .select('id, profile_type, nom, avatar_url, cat_pro')
+      .select('id, profile_type, nom, avatar_url, cat_pro, is_main')
       .eq('id', activeProfileId).single()
       .then(({ data }) => {
         setActiveProfile(data as typeof activeProfile);
@@ -171,6 +171,10 @@ export default function HomeDashboard() {
 
   // Profil secondaire actif particulier → ParticulierDashboard
   if (activeProfile?.profile_type === 'particulier') return <ParticulierDashboard />;
+
+  // Profil principal éleveur sélectionné comme "profil actif" (is_main) → vue éleveur dédiée,
+  // pas le dashboard pro générique (qui ne concerne que les vrais profils secondaires).
+  if (activeProfile?.profile_type === 'eleveur' && activeProfile.is_main) return <EleveurDashboard />;
 
   // Profil secondaire actif (pro/eleveur) → ProDashboard avec son ID
   if (activeProfile) return <ProDashboard profile={activeProfile} profileId={activeProfileId} />;

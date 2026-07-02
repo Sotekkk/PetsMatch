@@ -131,7 +131,6 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
     if (ok == true) {
       await _supa.from('animaux').update({
         'fa_id': null,
-        'statut': 'en_soin',
         'date_sortie': DateTime.now().toIso8601String().split('T').first,
       }).eq('id', animal['id']);
       _load();
@@ -818,7 +817,6 @@ class _PlaceAnimalSheetState extends State<_PlaceAnimalSheet> {
     try {
       await _supa.from('animaux').update({
         'fa_id': widget.fa['id'],
-        'statut': 'en_fa',
         'date_entree': DateTime.now().toIso8601String().split('T').first,
       }).eq('id', animal['id']);
 

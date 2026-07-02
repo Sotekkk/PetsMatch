@@ -51,7 +51,7 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
     // Queries indépendantes — une erreur n'annule pas les autres
     final animauxRes = await _supa
         .from('animaux')
-        .select('statut')
+        .select('statut, fa_id')
         .eq('uid_eleveur', uid)
         .eq('is_association', true)
         .catchError((_) => <dynamic>[]);
@@ -117,7 +117,7 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
         _nbAnimaux    = list.length;
         _nbDisponibles = list.where((a) => a['statut'] == 'disponible').length;
         _nbEnSoin     = list.where((a) => a['statut'] == 'en_soin').length;
-        _nbEnFa       = list.where((a) => a['statut'] == 'en_fa').length;
+        _nbEnFa       = list.where((a) => a['fa_id'] != null).length;
         _nbAdoptes    = list.where((a) => a['statut'] == 'adopte').length;
         _nbBenevoles  = benevoles.length;
         _recentAnimaux = List<Map<String, dynamic>>.from(recentRes as List);
@@ -229,7 +229,9 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
                   // Stats — 3 colonnes × 2 lignes
                   Row(
                     children: [
-                      _StatCard('Total', _nbAnimaux, Icons.pets, _teal),
+                      _StatCard('Total', _nbAnimaux, Icons.pets, _teal, onTap: () =>
+                          Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const MesAnimauxAssoPage()))),
                       const SizedBox(width: 10),
                       _StatCard('Disponibles', _nbDisponibles, Icons.favorite_border, _green),
                       const SizedBox(width: 10),

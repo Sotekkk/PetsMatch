@@ -206,7 +206,6 @@ export default function FamillesAccueilWebPage() {
     setPlacing(animal.id);
     await supabase.from('animaux').update({
       fa_id: placingFa.id,
-      statut: 'en_fa',
       date_entree: new Date().toISOString().split('T')[0],
     }).eq('id', animal.id);
 
@@ -230,7 +229,6 @@ export default function FamillesAccueilWebPage() {
     if (!confirm(`Retirer ${animal.nom} de cette famille d'accueil ?`)) return;
     await supabase.from('animaux').update({
       fa_id: null,
-      statut: 'en_soin',
       date_sortie: new Date().toISOString().split('T')[0],
     }).eq('id', animal.id);
     load();
@@ -410,7 +408,7 @@ export default function FamillesAccueilWebPage() {
       ) : (
         <div className="grid md:grid-cols-2 gap-4">
           {fas.map((fa) => {
-            const nbAnimaux = fa.animaux?.filter(a => a.statut === 'en_fa').length ?? 0;
+            const nbAnimaux = fa.animaux?.length ?? 0;
             const dispo = fa.capacite_max - nbAnimaux;
             return (
               <div key={fa.id} className="bg-white rounded-2xl shadow-sm p-5 border border-gray-100">
@@ -448,11 +446,11 @@ export default function FamillesAccueilWebPage() {
                 </div>
 
                 {/* Animaux en accueil */}
-                {fa.animaux && fa.animaux.filter(a => a.statut === 'en_fa').length > 0 && (
+                {fa.animaux && fa.animaux.length > 0 && (
                   <div className="mb-3">
                     <p className="text-xs font-semibold font-galey text-teal-700 mb-1">En accueil :</p>
                     <div className="flex flex-wrap gap-1">
-                      {fa.animaux.filter(a => a.statut === 'en_fa').map((a) => (
+                      {fa.animaux.map((a) => (
                         <button key={a.id}
                           onClick={() => handleRetirerAnimal(a, fa.id)}
                           title="Cliquer pour retirer"

@@ -1,4 +1,3 @@
-import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart' show speciesIcon, speciesColor, speciesLabel;
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
@@ -15,62 +14,76 @@ class MesAnimauxAssoPage extends StatefulWidget {
   State<MesAnimauxAssoPage> createState() => _MesAnimauxAssoPageState();
 }
 
-class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
+class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTickerProviderStateMixin {
   final _supa = Supabase.instance.client;
 
-  static const _green = Color(0xFF6E9E57);
   static const _teal = Color(0xFF0C5C6C);
 
+  late final TabController _tabController;
   List<Map<String, dynamic>> _animaux = [];
   List<Map<String, dynamic>> _filtered = [];
-  List<Map<String, dynamic>> _animauxRecus = [];
   bool _loading = true;
   late String _filterStatut = widget.initialFilterStatut;
   String _search = '';
+  String? _myUid;
 
-  static const _statuts = [
+  // "Ancien" = l'animal a un nouveau propriétaire (adopté/transféré) ou est décédé.
+  // "Détenus" = tout le reste (en_soin, disponible — et en_fa n'est plus un statut,
+  // c'est un état indépendant porté par fa_id, un animal en FA reste "détenu").
+  static const _anciensValues = {'adopte', 'transfere', 'decede'};
+
+  static const _detenusStatuts = [
     ('tous', 'Tous', Colors.grey),
     ('en_soin', 'En soin', Colors.orange),
     ('disponible', 'Disponible', Color(0xFF6E9E57)),
     ('en_fa', 'En FA', Colors.purple),
+  ];
+
+  static const _anciensStatuts = [
+    ('tous', 'Tous', Colors.grey),
     ('adopte', 'Adopté', Color(0xFF0C5C6C)),
     ('transfere', 'Transféré', Colors.blue),
     ('decede', 'Décédé', Colors.red),
   ];
 
-  static Map<String, Color> get statutColors => {
-    for (final s in _statuts) s.$1: s.$3,
-  };
-
-  static Map<String, String> get statutLabels => {
-    for (final s in _statuts) s.$1: s.$2,
-  };
-
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    if (_anciensValues.contains(widget.initialFilterStatut)) _tabController.index = 1;
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) return;
+      setState(() { _filterStatut = 'tous'; _applyFilters(); });
+    });
     _load();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    _myUid = uid;
     try {
+      const cols = 'id,nom,espece,race,sexe,statut,fa_id,date_naissance,photo_url,date_entree,date_sortie,uid_eleveur';
       final results = await Future.wait([
-        _supa.from('animaux')
-            .select('id,nom,espece,race,sexe,statut,date_naissance,photo_url,date_entree')
-            .eq('uid_eleveur', uid)
-            .eq('is_association', true)
-            .order('nom'),
-        _supa.from('animaux')
-            .select('id,nom,espece,race,sexe,statut,date_naissance,photo_url,date_sortie,uid_eleveur')
-            .eq('uid_acquereur', uid)
-            .order('date_sortie', ascending: false),
+        _supa.from('animaux').select(cols)
+            .eq('uid_eleveur', uid).eq('is_association', true).order('nom'),
+        _supa.from('animaux').select(cols)
+            .eq('uid_acquereur', uid).order('date_sortie', ascending: false),
       ]);
+      final owned = List<Map<String, dynamic>>.from(results[0] as List);
+      final receivedIds = owned.map((a) => a['id']).toSet();
+      final received = List<Map<String, dynamic>>.from(results[1] as List)
+          .where((a) => !receivedIds.contains(a['id']))
+          .toList();
       if (mounted) {
         setState(() {
-          _animaux = List<Map<String, dynamic>>.from(results[0] as List);
-          _animauxRecus = List<Map<String, dynamic>>.from(results[1] as List);
+          _animaux = [...owned, ...received];
           _applyFilters();
           _loading = false;
         });
@@ -81,8 +94,13 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
   }
 
   void _applyFilters() {
+    final isDetenus = _tabController.index == 0;
     _filtered = _animaux.where((a) {
-      final matchStatut = _filterStatut == 'tous' || a['statut'] == _filterStatut;
+      final statut = a['statut']?.toString() ?? 'en_soin';
+      final matchTab = isDetenus ? !_anciensValues.contains(statut) : _anciensValues.contains(statut);
+      if (!matchTab) return false;
+      final matchStatut = _filterStatut == 'tous'
+          || (_filterStatut == 'en_fa' ? a['fa_id'] != null : statut == _filterStatut);
       final matchSearch = _search.isEmpty ||
           (a['nom']?.toString().toLowerCase().contains(_search.toLowerCase()) ?? false) ||
           (a['espece']?.toString().toLowerCase().contains(_search.toLowerCase()) ?? false) ||
@@ -106,6 +124,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
 
   @override
   Widget build(BuildContext context) {
+    final statuts = _tabController.index == 0 ? _detenusStatuts : _anciensStatuts;
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(
@@ -113,6 +132,14 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
         title: const Text('Mes Animaux',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700),
+          tabs: const [Tab(text: 'Détenus'), Tab(text: 'Ancien')],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.sensors_rounded),
@@ -153,13 +180,13 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
               ),
             ),
           ),
-          // Filtres statut
+          // Filtres statut (dépendent de l'onglet actif)
           SizedBox(
             height: 44,
             child: ListView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              children: _statuts.map((s) {
+              children: statuts.map((s) {
                 final active = _filterStatut == s.$1;
                 return GestureDetector(
                   onTap: () => setState(() { _filterStatut = s.$1; _applyFilters(); }),
@@ -188,7 +215,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : (_filtered.isEmpty && _animauxRecus.isEmpty)
+                : _filtered.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -200,103 +227,41 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
                           ],
                         ),
                       )
-                    : CustomScrollView(
-                        slivers: [
-                          if (_filtered.isNotEmpty)
-                            SliverPadding(
-                              padding: const EdgeInsets.all(12),
-                              sliver: SliverGrid(
-                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 2,
-                                  crossAxisSpacing: 12,
-                                  mainAxisSpacing: 12,
-                                  childAspectRatio: 0.68,
+                    : GridView.builder(
+                        padding: const EdgeInsets.all(12),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 0.68,
+                        ),
+                        itemCount: _filtered.length,
+                        itemBuilder: (_, i) {
+                          final a = _filtered[i];
+                          final isCession = _myUid != null && a['uid_eleveur'] != _myUid;
+                          return _AnimalCard(
+                            animal: a,
+                            age: _age(a['date_naissance']),
+                            isCession: isCession,
+                            onTap: () async {
+                              await Navigator.push(context, MaterialPageRoute(
+                                builder: (_) => AnimalFichePage(
+                                  animalId: a['id'],
+                                  initialData: a,
+                                  isAssociation: true,
+                                  eleveurUidOverride: isCession ? a['uid_eleveur'] as String? : null,
                                 ),
-                                delegate: SliverChildBuilderDelegate(
-                                  (_, i) => _AnimalCard(
-                                    animal: _filtered[i],
-                                    age: _age(_filtered[i]['date_naissance']),
-                                    onTap: () async {
-                                      await Navigator.push(context, MaterialPageRoute(
-                                        builder: (_) => AnimalFichePage(
-                                          animalId: _filtered[i]['id'],
-                                          initialData: _filtered[i],
-                                          isAssociation: true,
-                                        ),
-                                      ));
-                                      _load();
-                                    },
-                                    onAddAnnonce: () => Navigator.push(context, MaterialPageRoute(
-                                      builder: (_) => CreateAnnonceAssoPage(
-                                        animalId: _filtered[i]['id']?.toString(),
-                                        initialAnimal: _filtered[i],
-                                      ),
-                                    )),
-                                  ),
-                                  childCount: _filtered.length,
-                                ),
+                              ));
+                              _load();
+                            },
+                            onAddAnnonce: () => Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => CreateAnnonceAssoPage(
+                                animalId: a['id']?.toString(),
+                                initialAnimal: a,
                               ),
-                            ),
-                          if (_filtered.isEmpty && _animauxRecus.isNotEmpty)
-                            const SliverToBoxAdapter(child: SizedBox(height: 12)),
-                          if (_animauxRecus.isNotEmpty) ...[
-                            SliverToBoxAdapter(
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                                child: Row(children: [
-                                  const Icon(Icons.handshake_outlined, size: 16, color: Color(0xFF0C5C6C)),
-                                  const SizedBox(width: 6),
-                                  Text('Reçus par cession (${_animauxRecus.length})',
-                                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                                          fontSize: 13, color: Color(0xFF0C5C6C))),
-                                ]),
-                              ),
-                            ),
-                            SliverList(
-                              delegate: SliverChildBuilderDelegate(
-                                (_, i) {
-                                  final a = _animauxRecus[i];
-                                  final nom = a['nom'] as String? ?? '—';
-                                  final espece = a['espece'] as String? ?? '';
-                                  final dateStr = a['date_sortie'] as String?;
-                                  final dt = dateStr != null ? DateTime.tryParse(dateStr) : null;
-                                  return ListTile(
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                                    leading: CircleAvatar(
-                                      backgroundColor: const Color(0xFF0C5C6C).withOpacity(0.08),
-                                      backgroundImage: a['photo_url'] != null
-                                          ? NetworkImage(a['photo_url'] as String) : null,
-                                      child: a['photo_url'] == null
-                                          ? Text(speciesLabel(espece).isNotEmpty
-                                              ? speciesLabel(espece)[0].toUpperCase() : '🐾',
-                                              style: const TextStyle(fontSize: 16))
-                                          : null,
-                                    ),
-                                    title: Text(nom, style: const TextStyle(
-                                        fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
-                                    subtitle: Text(
-                                      '$espece${dt != null ? ' · Reçu le ${dt.day}/${dt.month}/${dt.year}' : ''}',
-                                      style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                    ),
-                                    trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-                                    onTap: () async {
-                                      await Navigator.push(context, MaterialPageRoute(
-                                        builder: (_) => AnimalFichePage(
-                                          animalId: a['id'] as String,
-                                          readOnly: false,
-                                          isAssociation: true,
-                                          eleveurUidOverride: a['uid_eleveur'] as String?,
-                                        ),
-                                      ));
-                                      _load();
-                                    },
-                                  );
-                                },
-                                childCount: _animauxRecus.length,
-                              ),
-                            ),
-                          ],
-                        ],
+                            )),
+                          );
+                        },
                       ),
           ),
         ],
@@ -308,6 +273,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> {
 class _AnimalCard extends StatelessWidget {
   final Map<String, dynamic> animal;
   final String age;
+  final bool isCession;
   final VoidCallback onTap;
   final VoidCallback onAddAnnonce;
 
@@ -316,6 +282,7 @@ class _AnimalCard extends StatelessWidget {
     required this.age,
     required this.onTap,
     required this.onAddAnnonce,
+    this.isCession = false,
   });
 
   static const _statutColors = <String, Color>{
@@ -346,6 +313,7 @@ class _AnimalCard extends StatelessWidget {
     final race   = animal['race']?.toString()   ?? '';
     final sexe   = animal['sexe']?.toString()   ?? '';
     final statut = animal['statut']?.toString() ?? 'en_soin';
+    final enFa   = animal['fa_id'] != null;
     final statutColor = _statutColors[statut] ?? Colors.grey;
     final statutLabel = _statutLabels[statut] ?? statut;
     final specColor   = speciesColor(espece);
@@ -391,6 +359,36 @@ class _AnimalCard extends StatelessWidget {
                                 fontWeight: FontWeight.w700, color: Colors.white)),
                       ),
                     ),
+                    // Badge En FA — indépendant du statut, un animal peut être
+                    // à la fois "Disponible" et "En FA" en même temps.
+                    if (enFa)
+                      Positioned(
+                        top: 6, left: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.purple,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('🏡 FA',
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 9,
+                                  fontWeight: FontWeight.w700, color: Colors.white)),
+                        ),
+                      ),
+                    if (isCession)
+                      Positioned(
+                        bottom: 6, left: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('🤝 Cession',
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 9,
+                                  fontWeight: FontWeight.w700, color: Colors.white)),
+                        ),
+                      ),
                   ],
                 ),
               ),

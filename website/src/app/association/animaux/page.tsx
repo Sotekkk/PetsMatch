@@ -6,53 +6,91 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 
-const STATUTS = [
+interface Animal {
+  id: string;
+  nom: string;
+  espece?: string;
+  race?: string;
+  sexe?: string;
+  statut: string;
+  fa_id?: string | null;
+  date_naissance?: string | null;
+  photo_url?: string | null;
+  date_entree?: string | null;
+  uid_eleveur?: string | null;
+}
+
+const DETENUS_STATUTS = [
   { key: 'tous',      label: 'Tous',        color: 'bg-gray-100 text-gray-700' },
   { key: 'en_soin',   label: 'En soin',     color: 'bg-orange-100 text-orange-700' },
   { key: 'disponible',label: 'Disponible',  color: 'bg-green-100 text-green-700' },
   { key: 'en_fa',     label: 'En FA',       color: 'bg-purple-100 text-purple-700' },
+];
+
+const ANCIEN_STATUTS = [
+  { key: 'tous',      label: 'Tous',        color: 'bg-gray-100 text-gray-700' },
   { key: 'adopte',    label: 'Adopté',      color: 'bg-teal-100 text-teal-700' },
   { key: 'transfere', label: 'Transféré',   color: 'bg-blue-100 text-blue-700' },
   { key: 'decede',    label: 'Décédé',      color: 'bg-red-100 text-red-700' },
 ];
 
-const STATUT_MAP = Object.fromEntries(STATUTS.map(s => [s.key, s]));
+const ANCIENS_VALUES = new Set(['adopte', 'transfere', 'decede']);
+
+const STATUT_MAP = Object.fromEntries([...DETENUS_STATUTS, ...ANCIEN_STATUTS].map(s => [s.key, s]));
+
+// Statuts assignables manuellement — "en_fa" n'en fait plus partie : c'est un état
+// indépendant porté par fa_id (un animal en FA reste "disponible" ou "en soin").
+const ASSIGNABLE_STATUTS = ['en_soin', 'disponible', 'adopte', 'transfere', 'decede'];
 
 export default function AnimauxAssoPage() {
   const { user } = useAuth();
   const router = useRouter();
-  const [animaux, setAnimaux] = useState<any[]>([]);
-  const [filtered, setFiltered] = useState<any[]>([]);
+  const [animaux, setAnimaux] = useState<Animal[]>([]);
+  const [filtered, setFiltered] = useState<Animal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<'detenus' | 'ancien'>('detenus');
   const [filterStatut, setFilterStatut] = useState('tous');
   const [search, setSearch] = useState('');
+  const [myUid, setMyUid] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
-    supabase
-      .from('animaux')
-      .select('id, nom, espece, race, sexe, statut, date_naissance, photo_url, date_entree')
-      .eq('uid_eleveur', user.uid)
-      .eq('is_association', true)
-      .order('nom')
-      .then(({ data }) => {
-        setAnimaux(data ?? []);
-        setLoading(false);
-      });
+    setMyUid(user.uid);
+    const cols = 'id, nom, espece, race, sexe, statut, fa_id, date_naissance, photo_url, date_entree, uid_eleveur';
+    Promise.all([
+      supabase.from('animaux').select(cols)
+        .eq('uid_eleveur', user.uid).eq('is_association', true).order('nom'),
+      supabase.from('animaux').select(cols)
+        .eq('uid_acquereur', user.uid).order('date_entree', { ascending: false }),
+    ]).then(([owned, received]) => {
+      const ownedList = (owned.data ?? []) as Animal[];
+      const ownedIds = new Set(ownedList.map(a => a.id));
+      const receivedList = ((received.data ?? []) as Animal[]).filter(a => !ownedIds.has(a.id));
+      setAnimaux([...ownedList, ...receivedList]);
+      setLoading(false);
+    });
   }, [user]);
+
+  useEffect(() => {
+    const statuts = tab === 'detenus' ? DETENUS_STATUTS : ANCIEN_STATUTS;
+    if (!statuts.some(s => s.key === filterStatut)) setFilterStatut('tous');
+  }, [tab, filterStatut]);
 
   useEffect(() => {
     setFiltered(
       animaux.filter(a => {
-        const matchS = filterStatut === 'tous' || a.statut === filterStatut;
+        const matchTab = tab === 'detenus' ? !ANCIENS_VALUES.has(a.statut) : ANCIENS_VALUES.has(a.statut);
+        if (!matchTab) return false;
+        const matchS = filterStatut === 'tous'
+          || (filterStatut === 'en_fa' ? !!a.fa_id : a.statut === filterStatut);
         const q = search.toLowerCase();
         const matchQ = !q || a.nom?.toLowerCase().includes(q) || a.espece?.toLowerCase().includes(q) || a.race?.toLowerCase().includes(q);
         return matchS && matchQ;
       })
     );
-  }, [animaux, filterStatut, search]);
+  }, [animaux, tab, filterStatut, search]);
 
-  const age = (dn: string | null) => {
+  const age = (dn: string | null | undefined) => {
     if (!dn) return '';
     const mois = Math.floor((Date.now() - new Date(dn).getTime()) / (1000 * 60 * 60 * 24 * 30));
     return mois < 12 ? `${mois}m` : `${Math.floor(mois / 12)}a`;
@@ -63,6 +101,8 @@ export default function AnimauxAssoPage() {
     setAnimaux(prev => prev.map(a => a.id === animalId ? { ...a, statut: newStatut } : a));
   };
 
+  const statuts = tab === 'detenus' ? DETENUS_STATUTS : ANCIEN_STATUTS;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -71,6 +111,18 @@ export default function AnimauxAssoPage() {
           className="bg-teal-700 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 transition-colors">
           + Ajouter
         </Link>
+      </div>
+
+      {/* Onglets */}
+      <div className="flex border-b border-gray-200">
+        {(['detenus', 'ancien'] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-galey font-semibold border-b-2 transition-colors ${
+              tab === t ? 'border-teal-700 text-teal-800' : 'border-transparent text-gray-400 hover:text-gray-600'
+            }`}>
+            {t === 'detenus' ? 'Détenus' : 'Ancien'}
+          </button>
+        ))}
       </div>
 
       {/* Search */}
@@ -84,7 +136,7 @@ export default function AnimauxAssoPage() {
 
       {/* Filtres statut */}
       <div className="flex gap-2 flex-wrap">
-        {STATUTS.map(s => (
+        {statuts.map(s => (
           <button
             key={s.key}
             onClick={() => setFilterStatut(s.key)}
@@ -110,12 +162,14 @@ export default function AnimauxAssoPage() {
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {filtered.map((a) => {
-            const sc = STATUT_MAP[a.statut] ?? STATUTS[0];
+            const sc = STATUT_MAP[a.statut] ?? DETENUS_STATUTS[0];
+            const isCession = !!myUid && a.uid_eleveur !== myUid;
             return (
               <div key={a.id} className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100 hover:border-teal-200 hover:shadow-md transition-all">
                 <Link href={`/association/animaux/${a.id}`}>
                   <div className="aspect-square bg-gray-100 relative overflow-hidden">
                     {a.photo_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img src={a.photo_url} alt={a.nom} className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-4xl text-gray-300">🐾</div>
@@ -123,6 +177,16 @@ export default function AnimauxAssoPage() {
                     <span className={`absolute top-2 right-2 text-xs font-galey font-bold px-2 py-0.5 rounded-full ${sc.color}`}>
                       {sc.label}
                     </span>
+                    {a.fa_id && (
+                      <span className="absolute top-2 left-2 text-xs font-galey font-bold px-2 py-0.5 rounded-full bg-purple-600 text-white">
+                        🏡 FA
+                      </span>
+                    )}
+                    {isCession && (
+                      <span className="absolute bottom-2 left-2 text-xs font-galey font-bold px-2 py-0.5 rounded-full bg-black/60 text-white">
+                        🤝 Cession
+                      </span>
+                    )}
                   </div>
                   <div className="p-3">
                     <div className="flex items-center justify-between">
@@ -141,8 +205,8 @@ export default function AnimauxAssoPage() {
                     onChange={e => handleChangeStatut(a.id, e.target.value)}
                     className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1 font-galey focus:outline-none focus:ring-1 focus:ring-teal-400"
                   >
-                    {STATUTS.filter(s => s.key !== 'tous').map(s => (
-                      <option key={s.key} value={s.key}>{s.label}</option>
+                    {ASSIGNABLE_STATUTS.map(key => (
+                      <option key={key} value={key}>{STATUT_MAP[key]?.label ?? key}</option>
                     ))}
                   </select>
                   {a.statut === 'disponible' && (
