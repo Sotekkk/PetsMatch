@@ -6787,6 +6787,8 @@ class _AlimentationTabState extends State<_AlimentationTab> {
               if (parts.length >= 9) _densitePateeCtrl.text   = parts[8];
               if (parts.length >= 10) _densiteGranCtrl.text   = parts[9];
               if (parts.length >= 11) _pctCroquMix = double.tryParse(parts[10]) ?? _pctCroquMix;
+              if (parts.length >= 12 && parts[11].isNotEmpty && _densiteCtrl.text.isEmpty)
+                _densiteCtrl.text = parts[11];
             }
           }
           _modeCalculateur = false;
@@ -7030,7 +7032,7 @@ class _AlimentationTabState extends State<_AlimentationTab> {
 
   // ── Save ──────────────────────────────────────────────────────────────────
 
-  Future<void> _save() async {
+  Future<void> _save({bool silent = false}) async {
     if (widget.s.widget.animalId == null) return;
     setState(() => _saving = true);
     try {
@@ -7053,7 +7055,7 @@ class _AlimentationTabState extends State<_AlimentationTab> {
         'mixte_ratio_croq':    _pctCroquMix.round(),
         'notes': '${_pctFoinMix.round()}|${_pctGranulesMix.round()}|${_pctCompMix.round()}|$_nbRepas'
                  '|${_mixteSepareParRepas?1:0}|${_doseManCtrl.text}|${_doseManCtrl2.text}'
-                 '|$_typeMixte2|${_densitePateeCtrl.text}|${_densiteGranCtrl.text}|${_pctCroquMix.round()}',
+                 '|$_typeMixte2|${_densitePateeCtrl.text}|${_densiteGranCtrl.text}|${_pctCroquMix.round()}|${_densiteCtrl.text}',
         'updated_at':          DateTime.now().toIso8601String(),
       };
       if (_existing != null) {
@@ -7062,9 +7064,9 @@ class _AlimentationTabState extends State<_AlimentationTab> {
         final r = await _supa.from('alimentations').insert(payload).select().single();
         if (mounted) setState(() => _existing = r);
       }
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+      if (mounted && !silent) ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Alimentation enregistrée'), behavior: SnackBarBehavior.floating));
-      if (mounted) setState(() => _modeCalculateur = false);
+      if (mounted && !silent) setState(() => _modeCalculateur = false);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
@@ -7668,7 +7670,7 @@ class _AlimentationTabState extends State<_AlimentationTab> {
           final n = i + 1;
           final selected = _nbRepas == n;
           return GestureDetector(
-            onTap: () => setState(() => _nbRepas = n),
+            onTap: () { setState(() => _nbRepas = n); _save(silent: true); },
             child: Container(
               margin: const EdgeInsets.only(right: 6),
               width: 34, height: 34,
@@ -8189,7 +8191,7 @@ class _AlimentationTabState extends State<_AlimentationTab> {
           _BarfSlider(
             label: 'Croquettes', emoji: '🥜',
             value: _pctCroquMix, color: const Color(0xFF0C5C6C),
-            onChanged: (v) => setState(() => _pctCroquMix = v)),
+            onChanged: (v) => setState(() { _pctCroquMix = v; _doseManCtrl.clear(); _doseManCtrl2.clear(); })),
           Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 10),
             child: Row(children: [
@@ -8203,6 +8205,7 @@ class _AlimentationTabState extends State<_AlimentationTab> {
                   if (_typeMixte2 == 'patee') _typeMixte2 = 'barf';
                   else if (_typeMixte2 == 'barf') _typeMixte2 = 'menagere';
                   else _typeMixte2 = 'patee';
+                  _doseManCtrl2.clear();
                 }),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal:10, vertical:4),
