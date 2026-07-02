@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-06-29 — §5 permissions granulaires `employe_permissions` (write_animaux/sante/repro/planning/inventaire/notes) app+web, fix animaux bénévole/employé via `profile_id_proprio`  
+> Dernière mise à jour : 2026-07-02 — §19 Module Pension : état d'avancement (livré vs Phase 2 restante)  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -19,6 +19,7 @@
 16. [Lieux Pet-Friendly — Hôtels, Hébergements & Restaurants](#16-lieux-pet-friendly--hôtels-hébergements--restaurants)
 17. [Promenades collectives — Améliorations](#17-promenades-collectives--améliorations)
 18. [PetFriends — Réseau social propriétaires](#18-petfriends--réseau-social-propriétaires)
+19. [Module Pension — État d'avancement](#19-module-pension--état-davancement-session-2026-07-02)
 
 ---
 
@@ -3677,6 +3678,66 @@ Phase 6 — Animaux partagés (PFR12, PFR13)
 Phase 7 — Visibilité promenades (PRO09, PRO10, PFR20, PFR21)
 Phase 8 — Invitations promenade (PRO11–PRO13, PRO17)
 Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
+```
+
+---
+
+## 19. Module Pension — État d'avancement (session 2026-07-02)
+
+> Objectif exprimé : donner aux pensions un socle de gestion aussi complet que l'éleveur/association
+> (au-delà des simples annonces) pour encourager leur inscription, plus une partie "profils avancés"
+> (réservation intelligente, tarification automatisée, facturation, paiement en ligne) prévue mais
+> phasée. Cette section liste ce qui est livré et ce qui reste, pour reprise ultérieure.
+
+### 19.1 — Livré ✅ (app + web sauf mention contraire)
+
+**Phase 1 — parité de gestion avec éleveur/association**
+- Inventaire, Protocoles/Tâches, Employés (avec permissions granulaires `employe_permissions`) débloqués
+  pour `cat_pro = 'pension'` — ces modules existaient déjà pour l'éleveur, seule la navigation était
+  verrouillée (`if (!User_Info.isPro)`). Web : liens ajoutés dans `MENU_PENSION` (Header.tsx) vers les
+  routes génériques déjà existantes (`/employes`, `/mes-taches`, `/elevage/inventaire`).
+- **Logements / Chenil** (nouveau) : gestion des box/enclos/chatterie/cage avec capacité, assignation
+  des animaux en pension. Réutilise `enclos_chenil` (déjà générique via `uid_eleveur`) + nouvelle colonne
+  `pension_entrees.logement_id`. Pages : `lib/pages/pro/pension_chenil_page.dart`,
+  `website/src/app/pension/chenil`. **Ne couvre pas encore** les états opérationnels détaillés du §4
+  (à nettoyer / en nettoyage / hors service, mode équin) — c'est un MVP capacité+occupation uniquement.
+- **Tarifs & arrhes** : champ tarif €/nuit par type de logement + % d'arrhes, configurables dans le
+  profil pro (`user_profiles.tarifs_logements` JSONB, `arrhes_pourcentage`). Pas de variation automatique
+  par saison ou par poids d'animal (voir 19.2).
+- **Signature électronique des contrats d'hébergement** : nouveau type `contrat_hebergement` sur
+  `documents_animaux` (`pension_entree_id` au lieu de `animal_id`), template
+  `website/src/lib/contrat-pension.ts`, page `/pension/contrat`, bouton "Signature en ligne" dans
+  `registre_pension_page.dart`. Réutilise le même mécanisme que les contrats éleveur/association
+  (canvas manuscrit via `/signer-contrat/[token]`) — voir §9ter, le provider YouSign réel reste un stub
+  pour tout le monde, pas seulement la pension.
+- **Export factures CSV** : bouton d'export sur `FacturationPage` (app) et `/elevage/facturation` (web,
+  déjà partagée par la pension) — base d'interopérabilité avec un logiciel comptable tiers. Pas d'alertes
+  impayés ni d'export par plage de dates personnalisée (voir 19.2).
+- **Tableau de bord** : cartes stats "Pensionnaires" (→ registre), "RDV aujourd'hui" (→ agenda vue jour),
+  "Statut" (→ abonnement) rendues cliquables comme pour l'éleveur (`eleveur_home.dart`).
+- **Fiches accessibles** : saisie manuelle du numéro de puce en secours si le scan échoue
+  (`fiches_pension_page.dart`).
+- **Correctif indépendant** : bug de reconnexion (déconnexion → reconnexion sans redémarrer l'app
+  échouait) corrigé sur tous les profils, pas seulement pension — voir commit `c7ff69aa`.
+
+### 19.2 — Reste à faire 🔨 (Phase 2 / profils avancés, explicitement différé)
+
+| Item | Détail | Statut |
+|---|---|---|
+| Réservation intelligente | Algorithme d'allocation optimale entre logements de même catégorie selon les dates demandées | Non commencé |
+| Tarification automatisée | Prix calculé automatiquement selon poids animal, individuel/collectif, arrivée/départ en début de journée, réductions séjour long | Non commencé |
+| Alertes facturation | Notification si séjour non facturé ou client débiteur | Non commencé |
+| Export facturation par plage de dates | Export CSV actuel = tout l'historique filtré par statut, pas de sélecteur de dates dédié | Non commencé |
+| Paiement en ligne (lien email/SMS) | Explicitement V2 par l'utilisateur, avec frais de service/transaction optionnels | Non commencé |
+| Formules d'abonnement pension (3 formules envisagées) | Note utilisateur "pour plus tard" — un ticket BL04b (plan PENSION 19€/mois) existe déjà dans TASKS.md mais sans détail des 3 paliers | Non commencé |
+| États opérationnels des logements | à nettoyer / en nettoyage / hors service (mode canin) — spec complète déjà écrite au §4, non implémentée pour la pension au-delà de capacité/occupation | Non commencé |
+| Activation YouSign réelle | `YouSignProvider` reste un stub (toutes méthodes lèvent une erreur) tant qu'un abonnement YouSign + clé API n'est pas fourni — voir §9ter.2 pour la liste complète des prérequis restants, communs à tous les profils | Bloqué sur décision business |
+
+### 19.3 — Migrations à exécuter (si pas déjà fait)
+
+```
+supabase/migration_pension_logements.sql   -- logement_id, tarifs_logements, arrhes_pourcentage
+supabase/migration_pension_contrat.sql     -- pension_entree_id sur documents_animaux
 ```
 
 ---
