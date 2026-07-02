@@ -15,6 +15,7 @@ import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
+import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
@@ -251,22 +252,6 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Modèles de routines',
-                      icon: Icons.repeat_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PlanTemplateListPage(isAssociation: true),
-                        ));
-                      },
-                    ),
-                  ],
-                ),
-                _DrawerSection(
-                  icon: Icons.event_note_outlined,
-                  label: 'Protocoles',
-                  children: [
-                    _DrawerSubItem(
                       label: 'Planning du mois',
                       icon: Icons.calendar_month_outlined,
                       onTap: () {
@@ -277,8 +262,8 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Mes protocoles',
-                      icon: Icons.playlist_add_check_outlined,
+                      label: 'Modèles de routines',
+                      icon: Icons.repeat_outlined,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
@@ -286,15 +271,9 @@ class _AssociationNavState extends State<AssociationNav> {
                         ));
                       },
                     ),
-                  ],
-                ),
-                _DrawerSection(
-                  icon: Icons.inventory_2_outlined,
-                  label: 'Inventaire',
-                  children: [
                     _DrawerSubItem(
-                      label: 'Mon Inventaire',
-                      icon: Icons.inventory_outlined,
+                      label: 'Inventaire',
+                      icon: Icons.inventory_2_outlined,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
@@ -413,6 +392,16 @@ class _AssociationNavState extends State<AssociationNav> {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(
                       builder: (_) => const ServicesPage(),
+                    ));
+                  },
+                ),
+                _DrawerItem(
+                  icon: Icons.groups_outlined,
+                  label: 'Communauté',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const CommunauteHubPage(),
                     ));
                   },
                 ),

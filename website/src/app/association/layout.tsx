@@ -24,6 +24,7 @@ const NAV_ITEMS = [
   { href: '/association/contrat',                    label: 'Contrats adoption',  icon: '📋' },
   { href: '/association/certificat-engagement',      label: 'Certificats',        icon: '✍️' },
   { href: '/association/facturation',                label: 'Facturation',        icon: '🧾' },
+  { href: '/communaute',                              label: 'Communauté',         icon: '👥' },
 ];
 
 export default function AssociationLayout({ children }: { children: React.ReactNode }) {
