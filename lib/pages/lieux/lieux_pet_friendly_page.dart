@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/widgets/app_nav_drawer.dart';
 
 import 'lieu_detail_page.dart';
 import 'lieux_feed_page.dart';
+
+const _catHue = {
+  'hebergement':  BitmapDescriptor.hueAzure,
+  'restauration': BitmapDescriptor.hueOrange,
+};
 
 class LieuxPetFriendlyPage extends StatefulWidget {
   final String? filterCategorie; // 'hebergement' | 'restauration' | null = tous
@@ -25,6 +31,7 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
   String _categorie = 'tous'; // 'tous' | 'hebergement' | 'restauration'
   String _espece = 'tous';
   String _sortBy = 'recent'; // 'recent' | 'note' | 'misEnAvant'
+  bool _mapView = false;
 
   List<Map<String, dynamic>> _lieux = [];
   bool _loading = true;
@@ -55,6 +62,19 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
         !_loadingMore &&
         _hasMore) {
       _load();
+    }
+  }
+
+  bool _loadingAllForMap = false;
+
+  Future<void> _toggleMapView() async {
+    setState(() => _mapView = !_mapView);
+    if (_mapView && _hasMore) {
+      setState(() => _loadingAllForMap = true);
+      while (_hasMore && mounted) {
+        await _load();
+      }
+      if (mounted) setState(() => _loadingAllForMap = false);
     }
   }
 
@@ -136,6 +156,11 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
           IconButton(
+            icon: Icon(_mapView ? Icons.grid_view_rounded : Icons.map_outlined),
+            tooltip: _mapView ? 'Vue grille' : 'Vue carte',
+            onPressed: _toggleMapView,
+          ),
+          IconButton(
             icon: const Icon(Icons.view_day_outlined),
             tooltip: 'Vue feed',
             onPressed: () => Navigator.push(context,
@@ -177,11 +202,20 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
             },
           ),
           Expanded(
-            child: _loading
+            child: _loading || (_mapView && _loadingAllForMap)
                 ? const Center(child: CircularProgressIndicator(color: _teal))
                 : _lieux.isEmpty
                     ? _Empty(categorie: _categorie)
-                    : RefreshIndicator(
+                    : _mapView
+                        ? _LieuxMapView(
+                            lieux: _lieux,
+                            onTapLieu: (id) => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => LieuDetailPage(id: id)),
+                            ).then((_) => _load(reset: true)),
+                          )
+                        : RefreshIndicator(
                         color: _teal,
                         onRefresh: () => _load(reset: true),
                         child: GridView.builder(
@@ -321,6 +355,88 @@ class _Chip extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ─── Vue carte ────────────────────────────────────────────────────────────────
+
+class _LieuxMapView extends StatefulWidget {
+  final List<Map<String, dynamic>> lieux;
+  final void Function(String id) onTapLieu;
+
+  const _LieuxMapView({required this.lieux, required this.onTapLieu});
+
+  @override
+  State<_LieuxMapView> createState() => _LieuxMapViewState();
+}
+
+class _LieuxMapViewState extends State<_LieuxMapView> {
+  final Map<MarkerId, Marker> _markers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _buildMarkers();
+  }
+
+  @override
+  void didUpdateWidget(_LieuxMapView old) {
+    super.didUpdateWidget(old);
+    if (old.lieux.length != widget.lieux.length) _buildMarkers();
+  }
+
+  void _buildMarkers() {
+    final m = <MarkerId, Marker>{};
+    for (final lieu in widget.lieux) {
+      final lat = (lieu['lat'] as num?)?.toDouble();
+      final lng = (lieu['lng'] as num?)?.toDouble();
+      if (lat == null || lng == null) continue;
+      final id = lieu['id'] as String;
+      final cat = lieu['categorie'] as String? ?? '';
+      m[MarkerId(id)] = Marker(
+        markerId: MarkerId(id),
+        position: LatLng(lat, lng),
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+            _catHue[cat] ?? BitmapDescriptor.hueViolet),
+        infoWindow: InfoWindow(
+          title: lieu['nom'] as String? ?? '',
+          snippet: cat == 'hebergement' ? '🏨 Hébergement' : '🍽️ Restauration',
+          onTap: () => widget.onTapLieu(id),
+        ),
+      );
+    }
+    setState(() {
+      _markers.clear();
+      _markers.addAll(m);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(children: [
+      GoogleMap(
+        initialCameraPosition: const CameraPosition(
+          target: LatLng(46.603354, 1.888334),
+          zoom: 5.5,
+        ),
+        markers: Set<Marker>.of(_markers.values),
+        myLocationButtonEnabled: false,
+        zoomControlsEnabled: true,
+      ),
+      Positioned(
+        top: 12, left: 12,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(20),
+            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+          ),
+          child: Text('${widget.lieux.length} lieu(x)',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  fontWeight: FontWeight.w500)),
+        ),
+      ),
+    ]);
   }
 }
 
