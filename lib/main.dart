@@ -698,61 +698,75 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
+  @override
+  _AuthWrapperState createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  Future<bool>? _loadFuture;
+  String? _loadedUid;
+
+  Future<bool> _loadAll(String uid) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if (doc.exists) {
+        User_Info.updateUserInfo(doc.data() as Map<String, dynamic>);
+      }
+      await User_Info.loadProfiles(uid);
+    } catch (_) {}
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Scaffold(
+          return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
-        } else if (snapshot.hasData) {
-          User? user = snapshot.data;
-          if (user != null) {
-            return FutureBuilder<DocumentSnapshot>(
-              future: FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(user.uid)
-                  .get(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  );
-                } else if (snapshot.hasData && snapshot.data != null) {
-                  if (snapshot.data!.exists) {
-                    User_Info.updateUserInfo(
-                        snapshot.data!.data() as Map<String, dynamic>);
-                    final needsValidation = User_Info.isElevage || User_Info.isPro;
-                    if (User_Info.isAdmin || User_Info.isValidate || !needsValidation) {
-                      return BottomNav();
-                    } else {
-                      return VerificationRegistrationPage();
-                    }
-                  } else {
-                    if (User_Info.isElevage || User_Info.isPro) {
-                      return WelcomePage(); // Si isElevage est vrai
-                    } else {
-                      return WelcomePage(); // Si isElevage est faux
-                    }
-                  }
-                } else {
-                  if (User_Info.isElevage || User_Info.isPro) {
-                    return WelcomePage(); // Si isElevage est vrai
-                  } else {
-                    return WelcomePage(); // Si isElevage est faux
-                  }
-                }
-              },
-            );
-          } else {
-            return WelcomePage(); // Page principale de connection
-          }
-        } else {
-          return WelcomePage(); // Page principale de connexion
         }
+
+        final user = snapshot.data;
+        if (user == null) {
+          _loadFuture = null;
+          _loadedUid = null;
+          return WelcomePage();
+        }
+
+        // Crée le Future une seule fois par UID pour éviter les rechargements
+        if (_loadFuture == null || _loadedUid != user.uid) {
+          _loadedUid = user.uid;
+          _loadFuture = _loadAll(user.uid);
+        }
+
+        return FutureBuilder<bool>(
+          future: _loadFuture,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            if (!snap.hasData) return WelcomePage();
+
+            // Profil actif dans Supabase (contourne isValidate Firestore)
+            final hasActiveProfile = User_Info.availableProfiles.any((p) {
+              final s = (p['statut_pro'] ?? '').toString().toLowerCase();
+              return s == 'actif' || s == 'validated';
+            });
+            final needsValidation = User_Info.isElevage || User_Info.isPro;
+
+            if (User_Info.isAdmin || User_Info.isValidate || !needsValidation || hasActiveProfile) {
+              return BottomNav();
+            } else {
+              return VerificationRegistrationPage();
+            }
+          },
+        );
       },
     );
   }

@@ -268,7 +268,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         data.lastname  = userLastname;
       }
       if (isEleveur) {
-        data.name_elevage     = nomCabinet.trim();
+        data.nom              = nomCabinet.trim();
         data.numero_elevage   = numElevage.trim();
         data.is_elevage       = true;
         data.siret            = siret.trim();
@@ -299,7 +299,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
       }
       if (isProType) {
         data.cat_pro           = typeInfo.type;
-        data.name_elevage      = nomCabinet.trim();
+        data.nom               = nomCabinet.trim();
         data.profession_pro    = subProfession || typeInfo.label;
         data.siret             = siret.trim();
         data.rayon_intervention = rayon;

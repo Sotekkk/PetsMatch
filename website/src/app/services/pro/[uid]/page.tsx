@@ -123,7 +123,7 @@ function ProDetailContent() {
       if (profileTableId) {
         const { data } = await supabase.from('user_profiles').select('*').eq('id', profileTableId).maybeSingle();
         if (data) row = {
-          uid: data.uid, name: data.name_elevage || '',
+          uid: data.uid, name: (data.nom as string) || (data.name_elevage as string) || '',
           profession: data.profession_pro || '',
           description: data.desc_entreprise || data.description || '',
           ville: data.ville || '', adresse: data.adresse || '', code_postal: data.code_postal || '',

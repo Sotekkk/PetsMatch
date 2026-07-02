@@ -11,7 +11,7 @@ import { useAuth } from '@/lib/auth-context';
 interface ProProfile {
   id: string;
   profile_type: string;
-  name_elevage: string;
+  nom: string;
   avatar_url: string | null;
   cat_pro: string;
 }
@@ -88,7 +88,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
 
   const catPro = profile.profile_type ?? profile.cat_pro ?? '';
   const isVet  = catPro === 'veterinaire' || catPro === 'sante';
-  const name   = profile.name_elevage || userData?.firstname || 'Mon cabinet';
+  const name   = profile.nom || userData?.firstname || 'Mon cabinet';
   const avatar = profile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
 
   // Libellé "clients" selon la profession

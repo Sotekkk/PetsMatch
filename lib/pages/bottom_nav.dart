@@ -4,6 +4,7 @@ import 'package:PetsMatch/pages/association/association_nav.dart';
 import 'package:PetsMatch/pages/eleveur/eleveur_nav.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_asso.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_eleveur.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_pension.dart';
 import 'package:PetsMatch/pages/particulier/particulier_nav.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
@@ -101,35 +102,51 @@ class _BottomNavState extends State<BottomNav> {
     }
 
     final prefs = await SharedPreferences.getInstance();
+
+    // Types de profils disponibles
     final assoProfiles    = User_Info.availableProfiles.where((p) => p['profile_type'] == 'association').toList();
-    final eleveurProfiles = User_Info.availableProfiles.where((p) => p['profile_type'] == 'eleveur' || p['profile_type'] == 'pro').toList();
+    final pensionProfiles = User_Info.availableProfiles.where((p) => p['profile_type'] == 'pension').toList();
+    final eleveurProfiles = User_Info.availableProfiles.where((p) =>
+        !['particulier', 'association', 'pension'].contains(p['profile_type'] ?? '')).toList();
 
-    final hasAsso    = assoProfiles.isNotEmpty || User_Info.isAssociation;
-    final hasEleveur = eleveurProfiles.isNotEmpty || User_Info.isElevage || User_Info.isPro;
+    final hasAsso    = assoProfiles.isNotEmpty    || User_Info.isAssociation;
+    final hasPension = pensionProfiles.isNotEmpty;
+    final hasEleveur = eleveurProfiles.isNotEmpty || User_Info.isElevage ||
+                       (User_Info.isPro && !hasPension);
 
-    final assoDone   = prefs.getBool('onboarding_asso_done') ?? false;
-    final eleveurDone = prefs.getBool('onboarding_eleveur_done') ?? false;
+    // ── Lire les flags AVANT de les modifier ──────────────────────────────────
+    bool assoDone    = prefs.getBool('onboarding_asso_done')    ?? false;
+    bool pensionDone = prefs.getBool(OnboardingPensionPage.prefKey) ?? false;
+    bool eleveurDone = prefs.getBool('onboarding_eleveur_done') ?? false;
 
-    final needsAsso   = hasAsso && !assoDone;
+    // Si le profil existe déjà, on marque l'onboarding comme fait sans le montrer
+    if (hasAsso    && !assoDone)    { await prefs.setBool('onboarding_asso_done',    true); assoDone    = true; }
+    if (hasPension && !pensionDone) { await prefs.setBool(OnboardingPensionPage.prefKey, true); pensionDone = true; }
+    if (hasEleveur && !eleveurDone) { await prefs.setBool('onboarding_eleveur_done', true); eleveurDone = true; }
+
+    // ── Vérifier ce qui reste à montrer ──────────────────────────────────────
+    final needsAsso    = hasAsso    && !assoDone;
+    final needsPension = hasPension && !pensionDone;
     final needsEleveur = hasEleveur && !eleveurDone;
 
-    if (!needsAsso && !needsEleveur) return;
+    if (!needsAsso && !needsPension && !needsEleveur) return;
     if (!mounted) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      // Multi-profil : proposer le choix
-      if (needsAsso && needsEleveur) {
+      if (needsAsso && (needsEleveur || needsPension)) {
         _showOnboardingChoice(prefs);
       } else if (needsAsso) {
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const OnboardingAssoPage(),
-          fullscreenDialog: true,
+        ));
+      } else if (needsPension) {
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => const OnboardingPensionPage(),
         ));
       } else if (needsEleveur) {
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const OnboardingEleveurPage(),
-          fullscreenDialog: true,
         ));
       }
     });

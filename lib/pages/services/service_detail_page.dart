@@ -59,7 +59,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
           row = {
             ...raw,
             'uid':                       raw['uid'],
-            'name_elevage':              raw['name_elevage'] ?? '',
+            'name_elevage':              raw['nom'] ?? raw['name_elevage'] ?? '',
             'profile_picture_url_elevage': raw['avatar_url'] ?? '',
             'profile_picture_url':       raw['avatar_url'] ?? '',
             'banner_url':                raw['banner_url'] ?? '',

@@ -80,16 +80,16 @@ function ServicesCarteContent() {
       // Profils primaires (users) — sans filtre lat/lng pour inclure tous les pros dans la liste
       const { data: primaryData } = await supabase
         .from('users')
-        .select('uid, name_elevage, firstname, profile_picture_url, profession_pro, ville_elevage, ville, departement_elevage, region_elevage, cat_pro, especes_acceptees, accept_new_clients, lat, lng, rayon_intervention')
+        .select('uid, name_elevage, firstname, profile_picture_url, banner_url, profession_pro, ville_elevage, ville, departement_elevage, region_elevage, cat_pro, especes_acceptees, accept_new_clients, lat, lng, rayon_intervention')
         .not('cat_pro', 'is', null)
         .neq('cat_pro', '');
 
       // Profils secondaires (user_profiles) — latitude/longitude OU lat/lng
       const { data: secondaryData } = await supabase
         .from('user_profiles')
-        .select('id, uid, profile_type, name_elevage, avatar_url, profession_pro, ville, especes_acceptees, accept_new_clients, latitude, longitude, lat, lng, rayon_intervention')
+        .select('id, uid, profile_type, nom, name_elevage, avatar_url, banner_url, profession_pro, ville, ville_pro, especes_acceptees, accept_new_clients, latitude, longitude, lat, lng, rayon_intervention')
         .not('profile_type', 'is', null)
-        .eq('statut_pro', 'actif');
+        .in('statut_pro', ['actif', 'validated']);
 
       const items: ProMapItem[] = [];
 
@@ -99,6 +99,7 @@ function ServicesCarteContent() {
           uid:                row.uid,
           name:               row.name_elevage || row.firstname || 'Professionnel',
           photo:              row.profile_picture_url,
+          banner:             row.banner_url,
           profession:         row.profession_pro,
           ville:              row.ville_elevage || row.ville,
           cat_pro:            row.cat_pro,
@@ -122,10 +123,11 @@ function ServicesCarteContent() {
         items.push({
           uid:                row.uid,
           profileTableId:     row.id,
-          name:               row.name_elevage || 'Professionnel',
+          name:               row.nom || row.name_elevage || 'Professionnel',
           photo:              row.avatar_url,
+          banner:             row.banner_url,
           profession:         row.profession_pro,
-          ville:              row.ville,
+          ville:              row.ville_pro || row.ville,
           cat_pro:            cat,
           especes:            Array.isArray(row.especes_acceptees) ? row.especes_acceptees : [],
           accept_new_clients: row.accept_new_clients,
@@ -176,7 +178,12 @@ function ServicesCarteContent() {
   }
 
   const filtered = pros.filter(p => {
-    if (catFilter && p.cat_pro !== catFilter) return false;
+    if (catFilter) {
+      const catMatch = catFilter === 'garde'
+        ? (p.cat_pro === 'garde' || p.cat_pro === 'pension')
+        : p.cat_pro === catFilter;
+      if (!catMatch) return false;
+    }
     if (especeFilter && !p.especes.includes(especeFilter)) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -442,59 +449,111 @@ export default function ServicesCartePage() {
   );
 }
 
-// ─── ProCard (vue liste) ──────────────────────────────────────────────────────
+// ─── ProCard (vue liste) — même layout que l'app Flutter ─────────────────────
 
 interface ProCardPro {
-  uid: string; name: string; photo?: string; profession?: string;
+  uid: string; name: string; photo?: string; banner?: string; profession?: string;
   ville?: string; cat_pro?: string; especes: string[]; accept_new_clients?: boolean;
   lat?: number; lng?: number; profileTableId?: string;
 }
 
+const CAT_COLORS: Record<string, string> = {
+  veterinaire: '#2196F3', sante: '#2196F3', education: '#FF9800',
+  garde: '#4CAF50', pension: '#8BC34A', toilettage: '#00BCD4',
+  photographe: '#E91E63', marechal_ferrant: '#795548', referencement: '#CDDC39',
+};
+
 const CAT_LIST_LABELS: Record<string, string> = {
   veterinaire: 'Vétérinaire', sante: 'Santé', education: 'Éducateur',
-  garde: 'Pension / Pet sitter', toilettage: 'Toilettage', photographe: 'Photographe',
-  marechal_ferrant: 'Maréchal-ferrant', referencement: 'Commerce', pension: 'Pension',
+  garde: 'Pension / Garde', pension: 'Pension', toilettage: 'Toilettage',
+  photographe: 'Photographe', marechal_ferrant: 'Maréchal-ferrant', referencement: 'Commerce',
 };
 
 function ProCard({ pro }: { pro: ProCardPro }) {
+  const catColor = CAT_COLORS[pro.cat_pro ?? ''] ?? '#6B7280';
   const catLabel = CAT_LIST_LABELS[pro.cat_pro ?? ''] ?? pro.cat_pro ?? '';
   const href = `/services/pro/${pro.uid}${pro.profileTableId ? `?profileId=${pro.profileTableId}` : ''}`;
+  const accept = pro.accept_new_clients !== false;
+
+  const bannerStyle: React.CSSProperties = pro.banner
+    ? { backgroundImage: `url(${pro.banner})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+    : pro.photo
+    ? { backgroundImage: `url(${pro.photo})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+    : { background: `linear-gradient(135deg, ${catColor}cc, #1E2025)` };
+
   return (
-    <a href={href} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-start gap-4 hover:shadow-md transition-shadow block no-underline">
-      <div className="w-14 h-14 rounded-full bg-[#0C5C6C22] flex-shrink-0 overflow-hidden flex items-center justify-center">
-        {pro.photo
-          ? <img src={pro.photo} alt={pro.name} className="w-full h-full object-cover" />
-          : <span className="text-2xl">💼</span>
-        }
+    <a
+      href={href}
+      className="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-shadow block no-underline"
+      style={{ border: '1px solid #F0F0F0' }}
+    >
+      {/* Bannière */}
+      <div className="relative h-24 w-full" style={bannerStyle}>
+        {/* Overlay sombre si photo utilisée comme bannière */}
+        {(pro.banner || pro.photo) && (
+          <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.18)' }} />
+        )}
+        {/* Badge dispo */}
+        <div className="absolute top-2 right-2">
+          <span
+            className="text-[10px] font-bold px-2 py-1 rounded-xl"
+            style={{
+              background: accept ? '#E8F5E9' : '#FFF3E0',
+              color: accept ? '#388E3C' : '#F57C00',
+            }}
+          >
+            {accept ? '✓ Dispo' : 'Complet'}
+          </span>
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="font-bold text-[#1F2A2E] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{pro.name}</p>
-        {pro.profession && <p className="text-xs text-gray-500 truncate">{pro.profession}</p>}
-        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-          {catLabel && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-[#0C5C6C15] text-[#0C5C6C]">
+
+      {/* Contenu — avec photo avatar qui déborde sur la bannière */}
+      <div className="relative px-3 pb-3 pt-7">
+        {/* Photo avatar */}
+        <div
+          className="absolute -top-6 left-3 w-12 h-12 rounded-full overflow-hidden border-2 border-white shadow"
+          style={{ background: `${catColor}22` }}
+        >
+          {pro.photo
+            ? <img src={pro.photo} alt={pro.name} className="w-full h-full object-cover" />
+            : <div className="w-full h-full flex items-center justify-center text-xl">💼</div>
+          }
+        </div>
+
+        <p className="font-bold text-[#1E2025] text-sm truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{pro.name}</p>
+        {pro.profession && (
+          <p className="text-xs font-semibold truncate" style={{ color: catColor, fontFamily: 'Galey, sans-serif' }}>
+            {pro.profession}
+          </p>
+        )}
+        {pro.ville && (
+          <p className="text-[11px] text-gray-400 mt-0.5" style={{ fontFamily: 'Galey, sans-serif' }}>
+            📍 {pro.ville}
+          </p>
+        )}
+        {pro.especes.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {pro.especes.slice(0, 4).map(e => (
+              <span
+                key={e}
+                className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
+                style={{ background: `${catColor}18`, color: catColor, fontFamily: 'Galey, sans-serif' }}
+              >
+                {e}
+              </span>
+            ))}
+          </div>
+        )}
+        {catLabel && (
+          <div className="mt-1.5">
+            <span
+              className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
+              style={{ background: `${catColor}18`, color: catColor, fontFamily: 'Galey, sans-serif' }}
+            >
               {catLabel}
             </span>
-          )}
-          {pro.ville && (
-            <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
-              📍 {pro.ville}
-            </span>
-          )}
-          {pro.especes.slice(0, 3).map(e => (
-            <span key={e} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">{e}</span>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 mt-2">
-          {pro.accept_new_clients !== false && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-700 font-semibold border border-green-100">
-              Accepte de nouveaux clients
-            </span>
-          )}
-          {!pro.lat && (
-            <span className="text-[10px] text-amber-500" title="Pas de coordonnées — n'apparaît pas sur la carte">📍 Sans carte</span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </a>
   );

@@ -370,10 +370,10 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
       data['lastname']  = User_Info.lastname;
     }
     if (_isAssociationType) {
-      data['name_elevage'] = _nomCtrl.text.trim();
+      data['nom'] = _nomCtrl.text.trim();
     }
     if (_isEleveurType) {
-      data['name_elevage']    = _nomCtrl.text.trim();
+      data['nom']             = _nomCtrl.text.trim();
       data['numero_elevage']  = _numElevageCtrl.text.trim();
       data['is_elevage']      = true;
       data['acaced_numero']   = _acacedCtrl.text.trim();

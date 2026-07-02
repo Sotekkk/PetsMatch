@@ -10,6 +10,7 @@ export interface ProMapItem {
   profileTableId?: string; // user_profiles.id pour profils secondaires
   name: string;
   photo?: string;
+  banner?: string;
   profession?: string;
   ville?: string;
   cat_pro?: string;

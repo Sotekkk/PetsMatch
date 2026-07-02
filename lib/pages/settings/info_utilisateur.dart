@@ -1,11 +1,15 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:PetsMatch/pages/particulier/numberadressregistration.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
-import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geocoding/geocoding.dart' as geo;
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_webservice/places.dart';
 
 class InfoUserSettings extends StatefulWidget {
   const InfoUserSettings({super.key});
@@ -36,6 +40,16 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   final TextEditingController _phoneISOCodeController = TextEditingController();
   final TextEditingController _elevagePhoneISOCodeController = TextEditingController();
 
+  // Google Places — adresse particulier
+  late final GoogleMapsPlaces _places;
+  final _addressSearchCtrl = TextEditingController();
+  List<Prediction> _predictions = [];
+  bool _loadingPredictions = false;
+  bool _locating = false;
+  Timer? _searchDebounce;
+  double? _lat;
+  double? _lng;
+
   List<Country> countries = [];
   Country? selectedCountry;
   Country? selectedElevageCountry;
@@ -52,8 +66,16 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   @override
   void initState() {
     super.initState();
+    _places = GoogleMapsPlaces(apiKey: getApiKey());
     _loadUserInfo();
     _loadCountries();
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _addressSearchCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadUserInfo() async {
@@ -85,6 +107,25 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
         _villeController.text = User_Info.ville;
         _codePostalController.text = User_Info.codePostal;
         _paysController.text = User_Info.pays.isNotEmpty ? User_Info.pays : 'France';
+
+        // Charger lat/lng depuis Supabase et pré-remplir le champ de recherche
+        try {
+          final rows = await Supabase.instance.client
+              .from('users')
+              .select('lat, lng')
+              .eq('uid', user.uid)
+              .maybeSingle();
+          if (rows != null) {
+            _lat = (rows['lat'] as num?)?.toDouble();
+            _lng = (rows['lng'] as num?)?.toDouble();
+          }
+        } catch (_) {}
+        // Pré-remplir la barre de recherche avec l'adresse existante
+        final addrParts = [User_Info.rue, User_Info.codePostal, User_Info.ville]
+            .where((s) => s.isNotEmpty);
+        if (addrParts.isNotEmpty) {
+          _addressSearchCtrl.text = addrParts.join(', ');
+        }
       }
     }
   }
@@ -201,8 +242,12 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     };
     if (!User_Info.isElevage && !User_Info.isPro) {
       supaPayload['phone_number'] = _phoneController.text;
-      supaPayload['ville'] = _villeController.text;
-      supaPayload['code_postal'] = _codePostalController.text;
+      supaPayload['rue']          = _rueController.text;
+      supaPayload['ville']        = _villeController.text;
+      supaPayload['code_postal']  = _codePostalController.text;
+      supaPayload['pays']         = _paysController.text;
+      if (_lat != null) supaPayload['lat'] = _lat;
+      if (_lng != null) supaPayload['lng'] = _lng;
     }
     if (User_Info.isElevage || User_Info.isPro) {
       supaPayload['name_elevage'] = _elevageNameController.text;
@@ -221,6 +266,96 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
           behavior: SnackBarBehavior.floating,
         ),
       );
+    }
+  }
+
+  // ── Google Places autocomplete ─────────────────────────────────────────────
+
+  void _onAddressChanged(String val) {
+    _searchDebounce?.cancel();
+    if (val.length < 3) {
+      setState(() { _predictions = []; _loadingPredictions = false; });
+      return;
+    }
+    setState(() => _loadingPredictions = true);
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () => _fetchPredictions(val));
+  }
+
+  Future<void> _fetchPredictions(String input) async {
+    final res = await _places.autocomplete(
+      input,
+      components: [Component(Component.country, 'fr')],
+      language: 'fr',
+    );
+    if (!mounted) return;
+    setState(() {
+      _predictions = res.isOkay ? res.predictions : [];
+      _loadingPredictions = false;
+    });
+  }
+
+  Future<void> _selectPrediction(Prediction p) async {
+    _searchDebounce?.cancel();
+    setState(() { _predictions = []; _addressSearchCtrl.text = p.description ?? ''; });
+    if (p.placeId == null) return;
+
+    final det = await _places.getDetailsByPlaceId(p.placeId!);
+    if (!mounted || !det.isOkay) return;
+
+    String num = '', route = '', cp = '', ville = '', pays = 'France';
+    for (final c in det.result.addressComponents) {
+      if (c.types.contains('street_number')) num = c.longName;
+      if (c.types.contains('route')) route = c.longName;
+      if (c.types.contains('postal_code')) cp = c.longName;
+      if (c.types.contains('locality')) { ville = c.longName; }
+      else if (c.types.contains('administrative_area_level_2') && ville.isEmpty) { ville = c.longName; }
+      if (c.types.contains('country')) pays = c.longName;
+    }
+    final loc = det.result.geometry?.location;
+    setState(() {
+      _rueController.text   = [num, route].where((s) => s.isNotEmpty).join(' ');
+      _codePostalController.text = cp;
+      _villeController.text = ville;
+      _paysController.text  = pays;
+      if (loc != null) { _lat = loc.lat; _lng = loc.lng; }
+    });
+  }
+
+  Future<void> _geolocate() async {
+    setState(() => _locating = true);
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+        throw Exception('Permission refusée');
+      }
+      final pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium));
+      final marks = await geo.placemarkFromCoordinates(pos.latitude, pos.longitude);
+      if (marks.isEmpty) throw Exception('Adresse introuvable');
+      final m = marks.first;
+      setState(() {
+        _rueController.text   = m.street ?? '';
+        _codePostalController.text = m.postalCode ?? '';
+        _villeController.text = m.locality ?? m.subLocality ?? '';
+        _paysController.text  = m.country ?? 'France';
+        _lat = pos.latitude;
+        _lng = pos.longitude;
+        _addressSearchCtrl.text = [_rueController.text, _codePostalController.text,
+            _villeController.text].where((s) => s.isNotEmpty).join(', ');
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Géolocalisation impossible : $e',
+              style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _locating = false);
     }
   }
 
@@ -272,6 +407,85 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
                           _selectedCountryCode = c?.dialCode ?? _selectedCountryCode;
                         })),
                 const SizedBox(height: 12),
+                // Barre de recherche d'adresse Google Places
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 6, offset: const Offset(0, 2))],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _addressSearchCtrl,
+                          onChanged: _onAddressChanged,
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                          decoration: InputDecoration(
+                            labelText: 'Rechercher une adresse',
+                            prefixIcon: const Icon(Icons.search, size: 20, color: Color(0xFF6E9E57)),
+                            suffixIcon: _loadingPredictions
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(width: 16, height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2,
+                                            color: Color(0xFF6E9E57))))
+                                : null,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14),
+                                borderSide: BorderSide.none),
+                            filled: true, fillColor: Colors.white,
+                            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13,
+                                color: Colors.grey),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: IconButton(
+                          onPressed: _locating ? null : _geolocate,
+                          tooltip: 'Ma position actuelle',
+                          icon: _locating
+                              ? const SizedBox(width: 20, height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2,
+                                      color: Color(0xFF6E9E57)))
+                              : const Icon(Icons.my_location, color: Color(0xFF6E9E57)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Suggestions Google Places
+                if (_predictions.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 8, offset: const Offset(0, 4))],
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _predictions.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1, indent: 16),
+                      itemBuilder: (_, i) {
+                        final p = _predictions[i];
+                        return ListTile(
+                          leading: const Icon(Icons.location_on_outlined, size: 18,
+                              color: Color(0xFF6E9E57)),
+                          title: Text(p.description ?? '',
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                          dense: true,
+                          onTap: () => _selectPrediction(p),
+                        );
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                // Champs détaillés remplis automatiquement
                 _field('Rue', _rueController),
                 Row(children: [
                   Expanded(flex: 2, child: _fieldRaw('Ville *', _villeController)),

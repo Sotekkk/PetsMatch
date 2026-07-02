@@ -128,7 +128,7 @@ export default function HomeDashboard() {
   const activeProfileId = useActiveProfile();
   const router = useRouter();
   const [activeProfile, setActiveProfile] = useState<{
-    id: string; profile_type: string; name_elevage: string; avatar_url: string | null; cat_pro: string;
+    id: string; profile_type: string; nom: string; avatar_url: string | null; cat_pro: string;
   } | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
 
@@ -139,7 +139,7 @@ export default function HomeDashboard() {
       return;
     }
     supabase.from('user_profiles')
-      .select('id, profile_type, name_elevage, avatar_url, cat_pro')
+      .select('id, profile_type, nom, avatar_url, cat_pro')
       .eq('id', activeProfileId).single()
       .then(({ data }) => {
         setActiveProfile(data as typeof activeProfile);
@@ -180,7 +180,7 @@ export default function HomeDashboard() {
     const primaryProProfile = {
       id: user.uid,
       profile_type: userData.catPro ?? 'sante',
-      name_elevage: userData.nameElevage ?? `${userData.firstname ?? ''} ${userData.lastname ?? ''}`.trim(),
+      nom: userData.nameElevage ?? `${userData.firstname ?? ''} ${userData.lastname ?? ''}`.trim(),
       avatar_url: (userData.profilePictureUrlElevage ?? userData.profilePictureUrl) as string | null ?? null,
       cat_pro: userData.catPro ?? '',
     };
