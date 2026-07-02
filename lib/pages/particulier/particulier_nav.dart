@@ -19,7 +19,6 @@ import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
-import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_associations_benevole.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
@@ -435,13 +434,11 @@ class _ParticulierNavState extends State<ParticulierNav> {
                     fontSize: 15,
                     color: Colors.redAccent)),
             onTap: () async {
+              // Ne pas naviguer manuellement : AuthWrapper (racine de l'app) écoute
+              // authStateChanges() et bascule seul sur WelcomePage. Un pushAndRemoveUntil
+              // ici détruirait cet AuthWrapper racine et casserait la reconnexion suivante
+              // (retour en boucle sur l'écran de bienvenue après un nouveau login).
               await FirebaseAuth.instance.signOut();
-              if (context.mounted) {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => WelcomePage()),
-                  (route) => false,
-                );
-              }
             },
             dense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),

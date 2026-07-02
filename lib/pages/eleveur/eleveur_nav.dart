@@ -45,7 +45,6 @@ import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
-import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_eleveur.dart';
@@ -709,13 +708,11 @@ class _EleveurNavState extends State<EleveurNav> {
             title: const Text('Déconnexion',
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15, color: Colors.redAccent)),
             onTap: () async {
+              // Ne pas naviguer manuellement : AuthWrapper (racine de l'app) écoute
+              // authStateChanges() et bascule seul sur WelcomePage. Un pushAndRemoveUntil
+              // ici détruirait cet AuthWrapper racine et casserait la reconnexion suivante
+              // (retour en boucle sur l'écran de bienvenue après un nouveau login).
               await FirebaseAuth.instance.signOut();
-              if (context.mounted) {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => WelcomePage()),
-                  (route) => false,
-                );
-              }
             },
             dense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
