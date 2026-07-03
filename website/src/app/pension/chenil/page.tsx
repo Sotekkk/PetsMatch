@@ -41,6 +41,7 @@ export default function PensionChenilPage() {
   const [editing, setEditing] = useState<Logement | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [assigningTo, setAssigningTo] = useState<Logement | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const isPension = userData?.isPro && userData?.catPro === 'pension';
 
@@ -66,24 +67,28 @@ export default function PensionChenilPage() {
   const occupants = (logementId: string) => entrees.filter(e => e.logement_id === logementId);
   const nonAssignes = entrees.filter(e => !e.logement_id);
 
-  const openAdd = () => { setEditing(null); setForm(EMPTY_FORM); setShowForm(true); };
+  const openAdd = () => { setEditing(null); setForm(EMPTY_FORM); setSaveError(null); setShowForm(true); };
   const openEdit = (l: Logement) => {
     setEditing(l);
     setForm({ nom: l.nom, type: l.type, capacite: l.capacite, notes: l.notes ?? '' });
+    setSaveError(null);
     setShowForm(true);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !form.nom.trim()) return;
+    setSaveError(null);
     const payload = {
       nom: form.nom.trim(), type: form.type, capacite: form.capacite,
       notes: form.notes.trim() || null, updated_at: new Date().toISOString(),
     };
-    if (editing) {
-      await supabase.from('enclos_chenil').update(payload).eq('id', editing.id);
-    } else {
-      await supabase.from('enclos_chenil').insert({ ...payload, uid_eleveur: user.uid });
+    const { error } = editing
+      ? await supabase.from('enclos_chenil').update(payload).eq('id', editing.id)
+      : await supabase.from('enclos_chenil').insert({ ...payload, uid_eleveur: user.uid });
+    if (error) {
+      setSaveError(error.message);
+      return;
     }
     setShowForm(false);
     load();
@@ -143,6 +148,11 @@ export default function PensionChenilPage() {
           <textarea placeholder="Notes (optionnel)" rows={2} value={form.notes}
             onChange={e => setForm({ ...form, notes: e.target.value })}
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300" />
+          {saveError && (
+            <p className="text-sm font-galey text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+              {saveError}
+            </p>
+          )}
           <div className="flex gap-3">
             <button type="submit" className="bg-teal-700 text-white px-6 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800">
               {editing ? 'Enregistrer' : 'Ajouter'}
