@@ -90,6 +90,7 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
 
   List<Map<String, dynamic>> _logements = [];
   List<Map<String, dynamic>> _entrees = [];
+  Set<String> _nettoyages = {}; // "logementId|yyyy-MM-dd"
   bool _loading = true;
   DateTime _windowStart = DateTime.now();
   String? _filterEspece;
@@ -111,11 +112,15 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
     setState(() => _loading = true);
     try {
       final windowEnd = _windowStart.add(const Duration(days: _days));
+      final windowStartStr = DateFormat('yyyy-MM-dd').format(_windowStart);
+      final windowEndStr = DateFormat('yyyy-MM-dd').format(windowEnd);
       final results = await Future.wait([
         _supa.from('enclos_chenil').select().eq('uid_eleveur', uid).order('nom'),
         _supa.from('pension_entrees').select().eq('pro_uid', uid)
-            .lte('date_entree', DateFormat('yyyy-MM-dd').format(windowEnd))
+            .lte('date_entree', windowEndStr)
             .order('date_entree'),
+        _supa.from('pension_nettoyages').select('logement_id, date').eq('uid_eleveur', uid)
+            .gte('date', windowStartStr).lte('date', windowEndStr),
       ]);
       if (mounted) {
         setState(() {
@@ -125,6 +130,9 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
             final sortieEff = _parseDate(e['date_sortie_effective']);
             return sortieEff == null || !sortieEff.isBefore(_windowStart);
           }).toList();
+          _nettoyages = List<Map<String, dynamic>>.from(results[2] as List)
+              .map((n) => '${n['logement_id']}|${n['date']}')
+              .toSet();
           _loading = false;
         });
       }
@@ -144,15 +152,33 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
   List<Map<String, dynamic>> _soloEntreesFor(String? logementId) =>
       _entrees.where((e) => e['logement_id'] == logementId && e['seul_dans_logement'] == true).toList();
 
-  bool _estNettoyeAujourdhui(Map<String, dynamic> logement) {
-    final d = _parseDate(logement['dernier_nettoyage']);
-    return d != null && _sameDay(d, DateTime.now());
-  }
+  bool _estNettoye(String logementId, DateTime day) =>
+      _nettoyages.contains('$logementId|${DateFormat('yyyy-MM-dd').format(day)}');
 
-  Future<void> _marquerNettoye(String logementId) async {
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    await _supa.from('enclos_chenil').update({'dernier_nettoyage': today}).eq('id', logementId);
-    _load();
+  Future<void> _toggleNettoyage(String logementId, DateTime day) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final dateStr = DateFormat('yyyy-MM-dd').format(day);
+    final key = '$logementId|$dateStr';
+    final nowClean = _nettoyages.contains(key);
+    setState(() {
+      if (nowClean) { _nettoyages.remove(key); } else { _nettoyages.add(key); }
+    });
+    try {
+      if (nowClean) {
+        await _supa.from('pension_nettoyages').delete()
+            .eq('logement_id', logementId).eq('date', dateStr);
+      } else {
+        await _supa.from('pension_nettoyages').insert(
+            {'logement_id': logementId, 'uid_eleveur': uid, 'date': dateStr});
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          if (nowClean) { _nettoyages.add(key); } else { _nettoyages.remove(key); }
+        });
+      }
+    }
   }
 
   Future<void> _openEditSheet(Map<String, dynamic> entree) async {
@@ -243,20 +269,16 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
                                     padding: const EdgeInsets.symmetric(horizontal: 8),
                                     decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
                                     child: slot == 0
-                                        ? Row(children: [
-                                            Expanded(child: Text(l['nom'] as String? ?? '', overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600))),
-                                            GestureDetector(
-                                              onTap: () => _marquerNettoye(l['id'] as String),
-                                              child: Icon(
-                                                _estNettoyeAujourdhui(l) ? Icons.check_circle : Icons.cleaning_services_outlined,
-                                                size: 14,
-                                                color: _estNettoyeAujourdhui(l) ? const Color(0xFF6E9E57) : Colors.orange,
-                                              ),
-                                            ),
-                                          ])
+                                        ? Text(l['nom'] as String? ?? '', overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600))
                                         : const SizedBox.shrink(),
                                   ),
+                                Container(
+                                  height: 28, alignment: Alignment.centerLeft,
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
+                                  child: Text('Nettoyage', style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade500)),
+                                ),
                               ],
                             ],
                           ]),
@@ -297,6 +319,12 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
                                         onTapEntree: _openEditSheet,
                                         onTapEmpty: (d) => _openCreationSheet(l['id'] as String, d),
                                       ),
+                                    _NettoyageRow(
+                                      days: days,
+                                      logementId: l['id'] as String,
+                                      isClean: (d) => _estNettoye(l['id'] as String, d),
+                                      onToggle: (d) => _toggleNettoyage(l['id'] as String, d),
+                                    ),
                                   ],
                                 ],
                               ]),
@@ -413,6 +441,37 @@ class _LogementRow extends StatelessWidget {
               : null,
         ),
       ),
+    );
+  }
+}
+
+class _NettoyageRow extends StatelessWidget {
+  final List<DateTime> days;
+  final String logementId;
+  final bool Function(DateTime) isClean;
+  final void Function(DateTime) onToggle;
+
+  const _NettoyageRow({required this.days, required this.logementId, required this.isClean, required this.onToggle});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 28,
+      child: Row(children: [
+        for (final d in days)
+          GestureDetector(
+            onTap: () => onToggle(d),
+            child: Container(
+              width: 56, height: 28, alignment: Alignment.center,
+              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
+              child: Icon(
+                isClean(d) ? Icons.check_circle : Icons.cleaning_services_outlined,
+                size: 13,
+                color: isClean(d) ? const Color(0xFF6E9E57) : Colors.grey.shade300,
+              ),
+            ),
+          ),
+      ]),
     );
   }
 }

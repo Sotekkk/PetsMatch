@@ -139,6 +139,15 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
     onSaved();
   }
 
+  async function deleteEntree() {
+    if (!entree) return;
+    if (!window.confirm('Supprimer ce séjour ? Cette action est irréversible (annulation de la réservation).')) return;
+    setSaving(true);
+    const { error: err } = await supabase.from('pension_entrees').delete().eq('id', entree.id);
+    if (err) { setError(err.message); setSaving(false); return; }
+    onSaved();
+  }
+
   const inp: React.CSSProperties = {
     width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #d1d5db',
     fontFamily: 'Galey, sans-serif', fontSize: 14, boxSizing: 'border-box',
@@ -315,6 +324,16 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
           }}>
             {saving ? 'Enregistrement…' : isEdit ? 'Enregistrer les modifications' : 'Enregistrer l\'entrée'}
           </button>
+          {isEdit && (
+            <button type="button" onClick={deleteEntree} disabled={saving} style={{
+              width: '100%', padding: '12px 0', background: 'transparent', color: '#dc2626',
+              border: '1px solid #dc2626', borderRadius: 12, fontFamily: 'Galey, sans-serif',
+              fontWeight: 600, fontSize: 14, cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.7 : 1, marginTop: 10,
+            }}>
+              Supprimer le séjour (annulation)
+            </button>
+          )}
         </form>
       </div>
     </div>

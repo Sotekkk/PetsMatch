@@ -32,8 +32,8 @@ const ESP_LABEL: Record<string, string> = {
   cheval: 'Cheval', nac: 'NAC', ovin: 'Ovin', caprin: 'Caprin', porcin: 'Porc',
 };
 
-function espEmoji(e?: string) { return ESP_EMOJI[e ?? ''] ?? '🐾'; }
-function espLabel(e?: string) { return ESP_LABEL[e ?? ''] ?? (e ?? ''); }
+function espEmoji(e?: string | null) { return ESP_EMOJI[e ?? ''] ?? '🐾'; }
+function espLabel(e?: string | null) { return ESP_LABEL[e ?? ''] ?? (e ?? ''); }
 
 // ── Page principale ───────────────────────────────────────────────────────────
 

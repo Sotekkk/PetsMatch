@@ -3795,15 +3795,18 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
   demande d'accès (`animal_access`) au propriétaire résolu. App : classe `_PensionEditSheet` rendue publique
   (`PensionEditSheet`), réutilisée par le planning. Web : `PensionEntreeModal` gagne cette même capacité
   (partagée avec le registre).
-- **Statut de nettoyage des logements** : réutilise la colonne déjà existante `enclos_chenil.dernier_nettoyage`
-  — badge à côté du nom du logement dans le planning (🧹 à nettoyer / ✓ nettoyé aujourd'hui), cliquable pour
-  marquer nettoyé.
+- **Statut de nettoyage des logements, jour par jour** : nouvelle table `pension_nettoyages` (logement_id,
+  date, unique par jour) — remplace l'idée initiale de badge global (`enclos_chenil.dernier_nettoyage`,
+  abandonnée) par une ligne dédiée sous chaque logement dans le planning, avec une icône par jour cliquable
+  pour marquer/démarquer ce jour comme nettoyé (toggle insert/delete).
 - **Lignes multiples selon la capacité + exclusivité "seul"** : un logement de capacité N affiche N lignes
   dans le planning ; les séjours qui se chevauchent sont répartis automatiquement dans la première ligne
   libre (algorithme glouton façon Tetris, calculé à l'affichage — pas de colonne d'assignation persistée).
   Nouveau champ `seul_dans_logement` (BOOLEAN) sur `pension_entrees` : un séjour marqué "doit être seul"
   bloque visuellement les N lignes du logement pour ses dates (bordure rouge + icône 🔒), empêchant d'y
   planifier un autre animal.
+- **Suppression d'un séjour (annulation)** : bouton dédié dans le formulaire d'édition (app et web), avec
+  confirmation avant suppression définitive de la ligne `pension_entrees`.
 
 ### 19.3 — Migrations à exécuter (si pas déjà fait)
 
@@ -3816,6 +3819,7 @@ supabase/migration_animaux_owner_uid_claims.sql -- owner_uid sur animaux + table
 supabase/migration_pension_updates.sql          -- table pension_updates (journal de séjour)
 supabase/migration_pension_entrees_proprietaire_adresse.sql -- proprietaire_adresse sur pension_entrees
 supabase/migration_pension_solo_nettoyage.sql   -- seul_dans_logement sur pension_entrees
+supabase/migration_pension_nettoyages_jour.sql  -- table pension_nettoyages (nettoyage jour par jour)
 ```
 
 ---

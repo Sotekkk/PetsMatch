@@ -14,7 +14,6 @@ interface Logement {
   type: string;
   capacite: number;
   especes?: string[] | null;
-  dernier_nettoyage?: string | null;
 }
 
 interface Entree {
@@ -110,6 +109,7 @@ export default function PensionPlanningPage() {
   const activeProfileId = useActiveProfile();
   const [logements, setLogements] = useState<Logement[]>([]);
   const [entrees, setEntrees] = useState<Entree[]>([]);
+  const [nettoyages, setNettoyages] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [windowStart, setWindowStart] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [editingEntree, setEditingEntree] = useState<Entree | null>(null);
@@ -138,21 +138,34 @@ export default function PensionPlanningPage() {
   const load = useCallback(async () => {
     if (!user) return;
     const windowEnd = new Date(windowStart); windowEnd.setDate(windowEnd.getDate() + DAYS);
-    const [{ data: log }, { data: ent }] = await Promise.all([
-      supabase.from('enclos_chenil').select('id, nom, type, capacite, especes, dernier_nettoyage').eq('uid_eleveur', user.uid).order('nom'),
+    const windowStartStr = windowStart.toISOString().slice(0, 10);
+    const windowEndStr = windowEnd.toISOString().slice(0, 10);
+    const [{ data: log }, { data: ent }, { data: net }] = await Promise.all([
+      supabase.from('enclos_chenil').select('id, nom, type, capacite, especes').eq('uid_eleveur', user.uid).order('nom'),
       supabase.from('pension_entrees').select('id, pro_uid, animal_nom, proprietaire_nom, logement_id, animal_id, seul_dans_logement, statut, date_entree, date_sortie_prevue, date_sortie_effective, created_at')
-        .eq('pro_uid', user.uid).lte('date_entree', windowEnd.toISOString().slice(0, 10)).order('date_entree'),
+        .eq('pro_uid', user.uid).lte('date_entree', windowEndStr).order('date_entree'),
+      supabase.from('pension_nettoyages').select('logement_id, date').eq('uid_eleveur', user.uid)
+        .gte('date', windowStartStr).lte('date', windowEndStr),
     ]);
     setLogements(log ?? []);
     setEntrees((ent ?? []).filter(e => !e.date_sortie_effective || new Date(e.date_sortie_effective) >= windowStart));
+    setNettoyages(new Set((net ?? []).map(n => `${n.logement_id}|${n.date}`)));
     setLoading(false);
   }, [user, windowStart]);
 
   useEffect(() => { load(); }, [load]);
 
-  async function marquerNettoye(logementId: string) {
-    await supabase.from('enclos_chenil').update({ dernier_nettoyage: new Date().toISOString().slice(0, 10) }).eq('id', logementId);
-    load();
+  async function toggleNettoyage(logementId: string, day: Date) {
+    if (!user) return;
+    const dateStr = day.toISOString().slice(0, 10);
+    const key = `${logementId}|${dateStr}`;
+    const wasClean = nettoyages.has(key);
+    setNettoyages(prev => { const next = new Set(prev); if (wasClean) next.delete(key); else next.add(key); return next; });
+    if (wasClean) {
+      await supabase.from('pension_nettoyages').delete().eq('logement_id', logementId).eq('date', dateStr);
+    } else {
+      await supabase.from('pension_nettoyages').insert({ logement_id: logementId, uid_eleveur: user.uid, date: dateStr });
+    }
   }
 
   const days = Array.from({ length: DAYS }, (_, i) => { const d = new Date(windowStart); d.setDate(d.getDate() + i); return d; });
@@ -179,11 +192,7 @@ export default function PensionPlanningPage() {
     return null;
   };
 
-  const estNettoyeAujourdhui = (l: Logement) => {
-    if (!l.dernier_nettoyage) return false;
-    const d = new Date(l.dernier_nettoyage);
-    return sameDay(d, today);
-  };
+  const estNettoye = (logementId: string, day: Date) => nettoyages.has(`${logementId}|${day.toISOString().slice(0, 10)}`);
 
   if (!user || !userData) return null;
 
@@ -258,50 +267,57 @@ export default function PensionPlanningPage() {
                     const soloEntrees = logEntrees.filter(e => e.seul_dans_logement);
                     const capacite = l.capacite || 1;
                     const rows = packEntries(logEntrees, capacite);
-                    return rows.map((rowEntrees, slot) => (
-                      <tr key={`${l.id}-${slot}`}>
-                        <td className="sticky left-0 bg-white z-10 px-3 py-2 text-sm font-galey font-semibold text-gray-800 border-b border-gray-50 truncate max-w-32">
-                          {slot === 0 && (
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="truncate">{l.nom}</span>
-                              <button onClick={() => marquerNettoye(l.id)}
-                                title={estNettoyeAujourdhui(l) ? 'Nettoyé aujourd\'hui' : 'Marquer comme nettoyé'}
-                                className="shrink-0">
-                                {estNettoyeAujourdhui(l)
-                                  ? <span className="text-green-600 text-xs">✓</span>
-                                  : <span className="text-orange-500 text-xs">🧹</span>}
-                              </button>
-                            </div>
-                          )}
+                    return [
+                      ...rows.map((rowEntrees, slot) => (
+                        <tr key={`${l.id}-${slot}`}>
+                          <td className="sticky left-0 bg-white z-10 px-3 py-2 text-sm font-galey font-semibold text-gray-800 border-b border-gray-50 truncate max-w-32">
+                            {slot === 0 && <span className="truncate">{l.nom}</span>}
+                          </td>
+                          {days.map(d => {
+                            const solo = entryForDay(soloEntrees, d);
+                            const e = solo ?? entryForDay(rowEntrees, d);
+                            const st = e ? computeStatut(e, today) : null;
+                            return (
+                              <td key={d.toISOString()} className="border-b border-gray-50 p-1">
+                                {e && st ? (
+                                  <button
+                                    onClick={() => setEditingEntree(e)}
+                                    title={e.animal_nom}
+                                    className="w-full h-6 rounded relative"
+                                    style={{ backgroundColor: STATUT_COLOR[st], border: solo ? '1.5px solid #ef4444' : undefined }}
+                                  >
+                                    {solo && <span className="absolute inset-0 flex items-center justify-center text-[9px] text-white">🔒</span>}
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => { setPrefill(undefined); setChipStepFor({ logementId: l.id, date: d.toISOString().slice(0, 10) }); }}
+                                    title="Ajouter un séjour"
+                                    className="w-full h-6 rounded hover:bg-gray-100 flex items-center justify-center text-gray-300 hover:text-gray-400 transition-colors">
+                                    +
+                                  </button>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      )),
+                      <tr key={`${l.id}-nettoyage`}>
+                        <td className="sticky left-0 bg-white z-10 px-3 py-1 text-[10px] font-galey text-gray-400 border-b border-gray-50">
+                          Nettoyage
                         </td>
-                        {days.map(d => {
-                          const solo = entryForDay(soloEntrees, d);
-                          const e = solo ?? entryForDay(rowEntrees, d);
-                          const st = e ? computeStatut(e, today) : null;
-                          return (
-                            <td key={d.toISOString()} className="border-b border-gray-50 p-1">
-                              {e && st ? (
-                                <button
-                                  onClick={() => setEditingEntree(e)}
-                                  title={e.animal_nom}
-                                  className="w-full h-6 rounded relative"
-                                  style={{ backgroundColor: STATUT_COLOR[st], border: solo ? '1.5px solid #ef4444' : undefined }}
-                                >
-                                  {solo && <span className="absolute inset-0 flex items-center justify-center text-[9px] text-white">🔒</span>}
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => { setPrefill(undefined); setChipStepFor({ logementId: l.id, date: d.toISOString().slice(0, 10) }); }}
-                                  title="Ajouter un séjour"
-                                  className="w-full h-6 rounded hover:bg-gray-100 flex items-center justify-center text-gray-300 hover:text-gray-400 transition-colors">
-                                  +
-                                </button>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ));
+                        {days.map(d => (
+                          <td key={d.toISOString()} className="border-b border-gray-50 p-1 text-center">
+                            <button onClick={() => toggleNettoyage(l.id, d)}
+                              title={estNettoye(l.id, d) ? 'Nettoyé' : 'Marquer comme nettoyé'}
+                              className="w-full h-5 flex items-center justify-center">
+                              {estNettoye(l.id, d)
+                                ? <span className="text-green-600 text-xs">✓</span>
+                                : <span className="text-gray-300 text-xs">🧹</span>}
+                            </button>
+                          </td>
+                        ))}
+                      </tr>,
+                    ];
                   })}
                 </Fragment>
               ))}
