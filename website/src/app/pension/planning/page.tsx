@@ -9,6 +9,7 @@ interface Logement {
   id: string;
   nom: string;
   type: string;
+  especes?: string[] | null;
 }
 
 interface Entree {
@@ -68,6 +69,7 @@ function computeStatut(e: Entree, today: Date): Statut {
 
 const DAYS = 14;
 const DAY_FMT = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'numeric' });
+const ESPECES = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
 
 export default function PensionPlanningPage() {
   const { user, userData, isPension, loading: authLoading } = usePensionAccess();
@@ -77,6 +79,7 @@ export default function PensionPlanningPage() {
   const [loading, setLoading] = useState(true);
   const [windowStart, setWindowStart] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [selected, setSelected] = useState<{ e: Entree; st: Statut } | null>(null);
+  const [filterEspece, setFilterEspece] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -89,7 +92,7 @@ export default function PensionPlanningPage() {
     if (!user) return;
     const windowEnd = new Date(windowStart); windowEnd.setDate(windowEnd.getDate() + DAYS);
     const [{ data: log }, { data: ent }] = await Promise.all([
-      supabase.from('enclos_chenil').select('id, nom, type').eq('uid_eleveur', user.uid).order('nom'),
+      supabase.from('enclos_chenil').select('id, nom, type, especes').eq('uid_eleveur', user.uid).order('nom'),
       supabase.from('pension_entrees').select('id, animal_nom, proprietaire_nom, logement_id, statut, date_entree, date_sortie_prevue, date_sortie_effective')
         .eq('pro_uid', user.uid).lte('date_entree', windowEnd.toISOString().slice(0, 10)).order('date_entree'),
     ]);
@@ -102,7 +105,8 @@ export default function PensionPlanningPage() {
 
   const days = Array.from({ length: DAYS }, (_, i) => { const d = new Date(windowStart); d.setDate(d.getDate() + i); return d; });
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const grouped = logements.reduce<Record<string, Logement[]>>((acc, l) => {
+  const visibleLogements = filterEspece ? logements.filter(l => (l.especes ?? []).includes(filterEspece)) : logements;
+  const grouped = visibleLogements.reduce<Record<string, Logement[]>>((acc, l) => {
     (acc[l.type] ??= []).push(l);
     return acc;
   }, {});
@@ -142,14 +146,33 @@ export default function PensionPlanningPage() {
         </div>
       </div>
 
+      {logements.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => setFilterEspece(null)}
+            className={`px-3 py-1.5 rounded-full text-xs font-galey font-semibold border transition-colors ${
+              filterEspece === null ? 'bg-teal-700 text-white border-teal-700' : 'bg-white text-gray-600 border-gray-200'
+            }`}>
+            Toutes espèces
+          </button>
+          {ESPECES.map(esp => (
+            <button key={esp} onClick={() => setFilterEspece(esp)}
+              className={`px-3 py-1.5 rounded-full text-xs font-galey font-semibold border transition-colors ${
+                filterEspece === esp ? 'bg-teal-700 text-white border-teal-700' : 'bg-white text-gray-600 border-gray-200'
+              }`}>
+              {esp}
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-16">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" />
         </div>
-      ) : logements.length === 0 ? (
+      ) : visibleLogements.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-4xl mb-3">🏘️</p>
-          <p className="font-galey">Aucun logement enregistré</p>
+          <p className="font-galey">{logements.length === 0 ? 'Aucun logement enregistré' : 'Aucun logement pour cette espèce'}</p>
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">

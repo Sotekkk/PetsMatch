@@ -11,6 +11,7 @@ interface Logement {
   type: string;
   capacite: number;
   notes?: string | null;
+  especes?: string[] | null;
 }
 
 interface Entree {
@@ -28,8 +29,9 @@ const TYPES = [
   { value: 'cage', label: 'Cage' },
 ];
 const TYPE_LABEL = Object.fromEntries(TYPES.map(t => [t.value, t.label]));
+const ESPECES = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
 
-const EMPTY_FORM = { nom: '', type: 'box', capacite: 1, notes: '' };
+const EMPTY_FORM = { nom: '', type: 'box', capacite: 1, notes: '', especes: [] as string[] };
 
 export default function PensionChenilPage() {
   const { user, userData, isPension, loading: authLoading } = usePensionAccess();
@@ -42,6 +44,7 @@ export default function PensionChenilPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [assigningTo, setAssigningTo] = useState<Logement | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [filterEspece, setFilterEspece] = useState<string | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
@@ -69,10 +72,16 @@ export default function PensionChenilPage() {
   const openAdd = () => { setEditing(null); setForm(EMPTY_FORM); setSaveError(null); setShowForm(true); };
   const openEdit = (l: Logement) => {
     setEditing(l);
-    setForm({ nom: l.nom, type: l.type, capacite: l.capacite, notes: l.notes ?? '' });
+    setForm({ nom: l.nom, type: l.type, capacite: l.capacite, notes: l.notes ?? '', especes: l.especes ?? [] });
     setSaveError(null);
     setShowForm(true);
   };
+
+  const toggleEspece = (e: string) => setForm(f => ({
+    ...f, especes: f.especes.includes(e) ? f.especes.filter(x => x !== e) : [...f.especes, e],
+  }));
+
+  const filteredLogements = filterEspece ? logements.filter(l => (l.especes ?? []).includes(filterEspece)) : logements;
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,7 +89,7 @@ export default function PensionChenilPage() {
     setSaveError(null);
     const payload = {
       nom: form.nom.trim(), type: form.type, capacite: form.capacite,
-      notes: form.notes.trim() || null, updated_at: new Date().toISOString(),
+      notes: form.notes.trim() || null, especes: form.especes, updated_at: new Date().toISOString(),
     };
     const { error } = editing
       ? await supabase.from('enclos_chenil').update(payload).eq('id', editing.id)
@@ -144,6 +153,19 @@ export default function PensionChenilPage() {
             <button type="button" onClick={() => setForm(f => ({ ...f, capacite: f.capacite + 1 }))}
               className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">+</button>
           </div>
+          <div>
+            <p className="text-sm font-galey text-gray-700 mb-2">Espèces acceptées</p>
+            <div className="flex gap-2 flex-wrap">
+              {ESPECES.map(esp => (
+                <button key={esp} type="button" onClick={() => toggleEspece(esp)}
+                  className={`px-3.5 py-1.5 rounded-full text-sm font-galey font-medium border transition-colors ${
+                    form.especes.includes(esp) ? 'bg-[#6E9E57] text-white border-[#6E9E57]' : 'bg-white text-gray-600 border-gray-200'
+                  }`}>
+                  {esp}
+                </button>
+              ))}
+            </div>
+          </div>
           <textarea placeholder="Notes (optionnel)" rows={2} value={form.notes}
             onChange={e => setForm({ ...form, notes: e.target.value })}
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300" />
@@ -195,19 +217,40 @@ export default function PensionChenilPage() {
         </div>
       )}
 
+      {logements.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => setFilterEspece(null)}
+            className={`px-3 py-1.5 rounded-full text-xs font-galey font-semibold border transition-colors ${
+              filterEspece === null ? 'bg-teal-700 text-white border-teal-700' : 'bg-white text-gray-600 border-gray-200'
+            }`}>
+            Toutes espèces
+          </button>
+          {ESPECES.map(esp => (
+            <button key={esp} onClick={() => setFilterEspece(esp)}
+              className={`px-3 py-1.5 rounded-full text-xs font-galey font-semibold border transition-colors ${
+                filterEspece === esp ? 'bg-teal-700 text-white border-teal-700' : 'bg-white text-gray-600 border-gray-200'
+              }`}>
+              {esp}
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-16">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" />
         </div>
-      ) : logements.length === 0 ? (
+      ) : filteredLogements.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-4xl mb-3">🏘️</p>
-          <p className="font-galey">Aucun logement enregistré</p>
-          <p className="text-sm font-galey mt-1">Créez vos box, enclos ou chatterie pour suivre l&apos;occupation.</p>
+          <p className="font-galey">{logements.length === 0 ? 'Aucun logement enregistré' : 'Aucun logement pour cette espèce'}</p>
+          {logements.length === 0 && (
+            <p className="text-sm font-galey mt-1">Créez vos box, enclos ou chatterie pour suivre l&apos;occupation.</p>
+          )}
         </div>
       ) : (
         <div className="grid md:grid-cols-2 gap-4">
-          {logements.map(l => {
+          {filteredLogements.map(l => {
             const occ = occupants(l.id);
             const dispo = l.capacite - occ.length;
             return (
@@ -225,6 +268,13 @@ export default function PensionChenilPage() {
                   <button onClick={() => openEdit(l)} className="text-gray-400 hover:text-teal-700 text-sm">✏️</button>
                   <button onClick={() => handleDelete(l.id)} className="text-gray-400 hover:text-red-500 text-sm">🗑</button>
                 </div>
+                {(l.especes ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {(l.especes ?? []).map(esp => (
+                      <span key={esp} className="text-[10px] font-galey text-gray-500 bg-gray-100 px-2 py-0.5 rounded-lg">{esp}</span>
+                    ))}
+                  </div>
+                )}
                 {occ.length > 0 && (
                   <div className="flex flex-wrap gap-1 mb-3">
                     {occ.map(e => (

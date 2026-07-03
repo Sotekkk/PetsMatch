@@ -61,8 +61,10 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
   List<Map<String, dynamic>> _entrees = [];
   bool _loading = true;
   DateTime _windowStart = DateTime.now();
+  String? _filterEspece;
 
   static const int _days = 14;
+  static const _especesList = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
 
   @override
   void initState() {
@@ -112,8 +114,11 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
   Widget build(BuildContext context) {
     final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     final days = List.generate(_days, (i) => _windowStart.add(Duration(days: i)));
+    final visibleLogements = _filterEspece == null
+        ? _logements
+        : _logements.where((l) => List<String>.from(l['especes'] as List? ?? []).contains(_filterEspece)).toList();
     final grouped = <String, List<Map<String, dynamic>>>{};
-    for (final l in _logements) {
+    for (final l in visibleLogements) {
       final type = l['type'] as String? ?? 'box';
       grouped.putIfAbsent(type, () => []).add(l);
     }
@@ -133,15 +138,33 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
           IconButton(icon: const Icon(Icons.chevron_right), onPressed: () => _shiftWindow(7)),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _teal))
-          : _logements.isEmpty
-              ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.calendar_view_week_outlined, size: 60, color: Colors.grey.shade300),
-                  const SizedBox(height: 12),
-                  Text('Aucun logement enregistré', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
-                ]))
-              : Column(children: [
+      body: _logements.isEmpty && !_loading
+          ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.calendar_view_week_outlined, size: 60, color: Colors.grey.shade300),
+              const SizedBox(height: 12),
+              Text('Aucun logement enregistré', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
+            ]))
+          : Column(children: [
+              if (_logements.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  color: Colors.white,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(children: [
+                      _PlanningFilterChip(label: 'Toutes espèces', active: _filterEspece == null, onTap: () => setState(() => _filterEspece = null)),
+                      const SizedBox(width: 6),
+                      for (final e in _especesList) ...[
+                        _PlanningFilterChip(label: e, active: _filterEspece == e, onTap: () => setState(() => _filterEspece = e)),
+                        const SizedBox(width: 6),
+                      ],
+                    ]),
+                  ),
+                ),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator(color: _teal))
+                    : Column(children: [
                   Expanded(
                     child: SingleChildScrollView(
                       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -212,6 +235,8 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
                   ),
                   _Legend(),
                 ]),
+              ),
+            ]),
     );
   }
 
@@ -304,6 +329,31 @@ class _Legend extends StatelessWidget {
             Text(_stLabels[st]!, style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade600)),
           ]),
       ]),
+    );
+  }
+}
+
+class _PlanningFilterChip extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  const _PlanningFilterChip({required this.label, required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    const teal = Color(0xFF0C5C6C);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? teal : Colors.white,
+          border: Border.all(color: active ? teal : Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+            color: active ? Colors.white : Colors.black87, fontWeight: FontWeight.w500)),
+      ),
     );
   }
 }

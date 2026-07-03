@@ -29,6 +29,8 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
     ('cage', 'Cage'),
   ];
   static const _typeLabels = {'box': 'Box', 'enclos': 'Enclos', 'parc': 'Parc', 'chatterie': 'Chatterie', 'cage': 'Cage'};
+  static const _especesList = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
+  String? _filterEspece;
 
   @override
   void initState() {
@@ -68,10 +70,14 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
   List<Map<String, dynamic>> _occupants(String logementId) =>
       _entrees.where((e) => e['logement_id'] == logementId).toList();
 
+  List<Map<String, dynamic>> get _filteredLogements => _filterEspece == null
+      ? _logements
+      : _logements.where((l) => List<String>.from(l['especes'] as List? ?? []).contains(_filterEspece)).toList();
+
   List<Map<String, dynamic>> get _nonAssignes =>
       _entrees.where((e) => e['logement_id'] == null).toList();
 
-  Future<void> _saveLogement({String? id, required String nom, required String type, required int capacite, String? notes}) async {
+  Future<void> _saveLogement({String? id, required String nom, required String type, required int capacite, String? notes, required List<String> especes}) async {
     if (_uid == null) return;
     final payload = {
       'uid_eleveur': _uid,
@@ -79,6 +85,7 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
       'type': type,
       'capacite': capacite,
       'notes': notes?.isEmpty == true ? null : notes,
+      'especes': especes,
       'updated_at': DateTime.now().toIso8601String(),
     };
     if (id != null) {
@@ -126,6 +133,7 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
     final capaciteCtrl = TextEditingController(text: (logement?['capacite'] ?? 1).toString());
     final notesCtrl = TextEditingController(text: logement?['notes'] as String? ?? '');
     String type = logement?['type'] as String? ?? 'box';
+    final especes = <String>{...List<String>.from(logement?['especes'] as List? ?? [])};
 
     showModalBottomSheet(
       context: context,
@@ -160,6 +168,25 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
                 ),
               );
             }).toList()),
+            const SizedBox(height: 14),
+            const Text('Espèces acceptées', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black54)),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 8, children: _especesList.map((e) {
+              final active = especes.contains(e);
+              return GestureDetector(
+                onTap: () => setSheet(() => active ? especes.remove(e) : especes.add(e)),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: active ? _green : Colors.white,
+                    border: Border.all(color: active ? _green : Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(e, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                      color: active ? Colors.white : Colors.black87)),
+                ),
+              );
+            }).toList()),
             const SizedBox(height: 12),
             TextField(controller: capaciteCtrl, keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'Capacité (nb d\'animaux)', border: OutlineInputBorder())),
@@ -180,6 +207,7 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
                     type: type,
                     capacite: int.tryParse(capaciteCtrl.text.trim()) ?? 1,
                     notes: notesCtrl.text.trim(),
+                    especes: especes.toList(),
                   );
                 },
                 style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white,
@@ -253,28 +281,48 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
       ),
-      body: _loading
+      body: Column(children: [
+          if (_logements.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              color: Colors.white,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(children: [
+                  _FilterChip(label: 'Toutes espèces', active: _filterEspece == null, onTap: () => setState(() => _filterEspece = null)),
+                  const SizedBox(width: 6),
+                  for (final e in _especesList) ...[
+                    _FilterChip(label: e, active: _filterEspece == e, onTap: () => setState(() => _filterEspece = e)),
+                    const SizedBox(width: 6),
+                  ],
+                ]),
+              ),
+            ),
+          Expanded(
+            child: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _load,
-              child: _logements.isEmpty
+              child: _filteredLogements.isEmpty
                   ? ListView(children: [
                       const SizedBox(height: 80),
                       Center(child: Column(children: [
                         Icon(Icons.home_work_outlined, size: 60, color: Colors.grey.shade300),
                         const SizedBox(height: 12),
-                        Text('Aucun logement enregistré', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
+                        Text(_logements.isEmpty ? 'Aucun logement enregistré' : 'Aucun logement pour cette espèce',
+                            style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
                         const SizedBox(height: 4),
-                        Text('Créez vos box, enclos ou chatterie pour suivre l\'occupation.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400)),
+                        if (_logements.isEmpty)
+                          Text('Créez vos box, enclos ou chatterie pour suivre l\'occupation.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400)),
                       ])),
                     ])
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-                      itemCount: _logements.length,
+                      itemCount: _filteredLogements.length,
                       itemBuilder: (_, i) {
-                        final l = _logements[i];
+                        final l = _filteredLogements[i];
                         final occ = _occupants(l['id'] as String);
                         final capacite = (l['capacite'] as int?) ?? 1;
                         final dispo = capacite - occ.length;
@@ -312,6 +360,15 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
                               IconButton(icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
                                   onPressed: () => _deleteLogement(l['id'] as String)),
                             ]),
+                            if (List<String>.from(l['especes'] as List? ?? []).isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Wrap(spacing: 4, runSpacing: 4, children: List<String>.from(l['especes'] as List)
+                                  .map((e) => Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                        decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
+                                        child: Text(e, style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade600)),
+                                      )).toList()),
+                            ],
                             if (occ.isNotEmpty) ...[
                               const SizedBox(height: 8),
                               Wrap(spacing: 6, runSpacing: 4, children: occ.map((e) => GestureDetector(
@@ -340,6 +397,33 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
                       },
                     ),
             ),
+          ),
+        ]),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  const _FilterChip({required this.label, required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    const teal = Color(0xFF0C5C6C);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? teal : Colors.white,
+          border: Border.all(color: active ? teal : Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+            color: active ? Colors.white : Colors.black87, fontWeight: FontWeight.w500)),
+      ),
     );
   }
 }
