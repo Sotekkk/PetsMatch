@@ -218,6 +218,7 @@ const MENU_PENSION = [
       { href: '/pension/registre',  label: 'Registre pension',     icon: '📋' },
       { href: '/pension/demandes',  label: 'Demandes d\'accès',    icon: '🔑' },
       { href: '/pension/chenil',    label: 'Logements / Chenil',   icon: '🏘️' },
+      { href: '/pension/planning',  label: 'Planning occupation',  icon: '📆' },
       { href: '/pension/contrat',   label: 'Contrats',             icon: '✍️' },
       { href: '/mes-rdv',           label: 'Gestion des RDV',      icon: '🗓️' },
       { href: '/pro/creneaux',      label: 'Mes créneaux',         icon: '⏰' },
