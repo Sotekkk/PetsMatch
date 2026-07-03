@@ -64,9 +64,19 @@ export default function RegistrePensionPage() {
     setLoading(true);
     let qEnt = supabase.from('pension_entrees').select('*').eq('pro_uid', user.uid).order('date_entree', { ascending: false });
     if (activeProfileId) qEnt = qEnt.eq('pro_profile_id', activeProfileId) as typeof qEnt;
-    let qAcc = supabase.from('pension_acces').select('animal_id').eq('pro_uid', user.uid).eq('statut', 'approved');
-    if (activeProfileId) qAcc = qAcc.eq('pro_profile_id', activeProfileId) as typeof qAcc;
-    const [{ data: ent }, { data: acc }] = await Promise.all([qEnt, qAcc]);
+
+    let proProfileId = activeProfileId || null;
+    if (!proProfileId) {
+      const { data: mainProfile } = await supabase.from('user_profiles')
+        .select('id').eq('uid', user.uid).eq('is_main', true).maybeSingle();
+      proProfileId = mainProfile?.id ?? null;
+    }
+    const [{ data: ent }, { data: acc }] = await Promise.all([
+      qEnt,
+      proProfileId
+        ? supabase.from('animal_access').select('animal_id').eq('pro_profile_id', proProfileId).eq('statut', 'active')
+        : Promise.resolve({ data: [] as { animal_id: string }[] }),
+    ]);
     setEntrees((ent ?? []) as PensionEntree[]);
 
     const ids = (acc ?? []).map((a: { animal_id: string }) => a.animal_id);

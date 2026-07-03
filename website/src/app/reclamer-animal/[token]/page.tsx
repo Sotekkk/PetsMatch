@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -20,7 +20,8 @@ interface Animal {
   photo_url: string | null;
 }
 
-export default function ReclamerAnimalPage({ params }: { params: { token: string } }) {
+export default function ReclamerAnimalPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = use(params);
   const { user } = useAuth();
   const [claim, setClaim] = useState<Claim | null>(null);
   const [animal, setAnimal] = useState<Animal | null>(null);
@@ -33,7 +34,7 @@ export default function ReclamerAnimalPage({ params }: { params: { token: string
     (async () => {
       const { data: claimRow } = await supabase
         .from('animal_claims').select('id, animal_id, statut, nom_destinataire')
-        .eq('token', params.token).maybeSingle();
+        .eq('token', token).maybeSingle();
       if (!claimRow) { setLoading(false); return; }
       setClaim(claimRow as Claim);
       const { data: animalRow } = await supabase
@@ -42,7 +43,7 @@ export default function ReclamerAnimalPage({ params }: { params: { token: string
       setAnimal(animalRow as Animal);
       setLoading(false);
     })();
-  }, [params.token]);
+  }, [token]);
 
   async function claimIt() {
     if (!user || !claim) return;

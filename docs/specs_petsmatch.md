@@ -3807,6 +3807,27 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
   planifier un autre animal.
 - **Suppression d'un séjour (annulation)** : bouton dédié dans le formulaire d'édition (app et web), avec
   confirmation avant suppression définitive de la ligne `pension_entrees`.
+- **Champs espèce/race manquants dans l'édition (app)** : `PensionEditSheet` (ouvert au clic sur une case
+  occupée du planning) n'affichait ni ne sauvegardait `espece`/`race` — d'où l'impression que ces infos
+  « disparaissaient » après enregistrement. Section "Animal" ajoutée avec ces deux champs.
+- **Bouton "Demander l'accès à la fiche"** : ajouté à côté de "Voir la fiche" (app + web), visible quand une
+  fiche est rattachée mais qu'aucune demande d'accès n'existe encore — évite de dépendre uniquement du
+  rattachement initial pour déclencher la demande.
+- **Découverte majeure — `pension_acces` (legacy) vs `animal_access` (unifié)** : plusieurs pages web
+  (`Header.tsx` — dialogue d'autorisation du propriétaire, `pension/fiche/[animalId]`, `pension/registre`,
+  `pension/demandes`) lisaient/écrivaient encore l'ancienne table `pension_acces`, alors que l'app et tout
+  le travail pension de cette session utilisent la table unifiée `animal_access` (prévue par
+  `migration_v2_02_access_members.sql`, déjà écrite mais dont la bascule des pages consommatrices n'avait
+  jamais été terminée). Conséquence concrète : une demande d'accès créée via l'app ou le nouveau flux web
+  était invisible sur `pension/fiche`/`pension/demandes`, et le bouton Autoriser/Refuser du propriétaire
+  (web) ne faisait rien (update sur une table qui ne contenait pas la ligne). Les 4 pages web sont
+  maintenant alignées sur `animal_access` (statuts `pending`/`active`/`revoked`, résolution via
+  `pro_profile_id`). Le carnet santé de l'animal est obligatoire pour toute réservation en pension côté
+  produit, mais l'approbation du propriétaire reste requise (pas de contournement) — seule la lecture
+  "aperçu" (nom/espèce/race, déjà visible sans accès) et le journal de séjour (`pension_updates`, non gaté)
+  sont accessibles sans validation.
+- **Bug Next.js — `params` non déballé** : `reclamer-animal/[token]` et `signer-cession/[token]` accédaient
+  encore `params.token` directement (ancienne API Next.js) au lieu de `use(params)` — corrigé sur les deux.
 
 ### 19.3 — Migrations à exécuter (si pas déjà fait)
 
@@ -3820,6 +3841,8 @@ supabase/migration_pension_updates.sql          -- table pension_updates (journa
 supabase/migration_pension_entrees_proprietaire_adresse.sql -- proprietaire_adresse sur pension_entrees
 supabase/migration_pension_solo_nettoyage.sql   -- seul_dans_logement sur pension_entrees
 supabase/migration_pension_nettoyages_jour.sql  -- table pension_nettoyages (nettoyage jour par jour)
+supabase/migration_v2_02_access_members.sql     -- IMPORTANT si pas déjà fait : crée animal_access et
+                                                 -- migre les données pension_acces/vet_access_grants existantes
 ```
 
 ---

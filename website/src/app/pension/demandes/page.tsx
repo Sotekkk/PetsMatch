@@ -10,11 +10,8 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 interface PensionAcces {
   id: string;
-  pro_uid: string;
   animal_id: string;
-  owner_uid: string;
-  statut: 'pending' | 'approved' | 'refused';
-  pro_nom?: string;
+  statut: 'pending' | 'active' | 'revoked';
   animal_nom?: string;
   created_at: string;
 }
@@ -25,9 +22,9 @@ const TEAL  = '#0C5C6C';
 const GREEN = '#6E9E57';
 
 const STATUT_CONFIG = {
-  pending:  { label: 'En attente',  color: '#e08000', bg: '#FFF3E0' },
-  approved: { label: 'Autorisé',    color: GREEN,     bg: '#E8F5E9' },
-  refused:  { label: 'Refusé',      color: '#d32f2f', bg: '#FFEBEE' },
+  pending: { label: 'En attente', color: '#e08000', bg: '#FFF3E0' },
+  active:  { label: 'Autorisé',   color: GREEN,     bg: '#E8F5E9' },
+  revoked: { label: 'Refusé',     color: '#d32f2f', bg: '#FFEBEE' },
 };
 
 function fmtDate(iso: string) {
@@ -43,7 +40,7 @@ export default function DemandesAccesPage() {
 
   const [demandes, setDemandes] = useState<PensionAcces[]>([]);
   const [loading, setLoading]   = useState(true);
-  const [tab, setTab]           = useState<'pending' | 'approved' | 'refused' | 'tous'>('tous');
+  const [tab, setTab]           = useState<'pending' | 'active' | 'revoked' | 'tous'>('tous');
 
 
   useEffect(() => {
@@ -55,14 +52,26 @@ export default function DemandesAccesPage() {
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    let q = supabase
-      .from('pension_acces')
-      .select('*')
-      .eq('pro_uid', user.uid)
+    let proProfileId = activeProfileId || null;
+    if (!proProfileId) {
+      const { data: mainProfile } = await supabase.from('user_profiles')
+        .select('id').eq('uid', user.uid).eq('is_main', true).maybeSingle();
+      proProfileId = mainProfile?.id ?? null;
+    }
+    if (!proProfileId) { setDemandes([]); setLoading(false); return; }
+    const { data } = await supabase.from('animal_access')
+      .select('id, animal_id, statut, created_at')
+      .eq('pro_profile_id', proProfileId)
       .order('created_at', { ascending: false });
-    q = (q as any).eq('pro_profile_id', activeProfileId);
-    const { data } = await q;
-    setDemandes((data ?? []) as PensionAcces[]);
+    const rows = (data ?? []) as PensionAcces[];
+    const ids = rows.map(r => r.animal_id);
+    if (ids.length > 0) {
+      const { data: animaux } = await supabase.from('animaux').select('id, nom').in('id', ids);
+      const nomById: Record<string, string> = {};
+      for (const a of animaux ?? []) nomById[a.id] = a.nom ?? 'Animal';
+      for (const r of rows) r.animal_nom = nomById[r.animal_id];
+    }
+    setDemandes(rows);
     setLoading(false);
   }, [user, activeProfileId]);
 
@@ -73,10 +82,10 @@ export default function DemandesAccesPage() {
   );
 
   const counts = {
-    tous:     demandes.length,
-    pending:  demandes.filter(d => d.statut === 'pending').length,
-    approved: demandes.filter(d => d.statut === 'approved').length,
-    refused:  demandes.filter(d => d.statut === 'refused').length,
+    tous:    demandes.length,
+    pending: demandes.filter(d => d.statut === 'pending').length,
+    active:  demandes.filter(d => d.statut === 'active').length,
+    revoked: demandes.filter(d => d.statut === 'revoked').length,
   };
 
   if (!user || !userData) return null;
@@ -98,7 +107,7 @@ export default function DemandesAccesPage() {
 
           {/* Onglets */}
           <div style={{ display: 'flex', gap: 0 }}>
-            {([['tous', 'Toutes'], ['pending', 'En attente'], ['approved', 'Autorisées'], ['refused', 'Refusées']] as const).map(([val, label]) => (
+            {([['tous', 'Toutes'], ['pending', 'En attente'], ['active', 'Autorisées'], ['revoked', 'Refusées']] as const).map(([val, label]) => (
               <button key={val} onClick={() => setTab(val)} style={{
                 flex: 1, padding: '10px 0', background: 'none', border: 'none',
                 borderBottom: tab === val ? '2px solid white' : '2px solid transparent',
@@ -177,12 +186,12 @@ function DemandeCard({ demande }: { demande: PensionAcces }) {
             Demande envoyée le {fmtDate(demande.created_at)}
           </p>
 
-          {demande.statut === 'approved' && (
+          {demande.statut === 'active' && (
             <p style={{ margin: '6px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#6E9E57', fontWeight: 600 }}>
               ✓ Le propriétaire a autorisé l'accès à cette fiche.
             </p>
           )}
-          {demande.statut === 'refused' && (
+          {demande.statut === 'revoked' && (
             <p style={{ margin: '6px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#d32f2f' }}>
               Le propriétaire a refusé la demande.
             </p>

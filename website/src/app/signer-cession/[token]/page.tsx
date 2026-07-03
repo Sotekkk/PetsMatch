@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { use, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 interface Cession {
@@ -31,7 +31,8 @@ interface Cession {
   };
 }
 
-export default function SignerCessionPage({ params }: { params: { token: string } }) {
+export default function SignerCessionPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = use(params);
   const [cession, setCession] = useState<Cession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -43,7 +44,7 @@ export default function SignerCessionPage({ params }: { params: { token: string 
 
   useEffect(() => {
     load();
-  }, [params.token]);
+  }, [token]);
 
   useEffect(() => {
     if (!cession || signed) return;
@@ -75,7 +76,7 @@ export default function SignerCessionPage({ params }: { params: { token: string 
       const { data, error: e } = await supabase
         .from('cessions')
         .select(`*, animaux!animal_id(nom, espece, race, sexe, identification, date_naissance), users!uid_eleveur(firstname, lastname, name_elevage, is_elevage, adress_elevage, adress, siret, email)`)
-        .eq('token', params.token)
+        .eq('token', token)
         .maybeSingle();
 
       if (e || !data) { setError('Lien invalide ou expiré.'); return; }

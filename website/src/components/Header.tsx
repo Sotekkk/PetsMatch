@@ -1201,7 +1201,7 @@ export default function Header() {
         </div>
       )}
 
-      {/* Dialog pension_acces — accepter / refuser */}
+      {/* Dialog animal_access (pension) — accepter / refuser */}
       {pensionDialog && user && (
         <PensionAccesDialog
           notif={pensionDialog}
@@ -1214,9 +1214,14 @@ export default function Header() {
             const animalNom  = d.animalNom ?? 'cet animal';
             if (!pensionUid || !animalId) { setPensionDialog(null); return; }
 
-            const newStatut = approved ? 'approved' : 'refused';
-            await supabase.from('pension_acces').update({ statut: newStatut })
-              .eq('pro_uid', pensionUid).eq('animal_id', animalId);
+            const { data: proProfile } = await supabase.from('user_profiles')
+              .select('id').eq('uid', pensionUid).eq('is_main', true).maybeSingle();
+            if (proProfile?.id) {
+              await supabase.from('animal_access').update({
+                statut: approved ? 'active' : 'revoked',
+                ...(approved ? { granted_at: new Date().toISOString() } : { revoked_at: new Date().toISOString() }),
+              }).eq('pro_profile_id', proProfile.id).eq('animal_id', animalId);
+            }
 
             await supabase.from('notifications').insert({
               uid:   pensionUid,

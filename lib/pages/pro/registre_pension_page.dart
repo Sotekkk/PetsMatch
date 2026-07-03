@@ -1335,6 +1335,8 @@ class PensionEditSheetState extends State<PensionEditSheet> {
   DateTime?    _dateEntree;
   DateTime?    _dateSortiePrevue;
   DateTime?    _dateSortieEff;
+  late final TextEditingController _especeCtrl;
+  late final TextEditingController _raceCtrl;
   late final TextEditingController _clientCtrl;
   late final TextEditingController _contactCtrl;
   late final TextEditingController _emailCtrl;
@@ -1343,6 +1345,8 @@ class PensionEditSheetState extends State<PensionEditSheet> {
   bool _linkingFiche = false;
   late bool _seul;
   String? _animalId;
+  String? _accessStatus; // null = pas de demande, 'pending' | 'active' | 'refused'
+  bool _checkingAccess = false;
   final _fmt   = DateFormat('dd/MM/yyyy');
 
   @override
@@ -1353,12 +1357,57 @@ class PensionEditSheetState extends State<PensionEditSheet> {
     _dateEntree       = DateTime.tryParse(d['date_entree'] as String? ?? '');
     _dateSortiePrevue = DateTime.tryParse(d['date_sortie_prevue'] as String? ?? '');
     _dateSortieEff    = DateTime.tryParse(d['date_sortie_effective'] as String? ?? '');
+    _especeCtrl  = TextEditingController(text: d['espece'] as String? ?? '');
+    _raceCtrl    = TextEditingController(text: d['race'] as String? ?? '');
     _clientCtrl  = TextEditingController(text: d['proprietaire_nom'] as String? ?? '');
     _contactCtrl = TextEditingController(text: d['proprietaire_contact'] as String? ?? '');
     _emailCtrl   = TextEditingController(text: d['proprietaire_email'] as String? ?? '');
     _notesCtrl   = TextEditingController(text: d['notes'] as String? ?? '');
     _seul        = d['seul_dans_logement'] as bool? ?? false;
     _animalId    = d['animal_id'] as String?;
+    if (_animalId != null) _checkAccessStatus();
+  }
+
+  Future<void> _checkAccessStatus() async {
+    setState(() => _checkingAccess = true);
+    try {
+      final pid = User_Info.activeProfileId;
+      final row = await widget.supa.from('animal_access')
+          .select('statut').eq('pro_profile_id', pid).eq('animal_id', _animalId!).maybeSingle();
+      if (mounted) setState(() => _accessStatus = row?['statut'] as String?);
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _checkingAccess = false);
+    }
+  }
+
+  Future<void> _demanderAcces() async {
+    if (_animalId == null) return;
+    setState(() => _checkingAccess = true);
+    try {
+      final propRow = await widget.supa.from('animaux_proprietes')
+          .select('uid_proprio').eq('animal_id', _animalId!)
+          .filter('date_fin', 'is', null).order('date_debut', ascending: false)
+          .limit(1).maybeSingle();
+      final ownerUid = propRow?['uid_proprio'] as String?;
+      if (ownerUid == null || ownerUid.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Propriétaire introuvable pour cet animal.', style: TextStyle(fontFamily: 'Galey'))));
+        }
+        return;
+      }
+      await _requestAccessTo(_animalId!, ownerUid);
+      if (mounted) {
+        setState(() => _accessStatus = 'pending');
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Demande d\'accès envoyée au propriétaire', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: _green,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _checkingAccess = false);
+    }
   }
 
   Future<void> _linkFiche() async {
@@ -1380,6 +1429,7 @@ class PensionEditSheetState extends State<PensionEditSheet> {
       if (mounted) {
         setState(() {
           _animalId = animalId;
+          _accessStatus = (ownerUid != null && ownerUid.isNotEmpty) ? 'pending' : null;
           if ((prefill['proprietaireNom'] as String?)?.isNotEmpty ?? false) _clientCtrl.text = prefill['proprietaireNom'] as String;
           if ((prefill['proprietaireContact'] as String?)?.isNotEmpty ?? false) _contactCtrl.text = prefill['proprietaireContact'] as String;
           if ((prefill['proprietaireEmail'] as String?)?.isNotEmpty ?? false) _emailCtrl.text = prefill['proprietaireEmail'] as String;
@@ -1426,6 +1476,8 @@ class PensionEditSheetState extends State<PensionEditSheet> {
 
   @override
   void dispose() {
+    _especeCtrl.dispose();
+    _raceCtrl.dispose();
     _clientCtrl.dispose();
     _contactCtrl.dispose();
     _emailCtrl.dispose();
@@ -1456,6 +1508,8 @@ class PensionEditSheetState extends State<PensionEditSheet> {
     try {
       await widget.supa.from('pension_entrees').update({
         'statut':                _statut,
+        'espece':                _especeCtrl.text.trim().toLowerCase(),
+        'race':                  _raceCtrl.text.trim(),
         'proprietaire_nom':      _clientCtrl.text.trim(),
         'proprietaire_contact':  _contactCtrl.text.trim(),
         'proprietaire_email':    _emailCtrl.text.trim(),
@@ -1568,11 +1622,21 @@ class PensionEditSheetState extends State<PensionEditSheet> {
               ])]),
               const SizedBox(height: 16),
 
+              // Animal
+              _sectionTitle('Animal'),
+              const SizedBox(height: 10),
+              _card([
+                _tf('Espèce', _especeCtrl),
+                const SizedBox(height: 10),
+                _tf('Race', _raceCtrl),
+              ]),
+              const SizedBox(height: 16),
+
               // Fiche animal
               _sectionTitle('Fiche animal'),
               const SizedBox(height: 10),
               _card([
-                if (_animalId != null)
+                if (_animalId != null) ...[
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
@@ -1586,8 +1650,29 @@ class PensionEditSheetState extends State<PensionEditSheet> {
                       label: const Text('Voir la fiche', style: TextStyle(fontFamily: 'Galey')),
                       style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
                     ),
-                  )
-                else ...[
+                  ),
+                  const SizedBox(height: 8),
+                  if (_accessStatus == null && !_checkingAccess)
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _demanderAcces,
+                        icon: const Icon(Icons.lock_open_outlined, size: 16),
+                        label: const Text('Demander l\'accès à la fiche', style: TextStyle(fontFamily: 'Galey')),
+                        style: OutlinedButton.styleFrom(foregroundColor: _green, side: const BorderSide(color: _green)),
+                      ),
+                    )
+                  else if (_checkingAccess)
+                    const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 8),
+                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))))
+                  else
+                    Text(
+                      _accessStatus == 'active' ? 'Accès accordé par le propriétaire'
+                          : _accessStatus == 'pending' ? 'Demande d\'accès en attente'
+                          : 'Accès refusé par le propriétaire',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                ] else ...[
                   Text('Aucune fiche rattachée à ce séjour.',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
                   const SizedBox(height: 8),

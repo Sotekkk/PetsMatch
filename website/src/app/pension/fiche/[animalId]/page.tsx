@@ -127,17 +127,17 @@ export default function AnimalFichePensionWebPage() {
     if (!user || !animalId) return;
     setLoading(true);
 
-    // Vérifier l'accès — préférer pro_profile_id si disponible
-    let accQuery = supabase.from('pension_acces')
-      .select('statut')
-      .eq('animal_id', animalId)
-      .eq('statut', 'approved');
-    if (activeProfileId) {
-      accQuery = accQuery.eq('pro_profile_id', activeProfileId) as typeof accQuery;
-    } else {
-      accQuery = accQuery.eq('pro_uid', user.uid) as typeof accQuery;
+    // Vérifier l'accès — animal_access, résolu via le profil principal si activeProfileId absent
+    let proProfileId: string | null = activeProfileId || null;
+    if (!proProfileId) {
+      const { data: mainProfile } = await supabase.from('user_profiles')
+        .select('id').eq('uid', user.uid).eq('is_main', true).maybeSingle();
+      proProfileId = mainProfile?.id ?? null;
     }
-    const { data: acc } = await accQuery.maybeSingle();
+    const { data: acc } = proProfileId
+      ? await supabase.from('animal_access').select('statut')
+          .eq('animal_id', animalId).eq('pro_profile_id', proProfileId).eq('statut', 'active').maybeSingle()
+      : { data: null };
 
     if (!acc) { setHasAccess(false); setLoading(false); return; }
     setHasAccess(true);

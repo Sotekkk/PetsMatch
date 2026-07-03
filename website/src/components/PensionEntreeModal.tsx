@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { lookupAnimalByChip, requestAnimalAccess } from '@/lib/pension-chip-lookup';
@@ -74,6 +74,36 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
   const [linkingFiche, setLinkingFiche] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
+  const [accessStatus, setAccessStatus] = useState<string | null | undefined>(undefined);
+  const [checkingAccess, setCheckingAccess] = useState(false);
+
+  useEffect(() => {
+    if (!animalId || !proProfileId) return;
+    let cancelled = false;
+    supabase.from('animal_access').select('statut')
+      .eq('pro_profile_id', proProfileId).eq('animal_id', animalId).maybeSingle()
+      .then(({ data }) => { if (!cancelled) setAccessStatus(data?.statut ?? null); });
+    return () => { cancelled = true; };
+  }, [animalId, proProfileId]);
+
+  async function demanderAcces() {
+    if (!animalId) return;
+    setCheckingAccess(true);
+    try {
+      const { data: propRow } = await supabase.from('animaux_proprietes')
+        .select('uid_proprio').eq('animal_id', animalId).is('date_fin', null)
+        .order('date_debut', { ascending: false }).limit(1).maybeSingle();
+      const ownerUid = propRow?.uid_proprio;
+      if (!ownerUid) {
+        setError('Propriétaire introuvable pour cet animal.');
+        return;
+      }
+      await requestAnimalAccess(animalId, ownerUid, proUid, proProfileId, 'Votre pension', form.animal_nom);
+      setAccessStatus('pending');
+    } finally {
+      setCheckingAccess(false);
+    }
+  }
 
   async function linkFiche() {
     const chip = window.prompt('Numéro de puce de l\'animal :');
@@ -90,6 +120,7 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
         if (found.owner_uid) {
           await requestAnimalAccess(found.animal_id, found.owner_uid, proUid, proProfileId,
             'Votre pension', entree.animal_nom);
+          setAccessStatus('pending');
         }
       }
       setAnimalId(found.animal_id);
@@ -231,11 +262,27 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
           <p style={sec}>FICHE ANIMAL</p>
           <div style={{ marginBottom: 12 }}>
             {animalId ? (
-              <Link href={`/pension/fiche/${animalId}`}
-                style={{ display: 'block', textAlign: 'center', padding: '10px 0', borderRadius: 10,
-                  border: `1px solid ${TEAL}`, color: TEAL, fontFamily: 'Galey, sans-serif', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
-                Voir la fiche
-              </Link>
+              <>
+                <Link href={`/pension/fiche/${animalId}`}
+                  style={{ display: 'block', textAlign: 'center', padding: '10px 0', borderRadius: 10,
+                    border: `1px solid ${TEAL}`, color: TEAL, fontFamily: 'Galey, sans-serif', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
+                  Voir la fiche
+                </Link>
+                {accessStatus === undefined ? null : accessStatus === null ? (
+                  <button type="button" onClick={demanderAcces} disabled={checkingAccess}
+                    style={{ width: '100%', padding: '10px 0', borderRadius: 10, border: `1px solid ${GREEN}`,
+                      background: 'transparent', color: GREEN, cursor: 'pointer', marginTop: 8,
+                      fontFamily: 'Galey, sans-serif', fontSize: 13, fontWeight: 700 }}>
+                    {checkingAccess ? 'Envoi…' : 'Demander l\'accès à la fiche'}
+                  </button>
+                ) : (
+                  <p style={{ margin: '8px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 12, color: '#9ca3af' }}>
+                    {accessStatus === 'active' ? 'Accès accordé par le propriétaire'
+                      : accessStatus === 'pending' ? 'Demande d\'accès en attente'
+                      : 'Accès refusé par le propriétaire'}
+                  </p>
+                )}
+              </>
             ) : (
               <>
                 <p style={{ margin: '0 0 8px', fontFamily: 'Galey, sans-serif', fontSize: 12, color: '#9ca3af' }}>
