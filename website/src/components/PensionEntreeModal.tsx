@@ -127,7 +127,8 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
       if (!form.proprietaire_adresse.trim() && found.proprietaire_adresse) update.proprietaire_adresse = found.proprietaire_adresse;
       if (!animalId && found.animal_id) update.animal_id = found.animal_id;
       if (Object.keys(update).length > 0 && isEdit && entree) {
-        await supabase.from('pension_entrees').update(update).eq('id', entree.id);
+        const { error: err } = await supabase.from('pension_entrees').update(update).eq('id', entree.id);
+        if (err) { setError(`Échec de l'enregistrement : ${err.message}`); return; }
       }
       setForm(f => ({ ...f, ...update }));
       if (!animalId) setAnimalId(found.animal_id);
@@ -152,7 +153,8 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
         if (found.proprietaire_contact) update.proprietaire_contact = found.proprietaire_contact;
         if (found.proprietaire_email) update.proprietaire_email = found.proprietaire_email;
         if (found.proprietaire_adresse) update.proprietaire_adresse = found.proprietaire_adresse;
-        await supabase.from('pension_entrees').update(update).eq('id', entree.id);
+        const { error: err } = await supabase.from('pension_entrees').update(update).eq('id', entree.id);
+        if (err) { setError(`Échec de l'enregistrement : ${err.message}`); return; }
         if (found.owner_uid) {
           await requestAnimalAccess(found.animal_id, found.owner_uid, proUid, proProfileId,
             'Votre pension', entree.animal_nom);

@@ -1464,6 +1464,13 @@ class PensionEditSheetState extends State<PensionEditSheet> {
           backgroundColor: _green,
         ));
       }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Échec de l\'enregistrement : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+        ));
+      }
     } finally {
       if (mounted) setState(() => _linkingFiche = false);
     }
