@@ -85,7 +85,12 @@ const PRO_TYPES = new Set([
 function mapProfile(d: Record<string, unknown>): UserData {
   const type = (d.profile_type as string | undefined) ?? '';
 
-  const especesElevees = (d.especes_elevees as { espece: string; races?: string[] }[] | undefined) ?? [];
+  // especes_elevees peut être stocké soit en objets {espece, races} (éleveur),
+  // soit en simples chaînes ["chien", "chat"] (autres profils pro) — on normalise.
+  const especesEleveesRaw = (d.especes_elevees as unknown[] | undefined) ?? [];
+  const especesElevees = especesEleveesRaw
+    .map(e => typeof e === 'string' ? { espece: e, races: [] as string[] } : e as { espece?: string; races?: string[] })
+    .filter((e): e is { espece: string; races?: string[] } => typeof e?.espece === 'string' && e.espece.length > 0);
   const dogBreeds = (d.dog_breeds as string[] | undefined) ?? [];
   const catBreeds = (d.cat_breeds as string[] | undefined) ?? [];
 
