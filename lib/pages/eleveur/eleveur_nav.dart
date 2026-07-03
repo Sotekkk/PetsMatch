@@ -34,6 +34,7 @@ import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_chenil_page.dart';
+import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
@@ -66,6 +67,7 @@ class _EleveurNavState extends State<EleveurNav> {
   bool _isEmploye    = false;
   bool _isBenevole   = false;
   String _planCode   = 'free';
+  String _pensionPlanCode = 'free';
 
   static const _green = Color(0xFF6E9E57);
   static const _teal = Color(0xFF0C5C6C);
@@ -96,6 +98,11 @@ class _EleveurNavState extends State<EleveurNav> {
   Future<void> _loadPlan() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    if (User_Info.catPro == 'pension') {
+      final code = await PlanService.getPensionPlanCode(uid);
+      if (mounted) setState(() => _pensionPlanCode = code);
+      return;
+    }
     final code = await PlanService.getPlanCode(uid);
     if (mounted) setState(() => _planCode = code);
   }
@@ -612,30 +619,49 @@ class _EleveurNavState extends State<EleveurNav> {
                     _DrawerItem(
                       icon: Icons.inventory_2_outlined,
                       label: 'Inventaire',
+                      locked: _pensionPlanCode == 'free',
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const InventairePage(),
+                          builder: (_) => _pensionPlanCode == 'free'
+                              ? const PensionAbonnementPage()
+                              : const InventairePage(),
                         ));
                       },
                     ),
                     _DrawerItem(
                       icon: Icons.event_note_outlined,
                       label: 'Protocoles / Tâches',
+                      locked: _pensionPlanCode == 'free',
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PlanTemplateListPage(),
+                          builder: (_) => _pensionPlanCode == 'free'
+                              ? const PensionAbonnementPage()
+                              : const PlanTemplateListPage(),
                         ));
                       },
                     ),
                     _DrawerItem(
                       icon: Icons.groups_outlined,
                       label: 'Mes Employés',
+                      locked: _pensionPlanCode == 'free',
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const EmployesPage(),
+                          builder: (_) => _pensionPlanCode == 'free'
+                              ? const PensionAbonnementPage()
+                              : const EmployesPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.workspace_premium_outlined,
+                      label: 'Mon abonnement',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PensionAbonnementPage(),
                         ));
                       },
                     ),
@@ -728,15 +754,35 @@ class _DrawerItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final bool locked;
+  final String badgeLabel;
 
-  const _DrawerItem({required this.icon, required this.label, required this.onTap});
+  const _DrawerItem({
+    required this.icon, required this.label, required this.onTap,
+    this.locked = false, this.badgeLabel = 'Pro',
+  });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: const Color(0xFF0C5C6C), size: 22),
-      title: Text(label,
-          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15)),
+      leading: Icon(icon, color: locked ? Colors.grey.shade400 : const Color(0xFF0C5C6C), size: 22),
+      title: Row(children: [
+        Flexible(child: Text(label,
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15,
+                color: locked ? Colors.grey.shade400 : const Color(0xFF1F2A2E)))),
+        if (locked) ...[
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+                color: const Color(0xFFD97706).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8)),
+            child: Text(badgeLabel,
+                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700,
+                    fontFamily: 'Galey', color: Color(0xFFD97706))),
+          ),
+        ],
+      ]),
       onTap: onTap,
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),

@@ -141,7 +141,7 @@ export default function AdminPage() {
   const [annoncesTab, setAnnoncesTab] = useState<'attente' | 'suspectes' | 'suspendues'>('attente');
 
   // Tarification
-  interface PlanAdmin { id: string; plan_code: string; label: string; prix_mensuel: number; prix_annuel: number; max_annonces: number; duree_annonce_jours: number; auto_publish: boolean; stripe_price_id_mensuel?: string; stripe_price_id_annuel?: string; actif: boolean; }
+  interface PlanAdmin { id: string; profil_type: string; plan_code: string; label: string; prix_mensuel: number; prix_annuel: number; max_annonces: number; duree_annonce_jours: number; auto_publish: boolean; stripe_price_id_mensuel?: string; stripe_price_id_annuel?: string; actif: boolean; }
   interface ProduitAdmin { id: string; code: string; label: string; prix: number; duree_heures?: number; description?: string; stripe_price_id?: string; actif: boolean; }
   const [plans, setPlans] = useState<PlanAdmin[]>([]);
   const [produits, setProduits] = useState<ProduitAdmin[]>([]);
@@ -671,7 +671,7 @@ export default function AdminPage() {
     setTarifLoading(true);
     try {
       const [{ data: plansData }, { data: produitsData }] = await Promise.all([
-        supabase.from('plans_tarifaires').select('*').order('prix_mensuel'),
+        supabase.from('plans_tarifaires').select('*').order('profil_type').order('prix_mensuel'),
         supabase.from('produits_ponctuels').select('*').order('prix'),
       ]);
       setPlans((plansData ?? []) as PlanAdmin[]);
@@ -1492,7 +1492,7 @@ export default function AdminPage() {
                 <section>
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="font-bold text-[#1F2A2E] text-lg" style={{ fontFamily: 'Galey, sans-serif' }}>
-                      Plans d&apos;abonnement éleveur
+                      Plans d&apos;abonnement (tous profils)
                     </h2>
                     <button onClick={loadTarification} className="text-xs text-gray-400 hover:text-[#0C5C6C]">↺ Rafraîchir</button>
                   </div>
@@ -1567,6 +1567,7 @@ export default function AdminPage() {
                       <div key={plan.id} className={`bg-white rounded-2xl border p-5 flex items-start gap-4 ${plan.actif ? 'border-gray-100' : 'border-dashed border-gray-300 opacity-60'}`}>
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center gap-2">
+                            <span className="text-xs bg-[#0C5C6C]/10 text-[#0C5C6C] px-2 py-0.5 rounded-full font-semibold capitalize">{plan.profil_type}</span>
                             <p className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{plan.label}</p>
                             <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-mono">{plan.plan_code}</span>
                             {!plan.actif && <span className="text-xs bg-red-100 text-red-500 px-2 py-0.5 rounded-full">Inactif</span>}
@@ -1575,9 +1576,11 @@ export default function AdminPage() {
                             {plan.prix_mensuel === 0 ? 'Gratuit' : `${plan.prix_mensuel} €/mois`}
                             {plan.prix_annuel > 0 && ` · ${plan.prix_annuel} €/an`}
                           </p>
-                          <p className="text-xs text-gray-400">
-                            {plan.max_annonces === -1 ? 'Illimité' : `${plan.max_annonces} annonces`} · {plan.duree_annonce_jours}j · {plan.auto_publish ? 'Auto-publish' : 'Validation admin'}
-                          </p>
+                          {plan.profil_type === 'eleveur' && (
+                            <p className="text-xs text-gray-400">
+                              {plan.max_annonces === -1 ? 'Illimité' : `${plan.max_annonces} annonces`} · {plan.duree_annonce_jours}j · {plan.auto_publish ? 'Auto-publish' : 'Validation admin'}
+                            </p>
+                          )}
                           {plan.stripe_price_id_mensuel && (
                             <p className="text-xs font-mono text-gray-300 truncate">Stripe: {plan.stripe_price_id_mensuel}</p>
                           )}

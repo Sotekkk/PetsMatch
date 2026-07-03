@@ -21,6 +21,7 @@ import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
+import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
@@ -384,7 +385,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
         const SizedBox(width: 12),
         _StatCard(
           value: 'Pension', label: 'Statut', icon: Icons.verified_outlined,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AbonnementPage())),
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PensionAbonnementPage())),
         ),
       ]);
     }

@@ -32,6 +32,92 @@ export interface UsePlanResult {
   loading: boolean;
 }
 
+export interface PensionPlanConfig {
+  label: string;
+  hasInventaire: boolean;
+  hasEmployes: boolean;
+  maxEmployes: number; // -1 = illimité
+  logementsIllimites: boolean;
+  hasProtocoles: boolean;
+  hasContratSignature: boolean;
+  hasFactureExport: boolean;
+  hasBadgePremium: boolean;
+  prixMensuel: number;
+  prixAnnuel: number;
+}
+
+// Fallback si plans_tarifaires est indisponible — usePensionPlan() charge
+// toujours les prix/labels réels depuis la BDD (éditables depuis /admin).
+export const PENSION_PLAN_FALLBACK: Record<PlanCode, PensionPlanConfig> = {
+  free:    { label: 'Découverte', hasInventaire: false, hasEmployes: false, maxEmployes: 0, logementsIllimites: false, hasProtocoles: false, hasContratSignature: false, hasFactureExport: false, hasBadgePremium: false, prixMensuel: 0, prixAnnuel: 0 },
+  pro:     { label: 'Pro', hasInventaire: true, hasEmployes: true, maxEmployes: 3, logementsIllimites: true, hasProtocoles: true, hasContratSignature: true, hasFactureExport: true, hasBadgePremium: false, prixMensuel: 14, prixAnnuel: 140 },
+  premium: { label: 'Premium', hasInventaire: true, hasEmployes: true, maxEmployes: -1, logementsIllimites: true, hasProtocoles: true, hasContratSignature: true, hasFactureExport: true, hasBadgePremium: true, prixMensuel: 24, prixAnnuel: 240 },
+};
+
+export interface UsePensionPlanResult {
+  plan: PlanCode;
+  config: PensionPlanConfig;
+  loading: boolean;
+}
+
+/** Plan pension actif — distinct du plan éleveur (abonnements est scopé
+ * par profil_type, un même compte peut avoir les deux simultanément). */
+export function usePensionPlan(): UsePensionPlanResult {
+  const { user } = useAuth();
+  const [plan, setPlan] = useState<PlanCode>('free');
+  const [config, setConfig] = useState<PensionPlanConfig>(PENSION_PLAN_FALLBACK.free);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) { setLoading(false); return; }
+    (async () => {
+      try {
+        const abo = await supabase
+          .from('abonnements')
+          .select('plan_code')
+          .eq('uid', user.uid)
+          .eq('profil_type', 'pension')
+          .eq('statut', 'actif')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const code = (abo.data?.plan_code ?? 'free') as PlanCode;
+        setPlan(code);
+        const { data: planRow } = await supabase
+          .from('plans_tarifaires')
+          .select('label, prix_mensuel, prix_annuel, features')
+          .eq('profil_type', 'pension')
+          .eq('plan_code', code)
+          .maybeSingle();
+        const fallback = PENSION_PLAN_FALLBACK[code];
+        if (planRow) {
+          const f = (planRow.features ?? {}) as Record<string, unknown>;
+          setConfig({
+            label: planRow.label ?? fallback.label,
+            prixMensuel: planRow.prix_mensuel ?? fallback.prixMensuel,
+            prixAnnuel: planRow.prix_annuel ?? fallback.prixAnnuel,
+            hasInventaire: Boolean(f.hasInventaire),
+            hasEmployes: Boolean(f.hasEmployes),
+            maxEmployes: typeof f.maxEmployes === 'number' ? f.maxEmployes : fallback.maxEmployes,
+            logementsIllimites: Boolean(f.logementsIllimites),
+            hasProtocoles: Boolean(f.hasProtocoles),
+            hasContratSignature: Boolean(f.hasContratSignature),
+            hasFactureExport: Boolean(f.hasFactureExport),
+            hasBadgePremium: Boolean(f.hasBadgePremium),
+          });
+        } else {
+          setConfig(fallback);
+        }
+        setLoading(false);
+      } catch {
+        setLoading(false);
+      }
+    })();
+  }, [user]);
+
+  return { plan, config, loading };
+}
+
 export function usePlan(): UsePlanResult {
   const { user } = useAuth();
   const [plan, setPlan] = useState<PlanCode>('free');

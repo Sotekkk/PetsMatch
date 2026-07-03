@@ -22,8 +22,119 @@ class PlanConfig {
   });
 }
 
+class PensionPlanConfig {
+  final String code;
+  final String label;
+  final bool hasInventaire;
+  final bool hasEmployes;
+  final int maxEmployes; // -1 = illimité
+  final bool logementsIllimites;
+  final int maxLogements; // -1 = illimité
+  final bool hasProtocoles;
+  final bool hasContratSignature;
+  final bool hasFactureExport;
+  final bool hasBadgePremium;
+  final double prixMensuel;
+  final double prixAnnuel;
+
+  const PensionPlanConfig({
+    required this.code,
+    required this.label,
+    required this.hasInventaire,
+    required this.hasEmployes,
+    required this.maxEmployes,
+    required this.logementsIllimites,
+    required this.maxLogements,
+    required this.hasProtocoles,
+    required this.hasContratSignature,
+    required this.hasFactureExport,
+    required this.hasBadgePremium,
+    this.prixMensuel = 0,
+    this.prixAnnuel = 0,
+  });
+}
+
 class PlanService {
   static const String kWebsiteUrl = 'https://www.petsmatchapp.com';
+
+  // Fallback statique si plans_tarifaires est indisponible — les prix affichés
+  // à l'utilisateur viennent toujours de la BDD (éditable depuis l'admin).
+  static const Map<String, PensionPlanConfig> pensionConfigs = {
+    'free': PensionPlanConfig(
+      code: 'free', label: 'Découverte', hasInventaire: false, hasEmployes: false, maxEmployes: 0,
+      logementsIllimites: false, maxLogements: 1, hasProtocoles: false, hasContratSignature: false,
+      hasFactureExport: false, hasBadgePremium: false, prixMensuel: 0, prixAnnuel: 0,
+    ),
+    'pro': PensionPlanConfig(
+      code: 'pro', label: 'Pro', hasInventaire: true, hasEmployes: true, maxEmployes: 3,
+      logementsIllimites: true, maxLogements: -1, hasProtocoles: true, hasContratSignature: true,
+      hasFactureExport: true, hasBadgePremium: false, prixMensuel: 14, prixAnnuel: 140,
+    ),
+    'premium': PensionPlanConfig(
+      code: 'premium', label: 'Premium', hasInventaire: true, hasEmployes: true, maxEmployes: -1,
+      logementsIllimites: true, maxLogements: -1, hasProtocoles: true, hasContratSignature: true,
+      hasFactureExport: true, hasBadgePremium: true, prixMensuel: 24, prixAnnuel: 240,
+    ),
+  };
+
+  static PensionPlanConfig getPensionConfig(String planCode) =>
+      pensionConfigs[planCode] ?? pensionConfigs['free']!;
+
+  /// Tarifs pension à jour depuis plans_tarifaires (éditables depuis l'admin
+  /// web sans déploiement). Retombe sur pensionConfigs si la BDD est injoignable.
+  static Future<Map<String, PensionPlanConfig>> getPensionPlansLive() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('plans_tarifaires')
+          .select('plan_code, label, prix_mensuel, prix_annuel, features')
+          .eq('profil_type', 'pension')
+          .eq('actif', true);
+      final out = <String, PensionPlanConfig>{};
+      for (final row in (rows as List)) {
+        final code = row['plan_code'] as String?;
+        if (code == null) continue;
+        final fallback = getPensionConfig(code);
+        final f = (row['features'] as Map<String, dynamic>?) ?? {};
+        out[code] = PensionPlanConfig(
+          code: code,
+          label: (row['label'] as String?) ?? fallback.label,
+          hasInventaire: f['hasInventaire'] as bool? ?? fallback.hasInventaire,
+          hasEmployes: f['hasEmployes'] as bool? ?? fallback.hasEmployes,
+          maxEmployes: (f['maxEmployes'] as num?)?.toInt() ?? fallback.maxEmployes,
+          logementsIllimites: f['logementsIllimites'] as bool? ?? fallback.logementsIllimites,
+          maxLogements: (f['maxLogements'] as num?)?.toInt() ?? fallback.maxLogements,
+          hasProtocoles: f['hasProtocoles'] as bool? ?? fallback.hasProtocoles,
+          hasContratSignature: f['hasContratSignature'] as bool? ?? fallback.hasContratSignature,
+          hasFactureExport: f['hasFactureExport'] as bool? ?? fallback.hasFactureExport,
+          hasBadgePremium: f['hasBadgePremium'] as bool? ?? fallback.hasBadgePremium,
+          prixMensuel: (row['prix_mensuel'] as num?)?.toDouble() ?? fallback.prixMensuel,
+          prixAnnuel: (row['prix_annuel'] as num?)?.toDouble() ?? fallback.prixAnnuel,
+        );
+      }
+      return out.isEmpty ? pensionConfigs : out;
+    } catch (_) {
+      return pensionConfigs;
+    }
+  }
+
+  /// Plan pension actif pour ce uid — distinct du plan éleveur (abonnements
+  /// est scopé par profil_type, un même compte peut avoir les deux).
+  static Future<String> getPensionPlanCode(String uid) async {
+    try {
+      final res = await Supabase.instance.client
+          .from('abonnements')
+          .select('plan_code')
+          .eq('uid', uid)
+          .eq('profil_type', 'pension')
+          .eq('statut', 'actif')
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      return (res?['plan_code'] as String?) ?? 'free';
+    } catch (_) {
+      return 'free';
+    }
+  }
 
   static const Map<String, PlanConfig> configs = {
     'free': PlanConfig(

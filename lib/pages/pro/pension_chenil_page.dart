@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 
 class PensionChenilPage extends StatefulWidget {
   const PensionChenilPage({super.key});
@@ -17,6 +19,7 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
   List<Map<String, dynamic>> _entrees = [];
   bool _loading = true;
   String? _uid;
+  String _planCode = 'free';
 
   static const _types = [
     ('box', 'Box'),
@@ -30,6 +33,14 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
   void initState() {
     super.initState();
     _load();
+    _loadPlan();
+  }
+
+  Future<void> _loadPlan() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final code = await PlanService.getPensionPlanCode(uid);
+    if (mounted) setState(() => _planCode = code);
   }
 
   Future<void> _load() async {
@@ -102,6 +113,14 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
   }
 
   void _showLogementSheet({Map<String, dynamic>? logement}) {
+    if (logement == null && _planCode == 'free' && _logements.isNotEmpty) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const PensionAbonnementPage()));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('La formule Découverte est limitée à 1 logement — passez en formule Pro pour en ajouter davantage.',
+            style: TextStyle(fontFamily: 'Galey')),
+      ));
+      return;
+    }
     final nomCtrl = TextEditingController(text: logement?['nom'] as String? ?? '');
     final capaciteCtrl = TextEditingController(text: (logement?['capacite'] ?? 1).toString());
     final notesCtrl = TextEditingController(text: logement?['notes'] as String? ?? '');

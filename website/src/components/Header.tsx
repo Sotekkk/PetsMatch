@@ -226,6 +226,7 @@ const MENU_PENSION = [
       { href: '/mes-taches',        label: 'Mes tâches',           icon: '✅' },
       { href: '/employes',          label: 'Mes employés',         icon: '👥' },
       { href: '/elevage/facturation',label: 'Facturation',          icon: '🧾' },
+      { href: '/pension/abonnement', label: 'Mon abonnement',       icon: '💳' },
     ],
   },
   {
