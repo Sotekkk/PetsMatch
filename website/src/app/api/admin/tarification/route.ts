@@ -16,24 +16,60 @@ async function checkAdmin(uid: string): Promise<boolean> {
   } catch { return false; }
 }
 
-// Crée un nouveau prix Stripe et archive l'ancien si le montant a changé
+// Récupère le produit Stripe existant du plan (via un de ses prix), ou en crée un
+// nouveau — permet de saisir un tarif pour un profil qui n'a encore aucun produit
+// Stripe (ex : pension) sans jamais ouvrir le dashboard Stripe.
+async function getOrCreatePlanProduct(current: {
+  stripe_price_id_mensuel: string | null;
+  stripe_price_id_annuel: string | null;
+  profil_type: string;
+  plan_code: string;
+  label: string;
+}): Promise<string> {
+  const existingPriceId = current.stripe_price_id_mensuel || current.stripe_price_id_annuel;
+  if (existingPriceId) {
+    const price = await stripe.prices.retrieve(existingPriceId);
+    return typeof price.product === 'string' ? price.product : price.product.id;
+  }
+  const product = await stripe.products.create({
+    name: `PetsMatch — ${current.profil_type} ${current.label}`,
+    metadata: { profil_type: current.profil_type, plan_code: current.plan_code },
+  });
+  return product.id;
+}
+
+// Crée un nouveau prix Stripe et archive l'ancien si le montant a changé.
+// Si aucun prix n'existe encore pour ce plan, crée le produit + le prix Stripe
+// depuis zéro (ex : première tarification d'un nouveau profil comme la pension).
 async function rotatePlanPrice(
   oldPriceId: string | null,
   newAmount: number,
   interval: 'month' | 'year',
   planCode: string,
+  productId?: string,
 ): Promise<string | null> {
-  if (!oldPriceId) return null;
   try {
+    if (!oldPriceId) {
+      if (!productId || newAmount <= 0) return null;
+      const newPrice = await stripe.prices.create({
+        currency: 'eur',
+        unit_amount: newAmount,
+        recurring: { interval },
+        product: productId,
+        metadata: { plan: planCode, periodicite: interval === 'month' ? 'mensuel' : 'annuel' },
+      });
+      return newPrice.id;
+    }
+
     const oldPrice = await stripe.prices.retrieve(oldPriceId);
     if (oldPrice.unit_amount === newAmount) return null; // pas de changement
 
-    const productId = typeof oldPrice.product === 'string' ? oldPrice.product : oldPrice.product.id;
+    const resolvedProductId = typeof oldPrice.product === 'string' ? oldPrice.product : oldPrice.product.id;
     const newPrice = await stripe.prices.create({
       currency: 'eur',
       unit_amount: newAmount,
       recurring: { interval },
-      product: productId,
+      product: resolvedProductId,
       metadata: { plan: planCode, periodicite: interval === 'month' ? 'mensuel' : 'annuel' },
     });
     await stripe.prices.update(oldPriceId, { active: false });
@@ -94,6 +130,21 @@ export async function PUT(req: NextRequest) {
         .from('plans_tarifaires').select('*').eq('id', id).single();
 
       if (current) {
+        // Un seul produit Stripe partagé entre le prix mensuel et annuel — réutilisé
+        // s'il existe déjà (via l'un des deux prix), sinon créé au premier tarif
+        // renseigné pour un plan qui n'a encore aucun produit (nouveau profil_type).
+        const needsNewMensuel = data.prix_mensuel !== undefined && Number(data.prix_mensuel) > 0 && !current.stripe_price_id_mensuel;
+        const needsNewAnnuel  = data.prix_annuel  !== undefined && Number(data.prix_annuel)  > 0 && !current.stripe_price_id_annuel;
+        const productId = (needsNewMensuel || needsNewAnnuel)
+          ? await getOrCreatePlanProduct({
+              stripe_price_id_mensuel: current.stripe_price_id_mensuel,
+              stripe_price_id_annuel: current.stripe_price_id_annuel,
+              profil_type: current.profil_type,
+              plan_code: current.plan_code,
+              label: data.label as string ?? current.label,
+            })
+          : undefined;
+
         // Sync mensuel si prix_mensuel change
         if (data.prix_mensuel !== undefined) {
           const newAmt = Math.round(Number(data.prix_mensuel) * 100);
@@ -102,6 +153,7 @@ export async function PUT(req: NextRequest) {
             newAmt,
             'month',
             current.plan_code,
+            productId,
           );
           if (newId) stripeUpdates.stripe_price_id_mensuel = newId;
         }
@@ -114,6 +166,7 @@ export async function PUT(req: NextRequest) {
             newAmt,
             'year',
             current.plan_code,
+            productId,
           );
           if (newId) stripeUpdates.stripe_price_id_annuel = newId;
         }

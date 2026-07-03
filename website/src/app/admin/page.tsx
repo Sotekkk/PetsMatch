@@ -1541,12 +1541,14 @@ export default function AdminPage() {
                         <label className="block">
                           <span className="text-xs text-gray-400">Stripe Price ID mensuel</span>
                           <input className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5 font-mono"
+                            placeholder="Laissez vide — créé automatiquement à l'enregistrement du prix"
                             value={editingPlan.stripe_price_id_mensuel ?? ''}
                             onChange={e => setEditingPlan({ ...editingPlan, stripe_price_id_mensuel: e.target.value })} />
                         </label>
                         <label className="block">
                           <span className="text-xs text-gray-400">Stripe Price ID annuel</span>
                           <input className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5 font-mono"
+                            placeholder="Laissez vide — créé automatiquement à l'enregistrement du prix"
                             value={editingPlan.stripe_price_id_annuel ?? ''}
                             onChange={e => setEditingPlan({ ...editingPlan, stripe_price_id_annuel: e.target.value })} />
                         </label>
