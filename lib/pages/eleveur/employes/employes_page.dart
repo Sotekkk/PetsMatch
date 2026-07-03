@@ -45,6 +45,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 
 // ─── Page principale ──────────────────────────────────────────────────────────
 
@@ -363,6 +364,7 @@ const _kPerms = [
   ('write_planning',  Icons.calendar_month_outlined,'Planning & tâches',      'Créer et modifier les tâches'),
   ('write_inventaire',Icons.inventory_2_outlined,  'Inventaire',              'Gérer les stocks et alertes'),
   ('write_notes',     Icons.notes_outlined,         'Notes',                   'Ajouter des notes internes'),
+  ('read_planning_pension', Icons.calendar_view_week_outlined, 'Planning pension', 'Voir le planning d\'occupation et les fiches des animaux en pension'),
 ];
 
 class _PermissionsSheetState extends State<_PermissionsSheet> {
@@ -2640,7 +2642,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
 
       final results = await Future.wait([
         _supa.from('users')
-            .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, profile_picture_url_elevage')
+            .select('uid, firstname, lastname, name_elevage, is_elevage, cat_pro, profile_picture_url, profile_picture_url_elevage')
             .inFilter('uid', uids),
         _supa.from('animaux')
             .select('id, nom, espece, race, photo_url, uid_eleveur')
@@ -2779,11 +2781,13 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                         final animaux = e['animaux'] as List;
                         final taches  = e['taches'] as List;
                         final activeTab = _tabState[uid] ?? 'animaux';
+                        final catPro = u['cat_pro'] as String?;
                         return _EmployeurExpandedCard(
                           uid: uid, nom: nom, photo: photo, teal: _teal, dark: _dark,
                           activeTab: activeTab,
                           eleveurProfileId: eleveurProfileId,
                           perms: perms,
+                          catPro: catPro,
                           animaux: animaux.cast<Map<String, dynamic>>(),
                           taches: taches.cast<Map<String, dynamic>>(),
                           onTabChange: (val) => setState(() => _tabState[uid] = val),
@@ -2803,6 +2807,9 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                               employePerms: perms,
                             ),
                           )),
+                          onPlanningTap: () => Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => PensionPlanningPage(employerUid: uid, employerNom: nom),
+                          )),
                         );
                       },
                     ),
@@ -2818,19 +2825,21 @@ class _EmployeurExpandedCard extends StatelessWidget {
   final String activeTab; // 'animaux' | 'taches' | 'inventaire'
   final String eleveurProfileId;
   final Set<String> perms;
+  final String? catPro;
   final List<Map<String, dynamic>> animaux, taches;
   final ValueChanged<String> onTabChange;
   final VoidCallback onVoirProfil;
   final Future<void> Function(Map<String, dynamic>) onMarquerFait;
   final void Function(Map<String, dynamic>) onAnimalTap;
+  final VoidCallback onPlanningTap;
 
   const _EmployeurExpandedCard({
     required this.uid, required this.nom, required this.photo,
     required this.teal, required this.dark, required this.activeTab,
-    required this.eleveurProfileId, required this.perms,
+    required this.eleveurProfileId, required this.perms, required this.catPro,
     required this.animaux, required this.taches,
     required this.onTabChange, required this.onVoirProfil, required this.onMarquerFait,
-    required this.onAnimalTap,
+    required this.onAnimalTap, required this.onPlanningTap,
   });
 
   @override
@@ -2855,6 +2864,20 @@ class _EmployeurExpandedCard extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(child: Text(nom.isEmpty ? 'Élevage' : nom,
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15, color: dark))),
+            if (catPro == 'pension' && perms.contains('read_planning_pension')) ...[
+              GestureDetector(
+                onTap: onPlanningTap,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: teal.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text('📅 Planning', style: TextStyle(color: teal, fontSize: 12, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ],
             GestureDetector(
               onTap: onVoirProfil,
               child: Container(

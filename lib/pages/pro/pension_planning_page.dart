@@ -3,9 +3,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart' show PensionEntreeSheet, pickAnimalForAdmission, PensionEditSheet;
+import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 
 class PensionPlanningPage extends StatefulWidget {
-  const PensionPlanningPage({super.key});
+  final String? employerUid;  // vue employé : consulte le planning d'un employeur pension
+  final String? employerNom;
+  const PensionPlanningPage({super.key, this.employerUid, this.employerNom});
   @override
   State<PensionPlanningPage> createState() => _PensionPlanningPageState();
 }
@@ -98,6 +101,9 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
   static const int _days = 14;
   static const _especesList = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
 
+  bool get _readOnly => widget.employerUid != null;
+  String? get _effectiveUid => widget.employerUid ?? FirebaseAuth.instance.currentUser?.uid;
+
   @override
   void initState() {
     super.initState();
@@ -107,7 +113,7 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
   }
 
   Future<void> _load() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = _effectiveUid;
     if (uid == null) return;
     setState(() => _loading = true);
     try {
@@ -156,6 +162,7 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
       _nettoyages.contains('$logementId|${DateFormat('yyyy-MM-dd').format(day)}');
 
   Future<void> _toggleNettoyage(String logementId, DateTime day) async {
+    if (_readOnly) return;
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final dateStr = DateFormat('yyyy-MM-dd').format(day);
@@ -182,6 +189,10 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
   }
 
   Future<void> _openEditSheet(Map<String, dynamic> entree) async {
+    if (_readOnly) {
+      _showReadOnlyInfo(entree);
+      return;
+    }
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -189,6 +200,39 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
       builder: (_) => PensionEditSheet(entree: entree, supa: _supa),
     );
     _load();
+  }
+
+  void _showReadOnlyInfo(Map<String, dynamic> entree) {
+    final animalId = entree['animal_id'] as String?;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(entree['animal_nom'] as String? ?? 'Animal',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Espèce : ${entree['espece'] ?? '—'}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          Text('Race : ${entree['race'] ?? '—'}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          const SizedBox(height: 6),
+          Text('Propriétaire : ${entree['proprietaire_nom'] ?? '—'}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          Text('Entrée : ${entree['date_entree'] ?? '—'}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          Text('Sortie prévue : ${entree['date_sortie_prevue'] ?? '—'}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        ]),
+        actions: [
+          if (animalId != null)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => AnimalFichePensionPage(animalId: animalId, animalNom: entree['animal_nom']?.toString()),
+                ));
+              },
+              child: const Text('Voir la fiche'),
+            ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer')),
+        ],
+      ),
+    );
   }
 
   @override
@@ -209,7 +253,8 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
-        title: const Text('Planning occupation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        title: Text(_readOnly ? 'Planning — ${widget.employerNom ?? "employeur"}' : 'Planning occupation',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
           IconButton(icon: const Icon(Icons.chevron_left), onPressed: () => _shiftWindow(-7)),
           IconButton(icon: const Icon(Icons.today_outlined), tooltip: 'Aujourd\'hui', onPressed: () {
@@ -342,6 +387,7 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
   }
 
   Future<void> _openCreationSheet(String logementId, DateTime date) async {
+    if (_readOnly) return;
     final prefill = await pickAnimalForAdmission(context);
     if (prefill == null || !mounted) return; // annulé au choix scan/manuel/sans puce
 

@@ -134,10 +134,29 @@ export default function AnimalFichePensionWebPage() {
         .select('id').eq('uid', user.uid).eq('is_main', true).maybeSingle();
       proProfileId = mainProfile?.id ?? null;
     }
-    const { data: acc } = proProfileId
+    let { data: acc } = proProfileId
       ? await supabase.from('animal_access').select('statut')
           .eq('animal_id', animalId).eq('pro_profile_id', proProfileId).eq('statut', 'active').maybeSingle()
       : { data: null };
+
+    // Pas d'accès direct → vérifier si employé d'une pension ayant elle-même l'accès
+    if (!acc) {
+      const { data: emplois } = await supabase.from('employes')
+        .select('uid_eleveur, eleveur_profile_id').eq('uid_employe', user.uid).eq('actif', true);
+      if (emplois && emplois.length > 0 && proProfileId) {
+        const eleveurProfileIds = emplois.map(e => e.eleveur_profile_id).filter(Boolean) as string[];
+        const { data: perms } = await supabase.from('employe_permissions')
+          .select('eleveur_profile_id').eq('employe_profile_id', proProfileId)
+          .eq('permission', 'read_planning_pension').in('eleveur_profile_id', eleveurProfileIds);
+        const allowedEleveurProfileIds = new Set((perms ?? []).map(p => p.eleveur_profile_id));
+        for (const emp of emplois) {
+          if (!emp.eleveur_profile_id || !allowedEleveurProfileIds.has(emp.eleveur_profile_id)) continue;
+          const { data: employerAcc } = await supabase.from('animal_access').select('statut')
+            .eq('animal_id', animalId).eq('pro_profile_id', emp.eleveur_profile_id).eq('statut', 'active').maybeSingle();
+          if (employerAcc) { acc = employerAcc; proProfileId = emp.eleveur_profile_id; break; }
+        }
+      }
+    }
 
     if (!acc) { setHasAccess(false); setLoading(false); return; }
     setHasAccess(true);
@@ -156,17 +175,16 @@ export default function AnimalFichePensionWebPage() {
       supabase.from('alimentations').select('*').eq('animal_id', animalId).maybeSingle(),
     ]);
 
-    // Entrée pension active pour ce pro
-    let entQuery = supabase.from('pension_entrees')
-      .select('id, notes, date_entree, date_sortie_prevue, statut')
-      .eq('statut', 'en_pension')
-      .order('date_entree', { ascending: false })
-      .limit(1);
-    if (activeProfileId) {
-      entQuery = entQuery.eq('pro_profile_id', activeProfileId) as typeof entQuery;
-    } else {
-      entQuery = entQuery.eq('pro_uid', user.uid) as typeof entQuery;
-    }
+    // Entrée pension active pour ce pro (proProfileId peut être celui de l'employeur si vue employé)
+    const entQuery = proProfileId
+      ? supabase.from('pension_entrees')
+          .select('id, notes, date_entree, date_sortie_prevue, statut')
+          .eq('statut', 'en_pension').eq('pro_profile_id', proProfileId)
+          .order('date_entree', { ascending: false }).limit(1)
+      : supabase.from('pension_entrees')
+          .select('id, notes, date_entree, date_sortie_prevue, statut')
+          .eq('statut', 'en_pension').eq('pro_uid', user.uid)
+          .order('date_entree', { ascending: false }).limit(1);
     const { data: entList } = await entQuery;
     const entry = (entList ?? []).find((e: PensionEntry) => true) ?? null;
 

@@ -1,7 +1,7 @@
 'use client';
 
-import { Fragment, useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { Fragment, Suspense, useEffect, useState, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -103,22 +103,30 @@ const DAYS = 14;
 const DAY_FMT = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'numeric' });
 const ESPECES = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
 
-export default function PensionPlanningPage() {
+function PensionPlanningPageInner() {
   const { user, userData, isPension, loading: authLoading } = usePensionAccess();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const employerUid = searchParams.get('employerUid');
+  const readOnly = !!employerUid;
   const activeProfileId = useActiveProfile();
+  const [employerOk, setEmployerOk] = useState(!employerUid);
+  const [employerNom, setEmployerNom] = useState('');
   const [logements, setLogements] = useState<Logement[]>([]);
   const [entrees, setEntrees] = useState<Entree[]>([]);
   const [nettoyages, setNettoyages] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [windowStart, setWindowStart] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [editingEntree, setEditingEntree] = useState<Entree | null>(null);
+  const [readOnlyEntree, setReadOnlyEntree] = useState<Entree | null>(null);
   const [filterEspece, setFilterEspece] = useState<string | null>(null);
   const [creatingFor, setCreatingFor] = useState<{ logementId: string; date: string } | null>(null);
   const [chipStepFor, setChipStepFor] = useState<{ logementId: string; date: string } | null>(null);
   const [chipInput, setChipInput] = useState('');
   const [chipSearching, setChipSearching] = useState(false);
   const [prefill, setPrefill] = useState<PensionEntreePrefill | undefined>(undefined);
+
+  const effectiveUid = employerUid || user?.uid;
 
   async function searchByChip(chip: string) {
     setChipSearching(true);
@@ -132,31 +140,48 @@ export default function PensionPlanningPage() {
   useEffect(() => {
     if (authLoading) return;
     if (!user) { router.push('/connexion'); return; }
-    if (userData && !isPension) { router.push('/'); return; }
-  }, [user, userData, isPension, authLoading, router]);
+    if (!employerUid && userData && !isPension) { router.push('/'); return; }
+  }, [user, userData, isPension, authLoading, router, employerUid]);
+
+  // Vue employé : vérifie la permission read_planning_pension pour cet employeur
+  useEffect(() => {
+    if (!employerUid || !user) return;
+    (async () => {
+      const { data: emp } = await supabase.from('employes')
+        .select('eleveur_profile_id').eq('uid_employe', user.uid).eq('uid_eleveur', employerUid).eq('actif', true).maybeSingle();
+      if (!emp?.eleveur_profile_id) { router.push('/mes-employeurs'); return; }
+      const { data: perm } = await supabase.from('employe_permissions')
+        .select('permission').eq('eleveur_profile_id', emp.eleveur_profile_id)
+        .eq('employe_profile_id', activeProfileId).eq('permission', 'read_planning_pension').maybeSingle();
+      if (!perm) { router.push('/mes-employeurs'); return; }
+      const { data: u } = await supabase.from('users').select('firstname, lastname, name_elevage, is_elevage').eq('uid', employerUid).maybeSingle();
+      setEmployerNom(u?.is_elevage ? (u?.name_elevage ?? 'Employeur') : `${u?.firstname ?? ''} ${u?.lastname ?? ''}`.trim());
+      setEmployerOk(true);
+    })();
+  }, [employerUid, user, activeProfileId, router]);
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!effectiveUid || !employerOk) return;
     const windowEnd = new Date(windowStart); windowEnd.setDate(windowEnd.getDate() + DAYS);
     const windowStartStr = windowStart.toISOString().slice(0, 10);
     const windowEndStr = windowEnd.toISOString().slice(0, 10);
     const [{ data: log }, { data: ent }, { data: net }] = await Promise.all([
-      supabase.from('enclos_chenil').select('id, nom, type, capacite, especes').eq('uid_eleveur', user.uid).order('nom'),
+      supabase.from('enclos_chenil').select('id, nom, type, capacite, especes').eq('uid_eleveur', effectiveUid).order('nom'),
       supabase.from('pension_entrees').select('id, pro_uid, animal_nom, proprietaire_nom, logement_id, animal_id, seul_dans_logement, statut, date_entree, date_sortie_prevue, date_sortie_effective, created_at')
-        .eq('pro_uid', user.uid).lte('date_entree', windowEndStr).order('date_entree'),
-      supabase.from('pension_nettoyages').select('logement_id, date').eq('uid_eleveur', user.uid)
+        .eq('pro_uid', effectiveUid).lte('date_entree', windowEndStr).order('date_entree'),
+      supabase.from('pension_nettoyages').select('logement_id, date').eq('uid_eleveur', effectiveUid)
         .gte('date', windowStartStr).lte('date', windowEndStr),
     ]);
     setLogements(log ?? []);
     setEntrees((ent ?? []).filter(e => !e.date_sortie_effective || new Date(e.date_sortie_effective) >= windowStart));
     setNettoyages(new Set((net ?? []).map(n => `${n.logement_id}|${n.date}`)));
     setLoading(false);
-  }, [user, windowStart]);
+  }, [effectiveUid, employerOk, windowStart]);
 
   useEffect(() => { load(); }, [load]);
 
   async function toggleNettoyage(logementId: string, day: Date) {
-    if (!user) return;
+    if (!effectiveUid || readOnly) return;
     const dateStr = day.toISOString().slice(0, 10);
     const key = `${logementId}|${dateStr}`;
     const wasClean = nettoyages.has(key);
@@ -164,7 +189,7 @@ export default function PensionPlanningPage() {
     if (wasClean) {
       await supabase.from('pension_nettoyages').delete().eq('logement_id', logementId).eq('date', dateStr);
     } else {
-      await supabase.from('pension_nettoyages').insert({ logement_id: logementId, uid_eleveur: user.uid, date: dateStr });
+      await supabase.from('pension_nettoyages').insert({ logement_id: logementId, uid_eleveur: effectiveUid, date: dateStr });
     }
   }
 
@@ -199,7 +224,9 @@ export default function PensionPlanningPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-bold font-galey text-teal-800">Planning occupation</h1>
+        <h1 className="text-2xl font-bold font-galey text-teal-800">
+          {readOnly ? `Planning — ${employerNom || 'employeur'}` : 'Planning occupation'}
+        </h1>
         <div className="flex items-center gap-2">
           <button onClick={() => setWindowStart(d => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; })}
             className="w-8 h-8 rounded-full border border-gray-200 hover:bg-gray-50 flex items-center justify-center">‹</button>
@@ -281,13 +308,15 @@ export default function PensionPlanningPage() {
                               <td key={d.toISOString()} className="border-b border-gray-50 p-1">
                                 {e && st ? (
                                   <button
-                                    onClick={() => setEditingEntree(e)}
+                                    onClick={() => readOnly ? setReadOnlyEntree(e) : setEditingEntree(e)}
                                     title={e.animal_nom}
                                     className="w-full h-6 rounded relative"
                                     style={{ backgroundColor: STATUT_COLOR[st], border: solo ? '1.5px solid #ef4444' : undefined }}
                                   >
                                     {solo && <span className="absolute inset-0 flex items-center justify-center text-[9px] text-white">🔒</span>}
                                   </button>
+                                ) : readOnly ? (
+                                  <div className="w-full h-6" />
                                 ) : (
                                   <button
                                     onClick={() => { setPrefill(undefined); setChipStepFor({ logementId: l.id, date: d.toISOString().slice(0, 10) }); }}
@@ -301,7 +330,7 @@ export default function PensionPlanningPage() {
                           })}
                         </tr>
                       )),
-                      <tr key={`${l.id}-nettoyage`}>
+                      ...(readOnly ? [] : [<tr key={`${l.id}-nettoyage`}>
                         <td className="sticky left-0 bg-white z-10 px-3 py-1 text-[10px] font-galey text-gray-400 border-b border-gray-50">
                           Nettoyage
                         </td>
@@ -316,7 +345,7 @@ export default function PensionPlanningPage() {
                             </button>
                           </td>
                         ))}
-                      </tr>,
+                      </tr>]),
                     ];
                   })}
                 </Fragment>
@@ -345,7 +374,30 @@ export default function PensionPlanningPage() {
         />
       )}
 
-      {chipStepFor && (
+      {readOnlyEntree && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setReadOnlyEntree(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold font-galey text-lg text-gray-900 mb-3">{readOnlyEntree.animal_nom}</h3>
+            <p className="text-sm font-galey text-gray-600">Propriétaire : {readOnlyEntree.proprietaire_nom ?? '—'}</p>
+            <p className="text-sm font-galey text-gray-600">Entrée : {readOnlyEntree.date_entree}</p>
+            <p className="text-sm font-galey text-gray-600">Sortie prévue : {readOnlyEntree.date_sortie_prevue ?? '—'}</p>
+            <div className="mt-4 flex gap-2">
+              {readOnlyEntree.animal_id && (
+                <a href={`/pension/fiche/${readOnlyEntree.animal_id}`}
+                  className="flex-1 text-center text-sm font-galey font-semibold bg-[#0C5C6C] text-white rounded-xl py-2 hover:bg-[#094F5D]">
+                  Voir la fiche
+                </a>
+              )}
+              <button onClick={() => setReadOnlyEntree(null)}
+                className="flex-1 text-sm font-galey font-semibold border border-gray-200 rounded-xl py-2 hover:bg-gray-50">
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {chipStepFor && !readOnly && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
           onClick={() => setChipStepFor(null)}>
           <div className="bg-white rounded-2xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
@@ -367,7 +419,7 @@ export default function PensionPlanningPage() {
         </div>
       )}
 
-      {creatingFor && user && (
+      {creatingFor && user && !readOnly && (
         <PensionEntreeModal
           proUid={user.uid}
           proProfileId={activeProfileId || null}
@@ -379,5 +431,13 @@ export default function PensionPlanningPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function PensionPlanningPage() {
+  return (
+    <Suspense>
+      <PensionPlanningPageInner />
+    </Suspense>
   );
 }

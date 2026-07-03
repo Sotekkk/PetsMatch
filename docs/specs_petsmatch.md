@@ -3754,7 +3754,7 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
 | Paiement en ligne (lien email/SMS) | Explicitement V2 par l'utilisateur, avec frais de service/transaction optionnels | Non commencé |
 | États de nettoyage des logements | ✅ Livré (session 2026-07-03) : suivi jour par jour via `pension_nettoyages`, ligne dédiée dans le planning. Reste : pas d'état "hors service" (logement indisponible temporairement, hors nettoyage) | Partiel — nettoyage fait, "hors service" restant |
 | Activation YouSign réelle | `YouSignProvider` reste un stub (toutes méthodes lèvent une erreur) tant qu'un abonnement YouSign + clé API n'est pas fourni — voir §9ter.2 pour la liste complète des prérequis restants, communs à tous les profils | Bloqué sur décision business |
-| Accès employés au planning + fiches | Les employés pension n'ont pas encore de permission dédiée pour consulter le planning d'occupation et les fiches animaux en pension | En cours (session 2026-07-03) |
+| Accès employés au planning + fiches | ✅ Livré (session 2026-07-03) — voir §19.4 | Livré |
 
 ### 19.4 — Livré (session 2026-07-03, suite retours utilisateur)
 
@@ -3829,6 +3829,21 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
   sont accessibles sans validation.
 - **Bug Next.js — `params` non déballé** : `reclamer-animal/[token]` et `signer-cession/[token]` accédaient
   encore `params.token` directement (ancienne API Next.js) au lieu de `use(params)` — corrigé sur les deux.
+- **Retrouver via la puce (backfill)** : les séjours créés avant les correctifs ci-dessus ont parfois
+  race/espèce/propriétaire vides en base. Bouton "Retrouver via la puce" dans le formulaire d'édition
+  (app + web) — relance la recherche par puce déjà enregistrée et complète uniquement les champs vides
+  (ne écrase jamais une saisie manuelle existante).
+- **Accès employés au planning + fiches en pension** : nouvelle permission `read_planning_pension` dans le
+  catalogue `employe_permissions` (aucune migration — juste une nouvelle valeur texte). Un employé avec
+  cette permission voit un bouton "📅 Planning" sur la carte de son employeur (si `cat_pro = 'pension'`)
+  dans "Mes employeurs" (app : `MesEmployeursPage`, web : `/mes-employeurs`), qui ouvre le planning
+  d'occupation de l'employeur en **lecture seule** (pas de création/édition/nettoyage — clic sur une case
+  occupée affiche juste un résumé + lien "Voir la fiche"). App : `PensionPlanningPage` gagne
+  `employerUid`/`employerNom`. Web : `/pension/planning?employerUid=...`, vérifie la permission côté client
+  avant de charger les données, sinon redirige vers `/mes-employeurs`. La fiche pension
+  (`/pension/fiche/[animalId]`) a aussi été étendue : si l'utilisateur n'a pas d'`animal_access` direct, elle
+  vérifie s'il est employé (avec la permission) d'une pension qui, elle, a l'accès actif — et utilise le
+  profil de l'employeur pour résoudre le séjour en cours.
 
 ### 19.3 — Migrations à exécuter (si pas déjà fait)
 

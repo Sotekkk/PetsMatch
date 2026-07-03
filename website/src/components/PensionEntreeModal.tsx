@@ -105,6 +105,34 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
     }
   }
 
+  async function retrouverViaPuce() {
+    const puce = entree?.puce?.trim();
+    if (!puce) {
+      setError('Aucun numéro de puce enregistré pour ce séjour.');
+      return;
+    }
+    setLinkingFiche(true);
+    try {
+      const found = await lookupAnimalByChip(puce);
+      if (!found.animal_id) {
+        setError('Aucun animal trouvé avec cette puce.');
+        return;
+      }
+      setForm(f => ({
+        ...f,
+        espece: f.espece.trim() || found.espece || f.espece,
+        race: f.race.trim() || found.race || f.race,
+        proprietaire_nom: f.proprietaire_nom.trim() || found.proprietaire_nom || f.proprietaire_nom,
+        proprietaire_contact: f.proprietaire_contact.trim() || found.proprietaire_contact || f.proprietaire_contact,
+        proprietaire_email: f.proprietaire_email.trim() || found.proprietaire_email || f.proprietaire_email,
+        proprietaire_adresse: f.proprietaire_adresse.trim() || found.proprietaire_adresse || f.proprietaire_adresse,
+      }));
+      if (!animalId) setAnimalId(found.animal_id);
+    } finally {
+      setLinkingFiche(false);
+    }
+  }
+
   async function linkFiche() {
     const chip = window.prompt('Numéro de puce de l\'animal :');
     if (!chip || !chip.trim()) return;
@@ -257,6 +285,16 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
             <input style={inp} placeholder="250 269 810 000 000" value={form.puce}
               onChange={e => set('puce', e.target.value)} />
           </div>
+          {isEdit && entree?.puce && (
+            <div style={{ marginBottom: 12 }}>
+              <button type="button" onClick={retrouverViaPuce} disabled={linkingFiche}
+                style={{ width: '100%', padding: '10px 0', borderRadius: 10, border: `1px solid ${TEAL}`,
+                  background: 'transparent', color: TEAL, cursor: 'pointer',
+                  fontFamily: 'Galey, sans-serif', fontSize: 13, fontWeight: 700 }}>
+                {linkingFiche ? 'Recherche…' : 'Retrouver via la puce'}
+              </button>
+            </div>
+          )}
 
           {/* Fiche animal */}
           <p style={sec}>FICHE ANIMAL</p>

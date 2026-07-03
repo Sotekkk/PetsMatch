@@ -49,6 +49,7 @@ interface Employer {
   lastname: string | null;
   name_elevage: string | null;
   is_elevage: boolean;
+  cat_pro: string | null;
   profile_picture_url: string | null;
   profile_picture_url_elevage: string | null;
   perms: string[];
@@ -137,7 +138,7 @@ export default function MesEmployeursPage() {
     const pastStr   = past.toISOString().slice(0, 10);
     const futureStr = future.toISOString().slice(0, 10);
 
-    type UserRow = { uid: string; firstname: string | null; lastname: string | null; name_elevage: string | null; is_elevage: boolean; profile_picture_url: string | null; profile_picture_url_elevage: string | null };
+    type UserRow = { uid: string; firstname: string | null; lastname: string | null; name_elevage: string | null; is_elevage: boolean; cat_pro: string | null; profile_picture_url: string | null; profile_picture_url_elevage: string | null };
     type AnimalRow = { id: string; nom: string | null; espece: string | null; race: string | null; sexe: string | null; photo_url: string | null; uid_eleveur: string };
     type TacheRow = { id: string; titre: string; date: string; statut: string; animal_id: string | null; uid_eleveur: string };
     type PlanRow  = { id: string; label: string | null; date_prevue: string; statut: string; animal_id: string | null; uid_eleveur: string };
@@ -150,7 +151,7 @@ export default function MesEmployeursPage() {
       { data: planTachesRaw },
     ] = await Promise.all([
       supabase.from('users')
-        .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, profile_picture_url_elevage')
+        .select('uid, firstname, lastname, name_elevage, is_elevage, cat_pro, profile_picture_url, profile_picture_url_elevage')
         .in('uid', uids) as unknown as Promise<{ data: UserRow[] | null }>,
       supabase.from('animaux')
         .select('id, nom, espece, race, sexe, photo_url, uid_eleveur')
@@ -349,6 +350,12 @@ export default function MesEmployeursPage() {
                       )}
                     </div>
                   </div>
+                  {emp.cat_pro === 'pension' && emp.perms.includes('read_planning_pension') && (
+                    <Link href={`/pension/planning?employerUid=${emp.uid}`}
+                      className="flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C] hover:bg-[#0C5C6C]/20 transition-colors">
+                      📅 Planning
+                    </Link>
+                  )}
                 </div>
 
                 {/* Onglets */}

@@ -1410,6 +1410,55 @@ class PensionEditSheetState extends State<PensionEditSheet> {
     }
   }
 
+  Future<void> _retrouverViaPuce() async {
+    final puce = widget.entree['puce']?.toString().trim() ?? '';
+    if (puce.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Aucun numéro de puce enregistré pour ce séjour.', style: TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
+    setState(() => _linkingFiche = true);
+    try {
+      final prefill = await _lookupAnimalByChip(puce);
+      if (prefill['animalId'] == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Aucun animal trouvé avec cette puce.', style: TextStyle(fontFamily: 'Galey'))));
+        }
+        return;
+      }
+      setState(() {
+        if (_especeCtrl.text.trim().isEmpty && (prefill['espece'] as String?)?.isNotEmpty == true) {
+          _especeCtrl.text = prefill['espece'] as String;
+        }
+        if (_raceCtrl.text.trim().isEmpty && (prefill['race'] as String?)?.isNotEmpty == true) {
+          _raceCtrl.text = prefill['race'] as String;
+        }
+        if (_clientCtrl.text.trim().isEmpty && (prefill['proprietaireNom'] as String?)?.isNotEmpty == true) {
+          _clientCtrl.text = prefill['proprietaireNom'] as String;
+        }
+        if (_contactCtrl.text.trim().isEmpty && (prefill['proprietaireContact'] as String?)?.isNotEmpty == true) {
+          _contactCtrl.text = prefill['proprietaireContact'] as String;
+        }
+        if (_emailCtrl.text.trim().isEmpty && (prefill['proprietaireEmail'] as String?)?.isNotEmpty == true) {
+          _emailCtrl.text = prefill['proprietaireEmail'] as String;
+        }
+        if (_animalId == null) {
+          _animalId = prefill['animalId'] as String?;
+          _accessStatus = null;
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Infos retrouvées via la puce', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: _green,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _linkingFiche = false);
+    }
+  }
+
   Future<void> _linkFiche() async {
     final prefill = await pickAnimalForAdmission(context, allowSkip: false);
     if (prefill == null || !mounted) return;
@@ -1629,6 +1678,20 @@ class PensionEditSheetState extends State<PensionEditSheet> {
                 _tf('Espèce', _especeCtrl),
                 const SizedBox(height: 10),
                 _tf('Race', _raceCtrl),
+                if ((widget.entree['puce']?.toString().trim() ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _linkingFiche ? null : _retrouverViaPuce,
+                      icon: _linkingFiche
+                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.refresh_rounded, size: 16),
+                      label: const Text('Retrouver via la puce', style: TextStyle(fontFamily: 'Galey')),
+                      style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
+                    ),
+                  ),
+                ],
               ]),
               const SizedBox(height: 16),
 

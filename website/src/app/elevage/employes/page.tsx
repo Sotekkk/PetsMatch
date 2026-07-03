@@ -55,6 +55,7 @@ const PERMS_LIST = [
   { key: 'write_planning',   label: 'Planning & tâches',     desc: 'Créer et modifier les tâches' },
   { key: 'write_inventaire', label: 'Inventaire',            desc: 'Gérer les stocks et alertes' },
   { key: 'write_notes',      label: 'Notes',                 desc: 'Ajouter des notes internes' },
+  { key: 'read_planning_pension', label: 'Planning pension', desc: 'Voir le planning d\'occupation et les fiches des animaux en pension' },
 ] as const;
 
 // ── Constantes ────────────────────────────────────────────────────────────────
