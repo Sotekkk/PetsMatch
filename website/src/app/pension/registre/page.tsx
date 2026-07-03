@@ -213,12 +213,14 @@ export default function RegistrePensionPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {filtered.map(e => {
               const puce = normalizeChip(e.puce);
-              const animalId = puceToAnimalId[puce];
+              const animalId = e.animal_id ?? puceToAnimalId[puce];
               return (
                 <EntreeCard
                   key={e.id}
                   entree={e}
                   animalId={animalId}
+                  proUid={user.uid}
+                  proNom={userData?.nameElevage || userData?.firstname || 'Votre pension'}
                   onEdit={() => setEditEntree(e)}
                   onSorti={() => marquerSorti(e.id)}
                 />
@@ -252,15 +254,50 @@ export default function RegistrePensionPage() {
 
 // ── Carte entrée ──────────────────────────────────────────────────────────────
 
-function EntreeCard({ entree, animalId, onEdit, onSorti }: {
+function EntreeCard({ entree, animalId, proUid, proNom, onEdit, onSorti }: {
   entree: PensionEntree;
   animalId?: string;
+  proUid: string;
+  proNom: string;
   onEdit: () => void;
   onSorti: () => void;
 }) {
   const inPension = entree.statut === 'en_pension';
   const bgColor   = inPension ? '#E0F2F1' : '#f3f4f6';
   const txtColor  = inPension ? TEAL : '#6b7280';
+  const [sendingClaim, setSendingClaim] = useState(false);
+  const [claimSent, setClaimSent] = useState(false);
+
+  async function envoyerLienReclamation(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!animalId || !entree.proprietaire_email) return;
+    setSendingClaim(true);
+    try {
+      const { data: claimRow, error } = await supabase.from('animal_claims').insert({
+        animal_id: animalId,
+        created_by_uid: proUid,
+        email_destinataire: entree.proprietaire_email,
+        nom_destinataire: entree.proprietaire_nom ?? null,
+        tel_destinataire: entree.proprietaire_contact ?? null,
+      }).select('token').single();
+      if (error || !claimRow) { setSendingClaim(false); return; }
+      const claimUrl = `${window.location.origin}/reclamer-animal/${claimRow.token}`;
+      await fetch('/api/animal-claim/notify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: entree.proprietaire_email,
+          nom_destinataire: entree.proprietaire_nom,
+          animal_nom: entree.animal_nom,
+          pro_nom: proNom,
+          claim_url: claimUrl,
+        }),
+      });
+      setClaimSent(true);
+    } finally {
+      setSendingClaim(false);
+    }
+  }
 
   return (
     <div style={{
@@ -324,6 +361,17 @@ function EntreeCard({ entree, animalId, onEdit, onSorti }: {
                 <p style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontSize: 12, color: '#6b7280' }}>
                   ✉ {entree.proprietaire_email}
                 </p>
+              )}
+              {animalId && entree.proprietaire_email && (
+                <button onClick={envoyerLienReclamation} disabled={sendingClaim || claimSent}
+                  style={{
+                    marginTop: 6, padding: '4px 10px', borderRadius: 20, border: `1px solid ${claimSent ? GREEN : PURPLE}`,
+                    background: 'transparent', color: claimSent ? GREEN : PURPLE,
+                    cursor: sendingClaim || claimSent ? 'default' : 'pointer',
+                    fontFamily: 'Galey, sans-serif', fontSize: 11, fontWeight: 700,
+                  }}>
+                  {claimSent ? '✓ Lien envoyé' : sendingClaim ? 'Envoi…' : '🔗 Envoyer le lien de réclamation'}
+                </button>
               )}
             </div>
           )}

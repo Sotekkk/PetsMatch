@@ -17,6 +17,7 @@ export interface PensionEntree {
   date_sortie_prevue?: string;
   date_sortie_effective?: string;
   logement_id?: string | null;
+  animal_id?: string | null;
   notes?: string;
   statut: 'en_pension' | 'sorti';
   created_at: string;

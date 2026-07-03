@@ -11,6 +11,8 @@ import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
@@ -366,6 +368,46 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
   }
 
   // ── Générer contrat PDF ───────────────────────────────────────────────────
+
+  Future<void> _envoyerLienReclamation(Map<String, dynamic> e, String animalId) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final email = (e['proprietaire_email'] as String?)?.trim();
+    if (uid == null || email == null || email.isEmpty) return;
+    try {
+      final row = await _supa.from('animal_claims').insert({
+        'animal_id': animalId,
+        'created_by_uid': uid,
+        'email_destinataire': email,
+        'nom_destinataire': e['proprietaire_nom'],
+        'tel_destinataire': e['proprietaire_contact'],
+      }).select('token').single();
+      final token = row['token'] as String?;
+      if (token == null) return;
+      final claimUrl = '$kSiteBaseUrl/reclamer-animal/$token';
+      await http.post(
+        Uri.parse('$kSiteBaseUrl/api/animal-claim/notify-email'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email,
+          'nom_destinataire': e['proprietaire_nom'],
+          'animal_nom': e['animal_nom'],
+          'pro_nom': User_Info.nameElevage.isNotEmpty
+              ? User_Info.nameElevage : '${User_Info.firstname} ${User_Info.lastname}'.trim(),
+          'claim_url': claimUrl,
+        }),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Lien de réclamation envoyé par email', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: const Color(0xFF6E9E57),
+        ));
+      }
+    } catch (err) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $err')));
+      }
+    }
+  }
 
   Future<void> _genererContratSignature(Map<String, dynamic> e) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -932,7 +974,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                     itemBuilder: (_, i) {
                       final e    = filtered[i];
                       final puce = (e['puce'] ?? '').toString().replaceAll(RegExp(r'[\s\-]'), '');
-                      final animalId = _puceToAnimalId[puce];
+                      final animalId = (e['animal_id'] as String?) ?? _puceToAnimalId[puce];
                       return _PensionCard(
                         entree: e,
                         animalId: animalId,
@@ -941,6 +983,9 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                         onLongPress: () => _supprimerEntree(e),
                         onContrat: () => _genererContrat(e),
                         onSignature: () => _genererContratSignature(e),
+                        onEnvoyerLien: (animalId != null && (e['proprietaire_email']?.toString().isNotEmpty ?? false))
+                            ? () => _envoyerLienReclamation(e, animalId)
+                            : null,
                         onFicheTap: animalId != null ? () => Navigator.push(context, MaterialPageRoute(
                           builder: (_) => AnimalFichePensionPage(
                             animalId: animalId,
@@ -1021,9 +1066,11 @@ class _PensionCard extends StatelessWidget {
   final VoidCallback? onContrat;
   final VoidCallback? onSignature;
   final VoidCallback? onFacture;
+  final VoidCallback? onEnvoyerLien;
 
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
+  static const _purple = Color(0xFF7B5EA7);
 
   const _PensionCard({
     required this.entree,
@@ -1036,6 +1083,7 @@ class _PensionCard extends StatelessWidget {
     this.onContrat,
     this.onSignature,
     this.onFacture,
+    this.onEnvoyerLien,
   });
 
   @override
@@ -1166,9 +1214,9 @@ class _PensionCard extends StatelessWidget {
                   ],
                 ]),
                 // Boutons d'action
-                if (onSorti != null || onContrat != null || onSignature != null || onFacture != null) ...[
+                if (onSorti != null || onContrat != null || onSignature != null || onFacture != null || onEnvoyerLien != null) ...[
                   const SizedBox(height: 8),
-                  Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                  Wrap(alignment: WrapAlignment.end, spacing: 8, runSpacing: 8, children: [
                     if (onContrat != null)
                       OutlinedButton.icon(
                         onPressed: onContrat,
@@ -1183,8 +1231,6 @@ class _PensionCard extends StatelessWidget {
                           minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                       ),
-                    if (onContrat != null && (onSignature != null || onSorti != null || onFacture != null))
-                      const SizedBox(width: 8),
                     if (onSignature != null)
                       OutlinedButton.icon(
                         onPressed: onSignature,
@@ -1199,8 +1245,20 @@ class _PensionCard extends StatelessWidget {
                           minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                       ),
-                    if (onSignature != null && (onSorti != null || onFacture != null))
-                      const SizedBox(width: 8),
+                    if (onEnvoyerLien != null)
+                      OutlinedButton.icon(
+                        onPressed: onEnvoyerLien,
+                        icon: const Icon(Icons.link_rounded, size: 14),
+                        label: const Text('Lien de réclamation',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _purple,
+                          side: const BorderSide(color: _purple),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
                     if (onFacture != null)
                       OutlinedButton.icon(
                         onPressed: onFacture,
@@ -1682,9 +1740,30 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
     _formKey.currentState!.save();
     setState(() => _saving = true);
     try {
+      // Animal inconnu (pas trouvé via scan/recherche) → on crée sa fiche
+      // complète en base tout de suite, même sans compte propriétaire.
+      // uid_eleveur = la pension (gestionnaire actuel), owner_uid sera
+      // renseigné si le propriétaire réclame la fiche plus tard.
+      String? animalId = widget.initialAnimalId;
+      final justCreatedFiche = animalId == null && _nomCtrl.text.trim().isNotEmpty;
+      if (justCreatedFiche) {
+        animalId = DateTime.now().millisecondsSinceEpoch.toString();
+        await _supa.from('animaux').insert({
+          'id':            animalId,
+          'uid_eleveur':   _uid,
+          'nom':           _nomCtrl.text.trim(),
+          'espece':        _especeCtrl.text.trim().toLowerCase(),
+          'race':          _raceCtrl.text.trim(),
+          'identification': _puceCtrl.text.trim(),
+          if (widget.initialPhotoUrl != null) 'photo_url': widget.initialPhotoUrl,
+          'statut': 'present',
+        });
+      }
+
       await _supa.from('pension_entrees').insert({
         'pro_uid':              _uid,
         'pro_profile_id':       User_Info.activeProfileId,
+        'animal_id':            animalId,
         'animal_nom':           _nomCtrl.text.trim(),
         'espece':               _especeCtrl.text.trim().toLowerCase(),
         'race':                 _raceCtrl.text.trim(),
@@ -1703,7 +1782,8 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
       });
 
       // Demande d'accès à la fiche en parallèle (silencieux si déjà accordé)
-      _requestFicheAcces().ignore();
+      // — inutile si on vient de créer la fiche nous-mêmes (on est déjà gestionnaire)
+      if (!justCreatedFiche) _requestFicheAcces().ignore();
 
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
