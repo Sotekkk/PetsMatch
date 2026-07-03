@@ -3752,8 +3752,9 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
 | Export facturation par plage de dates | Export CSV actuel = tout l'historique filtré par statut, pas de sélecteur de dates dédié | Non commencé |
 | Paiement en ligne pension (Stripe) | Plomberie corrigée (2026-07-03, commits `a9a3152e`/`7c823f31`) : `/api/stripe/checkout`/`activate`/`portal` sont profil_type-aware, price ID lu depuis `plans_tarifaires`. **Plus besoin d'ouvrir le dashboard Stripe** : `/admin` → Tarification crée désormais automatiquement le produit + prix Stripe dès qu'un tarif > 0 est saisi et enregistré (`getOrCreatePlanProduct` dans `api/admin/tarification/route.ts`). Reste : aller dans `/admin` et saisir les prix pension pour déclencher la création | Prêt — reste juste à saisir les prix dans /admin |
 | Paiement en ligne (lien email/SMS) | Explicitement V2 par l'utilisateur, avec frais de service/transaction optionnels | Non commencé |
-| États de nettoyage des logements | à nettoyer / en nettoyage / hors service (mode canin, §4) — la vue planning (2026-07-03) couvre l'occupation/réservation, pas le nettoyage | Non commencé |
+| États de nettoyage des logements | ✅ Livré (session 2026-07-03) : suivi jour par jour via `pension_nettoyages`, ligne dédiée dans le planning. Reste : pas d'état "hors service" (logement indisponible temporairement, hors nettoyage) | Partiel — nettoyage fait, "hors service" restant |
 | Activation YouSign réelle | `YouSignProvider` reste un stub (toutes méthodes lèvent une erreur) tant qu'un abonnement YouSign + clé API n'est pas fourni — voir §9ter.2 pour la liste complète des prérequis restants, communs à tous les profils | Bloqué sur décision business |
+| Accès employés au planning + fiches | Les employés pension n'ont pas encore de permission dédiée pour consulter le planning d'occupation et les fiches animaux en pension | En cours (session 2026-07-03) |
 
 ### 19.4 — Livré (session 2026-07-03, suite retours utilisateur)
 
