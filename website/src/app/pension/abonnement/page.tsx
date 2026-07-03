@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 interface PlanTarifaire {
   plan_code: string;
@@ -32,12 +33,17 @@ function featureLabels(f: Record<string, boolean | number>): string[] {
   return out;
 }
 
-export default function PensionAbonnementPage() {
+function PensionAbonnementContent() {
   const { user, loading: authLoading } = useAuth();
+  const activeProfileId = useActiveProfile();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [plans, setPlans] = useState<PlanTarifaire[]>([]);
   const [currentPlan, setCurrentPlan] = useState('free');
   const [periodicite, setPeriodicite] = useState<'mensuel' | 'annuel'>('mensuel');
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+  const [loadingPortal, setLoadingPortal] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'info'; text: string } | null>(null);
 
   useEffect(() => {
     supabase.from('plans_tarifaires').select('*').eq('profil_type', 'pension').eq('actif', true).order('prix_mensuel')
@@ -45,11 +51,107 @@ export default function PensionAbonnementPage() {
   }, []);
 
   useEffect(() => {
+    if (searchParams.get('cancelled')) {
+      setMessage({ type: 'info', text: 'Paiement annulé. Votre formule n\'a pas changé.' });
+    }
+    const pending = sessionStorage.getItem('pension_abonnement_success');
+    if (pending) {
+      setMessage({ type: 'success', text: pending });
+      sessionStorage.removeItem('pension_abonnement_success');
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     if (!user) return;
-    supabase.from('abonnements').select('plan_code').eq('uid', user.uid).eq('profil_type', 'pension').eq('statut', 'actif')
-      .order('created_at', { ascending: false }).limit(1).maybeSingle()
-      .then(({ data }) => setCurrentPlan(data?.plan_code ?? 'free'));
-  }, [user]);
+    const sessionId = searchParams.get('session_id');
+    const isSuccess = !!searchParams.get('success');
+
+    const fetchPlan = async () => {
+      const { data } = await supabase
+        .from('abonnements').select('plan_code').eq('uid', user.uid).eq('profil_type', 'pension').eq('statut', 'actif')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      return data?.plan_code ?? 'free';
+    };
+
+    if (!isSuccess) {
+      fetchPlan().then(setCurrentPlan);
+      return;
+    }
+
+    const activate = async () => {
+      if (sessionId) {
+        try {
+          const res = await fetch('/api/stripe/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, uid: user.uid }),
+          });
+          const json = await res.json();
+          if (json.ok && json.plan) {
+            const label = json.plan.charAt(0).toUpperCase() + json.plan.slice(1);
+            sessionStorage.setItem('pension_abonnement_success', `🎉 Formule ${label} activée !`);
+            router.replace('/pension/abonnement');
+            router.refresh();
+            return;
+          }
+        } catch {
+          // fallback : polling Supabase
+        }
+      }
+      let attempts = 0;
+      const poll = async () => {
+        const plan = await fetchPlan();
+        setCurrentPlan(plan);
+        if (plan !== 'free' || attempts >= 4) {
+          const label = plan.charAt(0).toUpperCase() + plan.slice(1);
+          sessionStorage.setItem('pension_abonnement_success', plan !== 'free' ? `🎉 Formule ${label} activée !` : '✅ Paiement reçu, activation en cours…');
+          router.replace('/pension/abonnement');
+          router.refresh();
+          return;
+        }
+        attempts++;
+        setTimeout(poll, 2000);
+      };
+      poll();
+    };
+
+    activate();
+  }, [user, searchParams]);
+
+  const handleSubscribe = async (planCode: string) => {
+    if (!user) { router.push('/connexion'); return; }
+    if (planCode === 'free') return;
+    setLoadingPlan(planCode);
+    try {
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: user.uid, email: user.email, plan: planCode, periodicite,
+          profil_type: 'pension', returnPath: '/pension/abonnement',
+          ...(activeProfileId ? { profile_id: activeProfileId } : {}),
+        }),
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else setMessage({ type: 'info', text: data.error ?? 'Erreur lors de la création du paiement.' });
+    } catch { setMessage({ type: 'info', text: 'Erreur réseau.' }); }
+    finally { setLoadingPlan(null); }
+  };
+
+  const handlePortal = async () => {
+    if (!user) return;
+    setLoadingPortal(true);
+    try {
+      const res = await fetch('/api/stripe/portal', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user.uid, returnPath: '/pension/abonnement' }),
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else setMessage({ type: 'info', text: data.error ?? 'Portail Stripe non disponible.' });
+    } finally { setLoadingPortal(false); }
+  };
 
   if (authLoading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
 
@@ -59,6 +161,17 @@ export default function PensionAbonnementPage() {
         <h1 className="font-['Galey'] font-bold text-3xl text-[#1F2A2E] mb-2">Formules Pension</h1>
         <p className="text-gray-500">Choisissez la formule adaptée à votre structure</p>
       </div>
+
+      {message && (
+        <div className={`mb-6 p-4 rounded-xl text-sm font-medium ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>
+          {message.text}
+          {currentPlan !== 'free' && message.type === 'success' && (
+            <button onClick={handlePortal} disabled={loadingPortal} className="ml-4 underline text-xs">
+              Gérer mon abonnement
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex justify-center mb-8">
         <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
@@ -108,24 +221,40 @@ export default function PensionAbonnementPage() {
                 </div>
               ) : plan.plan_code === 'free' ? (
                 <div className="text-center text-sm text-gray-400 py-2">Formule par défaut</div>
-              ) : !user ? (
-                <button onClick={() => router.push('/connexion')}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold bg-[#0C5C6C] text-white hover:bg-[#094F5D] transition-colors">
-                  Se connecter
-                </button>
               ) : (
-                <div className="text-center text-xs text-gray-400 border border-dashed border-gray-200 py-2.5 rounded-xl">
-                  Paiement en ligne bientôt disponible
-                </div>
+                <button onClick={() => handleSubscribe(plan.plan_code)}
+                  disabled={loadingPlan === plan.plan_code}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold bg-[#0C5C6C] text-white hover:bg-[#094F5D] disabled:opacity-50 transition-colors">
+                  {loadingPlan === plan.plan_code ? (
+                    <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : `Passer en ${plan.label}`}
+                </button>
               )}
             </div>
           );
         })}
       </div>
 
+      {currentPlan !== 'free' && user && (
+        <div className="text-center mb-4">
+          <button onClick={handlePortal} disabled={loadingPortal}
+            className="text-sm text-gray-500 hover:text-[#0C5C6C] underline">
+            {loadingPortal ? 'Chargement…' : 'Gérer mon abonnement (factures, annulation)'}
+          </button>
+        </div>
+      )}
+
       <p className="text-center text-xs text-gray-400">
         Une question sur les formules pension ? Contactez-nous depuis votre espace pro.
       </p>
     </div>
+  );
+}
+
+export default function PensionAbonnementPage() {
+  return (
+    <Suspense>
+      <PensionAbonnementContent />
+    </Suspense>
   );
 }

@@ -150,7 +150,7 @@ function AbonnementContent() {
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: user.uid, email: user.email, plan: planCode, periodicite, ...(activeProfileId ? { profile_id: activeProfileId } : {}) }),
+        body: JSON.stringify({ uid: user.uid, email: user.email, plan: planCode, periodicite, profil_type: 'eleveur', returnPath: '/abonnement', ...(activeProfileId ? { profile_id: activeProfileId } : {}) }),
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;

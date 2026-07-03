@@ -10,7 +10,6 @@ export const PLAN_CONFIG: Record<string, { maxAnnonces: number; dureeDays: numbe
   premium: { maxAnnonces: -1, dureeDays: 60, autoPublish: true  },
 };
 
-export const STRIPE_PRICES: Record<string, { mensuel?: string; annuel?: string }> = {
-  pro:     { mensuel: process.env.STRIPE_PRICE_ELEVEUR_PRO_MENSUEL,     annuel: process.env.STRIPE_PRICE_ELEVEUR_PRO_ANNUEL     },
-  premium: { mensuel: process.env.STRIPE_PRICE_ELEVEUR_PREMIUM_MENSUEL, annuel: process.env.STRIPE_PRICE_ELEVEUR_PREMIUM_ANNUEL },
-};
+// Les Stripe Price IDs viennent de plans_tarifaires (scopé profil_type+plan_code,
+// éditable depuis /admin → Tarification) — voir api/stripe/checkout/route.ts.
+// Ne pas réintroduire de map hardcodée ici, ça recrée la collision entre profils.

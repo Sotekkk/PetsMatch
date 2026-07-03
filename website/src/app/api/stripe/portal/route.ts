@@ -9,7 +9,7 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { uid } = await req.json();
+    const { uid, returnPath } = await req.json();
     if (!uid) return NextResponse.json({ error: 'uid requis' }, { status: 400 });
 
     const { data: userData } = await supabase.from('users').select('stripe_customer_id').eq('uid', uid).maybeSingle();
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const origin = req.headers.get('origin') ?? 'http://localhost:3000';
     const session = await stripe.billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${origin}/abonnement`,
+      return_url: `${origin}${(returnPath as string | undefined) ?? '/abonnement'}`,
     });
 
     return NextResponse.json({ url: session.url });

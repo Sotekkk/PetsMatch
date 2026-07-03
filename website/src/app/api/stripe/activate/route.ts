@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
     const plan = session.metadata?.plan ?? 'pro';
     const periodicite = session.metadata?.periodicite ?? 'mensuel';
     const profileId = session.metadata?.profile_id ?? null;
+    const profilType = session.metadata?.profil_type ?? 'eleveur';
     const sub = session.subscription as import('stripe').Stripe.Subscription & {
       items: { data: Array<{ current_period_end: number }> };
     };
@@ -48,8 +49,11 @@ export async function POST(req: NextRequest) {
       .from('abonnements').select('plan_code').eq('stripe_subscription_id', subId).eq('statut', 'actif').maybeSingle();
     if (existing) return NextResponse.json({ ok: true, plan: existing.plan_code });
 
-    // Désactiver les anciens abonnements actifs pour ce profil
-    const cancelQ = supabase.from('abonnements').update({ statut: 'annule', updated_at: new Date().toISOString() }).eq('uid', uid).eq('statut', 'actif');
+    // Désactiver les anciens abonnements actifs pour ce profil — scopé par profil_type
+    // pour ne pas annuler un abonnement éleveur en activant un abonnement pension (et
+    // inversement) sur le même compte.
+    const cancelQ = supabase.from('abonnements').update({ statut: 'annule', updated_at: new Date().toISOString() })
+      .eq('uid', uid).eq('statut', 'actif').eq('profil_type', profilType);
     if (profileId) await cancelQ.eq('profile_id', profileId);
     else await cancelQ;
 
@@ -57,7 +61,7 @@ export async function POST(req: NextRequest) {
     const { error: insertErr } = await supabase.from('abonnements').insert({
       uid,
       profile_id: profileId,
-      profil_type: 'eleveur',
+      profil_type: profilType,
       plan_code: plan,
       periodicite,
       statut: 'actif',

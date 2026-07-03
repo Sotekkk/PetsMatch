@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { stripe, STRIPE_PRICES } from '@/lib/stripe';
+import { stripe } from '@/lib/stripe';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -9,16 +9,27 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { uid, email, plan, periodicite, annonce_id, produit_code, profile_id } = await req.json();
+    const { uid, email, plan, periodicite, annonce_id, produit_code, profile_id, profil_type, returnPath } = await req.json();
     if (!uid || !email) return NextResponse.json({ error: 'uid et email requis' }, { status: 400 });
 
     const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+    const type = (profil_type as string | undefined) ?? 'eleveur';
+    const backPath = (returnPath as string | undefined) ?? '/abonnement';
 
     // ── Abonnement récurrent ──────────────────────────────────────────────────
     if (plan && periodicite) {
-      const priceId = STRIPE_PRICES[plan]?.[periodicite as 'mensuel' | 'annuel'];
-      if (!priceId || priceId.startsWith('price_REMPLACER')) {
-        return NextResponse.json({ error: 'Price ID Stripe non configuré. Créez les produits dans le dashboard Stripe et renseignez les variables STRIPE_PRICE_* dans .env.local.' }, { status: 503 });
+      // Le prix vient de plans_tarifaires, scopé par profil_type+plan_code — édité
+      // depuis /admin sans déploiement, évite toute collision entre types de profil
+      // (ex : plan_code 'pro' existe à la fois pour éleveur et pension, à des prix différents).
+      const { data: planRow } = await supabase
+        .from('plans_tarifaires')
+        .select('stripe_price_id_mensuel, stripe_price_id_annuel')
+        .eq('profil_type', type)
+        .eq('plan_code', plan)
+        .maybeSingle();
+      const priceId = periodicite === 'annuel' ? planRow?.stripe_price_id_annuel : planRow?.stripe_price_id_mensuel;
+      if (!priceId) {
+        return NextResponse.json({ error: `Price ID Stripe non configuré pour ${type}/${plan}. Renseignez-le depuis /admin → Tarification.` }, { status: 503 });
       }
 
       // Récupérer ou créer le customer Stripe
@@ -35,10 +46,10 @@ export async function POST(req: NextRequest) {
         mode: 'subscription',
         customer: customerId,
         line_items: [{ price: priceId, quantity: 1 }],
-        success_url: `${origin}/abonnement?success=1&plan=${plan}&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url:  `${origin}/abonnement?cancelled=1`,
-        metadata: { uid, plan, periodicite, ...(profile_id ? { profile_id } : {}) },
-        subscription_data: { metadata: { uid, plan, periodicite, ...(profile_id ? { profile_id } : {}) } },
+        success_url: `${origin}${backPath}?success=1&plan=${plan}&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url:  `${origin}${backPath}?cancelled=1`,
+        metadata: { uid, plan, periodicite, profil_type: type, ...(profile_id ? { profile_id } : {}) },
+        subscription_data: { metadata: { uid, plan, periodicite, profil_type: type, ...(profile_id ? { profile_id } : {}) } },
       });
 
       return NextResponse.json({ url: session.url });
