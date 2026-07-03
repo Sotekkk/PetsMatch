@@ -85,9 +85,12 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
   const [clientNames, setClientNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [savingRdv, setSavingRdv] = useState<string | null>(null);
+  const [logementsDispo, setLogementsDispo] = useState(0);
+  const [logementsTotal, setLogementsTotal] = useState(0);
 
   const catPro = profile.profile_type ?? profile.cat_pro ?? '';
   const isVet  = catPro === 'veterinaire' || catPro === 'sante';
+  const isPension = catPro === 'pension';
   const name   = profile.nom || userData?.firstname || 'Mon cabinet';
   const avatar = profile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
 
@@ -163,6 +166,30 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
     }
     load();
   }, [uid, profileId, isVet]);
+
+  useEffect(() => {
+    if (!uid || !isPension) return;
+    async function loadDispo() {
+      const [{ data: logements }, { data: actives }] = await Promise.all([
+        supabase.from('enclos_chenil').select('id, capacite').eq('uid_eleveur', uid),
+        supabase.from('pension_entrees').select('logement_id').eq('pro_uid', uid).eq('statut', 'en_pension'),
+      ]);
+      const occupePerLogement: Record<string, number> = {};
+      for (const e of (actives ?? [])) {
+        if (e.logement_id) occupePerLogement[e.logement_id] = (occupePerLogement[e.logement_id] ?? 0) + 1;
+      }
+      let dispo = 0, total = 0;
+      for (const l of (logements ?? [])) {
+        const capacite = l.capacite ?? 1;
+        const occupe = occupePerLogement[l.id] ?? 0;
+        total += capacite;
+        dispo += Math.max(0, capacite - occupe);
+      }
+      setLogementsDispo(dispo);
+      setLogementsTotal(total);
+    }
+    loadDispo();
+  }, [uid, isPension]);
 
   async function confirmRdv(rdv: PendingRdv) {
     setSavingRdv(rdv.id);
@@ -245,6 +272,27 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+
+        {/* Disponibilité logements (pension) */}
+        {isPension && logementsTotal > 0 && (
+          <Link href="/pension/planning"
+            className="block bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🏘️</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-[#1F2A2E]">{logementsDispo} / {logementsTotal} places disponibles</p>
+                <div className="w-full h-1.5 bg-gray-100 rounded-full mt-1.5 overflow-hidden">
+                  <div className="h-full rounded-full"
+                    style={{
+                      width: `${logementsTotal === 0 ? 0 : ((logementsTotal - logementsDispo) / logementsTotal) * 100}%`,
+                      backgroundColor: logementsDispo === 0 ? '#F97316' : '#6E9E57',
+                    }} />
+                </div>
+              </div>
+              <span className="text-gray-400">›</span>
+            </div>
+          </Link>
+        )}
 
         {/* Accès rapides */}
         <div>

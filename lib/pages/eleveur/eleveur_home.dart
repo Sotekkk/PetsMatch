@@ -22,6 +22,7 @@ import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
@@ -49,6 +50,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
   int _patientCount = 0;
   int _rdvMonthCount = 0;
   int _pensionnairesCount = 0;
+  int _logementsDispo = 0;
+  int _logementsTotal = 0;
   List<Map<String, dynamic>> _mesAlertes = [];
   bool _loading = true;
   List<Map<String, dynamic>> _recentAnnonces = [];
@@ -166,9 +169,27 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
             .gte('date_heure', todayStart)
             .lte('date_heure', todayEnd)
             .inFilter('statut', activeStatuts));
+        final logements = await supa.from('enclos_chenil').select('id, capacite').eq('uid_eleveur', uid);
+        final entreesActives = await supa.from('pension_entrees').select('logement_id')
+            .eq('pro_uid', uid).eq('statut', 'en_pension');
+        final occupePerLogement = <String, int>{};
+        for (final e in (entreesActives as List)) {
+          final lid = e['logement_id'] as String?;
+          if (lid != null) occupePerLogement[lid] = (occupePerLogement[lid] ?? 0) + 1;
+        }
+        var dispo = 0;
+        var total = 0;
+        for (final l in (logements as List)) {
+          final capacite = (l['capacite'] as int?) ?? 1;
+          final occupe = occupePerLogement[l['id']] ?? 0;
+          total += capacite;
+          dispo += (capacite - occupe).clamp(0, capacite);
+        }
         if (mounted) setState(() {
           _pensionnairesCount = (pensionnaires as List).length;
           _rdvTodayCount      = (rdvToday as List).length;
+          _logementsDispo     = dispo;
+          _logementsTotal     = total;
         });
       } else {
         final rdvToday = await pf(supa.from('rdv').select('id')
@@ -206,6 +227,10 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
                         _buildStatsRow(),
+                        if (User_Info.catPro == 'pension' && _logementsTotal > 0) ...[
+                          const SizedBox(height: 12),
+                          _buildDisponibiliteBanner(context),
+                        ],
                         if (!User_Info.isProfileComplete()) ...[
                           const SizedBox(height: 16),
                           _buildProfileIncompleteBanner(context),
@@ -341,6 +366,42 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
       case 'marechal_ferrant': return 'Maréchal';
       default: return 'Pro';
     }
+  }
+
+  Widget _buildDisponibiliteBanner(BuildContext context) {
+    final occupe = _logementsTotal - _logementsDispo;
+    final tauxOccupation = _logementsTotal == 0 ? 0.0 : occupe / _logementsTotal;
+    final color = _logementsDispo == 0 ? Colors.orange : _green;
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PensionPlanningPage())),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 2))],
+        ),
+        child: Row(children: [
+          Icon(Icons.home_work_outlined, color: color, size: 26),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('$_logementsDispo / $_logementsTotal places disponibles',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E))),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: tauxOccupation, backgroundColor: Colors.grey.shade100, color: color, minHeight: 5,
+                ),
+              ),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.chevron_right, color: Colors.grey),
+        ]),
+      ),
+    );
   }
 
   Widget _buildStatsRow() {
