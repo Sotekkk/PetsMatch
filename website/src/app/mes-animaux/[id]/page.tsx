@@ -13,6 +13,7 @@ import { uploadBlob, uploadDocument as uploadDocToStorage } from '@/lib/upload-m
 import ImageCropModal from '@/components/ImageCropModal';
 import AlimentationTab from './AlimentationTab';
 import { triggerAutoProtocoles } from '@/lib/planning-service';
+import { PensionJournal } from '@/components/PensionJournal';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1108,6 +1109,8 @@ export default function AnimalFichePage() {
   // ── Accès vétérinaires (animal_access)
   const [vetAcces, setVetAcces] = useState<{id:string;pro_profile_id:string;vet_nom:string;statut:string;granted_at?:string}[]>([]);
   const [vetAccesSaving, setVetAccesSaving] = useState<string|null>(null);
+  const [hasPensionUpdates, setHasPensionUpdates] = useState(false);
+  const [showJournal, setShowJournal] = useState(false);
 
   // ── État repro
   const [chaleurs, setChaleurs] = useState<HealthRecord[]>([]);
@@ -1289,6 +1292,11 @@ export default function AnimalFichePage() {
   useEffect(() => { loadBreeds(animal.espece ?? 'chien').then(setBreeds); }, [animal.espece]);
   useEffect(() => { loadAnimal(); loadHealth(); loadRepro(); loadAlerte(); loadDocs(); loadMouvements(); }, [loadAnimal, loadHealth, loadRepro, loadAlerte, loadDocs, loadMouvements]);
   useEffect(() => { loadCessionEnCours(); }, [loadCessionEnCours]);
+  useEffect(() => {
+    if (!id || isNew) return;
+    supabase.from('pension_updates').select('id').eq('animal_id', id).limit(1)
+      .then(({ data }) => setHasPensionUpdates((data ?? []).length > 0));
+  }, [id, isNew]);
   useEffect(() => {
     if (!user || !isEleveur) return;
     supabase.from('users').select('name_elevage, rue_elevage, ville_elevage').eq('uid', user.uid).maybeSingle()
@@ -2357,6 +2365,27 @@ export default function AnimalFichePage() {
               </div>
             </div>
           )}
+        {/* ── Journal de pension ───────────────────────────────────────────── */}
+        {!isNew && hasPensionUpdates && (
+          <button onClick={() => setShowJournal(true)}
+            className="w-full text-left rounded-2xl border border-[#6E9E57]/30 bg-[#6E9E57]/5 p-4 hover:bg-[#6E9E57]/10 transition-colors">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📸</span>
+              <p className="font-bold text-sm text-[#6E9E57]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                Nouvelles de la pension
+              </p>
+              <span className="ml-auto text-gray-400">›</span>
+            </div>
+          </button>
+        )}
+        {showJournal && (
+          <PensionJournal
+            animalId={id}
+            animalNom={animal.nom || 'Animal'}
+            readOnly
+            onClose={() => setShowJournal(false)}
+          />
+        )}
         {/* ── Accès vétérinaires ───────────────────────────────────────────── */}
         {!isNew && vetAcces.length > 0 && (
           <div className="rounded-2xl border border-[#26A69A]/20 bg-[#26A69A]/5 p-4">

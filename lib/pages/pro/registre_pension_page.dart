@@ -12,6 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:http/http.dart' as http;
+import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'dart:convert';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
@@ -986,6 +987,13 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                         onEnvoyerLien: (animalId != null && (e['proprietaire_email']?.toString().isNotEmpty ?? false))
                             ? () => _envoyerLienReclamation(e, animalId)
                             : null,
+                        onJournal: () => Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => PensionJournalPage(
+                            animalId: animalId,
+                            pensionEntreeId: e['id'] as String?,
+                            animalNom: e['animal_nom']?.toString() ?? 'Animal',
+                          ),
+                        )),
                         onFicheTap: animalId != null ? () => Navigator.push(context, MaterialPageRoute(
                           builder: (_) => AnimalFichePensionPage(
                             animalId: animalId,
@@ -1067,6 +1075,7 @@ class _PensionCard extends StatelessWidget {
   final VoidCallback? onSignature;
   final VoidCallback? onFacture;
   final VoidCallback? onEnvoyerLien;
+  final VoidCallback? onJournal;
 
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
@@ -1084,6 +1093,7 @@ class _PensionCard extends StatelessWidget {
     this.onSignature,
     this.onFacture,
     this.onEnvoyerLien,
+    this.onJournal,
   });
 
   @override
@@ -1214,9 +1224,23 @@ class _PensionCard extends StatelessWidget {
                   ],
                 ]),
                 // Boutons d'action
-                if (onSorti != null || onContrat != null || onSignature != null || onFacture != null || onEnvoyerLien != null) ...[
+                if (onSorti != null || onContrat != null || onSignature != null || onFacture != null || onEnvoyerLien != null || onJournal != null) ...[
                   const SizedBox(height: 8),
                   Wrap(alignment: WrapAlignment.end, spacing: 8, runSpacing: 8, children: [
+                    if (onJournal != null)
+                      OutlinedButton.icon(
+                        onPressed: onJournal,
+                        icon: const Icon(Icons.photo_camera_back_outlined, size: 14),
+                        label: const Text('Journal',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _green,
+                          side: const BorderSide(color: _green),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
                     if (onContrat != null)
                       OutlinedButton.icon(
                         onPressed: onContrat,

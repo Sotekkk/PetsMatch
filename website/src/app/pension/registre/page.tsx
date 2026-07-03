@@ -6,6 +6,7 @@ import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { PensionEntreeModal, type PensionEntree } from '@/components/PensionEntreeModal';
+import { PensionJournal } from '@/components/PensionJournal';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,7 @@ export default function RegistrePensionPage() {
   const [editEntree, setEditEntree]     = useState<PensionEntree | null>(null);
   const [filterEspece, setFilterEspece] = useState('');
   const [showFilter, setShowFilter]     = useState(false);
+  const [journalFor, setJournalFor]     = useState<PensionEntree | null>(null);
 
 
   useEffect(() => {
@@ -223,6 +225,7 @@ export default function RegistrePensionPage() {
                   proNom={userData?.nameElevage || userData?.firstname || 'Votre pension'}
                   onEdit={() => setEditEntree(e)}
                   onSorti={() => marquerSorti(e.id)}
+                  onJournal={() => setJournalFor(e)}
                 />
               );
             })}
@@ -248,19 +251,29 @@ export default function RegistrePensionPage() {
           onSaved={() => { setEditEntree(null); load(); }}
         />
       )}
+      {journalFor && (
+        <PensionJournal
+          pensionEntreeId={journalFor.id}
+          animalId={journalFor.animal_id ?? undefined}
+          animalNom={journalFor.animal_nom}
+          proUid={user.uid}
+          onClose={() => setJournalFor(null)}
+        />
+      )}
     </div>
   );
 }
 
 // ── Carte entrée ──────────────────────────────────────────────────────────────
 
-function EntreeCard({ entree, animalId, proUid, proNom, onEdit, onSorti }: {
+function EntreeCard({ entree, animalId, proUid, proNom, onEdit, onSorti, onJournal }: {
   entree: PensionEntree;
   animalId?: string;
   proUid: string;
   proNom: string;
   onEdit: () => void;
   onSorti: () => void;
+  onJournal: () => void;
 }) {
   const inPension = entree.statut === 'en_pension';
   const bgColor   = inPension ? '#E0F2F1' : '#f3f4f6';
@@ -402,17 +415,25 @@ function EntreeCard({ entree, animalId, proUid, proNom, onEdit, onSorti }: {
           )}
         </div>
 
-        {/* Bouton marquer sorti */}
-        {inPension && (
-          <button onClick={e => { e.stopPropagation(); onSorti(); }} style={{
-            padding: '6px 14px', borderRadius: 20, border: `1px solid ${TEAL}`,
-            background: 'transparent', color: TEAL, cursor: 'pointer',
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+          <button onClick={e => { e.stopPropagation(); onJournal(); }} style={{
+            padding: '6px 14px', borderRadius: 20, border: `1px solid ${GREEN}`,
+            background: 'transparent', color: GREEN, cursor: 'pointer',
             fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
-            flexShrink: 0,
           }}>
-            Sorti →
+            📸 Journal
           </button>
-        )}
+          {/* Bouton marquer sorti */}
+          {inPension && (
+            <button onClick={e => { e.stopPropagation(); onSorti(); }} style={{
+              padding: '6px 14px', borderRadius: 20, border: `1px solid ${TEAL}`,
+              background: 'transparent', color: TEAL, cursor: 'pointer',
+              fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+            }}>
+              Sorti →
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -14,6 +14,7 @@ import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
+import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -79,6 +80,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   // Pension access (read-only accesses granted to pros)
   List<Map<String, dynamic>> _pensionAcces = [];
+  bool _hasPensionUpdates = false;
 
   // Health records
   bool _loadingHealth = false;
@@ -143,6 +145,10 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           .eq('statut', 'active')
           .contains('permissions', ['write_notes']);
       if (mounted) setState(() => _pensionAcces = List<Map<String, dynamic>>.from(rows));
+    } catch (_) {}
+    try {
+      final updates = await _supa.from('pension_updates').select('id').eq('animal_id', _animalId!).limit(1);
+      if (mounted) setState(() => _hasPensionUpdates = (updates as List).isNotEmpty);
     } catch (_) {}
   }
 
@@ -590,6 +596,32 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         if (_descCtrl.text.isNotEmpty) _infoRow('Description', _descCtrl.text),
         if (_notesCtrl.text.isNotEmpty) _infoRow('Notes', _notesCtrl.text),
 
+        if (_hasPensionUpdates) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => PensionJournalPage(
+                    animalId: _animalId,
+                    animalNom: _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text,
+                    readOnly: true,
+                  ),
+                )),
+                icon: const Icon(Icons.photo_camera_back_outlined, size: 16),
+                label: const Text('📸 Nouvelles de la pension',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF6E9E57),
+                  side: const BorderSide(color: Color(0xFF6E9E57)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ),
+        ],
         // Accès lecture pension actifs
         if (_pensionAcces.isNotEmpty) ...[
           Padding(
