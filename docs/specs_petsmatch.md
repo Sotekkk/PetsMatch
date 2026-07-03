@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-07-03 — §19.1 vue planning d'occupation pension livrée (app+web), §8.1/§19.2 paiement Stripe profil_type-aware + création auto produit/prix depuis /admin  
+> Dernière mise à jour : 2026-07-03 — §19.4 espèces/filtres, dashboard disponibilité, clic-planning→réservation, fiche animal sans compte + lien de réclamation, journal de séjour  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -3755,12 +3755,44 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
 | États de nettoyage des logements | à nettoyer / en nettoyage / hors service (mode canin, §4) — la vue planning (2026-07-03) couvre l'occupation/réservation, pas le nettoyage | Non commencé |
 | Activation YouSign réelle | `YouSignProvider` reste un stub (toutes méthodes lèvent une erreur) tant qu'un abonnement YouSign + clé API n'est pas fourni — voir §9ter.2 pour la liste complète des prérequis restants, communs à tous les profils | Bloqué sur décision business |
 
+### 19.4 — Livré (session 2026-07-03, suite retours utilisateur)
+
+- **Espèces acceptées par logement + filtres** : colonne `especes` (TEXT[]) sur `enclos_chenil`, sélection
+  multi-espèces à la création/édition d'un logement, filtre par espèce sur Logements/Chenil et Planning
+  occupation (app+web). Liste réutilisée depuis `especes_acceptees` du profil pro.
+- **Widget disponibilité tableau de bord** : bannière "X / Y places disponibles" (app `eleveur_home.dart`,
+  web `ProDashboard.tsx`), calculée depuis `enclos_chenil.capacite` et les séjours actifs.
+- **Clic sur créneau libre du planning → intègre un animal** : ouvre directement le formulaire d'ajout de
+  séjour pré-rempli (logement + date). App : `PensionEntreeSheet` gagne `initialLogementId`/
+  `initialDateEntree`. Web : formulaire extrait en composant partagé `PensionEntreeModal.tsx` (auparavant
+  local à `pension/registre`), réutilisé dans `pension/planning`.
+- **Fiche animal créée sans compte propriétaire + lien de réclamation** : quand un animal inconnu est ajouté
+  en pension, sa fiche est créée immédiatement dans `animaux` (`uid_eleveur` = la pension, gestionnaire
+  temporaire). Nouveau champ `owner_uid` (nullable) accueille le vrai propriétaire une fois réclamée via
+  un lien à token envoyé par email (table `animal_claims`, page `/reclamer-animal/[token]`, réutilise
+  l'infra nodemailer déjà en place pour les cessions). **SMS non disponible** — Twilio jamais implémenté
+  dans ce projet (seulement prévu sur le papier), email uniquement pour l'instant.
+- **Journal de séjour** : la pension poste des nouvelles (photo + note) pendant le séjour, visibles par le
+  propriétaire sur la fiche de son animal une fois liée. App : `pension_journal_page.dart` (post, côté
+  pension) + bouton "Nouvelles de la pension" en lecture seule dans `animal_fiche_particulier.dart`. Web :
+  composant partagé `PensionJournal.tsx`. **Vidéo pas câblée** (colonne `video_url` prête en base, scope
+  limité à photo/note pour ce tour — vidéo en fast-follow si besoin).
+- **Correctifs indépendants découverts en testant** : `mapProfile()` (`auth-context.tsx`) plantait
+  silencieusement sur les profils dont `especes_elevees` est stocké en tableau de chaînes plutôt qu'en
+  objets `{espece, races}` — bloquait `userData` (donc toutes les pages pension) pour ces comptes ; nouveau
+  hook `usePensionAccess()` remplace le check naïf `userData?.catPro==='pension'` sur 6 pages web pour
+  gérer correctement les comptes multi-profils (ex : pension + particulier) ; redirection prématurée vers
+  `/connexion` sur rechargement complet corrigée (attente de `authLoading` avant de décider).
+
 ### 19.3 — Migrations à exécuter (si pas déjà fait)
 
 ```
 supabase/migration_pension_logements.sql        -- logement_id, tarifs_logements, arrhes_pourcentage
 supabase/migration_pension_contrat.sql          -- pension_entree_id sur documents_animaux
 supabase/migration_pension_plans_tarifaires.sql -- 3 formules pension dans plans_tarifaires
+supabase/migration_enclos_chenil_especes.sql    -- especes sur enclos_chenil
+supabase/migration_animaux_owner_uid_claims.sql -- owner_uid sur animaux + table animal_claims
+supabase/migration_pension_updates.sql          -- table pension_updates (journal de séjour)
 ```
 
 ---
