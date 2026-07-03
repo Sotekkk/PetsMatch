@@ -118,15 +118,18 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
         setError('Aucun animal trouvé avec cette puce.');
         return;
       }
-      setForm(f => ({
-        ...f,
-        espece: f.espece.trim() || found.espece || f.espece,
-        race: f.race.trim() || found.race || f.race,
-        proprietaire_nom: f.proprietaire_nom.trim() || found.proprietaire_nom || f.proprietaire_nom,
-        proprietaire_contact: f.proprietaire_contact.trim() || found.proprietaire_contact || f.proprietaire_contact,
-        proprietaire_email: f.proprietaire_email.trim() || found.proprietaire_email || f.proprietaire_email,
-        proprietaire_adresse: f.proprietaire_adresse.trim() || found.proprietaire_adresse || f.proprietaire_adresse,
-      }));
+      const update: Record<string, string> = {};
+      if (!form.espece.trim() && found.espece) update.espece = found.espece;
+      if (!form.race.trim() && found.race) update.race = found.race;
+      if (!form.proprietaire_nom.trim() && found.proprietaire_nom) update.proprietaire_nom = found.proprietaire_nom;
+      if (!form.proprietaire_contact.trim() && found.proprietaire_contact) update.proprietaire_contact = found.proprietaire_contact;
+      if (!form.proprietaire_email.trim() && found.proprietaire_email) update.proprietaire_email = found.proprietaire_email;
+      if (!form.proprietaire_adresse.trim() && found.proprietaire_adresse) update.proprietaire_adresse = found.proprietaire_adresse;
+      if (!animalId && found.animal_id) update.animal_id = found.animal_id;
+      if (Object.keys(update).length > 0 && isEdit && entree) {
+        await supabase.from('pension_entrees').update(update).eq('id', entree.id);
+      }
+      setForm(f => ({ ...f, ...update }));
       if (!animalId) setAnimalId(found.animal_id);
     } finally {
       setLinkingFiche(false);
@@ -144,7 +147,12 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
         return;
       }
       if (isEdit && entree) {
-        await supabase.from('pension_entrees').update({ animal_id: found.animal_id }).eq('id', entree.id);
+        const update: Record<string, string> = { animal_id: found.animal_id };
+        if (found.proprietaire_nom) update.proprietaire_nom = found.proprietaire_nom;
+        if (found.proprietaire_contact) update.proprietaire_contact = found.proprietaire_contact;
+        if (found.proprietaire_email) update.proprietaire_email = found.proprietaire_email;
+        if (found.proprietaire_adresse) update.proprietaire_adresse = found.proprietaire_adresse;
+        await supabase.from('pension_entrees').update(update).eq('id', entree.id);
         if (found.owner_uid) {
           await requestAnimalAccess(found.animal_id, found.owner_uid, proUid, proProfileId,
             'Votre pension', entree.animal_nom);

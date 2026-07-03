@@ -162,16 +162,16 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
           _rdvTodayCount = (rdvToday as List).length;
         });
       } else if (User_Info.catPro == 'pension') {
-        final pensionnaires = await pf(supa.from('animal_access')
-            .select('id').eq('pro_profile_id', pid).eq('statut', 'active'));
+        final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
         final rdvToday = await pf(supa.from('rdv').select('id')
             .eq('pro_uid', uid)
             .gte('date_heure', todayStart)
             .lte('date_heure', todayEnd)
             .inFilter('statut', activeStatuts));
         final logements = await supa.from('enclos_chenil').select('id, capacite').eq('uid_eleveur', uid);
-        final entreesActives = await supa.from('pension_entrees').select('logement_id')
-            .eq('pro_uid', uid).eq('statut', 'en_pension');
+        // Séjours réellement en cours aujourd'hui : statut actif + déjà arrivé (date_entree <= aujourd'hui)
+        final entreesActives = await supa.from('pension_entrees').select('id, logement_id, date_entree')
+            .eq('pro_uid', uid).eq('statut', 'en_pension').lte('date_entree', todayStr);
         final occupePerLogement = <String, int>{};
         for (final e in (entreesActives as List)) {
           final lid = e['logement_id'] as String?;
@@ -186,7 +186,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
           dispo += (capacite - occupe).clamp(0, capacite);
         }
         if (mounted) setState(() {
-          _pensionnairesCount = (pensionnaires as List).length;
+          _pensionnairesCount = entreesActives.length;
           _rdvTodayCount      = (rdvToday as List).length;
           _logementsDispo     = dispo;
           _logementsTotal     = total;

@@ -3844,6 +3844,26 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
   (`/pension/fiche/[animalId]`) a aussi été étendue : si l'utilisateur n'a pas d'`animal_access` direct, elle
   vérifie s'il est employé (avec la permission) d'une pension qui, elle, a l'accès actif — et utilise le
   profil de l'employeur pour résoudre le séjour en cours.
+- **Bug — "Rattacher/Retrouver via la puce" ne persistait rien** : `_linkFiche()`/`_retrouverViaPuce()` (app)
+  et leurs équivalents web ne faisaient que remplir les champs du formulaire en mémoire (`setState`/`setForm`)
+  sans jamais écrire en base — les infos retrouvées disparaissaient si l'utilisateur ne cliquait pas ensuite
+  sur "Enregistrer". Les deux actions persistent désormais immédiatement les champs retrouvés (nom/contact/
+  email propriétaire, espèce/race, animal_id) dans `pension_entrees`.
+- **Bug — compteurs tableau de bord pension pas à jour** : la carte "Pensionnaires" comptait les lignes
+  `animal_access` actives (accès à la fiche accordé) au lieu du nombre de séjours réellement en cours
+  (`pension_entrees` statut `en_pension`) — deux choses différentes, un séjour peut exister sans que l'accès
+  fiche ait été demandé/approuvé. Corrigé côté app (`eleveur_home.dart`). Sur les deux plateformes, le calcul
+  "places disponibles" comptait aussi les réservations **futures** comme occupant une place dès aujourd'hui —
+  filtré désormais sur `date_entree <= aujourd'hui`.
+- **Bug — approbation d'accès silencieusement sans effet (`is_main` vs profil actif)** : quand une pension
+  demande l'accès à une fiche, la ligne `animal_access` est créée avec le `pro_profile_id` du profil
+  **actif** au moment de la demande. Mais côté propriétaire, l'écran d'autorisation (web `Header.tsx`,
+  app `notifications_page.dart`, pension et vétérinaire) résolvait le profil du demandeur via
+  `is_main = true` — si le compte a plusieurs profils et que le profil actif à la demande n'était pas le
+  profil principal, l'`UPDATE` ne matchait aucune ligne et l'accès restait bloqué à `pending` indéfiniment
+  (symptôme observé : "Accès non autorisé" persistant côté site même après clic sur Autoriser). Corrigé pour
+  résoudre **tous** les profils du compte demandeur plutôt que le seul profil principal. Une demande déjà
+  bloquée par ce bug doit être réapprouvée une fois après ce correctif pour se débloquer.
 
 ### 19.3 — Migrations à exécuter (si pas déjà fait)
 

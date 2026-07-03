@@ -603,19 +603,20 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (result == null || !mounted) return;
 
     try {
-      // Résoudre pro_profile_id depuis le Firebase UID de la pension
-      final proProfile = await _supa.from('user_profiles')
-          .select('id').eq('uid', pensionUid).eq('is_main', true).maybeSingle();
-      final proProfileId = proProfile?['id'] as String?;
+      // Résoudre tous les profils du compte pension — la demande a pu être
+      // envoyée depuis un profil secondaire (pas forcément is_main).
+      final proProfiles = await _supa.from('user_profiles')
+          .select('id').eq('uid', pensionUid);
+      final proProfileIds = (proProfiles as List).map((p) => p['id'] as String).toList();
 
-      if (proProfileId != null) {
+      if (proProfileIds.isNotEmpty) {
         await _supa.from('animal_access')
             .update({
               'statut': result ? 'active' : 'revoked',
               if (result) 'granted_at': DateTime.now().toUtc().toIso8601String(),
               if (!result) 'revoked_at': DateTime.now().toUtc().toIso8601String(),
             })
-            .eq('pro_profile_id', proProfileId)
+            .inFilter('pro_profile_id', proProfileIds)
             .eq('animal_id', animalId);
       }
 
@@ -687,16 +688,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
     if (result == null || !mounted) return;
     try {
-      // Résoudre pro_profile_id depuis le Firebase UID du vet
-      final vetProfile = await _supa.from('user_profiles')
-          .select('id').eq('uid', vetId).eq('is_main', true).maybeSingle();
-      final vetProfileId = vetProfile?['id'] as String?;
-      if (vetProfileId != null) {
+      // Résoudre tous les profils du compte vet — la demande a pu être
+      // envoyée depuis un profil secondaire (pas forcément is_main).
+      final vetProfiles = await _supa.from('user_profiles')
+          .select('id').eq('uid', vetId);
+      final vetProfileIds = (vetProfiles as List).map((p) => p['id'] as String).toList();
+      if (vetProfileIds.isNotEmpty) {
         await _supa.from('animal_access').update({
           'statut': result ? 'active' : 'revoked',
           if (result) 'granted_at': DateTime.now().toUtc().toIso8601String(),
           if (!result) 'revoked_at': DateTime.now().toUtc().toIso8601String(),
-        }).eq('pro_profile_id', vetProfileId).eq('animal_id', animalId);
+        }).inFilter('pro_profile_id', vetProfileIds).eq('animal_id', animalId);
       }
 
       // Notification retour au vétérinaire

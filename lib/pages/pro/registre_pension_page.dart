@@ -1427,27 +1427,37 @@ class PensionEditSheetState extends State<PensionEditSheet> {
         }
         return;
       }
+      final update = <String, dynamic>{};
       setState(() {
         if (_especeCtrl.text.trim().isEmpty && (prefill['espece'] as String?)?.isNotEmpty == true) {
           _especeCtrl.text = prefill['espece'] as String;
+          update['espece'] = _especeCtrl.text.trim().toLowerCase();
         }
         if (_raceCtrl.text.trim().isEmpty && (prefill['race'] as String?)?.isNotEmpty == true) {
           _raceCtrl.text = prefill['race'] as String;
+          update['race'] = _raceCtrl.text.trim();
         }
         if (_clientCtrl.text.trim().isEmpty && (prefill['proprietaireNom'] as String?)?.isNotEmpty == true) {
           _clientCtrl.text = prefill['proprietaireNom'] as String;
+          update['proprietaire_nom'] = _clientCtrl.text.trim();
         }
         if (_contactCtrl.text.trim().isEmpty && (prefill['proprietaireContact'] as String?)?.isNotEmpty == true) {
           _contactCtrl.text = prefill['proprietaireContact'] as String;
+          update['proprietaire_contact'] = _contactCtrl.text.trim();
         }
         if (_emailCtrl.text.trim().isEmpty && (prefill['proprietaireEmail'] as String?)?.isNotEmpty == true) {
           _emailCtrl.text = prefill['proprietaireEmail'] as String;
+          update['proprietaire_email'] = _emailCtrl.text.trim();
         }
         if (_animalId == null) {
           _animalId = prefill['animalId'] as String?;
           _accessStatus = null;
+          if (_animalId != null) update['animal_id'] = _animalId;
         }
       });
+      if (update.isNotEmpty) {
+        await widget.supa.from('pension_entrees').update(update).eq('id', widget.entree['id']);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Infos retrouvées via la puce', style: TextStyle(fontFamily: 'Galey')),
@@ -1470,7 +1480,11 @@ class PensionEditSheetState extends State<PensionEditSheet> {
     }
     setState(() => _linkingFiche = true);
     try {
-      await widget.supa.from('pension_entrees').update({'animal_id': animalId}).eq('id', widget.entree['id']);
+      final update = <String, dynamic>{'animal_id': animalId};
+      if ((prefill['proprietaireNom'] as String?)?.isNotEmpty ?? false) update['proprietaire_nom'] = prefill['proprietaireNom'];
+      if ((prefill['proprietaireContact'] as String?)?.isNotEmpty ?? false) update['proprietaire_contact'] = prefill['proprietaireContact'];
+      if ((prefill['proprietaireEmail'] as String?)?.isNotEmpty ?? false) update['proprietaire_email'] = prefill['proprietaireEmail'];
+      await widget.supa.from('pension_entrees').update(update).eq('id', widget.entree['id']);
       final ownerUid = prefill['ownerUid'] as String?;
       if (ownerUid != null && ownerUid.isNotEmpty) {
         await _requestAccessTo(animalId, ownerUid);
@@ -1479,9 +1493,9 @@ class PensionEditSheetState extends State<PensionEditSheet> {
         setState(() {
           _animalId = animalId;
           _accessStatus = (ownerUid != null && ownerUid.isNotEmpty) ? 'pending' : null;
-          if ((prefill['proprietaireNom'] as String?)?.isNotEmpty ?? false) _clientCtrl.text = prefill['proprietaireNom'] as String;
-          if ((prefill['proprietaireContact'] as String?)?.isNotEmpty ?? false) _contactCtrl.text = prefill['proprietaireContact'] as String;
-          if ((prefill['proprietaireEmail'] as String?)?.isNotEmpty ?? false) _emailCtrl.text = prefill['proprietaireEmail'] as String;
+          if (update.containsKey('proprietaire_nom')) _clientCtrl.text = update['proprietaire_nom'] as String;
+          if (update.containsKey('proprietaire_contact')) _contactCtrl.text = update['proprietaire_contact'] as String;
+          if (update.containsKey('proprietaire_email')) _emailCtrl.text = update['proprietaire_email'] as String;
         });
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Fiche rattachée — demande d\'accès envoyée au propriétaire', style: TextStyle(fontFamily: 'Galey')),

@@ -1214,13 +1214,16 @@ export default function Header() {
             const animalNom  = d.animalNom ?? 'cet animal';
             if (!pensionUid || !animalId) { setPensionDialog(null); return; }
 
-            const { data: proProfile } = await supabase.from('user_profiles')
-              .select('id').eq('uid', pensionUid).eq('is_main', true).maybeSingle();
-            if (proProfile?.id) {
+            // Tous les profils du compte pension — la demande a pu être envoyée
+            // depuis un profil secondaire (pas forcément is_main).
+            const { data: proProfiles } = await supabase.from('user_profiles')
+              .select('id').eq('uid', pensionUid);
+            const proProfileIds = (proProfiles ?? []).map(p => p.id);
+            if (proProfileIds.length > 0) {
               await supabase.from('animal_access').update({
                 statut: approved ? 'active' : 'revoked',
                 ...(approved ? { granted_at: new Date().toISOString() } : { revoked_at: new Date().toISOString() }),
-              }).eq('pro_profile_id', proProfile.id).eq('animal_id', animalId);
+              }).in('pro_profile_id', proProfileIds).eq('animal_id', animalId);
             }
 
             await supabase.from('notifications').insert({

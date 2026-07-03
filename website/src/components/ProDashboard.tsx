@@ -170,9 +170,11 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
   useEffect(() => {
     if (!uid || !isPension) return;
     async function loadDispo() {
+      const todayStr = new Date().toISOString().slice(0, 10);
       const [{ data: logements }, { data: actives }] = await Promise.all([
         supabase.from('enclos_chenil').select('id, capacite').eq('uid_eleveur', uid),
-        supabase.from('pension_entrees').select('logement_id').eq('pro_uid', uid).eq('statut', 'en_pension'),
+        // Séjours réellement en cours aujourd'hui : statut actif + déjà arrivé
+        supabase.from('pension_entrees').select('logement_id').eq('pro_uid', uid).eq('statut', 'en_pension').lte('date_entree', todayStr),
       ]);
       const occupePerLogement: Record<string, number> = {};
       for (const e of (actives ?? [])) {
