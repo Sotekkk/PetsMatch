@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/auth-context';
+import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
 
 interface Logement {
@@ -32,7 +32,7 @@ const TYPE_LABEL = Object.fromEntries(TYPES.map(t => [t.value, t.label]));
 const EMPTY_FORM = { nom: '', type: 'box', capacite: 1, notes: '' };
 
 export default function PensionChenilPage() {
-  const { user, userData } = useAuth();
+  const { user, userData, isPension } = usePensionAccess();
   const router = useRouter();
   const [logements, setLogements] = useState<Logement[]>([]);
   const [entrees, setEntrees] = useState<Entree[]>([]);
@@ -42,8 +42,6 @@ export default function PensionChenilPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [assigningTo, setAssigningTo] = useState<Logement | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-
-  const isPension = userData?.isPro && userData?.catPro === 'pension';
 
   useEffect(() => {
     if (!user) { router.push('/connexion'); return; }

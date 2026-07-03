@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/auth-context';
+import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 
@@ -56,7 +56,7 @@ function espLabel(e?: string) { return ESP_LABEL[e ?? ''] ?? (e ?? ''); }
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export default function RegistrePensionPage() {
-  const { user, userData } = useAuth();
+  const { user, userData, isPension } = usePensionAccess();
   const router = useRouter();
   const activeProfileId = useActiveProfile();
 
@@ -69,7 +69,6 @@ export default function RegistrePensionPage() {
   const [filterEspece, setFilterEspece] = useState('');
   const [showFilter, setShowFilter]     = useState(false);
 
-  const isPension = userData?.isPro && userData?.catPro === 'pension';
 
   useEffect(() => {
     if (!user) { router.push('/connexion'); return; }

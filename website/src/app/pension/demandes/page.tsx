@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/auth-context';
+import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 
@@ -37,7 +37,7 @@ function fmtDate(iso: string) {
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export default function DemandesAccesPage() {
-  const { user, userData } = useAuth();
+  const { user, userData, isPension } = usePensionAccess();
   const router = useRouter();
   const activeProfileId = useActiveProfile();
 
@@ -45,7 +45,6 @@ export default function DemandesAccesPage() {
   const [loading, setLoading]   = useState(true);
   const [tab, setTab]           = useState<'pending' | 'approved' | 'refused' | 'tous'>('tous');
 
-  const isPension = userData?.isPro && userData?.catPro === 'pension';
 
   useEffect(() => {
     if (!user) { router.push('/connexion'); return; }

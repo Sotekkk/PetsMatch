@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/lib/auth-context';
+import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { sendNotification } from '@/lib/notifications';
 
 interface Entree {
@@ -35,7 +35,7 @@ const STATUT_META: Record<string, { label: string; cls: string }> = {
 };
 
 export default function PensionContratPage() {
-  const { user, userData } = useAuth();
+  const { user, userData, isPension } = usePensionAccess();
   const router = useRouter();
   const [entrees, setEntrees] = useState<Entree[]>([]);
   const [docs, setDocs] = useState<Record<string, Doc>>({});
@@ -44,7 +44,6 @@ export default function PensionContratPage() {
   const [generating, setGenerating] = useState<string | null>(null);
   const [arrhesDefaut, setArrhesDefaut] = useState(0);
 
-  const isPension = userData?.isPro && userData?.catPro === 'pension';
 
   useEffect(() => {
     if (!user) { router.push('/connexion'); return; }

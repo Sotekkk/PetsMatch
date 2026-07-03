@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/auth-context';
+import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
 
 interface Logement {
@@ -70,7 +70,7 @@ const DAYS = 14;
 const DAY_FMT = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'numeric' });
 
 export default function PensionPlanningPage() {
-  const { user, userData } = useAuth();
+  const { user, userData, isPension } = usePensionAccess();
   const router = useRouter();
   const [logements, setLogements] = useState<Logement[]>([]);
   const [entrees, setEntrees] = useState<Entree[]>([]);
@@ -78,7 +78,6 @@ export default function PensionPlanningPage() {
   const [windowStart, setWindowStart] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [selected, setSelected] = useState<{ e: Entree; st: Statut } | null>(null);
 
-  const isPension = userData?.isPro && userData?.catPro === 'pension';
 
   useEffect(() => {
     if (!user) { router.push('/connexion'); return; }

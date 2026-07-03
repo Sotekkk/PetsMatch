@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { useAuth } from '@/lib/auth-context';
+import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 
@@ -97,7 +97,7 @@ const ACTIVITE_LABEL: Record<string, string> = {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AnimalFichePensionWebPage() {
-  const { user, userData } = useAuth();
+  const { user, userData, isPension } = usePensionAccess();
   const router = useRouter();
   const params = useParams();
   const animalId = params?.animalId as string;
@@ -116,7 +116,6 @@ export default function AnimalFichePensionWebPage() {
   const [hasAccess, setHasAccess]         = useState(false);
   const [loading, setLoading]             = useState(true);
 
-  const isPension = userData?.isPro && userData?.catPro === 'pension';
 
   useEffect(() => {
     if (!user) { router.push('/connexion'); return; }
