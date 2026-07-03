@@ -1,25 +1,28 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { lookupAnimalByChip, requestAnimalAccess } from '@/lib/pension-chip-lookup';
 
 export interface PensionEntree {
   id: string;
   pro_uid: string;
   animal_nom: string;
-  espece?: string;
-  race?: string;
-  puce?: string;
-  proprietaire_nom?: string;
-  proprietaire_contact?: string;
-  proprietaire_email?: string;
-  proprietaire_adresse?: string;
+  espece?: string | null;
+  race?: string | null;
+  puce?: string | null;
+  proprietaire_nom?: string | null;
+  proprietaire_contact?: string | null;
+  proprietaire_email?: string | null;
+  proprietaire_adresse?: string | null;
   date_entree: string;
-  date_sortie_prevue?: string;
-  date_sortie_effective?: string;
+  date_sortie_prevue?: string | null;
+  date_sortie_effective?: string | null;
   logement_id?: string | null;
   animal_id?: string | null;
-  notes?: string;
+  seul_dans_logement?: boolean;
+  notes?: string | null;
   statut: 'en_pension' | 'sorti';
   created_at: string;
 }
@@ -37,6 +40,7 @@ export interface PensionEntreePrefill {
   proprietaire_contact?: string;
   proprietaire_email?: string;
   proprietaire_adresse?: string;
+  owner_uid?: string;
 }
 
 export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogementId, initialDateEntree, prefill, onClose, onSaved }: {
@@ -64,9 +68,42 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
     date_sortie_effective: entree?.date_sortie_effective ?? '',
     statut:                entree?.statut ?? 'en_pension',
     notes:                 entree?.notes ?? '',
+    seul_dans_logement:    entree?.seul_dans_logement ?? false,
   });
+  const [animalId, setAnimalId] = useState<string | null | undefined>(entree?.animal_id ?? prefill?.animal_id);
+  const [linkingFiche, setLinkingFiche] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
+
+  async function linkFiche() {
+    const chip = window.prompt('Numéro de puce de l\'animal :');
+    if (!chip || !chip.trim()) return;
+    setLinkingFiche(true);
+    try {
+      const found = await lookupAnimalByChip(chip.trim());
+      if (!found.animal_id) {
+        setError('Aucun animal trouvé avec cette puce.');
+        return;
+      }
+      if (isEdit && entree) {
+        await supabase.from('pension_entrees').update({ animal_id: found.animal_id }).eq('id', entree.id);
+        if (found.owner_uid) {
+          await requestAnimalAccess(found.animal_id, found.owner_uid, proUid, proProfileId,
+            'Votre pension', entree.animal_nom);
+        }
+      }
+      setAnimalId(found.animal_id);
+      setForm(f => ({
+        ...f,
+        proprietaire_nom: found.proprietaire_nom || f.proprietaire_nom,
+        proprietaire_contact: found.proprietaire_contact || f.proprietaire_contact,
+        proprietaire_email: found.proprietaire_email || f.proprietaire_email,
+        proprietaire_adresse: found.proprietaire_adresse || f.proprietaire_adresse,
+      }));
+    } finally {
+      setLinkingFiche(false);
+    }
+  }
 
   function set(field: string, value: string) { setForm(f => ({ ...f, [field]: value })); }
 
@@ -91,8 +128,9 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
       date_sortie_effective: form.statut === 'sorti' ? (form.date_sortie_effective || null) : null,
       notes:                form.notes.trim() || null,
       statut:               form.statut,
+      seul_dans_logement:   form.seul_dans_logement,
       ...(!isEdit && initialLogementId ? { logement_id: initialLogementId } : {}),
-      ...(!isEdit && prefill?.animal_id ? { animal_id: prefill.animal_id } : {}),
+      ...(!isEdit && animalId ? { animal_id: animalId } : {}),
     };
     const { error: err } = isEdit
       ? await supabase.from('pension_entrees').update(payload).eq('id', entree!.id)
@@ -174,11 +212,42 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
                 onChange={e => set('race', e.target.value)} />
             </div>
           </div>
-          <div style={{ marginBottom: 4 }}>
+          <div style={{ marginBottom: 12 }}>
             <label style={lbl}>Numéro de puce</label>
             <input style={inp} placeholder="250 269 810 000 000" value={form.puce}
               onChange={e => set('puce', e.target.value)} />
           </div>
+
+          {/* Fiche animal */}
+          <p style={sec}>FICHE ANIMAL</p>
+          <div style={{ marginBottom: 12 }}>
+            {animalId ? (
+              <Link href={`/pension/fiche/${animalId}`}
+                style={{ display: 'block', textAlign: 'center', padding: '10px 0', borderRadius: 10,
+                  border: `1px solid ${TEAL}`, color: TEAL, fontFamily: 'Galey, sans-serif', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
+                Voir la fiche
+              </Link>
+            ) : (
+              <>
+                <p style={{ margin: '0 0 8px', fontFamily: 'Galey, sans-serif', fontSize: 12, color: '#9ca3af' }}>
+                  Aucune fiche rattachée à ce séjour.
+                </p>
+                <button type="button" onClick={linkFiche} disabled={linkingFiche}
+                  style={{ width: '100%', padding: '10px 0', borderRadius: 10, border: `1px solid ${GREEN}`,
+                    background: 'transparent', color: GREEN, cursor: 'pointer',
+                    fontFamily: 'Galey, sans-serif', fontSize: 13, fontWeight: 700 }}>
+                  {linkingFiche ? 'Recherche…' : 'Rattacher une fiche (puce)'}
+                </button>
+              </>
+            )}
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.seul_dans_logement}
+              onChange={e => setForm(f => ({ ...f, seul_dans_logement: e.target.checked }))} />
+            <span style={{ fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#374151' }}>
+              Animal doit être seul dans le logement
+            </span>
+          </label>
 
           {/* Propriétaire */}
           <p style={sec}>PROPRIÉTAIRE</p>

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:PetsMatch/pages/pro/registre_pension_page.dart' show PensionEntreeSheet, pickAnimalForAdmission;
+import 'package:PetsMatch/pages/pro/registre_pension_page.dart' show PensionEntreeSheet, pickAnimalForAdmission, PensionEditSheet;
 
 class PensionPlanningPage extends StatefulWidget {
   const PensionPlanningPage({super.key});
@@ -52,6 +52,36 @@ _StaySt _computeStatus(Map<String, dynamic> e, DateTime today) {
   if (dateSortiePrevue != null && _sameDay(dateSortiePrevue, today)) return _StaySt.sortieAujourdhui;
   if (dateSortiePrevue != null && dateSortiePrevue.isBefore(today)) return _StaySt.sortieRetard;
   return _StaySt.enCours;
+}
+
+bool _rangesOverlap(Map<String, dynamic> a, Map<String, dynamic> b) {
+  final aStart = _parseDate(a['date_entree']);
+  final bStart = _parseDate(b['date_entree']);
+  if (aStart == null || bStart == null) return false;
+  final aEnd = _parseDate(a['date_sortie_effective']) ?? _parseDate(a['date_sortie_prevue']) ?? DateTime(2100);
+  final bEnd = _parseDate(b['date_sortie_effective']) ?? _parseDate(b['date_sortie_prevue']) ?? DateTime(2100);
+  return !aStart.isAfter(bEnd) && !bStart.isAfter(aEnd);
+}
+
+/// Range dans capacite lignes les séjours d'un logement sans chevauchement
+/// (façon Tetris) — les séjours "seul" ne sont pas rangés dans la grille
+/// normale, ils sont traités à part (bloquent toutes les lignes).
+List<List<Map<String, dynamic>>> _packEntries(List<Map<String, dynamic>> entries, int capacite) {
+  final rows = List.generate(capacite < 1 ? 1 : capacite, (_) => <Map<String, dynamic>>[]);
+  final normales = entries.where((e) => e['seul_dans_logement'] != true).toList()
+    ..sort((a, b) {
+      final da = _parseDate(a['date_entree']) ?? DateTime(2000);
+      final db = _parseDate(b['date_entree']) ?? DateTime(2000);
+      return da.compareTo(db);
+    });
+  for (final e in normales) {
+    var placed = false;
+    for (final row in rows) {
+      if (!row.any((other) => _rangesOverlap(other, e))) { row.add(e); placed = true; break; }
+    }
+    if (!placed) rows.last.add(e);
+  }
+  return rows;
 }
 
 class _PensionPlanningPageState extends State<PensionPlanningPage> {
@@ -110,6 +140,30 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
 
   List<Map<String, dynamic>> _entreesFor(String? logementId) =>
       _entrees.where((e) => e['logement_id'] == logementId).toList();
+
+  List<Map<String, dynamic>> _soloEntreesFor(String? logementId) =>
+      _entrees.where((e) => e['logement_id'] == logementId && e['seul_dans_logement'] == true).toList();
+
+  bool _estNettoyeAujourdhui(Map<String, dynamic> logement) {
+    final d = _parseDate(logement['dernier_nettoyage']);
+    return d != null && _sameDay(d, DateTime.now());
+  }
+
+  Future<void> _marquerNettoye(String logementId) async {
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    await _supa.from('enclos_chenil').update({'dernier_nettoyage': today}).eq('id', logementId);
+    _load();
+  }
+
+  Future<void> _openEditSheet(Map<String, dynamic> entree) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => PensionEditSheet(entree: entree, supa: _supa),
+    );
+    _load();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -182,14 +236,28 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
                                 child: Text(_typeLabels[type] ?? type,
                                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 11, color: _teal)),
                               ),
-                              for (final l in grouped[type]!)
-                                Container(
-                                  height: 40, alignment: Alignment.centerLeft,
-                                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                                  decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
-                                  child: Text(l['nom'] as String? ?? '', overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
-                                ),
+                              for (final l in grouped[type]!) ...[
+                                for (var slot = 0; slot < ((l['capacite'] as int?) ?? 1).clamp(1, 99); slot++)
+                                  Container(
+                                    height: 40, alignment: Alignment.centerLeft,
+                                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                                    decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
+                                    child: slot == 0
+                                        ? Row(children: [
+                                            Expanded(child: Text(l['nom'] as String? ?? '', overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600))),
+                                            GestureDetector(
+                                              onTap: () => _marquerNettoye(l['id'] as String),
+                                              child: Icon(
+                                                _estNettoyeAujourdhui(l) ? Icons.check_circle : Icons.cleaning_services_outlined,
+                                                size: 14,
+                                                color: _estNettoyeAujourdhui(l) ? const Color(0xFF6E9E57) : Colors.orange,
+                                              ),
+                                            ),
+                                          ])
+                                        : const SizedBox.shrink(),
+                                  ),
+                              ],
                             ],
                           ]),
                         ),
@@ -219,14 +287,17 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
                                 ]),
                                 for (final type in grouped.keys) ...[
                                   Container(height: 28, color: const Color(0xFFEEF5EA)),
-                                  for (final l in grouped[type]!)
-                                    _LogementRow(
-                                      days: days,
-                                      entrees: _entreesFor(l['id'] as String?),
-                                      today: today,
-                                      onTapEntree: _showEntreeInfo,
-                                      onTapEmpty: (d) => _openCreationSheet(l['id'] as String, d),
-                                    ),
+                                  for (final l in grouped[type]!) ...[
+                                    for (final row in _packEntries(_entreesFor(l['id'] as String?), (l['capacite'] as int?) ?? 1))
+                                      _LogementRow(
+                                        days: days,
+                                        entrees: row,
+                                        soloEntrees: _soloEntreesFor(l['id'] as String?),
+                                        today: today,
+                                        onTapEntree: _openEditSheet,
+                                        onTapEmpty: (d) => _openCreationSheet(l['id'] as String, d),
+                                      ),
+                                  ],
                                 ],
                               ]),
                             ),
@@ -272,40 +343,20 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
     if (created == true) _load();
   }
 
-  void _showEntreeInfo(Map<String, dynamic> e, _StaySt st) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(e['animal_nom'] as String? ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(color: _stColors[st]!.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
-            child: Text(_stLabels[st]!, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _stColors[st], fontWeight: FontWeight.w700)),
-          ),
-          Text('Propriétaire : ${e['proprietaire_nom'] ?? '—'}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-          const SizedBox(height: 4),
-          Text('Entrée : ${e['date_entree'] ?? '—'}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-          Text('Sortie prévue : ${e['date_sortie_prevue'] ?? '—'}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer')),
-        ],
-      ),
-    );
-  }
 }
 
 class _LogementRow extends StatelessWidget {
   final List<DateTime> days;
   final List<Map<String, dynamic>> entrees;
+  final List<Map<String, dynamic>> soloEntrees;
   final DateTime today;
-  final void Function(Map<String, dynamic>, _StaySt) onTapEntree;
+  final void Function(Map<String, dynamic>) onTapEntree;
   final void Function(DateTime) onTapEmpty;
 
-  const _LogementRow({required this.days, required this.entrees, required this.today, required this.onTapEntree, required this.onTapEmpty});
+  const _LogementRow({
+    required this.days, required this.entrees, required this.soloEntrees,
+    required this.today, required this.onTapEntree, required this.onTapEmpty,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -317,16 +368,23 @@ class _LogementRow extends StatelessWidget {
     );
   }
 
-  Widget _dayCell(DateTime d) {
-    Map<String, dynamic>? match;
-    for (final e in entrees) {
+  Map<String, dynamic>? _matchFor(List<Map<String, dynamic>> list, DateTime d) {
+    for (final e in list) {
       final entree = _parseDate(e['date_entree']);
       final sortie = _parseDate(e['date_sortie_effective']) ?? _parseDate(e['date_sortie_prevue']);
       if (entree == null) continue;
       final startOk = !d.isBefore(DateTime(entree.year, entree.month, entree.day));
       final endOk = sortie == null || !d.isAfter(DateTime(sortie.year, sortie.month, sortie.day));
-      if (startOk && endOk) { match = e; break; }
+      if (startOk && endOk) return e;
     }
+    return null;
+  }
+
+  Widget _dayCell(DateTime d) {
+    // Un séjour "seul" bloque toutes les lignes du logement pour ses dates.
+    final solo = _matchFor(soloEntrees, d);
+    final match = solo ?? _matchFor(entrees, d);
+
     if (match == null) {
       return GestureDetector(
         onTap: () => onTapEmpty(d),
@@ -339,13 +397,20 @@ class _LogementRow extends StatelessWidget {
     }
     final st = _computeStatus(match, today);
     return GestureDetector(
-      onTap: () => onTapEntree(match!, st),
+      onTap: () => onTapEntree(match),
       child: Container(
         width: 56, height: 40,
         padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
         decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
         child: Container(
-          decoration: BoxDecoration(color: _stColors[st], borderRadius: BorderRadius.circular(4)),
+          decoration: BoxDecoration(
+            color: _stColors[st],
+            borderRadius: BorderRadius.circular(4),
+            border: solo != null ? Border.all(color: Colors.redAccent, width: 1.5) : null,
+          ),
+          child: solo != null
+              ? const Center(child: Icon(Icons.lock_outline, size: 12, color: Colors.white))
+              : null,
         ),
       ),
     );

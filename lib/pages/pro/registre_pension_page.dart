@@ -1005,7 +1005,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _PensionEditSheet(entree: entree, supa: _supa),
+      builder: (_) => PensionEditSheet(entree: entree, supa: _supa),
     );
     _load();
   }
@@ -1318,16 +1318,16 @@ String _espLabel(String e) {
 
 // ── Sheet édition entrée ───────────────────────────────────────────────────────
 
-class _PensionEditSheet extends StatefulWidget {
+class PensionEditSheet extends StatefulWidget {
   final Map<String, dynamic> entree;
   final SupabaseClient supa;
-  const _PensionEditSheet({required this.entree, required this.supa});
+  const PensionEditSheet({required this.entree, required this.supa});
 
   @override
-  State<_PensionEditSheet> createState() => _PensionEditSheetState();
+  State<PensionEditSheet> createState() => PensionEditSheetState();
 }
 
-class _PensionEditSheetState extends State<_PensionEditSheet> {
+class PensionEditSheetState extends State<PensionEditSheet> {
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
 
@@ -1340,6 +1340,9 @@ class _PensionEditSheetState extends State<_PensionEditSheet> {
   late final TextEditingController _emailCtrl;
   late final TextEditingController _notesCtrl;
   bool _saving = false;
+  bool _linkingFiche = false;
+  late bool _seul;
+  String? _animalId;
   final _fmt   = DateFormat('dd/MM/yyyy');
 
   @override
@@ -1354,6 +1357,71 @@ class _PensionEditSheetState extends State<_PensionEditSheet> {
     _contactCtrl = TextEditingController(text: d['proprietaire_contact'] as String? ?? '');
     _emailCtrl   = TextEditingController(text: d['proprietaire_email'] as String? ?? '');
     _notesCtrl   = TextEditingController(text: d['notes'] as String? ?? '');
+    _seul        = d['seul_dans_logement'] as bool? ?? false;
+    _animalId    = d['animal_id'] as String?;
+  }
+
+  Future<void> _linkFiche() async {
+    final prefill = await pickAnimalForAdmission(context, allowSkip: false);
+    if (prefill == null || !mounted) return;
+    final animalId = prefill['animalId'] as String?;
+    if (animalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Aucun animal trouvé avec cette puce.', style: TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
+    setState(() => _linkingFiche = true);
+    try {
+      await widget.supa.from('pension_entrees').update({'animal_id': animalId}).eq('id', widget.entree['id']);
+      final ownerUid = prefill['ownerUid'] as String?;
+      if (ownerUid != null && ownerUid.isNotEmpty) {
+        await _requestAccessTo(animalId, ownerUid);
+      }
+      if (mounted) {
+        setState(() {
+          _animalId = animalId;
+          if ((prefill['proprietaireNom'] as String?)?.isNotEmpty ?? false) _clientCtrl.text = prefill['proprietaireNom'] as String;
+          if ((prefill['proprietaireContact'] as String?)?.isNotEmpty ?? false) _contactCtrl.text = prefill['proprietaireContact'] as String;
+          if ((prefill['proprietaireEmail'] as String?)?.isNotEmpty ?? false) _emailCtrl.text = prefill['proprietaireEmail'] as String;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Fiche rattachée — demande d\'accès envoyée au propriétaire', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: _green,
+        ));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    } finally {
+      if (mounted) setState(() => _linkingFiche = false);
+    }
+  }
+
+  Future<void> _requestAccessTo(String animalId, String ownerUid) async {
+    try {
+      final pid = User_Info.activeProfileId;
+      final ownerProfile = await widget.supa.from('user_profiles')
+          .select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
+      final ownerProfileId = ownerProfile?['id'] as String?;
+      if (pid.isEmpty || ownerProfileId == null) return;
+      final existing = await widget.supa.from('animal_access')
+          .select('id').eq('pro_profile_id', pid).eq('animal_id', animalId).maybeSingle();
+      if (existing != null) return;
+      final pensionNom = User_Info.nameElevage.isNotEmpty
+          ? User_Info.nameElevage : '${User_Info.firstname} ${User_Info.lastname}'.trim();
+      await widget.supa.from('animal_access').insert({
+        'pro_profile_id': pid, 'animal_id': animalId,
+        'granted_by_profile_id': ownerProfileId,
+        'permissions': ['read_basic', 'read_alimentation', 'write_notes'],
+        'statut': 'pending',
+      });
+      await widget.supa.from('notifications').insert({
+        'uid': ownerUid, 'type': 'pension_acces',
+        'title': 'Demande d\'accès à la fiche de ${_clientCtrl.text.isEmpty ? "votre animal" : widget.entree['animal_nom']}',
+        'body': '$pensionNom souhaite consulter la fiche en pension (lecture seule).',
+        'data': {'pensionUid': FirebaseAuth.instance.currentUser?.uid, 'pensionNom': pensionNom, 'animalId': animalId},
+        'read': false,
+      });
+    } catch (_) {}
   }
 
   @override
@@ -1398,6 +1466,7 @@ class _PensionEditSheetState extends State<_PensionEditSheet> {
             ? DateFormat('yyyy-MM-dd').format(_dateSortiePrevue!) : null,
         'date_sortie_effective': _statut == 'sorti' && _dateSortieEff != null
             ? DateFormat('yyyy-MM-dd').format(_dateSortieEff!) : null,
+        'seul_dans_logement':    _seul,
       }).eq('id', widget.entree['id']);
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -1467,6 +1536,54 @@ class _PensionEditSheetState extends State<_PensionEditSheet> {
                 const SizedBox(width: 8),
                 _statutChip('sorti', 'Sorti', _teal),
               ])]),
+              const SizedBox(height: 16),
+
+              // Fiche animal
+              _sectionTitle('Fiche animal'),
+              const SizedBox(height: 10),
+              _card([
+                if (_animalId != null)
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => AnimalFichePensionPage(
+                          animalId: _animalId!,
+                          animalNom: widget.entree['animal_nom']?.toString(),
+                        ),
+                      )),
+                      icon: const Icon(Icons.badge_outlined, size: 16),
+                      label: const Text('Voir la fiche', style: TextStyle(fontFamily: 'Galey')),
+                      style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
+                    ),
+                  )
+                else ...[
+                  Text('Aucune fiche rattachée à ce séjour.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _linkingFiche ? null : _linkFiche,
+                      icon: _linkingFiche
+                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.link_rounded, size: 16),
+                      label: const Text('Rattacher une fiche (puce)', style: TextStyle(fontFamily: 'Galey')),
+                      style: OutlinedButton.styleFrom(foregroundColor: _green, side: const BorderSide(color: _green)),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                CheckboxListTile(
+                  value: _seul,
+                  onChanged: (v) => setState(() => _seul = v ?? false),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  activeColor: _teal,
+                  title: const Text('Animal doit être seul dans le logement',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                ),
+              ]),
               const SizedBox(height: 16),
 
               // Client
@@ -1621,7 +1738,7 @@ const _kChipTeal = Color(0xFF0C5C6C);
 /// correspondant en base. Retourne les valeurs à préremplir dans
 /// PensionEntreeSheet (map vide si "sans puce" ou animal non trouvé),
 /// ou null si l'utilisateur annule le choix initial.
-Future<Map<String, dynamic>?> pickAnimalForAdmission(BuildContext context) async {
+Future<Map<String, dynamic>?> pickAnimalForAdmission(BuildContext context, {bool allowSkip = true}) async {
   final choice = await showModalBottomSheet<String>(
     context: context,
     backgroundColor: Colors.white,
@@ -1643,11 +1760,12 @@ Future<Map<String, dynamic>?> pickAnimalForAdmission(BuildContext context) async
           title: const Text('Saisir le numéro de puce', style: TextStyle(fontFamily: 'Galey')),
           onTap: () => Navigator.pop(ctx, 'manual'),
         ),
-        ListTile(
-          leading: const Icon(Icons.edit_note_outlined, color: Colors.grey),
-          title: const Text('Sans puce (saisie manuelle)', style: TextStyle(fontFamily: 'Galey')),
-          onTap: () => Navigator.pop(ctx, 'skip'),
-        ),
+        if (allowSkip)
+          ListTile(
+            leading: const Icon(Icons.edit_note_outlined, color: Colors.grey),
+            title: const Text('Sans puce (saisie manuelle)', style: TextStyle(fontFamily: 'Galey')),
+            onTap: () => Navigator.pop(ctx, 'skip'),
+          ),
         const SizedBox(height: 8),
       ]),
     ),
@@ -1833,6 +1951,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
   final _notesCtrl    = TextEditingController();
   DateTime _dateEntree = DateTime.now();
   DateTime? _dateSortiePrevue;
+  bool _seul = false;
 
   @override
   void initState() {
@@ -1919,6 +2038,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
         'proprietaire_adresse': _adresseCtrl.text.trim(),
         if (widget.initialPhotoUrl != null) 'photo_url': widget.initialPhotoUrl,
         if (widget.initialLogementId != null) 'logement_id': widget.initialLogementId,
+        'seul_dans_logement':   _seul,
         'date_entree':          DateFormat('yyyy-MM-dd').format(_dateEntree),
         if (_dateSortiePrevue != null)
           'date_sortie_prevue': DateFormat('yyyy-MM-dd').format(_dateSortiePrevue!),
@@ -2082,7 +2202,17 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
           const SizedBox(height: 10),
           _lbl('Adresse'),
           TextFormField(controller: _adresseCtrl, decoration: _dec('Rue, code postal, ville')),
-          const SizedBox(height: 20),
+          const SizedBox(height: 8),
+          CheckboxListTile(
+            value: _seul,
+            onChanged: (v) => setState(() => _seul = v ?? false),
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            activeColor: _teal,
+            title: const Text('Animal doit être seul dans le logement',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          ),
+          const SizedBox(height: 12),
 
           Row(children: [
             Expanded(child: _DateTile(label: 'Entrée *', date: _dateEntree,

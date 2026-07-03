@@ -3783,6 +3783,27 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
   hook `usePensionAccess()` remplace le check naïf `userData?.catPro==='pension'` sur 6 pages web pour
   gérer correctement les comptes multi-profils (ex : pension + particulier) ; redirection prématurée vers
   `/connexion` sur rechargement complet corrigée (attente de `authLoading` avant de décider).
+- **Infos propriétaire via `animaux_proprietes`** : la recherche par puce (registre + planning) résout
+  désormais le propriétaire actuel via `animaux_proprietes` (source unique, `date_fin IS NULL`) au lieu de
+  dépendre d'un accès `animal_access` déjà accordé — nom d'élevage prioritaire si le propriétaire est un
+  pro, adresse remontée (nouveau champ `proprietaire_adresse` sur `pension_entrees`). App : `_processChip`
+  (registre) et `pickAnimalForAdmission` (planning) partagent la même fonction `_lookupAnimalByChip`. Web :
+  bug de noms de colonnes corrigé au passage sur la table `users`.
+- **Case occupée du planning éditable + rattachement de fiche** : cliquer une case occupée ouvre le
+  formulaire d'édition complet (plus un simple résumé lecture seule). Si l'entrée n'a pas encore de fiche
+  animal liée, bouton "Rattacher une fiche (puce)" qui recherche par puce et déclenche automatiquement la
+  demande d'accès (`animal_access`) au propriétaire résolu. App : classe `_PensionEditSheet` rendue publique
+  (`PensionEditSheet`), réutilisée par le planning. Web : `PensionEntreeModal` gagne cette même capacité
+  (partagée avec le registre).
+- **Statut de nettoyage des logements** : réutilise la colonne déjà existante `enclos_chenil.dernier_nettoyage`
+  — badge à côté du nom du logement dans le planning (🧹 à nettoyer / ✓ nettoyé aujourd'hui), cliquable pour
+  marquer nettoyé.
+- **Lignes multiples selon la capacité + exclusivité "seul"** : un logement de capacité N affiche N lignes
+  dans le planning ; les séjours qui se chevauchent sont répartis automatiquement dans la première ligne
+  libre (algorithme glouton façon Tetris, calculé à l'affichage — pas de colonne d'assignation persistée).
+  Nouveau champ `seul_dans_logement` (BOOLEAN) sur `pension_entrees` : un séjour marqué "doit être seul"
+  bloque visuellement les N lignes du logement pour ses dates (bordure rouge + icône 🔒), empêchant d'y
+  planifier un autre animal.
 
 ### 19.3 — Migrations à exécuter (si pas déjà fait)
 
@@ -3793,6 +3814,8 @@ supabase/migration_pension_plans_tarifaires.sql -- 3 formules pension dans plans
 supabase/migration_enclos_chenil_especes.sql    -- especes sur enclos_chenil
 supabase/migration_animaux_owner_uid_claims.sql -- owner_uid sur animaux + table animal_claims
 supabase/migration_pension_updates.sql          -- table pension_updates (journal de séjour)
+supabase/migration_pension_entrees_proprietaire_adresse.sql -- proprietaire_adresse sur pension_entrees
+supabase/migration_pension_solo_nettoyage.sql   -- seul_dans_logement sur pension_entrees
 ```
 
 ---

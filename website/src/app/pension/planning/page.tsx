@@ -6,23 +6,54 @@ import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { PensionEntreeModal, type PensionEntreePrefill } from '@/components/PensionEntreeModal';
+import { lookupAnimalByChip } from '@/lib/pension-chip-lookup';
 
 interface Logement {
   id: string;
   nom: string;
   type: string;
+  capacite: number;
   especes?: string[] | null;
+  dernier_nettoyage?: string | null;
 }
 
 interface Entree {
   id: string;
+  pro_uid: string;
   animal_nom: string;
   proprietaire_nom?: string | null;
   logement_id?: string | null;
-  statut: string;
+  animal_id?: string | null;
+  seul_dans_logement?: boolean;
+  statut: 'en_pension' | 'sorti';
   date_entree: string;
   date_sortie_prevue?: string | null;
   date_sortie_effective?: string | null;
+  created_at: string;
+}
+
+function rangesOverlap(a: Entree, b: Entree): boolean {
+  const aStart = new Date(a.date_entree);
+  const bStart = new Date(b.date_entree);
+  const aEnd = a.date_sortie_effective ? new Date(a.date_sortie_effective) : (a.date_sortie_prevue ? new Date(a.date_sortie_prevue) : new Date(2100, 0, 1));
+  const bEnd = b.date_sortie_effective ? new Date(b.date_sortie_effective) : (b.date_sortie_prevue ? new Date(b.date_sortie_prevue) : new Date(2100, 0, 1));
+  return aStart <= bEnd && bStart <= aEnd;
+}
+
+/** Range dans capacite lignes les séjours d'un logement sans chevauchement
+ * (façon Tetris) — les séjours "seul" sont traités à part par l'appelant. */
+function packEntries(entries: Entree[], capacite: number): Entree[][] {
+  const rows: Entree[][] = Array.from({ length: Math.max(1, capacite) }, () => []);
+  const normales = entries.filter(e => !e.seul_dans_logement)
+    .sort((a, b) => a.date_entree.localeCompare(b.date_entree));
+  for (const e of normales) {
+    let placed = false;
+    for (const row of rows) {
+      if (!row.some(other => rangesOverlap(other, e))) { row.push(e); placed = true; break; }
+    }
+    if (!placed) rows[rows.length - 1].push(e);
+  }
+  return rows;
 }
 
 const TYPE_LABEL: Record<string, string> = { box: 'Box', enclos: 'Enclos', parc: 'Parc', chatterie: 'Chatterie', cage: 'Cage' };
@@ -81,7 +112,7 @@ export default function PensionPlanningPage() {
   const [entrees, setEntrees] = useState<Entree[]>([]);
   const [loading, setLoading] = useState(true);
   const [windowStart, setWindowStart] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
-  const [selected, setSelected] = useState<{ e: Entree; st: Statut } | null>(null);
+  const [editingEntree, setEditingEntree] = useState<Entree | null>(null);
   const [filterEspece, setFilterEspece] = useState<string | null>(null);
   const [creatingFor, setCreatingFor] = useState<{ logementId: string; date: string } | null>(null);
   const [chipStepFor, setChipStepFor] = useState<{ logementId: string; date: string } | null>(null);
@@ -91,41 +122,7 @@ export default function PensionPlanningPage() {
 
   async function searchByChip(chip: string) {
     setChipSearching(true);
-    const normalized = chip.replace(/[\s-]/g, '');
-    const { data } = await supabase.from('animaux')
-      .select('id, nom, espece, race, identification, uid_eleveur, uid_proprietaire')
-      .not('identification', 'is', null);
-    const found = (data ?? []).find(a => (a.identification ?? '').replace(/[\s-]/g, '') === normalized);
-    if (found) {
-      const next: PensionEntreePrefill = {
-        animal_id: found.id, animal_nom: found.nom ?? undefined,
-        espece: found.espece ?? undefined, race: found.race ?? undefined,
-        puce: found.identification ?? chip,
-      };
-      // Propriétaire actuel = animaux_proprietes (source unique), fallback animaux.uid_eleveur
-      const { data: propRow } = await supabase.from('animaux_proprietes')
-        .select('uid_proprio').eq('animal_id', found.id).is('date_fin', null)
-        .order('date_debut', { ascending: false }).limit(1).maybeSingle();
-      const ownerUid = propRow?.uid_proprio ?? found.uid_eleveur ?? found.uid_proprietaire;
-      if (ownerUid) {
-        const { data: owner } = await supabase.from('users')
-          .select('name_elevage, firstname, lastname, phone_number, email, adress_elevage, rue_elevage, ville_elevage, code_postal_elevage, rue, code_postal, ville')
-          .eq('uid', ownerUid).maybeSingle();
-        if (owner) {
-          const firstLast = [owner.firstname, owner.lastname].filter(Boolean).join(' ');
-          next.proprietaire_nom = owner.name_elevage || firstLast || undefined;
-          next.proprietaire_contact = owner.phone_number || undefined;
-          next.proprietaire_email = owner.email || undefined;
-          const rue = owner.adress_elevage || owner.rue_elevage || owner.rue;
-          const cp = owner.code_postal_elevage || owner.code_postal;
-          const ville = owner.ville_elevage || owner.ville;
-          next.proprietaire_adresse = [rue, [cp, ville].filter(Boolean).join(' ')].filter(Boolean).join(', ') || undefined;
-        }
-      }
-      setPrefill(next);
-    } else {
-      setPrefill({ puce: chip });
-    }
+    setPrefill(await lookupAnimalByChip(chip));
     setChipSearching(false);
     if (chipStepFor) { setCreatingFor(chipStepFor); setChipStepFor(null); }
     setChipInput('');
@@ -142,8 +139,8 @@ export default function PensionPlanningPage() {
     if (!user) return;
     const windowEnd = new Date(windowStart); windowEnd.setDate(windowEnd.getDate() + DAYS);
     const [{ data: log }, { data: ent }] = await Promise.all([
-      supabase.from('enclos_chenil').select('id, nom, type, especes').eq('uid_eleveur', user.uid).order('nom'),
-      supabase.from('pension_entrees').select('id, animal_nom, proprietaire_nom, logement_id, statut, date_entree, date_sortie_prevue, date_sortie_effective')
+      supabase.from('enclos_chenil').select('id, nom, type, capacite, especes, dernier_nettoyage').eq('uid_eleveur', user.uid).order('nom'),
+      supabase.from('pension_entrees').select('id, pro_uid, animal_nom, proprietaire_nom, logement_id, animal_id, seul_dans_logement, statut, date_entree, date_sortie_prevue, date_sortie_effective, created_at')
         .eq('pro_uid', user.uid).lte('date_entree', windowEnd.toISOString().slice(0, 10)).order('date_entree'),
     ]);
     setLogements(log ?? []);
@@ -153,6 +150,11 @@ export default function PensionPlanningPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  async function marquerNettoye(logementId: string) {
+    await supabase.from('enclos_chenil').update({ dernier_nettoyage: new Date().toISOString().slice(0, 10) }).eq('id', logementId);
+    load();
+  }
+
   const days = Array.from({ length: DAYS }, (_, i) => { const d = new Date(windowStart); d.setDate(d.getDate() + i); return d; });
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const visibleLogements = filterEspece ? logements.filter(l => (l.especes ?? []).includes(filterEspece)) : logements;
@@ -161,14 +163,13 @@ export default function PensionPlanningPage() {
     return acc;
   }, {});
 
-  const entryFor = (logementId: string, day: Date): Entree | null => {
-    for (const e of entrees) {
-      if (e.logement_id !== logementId) continue;
+  const entryForDay = (list: Entree[], day: Date): Entree | null => {
+    const dayOnly = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+    for (const e of list) {
       const start = new Date(e.date_entree);
-      const end = e.date_sortie_effective ? new Date(e.date_sortie_effective) : (e.date_sortie_prevue ? new Date(e.date_sortie_prevue) : null);
-      const dayOnly = new Date(day.getFullYear(), day.getMonth(), day.getDate());
       const startOnly = new Date(start.getFullYear(), start.getMonth(), start.getDate());
       if (dayOnly < startOnly) continue;
+      const end = e.date_sortie_effective ? new Date(e.date_sortie_effective) : (e.date_sortie_prevue ? new Date(e.date_sortie_prevue) : null);
       if (end) {
         const endOnly = new Date(end.getFullYear(), end.getMonth(), end.getDate());
         if (dayOnly > endOnly) continue;
@@ -176,6 +177,12 @@ export default function PensionPlanningPage() {
       return e;
     }
     return null;
+  };
+
+  const estNettoyeAujourdhui = (l: Logement) => {
+    if (!l.dernier_nettoyage) return false;
+    const d = new Date(l.dernier_nettoyage);
+    return sameDay(d, today);
   };
 
   if (!user || !userData) return null;
@@ -246,36 +253,56 @@ export default function PensionPlanningPage() {
                       {TYPE_LABEL[type] ?? type}
                     </td>
                   </tr>
-                  {ls.map(l => (
-                    <tr key={l.id}>
-                      <td className="sticky left-0 bg-white z-10 px-3 py-2 text-sm font-galey font-semibold text-gray-800 border-b border-gray-50 truncate max-w-32">
-                        {l.nom}
-                      </td>
-                      {days.map(d => {
-                        const e = entryFor(l.id, d);
-                        const st = e ? computeStatut(e, today) : null;
-                        return (
-                          <td key={d.toISOString()} className="border-b border-gray-50 p-1">
-                            {e && st ? (
-                              <button
-                                onClick={() => setSelected({ e, st })}
-                                title={e.animal_nom}
-                                className="w-full h-6 rounded"
-                                style={{ backgroundColor: STATUT_COLOR[st] }}
-                              />
-                            ) : (
-                              <button
-                                onClick={() => { setPrefill(undefined); setChipStepFor({ logementId: l.id, date: d.toISOString().slice(0, 10) }); }}
-                                title="Ajouter un séjour"
-                                className="w-full h-6 rounded hover:bg-gray-100 flex items-center justify-center text-gray-300 hover:text-gray-400 transition-colors">
-                                +
+                  {ls.map(l => {
+                    const logEntrees = entrees.filter(e => e.logement_id === l.id);
+                    const soloEntrees = logEntrees.filter(e => e.seul_dans_logement);
+                    const capacite = l.capacite || 1;
+                    const rows = packEntries(logEntrees, capacite);
+                    return rows.map((rowEntrees, slot) => (
+                      <tr key={`${l.id}-${slot}`}>
+                        <td className="sticky left-0 bg-white z-10 px-3 py-2 text-sm font-galey font-semibold text-gray-800 border-b border-gray-50 truncate max-w-32">
+                          {slot === 0 && (
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="truncate">{l.nom}</span>
+                              <button onClick={() => marquerNettoye(l.id)}
+                                title={estNettoyeAujourdhui(l) ? 'Nettoyé aujourd\'hui' : 'Marquer comme nettoyé'}
+                                className="shrink-0">
+                                {estNettoyeAujourdhui(l)
+                                  ? <span className="text-green-600 text-xs">✓</span>
+                                  : <span className="text-orange-500 text-xs">🧹</span>}
                               </button>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
+                            </div>
+                          )}
+                        </td>
+                        {days.map(d => {
+                          const solo = entryForDay(soloEntrees, d);
+                          const e = solo ?? entryForDay(rowEntrees, d);
+                          const st = e ? computeStatut(e, today) : null;
+                          return (
+                            <td key={d.toISOString()} className="border-b border-gray-50 p-1">
+                              {e && st ? (
+                                <button
+                                  onClick={() => setEditingEntree(e)}
+                                  title={e.animal_nom}
+                                  className="w-full h-6 rounded relative"
+                                  style={{ backgroundColor: STATUT_COLOR[st], border: solo ? '1.5px solid #ef4444' : undefined }}
+                                >
+                                  {solo && <span className="absolute inset-0 flex items-center justify-center text-[9px] text-white">🔒</span>}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => { setPrefill(undefined); setChipStepFor({ logementId: l.id, date: d.toISOString().slice(0, 10) }); }}
+                                  title="Ajouter un séjour"
+                                  className="w-full h-6 rounded hover:bg-gray-100 flex items-center justify-center text-gray-300 hover:text-gray-400 transition-colors">
+                                  +
+                                </button>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ));
+                  })}
                 </Fragment>
               ))}
             </tbody>
@@ -292,23 +319,14 @@ export default function PensionPlanningPage() {
         ))}
       </div>
 
-      {selected && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setSelected(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold font-galey text-lg text-gray-900 mb-1">{selected.e.animal_nom}</h3>
-            <span className="inline-block text-xs font-galey font-semibold px-2.5 py-1 rounded-full mb-3"
-              style={{ backgroundColor: `${STATUT_COLOR[selected.st]}26`, color: STATUT_COLOR[selected.st] }}>
-              {STATUT_LABEL[selected.st]}
-            </span>
-            <p className="text-sm font-galey text-gray-600">Propriétaire : {selected.e.proprietaire_nom ?? '—'}</p>
-            <p className="text-sm font-galey text-gray-600">Entrée : {selected.e.date_entree}</p>
-            <p className="text-sm font-galey text-gray-600">Sortie prévue : {selected.e.date_sortie_prevue ?? '—'}</p>
-            <button onClick={() => setSelected(null)}
-              className="mt-4 w-full text-sm font-galey font-semibold border border-gray-200 rounded-xl py-2 hover:bg-gray-50">
-              Fermer
-            </button>
-          </div>
-        </div>
+      {editingEntree && user && (
+        <PensionEntreeModal
+          proUid={user.uid}
+          proProfileId={activeProfileId || null}
+          entree={editingEntree}
+          onClose={() => setEditingEntree(null)}
+          onSaved={() => { setEditingEntree(null); load(); }}
+        />
       )}
 
       {chipStepFor && (
