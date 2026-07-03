@@ -97,11 +97,32 @@ export default function PensionPlanningPage() {
       .not('identification', 'is', null);
     const found = (data ?? []).find(a => (a.identification ?? '').replace(/[\s-]/g, '') === normalized);
     if (found) {
-      setPrefill({
+      const next: PensionEntreePrefill = {
         animal_id: found.id, animal_nom: found.nom ?? undefined,
         espece: found.espece ?? undefined, race: found.race ?? undefined,
         puce: found.identification ?? chip,
-      });
+      };
+      // Propriétaire actuel = animaux_proprietes (source unique), fallback animaux.uid_eleveur
+      const { data: propRow } = await supabase.from('animaux_proprietes')
+        .select('uid_proprio').eq('animal_id', found.id).is('date_fin', null)
+        .order('date_debut', { ascending: false }).limit(1).maybeSingle();
+      const ownerUid = propRow?.uid_proprio ?? found.uid_eleveur ?? found.uid_proprietaire;
+      if (ownerUid) {
+        const { data: owner } = await supabase.from('users')
+          .select('name_elevage, firstname, lastname, phone_number, email, adress_elevage, rue_elevage, ville_elevage, code_postal_elevage, rue, code_postal, ville')
+          .eq('uid', ownerUid).maybeSingle();
+        if (owner) {
+          const firstLast = [owner.firstname, owner.lastname].filter(Boolean).join(' ');
+          next.proprietaire_nom = owner.name_elevage || firstLast || undefined;
+          next.proprietaire_contact = owner.phone_number || undefined;
+          next.proprietaire_email = owner.email || undefined;
+          const rue = owner.adress_elevage || owner.rue_elevage || owner.rue;
+          const cp = owner.code_postal_elevage || owner.code_postal;
+          const ville = owner.ville_elevage || owner.ville;
+          next.proprietaire_adresse = [rue, [cp, ville].filter(Boolean).join(' ')].filter(Boolean).join(', ') || undefined;
+        }
+      }
+      setPrefill(next);
     } else {
       setPrefill({ puce: chip });
     }

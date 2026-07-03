@@ -13,6 +13,7 @@ export interface PensionEntree {
   proprietaire_nom?: string;
   proprietaire_contact?: string;
   proprietaire_email?: string;
+  proprietaire_adresse?: string;
   date_entree: string;
   date_sortie_prevue?: string;
   date_sortie_effective?: string;
@@ -35,6 +36,7 @@ export interface PensionEntreePrefill {
   proprietaire_nom?: string;
   proprietaire_contact?: string;
   proprietaire_email?: string;
+  proprietaire_adresse?: string;
 }
 
 export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogementId, initialDateEntree, prefill, onClose, onSaved }: {
@@ -56,6 +58,7 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
     proprietaire_nom:      entree?.proprietaire_nom ?? prefill?.proprietaire_nom ?? '',
     proprietaire_contact:  entree?.proprietaire_contact ?? prefill?.proprietaire_contact ?? '',
     proprietaire_email:    entree?.proprietaire_email ?? prefill?.proprietaire_email ?? '',
+    proprietaire_adresse:  entree?.proprietaire_adresse ?? prefill?.proprietaire_adresse ?? '',
     date_entree:           entree?.date_entree ?? initialDateEntree ?? new Date().toISOString().split('T')[0],
     date_sortie_prevue:    entree?.date_sortie_prevue ?? '',
     date_sortie_effective: entree?.date_sortie_effective ?? '',
@@ -82,6 +85,7 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
       proprietaire_nom:     form.proprietaire_nom.trim() || null,
       proprietaire_contact: form.proprietaire_contact.trim() || null,
       proprietaire_email:   form.proprietaire_email.trim() || null,
+      proprietaire_adresse: form.proprietaire_adresse.trim() || null,
       date_entree:          form.date_entree,
       date_sortie_prevue:   form.date_sortie_prevue || null,
       date_sortie_effective: form.statut === 'sorti' ? (form.date_sortie_effective || null) : null,
@@ -196,6 +200,11 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
                 value={form.proprietaire_email}
                 onChange={e => set('proprietaire_email', e.target.value)} />
             </div>
+          </div>
+          <div style={{ marginBottom: 4 }}>
+            <label style={lbl}>Adresse</label>
+            <input style={inp} placeholder="Rue, code postal, ville" value={form.proprietaire_adresse}
+              onChange={e => set('proprietaire_adresse', e.target.value)} />
           </div>
 
           {/* Séjour */}

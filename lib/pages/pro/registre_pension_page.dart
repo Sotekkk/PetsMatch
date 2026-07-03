@@ -206,58 +206,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       builder: (_) => const Center(child: CircularProgressIndicator(color: _teal)),
     );
 
-    Map<String, dynamic>? found;
-    String? ownerNom, ownerContact, ownerEmail, ownerUid;
-
-    try {
-      final rows = await _supa
-          .from('animaux')
-          .select('id,nom,espece,race,identification,photo_url,uid_eleveur,uid_proprietaire')
-          .not('identification', 'is', null)
-          .limit(2000);
-      for (final row in rows as List) {
-        final id = ((row as Map)['identification'] ?? '').toString()
-            .replaceAll(RegExp(r'[\s\-]'), '');
-        if (id.isNotEmpty && id == normalized) {
-          found = Map<String, dynamic>.from(row);
-          break;
-        }
-      }
-
-      // Propriétaire depuis animal_access si accès actif
-      if (found != null) {
-        final animalId = found['id'] as String;
-        ownerUid = (found['uid_eleveur'] ?? found['uid_proprietaire'])?.toString();
-        try {
-          final pid = User_Info.activeProfileId;
-          final acces = await _supa.from('animal_access')
-              .select('granted_by_profile_id')
-              .eq('pro_profile_id', pid)
-              .eq('animal_id', animalId)
-              .eq('statut', 'active')
-              .maybeSingle();
-          final ownerProfileId = acces?['granted_by_profile_id'] as String? ?? '';
-          // Récupérer uid depuis user_profiles
-          final ownerProfileData = ownerProfileId.isNotEmpty
-              ? await _supa.from('user_profiles').select('uid').eq('id', ownerProfileId).maybeSingle()
-              : null;
-          final approvedUid = ownerProfileData?['uid'] as String? ?? '';
-          if (approvedUid.isNotEmpty) {
-            ownerUid = approvedUid;
-            final doc = await FirebaseFirestore.instance
-                .collection('users').doc(approvedUid).get();
-            final d = doc.data();
-            if (d != null) {
-              ownerNom = [d['firstname'] as String? ?? '',
-                d['lastname']  as String? ?? '']
-                  .where((s) => s.isNotEmpty).join(' ');
-              ownerContact = d['phone_number'] as String? ?? '';
-              ownerEmail   = d['email']        as String? ?? '';
-            }
-          }
-        } catch (_) {}
-      }
-    } catch (_) {}
+    final prefill = await _lookupAnimalByChip(chip);
 
     if (!mounted) return;
     Navigator.pop(context); // ferme le loader
@@ -269,16 +218,17 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => PensionEntreeSheet(
-        initialNom:                 found?['nom']?.toString(),
-        initialEspece:              found?['espece']?.toString(),
-        initialRace:                found?['race']?.toString(),
-        initialPuce:                found?['identification']?.toString() ?? chip,
-        initialPhotoUrl:            found?['photo_url']?.toString(),
-        initialAnimalId:            found?['id']?.toString(),
-        initialOwnerUid:            ownerUid,
-        initialProprietaireNom:     ownerNom,
-        initialProprietaireContact: ownerContact,
-        initialProprietaireEmail:   ownerEmail,
+        initialNom:                 prefill['nom'] as String?,
+        initialEspece:              prefill['espece'] as String?,
+        initialRace:                prefill['race'] as String?,
+        initialPuce:                prefill['puce'] as String? ?? chip,
+        initialPhotoUrl:            prefill['photoUrl'] as String?,
+        initialAnimalId:            prefill['animalId'] as String?,
+        initialOwnerUid:            prefill['ownerUid'] as String?,
+        initialProprietaireNom:     prefill['proprietaireNom'] as String?,
+        initialProprietaireContact: prefill['proprietaireContact'] as String?,
+        initialProprietaireEmail:   prefill['proprietaireEmail'] as String?,
+        initialProprietaireAdresse: prefill['proprietaireAdresse'] as String?,
       ),
     );
     if (added == true && mounted) _load();
@@ -1754,7 +1704,7 @@ Future<Map<String, dynamic>> _lookupAnimalByChip(String chip) async {
   final supa = Supabase.instance.client;
   final normalized = chip.replaceAll(RegExp(r'[\s\-]'), '');
   Map<String, dynamic>? found;
-  String? ownerNom, ownerContact, ownerEmail, ownerUid;
+  String? ownerNom, ownerContact, ownerEmail, ownerAdresse, ownerUid;
 
   try {
     final rows = await supa
@@ -1771,32 +1721,47 @@ Future<Map<String, dynamic>> _lookupAnimalByChip(String chip) async {
     }
     if (found != null) {
       final animalId = found['id'] as String;
-      ownerUid = (found['uid_eleveur'] ?? found['uid_proprietaire'])?.toString();
+      // Propriétaire actuel = animaux_proprietes (source unique, date_fin IS NULL),
+      // fallback sur uid_eleveur/uid_proprietaire si jamais peuplée pour cet animal.
       try {
-        final pid = User_Info.activeProfileId;
-        final acces = await supa.from('animal_access')
-            .select('granted_by_profile_id')
-            .eq('pro_profile_id', pid)
+        final propRow = await supa.from('animaux_proprietes')
+            .select('uid_proprio')
             .eq('animal_id', animalId)
-            .eq('statut', 'active')
+            .filter('date_fin', 'is', null)
+            .order('date_debut', ascending: false)
+            .limit(1)
             .maybeSingle();
-        final ownerProfileId = acces?['granted_by_profile_id'] as String? ?? '';
-        final ownerProfileData = ownerProfileId.isNotEmpty
-            ? await supa.from('user_profiles').select('uid').eq('id', ownerProfileId).maybeSingle()
-            : null;
-        final approvedUid = ownerProfileData?['uid'] as String? ?? '';
-        if (approvedUid.isNotEmpty) {
-          ownerUid = approvedUid;
-          final doc = await FirebaseFirestore.instance.collection('users').doc(approvedUid).get();
+        ownerUid = (propRow?['uid_proprio'] as String?) ??
+            (found['uid_eleveur'] ?? found['uid_proprietaire'])?.toString();
+      } catch (_) {
+        ownerUid = (found['uid_eleveur'] ?? found['uid_proprietaire'])?.toString();
+      }
+
+      if (ownerUid != null && ownerUid.isNotEmpty) {
+        try {
+          final doc = await FirebaseFirestore.instance.collection('users').doc(ownerUid).get();
           final d = doc.data();
           if (d != null) {
-            ownerNom = [d['firstname'] as String? ?? '', d['lastname'] as String? ?? '']
+            // Éleveur/pro → nom d'élevage + adresse pro en priorité, sinon nom perso.
+            final nameElevage = (d['name_elevage'] as String?) ?? (d['nom'] as String?);
+            final firstLast = [d['firstname'] as String? ?? '', d['lastname'] as String? ?? '']
                 .where((s) => s.isNotEmpty).join(' ');
-            ownerContact = d['phone_number'] as String? ?? '';
-            ownerEmail   = d['email'] as String? ?? '';
+            ownerNom = (nameElevage != null && nameElevage.isNotEmpty) ? nameElevage : firstLast;
+
+            ownerContact = (d['phone_number'] as String?) ?? (d['telephone'] as String?) ?? '';
+            ownerEmail   = (d['email'] as String?) ?? (d['email_contact'] as String?) ?? '';
+
+            final ruePro   = d['rue_pro'] as String? ?? d['adress_elevage'] as String? ?? d['rue_elevage'] as String?;
+            final cpPro    = d['code_postal_pro'] as String?;
+            final villePro = d['ville_pro'] as String? ?? d['ville_elevage'] as String?;
+            final rue      = ruePro ?? d['rue'] as String?;
+            final cp       = cpPro ?? d['code_postal'] as String?;
+            final ville    = villePro ?? d['ville'] as String?;
+            ownerAdresse = [rue, [cp, ville].where((s) => (s ?? '').isNotEmpty).join(' ')]
+                .where((s) => (s ?? '').isNotEmpty).join(', ');
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
     }
   } catch (_) {}
 
@@ -1811,6 +1776,7 @@ Future<Map<String, dynamic>> _lookupAnimalByChip(String chip) async {
     'proprietaireNom':     ownerNom,
     'proprietaireContact': ownerContact,
     'proprietaireEmail':   ownerEmail,
+    'proprietaireAdresse': ownerAdresse,
   };
 }
 
@@ -1824,6 +1790,7 @@ class PensionEntreeSheet extends StatefulWidget {
   final String? initialProprietaireNom;
   final String? initialProprietaireContact;
   final String? initialProprietaireEmail;
+  final String? initialProprietaireAdresse;
   final String? initialPhotoUrl;
   final String? initialAnimalId;   // passé depuis le scan pour éviter une 2e recherche
   final String? initialOwnerUid;   // passé depuis le scan pour la notif directe
@@ -1838,6 +1805,7 @@ class PensionEntreeSheet extends StatefulWidget {
     this.initialProprietaireNom,
     this.initialProprietaireContact,
     this.initialProprietaireEmail,
+    this.initialProprietaireAdresse,
     this.initialPhotoUrl,
     this.initialAnimalId,
     this.initialOwnerUid,
@@ -1861,6 +1829,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
   late final TextEditingController _clientCtrl;
   late final TextEditingController _contactCtrl;
   late final TextEditingController _emailCtrl;
+  late final TextEditingController _adresseCtrl;
   final _notesCtrl    = TextEditingController();
   DateTime _dateEntree = DateTime.now();
   DateTime? _dateSortiePrevue;
@@ -1875,6 +1844,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
     _clientCtrl  = TextEditingController(text: widget.initialProprietaireNom ?? '');
     _contactCtrl = TextEditingController(text: widget.initialProprietaireContact ?? '');
     _emailCtrl   = TextEditingController(text: widget.initialProprietaireEmail ?? '');
+    _adresseCtrl = TextEditingController(text: widget.initialProprietaireAdresse ?? '');
     if (widget.initialDateEntree != null) _dateEntree = widget.initialDateEntree!;
   }
   bool _saving = false;
@@ -1885,7 +1855,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
   void dispose() {
     _nomCtrl.dispose(); _especeCtrl.dispose(); _raceCtrl.dispose();
     _puceCtrl.dispose(); _clientCtrl.dispose(); _contactCtrl.dispose();
-    _emailCtrl.dispose(); _notesCtrl.dispose();
+    _emailCtrl.dispose(); _notesCtrl.dispose(); _adresseCtrl.dispose();
     super.dispose();
   }
 
@@ -1946,6 +1916,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
         'proprietaire_nom':     _clientCtrl.text.trim(),
         'proprietaire_contact': _contactCtrl.text.trim(),
         'proprietaire_email':   _emailCtrl.text.trim(),
+        'proprietaire_adresse': _adresseCtrl.text.trim(),
         if (widget.initialPhotoUrl != null) 'photo_url': widget.initialPhotoUrl,
         if (widget.initialLogementId != null) 'logement_id': widget.initialLogementId,
         'date_entree':          DateFormat('yyyy-MM-dd').format(_dateEntree),
@@ -2108,6 +2079,9 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
           _lbl('Email'),
           TextFormField(controller: _emailCtrl, decoration: _dec('adresse@email.com'),
               keyboardType: TextInputType.emailAddress),
+          const SizedBox(height: 10),
+          _lbl('Adresse'),
+          TextFormField(controller: _adresseCtrl, decoration: _dec('Rue, code postal, ville')),
           const SizedBox(height: 20),
 
           Row(children: [

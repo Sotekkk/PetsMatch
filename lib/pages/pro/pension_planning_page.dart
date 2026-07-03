@@ -266,6 +266,7 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
         initialProprietaireNom:     prefill['proprietaireNom'] as String?,
         initialProprietaireContact: prefill['proprietaireContact'] as String?,
         initialProprietaireEmail:   prefill['proprietaireEmail'] as String?,
+        initialProprietaireAdresse: prefill['proprietaireAdresse'] as String?,
       ),
     );
     if (created == true) _load();
