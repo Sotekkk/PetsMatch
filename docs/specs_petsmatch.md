@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-07-02 — §19 Module Pension : état d'avancement (livré vs Phase 2 restante)  
+> Dernière mise à jour : 2026-07-03 — §19.1 Formules d'abonnement pension livrées (Découverte/Pro/Premium), tarifs éditables depuis /admin  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -3719,6 +3719,21 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
   (`fiches_pension_page.dart`).
 - **Correctif indépendant** : bug de reconnexion (déconnexion → reconnexion sans redémarrer l'app
   échouait) corrigé sur tous les profils, pas seulement pension — voir commit `c7ff69aa`.
+- **Formules d'abonnement pension** (session 2026-07-03) : 3 formules livrées — Découverte (gratuit,
+  1 logement, RDV, registre basique), Pro (14€/mois·140€/an — logements illimités, inventaire, 3
+  employés, protocoles, contrats signature, export factures), Premium (24€/mois·240€/an — employés
+  illimités, badge, accès prioritaire aux futures features). Seedées dans `plans_tarifaires`
+  (`profil_type='pension'`), **éditables sans déploiement depuis `/admin` → onglet Tarification**
+  (déjà générique côté données, l'UI affiche désormais le `profil_type` pour distinguer les plans).
+  `PlanService.getPensionPlanCode()`/`getPensionPlansLive()` (app) et `usePensionPlan()` (web) lisent
+  le plan actif — scopé par `profil_type`, indépendant du plan éleveur du même compte.
+  `PensionAbonnementPage` (app) + `/pension/abonnement` (web) affichent les 3 formules avec prix à
+  jour. Gating : Inventaire/Protocoles/Employés verrouillés en Découverte (icône grisée +
+  redirection abonnement dans le drawer), 1 logement max appliqué dans `pension_chenil_page.dart`.
+  **Paiement en ligne non câblé** : `STRIPE_PRICES` (web) est actuellement scopé par `plan_code` seul
+  (pas par `profil_type`), donc réutiliser les codes 'pro'/'premium' via `/api/stripe/checkout`
+  facturerait au tarif ÉLEVEUR — volontairement affiché "bientôt disponible" tant que des produits
+  Stripe dédiés à la pension n'existent pas et que l'endpoint n'est pas rendu profil_type-aware.
 
 ### 19.2 — Reste à faire 🔨 (Phase 2 / profils avancés, explicitement différé)
 
@@ -3728,16 +3743,17 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
 | Tarification automatisée | Prix calculé automatiquement selon poids animal, individuel/collectif, arrivée/départ en début de journée, réductions séjour long | Non commencé |
 | Alertes facturation | Notification si séjour non facturé ou client débiteur | Non commencé |
 | Export facturation par plage de dates | Export CSV actuel = tout l'historique filtré par statut, pas de sélecteur de dates dédié | Non commencé |
+| Paiement en ligne pension (Stripe) | Créer les produits/prix Stripe pension + rendre `/api/stripe/checkout` et `STRIPE_PRICES` profil_type-aware (actuellement scopé par plan_code seul, collision avec l'éleveur) | Non commencé |
 | Paiement en ligne (lien email/SMS) | Explicitement V2 par l'utilisateur, avec frais de service/transaction optionnels | Non commencé |
-| Formules d'abonnement pension (3 formules envisagées) | Note utilisateur "pour plus tard" — un ticket BL04b (plan PENSION 19€/mois) existe déjà dans TASKS.md mais sans détail des 3 paliers | Non commencé |
 | États opérationnels des logements | à nettoyer / en nettoyage / hors service (mode canin) — spec complète déjà écrite au §4, non implémentée pour la pension au-delà de capacité/occupation | Non commencé |
 | Activation YouSign réelle | `YouSignProvider` reste un stub (toutes méthodes lèvent une erreur) tant qu'un abonnement YouSign + clé API n'est pas fourni — voir §9ter.2 pour la liste complète des prérequis restants, communs à tous les profils | Bloqué sur décision business |
 
 ### 19.3 — Migrations à exécuter (si pas déjà fait)
 
 ```
-supabase/migration_pension_logements.sql   -- logement_id, tarifs_logements, arrhes_pourcentage
-supabase/migration_pension_contrat.sql     -- pension_entree_id sur documents_animaux
+supabase/migration_pension_logements.sql        -- logement_id, tarifs_logements, arrhes_pourcentage
+supabase/migration_pension_contrat.sql          -- pension_entree_id sur documents_animaux
+supabase/migration_pension_plans_tarifaires.sql -- 3 formules pension dans plans_tarifaires
 ```
 
 ---
