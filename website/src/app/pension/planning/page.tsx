@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { PensionEntreeModal } from '@/components/PensionEntreeModal';
+import { PensionEntreeModal, type PensionEntreePrefill } from '@/components/PensionEntreeModal';
 
 interface Logement {
   id: string;
@@ -84,6 +84,31 @@ export default function PensionPlanningPage() {
   const [selected, setSelected] = useState<{ e: Entree; st: Statut } | null>(null);
   const [filterEspece, setFilterEspece] = useState<string | null>(null);
   const [creatingFor, setCreatingFor] = useState<{ logementId: string; date: string } | null>(null);
+  const [chipStepFor, setChipStepFor] = useState<{ logementId: string; date: string } | null>(null);
+  const [chipInput, setChipInput] = useState('');
+  const [chipSearching, setChipSearching] = useState(false);
+  const [prefill, setPrefill] = useState<PensionEntreePrefill | undefined>(undefined);
+
+  async function searchByChip(chip: string) {
+    setChipSearching(true);
+    const normalized = chip.replace(/[\s-]/g, '');
+    const { data } = await supabase.from('animaux')
+      .select('id, nom, espece, race, identification, uid_eleveur, uid_proprietaire')
+      .not('identification', 'is', null);
+    const found = (data ?? []).find(a => (a.identification ?? '').replace(/[\s-]/g, '') === normalized);
+    if (found) {
+      setPrefill({
+        animal_id: found.id, animal_nom: found.nom ?? undefined,
+        espece: found.espece ?? undefined, race: found.race ?? undefined,
+        puce: found.identification ?? chip,
+      });
+    } else {
+      setPrefill({ puce: chip });
+    }
+    setChipSearching(false);
+    if (chipStepFor) { setCreatingFor(chipStepFor); setChipStepFor(null); }
+    setChipInput('');
+  }
 
 
   useEffect(() => {
@@ -219,7 +244,7 @@ export default function PensionPlanningPage() {
                               />
                             ) : (
                               <button
-                                onClick={() => setCreatingFor({ logementId: l.id, date: d.toISOString().slice(0, 10) })}
+                                onClick={() => { setPrefill(undefined); setChipStepFor({ logementId: l.id, date: d.toISOString().slice(0, 10) }); }}
                                 title="Ajouter un séjour"
                                 className="w-full h-6 rounded hover:bg-gray-100 flex items-center justify-center text-gray-300 hover:text-gray-400 transition-colors">
                                 +
@@ -265,12 +290,35 @@ export default function PensionPlanningPage() {
         </div>
       )}
 
+      {chipStepFor && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => setChipStepFor(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold font-galey text-lg text-gray-900 mb-3">Identifier l&apos;animal</h3>
+            <input value={chipInput} onChange={e => setChipInput(e.target.value)}
+              placeholder="Numéro de puce (optionnel)"
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-galey mb-3 focus:outline-none focus:ring-2 focus:ring-teal-300" />
+            <div className="flex gap-3">
+              <button onClick={() => searchByChip(chipInput)} disabled={!chipInput.trim() || chipSearching}
+                className="flex-1 bg-[#0C5C6C] text-white text-sm font-galey font-semibold py-2.5 rounded-xl disabled:opacity-40 hover:bg-[#094F5D] transition-colors">
+                {chipSearching ? 'Recherche…' : 'Rechercher'}
+              </button>
+              <button onClick={() => { setPrefill(undefined); setCreatingFor(chipStepFor); setChipStepFor(null); }}
+                className="flex-1 border border-gray-200 text-gray-600 text-sm font-galey font-semibold py-2.5 rounded-xl hover:bg-gray-50 transition-colors">
+                Sans puce
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {creatingFor && user && (
         <PensionEntreeModal
           proUid={user.uid}
           proProfileId={activeProfileId || null}
           initialLogementId={creatingFor.logementId}
           initialDateEntree={creatingFor.date}
+          prefill={prefill}
           onClose={() => setCreatingFor(null)}
           onSaved={() => { setCreatingFor(null); load(); }}
         />

@@ -26,24 +26,36 @@ export interface PensionEntree {
 const TEAL  = '#0C5C6C';
 const GREEN = '#6E9E57';
 
-export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogementId, initialDateEntree, onClose, onSaved }: {
+export interface PensionEntreePrefill {
+  animal_id?: string;
+  animal_nom?: string;
+  espece?: string;
+  race?: string;
+  puce?: string;
+  proprietaire_nom?: string;
+  proprietaire_contact?: string;
+  proprietaire_email?: string;
+}
+
+export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogementId, initialDateEntree, prefill, onClose, onSaved }: {
   proUid: string;
   proProfileId: string | null;
   entree?: PensionEntree;
   initialLogementId?: string;
   initialDateEntree?: string;
+  prefill?: PensionEntreePrefill;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const isEdit = !!entree;
   const [form, setForm] = useState({
-    animal_nom:            entree?.animal_nom ?? '',
-    espece:                entree?.espece ?? '',
-    race:                  entree?.race ?? '',
-    puce:                  entree?.puce ?? '',
-    proprietaire_nom:      entree?.proprietaire_nom ?? '',
-    proprietaire_contact:  entree?.proprietaire_contact ?? '',
-    proprietaire_email:    entree?.proprietaire_email ?? '',
+    animal_nom:            entree?.animal_nom ?? prefill?.animal_nom ?? '',
+    espece:                entree?.espece ?? prefill?.espece ?? '',
+    race:                  entree?.race ?? prefill?.race ?? '',
+    puce:                  entree?.puce ?? prefill?.puce ?? '',
+    proprietaire_nom:      entree?.proprietaire_nom ?? prefill?.proprietaire_nom ?? '',
+    proprietaire_contact:  entree?.proprietaire_contact ?? prefill?.proprietaire_contact ?? '',
+    proprietaire_email:    entree?.proprietaire_email ?? prefill?.proprietaire_email ?? '',
     date_entree:           entree?.date_entree ?? initialDateEntree ?? new Date().toISOString().split('T')[0],
     date_sortie_prevue:    entree?.date_sortie_prevue ?? '',
     date_sortie_effective: entree?.date_sortie_effective ?? '',
@@ -76,6 +88,7 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
       notes:                form.notes.trim() || null,
       statut:               form.statut,
       ...(!isEdit && initialLogementId ? { logement_id: initialLogementId } : {}),
+      ...(!isEdit && prefill?.animal_id ? { animal_id: prefill.animal_id } : {}),
     };
     const { error: err } = isEdit
       ? await supabase.from('pension_entrees').update(payload).eq('id', entree!.id)

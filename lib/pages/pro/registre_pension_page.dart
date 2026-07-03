@@ -1663,6 +1663,157 @@ class _PensionEditSheetState extends State<_PensionEditSheet> {
   );
 }
 
+// ── Scan/saisie puce réutilisable (registre + planning) ─────────────────────
+
+const _kChipTeal = Color(0xFF0C5C6C);
+
+/// Propose Scanner / Saisir la puce / Sans puce, puis cherche l'animal
+/// correspondant en base. Retourne les valeurs à préremplir dans
+/// PensionEntreeSheet (map vide si "sans puce" ou animal non trouvé),
+/// ou null si l'utilisateur annule le choix initial.
+Future<Map<String, dynamic>?> pickAnimalForAdmission(BuildContext context) async {
+  final choice = await showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => SafeArea(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
+          child: Align(alignment: Alignment.centerLeft, child: Text('Identifier l\'animal',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+        ),
+        ListTile(
+          leading: const Icon(Icons.sensors_rounded, color: _kChipTeal),
+          title: const Text('Scanner une puce', style: TextStyle(fontFamily: 'Galey')),
+          onTap: () => Navigator.pop(ctx, 'scan'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.keyboard_outlined, color: _kChipTeal),
+          title: const Text('Saisir le numéro de puce', style: TextStyle(fontFamily: 'Galey')),
+          onTap: () => Navigator.pop(ctx, 'manual'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.edit_note_outlined, color: Colors.grey),
+          title: const Text('Sans puce (saisie manuelle)', style: TextStyle(fontFamily: 'Galey')),
+          onTap: () => Navigator.pop(ctx, 'skip'),
+        ),
+        const SizedBox(height: 8),
+      ]),
+    ),
+  );
+  if (choice == null) return null;
+  if (choice == 'skip') return {};
+
+  String? chip;
+  if (choice == 'scan') {
+    chip = await ChipScannerService.showScanner(context);
+  } else if (context.mounted) {
+    final ctrl = TextEditingController();
+    chip = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Saisir le numéro de puce',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 15, letterSpacing: 1.2),
+          decoration: InputDecoration(
+            hintText: '250 269 810 000 000',
+            hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _kChipTeal, width: 1.5)),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx),
+              child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _kChipTeal,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: const Text('Rechercher', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+  }
+  if (chip == null || chip.trim().isEmpty) return {};
+
+  return _lookupAnimalByChip(chip.trim());
+}
+
+Future<Map<String, dynamic>> _lookupAnimalByChip(String chip) async {
+  final supa = Supabase.instance.client;
+  final normalized = chip.replaceAll(RegExp(r'[\s\-]'), '');
+  Map<String, dynamic>? found;
+  String? ownerNom, ownerContact, ownerEmail, ownerUid;
+
+  try {
+    final rows = await supa
+        .from('animaux')
+        .select('id,nom,espece,race,identification,photo_url,uid_eleveur,uid_proprietaire')
+        .not('identification', 'is', null)
+        .limit(2000);
+    for (final row in rows as List) {
+      final id = ((row as Map)['identification'] ?? '').toString().replaceAll(RegExp(r'[\s\-]'), '');
+      if (id.isNotEmpty && id == normalized) {
+        found = Map<String, dynamic>.from(row);
+        break;
+      }
+    }
+    if (found != null) {
+      final animalId = found['id'] as String;
+      ownerUid = (found['uid_eleveur'] ?? found['uid_proprietaire'])?.toString();
+      try {
+        final pid = User_Info.activeProfileId;
+        final acces = await supa.from('animal_access')
+            .select('granted_by_profile_id')
+            .eq('pro_profile_id', pid)
+            .eq('animal_id', animalId)
+            .eq('statut', 'active')
+            .maybeSingle();
+        final ownerProfileId = acces?['granted_by_profile_id'] as String? ?? '';
+        final ownerProfileData = ownerProfileId.isNotEmpty
+            ? await supa.from('user_profiles').select('uid').eq('id', ownerProfileId).maybeSingle()
+            : null;
+        final approvedUid = ownerProfileData?['uid'] as String? ?? '';
+        if (approvedUid.isNotEmpty) {
+          ownerUid = approvedUid;
+          final doc = await FirebaseFirestore.instance.collection('users').doc(approvedUid).get();
+          final d = doc.data();
+          if (d != null) {
+            ownerNom = [d['firstname'] as String? ?? '', d['lastname'] as String? ?? '']
+                .where((s) => s.isNotEmpty).join(' ');
+            ownerContact = d['phone_number'] as String? ?? '';
+            ownerEmail   = d['email'] as String? ?? '';
+          }
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+
+  return {
+    'nom':                 found?['nom']?.toString(),
+    'espece':              found?['espece']?.toString(),
+    'race':                found?['race']?.toString(),
+    'puce':                found?['identification']?.toString() ?? chip,
+    'photoUrl':            found?['photo_url']?.toString(),
+    'animalId':            found?['id']?.toString(),
+    'ownerUid':            ownerUid,
+    'proprietaireNom':     ownerNom,
+    'proprietaireContact': ownerContact,
+    'proprietaireEmail':   ownerEmail,
+  };
+}
+
 // ── Sheet ajout nouvelle entrée ────────────────────────────────────────────────
 
 class PensionEntreeSheet extends StatefulWidget {

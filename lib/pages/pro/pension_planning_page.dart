@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:PetsMatch/pages/pro/registre_pension_page.dart' show PensionEntreeSheet;
+import 'package:PetsMatch/pages/pro/registre_pension_page.dart' show PensionEntreeSheet, pickAnimalForAdmission;
 
 class PensionPlanningPage extends StatefulWidget {
   const PensionPlanningPage({super.key});
@@ -243,6 +243,9 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
   }
 
   Future<void> _openCreationSheet(String logementId, DateTime date) async {
+    final prefill = await pickAnimalForAdmission(context);
+    if (prefill == null || !mounted) return; // annulé au choix scan/manuel/sans puce
+
     final created = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -250,7 +253,20 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
       enableDrag: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => PensionEntreeSheet(initialLogementId: logementId, initialDateEntree: date),
+      builder: (_) => PensionEntreeSheet(
+        initialLogementId: logementId,
+        initialDateEntree: date,
+        initialNom:                 prefill['nom'] as String?,
+        initialEspece:              prefill['espece'] as String?,
+        initialRace:                prefill['race'] as String?,
+        initialPuce:                prefill['puce'] as String?,
+        initialPhotoUrl:            prefill['photoUrl'] as String?,
+        initialAnimalId:            prefill['animalId'] as String?,
+        initialOwnerUid:            prefill['ownerUid'] as String?,
+        initialProprietaireNom:     prefill['proprietaireNom'] as String?,
+        initialProprietaireContact: prefill['proprietaireContact'] as String?,
+        initialProprietaireEmail:   prefill['proprietaireEmail'] as String?,
+      ),
     );
     if (created == true) _load();
   }
