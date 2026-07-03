@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/pages/pro/registre_pension_page.dart' show PensionEntreeSheet;
 
 class PensionPlanningPage extends StatefulWidget {
   const PensionPlanningPage({super.key});
@@ -224,6 +225,7 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
                                       entrees: _entreesFor(l['id'] as String?),
                                       today: today,
                                       onTapEntree: _showEntreeInfo,
+                                      onTapEmpty: (d) => _openCreationSheet(l['id'] as String, d),
                                     ),
                                 ],
                               ]),
@@ -238,6 +240,19 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
               ),
             ]),
     );
+  }
+
+  Future<void> _openCreationSheet(String logementId, DateTime date) async {
+    final created = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: true,
+      enableDrag: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => PensionEntreeSheet(initialLogementId: logementId, initialDateEntree: date),
+    );
+    if (created == true) _load();
   }
 
   void _showEntreeInfo(Map<String, dynamic> e, _StaySt st) {
@@ -271,8 +286,9 @@ class _LogementRow extends StatelessWidget {
   final List<Map<String, dynamic>> entrees;
   final DateTime today;
   final void Function(Map<String, dynamic>, _StaySt) onTapEntree;
+  final void Function(DateTime) onTapEmpty;
 
-  const _LogementRow({required this.days, required this.entrees, required this.today, required this.onTapEntree});
+  const _LogementRow({required this.days, required this.entrees, required this.today, required this.onTapEntree, required this.onTapEmpty});
 
   @override
   Widget build(BuildContext context) {
@@ -295,9 +311,13 @@ class _LogementRow extends StatelessWidget {
       if (startOk && endOk) { match = e; break; }
     }
     if (match == null) {
-      return Container(
-        width: 56, height: 40,
-        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100), right: BorderSide(color: Colors.grey.shade50))),
+      return GestureDetector(
+        onTap: () => onTapEmpty(d),
+        child: Container(
+          width: 56, height: 40,
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100), right: BorderSide(color: Colors.grey.shade50))),
+          child: const Center(child: Icon(Icons.add, size: 14, color: Color(0xFFD1D5DB))),
+        ),
       );
     }
     final st = _computeStatus(match, today);

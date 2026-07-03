@@ -4,6 +4,8 @@ import { Fragment, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { PensionEntreeModal } from '@/components/PensionEntreeModal';
 
 interface Logement {
   id: string;
@@ -74,12 +76,14 @@ const ESPECES = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Chev
 export default function PensionPlanningPage() {
   const { user, userData, isPension, loading: authLoading } = usePensionAccess();
   const router = useRouter();
+  const activeProfileId = useActiveProfile();
   const [logements, setLogements] = useState<Logement[]>([]);
   const [entrees, setEntrees] = useState<Entree[]>([]);
   const [loading, setLoading] = useState(true);
   const [windowStart, setWindowStart] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [selected, setSelected] = useState<{ e: Entree; st: Statut } | null>(null);
   const [filterEspece, setFilterEspece] = useState<string | null>(null);
+  const [creatingFor, setCreatingFor] = useState<{ logementId: string; date: string } | null>(null);
 
 
   useEffect(() => {
@@ -213,7 +217,14 @@ export default function PensionPlanningPage() {
                                 className="w-full h-6 rounded"
                                 style={{ backgroundColor: STATUT_COLOR[st] }}
                               />
-                            ) : <div className="w-full h-6" />}
+                            ) : (
+                              <button
+                                onClick={() => setCreatingFor({ logementId: l.id, date: d.toISOString().slice(0, 10) })}
+                                title="Ajouter un séjour"
+                                className="w-full h-6 rounded hover:bg-gray-100 flex items-center justify-center text-gray-300 hover:text-gray-400 transition-colors">
+                                +
+                              </button>
+                            )}
                           </td>
                         );
                       })}
@@ -252,6 +263,17 @@ export default function PensionPlanningPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {creatingFor && user && (
+        <PensionEntreeModal
+          proUid={user.uid}
+          proProfileId={activeProfileId || null}
+          initialLogementId={creatingFor.logementId}
+          initialDateEntree={creatingFor.date}
+          onClose={() => setCreatingFor(null)}
+          onSaved={() => { setCreatingFor(null); load(); }}
+        />
       )}
     </div>
   );

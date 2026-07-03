@@ -1594,6 +1594,8 @@ class PensionEntreeSheet extends StatefulWidget {
   final String? initialPhotoUrl;
   final String? initialAnimalId;   // passé depuis le scan pour éviter une 2e recherche
   final String? initialOwnerUid;   // passé depuis le scan pour la notif directe
+  final String? initialLogementId; // passé depuis le planning — assigne directement le logement
+  final DateTime? initialDateEntree; // passé depuis le planning — jour cliqué
 
   const PensionEntreeSheet({
     this.initialNom,
@@ -1606,6 +1608,8 @@ class PensionEntreeSheet extends StatefulWidget {
     this.initialPhotoUrl,
     this.initialAnimalId,
     this.initialOwnerUid,
+    this.initialLogementId,
+    this.initialDateEntree,
   });
 
   @override
@@ -1638,6 +1642,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
     _clientCtrl  = TextEditingController(text: widget.initialProprietaireNom ?? '');
     _contactCtrl = TextEditingController(text: widget.initialProprietaireContact ?? '');
     _emailCtrl   = TextEditingController(text: widget.initialProprietaireEmail ?? '');
+    if (widget.initialDateEntree != null) _dateEntree = widget.initialDateEntree!;
   }
   bool _saving = false;
 
@@ -1688,6 +1693,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
         'proprietaire_contact': _contactCtrl.text.trim(),
         'proprietaire_email':   _emailCtrl.text.trim(),
         if (widget.initialPhotoUrl != null) 'photo_url': widget.initialPhotoUrl,
+        if (widget.initialLogementId != null) 'logement_id': widget.initialLogementId,
         'date_entree':          DateFormat('yyyy-MM-dd').format(_dateEntree),
         if (_dateSortiePrevue != null)
           'date_sortie_prevue': DateFormat('yyyy-MM-dd').format(_dateSortiePrevue!),
