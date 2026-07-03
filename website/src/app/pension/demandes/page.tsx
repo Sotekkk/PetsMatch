@@ -37,7 +37,7 @@ function fmtDate(iso: string) {
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export default function DemandesAccesPage() {
-  const { user, userData, isPension } = usePensionAccess();
+  const { user, userData, isPension, loading: authLoading } = usePensionAccess();
   const router = useRouter();
   const activeProfileId = useActiveProfile();
 
@@ -47,9 +47,10 @@ export default function DemandesAccesPage() {
 
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user) { router.push('/connexion'); return; }
     if (userData && !isPension) { router.push('/'); return; }
-  }, [user, userData, isPension, router]);
+  }, [user, userData, isPension, authLoading, router]);
 
   const load = useCallback(async () => {
     if (!user) return;

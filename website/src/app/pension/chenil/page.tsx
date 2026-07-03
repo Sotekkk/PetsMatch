@@ -32,7 +32,7 @@ const TYPE_LABEL = Object.fromEntries(TYPES.map(t => [t.value, t.label]));
 const EMPTY_FORM = { nom: '', type: 'box', capacite: 1, notes: '' };
 
 export default function PensionChenilPage() {
-  const { user, userData, isPension } = usePensionAccess();
+  const { user, userData, isPension, loading: authLoading } = usePensionAccess();
   const router = useRouter();
   const [logements, setLogements] = useState<Logement[]>([]);
   const [entrees, setEntrees] = useState<Entree[]>([]);
@@ -44,9 +44,10 @@ export default function PensionChenilPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user) { router.push('/connexion'); return; }
     if (userData && !isPension) { router.push('/'); return; }
-  }, [user, userData, isPension, router]);
+  }, [user, userData, isPension, authLoading, router]);
 
   const load = useCallback(async () => {
     if (!user) return;

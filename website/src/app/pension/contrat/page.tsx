@@ -35,7 +35,7 @@ const STATUT_META: Record<string, { label: string; cls: string }> = {
 };
 
 export default function PensionContratPage() {
-  const { user, userData, isPension } = usePensionAccess();
+  const { user, userData, isPension, loading: authLoading } = usePensionAccess();
   const router = useRouter();
   const [entrees, setEntrees] = useState<Entree[]>([]);
   const [docs, setDocs] = useState<Record<string, Doc>>({});
@@ -46,9 +46,10 @@ export default function PensionContratPage() {
 
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user) { router.push('/connexion'); return; }
     if (userData && !isPension) { router.push('/'); return; }
-  }, [user, userData, isPension, router]);
+  }, [user, userData, isPension, authLoading, router]);
 
   const load = useCallback(async () => {
     if (!user) return;

@@ -97,7 +97,7 @@ const ACTIVITE_LABEL: Record<string, string> = {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AnimalFichePensionWebPage() {
-  const { user, userData, isPension } = usePensionAccess();
+  const { user, userData, isPension, loading: authLoading } = usePensionAccess();
   const router = useRouter();
   const params = useParams();
   const animalId = params?.animalId as string;
@@ -118,9 +118,10 @@ export default function AnimalFichePensionWebPage() {
 
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user) { router.push('/connexion'); return; }
     if (userData && !isPension) { router.push('/'); return; }
-  }, [user, userData, isPension, router]);
+  }, [user, userData, isPension, authLoading, router]);
 
   const load = useCallback(async () => {
     if (!user || !animalId) return;

@@ -70,7 +70,7 @@ const DAYS = 14;
 const DAY_FMT = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'numeric' });
 
 export default function PensionPlanningPage() {
-  const { user, userData, isPension } = usePensionAccess();
+  const { user, userData, isPension, loading: authLoading } = usePensionAccess();
   const router = useRouter();
   const [logements, setLogements] = useState<Logement[]>([]);
   const [entrees, setEntrees] = useState<Entree[]>([]);
@@ -80,9 +80,10 @@ export default function PensionPlanningPage() {
 
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user) { router.push('/connexion'); return; }
     if (userData && !isPension) { router.push('/'); return; }
-  }, [user, userData, isPension, router]);
+  }, [user, userData, isPension, authLoading, router]);
 
   const load = useCallback(async () => {
     if (!user) return;
