@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-07-03 — §8.4/§19 paiement Stripe rendu profil_type-aware (checkout/activate/portal) : tout type de profil (véto, éducateur, pet sitter…) peut désormais activer le paiement en ligne en créant ses produits Stripe + prix dans /admin, sans nouveau code  
+> Dernière mise à jour : 2026-07-03 — §8.1/§19 paiement Stripe profil_type-aware + création automatique produit/prix Stripe depuis /admin (plus besoin du dashboard Stripe pour lancer la tarification d'un nouveau profil)  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -1010,7 +1010,7 @@ Phase 4 — Améliorations
 
 > Les prix et features de chaque plan doivent être modifiables via le panel admin sans déploiement. Stocker dans une table Supabase `plans_tarifaires` (voir §8.4).
 >
-> **Plomberie de paiement générique (livrée 2026-07-03)** : `/api/stripe/checkout`, `/api/stripe/activate` et `/api/stripe/portal` sont profil_type-aware — le price ID Stripe est lu depuis `plans_tarifaires` (scopé `profil_type`+`plan_code`), et l'activation d'un abonnement n'affecte que les abonnements actifs du même `profil_type` (un compte peut avoir un abonnement éleveur ET un abonnement pension simultanément sans collision). Pour activer le paiement d'un nouveau type de profil (véto, éducateur, etc.) : seeder ses lignes dans `plans_tarifaires`, créer les produits/prix côté dashboard Stripe, coller les Price IDs dans `/admin` → Tarification. Aucun code à écrire.
+> **Plomberie de paiement générique (livrée 2026-07-03)** : `/api/stripe/checkout`, `/api/stripe/activate` et `/api/stripe/portal` sont profil_type-aware — le price ID Stripe est lu depuis `plans_tarifaires` (scopé `profil_type`+`plan_code`), et l'activation d'un abonnement n'affecte que les abonnements actifs du même `profil_type` (un compte peut avoir un abonnement éleveur ET un abonnement pension simultanément sans collision). Pour activer le paiement d'un nouveau type de profil (véto, éducateur, etc.) : seeder ses lignes dans `plans_tarifaires`, puis saisir le prix depuis `/admin` → Tarification — le produit et le prix Stripe sont créés automatiquement (`getOrCreatePlanProduct`), **plus besoin d'ouvrir le dashboard Stripe manuellement**. Aucun code à écrire.
 
 **Éleveurs**
 
@@ -3745,7 +3745,7 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
 | Tarification automatisée | Prix calculé automatiquement selon poids animal, individuel/collectif, arrivée/départ en début de journée, réductions séjour long | Non commencé |
 | Alertes facturation | Notification si séjour non facturé ou client débiteur | Non commencé |
 | Export facturation par plage de dates | Export CSV actuel = tout l'historique filtré par statut, pas de sélecteur de dates dédié | Non commencé |
-| Paiement en ligne pension (Stripe) | Plomberie corrigée (2026-07-03, commit `a9a3152e`) : `/api/stripe/checkout`/`activate`/`portal` sont désormais profil_type-aware, price ID lu depuis `plans_tarifaires`. Reste : créer les produits Stripe pension dans le dashboard et coller leurs price IDs dans `/admin` → Tarification (guard 503 propre en attendant, aucun risque de facturer au tarif éleveur) | Plomberie prête, produits Stripe à créer |
+| Paiement en ligne pension (Stripe) | Plomberie corrigée (2026-07-03, commits `a9a3152e`/`7c823f31`) : `/api/stripe/checkout`/`activate`/`portal` sont profil_type-aware, price ID lu depuis `plans_tarifaires`. **Plus besoin d'ouvrir le dashboard Stripe** : `/admin` → Tarification crée désormais automatiquement le produit + prix Stripe dès qu'un tarif > 0 est saisi et enregistré (`getOrCreatePlanProduct` dans `api/admin/tarification/route.ts`). Reste : aller dans `/admin` et saisir les prix pension pour déclencher la création | Prêt — reste juste à saisir les prix dans /admin |
 | Paiement en ligne (lien email/SMS) | Explicitement V2 par l'utilisateur, avec frais de service/transaction optionnels | Non commencé |
 | États opérationnels des logements | à nettoyer / en nettoyage / hors service (mode canin) — spec complète déjà écrite au §4, non implémentée pour la pension au-delà de capacité/occupation | Non commencé |
 | Activation YouSign réelle | `YouSignProvider` reste un stub (toutes méthodes lèvent une erreur) tant qu'un abonnement YouSign + clé API n'est pas fourni — voir §9ter.2 pour la liste complète des prérequis restants, communs à tous les profils | Bloqué sur décision business |
