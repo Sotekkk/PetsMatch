@@ -1,5 +1,5 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-07-03 — §8.1/§19 paiement Stripe profil_type-aware + création automatique produit/prix Stripe depuis /admin (plus besoin du dashboard Stripe pour lancer la tarification d'un nouveau profil)  
+> Dernière mise à jour : 2026-07-03 — §19.1 vue planning d'occupation pension livrée (app+web), §8.1/§19.2 paiement Stripe profil_type-aware + création auto produit/prix depuis /admin  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -3732,10 +3732,15 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
   `PensionAbonnementPage` (app) + `/pension/abonnement` (web) affichent les 3 formules avec prix à
   jour. Gating : Inventaire/Protocoles/Employés verrouillés en Découverte (icône grisée +
   redirection abonnement dans le drawer), 1 logement max appliqué dans `pension_chenil_page.dart`.
-  **Paiement en ligne non câblé** : `STRIPE_PRICES` (web) est actuellement scopé par `plan_code` seul
-  (pas par `profil_type`), donc réutiliser les codes 'pro'/'premium' via `/api/stripe/checkout`
-  facturerait au tarif ÉLEVEUR — volontairement affiché "bientôt disponible" tant que des produits
-  Stripe dédiés à la pension n'existent pas et que l'endpoint n'est pas rendu profil_type-aware.
+  **Paiement en ligne** : plomberie corrigée depuis (voir ligne Stripe ci-dessous, §19.2) — checkout
+  réellement câblé sur la page, reste juste à saisir les prix dans `/admin` pour activer.
+- **Planning d'occupation** (session 2026-07-03) : vue calendrier des séjours par logement façon
+  planning hôtelier — logements en lignes (groupés par type), fenêtre glissante de 14 jours,
+  barres colorées par statut (à venir/entrée aujourd'hui/en cours/sortie aujourd'hui/sortie en
+  retard/sortie faite aujourd'hui/passé), dérivé des champs déjà existants de `pension_entrees`
+  sans migration. Pas de statut "non confirmé" ni d'entrée/sortie réelle distincte de la date
+  prévue (pas trackées aujourd'hui) — repoussé en V2 pour rester sur les données disponibles.
+  App : `pension_planning_page.dart`. Web : `/pension/planning`.
 
 ### 19.2 — Reste à faire 🔨 (Phase 2 / profils avancés, explicitement différé)
 
@@ -3747,7 +3752,7 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
 | Export facturation par plage de dates | Export CSV actuel = tout l'historique filtré par statut, pas de sélecteur de dates dédié | Non commencé |
 | Paiement en ligne pension (Stripe) | Plomberie corrigée (2026-07-03, commits `a9a3152e`/`7c823f31`) : `/api/stripe/checkout`/`activate`/`portal` sont profil_type-aware, price ID lu depuis `plans_tarifaires`. **Plus besoin d'ouvrir le dashboard Stripe** : `/admin` → Tarification crée désormais automatiquement le produit + prix Stripe dès qu'un tarif > 0 est saisi et enregistré (`getOrCreatePlanProduct` dans `api/admin/tarification/route.ts`). Reste : aller dans `/admin` et saisir les prix pension pour déclencher la création | Prêt — reste juste à saisir les prix dans /admin |
 | Paiement en ligne (lien email/SMS) | Explicitement V2 par l'utilisateur, avec frais de service/transaction optionnels | Non commencé |
-| États opérationnels des logements | à nettoyer / en nettoyage / hors service (mode canin) — spec complète déjà écrite au §4, non implémentée pour la pension au-delà de capacité/occupation | Non commencé |
+| États de nettoyage des logements | à nettoyer / en nettoyage / hors service (mode canin, §4) — la vue planning (2026-07-03) couvre l'occupation/réservation, pas le nettoyage | Non commencé |
 | Activation YouSign réelle | `YouSignProvider` reste un stub (toutes méthodes lèvent une erreur) tant qu'un abonnement YouSign + clé API n'est pas fourni — voir §9ter.2 pour la liste complète des prérequis restants, communs à tous les profils | Bloqué sur décision business |
 
 ### 19.3 — Migrations à exécuter (si pas déjà fait)
