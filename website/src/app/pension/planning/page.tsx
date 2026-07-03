@@ -22,7 +22,7 @@ interface Entree {
   date_sortie_effective?: string | null;
 }
 
-const TYPE_LABEL: Record<string, string> = { box: 'Box', enclos: 'Enclos', chatterie: 'Chatterie', cage: 'Cage' };
+const TYPE_LABEL: Record<string, string> = { box: 'Box', enclos: 'Enclos', parc: 'Parc', chatterie: 'Chatterie', cage: 'Cage' };
 
 type Statut = 'a_venir' | 'entree_aujourdhui' | 'en_cours' | 'sortie_aujourdhui' | 'sortie_retard' | 'sortie_faite_aujourdhui' | 'passe';
 

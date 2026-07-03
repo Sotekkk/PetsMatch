@@ -24,10 +24,11 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
   static const _types = [
     ('box', 'Box'),
     ('enclos', 'Enclos'),
+    ('parc', 'Parc'),
     ('chatterie', 'Chatterie'),
     ('cage', 'Cage'),
   ];
-  static const _typeLabels = {'box': 'Box', 'enclos': 'Enclos', 'chatterie': 'Chatterie', 'cage': 'Cage'};
+  static const _typeLabels = {'box': 'Box', 'enclos': 'Enclos', 'parc': 'Parc', 'chatterie': 'Chatterie', 'cage': 'Cage'};
 
   @override
   void initState() {

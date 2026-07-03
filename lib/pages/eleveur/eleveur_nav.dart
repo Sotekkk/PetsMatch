@@ -620,10 +620,13 @@ class _EleveurNavState extends State<EleveurNav> {
                     _DrawerItem(
                       icon: Icons.calendar_view_week_outlined,
                       label: 'Planning occupation',
+                      locked: _pensionPlanCode == 'free',
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PensionPlanningPage(),
+                          builder: (_) => _pensionPlanCode == 'free'
+                              ? const PensionAbonnementPage()
+                              : const PensionPlanningPage(),
                         ));
                       },
                     ),

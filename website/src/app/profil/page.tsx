@@ -722,6 +722,7 @@ const ESPECES_PRO = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', '
 const LOGEMENT_TYPES = [
   { value: 'box', label: 'Box' },
   { value: 'enclos', label: 'Enclos' },
+  { value: 'parc', label: 'Parc' },
   { value: 'chatterie', label: 'Chatterie' },
   { value: 'cage', label: 'Cage' },
 ];

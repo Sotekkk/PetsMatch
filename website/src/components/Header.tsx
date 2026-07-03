@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
-import { usePlan } from '@/lib/use-plan';
+import { usePlan, usePensionPlan } from '@/lib/use-plan';
 import { useRouter } from 'next/navigation';
 import { ACTIVE_PROFILE_KEY, ACTIVE_PROFILE_TYPE_KEY, PROFILE_CHANGE_EVENT } from '@/hooks/useActiveProfile';
 
@@ -218,14 +218,14 @@ const MENU_PENSION = [
       { href: '/pension/registre',  label: 'Registre pension',     icon: '📋' },
       { href: '/pension/demandes',  label: 'Demandes d\'accès',    icon: '🔑' },
       { href: '/pension/chenil',    label: 'Logements / Chenil',   icon: '🏘️' },
-      { href: '/pension/planning',  label: 'Planning occupation',  icon: '📆' },
-      { href: '/pension/contrat',   label: 'Contrats',             icon: '✍️' },
+      { href: '/pension/planning',  label: 'Planning occupation',  icon: '📆', pro: true },
+      { href: '/pension/contrat',   label: 'Contrats',             icon: '✍️', pro: true },
       { href: '/mes-rdv',           label: 'Gestion des RDV',      icon: '🗓️' },
       { href: '/pro/creneaux',      label: 'Mes créneaux',         icon: '⏰' },
       { href: '/agenda',            label: 'Mon agenda',           icon: '📅' },
-      { href: '/elevage/inventaire',label: 'Inventaire',           icon: '📦' },
-      { href: '/mes-taches',        label: 'Mes tâches',           icon: '✅' },
-      { href: '/employes',          label: 'Mes employés',         icon: '👥' },
+      { href: '/elevage/inventaire',label: 'Inventaire',           icon: '📦', pro: true },
+      { href: '/mes-taches',        label: 'Mes tâches',           icon: '✅', pro: true },
+      { href: '/employes',          label: 'Mes employés',         icon: '👥', pro: true },
       { href: '/elevage/facturation',label: 'Facturation',          icon: '🧾' },
       { href: '/pension/abonnement', label: 'Mon abonnement',       icon: '💳' },
     ],
@@ -488,6 +488,7 @@ export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
   const { plan: eleveurPlan } = usePlan();
+  const { plan: pensionPlan } = usePensionPlan();
 
   // ── Effective profile data (primary or secondary) ─────────────────────────
   const activeProfile = profiles.find(p => p.id === activeProfileId) ?? null;
@@ -990,7 +991,8 @@ export default function Header() {
                           <div className="bg-gray-50">
                             {sec.items.map((item) => {
                               const it = item as { pro?: boolean; premium?: boolean; href: string; icon: string; label: string };
-                              const isProLocked = effectiveIsEleveur && it.pro && eleveurPlan === 'free';
+                              const isProLocked = (effectiveIsEleveur && it.pro && eleveurPlan === 'free')
+                                || (effectiveIsPension && it.pro && pensionPlan === 'free');
                               const isPremiumLocked = effectiveIsEleveur && it.premium && eleveurPlan !== 'premium';
                               const isLocked = isProLocked || isPremiumLocked;
                               const badge = isPremiumLocked ? 'Premium' : 'Pro';
@@ -998,7 +1000,7 @@ export default function Header() {
                                 ? 'text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full mr-1'
                                 : 'text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full mr-1';
                               return isLocked ? (
-                                <Link key={it.href} href="/abonnement"
+                                <Link key={it.href} href={effectiveIsPension ? '/pension/abonnement' : '/abonnement'}
                                   onClick={() => setDropdownOpen(false)}
                                   className="flex items-center gap-3 pl-10 pr-4 py-2 text-sm text-gray-400 hover:bg-gray-50 transition-colors">
                                   <span className="text-base opacity-50">{it.icon}</span>
@@ -1145,12 +1147,13 @@ export default function Header() {
                     <div className="pl-6 space-y-0.5 mb-1">
                       {sec.items.map((item) => {
                         const it = item as { pro?: boolean; premium?: boolean; href: string; icon: string; label: string };
-                        const isProLocked = effectiveIsEleveur && it.pro && eleveurPlan === 'free';
+                        const isProLocked = (effectiveIsEleveur && it.pro && eleveurPlan === 'free')
+                          || (effectiveIsPension && it.pro && pensionPlan === 'free');
                         const isPremiumLocked = effectiveIsEleveur && it.premium && eleveurPlan !== 'premium';
                         const isLocked = isProLocked || isPremiumLocked;
                         const badge = isPremiumLocked ? 'Premium' : 'Pro';
                         return isLocked ? (
-                          <Link key={it.href} href="/abonnement" onClick={() => setMenuOpen(false)}
+                          <Link key={it.href} href={effectiveIsPension ? '/pension/abonnement' : '/abonnement'} onClick={() => setMenuOpen(false)}
                             className="flex items-center gap-2 py-2 text-white/40 text-sm">
                             <span className="opacity-50">{it.icon}</span>
                             <span className="flex-1 opacity-60">{it.label}</span>

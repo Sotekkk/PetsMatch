@@ -23,6 +23,7 @@ interface Entree {
 const TYPES = [
   { value: 'box', label: 'Box' },
   { value: 'enclos', label: 'Enclos' },
+  { value: 'parc', label: 'Parc' },
   { value: 'chatterie', label: 'Chatterie' },
   { value: 'cage', label: 'Cage' },
 ];

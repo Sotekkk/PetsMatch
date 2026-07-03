@@ -31,7 +31,7 @@ const Map<_StaySt, String> _stLabels = {
   _StaySt.passe: 'Séjour passé',
 };
 
-const _typeLabels = {'box': 'Box', 'enclos': 'Enclos', 'chatterie': 'Chatterie', 'cage': 'Cage'};
+const _typeLabels = {'box': 'Box', 'enclos': 'Enclos', 'parc': 'Parc', 'chatterie': 'Chatterie', 'cage': 'Cage'};
 
 bool _sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
 DateTime? _parseDate(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());

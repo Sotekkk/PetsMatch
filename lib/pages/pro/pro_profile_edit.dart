@@ -72,7 +72,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   Map<String, int> _tarifsLogements = {};
   int _arrhesPourcentage = 0;
   static const _logementTypes = [
-    ('box', 'Box'), ('enclos', 'Enclos'), ('chatterie', 'Chatterie'), ('cage', 'Cage'),
+    ('box', 'Box'), ('enclos', 'Enclos'), ('parc', 'Parc'), ('chatterie', 'Chatterie'), ('cage', 'Cage'),
   ];
 
   static const _defaultDureesByCatPro = <String, Map<String, int>>{
