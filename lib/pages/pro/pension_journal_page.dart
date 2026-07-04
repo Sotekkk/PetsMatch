@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -6,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_player/video_player.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
+import 'package:PetsMatch/main.dart' show User_Info;
 
 const int _kMaxVideoBytes = 50 * 1024 * 1024; // 50 Mo
 
@@ -115,6 +117,7 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
         'video_url':          videoUrl,
         'note':               _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
       });
+      unawaited(_notifyOwner(hasMedia: photoUrl != null || videoUrl != null));
       _photoFile = null;
       _videoFile = null;
       _noteCtrl.clear();
@@ -131,6 +134,29 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
   Future<void> _delete(String id) async {
     await _supa.from('pension_updates').delete().eq('id', id);
     _load();
+  }
+
+  Future<void> _notifyOwner({required bool hasMedia}) async {
+    if (widget.animalId == null) return;
+    try {
+      final propRow = await _supa.from('animaux_proprietes')
+          .select('uid_proprio').eq('animal_id', widget.animalId!)
+          .filter('date_fin', 'is', null).order('date_debut', ascending: false)
+          .limit(1).maybeSingle();
+      final ownerUid = propRow?['uid_proprio'] as String?;
+      if (ownerUid == null || ownerUid.isEmpty) return;
+      final pensionNom = User_Info.nameElevage.isNotEmpty
+          ? User_Info.nameElevage : '${User_Info.firstname} ${User_Info.lastname}'.trim();
+      await _supa.from('notifications').insert({
+        'uid': ownerUid, 'type': 'pension_journal',
+        'title': 'Nouvelles de ${widget.animalNom}',
+        'body': hasMedia
+            ? '$pensionNom a partagé une photo/vidéo de ${widget.animalNom}.'
+            : '$pensionNom a laissé une note pour ${widget.animalNom}.',
+        'data': {'animalId': widget.animalId, 'animalNom': widget.animalNom},
+        'read': false,
+      });
+    } catch (_) {}
   }
 
   @override

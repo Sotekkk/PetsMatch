@@ -83,6 +83,7 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
         video_url: videoUrl,
         note: note.trim() || null,
       });
+      notifyOwner(!!photoUrl || !!videoUrl);
       setNote('');
       setPhotoFile(null);
       setVideoFile(null);
@@ -90,6 +91,29 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
     } finally {
       setPosting(false);
     }
+  }
+
+  async function notifyOwner(hasMedia: boolean) {
+    if (!animalId || !proUid) return;
+    try {
+      const { data: propRow } = await supabase.from('animaux_proprietes')
+        .select('uid_proprio').eq('animal_id', animalId).is('date_fin', null)
+        .order('date_debut', { ascending: false }).limit(1).maybeSingle();
+      const ownerUid = propRow?.uid_proprio;
+      if (!ownerUid) return;
+      const { data: pro } = await supabase.from('users')
+        .select('name_elevage, firstname, lastname').eq('uid', proUid).maybeSingle();
+      const proNom = pro?.name_elevage || [pro?.firstname, pro?.lastname].filter(Boolean).join(' ') || 'Votre pension';
+      await supabase.from('notifications').insert({
+        uid: ownerUid, type: 'pension_journal',
+        title: `Nouvelles de ${animalNom}`,
+        body: hasMedia
+          ? `${proNom} a partagé une photo/vidéo de ${animalNom}.`
+          : `${proNom} a laissé une note pour ${animalNom}.`,
+        data: { animalId, animalNom },
+        read: false,
+      });
+    } catch { /* silencieux */ }
   }
 
   async function del(id: string) {

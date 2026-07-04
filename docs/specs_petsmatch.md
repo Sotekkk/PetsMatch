@@ -3790,6 +3790,15 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
   `POST /api/cron/cleanup-pension-updates` (protégée par `CRON_SECRET`, même pattern que
   `api/contracts/expire`). Nécessite `SUPABASE_SERVICE_ROLE_KEY` en variable d'environnement Netlify (déjà
   utilisée par d'autres routes admin) pour bypasser les RLS lors de la purge inter-comptes.
+- **Deux trous trouvés en testant le journal de séjour côté propriétaire éleveur** :
+  1. Le bouton "📸 Nouvelles de la pension" n'existait que sur la fiche animal **particulier**
+     (`animal_fiche_particulier.dart`), pas sur la fiche **éleveur** (`animal_fiche.dart`) — un propriétaire
+     avec un profil élevage ne voyait donc jamais le journal de son animal en pension. Ajouté (nouveau
+     `_hasPensionUpdates`, requête `pension_updates`).
+  2. Poster une nouvelle (photo/vidéo/note) ne déclenchait **aucune notification** au propriétaire — il ne
+     pouvait s'en apercevoir qu'en repassant manuellement sur la fiche. App `_post()` et web `post()`
+     résolvent désormais le propriétaire actuel via `animaux_proprietes` et insèrent une notification
+     (`type: 'pension_journal'`).
 - **Correctifs indépendants découverts en testant** : `mapProfile()` (`auth-context.tsx`) plantait
   silencieusement sur les profils dont `especes_elevees` est stocké en tableau de chaînes plutôt qu'en
   objets `{espece, races}` — bloquait `userData` (donc toutes les pages pension) pour ces comptes ; nouveau

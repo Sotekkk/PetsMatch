@@ -17,6 +17,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/cession_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
+import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -86,6 +87,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
   // Pension access
   List<Map<String, dynamic>> _pensionAcces = [];
+  bool _hasPensionUpdates = false;
   // Registre mouvements (plusieurs E/S par animal)
   List<Map<String, dynamic>> _mouvements = [];
   // Vet access (visible au propriétaire)
@@ -293,6 +295,10 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           .eq('statut', 'active')
           .contains('permissions', ['write_notes']);
       if (mounted) setState(() => _pensionAcces = List<Map<String, dynamic>>.from(rows));
+    } catch (_) {}
+    try {
+      final updates = await _supa.from('pension_updates').select('id').eq('animal_id', widget.animalId!).limit(1);
+      if (mounted) setState(() => _hasPensionUpdates = (updates as List).isNotEmpty);
     } catch (_) {}
   }
 
@@ -1619,6 +1625,30 @@ class _IdentiteTab extends StatelessWidget {
             _documentsSection(context),
             const SizedBox(height: 12),
             _alerteSection(context),
+          ],
+          if (s._hasPensionUpdates && !s.widget.vetMode) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => PensionJournalPage(
+                    animalId: s.widget.animalId,
+                    animalNom: s._nomCtrl.text.isEmpty ? 'Animal' : s._nomCtrl.text,
+                    readOnly: true,
+                  ),
+                )),
+                icon: const Icon(Icons.photo_camera_back_outlined, size: 16),
+                label: const Text('📸 Nouvelles de la pension',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF6E9E57),
+                  side: const BorderSide(color: Color(0xFF6E9E57)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
           ],
           if (s._pensionAcces.isNotEmpty && !s.widget.vetMode) ...[
             const SizedBox(height: 12),
