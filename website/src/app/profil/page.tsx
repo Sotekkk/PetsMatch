@@ -727,6 +727,13 @@ const LOGEMENT_TYPES = [
   { value: 'cage', label: 'Cage' },
 ];
 
+const PRESTATIONS_EDUCATION = [
+  { value: 'cours_individuel', label: 'Cours individuel' },
+  { value: 'cours_collectif', label: 'Cours collectif (par participant)' },
+  { value: 'evaluation', label: 'Évaluation comportementale' },
+  { value: 'domicile_supplement', label: 'Supplément à domicile' },
+];
+
 const JOURS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
 const MOTIFS_LABELS: Record<string, Record<string, string>> = {
@@ -807,6 +814,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [certifications, setCertifications] = useState<{ nom: string; numero: string }[]>([]);
   const [durees, setDurees] = useState<Record<string, number>>({});
   const [tarifsLogements, setTarifsLogements] = useState<Record<string, number>>({});
+  const [tarifsEducation, setTarifsEducation] = useState<Record<string, number>>({});
   const [arrhesPourcentage, setArrhesPourcentage] = useState(0);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -858,6 +866,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         if (r.tarifs_logements && typeof r.tarifs_logements === 'object') {
           setTarifsLogements(r.tarifs_logements as Record<string, number>);
         }
+        if (r.tarifs_education && typeof r.tarifs_education === 'object') {
+          setTarifsEducation(r.tarifs_education as Record<string, number>);
+        }
         setArrhesPourcentage(((r.arrhes_pourcentage as number) ?? 0));
         setLoading(false);
       });
@@ -889,6 +900,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       durees_motifs: durees,
       ...((data?.profile_type ?? data?.cat_pro) === 'pension'
         ? { tarifs_logements: tarifsLogements, arrhes_pourcentage: arrhesPourcentage }
+        : {}),
+      ...((data?.profile_type ?? data?.cat_pro) === 'education'
+        ? { tarifs_education: tarifsEducation }
         : {}),
     };
 
@@ -1119,6 +1133,24 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                 onChange={e => setArrhesPourcentage(Math.min(100, Math.max(0, Number(e.target.value))))}
                 className={inputCls} />
             </Field>
+          </Card>
+        )}
+
+        {/* Tarifs éducateur/comportementaliste */}
+        {catPro === 'education' && (
+          <Card title="Tarifs par type de prestation (€)">
+            <p className="text-xs text-gray-400 mb-3">Laissez à 0 les prestations que vous ne proposez pas.</p>
+            <div className="grid grid-cols-2 gap-3">
+              {PRESTATIONS_EDUCATION.map(({ value, label }) => (
+                <div key={value}>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">{label}</label>
+                  <input type="number" min={0} step={1}
+                    value={tarifsEducation[value] ?? 0}
+                    onChange={e => setTarifsEducation(t => ({ ...t, [value]: Number(e.target.value) }))}
+                    className={inputCls} />
+                </div>
+              ))}
+            </div>
           </Card>
         )}
 

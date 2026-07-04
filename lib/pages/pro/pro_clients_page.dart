@@ -456,9 +456,29 @@ class _ProClientsPageState extends State<ProClientsPage>
         'date_seance': DateTime.now().toIso8601String().substring(0, 10),
         'contenu':    contenuCtrl.text.trim(),
       });
+      // Envoi du rapport au propriétaire — notification in-app en 1 clic
+      final ownerUid = animal['_owner_uid']?.toString();
+      if (ownerUid != null && ownerUid.isNotEmpty) {
+        final proNom = User_Info.nameElevage.isNotEmpty
+            ? User_Info.nameElevage
+            : '${User_Info.firstname} ${User_Info.lastname}'.trim();
+        try {
+          await Supabase.instance.client.from('notifications').insert({
+            'uid':   ownerUid,
+            'type':  'education_rapport',
+            'title': 'Rapport de séance — $animalNom',
+            'body':  '${proNom.isNotEmpty ? proNom : 'Votre éducateur'} a envoyé un rapport de séance pour $animalNom.',
+            'data':  <String, dynamic>{
+              'animalId': animal['id']?.toString() ?? '',
+              'animalNom': animalNom,
+            },
+            'read':  false,
+          });
+        } catch (_) {}
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Rapport de séance enregistré.',
+          content: Text('Rapport de séance envoyé au propriétaire.',
               style: TextStyle(fontFamily: 'Galey')),
           backgroundColor: Color(0xFF6E9E57),
           behavior: SnackBarBehavior.floating,

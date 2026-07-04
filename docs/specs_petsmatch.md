@@ -3949,4 +3949,90 @@ supabase/migration_v2_02_access_members.sql     -- IMPORTANT si pas déjà fait 
 
 ---
 
+## 20. Module Éducateur/Comportementaliste — Phase 1 (session 2026-07-04)
+
+Avant cette session, `education` n'existait que comme valeur de taxonomie
+(`profile_type`) : aucune page dédiée, tout le monde partageait les pages
+génériques (planning générique, `ProClientsPage`). Demande initiale du
+propriétaire, dans l'ordre :
+1. Planning des cours individuels ou collectifs
+2. Cours à domicile avec trajet et localisation GPS
+3. Cours en solo ou en équipe d'intervenants
+4. Réservations en direct ou en ligne
+5. Tarification automatisée des cours et forfaits
+6. Suivi de progression de l'animal + envoi de rapport en 1 clic
+7. Emails automatiques (devis, contrats, factures)
+8. Notification avant séance (+ SMS) et agenda dynamique avec temps de trajet
+
+Découpage validé avec l'utilisateur : **Phase 1** = socle (items 1, 4 partiel,
+5 simple, 6) livré cette session ; **Phase 2** = GPS/trajet, équipe
+d'intervenants, tarification automatisée + forfaits, devis auto — différé,
+voir §20.2.
+
+### 20.1 — Livré ✅
+
+- **Cours individuels** : aucune nouvelle table nécessaire — le flux de
+  réservation générique (`rdv_booking_page.dart`, `RdvBookingPage`) gérait
+  déjà les motifs `cours_individuel`/`cours_collectif`/`evaluation` pour
+  `cat_pro = 'education'` (durées par défaut déjà présentes dans
+  `_defaultDureesByCatPro`). Réutilisé tel quel pour les cours individuels.
+- **Cours collectifs** (plusieurs participants sur un même créneau) :
+  nouvelles tables `cours_collectifs` (titre, date/heure, durée, capacité
+  max, lieu, notes, statut) et `cours_collectifs_participants` (join table,
+  statut inscrit/présent/absent/annulé). Migration
+  `supabase/migration_education_cours_collectifs.sql`.
+- **App** : `lib/pages/pro/education_planning_page.dart` — planning
+  hebdomadaire combinant RDV individuels + cours collectifs, création d'un
+  cours collectif (bottom sheet), détail d'un cours avec liste des
+  participants et gestion du statut (présent/absent/retiré), annulation.
+  Accessible depuis le drawer (`eleveur_nav.dart`) pour `cat_pro = 'education'`.
+- **Web** : `website/src/app/education/planning/page.tsx` (miroir de la page
+  app), nouveau `MENU_EDUCATION` dans `Header.tsx`, hook
+  `useEducationAccess.ts` (miroir de `usePensionAccess`).
+- **Tarification simple par prestation** : nouvelle colonne
+  `user_profiles.tarifs_education` (JSONB, même modèle que
+  `tarifs_logements` côté pension) — cours individuel / cours collectif
+  (par participant) / évaluation / supplément à domicile. UI ajoutée dans
+  `pro_profile_edit.dart` (app) et `profil/page.tsx` (web).
+- **Suivi de progression + rapport en 1 clic** : une fonctionnalité
+  `education_progression` existait déjà (bouton "Rapport de séance" dans
+  `pro_clients_page.dart` → `_addProgression()`) mais n'était ni notifiée ni
+  visible côté propriétaire — trou comblé cette session :
+  - `_addProgression()` envoie désormais une notification in-app
+    (`type: 'education_rapport'`) au propriétaire de l'animal dès
+    l'enregistrement (le même clic "Enregistrer" fait office d'envoi —
+    "en 1 clic" tel que demandé), sans UI supplémentaire.
+  - Nouvelle page `lib/pages/pro/education_rapports_page.dart` (lecture
+    seule) affichant l'historique des rapports de séance, accessible via un
+    bouton "🐾 Suivi de progression" ajouté sur la fiche animal
+    particulier (`animal_fiche_particulier.dart`) et éleveur
+    (`animal_fiche.dart`) — même schéma que le bouton "📸 Nouvelles de la
+    pension" livré plus tôt.
+  - Web : bouton + modale équivalents sur `mes-animaux/[id]/page.tsx`.
+  - Notification cliquable : `education_rapport` ouvre directement la page
+    de suivi (app `notifications_page.dart`, web `Header.tsx` `getNotifUrl`).
+
+### 20.2 — Reste à faire 🔨 (Phase 2, explicitement différé)
+
+| Item | Détail | Statut |
+|---|---|---|
+| Réservation en ligne des cours collectifs | Le pro peut créer/gérer un cours collectif, mais **aucune interface client** ne permet encore de parcourir/s'inscrire soi-même à un cours collectif (contrairement aux RDV individuels, déjà réservables en ligne via le flux générique). Le pro doit pour l'instant inscrire les participants manuellement. | Non commencé |
+| Cours à domicile + GPS/trajet | Aucune API d'itinéraire n'existe dans le projet (seulement distance à vol d'oiseau via `Geolocator.distanceBetween`). Nécessite l'intégration d'une API Directions/Distance Matrix. | Non commencé |
+| Équipe d'intervenants | Le système `employes` ne gère que des permissions d'accès aux fonctionnalités, pas d'assignation à un RDV/cours précis. Nécessiterait une colonne/table d'assignation (`instructeur_profile_id` ou table de jointure). | Non commencé |
+| Tarification automatisée + forfaits | Tarifs actuels = prix fixe par prestation, saisis manuellement. Pas de calcul automatique (poids animal, etc.) ni de concept de forfait (pack de N séances). | Non commencé |
+| Devis automatique | Aucun système de devis n'existe dans le projet (seulement contrats/factures). À construire à partir de zéro, probablement comme étape avant `contrats`/`factures`. | Non commencé |
+| Emails automatiques devis/contrats/factures | Dépend du devis (ci-dessus) ; contrats/factures existent déjà mais sans envoi email automatique dédié à l'éducateur. | Non commencé |
+| Notification avant séance + SMS | Notification in-app faisable (pattern déjà en place) ; SMS non implémenté nulle part dans le projet actuellement. | Non commencé |
+| Agenda dynamique avec temps de trajet + alerte retard | Dépend du GPS/trajet (ci-dessus). | Non commencé |
+
+### 20.3 — Migration à exécuter
+
+```
+supabase/migration_education_cours_collectifs.sql -- cours_collectifs,
+                                                   -- cours_collectifs_participants,
+                                                   -- tarifs_education sur user_profiles
+```
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

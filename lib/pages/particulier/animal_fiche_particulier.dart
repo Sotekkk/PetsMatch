@@ -15,6 +15,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
+import 'package:PetsMatch/pages/pro/education_rapports_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -81,6 +82,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   // Pension access (read-only accesses granted to pros)
   List<Map<String, dynamic>> _pensionAcces = [];
   bool _hasPensionUpdates = false;
+  bool _hasEducationRapports = false;
 
   // Health records
   bool _loadingHealth = false;
@@ -149,6 +151,10 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     try {
       final updates = await _supa.from('pension_updates').select('id').eq('animal_id', _animalId!).limit(1);
       if (mounted) setState(() => _hasPensionUpdates = (updates as List).isNotEmpty);
+    } catch (_) {}
+    try {
+      final rapports = await _supa.from('education_progression').select('id').eq('animal_id', _animalId!).limit(1);
+      if (mounted) setState(() => _hasEducationRapports = (rapports as List).isNotEmpty);
     } catch (_) {}
   }
 
@@ -615,6 +621,31 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF6E9E57),
                   side: const BorderSide(color: Color(0xFF6E9E57)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ),
+        ],
+        if (_hasEducationRapports) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => EducationRapportsPage(
+                    animalId: _animalId,
+                    animalNom: _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text,
+                  ),
+                )),
+                icon: const Icon(Icons.school_outlined, size: 16),
+                label: const Text('🐾 Suivi de progression',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF7B5EA7),
+                  side: const BorderSide(color: Color(0xFF7B5EA7)),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),

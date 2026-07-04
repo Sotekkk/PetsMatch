@@ -18,6 +18,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/cession_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
+import 'package:PetsMatch/pages/pro/education_rapports_page.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -88,6 +89,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   // Pension access
   List<Map<String, dynamic>> _pensionAcces = [];
   bool _hasPensionUpdates = false;
+  bool _hasEducationRapports = false;
   // Registre mouvements (plusieurs E/S par animal)
   List<Map<String, dynamic>> _mouvements = [];
   // Vet access (visible au propriétaire)
@@ -313,6 +315,10 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     try {
       final updates = await _supa.from('pension_updates').select('id').eq('animal_id', widget.animalId!).limit(1);
       if (mounted) setState(() => _hasPensionUpdates = (updates as List).isNotEmpty);
+    } catch (_) {}
+    try {
+      final rapports = await _supa.from('education_progression').select('id').eq('animal_id', widget.animalId!).limit(1);
+      if (mounted) setState(() => _hasEducationRapports = (rapports as List).isNotEmpty);
     } catch (_) {}
   }
 
@@ -1658,6 +1664,29 @@ class _IdentiteTab extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF6E9E57),
                   side: const BorderSide(color: Color(0xFF6E9E57)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ],
+          if (s._hasEducationRapports && !s.widget.vetMode) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => EducationRapportsPage(
+                    animalId: s.widget.animalId,
+                    animalNom: s._nomCtrl.text.isEmpty ? 'Animal' : s._nomCtrl.text,
+                  ),
+                )),
+                icon: const Icon(Icons.school_outlined, size: 16),
+                label: const Text('🐾 Suivi de progression',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF7B5EA7),
+                  side: const BorderSide(color: Color(0xFF7B5EA7)),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),

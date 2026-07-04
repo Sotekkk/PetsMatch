@@ -1110,6 +1110,9 @@ export default function AnimalFichePage() {
   const [vetAcces, setVetAcces] = useState<{id:string;pro_profile_id:string;vet_nom:string;statut:string;granted_at?:string}[]>([]);
   const [vetAccesSaving, setVetAccesSaving] = useState<string|null>(null);
   const [hasPensionUpdates, setHasPensionUpdates] = useState(false);
+  const [hasEducationRapports, setHasEducationRapports] = useState(false);
+  const [showEducationRapports, setShowEducationRapports] = useState(false);
+  const [educationRapports, setEducationRapports] = useState<{ id: string; date_seance: string; contenu: string }[]>([]);
   const [showJournal, setShowJournal] = useState(false);
 
   // ── État repro
@@ -1296,6 +1299,8 @@ export default function AnimalFichePage() {
     if (!id || isNew) return;
     supabase.from('pension_updates').select('id').eq('animal_id', id).limit(1)
       .then(({ data }) => setHasPensionUpdates((data ?? []).length > 0));
+    supabase.from('education_progression').select('id').eq('animal_id', id).limit(1)
+      .then(({ data }) => setHasEducationRapports((data ?? []).length > 0));
   }, [id, isNew]);
   useEffect(() => {
     if (!user || !isEleveur) return;
@@ -2385,6 +2390,49 @@ export default function AnimalFichePage() {
             readOnly
             onClose={() => setShowJournal(false)}
           />
+        )}
+        {/* ── Suivi de progression éducateur/comportementaliste ────────────── */}
+        {!isNew && hasEducationRapports && (
+          <button onClick={() => {
+            setShowEducationRapports(true);
+            supabase.from('education_progression').select('id, date_seance, contenu')
+              .eq('animal_id', id).order('date_seance', { ascending: false })
+              .then(({ data }) => setEducationRapports(data ?? []));
+          }}
+            className="w-full text-left rounded-2xl border border-[#7B5EA7]/30 bg-[#7B5EA7]/5 p-4 hover:bg-[#7B5EA7]/10 transition-colors">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🐾</span>
+              <p className="font-bold text-sm text-[#7B5EA7]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                Suivi de progression
+              </p>
+              <span className="ml-auto text-gray-400">›</span>
+            </div>
+          </button>
+        )}
+        {showEducationRapports && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center p-4"
+            onClick={() => setShowEducationRapports(false)}>
+            <div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-5 border-b border-gray-100">
+                <h3 className="font-bold font-galey text-[#7B5EA7]">Suivi — {animal.nom || 'Animal'}</h3>
+                <button onClick={() => setShowEducationRapports(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+              </div>
+              <div className="overflow-y-auto flex-1 p-4">
+                {educationRapports.length === 0 ? (
+                  <p className="text-center text-gray-400 font-galey py-10">Aucun rapport de séance pour l&apos;instant</p>
+                ) : (
+                  <div className="space-y-3">
+                    {educationRapports.map(r => (
+                      <div key={r.id} className="rounded-xl border border-gray-100 p-3">
+                        <p className="text-xs font-galey text-gray-400 mb-1">{r.date_seance}</p>
+                        <p className="text-sm font-galey text-gray-800">{r.contenu}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         )}
         {/* ── Accès vétérinaires ───────────────────────────────────────────── */}
         {!isNew && vetAcces.length > 0 && (

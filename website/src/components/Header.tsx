@@ -240,6 +240,38 @@ const MENU_PENSION = [
   },
 ];
 
+const MENU_EDUCATION = [
+  {
+    section: 'Mon Activité',
+    icon: '📅',
+    items: [
+      { href: '/education/planning', label: 'Planning des cours', icon: '📅' },
+      { href: '/mes-rdv',            label: 'Gérer mes RDV',      icon: '🗓️' },
+      { href: '/pro/creneaux',       label: 'Mes créneaux',       icon: '⏰' },
+      { href: '/agenda',             label: 'Mon agenda',         icon: '📅' },
+    ],
+  },
+  {
+    section: 'Mon Profil',
+    icon: '👤',
+    items: [
+      { href: '/profil',     label: 'Modifier mon profil', icon: '✏️' },
+      { href: '/employes',   label: 'Mes employés',        icon: '👥' },
+      { href: '/mes-taches', label: 'Mes tâches',          icon: '✅' },
+      { href: '/elevage/facturation', label: 'Facturation', icon: '🧾' },
+    ],
+  },
+  {
+    section: 'Annuaire & Communauté',
+    icon: '🔎',
+    items: [
+      { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
+      { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
+      { href: '/marketplace', label: 'Marketplace',                 icon: '🛍️' },
+    ],
+  },
+];
+
 const MENU_ASSOCIATION = [
   {
     section: 'Mon Association',
@@ -435,6 +467,8 @@ function getNotifUrl(n: Notif): string | null {
       return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
     case 'pension_journal_reply':
       return d.animalId ? `/pension/fiche/${d.animalId}` : '/pension/registre';
+    case 'education_rapport':
+      return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
     case 'rdv_demande':
     case 'rdv_contre_proposition':
     case 'rdv_annule_client':
@@ -519,6 +553,9 @@ export default function Header() {
   const effectiveIsPension = resolvedProfileType
     ? resolvedProfileType === 'pension'
     : (userData?.isPro === true && userData?.catPro === 'pension');
+  const effectiveIsEducation = resolvedProfileType
+    ? resolvedProfileType === 'education'
+    : (userData?.isPro === true && userData?.catPro === 'education');
   // Détection pro primaire (userData.isPro = true, aucun profil secondaire actif)
   const isPrimaryPro = !resolvedProfileType && userData?.isPro === true;
   const primaryCatPro = userData?.catPro ?? '';
@@ -553,7 +590,7 @@ export default function Header() {
         : sec)
     : MENU_PARTICULIER;
   const baseMenuSections = isEffectivelyPro
-    ? (effectiveIsPension ? MENU_PENSION : effectiveIsVet ? MENU_VET : MENU_PRO)
+    ? (effectiveIsPension ? MENU_PENSION : effectiveIsVet ? MENU_VET : effectiveIsEducation ? MENU_EDUCATION : MENU_PRO)
     : effectiveIsAssociation ? MENU_ASSOCIATION
     : effectiveIsEleveur ? MENU_ELEVEUR
     : baseMenuParticulier;
@@ -878,6 +915,7 @@ export default function Header() {
                               : n.type === 'rappel_vaccin' ? '💉'
                               : n.type === 'pension_acces' || n.type === 'pension_acces_reponse' ? '🏡'
                               : n.type === 'pension_journal' || n.type === 'pension_journal_reply' ? '📸'
+                              : n.type === 'education_rapport' ? '🐾'
                               : n.type === 'contrat_saillie_invite' ? '💞'
                               : n.type === 'contrat_signe_complet' ? '✅'
                               : n.type === 'contrat_signe_acquereur' || n.type === 'contrat_signe_eleveur' ? '✍️'
