@@ -58,6 +58,10 @@ Future<String> _uploadDoc(File file, String storagePath, String bucket) async {
     'pdf'           => 'application/pdf',
     'png'           => 'image/png',
     'jpg' || 'jpeg' => 'image/jpeg',
+    'mp4'           => 'video/mp4',
+    'mov'           => 'video/quicktime',
+    'webm'          => 'video/webm',
+    '3gp'           => 'video/3gpp',
     _               => 'application/octet-stream',
   };
   final supa = Supabase.instance.client;

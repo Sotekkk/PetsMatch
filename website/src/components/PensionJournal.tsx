@@ -3,9 +3,12 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // 50 Mo
+
 interface Update {
   id: string;
   photo_url?: string | null;
+  video_url?: string | null;
   note?: string | null;
   created_at: string;
 }
@@ -22,11 +25,13 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
   const [posting, setPosting] = useState(false);
+  const [error, setError] = useState('');
 
   async function load() {
     setLoading(true);
-    let q = supabase.from('pension_updates').select('id, photo_url, note, created_at');
+    let q = supabase.from('pension_updates').select('id, photo_url, video_url, note, created_at');
     q = pensionEntreeId ? q.eq('pension_entree_id', pensionEntreeId) : q.eq('animal_id', animalId ?? '');
     const { data } = await q.order('created_at', { ascending: false });
     setUpdates((data ?? []) as Update[]);
@@ -35,11 +40,23 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
 
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  function onPickVideo(file: File | null) {
+    setError('');
+    if (file && file.size > MAX_VIDEO_BYTES) {
+      setError('Vidéo trop lourde (max 50 Mo).');
+      return;
+    }
+    setVideoFile(file);
+    setPhotoFile(null);
+  }
+
   async function post() {
-    if (!proUid || (!note.trim() && !photoFile)) return;
+    if (!proUid || (!note.trim() && !photoFile && !videoFile)) return;
     setPosting(true);
+    setError('');
     try {
       let photoUrl: string | null = null;
+      let videoUrl: string | null = null;
       if (photoFile) {
         const path = `pension_updates/${proUid}_${Date.now()}.jpg`;
         const { error: upErr } = await supabase.storage.from('media').upload(path, photoFile, { upsert: true });
@@ -47,15 +64,28 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
           photoUrl = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
         }
       }
+      if (videoFile) {
+        const ext = videoFile.name.split('.').pop()?.toLowerCase() || 'mp4';
+        const path = `pension_updates/${proUid}_${Date.now()}.${ext}`;
+        const { error: upErr } = await supabase.storage.from('media')
+          .upload(path, videoFile, { upsert: true, contentType: videoFile.type || 'video/mp4' });
+        if (!upErr) {
+          videoUrl = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
+        } else {
+          setError(`Échec de l'envoi de la vidéo : ${upErr.message}`);
+        }
+      }
       await supabase.from('pension_updates').insert({
         pension_entree_id: pensionEntreeId ?? null,
         animal_id: animalId ?? null,
         pro_uid: proUid,
         photo_url: photoUrl,
+        video_url: videoUrl,
         note: note.trim() || null,
       });
       setNote('');
       setPhotoFile(null);
+      setVideoFile(null);
       await load();
     } finally {
       setPosting(false);
@@ -88,9 +118,11 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
             <div className="space-y-3">
               {updates.map(u => (
                 <div key={u.id} className="rounded-xl border border-gray-100 overflow-hidden shadow-sm">
-                  {u.photo_url && (
+                  {u.photo_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={u.photo_url} alt="" className="w-full h-48 object-cover" />
+                  ) : u.video_url && (
+                    <video src={u.video_url} controls className="w-full h-48 object-cover bg-black" />
                   )}
                   <div className="p-3">
                     {u.note && <p className="text-sm font-galey text-gray-800 mb-1">{u.note}</p>}
@@ -111,6 +143,7 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
 
         {!readOnly && (
           <div className="border-t border-gray-100 p-4">
+            {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
             {photoFile && (
               <div className="mb-2 flex items-center gap-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -118,16 +151,28 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
                 <button onClick={() => setPhotoFile(null)} className="text-xs text-red-500">Retirer</button>
               </div>
             )}
+            {videoFile && (
+              <div className="mb-2 flex items-center gap-2">
+                <div className="w-14 h-14 rounded-lg bg-black flex items-center justify-center text-white text-lg">🎬</div>
+                <span className="text-xs text-gray-500 truncate max-w-[140px]">{videoFile.name}</span>
+                <button onClick={() => setVideoFile(null)} className="text-xs text-red-500">Retirer</button>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <label className="cursor-pointer text-[#0C5C6C]">
                 📷
                 <input type="file" accept="image/*" className="hidden"
-                  onChange={e => setPhotoFile(e.target.files?.[0] ?? null)} />
+                  onChange={e => { setPhotoFile(e.target.files?.[0] ?? null); setVideoFile(null); }} />
+              </label>
+              <label className="cursor-pointer text-[#0C5C6C]">
+                🎬
+                <input type="file" accept="video/*" className="hidden"
+                  onChange={e => onPickVideo(e.target.files?.[0] ?? null)} />
               </label>
               <input value={note} onChange={e => setNote(e.target.value)}
                 placeholder="Une petite note pour le propriétaire…"
                 className="flex-1 px-3 py-2 border border-gray-200 rounded-full text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300" />
-              <button onClick={post} disabled={posting || (!note.trim() && !photoFile)}
+              <button onClick={post} disabled={posting || (!note.trim() && !photoFile && !videoFile)}
                 className="text-[#6E9E57] disabled:opacity-40 disabled:cursor-not-allowed">
                 {posting ? '…' : '➤'}
               </button>

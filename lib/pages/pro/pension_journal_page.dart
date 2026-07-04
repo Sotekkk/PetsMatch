@@ -4,7 +4,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:video_player/video_player.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
+
+const int _kMaxVideoBytes = 50 * 1024 * 1024; // 50 Mo
 
 class PensionJournalPage extends StatefulWidget {
   final String? animalId;
@@ -33,6 +36,7 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
   bool _loading = true;
   bool _posting = false;
   File? _photoFile;
+  File? _videoFile;
   final _noteCtrl = TextEditingController();
 
   @override
@@ -69,28 +73,50 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
   Future<void> _pickPhoto() async {
     final file = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
     if (file == null) return;
-    setState(() => _photoFile = File(file.path));
+    setState(() { _photoFile = File(file.path); _videoFile = null; });
+  }
+
+  Future<void> _pickVideo() async {
+    final file = await ImagePicker().pickVideo(source: ImageSource.gallery);
+    if (file == null) return;
+    final size = await File(file.path).length();
+    if (size > _kMaxVideoBytes) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Vidéo trop lourde (max 50 Mo).', style: TextStyle(fontFamily: 'Galey'))));
+      }
+      return;
+    }
+    setState(() { _videoFile = File(file.path); _photoFile = null; });
   }
 
   Future<void> _post() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    if (_photoFile == null && _noteCtrl.text.trim().isEmpty) return;
+    if (_photoFile == null && _videoFile == null && _noteCtrl.text.trim().isEmpty) return;
     setState(() => _posting = true);
     try {
       String? photoUrl;
+      String? videoUrl;
       if (_photoFile != null) {
         final path = 'pension_updates/${uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
         photoUrl = await storage.uploadPhoto(_photoFile!, path, quality: 75);
+      }
+      if (_videoFile != null) {
+        final ext = _videoFile!.path.split('.').last.toLowerCase();
+        final path = 'pension_updates/${uid}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+        videoUrl = await storage.uploadRawFile(_videoFile!, path);
       }
       await _supa.from('pension_updates').insert({
         'pension_entree_id': widget.pensionEntreeId,
         'animal_id':         widget.animalId,
         'pro_uid':            uid,
         'photo_url':          photoUrl,
+        'video_url':          videoUrl,
         'note':               _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
       });
       _photoFile = null;
+      _videoFile = null;
       _noteCtrl.clear();
       await _load();
     } catch (e) {
@@ -145,6 +171,11 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
                               ClipRRect(
                                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                                 child: Image.network(u['photo_url'] as String, width: double.infinity, height: 220, fit: BoxFit.cover),
+                              )
+                            else if (u['video_url'] != null)
+                              ClipRRect(
+                                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                                child: _JournalVideo(url: u['video_url'] as String),
                               ),
                             Padding(
                               padding: const EdgeInsets.all(14),
@@ -190,8 +221,23 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
                     )),
                   ]),
                 ),
+              if (_videoFile != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Stack(children: [
+                    Container(height: 80, width: 80,
+                        decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(10)),
+                        child: const Icon(Icons.videocam, color: Colors.white, size: 28)),
+                    Positioned(top: 2, right: 2, child: GestureDetector(
+                      onTap: () => setState(() => _videoFile = null),
+                      child: const CircleAvatar(radius: 10, backgroundColor: Colors.black54,
+                          child: Icon(Icons.close, size: 12, color: Colors.white)),
+                    )),
+                  ]),
+                ),
               Row(children: [
                 IconButton(icon: const Icon(Icons.photo_camera_outlined, color: _teal), onPressed: _pickPhoto),
+                IconButton(icon: const Icon(Icons.videocam_outlined, color: _teal), onPressed: _pickVideo),
                 Expanded(
                   child: TextField(
                     controller: _noteCtrl,
@@ -213,6 +259,55 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
             ]),
           ),
       ]),
+    );
+  }
+}
+
+class _JournalVideo extends StatefulWidget {
+  final String url;
+  const _JournalVideo({required this.url});
+
+  @override
+  State<_JournalVideo> createState() => _JournalVideoState();
+}
+
+class _JournalVideoState extends State<_JournalVideo> {
+  VideoPlayerController? _controller;
+  bool _playing = false;
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _play() async {
+    final controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    await controller.initialize();
+    await controller.play();
+    if (!mounted) { controller.dispose(); return; }
+    setState(() { _controller = controller; _playing = true; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_playing && _controller != null) {
+      return AspectRatio(
+        aspectRatio: _controller!.value.aspectRatio == 0 ? 16 / 9 : _controller!.value.aspectRatio,
+        child: GestureDetector(
+          onTap: () => setState(() {
+            _controller!.value.isPlaying ? _controller!.pause() : _controller!.play();
+          }),
+          child: VideoPlayer(_controller!),
+        ),
+      );
+    }
+    return GestureDetector(
+      onTap: _play,
+      child: Container(
+        height: 220, width: double.infinity, color: Colors.black87,
+        child: const Center(child: Icon(Icons.play_circle_fill, color: Colors.white, size: 56)),
+      ),
     );
   }
 }

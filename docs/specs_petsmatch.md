@@ -3776,8 +3776,20 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
 - **Journal de séjour** : la pension poste des nouvelles (photo + note) pendant le séjour, visibles par le
   propriétaire sur la fiche de son animal une fois liée. App : `pension_journal_page.dart` (post, côté
   pension) + bouton "Nouvelles de la pension" en lecture seule dans `animal_fiche_particulier.dart`. Web :
-  composant partagé `PensionJournal.tsx`. **Vidéo pas câblée** (colonne `video_url` prête en base, scope
-  limité à photo/note pour ce tour — vidéo en fast-follow si besoin).
+  composant partagé `PensionJournal.tsx`.
+- **Vidéo câblée dans le journal de séjour** (session 2026-07-04) : sélection vidéo (limite 50 Mo) via
+  `image_picker`/input `type=file accept=video/*`, upload sur le bucket `media` (type MIME détecté :
+  mp4/mov/webm/3gp), lecture via `video_player` (app, widget `_JournalVideo` avec lazy-init du contrôleur)
+  et balise `<video controls>` (web).
+- **Purge automatique à 60 jours (anti-saturation stockage)** : nouvelle table non requise — purge basée sur
+  `pension_updates.created_at`. Déclenchée par une **Netlify Scheduled Function**
+  (`website/netlify/functions/cleanup-pension-updates.mts`, `schedule: '@daily'`, déclarée via
+  `[functions] directory = "netlify/functions"` dans `netlify.toml` racine) qui supprime les lignes de plus
+  de 60 jours **et** leurs fichiers du bucket `media` (photo + vidéo). Fonction autonome (pas d'import
+  `src/`, contexte de build Netlify séparé de Next.js). Route de déclenchement manuel/backup :
+  `POST /api/cron/cleanup-pension-updates` (protégée par `CRON_SECRET`, même pattern que
+  `api/contracts/expire`). Nécessite `SUPABASE_SERVICE_ROLE_KEY` en variable d'environnement Netlify (déjà
+  utilisée par d'autres routes admin) pour bypasser les RLS lors de la purge inter-comptes.
 - **Correctifs indépendants découverts en testant** : `mapProfile()` (`auth-context.tsx`) plantait
   silencieusement sur les profils dont `especes_elevees` est stocké en tableau de chaînes plutôt qu'en
   objets `{espece, races}` — bloquait `userData` (donc toutes les pages pension) pour ces comptes ; nouveau
