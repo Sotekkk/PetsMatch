@@ -42,18 +42,26 @@ export async function lookupAnimalByChip(chip: string): Promise<PensionEntreePre
 }
 
 /** Accorde l'accès en lecture à la fiche pour le pro connecté (admission en
- * pension = lecture automatique, pas d'attente d'approbation) — no-op si déjà
- * accordé, silencieux en cas d'erreur (ex: profil introuvable). */
+ * pension = lecture automatique, pas d'attente d'approbation) — remonte une
+ * ligne pending existante en active plutôt que de l'ignorer, silencieux en
+ * cas d'erreur (ex: profil introuvable). */
 export async function requestAnimalAccess(animalId: string, ownerUid: string, proUid: string, proProfileId: string | null, proNom: string, animalNom: string) {
   try {
     if (!proProfileId) return;
-    const { data: ownerProfile } = await supabase.from('user_profiles')
-      .select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
-    const ownerProfileId = ownerProfile?.id as string | undefined;
+    // Profil du propriétaire — is_main en priorité, sinon n'importe quel profil du compte.
+    const { data: ownerProfiles } = await supabase.from('user_profiles')
+      .select('id, is_main').eq('uid', ownerUid);
+    const ownerProfileId = (ownerProfiles ?? []).find(p => p.is_main)?.id ?? ownerProfiles?.[0]?.id;
     if (!ownerProfileId) return;
     const { data: existing } = await supabase.from('animal_access')
-      .select('id').eq('pro_profile_id', proProfileId).eq('animal_id', animalId).maybeSingle();
-    if (existing) return;
+      .select('id, statut').eq('pro_profile_id', proProfileId).eq('animal_id', animalId).maybeSingle();
+    if (existing) {
+      if (existing.statut === 'active') return;
+      await supabase.from('animal_access').update({
+        statut: 'active', granted_at: new Date().toISOString(),
+      }).eq('id', existing.id);
+      return;
+    }
     await supabase.from('animal_access').insert({
       pro_profile_id: proProfileId, animal_id: animalId,
       granted_by_profile_id: ownerProfileId,

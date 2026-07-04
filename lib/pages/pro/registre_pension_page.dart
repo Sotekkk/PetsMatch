@@ -1458,6 +1458,14 @@ class PensionEditSheetState extends State<PensionEditSheet> {
       if (update.isNotEmpty) {
         await widget.supa.from('pension_entrees').update(update).eq('id', widget.entree['id']);
       }
+      // Accorder/vérifier l'accès à la fiche, indépendamment des champs à
+      // compléter (l'animal peut déjà être entièrement rempli en base sans
+      // avoir jamais reçu l'accès).
+      final ownerUid = prefill['ownerUid'] as String?;
+      if (_animalId != null && ownerUid != null && ownerUid.isNotEmpty) {
+        await _requestAccessTo(_animalId!, ownerUid);
+        if (mounted) setState(() => _accessStatus = 'active');
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Infos retrouvées via la puce', style: TextStyle(fontFamily: 'Galey')),
@@ -1499,7 +1507,7 @@ class PensionEditSheetState extends State<PensionEditSheet> {
       if (mounted) {
         setState(() {
           _animalId = animalId;
-          _accessStatus = (ownerUid != null && ownerUid.isNotEmpty) ? 'pending' : null;
+          _accessStatus = (ownerUid != null && ownerUid.isNotEmpty) ? 'active' : null;
           if (update.containsKey('proprietaire_nom')) _clientCtrl.text = update['proprietaire_nom'] as String;
           if (update.containsKey('proprietaire_contact')) _contactCtrl.text = update['proprietaire_contact'] as String;
           if (update.containsKey('proprietaire_email')) _emailCtrl.text = update['proprietaire_email'] as String;
@@ -1519,25 +1527,34 @@ class PensionEditSheetState extends State<PensionEditSheet> {
   Future<void> _requestAccessTo(String animalId, String ownerUid) async {
     try {
       final pid = User_Info.activeProfileId;
-      final ownerProfile = await widget.supa.from('user_profiles')
-          .select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
-      final ownerProfileId = ownerProfile?['id'] as String?;
-      if (pid.isEmpty || ownerProfileId == null) return;
+      if (pid.isEmpty) return;
+      // Profil du propriétaire — is_main en priorité, sinon n'importe quel profil du compte.
+      final ownerProfiles = await widget.supa.from('user_profiles')
+          .select('id, is_main').eq('uid', ownerUid) as List;
+      final ownerProfileId = ownerProfiles.isEmpty ? null : (ownerProfiles.firstWhere(
+          (p) => (p as Map)['is_main'] == true, orElse: () => ownerProfiles.first) as Map)['id'] as String?;
+      if (ownerProfileId == null) return;
       final existing = await widget.supa.from('animal_access')
-          .select('id').eq('pro_profile_id', pid).eq('animal_id', animalId).maybeSingle();
-      if (existing != null) return;
+          .select('id, statut').eq('pro_profile_id', pid).eq('animal_id', animalId).maybeSingle();
       final pensionNom = User_Info.nameElevage.isNotEmpty
           ? User_Info.nameElevage : '${User_Info.firstname} ${User_Info.lastname}'.trim();
       // Lecture accordée automatiquement à l'admission en pension (le carnet de
       // l'animal est nécessaire pour la prise en charge) — le propriétaire est
       // simplement informé et peut révoquer si besoin.
-      await widget.supa.from('animal_access').insert({
-        'pro_profile_id': pid, 'animal_id': animalId,
-        'granted_by_profile_id': ownerProfileId,
-        'permissions': ['read_basic', 'read_alimentation', 'write_notes'],
-        'statut': 'active',
-        'granted_at': DateTime.now().toUtc().toIso8601String(),
-      });
+      if (existing != null) {
+        if (existing['statut'] == 'active') return;
+        await widget.supa.from('animal_access').update({
+          'statut': 'active', 'granted_at': DateTime.now().toUtc().toIso8601String(),
+        }).eq('id', existing['id']);
+      } else {
+        await widget.supa.from('animal_access').insert({
+          'pro_profile_id': pid, 'animal_id': animalId,
+          'granted_by_profile_id': ownerProfileId,
+          'permissions': ['read_basic', 'read_alimentation', 'write_notes'],
+          'statut': 'active',
+          'granted_at': DateTime.now().toUtc().toIso8601String(),
+        });
+      }
       await widget.supa.from('notifications').insert({
         'uid': ownerUid, 'type': 'pension_acces',
         'title': 'Accès accordé à la fiche de ${_clientCtrl.text.isEmpty ? "votre animal" : widget.entree['animal_nom']}',

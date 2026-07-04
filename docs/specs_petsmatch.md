@@ -3880,6 +3880,19 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
   notification, mais informative — le dialogue passe de "Autoriser/Refuser" à "OK/Révoquer l'accès"
   (web `Header.tsx`, app `notifications_page.dart`). Ne change rien pour les autres contextes (vétérinaire,
   demandes hors admission) qui restent soumis à validation explicite du propriétaire.
+- **"Accès non autorisé" toujours bloqué malgré le fix ci-dessus — 3 bugs de plus trouvés en creusant un cas
+  réel (fiche Utha/Pomsky déjà entièrement remplie)** :
+  1. `retrouverViaPuce()`/`_retrouverViaPuce()` ne demandait/accordait l'accès **que** si des champs
+     manquaient à compléter — pour un animal déjà entièrement rempli en base, rien à backfiller ⇒ la
+     fonction ne faisait strictement rien, sans erreur visible. Corrige : accorde l'accès inconditionnellement
+     dès que `animalId`+`ownerUid` sont connus, indépendamment du backfill des champs.
+  2. `requestAnimalAccess()`/`_requestAccessTo()` faisaient un no-op silencieux dès qu'une ligne
+     `animal_access` existait déjà, **quel que soit son statut** — une ligne restée bloquée à `pending`
+     (créée avant le passage en lecture automatique) n'était donc jamais remontée à `active`. Corrige :
+     remonte à `active` une ligne existante non-active au lieu de l'ignorer.
+  3. La résolution du profil du propriétaire exigeait `is_main = true` — si le compte propriétaire n'a pas
+     de profil marqué principal, la résolution échouait silencieusement et rien n'était créé. Corrige :
+     profil principal en priorité, sinon n'importe quel profil du compte.
 
 ### 19.3 — Migrations à exécuter (si pas déjà fait)
 

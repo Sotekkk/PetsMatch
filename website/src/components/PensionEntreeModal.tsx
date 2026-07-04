@@ -99,7 +99,7 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
         return;
       }
       await requestAnimalAccess(animalId, ownerUid, proUid, proProfileId, 'Votre pension', form.animal_nom);
-      setAccessStatus('pending');
+      setAccessStatus('active');
     } finally {
       setCheckingAccess(false);
     }
@@ -132,6 +132,13 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
       }
       setForm(f => ({ ...f, ...update }));
       if (!animalId) setAnimalId(found.animal_id);
+      // Accorder/vérifier l'accès à la fiche, indépendamment des champs à compléter
+      // (l'animal peut déjà être entièrement rempli et n'avoir jamais reçu l'accès).
+      if (found.owner_uid) {
+        await requestAnimalAccess(found.animal_id, found.owner_uid, proUid, proProfileId,
+          'Votre pension', form.animal_nom || entree?.animal_nom || 'cet animal');
+        setAccessStatus('active');
+      }
     } finally {
       setLinkingFiche(false);
     }
@@ -158,7 +165,7 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
         if (found.owner_uid) {
           await requestAnimalAccess(found.animal_id, found.owner_uid, proUid, proProfileId,
             'Votre pension', entree.animal_nom);
-          setAccessStatus('pending');
+          setAccessStatus('active');
         }
       }
       setAnimalId(found.animal_id);
