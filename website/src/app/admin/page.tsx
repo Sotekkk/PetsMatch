@@ -518,7 +518,10 @@ export default function AdminPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          uid: d.uid,
+          // Un compte peut avoir plusieurs profils user_profiles (éleveur, pension,
+          // éducateur…) — sans profileId, l'API renvoyait le premier profil trouvé
+          // pour ce uid (ex : SIRET de l'élevage) au lieu du profil réellement testé.
+          ...(d.isSecondary && d.profileTableId ? { profileId: d.profileTableId } : { uid: d.uid }),
           adminUid: user?.uid,
         }),
       });

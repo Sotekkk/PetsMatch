@@ -42,7 +42,7 @@ const ACTIVE_PROFILE_KEY = 'petsMatch_activeProfileId';
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AjouterProfilPage() {
-  const { user, userData } = useAuth();
+  const { user, userData, refreshUserData } = useAuth();
   const router = useRouter();
   const [step, setStep] = useState<'type' | 'form'>('type');
   const [selectedType, setSelectedType] = useState('');
@@ -97,8 +97,9 @@ export default function AjouterProfilPage() {
       <AssociationForm
         uid={user.uid}
         onBack={() => setStep('type')}
-        onSaved={(id) => {
+        onSaved={async (id) => {
           localStorage.setItem(ACTIVE_PROFILE_KEY, id);
+          await refreshUserData();
           router.push('/profil');
         }}
       />
@@ -112,8 +113,9 @@ export default function AjouterProfilPage() {
       userFirstname={userData?.firstname ?? ''}
       userLastname={userData?.lastname ?? ''}
       onBack={() => setStep('type')}
-      onSaved={(newProfileId) => {
+      onSaved={async (newProfileId) => {
         localStorage.setItem(ACTIVE_PROFILE_KEY, newProfileId);
+        await refreshUserData();
         router.push('/');
       }}
     />
