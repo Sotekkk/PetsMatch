@@ -20,7 +20,13 @@ interface Entree {
   id: string;
   pro_uid: string;
   animal_nom: string;
+  espece?: string | null;
+  race?: string | null;
+  puce?: string | null;
   proprietaire_nom?: string | null;
+  proprietaire_contact?: string | null;
+  proprietaire_email?: string | null;
+  proprietaire_adresse?: string | null;
   logement_id?: string | null;
   animal_id?: string | null;
   seul_dans_logement?: boolean;
@@ -28,6 +34,7 @@ interface Entree {
   date_entree: string;
   date_sortie_prevue?: string | null;
   date_sortie_effective?: string | null;
+  notes?: string | null;
   created_at: string;
 }
 
@@ -167,7 +174,7 @@ function PensionPlanningPageInner() {
     const windowEndStr = windowEnd.toISOString().slice(0, 10);
     const [{ data: log }, { data: ent }, { data: net }] = await Promise.all([
       supabase.from('enclos_chenil').select('id, nom, type, capacite, especes').eq('uid_eleveur', effectiveUid).order('nom'),
-      supabase.from('pension_entrees').select('id, pro_uid, animal_nom, proprietaire_nom, logement_id, animal_id, seul_dans_logement, statut, date_entree, date_sortie_prevue, date_sortie_effective, created_at')
+      supabase.from('pension_entrees').select('id, pro_uid, animal_nom, espece, race, puce, proprietaire_nom, proprietaire_contact, proprietaire_email, proprietaire_adresse, logement_id, animal_id, seul_dans_logement, statut, date_entree, date_sortie_prevue, date_sortie_effective, notes, created_at')
         .eq('pro_uid', effectiveUid).lte('date_entree', windowEndStr).order('date_entree'),
       supabase.from('pension_nettoyages').select('logement_id, date').eq('uid_eleveur', effectiveUid)
         .gte('date', windowStartStr).lte('date', windowEndStr),

@@ -3864,6 +3864,14 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
   (symptôme observé : "Accès non autorisé" persistant côté site même après clic sur Autoriser). Corrigé pour
   résoudre **tous** les profils du compte demandeur plutôt que le seul profil principal. Une demande déjà
   bloquée par ce bug doit être réapprouvée une fois après ce correctif pour se débloquer.
+- **Vraie cause de "les infos disparaissent en rouvrant" — trouvée via un dump JSON de la ligne** :
+  contrairement à ce qu'on pensait, les données étaient bien correctement enregistrées en base
+  (`pension_entrees` contenait espece/race/puce/proprietaire_contact/email/adresse). Le bug était côté
+  **lecture** : la requête `SELECT` du planning web (`pension/planning/page.tsx`) listait explicitement ses
+  colonnes et avait tout simplement oublié `espece, race, puce, proprietaire_contact, proprietaire_email,
+  proprietaire_adresse, notes` — ces champs n'existaient donc jamais dans l'objet chargé, d'où des champs
+  vides à chaque réouverture alors que la base était correcte. L'app et le registre web utilisaient déjà
+  `select()`/`select('*')` (toutes colonnes) et n'étaient pas concernés.
 
 ### 19.3 — Migrations à exécuter (si pas déjà fait)
 
