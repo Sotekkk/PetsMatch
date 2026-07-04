@@ -895,7 +895,6 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       code_postal: cp.trim(),
       pays: pays.trim() || 'France',
       especes_acceptees: Array.from(especes),
-      horaires,
       certifications,
       durees_motifs: durees,
       ...((data?.profile_type ?? data?.cat_pro) === 'pension'
@@ -1076,23 +1075,23 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
 
         {/* Horaires */}
         <Card title="Horaires">
-          <p className="text-xs text-gray-400 mb-3">Format : HH:MM-HH:MM (ex : 09:00-12:00 14:00-18:00). Laisser vide si fermé.</p>
-          <div className="space-y-2">
+          <p className="text-xs text-gray-400 mb-3">
+            Calculés automatiquement à partir de vos créneaux disponibles. Pour les modifier, gérez vos créneaux.
+          </p>
+          <div className="space-y-2 mb-4">
             {JOURS.map(j => (
               <div key={j} className="flex items-center gap-3">
                 <span className="text-xs font-semibold text-gray-500 w-16 flex-shrink-0">{j.slice(0, 3)}</span>
-                <input value={horaires[j] ?? ''} onChange={e => setHoraires(h => ({ ...h, [j]: e.target.value }))}
-                  className="flex-1 border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]"
-                  placeholder="ex : 09:00-12:00 14:00-18:00" />
-                {horaires[j] ? (
-                  <button type="button" onClick={() => setHoraires(h => ({ ...h, [j]: '' }))}
-                    className="text-gray-300 hover:text-red-400 text-lg flex-shrink-0">×</button>
-                ) : (
-                  <span className="text-xs text-gray-300 w-5 flex-shrink-0">—</span>
-                )}
+                <span className={`flex-1 text-sm ${horaires[j] ? 'text-gray-700' : 'text-gray-300'}`}>
+                  {horaires[j] || 'Fermé'}
+                </span>
               </div>
             ))}
           </div>
+          <Link href="/pro/creneaux"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#0C5C6C] hover:underline">
+            🗓️ Gérer mes créneaux
+          </Link>
         </Card>
 
         {/* Durées des prestations */}

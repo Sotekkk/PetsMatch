@@ -11,6 +11,7 @@ const GREEN  = '#6E9E57';
 const ORANGE = '#FF9800';
 
 const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+const JOURS_FULL = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const MOIS  = ['jan', 'fév', 'mar', 'avr', 'mai', 'jun', 'jul', 'aoû', 'sep', 'oct', 'nov', 'déc'];
 
 function getMonday(d: Date): Date {
@@ -115,6 +116,26 @@ export default function ProCreneauxPage() {
     .map(([k, statut]) => ({ time: k.slice(dateStr.length + 1), statut }));
   const ranges = groupRanges(slotsForDay);
 
+  // Recalcule le résumé "Horaires" (page profil) à partir des créneaux
+  // disponibles de la semaine affichée — l'utilisateur ne saisit plus les
+  // horaires à la main, ils sont dérivés de ce qui est réellement réservable.
+  async function syncHorairesSummary(mergedSlots: Record<string, SlotStatus>) {
+    if (!user) return;
+    try {
+      const horaires: Record<string, string> = {};
+      for (const day of days) {
+        const ds = toDateStr(day);
+        const dispoSlots = Object.entries(mergedSlots)
+          .filter(([k, v]) => k.startsWith(`${ds}_`) && v === 'disponible')
+          .map(([k]) => ({ time: k.slice(ds.length + 1), statut: 'disponible' as SlotStatus }));
+        const ranges = groupRanges(dispoSlots);
+        const label = JOURS_FULL[day.getDay() === 0 ? 6 : day.getDay() - 1];
+        horaires[label] = ranges.map(r => `${r.start}-${r.end}`).join(' ');
+      }
+      await supabase.from('user_profiles').update({ horaires }).eq('uid', user.uid).eq('id', activeProfileId);
+    } catch { /* ignore — résumé informatif, pas bloquant */ }
+  }
+
   async function applyRange(start: string, end: string, statut: SlotStatus) {
     if (!user || saving) return;
     setSaving(true);
@@ -130,9 +151,11 @@ export default function ProCreneauxPage() {
         heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut });
       cur += 15;
     }
-    setSlots(s => ({ ...s, ...newSlots }));
+    const merged = { ...slots, ...newSlots };
+    setSlots(merged);
     try {
       await supabase.from('creneaux_pro').upsert(rows, { onConflict: 'pro_uid,pro_profile_id,date,heure_debut' });
+      await syncHorairesSummary(merged);
     } catch {
       setSlots(s => { const n = { ...s }; Object.keys(newSlots).forEach(k => delete n[k]); return n; });
     }
@@ -151,11 +174,14 @@ export default function ProCreneauxPage() {
       keyList.push(`${dateStr}_${hhmm}`);
       cur += 15;
     }
-    setSlots(s => { const n = { ...s }; keyList.forEach(k => delete n[k]); return n; });
+    const merged = { ...slots };
+    keyList.forEach(k => delete merged[k]);
+    setSlots(merged);
     try {
       await supabase.from('creneaux_pro').delete()
         .eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId)
         .eq('date', dateStr).in('heure_debut', hdList);
+      await syncHorairesSummary(merged);
     } catch { loadSlots(); }
   }
 
