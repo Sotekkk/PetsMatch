@@ -14,6 +14,7 @@ import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/pages/pro/education_rapports_page.dart';
+import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
@@ -259,6 +260,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
           ),
         ));
       }
+      return;
+    }
+    // Inscription d'un client à un cours collectif — reçu par l'éducateur
+    if (type == 'cours_collectif_inscription') {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => const EducationPlanningPage(),
+      ));
       return;
     }
     // Notifications contrats — ouvre le lien de signature dans le navigateur
@@ -553,6 +561,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'pension_journal':
       case 'pension_journal_reply': return Icons.photo_camera_back_outlined;
       case 'education_rapport':     return Icons.school_outlined;
+      case 'cours_collectif_inscription': return Icons.groups_outlined;
       case 'rdv_demande':            return Icons.event_note_outlined;
       case 'rdv_confirme':           return Icons.event_available_outlined;
       case 'rdv_refuse':             return Icons.event_busy_outlined;
@@ -595,6 +604,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'pension_journal':
       case 'pension_journal_reply': return const Color(0xFF6E9E57);
       case 'education_rapport':     return const Color(0xFF7B5EA7);
+      case 'cours_collectif_inscription': return const Color(0xFF7B5EA7);
       case 'rdv_demande':
       case 'rdv_contre_proposition': return _teal;
       case 'rdv_confirme':           return const Color(0xFF6E9E57);

@@ -22,6 +22,9 @@ interface ProData {
 }
 interface Slot { date: string; heureDebut: string; heureFin: string; }
 interface Animal { id: number; nom: string; espece: string; }
+interface CoursCollectif {
+  id: string; titre: string; date_heure: string; capacite_max: number; lieu?: string | null;
+}
 
 // ─── Données statiques ─────────────────────────────────────────────────────────
 
@@ -114,6 +117,13 @@ function ProDetailContent() {
   const [saving, setSaving] = useState(false);
   const [rdvSuccess, setRdvSuccess] = useState(false);
 
+  // Cours collectifs (éducateur/comportementaliste)
+  const [coursCollectifs, setCoursCollectifs] = useState<CoursCollectif[]>([]);
+  const [participantsCount, setParticipantsCount] = useState<Record<string, number>>({});
+  const [inscriptionCours, setInscriptionCours] = useState<CoursCollectif | null>(null);
+  const [inscriptionAnimalId, setInscriptionAnimalId] = useState<number | null>(null);
+  const [inscrivant, setInscrivant] = useState(false);
+
   useEffect(() => { loadPro(); }, [uid]);
 
   async function loadPro() {
@@ -159,8 +169,74 @@ function ProDetailContent() {
         };
       }
       if (row) setPro({ ...(row as unknown as ProData), profileTableId });
+      const proRow = row as unknown as ProData | null;
+      if (proRow && proRow.cat_pro === 'education') await loadCoursCollectifs(proRow.uid);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadCoursCollectifs(proUid: string) {
+    const { data: cours } = await supabase.from('cours_collectifs')
+      .select('id, titre, date_heure, capacite_max, lieu')
+      .eq('pro_uid', proUid).eq('statut', 'planifie')
+      .gte('date_heure', new Date().toISOString())
+      .order('date_heure');
+    const list = (cours ?? []) as CoursCollectif[];
+    setCoursCollectifs(list);
+    const coursIds = list.map(c => c.id);
+    if (coursIds.length === 0) { setParticipantsCount({}); return; }
+    const { data: parts } = await supabase.from('cours_collectifs_participants')
+      .select('cours_id').in('cours_id', coursIds).neq('statut', 'annule');
+    const counts: Record<string, number> = {};
+    for (const p of parts ?? []) counts[p.cours_id] = (counts[p.cours_id] ?? 0) + 1;
+    setParticipantsCount(counts);
+  }
+
+  async function openInscription(cours: CoursCollectif) {
+    if (!user) { router.push('/connexion'); return; }
+    setInscriptionCours(cours);
+    setInscriptionAnimalId(null);
+    if (animaux.length === 0) {
+      const { data } = await supabase.from('animaux').select('id, nom, espece')
+        .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`).order('nom');
+      setAnimaux((data ?? []) as Animal[]);
+    }
+  }
+
+  async function confirmInscription() {
+    if (!inscriptionCours || !user || !pro) return;
+    setInscrivant(true);
+    try {
+      const { data: current } = await supabase.from('cours_collectifs_participants')
+        .select('id').eq('cours_id', inscriptionCours.id).neq('statut', 'annule');
+      if ((current ?? []).length >= inscriptionCours.capacite_max) {
+        alert('Ce cours est complet.');
+        await loadCoursCollectifs(pro.uid);
+        setInscriptionCours(null);
+        return;
+      }
+      await supabase.from('cours_collectifs_participants').insert({
+        cours_id: inscriptionCours.id,
+        client_uid: user.uid,
+        ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
+        animal_id: inscriptionAnimalId || null,
+      });
+      const animalNom = animaux.find(a => a.id === inscriptionAnimalId)?.nom ?? 'son animal';
+      const { data: userData } = await supabase.from('users').select('firstname, lastname').eq('uid', user.uid).maybeSingle();
+      const clientName = userData ? `${userData.firstname ?? ''} ${userData.lastname ?? ''}`.trim() : 'Un client';
+      const dateStr = new Date(inscriptionCours.date_heure).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+      await supabase.from('notifications').insert({
+        uid: pro.uid, type: 'cours_collectif_inscription',
+        title: `Nouvelle inscription — ${inscriptionCours.titre}`,
+        body: `${clientName || 'Un client'} a inscrit ${animalNom} au cours du ${dateStr}.`,
+        data: { coursId: inscriptionCours.id },
+        read: false,
+      });
+      await loadCoursCollectifs(pro.uid);
+      setInscriptionCours(null);
+    } finally {
+      setInscrivant(false);
     }
   }
 
@@ -406,6 +482,35 @@ function ProDetailContent() {
                 <p className="text-sm text-gray-600 leading-relaxed" style={{ fontFamily: 'Galey, sans-serif' }}>{pro.tarifs}</p>
               </div>
             )}
+            {pro.cat_pro === 'education' && coursCollectifs.length > 0 && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <p className="font-bold text-[#1E2025] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>Cours collectifs disponibles</p>
+                <div className="space-y-2">
+                  {coursCollectifs.map(c => {
+                    const inscrits = participantsCount[c.id] ?? 0;
+                    const complet = inscrits >= c.capacite_max;
+                    return (
+                      <div key={c.id} className="flex items-center gap-3 rounded-xl border border-[#7B5EA7]/25 bg-[#7B5EA7]/5 p-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-[#1E2025] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{c.titre}</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(c.date_heure).toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                          <p className={`text-xs ${complet ? 'text-orange-600' : 'text-gray-400'}`}>
+                            {complet ? 'Complet' : `${inscrits} / ${c.capacite_max} places`}
+                          </p>
+                        </div>
+                        <button onClick={() => openInscription(c)} disabled={complet}
+                          className="px-3.5 py-2 rounded-full text-xs font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                          style={{ background: '#7B5EA7' }}>
+                          {complet ? 'Complet' : "S'inscrire"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {pro.certifications.length > 0 && (
               <div className="bg-white rounded-2xl p-4 shadow-sm">
                 <p className="font-bold text-[#1E2025] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>Certifications</p>
@@ -423,6 +528,38 @@ function ProDetailContent() {
               </div>
             )}
           </>
+        )}
+
+        {inscriptionCours && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setInscriptionCours(null)}>
+            <div className="bg-white rounded-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+              <h3 className="font-bold text-base mb-1" style={{ fontFamily: 'Galey, sans-serif', color: '#7B5EA7' }}>
+                S&apos;inscrire — {inscriptionCours.titre}
+              </h3>
+              <p className="text-xs text-gray-500 mb-4">
+                {new Date(inscriptionCours.date_heure).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })}
+              </p>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Animal concerné</label>
+              <select value={inscriptionAnimalId ?? ''} onChange={e => setInscriptionAnimalId(e.target.value ? Number(e.target.value) : null)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mb-4">
+                <option value="">Sélectionner un animal (optionnel)</option>
+                {animaux.map(a => (
+                  <option key={a.id} value={a.id}>{a.nom} ({a.espece})</option>
+                ))}
+              </select>
+              <div className="flex gap-3">
+                <button onClick={() => setInscriptionCours(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500">
+                  Annuler
+                </button>
+                <button onClick={confirmInscription} disabled={inscrivant}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                  style={{ background: '#7B5EA7' }}>
+                  {inscrivant ? '…' : 'Confirmer'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
         {tab === 'horaires' && (
           <div className="bg-white rounded-2xl p-4 shadow-sm">

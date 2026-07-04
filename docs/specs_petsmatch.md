@@ -4014,9 +4014,12 @@ voir §20.2.
 
 ### 20.2 — Reste à faire 🔨 (Phase 2, explicitement différé)
 
+Ordre validé avec l'utilisateur : réservation en ligne cours collectifs → tarification
+automatisée + forfaits → devis auto → notification avant séance → GPS/équipe/agenda dynamique.
+
 | Item | Détail | Statut |
 |---|---|---|
-| Réservation en ligne des cours collectifs | Le pro peut créer/gérer un cours collectif, mais **aucune interface client** ne permet encore de parcourir/s'inscrire soi-même à un cours collectif (contrairement aux RDV individuels, déjà réservables en ligne via le flux générique). Le pro doit pour l'instant inscrire les participants manuellement. | Non commencé |
+| Réservation en ligne des cours collectifs | ✅ Livré (session 2026-07-04) : le client parcourt les cours collectifs à venir d'un pro directement sur sa fiche publique (app `service_detail_page.dart`, web `services/pro/[uid]/page.tsx`), choisit l'animal concerné, s'inscrit avec vérification de capacité (refus si complet), et le pro reçoit une notification (`type: 'cours_collectif_inscription'`, cliquable vers le planning). | Livré |
 | Cours à domicile + GPS/trajet | Aucune API d'itinéraire n'existe dans le projet (seulement distance à vol d'oiseau via `Geolocator.distanceBetween`). Nécessite l'intégration d'une API Directions/Distance Matrix. | Non commencé |
 | Équipe d'intervenants | Le système `employes` ne gère que des permissions d'accès aux fonctionnalités, pas d'assignation à un RDV/cours précis. Nécessiterait une colonne/table d'assignation (`instructeur_profile_id` ou table de jointure). | Non commencé |
 | Tarification automatisée + forfaits | Tarifs actuels = prix fixe par prestation, saisis manuellement. Pas de calcul automatique (poids animal, etc.) ni de concept de forfait (pack de N séances). | Non commencé |

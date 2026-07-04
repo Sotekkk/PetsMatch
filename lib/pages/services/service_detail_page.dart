@@ -1,10 +1,14 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
+import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:intl/intl.dart';
 
 class ServiceDetailPage extends StatefulWidget {
   final String proUid;
@@ -32,6 +36,9 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   bool _loading = true;
   bool _loadingChat = false;
   late TabController _tabController;
+  List<Map<String, dynamic>> _coursCollectifs = [];
+  Map<String, int> _participantsCount = {};
+  bool _inscrivant = false;
 
   @override
   void initState() {
@@ -89,8 +96,98 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             .maybeSingle();
       }
       if (mounted) setState(() { _proData = row; _loading = false; });
+      if (row?['cat_pro'] == 'education') await _loadCoursCollectifs();
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadCoursCollectifs() async {
+    final proUid = _proData?['uid']?.toString();
+    if (proUid == null) return;
+    try {
+      final rows = await _supa.from('cours_collectifs').select()
+          .eq('pro_uid', proUid)
+          .eq('statut', 'planifie')
+          .gte('date_heure', DateTime.now().toIso8601String())
+          .order('date_heure');
+      final cours = List<Map<String, dynamic>>.from(rows as List);
+      final coursIds = cours.map((c) => c['id'] as String).toList();
+      final counts = <String, int>{};
+      if (coursIds.isNotEmpty) {
+        final participants = await _supa.from('cours_collectifs_participants')
+            .select('cours_id').inFilter('cours_id', coursIds).neq('statut', 'annule');
+        for (final p in participants as List) {
+          final cid = p['cours_id'] as String;
+          counts[cid] = (counts[cid] ?? 0) + 1;
+        }
+      }
+      if (mounted) setState(() { _coursCollectifs = cours; _participantsCount = counts; });
+    } catch (_) {}
+  }
+
+  Future<void> _inscrireAuCours(Map<String, dynamic> cours) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || _inscrivant) return;
+    final animal = await AnimalPickerSheet.pickOne(
+      context,
+      uid: uid,
+      profileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+      accentColor: widget.categoryColor,
+    );
+    if (animal == null || !mounted) return;
+    setState(() => _inscrivant = true);
+    try {
+      final coursId = cours['id'] as String;
+      final current = await _supa.from('cours_collectifs_participants')
+          .select('id').eq('cours_id', coursId).neq('statut', 'annule');
+      final capacite = cours['capacite_max'] as int? ?? 0;
+      if ((current as List).length >= capacite) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Ce cours est complet.', style: TextStyle(fontFamily: 'Galey')),
+            backgroundColor: Colors.orange, behavior: SnackBarBehavior.floating,
+          ));
+        }
+        return;
+      }
+      await _supa.from('cours_collectifs_participants').insert({
+        'cours_id': coursId,
+        'client_uid': uid,
+        if (User_Info.activeProfileId.isNotEmpty) 'client_profile_id': User_Info.activeProfileId,
+        'animal_id': animal['id']?.toString(),
+      });
+      final clientName = FirebaseAuth.instance.currentUser?.displayName?.isNotEmpty == true
+          ? FirebaseAuth.instance.currentUser!.displayName!
+          : 'Un client';
+      final proUid = _proData?['uid']?.toString();
+      if (proUid != null) {
+        final dateStr = DateFormat('dd/MM à HH:mm').format(DateTime.tryParse(cours['date_heure']?.toString() ?? '') ?? DateTime.now());
+        await _supa.from('notifications').insert({
+          'uid': proUid,
+          'type': 'cours_collectif_inscription',
+          'title': 'Nouvelle inscription — ${cours['titre']}',
+          'body': '$clientName a inscrit ${animal['nom'] ?? 'son animal'} au cours du $dateStr.',
+          'data': <String, dynamic>{'coursId': coursId},
+          'read': false,
+        });
+      }
+      await _loadCoursCollectifs();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Inscription confirmée !', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Color(0xFF6E9E57), behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _inscrivant = false);
     }
   }
 
@@ -447,6 +544,57 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                 _sectionTitle('Tarifs'),
                 const SizedBox(height: 8),
                 Text(_tarifs, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5, color: Color(0xFF444444))),
+              ],
+            )),
+          ],
+
+          // Cours collectifs disponibles (éducateur/comportementaliste)
+          if (_proData?['cat_pro'] == 'education' && _coursCollectifs.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _card(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionTitle('Cours collectifs disponibles'),
+                const SizedBox(height: 10),
+                ..._coursCollectifs.map((c) {
+                  final d = DateTime.tryParse(c['date_heure']?.toString() ?? '');
+                  final inscrits = _participantsCount[c['id']] ?? 0;
+                  final capacite = c['capacite_max'] as int? ?? 0;
+                  final complet = inscrits >= capacite;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8F8F6),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF7B5EA7).withValues(alpha: 0.25)),
+                    ),
+                    child: Row(children: [
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(c['titre']?.toString() ?? 'Cours collectif',
+                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+                        if (d != null)
+                          Text(DateFormat('EEEE d MMMM à HH:mm', 'fr_FR').format(d),
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                        Text(complet ? 'Complet' : '$inscrits / $capacite places',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                                color: complet ? Colors.orange.shade700 : Colors.grey.shade500)),
+                      ])),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: (complet || _inscrivant) ? null : () => _inscrireAuCours(c),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF7B5EA7),
+                          disabledBackgroundColor: Colors.grey.shade300,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        ),
+                        child: Text(complet ? 'Complet' : 'S\'inscrire',
+                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Colors.white)),
+                      ),
+                    ]),
+                  );
+                }),
               ],
             )),
           ],
