@@ -181,7 +181,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
 
   // Initialiser Google Maps
   useEffect(() => {
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? '';
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
     setOptions({ key: apiKey, v: 'weekly', language: 'fr' });
     importLibrary('places').then((places) => {
       const lib = places as typeof google.maps.places;
