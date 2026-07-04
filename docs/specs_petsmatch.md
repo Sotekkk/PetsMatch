@@ -3872,6 +3872,14 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
   proprietaire_adresse, notes` — ces champs n'existaient donc jamais dans l'objet chargé, d'où des champs
   vides à chaque réouverture alors que la base était correcte. L'app et le registre web utilisaient déjà
   `select()`/`select('*')` (toutes colonnes) et n'étaient pas concernés.
+- **Accès lecture automatique à l'admission en pension** : décision produit confirmée par l'utilisateur
+  ("le carnet de l'animal est obligatoire à l'inscription") — dès qu'une pension rattache/admet un animal
+  via la puce (création d'entrée, `_linkFiche`, `_retrouverViaPuce`, scan dans "Fiches accessibles"),
+  l'accès `animal_access` est créé/mis à jour directement en statut `active` (lecture : identité, santé,
+  alimentation), **sans attendre l'approbation du propriétaire**. Le propriétaire reçoit toujours une
+  notification, mais informative — le dialogue passe de "Autoriser/Refuser" à "OK/Révoquer l'accès"
+  (web `Header.tsx`, app `notifications_page.dart`). Ne change rien pour les autres contextes (vétérinaire,
+  demandes hors admission) qui restent soumis à validation explicite du propriétaire.
 
 ### 19.3 — Migrations à exécuter (si pas déjà fait)
 

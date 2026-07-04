@@ -577,16 +577,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Demande d\'accès à la fiche de $animalNom',
+        title: Text('Accès accordé à la fiche de $animalNom',
           style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
         content: Text(
-          '$pensionNom souhaite consulter la fiche de $animalNom (santé, alimentation, comportement) en lecture seule.',
+          '$pensionNom a été admis à consulter la fiche de $animalNom (santé, alimentation, comportement) en lecture seule. Vous pouvez révoquer l\'accès si besoin.',
           style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Refuser', style: TextStyle(fontFamily: 'Galey', color: Colors.red)),
+            child: const Text('Révoquer l\'accès', style: TextStyle(fontFamily: 'Galey', color: Colors.red)),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -594,7 +594,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
               backgroundColor: const Color(0xFF0C5C6C),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            child: const Text('Autoriser', style: TextStyle(fontFamily: 'Galey')),
+            child: const Text('OK', style: TextStyle(fontFamily: 'Galey')),
           ),
         ],
       ),

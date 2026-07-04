@@ -1528,16 +1528,20 @@ class PensionEditSheetState extends State<PensionEditSheet> {
       if (existing != null) return;
       final pensionNom = User_Info.nameElevage.isNotEmpty
           ? User_Info.nameElevage : '${User_Info.firstname} ${User_Info.lastname}'.trim();
+      // Lecture accordée automatiquement à l'admission en pension (le carnet de
+      // l'animal est nécessaire pour la prise en charge) — le propriétaire est
+      // simplement informé et peut révoquer si besoin.
       await widget.supa.from('animal_access').insert({
         'pro_profile_id': pid, 'animal_id': animalId,
         'granted_by_profile_id': ownerProfileId,
         'permissions': ['read_basic', 'read_alimentation', 'write_notes'],
-        'statut': 'pending',
+        'statut': 'active',
+        'granted_at': DateTime.now().toUtc().toIso8601String(),
       });
       await widget.supa.from('notifications').insert({
         'uid': ownerUid, 'type': 'pension_acces',
-        'title': 'Demande d\'accès à la fiche de ${_clientCtrl.text.isEmpty ? "votre animal" : widget.entree['animal_nom']}',
-        'body': '$pensionNom souhaite consulter la fiche en pension (lecture seule).',
+        'title': 'Accès accordé à la fiche de ${_clientCtrl.text.isEmpty ? "votre animal" : widget.entree['animal_nom']}',
+        'body': '$pensionNom a été admis à consulter la fiche en pension (lecture). Vous pouvez révoquer l\'accès si besoin.',
         'data': {'pensionUid': FirebaseAuth.instance.currentUser?.uid, 'pensionNom': pensionNom, 'animalId': animalId},
         'read': false,
       });
@@ -2326,19 +2330,21 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
           ? User_Info.nameElevage
           : '${User_Info.firstname} ${User_Info.lastname}'.trim();
 
+      // Lecture accordée automatiquement à l'admission en pension.
       await _supa.from('animal_access').insert({
         'pro_profile_id':        pid,
         'animal_id':             animalId,
         'granted_by_profile_id': ownerProfileId,
         'permissions':           ['read_basic', 'read_alimentation', 'write_notes'],
-        'statut':                'pending',
+        'statut':                'active',
+        'granted_at':            DateTime.now().toUtc().toIso8601String(),
       });
 
       await _supa.from('notifications').insert({
         'uid':   ownerUid,
         'type':  'pension_acces',
-        'title': 'Demande d\'accès à la fiche de $animalNom',
-        'body':  '$pensionNom souhaite consulter la fiche de $animalNom en pension (lecture seule).',
+        'title': 'Accès accordé à la fiche de $animalNom',
+        'body':  '$pensionNom a été admis à consulter la fiche de $animalNom en pension (lecture). Vous pouvez révoquer l\'accès si besoin.',
         'data':  {
           'pensionUid': _uid,
           'pensionNom': pensionNom,
@@ -2582,9 +2588,10 @@ class _AccessRequestSheetState extends State<_AccessRequestSheet> {
       if (existing != null) {
         final statut = existing['statut'] as String? ?? '';
         if (statut == 'active')  { widget.onAlreadyApproved(animalId, animalNom); return; }
-        if (statut == 'pending') { widget.onAlreadyPending(animalNom);  return; }
+        // Lecture accordée automatiquement à l'admission en pension.
         await widget.supa.from('animal_access').update({
-          'statut': 'pending',
+          'statut': 'active',
+          'granted_at': DateTime.now().toUtc().toIso8601String(),
           'updated_at': DateTime.now().toIso8601String(),
         }).eq('id', existing['id']);
       } else {
@@ -2593,15 +2600,16 @@ class _AccessRequestSheetState extends State<_AccessRequestSheet> {
           'animal_id':             animalId,
           'granted_by_profile_id': ownerProfileId,
           'permissions':           ['read_basic', 'read_alimentation', 'write_notes'],
-          'statut':                'pending',
+          'statut':                'active',
+          'granted_at':            DateTime.now().toUtc().toIso8601String(),
         });
       }
 
       await widget.supa.from('notifications').insert({
         'uid':   ownerUid,
         'type':  'pension_acces',
-        'title': 'Demande d\'accès à la fiche de $animalNom',
-        'body':  '${widget.pensionNom} souhaite consulter la fiche de $animalNom (lecture seule).',
+        'title': 'Accès accordé à la fiche de $animalNom',
+        'body':  '${widget.pensionNom} a été admis à consulter la fiche de $animalNom en pension (lecture). Vous pouvez révoquer l\'accès si besoin.',
         'data':  {
           'pensionUid': widget.pensionUid,
           'pensionNom': widget.pensionNom,

@@ -1289,7 +1289,7 @@ function PensionAccesDialog({ notif, ownerUid: _ownerUid, onClose, onDone }: {
             border: '1px solid #d32f2f', background: 'transparent',
             color: '#d32f2f', fontFamily: 'Galey, sans-serif',
             fontWeight: 700, fontSize: 14, cursor: loading ? 'not-allowed' : 'pointer',
-          }}>Refuser</button>
+          }}>Révoquer l&apos;accès</button>
 
           <button disabled={loading} onClick={() => handle(true)} style={{
             flex: 1, padding: '12px 0', borderRadius: 10,
@@ -1297,7 +1297,7 @@ function PensionAccesDialog({ notif, ownerUid: _ownerUid, onClose, onDone }: {
             fontFamily: 'Galey, sans-serif', fontWeight: 700,
             fontSize: 14, cursor: loading ? 'not-allowed' : 'pointer',
             opacity: loading ? 0.7 : 1,
-          }}>{loading ? '…' : 'Autoriser'}</button>
+          }}>{loading ? '…' : 'OK'}</button>
         </div>
 
         <button onClick={onClose} style={{

@@ -41,8 +41,9 @@ export async function lookupAnimalByChip(chip: string): Promise<PensionEntreePre
   return next;
 }
 
-/** Demande d'accès en lecture à la fiche pour le pro connecté — no-op si
- * déjà demandé/accordé, silencieux en cas d'erreur (ex: profil introuvable). */
+/** Accorde l'accès en lecture à la fiche pour le pro connecté (admission en
+ * pension = lecture automatique, pas d'attente d'approbation) — no-op si déjà
+ * accordé, silencieux en cas d'erreur (ex: profil introuvable). */
 export async function requestAnimalAccess(animalId: string, ownerUid: string, proUid: string, proProfileId: string | null, proNom: string, animalNom: string) {
   try {
     if (!proProfileId) return;
@@ -57,12 +58,13 @@ export async function requestAnimalAccess(animalId: string, ownerUid: string, pr
       pro_profile_id: proProfileId, animal_id: animalId,
       granted_by_profile_id: ownerProfileId,
       permissions: ['read_basic', 'read_alimentation', 'write_notes'],
-      statut: 'pending',
+      statut: 'active',
+      granted_at: new Date().toISOString(),
     });
     await supabase.from('notifications').insert({
       uid: ownerUid, type: 'pension_acces',
-      title: `Demande d'accès à la fiche de ${animalNom}`,
-      body: `${proNom} souhaite consulter la fiche en pension (lecture seule).`,
+      title: `Accès accordé à la fiche de ${animalNom}`,
+      body: `${proNom} a été admis à consulter la fiche en pension (lecture). Vous pouvez révoquer l'accès si besoin.`,
       data: { pensionUid: proUid, pensionNom: proNom, animalId },
       read: false,
     });
