@@ -223,21 +223,26 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           .neq('statut', 'revoked');
       final profileIds = (grants as List).map((g) => g['pro_profile_id']?.toString()).whereType<String>().toList();
       final proNames = <String, String>{};
+      final vetProfileIds = <String>{};
       if (profileIds.isNotEmpty) {
         final profiles = await _supa.from('user_profiles')
-            .select('id, firstname, lastname')
+            .select('id, firstname, lastname, profile_type')
             .inFilter('id', profileIds);
         for (final u in profiles as List) {
           final pid = u['id']?.toString() ?? '';
+          if (u['profile_type'] != 'veterinaire') continue; // exclut pension/autres, gérés dans leur propre section
+          vetProfileIds.add(pid);
           final nom = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
           proNames[pid] = nom.isNotEmpty ? nom : 'Vétérinaire';
         }
       }
-      final list = (grants as List).map((g) {
-        final m = Map<String, dynamic>.from(g as Map);
-        m['vet_nom'] = proNames[g['pro_profile_id']?.toString()] ?? 'Professionnel';
-        return m;
-      }).toList();
+      final list = (grants as List)
+          .where((g) => vetProfileIds.contains(g['pro_profile_id']?.toString()))
+          .map((g) {
+            final m = Map<String, dynamic>.from(g as Map);
+            m['vet_nom'] = proNames[g['pro_profile_id']?.toString()] ?? 'Professionnel';
+            return m;
+          }).toList();
       if (mounted) setState(() => _vetAcces = list);
     } catch (_) {}
   }
@@ -290,11 +295,20 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     try {
       final rows = await _supa
           .from('animal_access')
-          .select('id, pro_profile_id, created_at, permissions')
+          .select('id, pro_profile_id, created_at, permissions, user_profiles!inner(profile_type, name_elevage, firstname, lastname)')
           .eq('animal_id', widget.animalId!)
           .eq('statut', 'active')
-          .contains('permissions', ['write_notes']);
-      if (mounted) setState(() => _pensionAcces = List<Map<String, dynamic>>.from(rows));
+          .eq('user_profiles.profile_type', 'pension');
+      final list = (rows as List).map((r) {
+        final m = Map<String, dynamic>.from(r as Map);
+        final profile = m['user_profiles'] as Map?;
+        final nom = (profile?['name_elevage'] as String?)?.isNotEmpty == true
+            ? profile!['name_elevage'] as String
+            : '${profile?['firstname'] ?? ''} ${profile?['lastname'] ?? ''}'.trim();
+        m['pro_nom'] = nom.isNotEmpty ? nom : 'Pension';
+        return m;
+      }).toList();
+      if (mounted) setState(() => _pensionAcces = list);
     } catch (_) {}
     try {
       final updates = await _supa.from('pension_updates').select('id').eq('animal_id', widget.animalId!).limit(1);

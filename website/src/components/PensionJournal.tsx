@@ -7,9 +7,12 @@ const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // 50 Mo
 
 interface Update {
   id: string;
+  pro_uid: string;
   photo_url?: string | null;
   video_url?: string | null;
   note?: string | null;
+  owner_liked?: boolean | null;
+  owner_reply?: string | null;
   created_at: string;
 }
 
@@ -31,7 +34,7 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
 
   async function load() {
     setLoading(true);
-    let q = supabase.from('pension_updates').select('id, photo_url, video_url, note, created_at');
+    let q = supabase.from('pension_updates').select('id, pro_uid, photo_url, video_url, note, owner_liked, owner_reply, created_at');
     q = pensionEntreeId ? q.eq('pension_entree_id', pensionEntreeId) : q.eq('animal_id', animalId ?? '');
     const { data } = await q.order('created_at', { ascending: false });
     setUpdates((data ?? []) as Update[]);
@@ -121,6 +124,35 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
     load();
   }
 
+  async function toggleLike(u: Update) {
+    const newLiked = !u.owner_liked;
+    await supabase.from('pension_updates').update({ owner_liked: newLiked }).eq('id', u.id);
+    if (newLiked) notifyPension(u, 'like');
+    load();
+  }
+
+  async function reply(u: Update) {
+    const message = window.prompt('Votre réponse à la pension :', u.owner_reply ?? '');
+    if (!message || !message.trim()) return;
+    await supabase.from('pension_updates').update({
+      owner_reply: message.trim(), owner_reply_at: new Date().toISOString(),
+    }).eq('id', u.id);
+    notifyPension(u, 'reply', message.trim());
+    load();
+  }
+
+  async function notifyPension(u: Update, action: 'like' | 'reply', message?: string) {
+    try {
+      await supabase.from('notifications').insert({
+        uid: u.pro_uid, type: 'pension_journal_reply',
+        title: action === 'like' ? `${animalNom} a aimé votre nouvelle` : `Réponse du propriétaire de ${animalNom}`,
+        body: action === 'like' ? 'Le propriétaire a aimé votre nouvelle.' : (message ?? ''),
+        data: { animalId, animalNom },
+        read: false,
+      });
+    } catch { /* silencieux */ }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -150,12 +182,28 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
                   )}
                   <div className="p-3">
                     {u.note && <p className="text-sm font-galey text-gray-800 mb-1">{u.note}</p>}
+                    {u.owner_reply && (
+                      <div className="bg-[#EEF5EA] rounded-lg px-2.5 py-1.5 mb-2">
+                        <p className="text-sm font-galey text-gray-800">💬 {u.owner_reply}</p>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-galey text-gray-400">
                         {new Date(u.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
                       </span>
-                      {!readOnly && (
-                        <button onClick={() => del(u.id)} className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
+                      {readOnly ? (
+                        <div className="flex items-center gap-3">
+                          <button onClick={() => toggleLike(u)} className="text-lg leading-none"
+                            aria-label={u.owner_liked ? 'Retirer le like' : 'Aimer'}>
+                            {u.owner_liked ? '❤️' : '🤍'}
+                          </button>
+                          <button onClick={() => reply(u)} className="text-xs text-[#0C5C6C] hover:underline">Répondre</button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          {u.owner_liked && <span className="text-sm">❤️</span>}
+                          <button onClick={() => del(u.id)} className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
+                        </div>
                       )}
                     </div>
                   </div>

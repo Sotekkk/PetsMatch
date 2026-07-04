@@ -3799,6 +3799,22 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
      pouvait s'en apercevoir qu'en repassant manuellement sur la fiche. App `_post()` et web `post()`
      résolvent désormais le propriétaire actuel via `animaux_proprietes` et insèrent une notification
      (`type: 'pension_journal'`).
+- **Bug — accès pension étiqueté "vétérinaire" avec un nom faux** : sur la fiche animal éleveur,
+  `_loadVetAcces()` chargeait **tous** les `animal_access` non révoqués de l'animal sans filtrer par type de
+  profil, puis affichait chacun avec un préfixe "Dr." — un accès pension apparaissait donc en double : une
+  fois correctement dans "Accès pension actifs", une fois à tort dans "Accès vétérinaires" (nom résolu via
+  `firstname`/`lastname` du profil pension, souvent vide ou avec des valeurs de test → "Dr. Pension
+  Pension"). Corrigé : filtre sur `profile_type = 'veterinaire'`. Au passage, `_loadPensionAcces()` ne
+  résolvait jamais le nom de la pension (toujours "Structure" par défaut) — corrigé par une jointure sur
+  `user_profiles` (nom d'élevage en priorité).
+- **Like + réponse du propriétaire sur le journal de séjour** (session 2026-07-04) : nouvelles colonnes
+  `owner_liked`/`owner_reply`/`owner_reply_at` sur `pension_updates` (déjà couvertes par la purge à 60 jours,
+  même table/ligne). Côté propriétaire (vue lecture seule) : bouton ❤️ et bouton "Répondre" (texte libre).
+  Notifie la pension en retour (`type: 'pension_journal_reply'`).
+- **Notifications cliquables → destination directe** : les notifications `pension_journal` (nouvelle reçue
+  par le propriétaire) et `pension_journal_reply` (like/réponse reçu par la pension) ouvrent désormais
+  directement la fiche/le journal concerné au clic, au lieu de rester sans action (app `notifications_page.dart`
+  `_handleTap`, web `Header.tsx` `getNotifUrl`).
 - **Correctifs indépendants découverts en testant** : `mapProfile()` (`auth-context.tsx`) plantait
   silencieusement sur les profils dont `especes_elevees` est stocké en tableau de chaînes plutôt qu'en
   objets `{espece, races}` — bloquait `userData` (donc toutes les pages pension) pour ces comptes ; nouveau

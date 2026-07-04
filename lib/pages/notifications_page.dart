@@ -12,6 +12,7 @@ import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
+import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
@@ -211,6 +212,35 @@ class _NotificationsPageState extends State<NotificationsPage> {
           builder: (_) => AnimalFichePensionPage(
             animalId: animalId,
             animalNom: animalNom,
+          ),
+        ));
+      }
+      return;
+    }
+    // Journal de séjour — nouvelle reçue par le propriétaire (lecture seule)
+    if (type == 'pension_journal') {
+      final animalId  = data is Map ? data['animalId']  as String? : null;
+      final animalNom = data is Map ? data['animalNom'] as String? : null;
+      if (animalId != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => PensionJournalPage(
+            animalId: animalId,
+            animalNom: animalNom ?? 'Animal',
+            readOnly: true,
+          ),
+        ));
+      }
+      return;
+    }
+    // Journal de séjour — like/réponse du propriétaire reçu par la pension
+    if (type == 'pension_journal_reply') {
+      final animalId  = data is Map ? data['animalId']  as String? : null;
+      final animalNom = data is Map ? data['animalNom'] as String? : null;
+      if (animalId != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => PensionJournalPage(
+            animalId: animalId,
+            animalNom: animalNom ?? 'Animal',
           ),
         ));
       }

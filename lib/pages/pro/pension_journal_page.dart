@@ -136,6 +136,58 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
     _load();
   }
 
+  Future<void> _toggleLike(Map<String, dynamic> u) async {
+    final newLiked = !(u['owner_liked'] == true);
+    await _supa.from('pension_updates').update({'owner_liked': newLiked}).eq('id', u['id'] as String);
+    if (newLiked) unawaited(_notifyPension(u, action: 'like'));
+    _load();
+  }
+
+  Future<void> _reply(Map<String, dynamic> u) async {
+    final ctrl = TextEditingController(text: u['owner_reply'] as String? ?? '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Répondre à la pension', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: TextField(
+          controller: ctrl, autofocus: true, maxLines: 3,
+          style: const TextStyle(fontFamily: 'Galey'),
+          decoration: const InputDecoration(hintText: 'Votre message…', border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Envoyer')),
+        ],
+      ),
+    );
+    if (result == null || result.isEmpty) return;
+    await _supa.from('pension_updates').update({
+      'owner_reply': result,
+      'owner_reply_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', u['id'] as String);
+    unawaited(_notifyPension(u, action: 'reply', message: result));
+    _load();
+  }
+
+  Future<void> _notifyPension(Map<String, dynamic> u, {required String action, String? message}) async {
+    try {
+      final proUid = u['pro_uid'] as String?;
+      if (proUid == null || proUid.isEmpty) return;
+      await _supa.from('notifications').insert({
+        'uid': proUid, 'type': 'pension_journal_reply',
+        'title': action == 'like'
+            ? '${widget.animalNom} a aimé votre nouvelle'
+            : 'Réponse du propriétaire de ${widget.animalNom}',
+        'body': action == 'like'
+            ? 'Le propriétaire a aimé votre nouvelle.'
+            : (message ?? ''),
+        'data': {'animalId': widget.animalId, 'animalNom': widget.animalNom},
+        'read': false,
+      });
+    } catch (_) {}
+  }
+
   Future<void> _notifyOwner({required bool hasMedia}) async {
     if (widget.animalId == null) return;
     try {
@@ -208,12 +260,42 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
                               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 if (u['note'] != null && (u['note'] as String).isNotEmpty)
                                   Text(u['note'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                                if ((u['owner_reply'] as String?)?.isNotEmpty == true) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFEEF5EA),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text('💬 ${u['owner_reply']}',
+                                        style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                                  ),
+                                ],
                                 const SizedBox(height: 6),
                                 Row(children: [
                                   Text(date != null ? DateFormat('dd/MM/yyyy à HH:mm').format(date) : '',
                                       style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade400)),
-                                  if (!widget.readOnly) ...[
-                                    const Spacer(),
+                                  const Spacer(),
+                                  if (widget.readOnly) ...[
+                                    IconButton(
+                                      icon: Icon(u['owner_liked'] == true ? Icons.favorite : Icons.favorite_border,
+                                          size: 18, color: Colors.redAccent),
+                                      onPressed: () => _toggleLike(u),
+                                      constraints: const BoxConstraints(),
+                                      padding: EdgeInsets.zero,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    IconButton(
+                                      icon: Icon(Icons.reply_outlined, size: 18, color: Colors.grey.shade500),
+                                      onPressed: () => _reply(u),
+                                      constraints: const BoxConstraints(),
+                                      padding: EdgeInsets.zero,
+                                    ),
+                                  ] else ...[
+                                    if (u['owner_liked'] == true)
+                                      const Padding(padding: EdgeInsets.only(right: 10),
+                                          child: Icon(Icons.favorite, size: 16, color: Colors.redAccent)),
                                     IconButton(
                                       icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
                                       onPressed: () => _delete(u['id'] as String),

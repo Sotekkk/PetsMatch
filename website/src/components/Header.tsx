@@ -431,6 +431,10 @@ function getNotifUrl(n: Notif): string | null {
       return null; // géré par dialog
     case 'pension_acces_reponse':
       return d.approved === 'true' && d.animalId ? `/mes-animaux/${d.animalId}` : null;
+    case 'pension_journal':
+      return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
+    case 'pension_journal_reply':
+      return d.animalId ? `/pension/fiche/${d.animalId}` : '/pension/registre';
     case 'rdv_demande':
     case 'rdv_contre_proposition':
     case 'rdv_annule_client':
@@ -873,6 +877,7 @@ export default function Header() {
                               : n.type === 'chaleur' ? '🌸'
                               : n.type === 'rappel_vaccin' ? '💉'
                               : n.type === 'pension_acces' || n.type === 'pension_acces_reponse' ? '🏡'
+                              : n.type === 'pension_journal' || n.type === 'pension_journal_reply' ? '📸'
                               : n.type === 'contrat_saillie_invite' ? '💞'
                               : n.type === 'contrat_signe_complet' ? '✅'
                               : n.type === 'contrat_signe_acquereur' || n.type === 'contrat_signe_eleveur' ? '✍️'
