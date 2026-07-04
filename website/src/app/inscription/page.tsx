@@ -204,6 +204,7 @@ export default function InscriptionPage() {
 
   const isEleveurOrPro = role === 'eleveur' || role === 'pro';
   const isVet = professionPro === 'Vétérinaire';
+  const isEducation = CAT_PRO_MAP[professionPro] === 'education';
   const professions = categoriePro ? PRO_CATEGORIES[categoriePro] ?? [] : [];
 
   // ── Navigation ──────────────────────────────────────────────────────────────
@@ -232,6 +233,10 @@ export default function InscriptionPage() {
       }
       if (isVet && !ordreVet.trim()) {
         setError("Le numéro d'ordre vétérinaire est obligatoire.");
+        return;
+      }
+      if (isEducation && !acacedNumero.trim()) {
+        setError('Le numéro ACACED est obligatoire pour l\'éducation canine/féline.');
         return;
       }
     }
@@ -346,6 +351,12 @@ export default function InscriptionPage() {
           profession_pro: professionPro || null,
           certifications: certifications ?? null,
         });
+        if (isEducation) {
+          Object.assign(base, {
+            acaced: acacedNumero.trim() || null,
+            acaced_doc_url: acacedDocUrl || null,
+          });
+        }
       }
     } else {
       Object.assign(base, {
@@ -663,6 +674,26 @@ export default function InscriptionPage() {
                         <input type="text" value={ordreVet} onChange={(e) => setOrdreVet(e.target.value)}
                           placeholder="XXXXX" className={inputCls} />
                       </div>
+                    )}
+                    {isEducation && (
+                      <>
+                        <div>
+                          <label className={labelCls}>
+                            Numéro ACACED *
+                            <span className="text-xs text-gray-400 font-normal ml-1">(obligatoire pour l&apos;éducation canine/féline)</span>
+                          </label>
+                          <input type="text" value={acacedNumero} onChange={(e) => setAcacedNumero(e.target.value)}
+                            placeholder="2022/9fd5-fd12" className={inputCls} />
+                        </div>
+                        <div>
+                          <label className={labelCls}>
+                            Document ACACED
+                            <span className="text-xs text-gray-400 font-normal ml-1">(optionnel maintenant, requis avant validation)</span>
+                          </label>
+                          <UploadTile label="Déposer le certificat ACACED"
+                            file={acacedFile} onSelect={setAcacedFile} onRemove={() => setAcacedFile(null)} />
+                        </div>
+                      </>
                     )}
                   </>
                 )}

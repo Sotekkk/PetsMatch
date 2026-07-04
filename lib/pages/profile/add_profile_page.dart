@@ -386,6 +386,9 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
       data['siret']              = _siretCtrl.text.trim();
       data['rayon_intervention'] = _rayon;
       data['especes_acceptees']  = _especesAcceptees.toList();
+      if (type == 'education') {
+        data['acaced_numero'] = _acacedCtrl.text.trim();
+      }
     }
     if (_isRestauration) {
       // Champs spécifiques attendus par RestaurationHomePage
@@ -495,6 +498,11 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
               const SizedBox(height: 16),
               _section('SIRET'),
               _field(_siretCtrl, '14 chiffres'),
+            ],
+            if (widget.typeInfo.type == 'education') ...[
+              const SizedBox(height: 16),
+              _section('Numéro ACACED *'),
+              _field(_acacedCtrl, 'Ex : 2022/9fd5-fd12', required: true),
             ],
             if (_hasRayon) ...[
               const SizedBox(height: 16),

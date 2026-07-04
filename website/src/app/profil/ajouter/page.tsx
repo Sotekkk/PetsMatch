@@ -173,6 +173,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
 
   const isProType   = PRO_TYPES.has(typeInfo.type);
   const isEleveur   = typeInfo.type === 'eleveur';
+  const isEducation = typeInfo.type === 'education';
   const isParticulier = typeInfo.type === 'particulier';
   const hasSiret    = HAS_SIRET.has(typeInfo.type);
   const hasRayon    = HAS_RAYON.has(typeInfo.type);
@@ -243,6 +244,11 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
       if (!acacedDateObtention) errs.push("Date d'obtention ACACED");
       if (!acacedDocFile) errs.push('Certificat ACACED');
     }
+    if (isEducation) {
+      if (!acaced.trim()) errs.push('N° ACACED');
+      if (!acacedDateObtention) errs.push("Date d'obtention ACACED");
+      if (!acacedDocFile) errs.push('Certificat ACACED');
+    }
     if (errs.length > 0) { setError(`Champs obligatoires manquants : ${errs.join(', ')}`); return; }
     setSaving(true);
     setError('');
@@ -304,6 +310,19 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         data.siret             = siret.trim();
         data.rayon_intervention = rayon;
         data.especes_acceptees = Array.from(especesSet);
+        if (isEducation) {
+          data.acaced_numero        = acaced.trim();
+          data.acaced_date_obtention = acacedDateObtention;
+          if (acacedDocFile) {
+            const ext = acacedDocFile.name.split('.').pop() ?? 'jpg';
+            const path = `documents/${uid}/acaced.${ext}`;
+            const { data: up } = await supabase.storage.from('petsmatch').upload(path, acacedDocFile, { upsert: true });
+            if (up) {
+              const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+              data.acaced_doc_url = pub.publicUrl;
+            }
+          }
+        }
       }
 
       // Vérifie si le profil existe déjà (pour ne pas remettre en_attente lors d'une mise à jour)
@@ -325,14 +344,14 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
 
       if (err) throw err;
 
-      // Sync champs éleveur dans la table users (SIRET, ACACED, docs)
-      if (isEleveur) {
+      // Sync champs éleveur/éducateur dans la table users (SIRET, ACACED, docs)
+      if (isEleveur || isEducation) {
         const usersPayload: Record<string, unknown> = {
           uid,
-          siret: siret.trim(),
           acaced: acaced.trim(),
           acaced_date_obtention: acacedDateObtention,
         };
+        if (isEleveur) usersPayload.siret = siret.trim();
         if (data.kbis_url) usersPayload.kbis_url = data.kbis_url;
         if (data.acaced_doc_url) usersPayload.acaced_doc_url = data.acaced_doc_url;
         await supabase.from('users').upsert(usersPayload, { onConflict: 'uid' });
@@ -526,6 +545,44 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
                   <input value={siret} onChange={e => setSiret(e.target.value)}
                     className="w-full input-field" placeholder="14 chiffres" maxLength={14} />
                 </Field>
+              )}
+              {isEducation && (
+                <>
+                  <input ref={acacedDocRef} type="file" accept="image/*,application/pdf" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) setAcacedDocFile(f); e.target.value = ''; }} />
+
+                  <Field label="N° ACACED" required>
+                    <input value={acaced} onChange={e => setAcaced(e.target.value)}
+                      className="w-full input-field" placeholder="Ex : 2022/9fd5-fd12" />
+                  </Field>
+
+                  <div>
+                    <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">
+                      Date d&apos;obtention ACACED <span className="text-red-500">*</span>
+                    </p>
+                    <input type="date" value={acacedDateObtention} onChange={e => setAcacedDateObtention(e.target.value)}
+                      className="w-full input-field" />
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">
+                      Certificat ACACED <span className="text-red-500">*</span>
+                    </p>
+                    {acacedDocFile ? (
+                      <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                        <span className="text-green-600 text-sm">✓</span>
+                        <span className="text-xs text-green-700 flex-1 truncate">{acacedDocFile.name}</span>
+                        <button type="button" onClick={() => acacedDocRef.current?.click()}
+                          className="text-xs text-[#0C5C6C] font-medium hover:underline">Changer</button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => acacedDocRef.current?.click()}
+                        className="w-full border-2 border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-xl py-3 text-sm text-gray-400 hover:text-[#0C5C6C] transition-colors">
+                        📎 Joindre le certificat ACACED (image ou PDF)
+                      </button>
+                    )}
+                  </div>
+                </>
               )}
               {hasRayon && (
                 <div>
