@@ -68,20 +68,30 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<void> _loadAujourdhui() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    // Même résolution de profil que _loadRdvs() — si le profil actif n'est
+    // pas encore renseigné, ne pas afficher sans filtre (fuite cross-profil),
+    // mais retomber sur le premier profil pro disponible.
+    String pid = User_Info.activeProfileId;
+    if (pid.isEmpty && User_Info.availableProfiles.isNotEmpty) {
+      final proProfile = User_Info.availableProfiles.firstWhere(
+        (p) => p['profile_type'] != 'particulier',
+        orElse: () => User_Info.availableProfiles.first,
+      );
+      pid = proProfile['id']?.toString() ?? '';
+    }
+    if (pid.isEmpty) { if (mounted) setState(() => _aujourdhui = []); return; }
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
     final end = start.add(const Duration(days: 1));
     try {
-      var q = Supabase.instance.client
+      final rows = await Supabase.instance.client
           .from('agenda_events')
           .select()
           .eq('uid', uid)
+          .eq('pro_profile_id', pid)
           .gte('date_debut', start.toIso8601String())
-          .lt('date_debut', end.toIso8601String());
-      if (User_Info.activeProfileId.isNotEmpty) {
-        q = q.eq('pro_profile_id', User_Info.activeProfileId);
-      }
-      final rows = await q.order('date_debut');
+          .lt('date_debut', end.toIso8601String())
+          .order('date_debut');
       if (mounted) setState(() => _aujourdhui = List<Map<String, dynamic>>.from(rows));
     } catch (_) {}
   }

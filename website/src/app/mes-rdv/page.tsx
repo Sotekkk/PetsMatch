@@ -980,15 +980,18 @@ export default function MesRdvPage() {
   useEffect(() => { fetchRdvs(); }, [fetchRdvs]);
 
   const fetchAujourdhui = useCallback(async () => {
-    if (!user) return;
+    // Ne pas interroger tant que le profil actif n'est pas résolu — un
+    // filtre absent ferait fuiter les séances de tous les profils
+    // (ex : pension visible depuis le profil éducation).
+    if (!user || !activeProfileId) return;
     const start = new Date(); start.setHours(0, 0, 0, 0);
     const end = new Date(start); end.setDate(end.getDate() + 1);
     try {
-      let q = supabase.from('agenda_events').select('id, titre, date_debut, type')
+      const { data } = await supabase.from('agenda_events').select('id, titre, date_debut, type')
         .eq('uid', user.uid)
-        .gte('date_debut', start.toISOString()).lt('date_debut', end.toISOString());
-      if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId);
-      const { data } = await q.order('date_debut');
+        .eq('pro_profile_id', activeProfileId)
+        .gte('date_debut', start.toISOString()).lt('date_debut', end.toISOString())
+        .order('date_debut');
       setAujourdhui((data ?? []) as { id: string; titre: string; date_debut: string; type: string }[]);
     } catch { /* ignore */ }
   }, [user, activeProfileId]);
