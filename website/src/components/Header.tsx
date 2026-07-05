@@ -259,6 +259,7 @@ const MENU_EDUCATION = [
       { href: '/employes',   label: 'Mes employés',        icon: '👥' },
       { href: '/mes-taches', label: 'Mes tâches',          icon: '✅' },
       { href: '/elevage/facturation', label: 'Facturation', icon: '🧾' },
+      { href: '/education/abonnement', label: 'Mon abonnement', icon: '💳' },
     ],
   },
   {

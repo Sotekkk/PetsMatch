@@ -39,6 +39,7 @@ import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
+import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
 import 'package:PetsMatch/pages/eleveur/user_elevage_feed.dart';
@@ -576,6 +577,16 @@ class _EleveurNavState extends State<EleveurNav> {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(
                         builder: (_) => const EducationPlanningPage(),
+                      ));
+                    },
+                  ),
+                  if (User_Info.catPro == 'education') _DrawerItem(
+                    icon: Icons.workspace_premium_outlined,
+                    label: 'Mon abonnement',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const EducationAbonnementPage(),
                       ));
                     },
                   ),

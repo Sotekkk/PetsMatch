@@ -54,6 +54,30 @@ class PensionPlanConfig {
   });
 }
 
+class EducationPlanConfig {
+  final String code;
+  final String label;
+  final bool hasEmployes;
+  final int maxEmployes; // -1 = illimité
+  final bool hasFactureExport;
+  final bool hasBadgePremium;
+  final bool hasAccesPrioritaire;
+  final double prixMensuel;
+  final double prixAnnuel;
+
+  const EducationPlanConfig({
+    required this.code,
+    required this.label,
+    required this.hasEmployes,
+    required this.maxEmployes,
+    required this.hasFactureExport,
+    required this.hasBadgePremium,
+    required this.hasAccesPrioritaire,
+    this.prixMensuel = 0,
+    this.prixAnnuel = 0,
+  });
+}
+
 class PlanService {
   static const String kWebsiteUrl = 'https://www.petsmatchapp.com';
 
@@ -126,6 +150,80 @@ class PlanService {
           .select('plan_code')
           .eq('uid', uid)
           .eq('profil_type', 'pension')
+          .eq('statut', 'actif')
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      return (res?['plan_code'] as String?) ?? 'free';
+    } catch (_) {
+      return 'free';
+    }
+  }
+
+  static const Map<String, EducationPlanConfig> educationConfigs = {
+    'free': EducationPlanConfig(
+      code: 'free', label: 'Découverte', hasEmployes: false, maxEmployes: 0,
+      hasFactureExport: false, hasBadgePremium: false, hasAccesPrioritaire: false,
+      prixMensuel: 0, prixAnnuel: 0,
+    ),
+    'pro': EducationPlanConfig(
+      code: 'pro', label: 'Pro', hasEmployes: true, maxEmployes: 3,
+      hasFactureExport: true, hasBadgePremium: false, hasAccesPrioritaire: false,
+      prixMensuel: 14, prixAnnuel: 140,
+    ),
+    'premium': EducationPlanConfig(
+      code: 'premium', label: 'Premium', hasEmployes: true, maxEmployes: -1,
+      hasFactureExport: true, hasBadgePremium: true, hasAccesPrioritaire: true,
+      prixMensuel: 24, prixAnnuel: 240,
+    ),
+  };
+
+  static EducationPlanConfig getEducationConfig(String planCode) =>
+      educationConfigs[planCode] ?? educationConfigs['free']!;
+
+  /// Tarifs éducateur à jour depuis plans_tarifaires (éditables depuis
+  /// l'admin web sans déploiement). Retombe sur educationConfigs si la BDD
+  /// est injoignable.
+  static Future<Map<String, EducationPlanConfig>> getEducationPlansLive() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('plans_tarifaires')
+          .select('plan_code, label, prix_mensuel, prix_annuel, features')
+          .eq('profil_type', 'education')
+          .eq('actif', true);
+      final out = <String, EducationPlanConfig>{};
+      for (final row in (rows as List)) {
+        final code = row['plan_code'] as String?;
+        if (code == null) continue;
+        final fallback = getEducationConfig(code);
+        final f = (row['features'] as Map<String, dynamic>?) ?? {};
+        out[code] = EducationPlanConfig(
+          code: code,
+          label: (row['label'] as String?) ?? fallback.label,
+          hasEmployes: f['hasEmployes'] as bool? ?? fallback.hasEmployes,
+          maxEmployes: (f['maxEmployes'] as num?)?.toInt() ?? fallback.maxEmployes,
+          hasFactureExport: f['hasFactureExport'] as bool? ?? fallback.hasFactureExport,
+          hasBadgePremium: f['hasBadgePremium'] as bool? ?? fallback.hasBadgePremium,
+          hasAccesPrioritaire: f['hasAccesPrioritaire'] as bool? ?? fallback.hasAccesPrioritaire,
+          prixMensuel: (row['prix_mensuel'] as num?)?.toDouble() ?? fallback.prixMensuel,
+          prixAnnuel: (row['prix_annuel'] as num?)?.toDouble() ?? fallback.prixAnnuel,
+        );
+      }
+      return out.isEmpty ? educationConfigs : out;
+    } catch (_) {
+      return educationConfigs;
+    }
+  }
+
+  /// Plan éducateur actif pour ce uid — distinct du plan éleveur/pension
+  /// (abonnements est scopé par profil_type).
+  static Future<String> getEducationPlanCode(String uid) async {
+    try {
+      final res = await Supabase.instance.client
+          .from('abonnements')
+          .select('plan_code')
+          .eq('uid', uid)
+          .eq('profil_type', 'education')
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
           .limit(1)

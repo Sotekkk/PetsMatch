@@ -4011,6 +4011,32 @@ voir §20.2.
   - Web : bouton + modale équivalents sur `mes-animaux/[id]/page.tsx`.
   - Notification cliquable : `education_rapport` ouvre directement la page
     de suivi (app `notifications_page.dart`, web `Header.tsx` `getNotifUrl`).
+- **Formules d'abonnement PetsMatch** (session 2026-07-05) — distinct de la
+  tarification client (ci-dessus), il s'agit des paliers que l'éducateur
+  paie à PetsMatch pour débloquer des fonctionnalités, comme pour la
+  pension. Constat : `plans_tarifaires` n'avait aucune ligne pour
+  `profil_type = 'education'`, et le système de vérification des
+  fonctionnalités (`PlanService`) était codé en dur spécifiquement pour la
+  pension. Découverte au passage : même pour la pension, les flags de
+  fonctionnalités (`hasEmployes`, `hasInventaire`, etc.) ne sont **jamais
+  appliqués en dur nulle part** — uniquement affichés sur la page
+  abonnement pour orienter l'achat Stripe, sans blocage technique réel.
+  Le même pattern (affichage + upsell, pas de blocage) a été répliqué pour
+  l'éducateur, par cohérence avec l'existant :
+  - 3 paliers (Découverte gratuit / Pro 14€ / Premium 24€, mêmes prix que
+    pension) — les fonctionnalités "cœur" (planning, cours
+    individuels/collectifs, tarification, suivi de progression,
+    réservation en ligne) restent disponibles à tous les paliers ; seuls
+    les employés, l'export facturation et les avantages de visibilité
+    sont différenciés par palier.
+  - `EducationPlanConfig` + `getEducationPlansLive()`/`getEducationPlanCode()`
+    ajoutés dans `plan_service.dart` (miroir exact de `PensionPlanConfig`).
+  - Page app `education_abonnement_page.dart` + page web
+    `education/abonnement/page.tsx` (miroir de la page pension), lien
+    "Mon abonnement" ajouté au drawer/menu.
+  - Stripe : `/api/stripe/checkout` était déjà générique par
+    `profil_type` (confirmé dans le code) — aucune modification de code
+    nécessaire côté paiement, juste le seed de `plans_tarifaires`.
 
 ### 20.2 — Reste à faire 🔨 (Phase 2, explicitement différé)
 
@@ -4034,6 +4060,7 @@ automatisée + forfaits → devis auto → notification avant séance → GPS/é
 supabase/migration_education_cours_collectifs.sql -- cours_collectifs,
                                                    -- cours_collectifs_participants,
                                                    -- tarifs_education sur user_profiles
+supabase/migration_education_plans_tarifaires.sql -- 3 formules éducateur dans plans_tarifaires
 ```
 
 ---
