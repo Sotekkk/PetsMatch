@@ -4190,6 +4190,22 @@ supabase/migration_education_exercices_conseilles.sql  -- colonne exercices_cons
   `/mes-patients/[id]?tab=Éducation` côté web — nouveau support du
   paramètre `?tab=` sur cette page).
 
+## 24. Correctifs agenda app (session 2026-07-05)
+
+- **Fuite cross-profil élevage → pension** : `lib/pages/agenda/agenda_page.dart`
+  incluait toujours les événements "legacy sans profile_id" en plus de ceux
+  du profil actif (`epid == pid || epid.isEmpty`), même quand un profil
+  secondaire précis (ex : pension) était actif. Or les événements créés
+  depuis le profil éleveur (primaire, `pro_profile_id` vide) tombent dans ce
+  cas "legacy" — ils étaient donc visibles depuis N'IMPORTE QUEL profil
+  secondaire. Corrigé : filtre strict par `pro_profile_id` dès qu'un profil
+  est actif ; le fallback "legacy" ne s'applique plus qu'au profil primaire
+  (pid vide). Le web (`agenda/page.tsx`) avait déjà la bonne logique — bug
+  app uniquement.
+- **Bouton Retour depuis la vue Jour** : cliquait directement `widget.onBack`
+  (quitte l'agenda) peu importe la vue active. Corrigé pour repasser
+  d'abord en vue Mois si on n'y est pas déjà, avant de quitter la page.
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

@@ -188,12 +188,15 @@ class _AgendaPageState extends State<AgendaPage> {
     final pid = User_Info.activeProfileId;
     print('[AGENDA _load] isParticulier=${widget.isParticulier} isAssociation=${widget.isAssociation} activeType=${User_Info.activeType} pid=$pid uid=$_uid');
 
-    final isParticulierMode = widget.isParticulier || User_Info.activeType == 'particulier';
     try {
-      // Particulier : filtre strict par profile_id uniquement (pas de legacy éleveur).
-      // Autres profils : inclut aussi les events legacy sans profile_id.
+      // Profil actif défini (secondaire pro, ou particulier) : filtre strict
+      // par profile_id — inclure les events "legacy" sans profile_id
+      // ferait fuiter les events créés depuis un AUTRE profil (ex : ceux de
+      // l'éleveur, créés avec pro_profile_id vide, visibles depuis pension).
+      // Le fallback "legacy sans profile_id" ne s'applique que quand on est
+      // sur le profil primaire (pid vide, ex : éleveur lui-même).
       final dynamic data;
-      if (isParticulierMode && pid.isNotEmpty) {
+      if (pid.isNotEmpty) {
         data = await _supa
             .from('agenda_events')
             .select()
@@ -215,8 +218,8 @@ class _AgendaPageState extends State<AgendaPage> {
       // Filtrage client-side : exclure les événements d'un autre UUID de profil
       final filtered = (data as List).where((e) {
         final epid = (e['pro_profile_id'] as String?) ?? '';
-        if (isParticulierMode && pid.isNotEmpty) return epid == pid;
-        return epid == pid || epid.isEmpty;
+        if (pid.isNotEmpty) return epid == pid;
+        return epid.isEmpty;
       }).toList();
       if (mounted) {
         setState(() {
@@ -943,7 +946,11 @@ class _AgendaPageState extends State<AgendaPage> {
             ? IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new_rounded),
                 tooltip: 'Retour',
-                onPressed: widget.onBack,
+                // Depuis une vue Jour/Liste, revenir d'abord à la vue Mois
+                // plutôt que de quitter directement l'agenda.
+                onPressed: _viewMode != 0
+                    ? () => setState(() => _viewMode = 0)
+                    : widget.onBack,
               )
             : null,
         title: const Text('Mon Agenda',
