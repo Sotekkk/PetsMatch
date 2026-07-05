@@ -564,7 +564,17 @@ export default function AgendaPage() {
           <div className="flex items-center gap-2">
             <div className="flex rounded-lg bg-white/10 overflow-hidden text-xs font-semibold">
               {([['calendar', 'Mois'], ['day', 'Jour'], ['list', 'Liste']] as const).map(([v, label]) => (
-                <button key={v} onClick={() => { setView(v); if (v === 'day') setSelectedDate(new Date()); }}
+                <button key={v} onClick={() => {
+                  setView(v);
+                  // Préserver le jour actuellement sélectionné (vue Mois) plutôt
+                  // que de toujours revenir à aujourd'hui — sinon un RDV vu sur
+                  // un autre jour "disparaît" en passant en vue Jour.
+                  if (v === 'day') {
+                    setSelectedDate(selectedDay
+                      ? new Date(focusedMonth.year, focusedMonth.month, selectedDay)
+                      : new Date());
+                  }
+                }}
                   className="px-3 py-1.5 transition-colors"
                   style={{ background: view === v ? 'rgba(255,255,255,0.25)' : 'transparent' }}>
                   {label}
