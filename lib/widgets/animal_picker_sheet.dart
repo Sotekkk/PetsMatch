@@ -103,17 +103,38 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
       return;
     }
     try {
+      final supa = Supabase.instance.client;
       final uid = widget.uid!;
       final pid = widget.profileId;
-      var q = Supabase.instance.client
-          .from('animaux')
+
+      var q = supa.from('animaux')
           .select('id, nom, espece, race, photo_url')
           .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid');
       if (pid != null && pid.isNotEmpty) q = q.eq('profile_id', pid);
-      final rows = await q.order('nom');
+      final directRows = await q;
+      final direct = List<Map<String, dynamic>>.from((directRows as List).map((e) => Map<String, dynamic>.from(e as Map)));
+
+      // animaux_proprietes = source de vérité pour la propriété actuelle
+      // (notamment après une cession — animaux.uid_proprietaire n'est pas
+      // mis à jour lors d'une cession, seul animaux_proprietes l'est).
+      var ownQ = supa.from('animaux_proprietes').select('animal_id').eq('uid_proprio', uid).isFilter('date_fin', null);
+      if (pid != null && pid.isNotEmpty) ownQ = ownQ.eq('profile_id_proprio', pid);
+      final ownRows = await ownQ;
+      final cessionIds = (ownRows as List).map((r) => r['animal_id']?.toString()).whereType<String>().toSet();
+      final missingIds = cessionIds.difference(direct.map((a) => a['id']?.toString() ?? '').toSet());
+
+      List<Map<String, dynamic>> viaCession = [];
+      if (missingIds.isNotEmpty) {
+        final rows2 = await supa.from('animaux')
+            .select('id, nom, espece, race, photo_url')
+            .inFilter('id', missingIds.toList());
+        viaCession = List<Map<String, dynamic>>.from((rows2 as List).map((e) => Map<String, dynamic>.from(e as Map)));
+      }
+
+      final rows = [...direct, ...viaCession]..sort((a, b) => (a['nom']?.toString() ?? '').compareTo(b['nom']?.toString() ?? ''));
       if (mounted) {
         setState(() {
-          _animaux = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          _animaux = rows;
           _loading = false;
         });
       }

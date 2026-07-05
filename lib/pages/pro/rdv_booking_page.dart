@@ -170,13 +170,23 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       return;
     }
     try {
-      final row = await Supabase.instance.client
-          .from('users')
-          .select('durees_motifs, cat_pro')
-          .eq('uid', widget.proUid)
-          .maybeSingle();
+      // Profil secondaire (pension, éducateur…) → user_profiles ; sinon
+      // compte principal → users. Sans cette distinction, cat_pro et
+      // durees_motifs d'un profil secondaire ne sont jamais résolus (on lit
+      // toujours le profil principal, potentiellement d'un autre type).
+      final row = (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
+          ? await Supabase.instance.client
+              .from('user_profiles')
+              .select('durees_motifs, profile_type, cat_pro')
+              .eq('id', widget.proProfileId!)
+              .maybeSingle()
+          : await Supabase.instance.client
+              .from('users')
+              .select('durees_motifs, cat_pro')
+              .eq('uid', widget.proUid)
+              .maybeSingle();
       if (row != null && mounted) {
-        _catPro = row['cat_pro']?.toString() ?? '';
+        _catPro = row['profile_type']?.toString() ?? row['cat_pro']?.toString() ?? '';
         if (row['durees_motifs'] is Map) {
           _dureesMotifs = Map<String, int>.from(
             (row['durees_motifs'] as Map).map((k, v) =>
@@ -203,13 +213,34 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final rows = await Supabase.instance.client
+      final supa = Supabase.instance.client;
+      // animaux_proprietes = source de vérité pour la propriété actuelle
+      // (notamment après une cession — animaux.uid_proprietaire n'est pas
+      // mis à jour lors d'une cession, seul animaux_proprietes l'est).
+      final ownRows = await supa.from('animaux_proprietes')
+          .select('animal_id')
+          .eq('uid_proprio', uid)
+          .isFilter('date_fin', null);
+      final cessionIds = (ownRows as List).map((r) => r['animal_id']?.toString()).whereType<String>().toSet();
+
+      final directRows = await supa
           .from('animaux')
           .select('id, nom, espece, race, photo_url')
-          .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid')
-          .order('nom');
+          .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid');
+      final direct = List<Map<String, dynamic>>.from((directRows as List).map((e) => Map<String, dynamic>.from(e as Map)));
+
+      final missingIds = cessionIds.difference(direct.map((a) => a['id']?.toString() ?? '').toSet());
+      List<Map<String, dynamic>> viaCession = [];
+      if (missingIds.isNotEmpty) {
+        final rows2 = await supa.from('animaux')
+            .select('id, nom, espece, race, photo_url')
+            .inFilter('id', missingIds.toList());
+        viaCession = List<Map<String, dynamic>>.from((rows2 as List).map((e) => Map<String, dynamic>.from(e as Map)));
+      }
+
+      final rows = [...direct, ...viaCession]..sort((a, b) => (a['nom']?.toString() ?? '').compareTo(b['nom']?.toString() ?? ''));
       if (mounted) {
-        _animaux = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        _animaux = rows;
         // Pré-sélection animal si fourni
         if (widget.preselectedAnimalId != null) {
           _selectedAnimal = _animaux.where(

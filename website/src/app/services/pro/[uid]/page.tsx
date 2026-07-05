@@ -256,7 +256,7 @@ function ProDetailContent() {
     setNotes('');
     setSlotsLoading(true);
     const profileId = profileTableId ?? '';
-    const [slotsRes, animauxRes] = await Promise.all([
+    const [slotsRes, animauxRes, ownRes] = await Promise.all([
       supabase.from('creneaux_pro').select('date, heure_debut, heure_fin')
         .eq('pro_uid', uid)
         .eq('statut', 'disponible')
@@ -266,10 +266,24 @@ function ProDetailContent() {
       supabase.from('animaux').select('id, nom, espece')
         .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`)
         .order('nom'),
+      // animaux_proprietes = source de vérité pour la propriété actuelle
+      // (notamment après une cession — animaux.uid_proprietaire n'est pas
+      // mis à jour lors d'une cession, seul animaux_proprietes l'est).
+      supabase.from('animaux_proprietes').select('animal_id')
+        .eq('uid_proprio', user.uid).is('date_fin', null),
     ]);
     const rawSlots = (slotsRes.data ?? []) as { date: string; heure_debut: string; heure_fin: string }[];
     setSlots(rawSlots.map(s => ({ date: s.date, heureDebut: s.heure_debut, heureFin: s.heure_fin })));
-    setAnimaux((animauxRes.data ?? []) as Animal[]);
+
+    const direct = (animauxRes.data ?? []) as Animal[];
+    const cessionIds = [...new Set((ownRes.data ?? []).map(r => r.animal_id as string))];
+    const missingIds = cessionIds.filter(id => !direct.some(a => String(a.id) === id));
+    let viaCession: Animal[] = [];
+    if (missingIds.length > 0) {
+      const { data } = await supabase.from('animaux').select('id, nom, espece').in('id', missingIds);
+      viaCession = (data ?? []) as Animal[];
+    }
+    setAnimaux([...direct, ...viaCession].sort((a, b) => a.nom.localeCompare(b.nom)));
     setSlotsLoading(false);
   }
 
