@@ -66,6 +66,20 @@ class _EducationRapportsPageState extends State<EducationRapportsPage> {
                         const SizedBox(height: 6),
                         Text(r['contenu']?.toString() ?? '',
                             style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
+                        if ((r['exercices_conseilles']?.toString() ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(8)),
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              const Text('🏋️ Exercices conseillés',
+                                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 11, color: Color(0xFF4A7A32))),
+                              const SizedBox(height: 2),
+                              Text(r['exercices_conseilles'].toString(),
+                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF4A7A32))),
+                            ]),
+                          ),
+                        ],
                       ]),
                     );
                   },

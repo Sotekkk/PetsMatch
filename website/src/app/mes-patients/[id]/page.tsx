@@ -140,6 +140,12 @@ export default function PatientDetailPage() {
   const [chaleurs, setChaleurs] = useState<Chaleur[]>([]);
   const [saillies, setSaillies] = useState<Saillie[]>([]);
   const [gestations, setGestations] = useState<Gestation[]>([]);
+  // Éducation (rapports de séance + exercices conseillés)
+  const [rapports, setRapports] = useState<{ id: string; date_seance: string; contenu: string; exercices_conseilles: string | null }[]>([]);
+  const [showAddRapport, setShowAddRapport] = useState(false);
+  const [rapportContenu, setRapportContenu] = useState('');
+  const [rapportExercices, setRapportExercices] = useState('');
+  const [savingRapport, setSavingRapport] = useState(false);
 
   // Add entry form
   type AddType = null | 'vaccin' | 'visite' | 'traitement' | 'ordonnance' | 'radio' | 'cr' | 'mesure';
@@ -173,6 +179,7 @@ export default function PatientDetailPage() {
 
   const isPensionType = PENSION_TYPES.has(catPro);
   const isVet = catPro === 'veterinaire' || catPro === 'sante';
+  const isEducation = catPro === 'education';
   const hasWriteAccess = isVet
     ? (grant?.statut === 'active' || grant?.statut === 'active_write')
     : grant?.statut === 'active_write';
@@ -183,7 +190,9 @@ export default function PatientDetailPage() {
     ? ['Identité', 'Santé', 'Alimentation', 'Propriétaire']
     : isVet
       ? ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations']
-      : ['Identité', 'Santé', 'Propriétaire', 'Consultations'];
+      : isEducation
+        ? ['Identité', 'Santé', 'Éducation', 'Propriétaire']
+        : ['Identité', 'Santé', 'Propriétaire', 'Consultations'];
 
   // Load data
   useEffect(() => {
@@ -215,6 +224,7 @@ export default function PatientDetailPage() {
         isFemelle ? supabase.from('chaleurs').select('*').eq('animal_id', animalId).order('date', { ascending: false }) : Promise.resolve({ data: [] }),
         supabase.from('saillies').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
         isFemelle ? supabase.from('gestations').select('*').eq('animal_id', animalId).order('date', { ascending: false }) : Promise.resolve({ data: [] }),
+        supabase.from('education_progression').select('id, date_seance, contenu, exercices_conseilles').eq('animal_id', animalId).order('date_seance', { ascending: false }),
       ]);
 
       const get = <T,>(i: number): T[] => {
@@ -238,6 +248,7 @@ export default function PatientDetailPage() {
       setChaleurs(get<Chaleur>(7));
       setSaillies(get<Saillie>(8));
       setGestations(get<Gestation>(9));
+      setRapports(get<{ id: string; date_seance: string; contenu: string; exercices_conseilles: string | null }>(10));
       setLoading(false);
     }
     load();
@@ -309,6 +320,38 @@ export default function PatientDetailPage() {
       setFormPoids(''); setFormTaille('');
       setFormDate(new Date().toISOString().slice(0, 10));
       setAddingType(null); setSavingForm(false);
+    }
+  }
+
+  async function soumettreRapport() {
+    if (!user?.uid || !animalId || !rapportContenu.trim()) return;
+    setSavingRapport(true);
+    try {
+      const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+      await supabase.from('education_progression').insert({
+        pro_uid: user.uid,
+        animal_id: animalId,
+        owner_uid: ownerUid,
+        date_seance: new Date().toISOString().slice(0, 10),
+        contenu: rapportContenu.trim(),
+        exercices_conseilles: rapportExercices.trim() || null,
+      });
+      if (ownerUid) {
+        const proNom = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || 'Votre éducateur';
+        await supabase.from('notifications').insert({
+          uid: ownerUid, type: 'education_rapport',
+          title: `Rapport de séance — ${animal?.nom ?? 'Animal'}`,
+          body: `${proNom} a envoyé un rapport de séance pour ${animal?.nom ?? 'votre animal'}.`,
+          data: { animalId, animalNom: animal?.nom ?? 'Animal' },
+          read: false,
+        });
+      }
+      const { data } = await supabase.from('education_progression')
+        .select('id, date_seance, contenu, exercices_conseilles').eq('animal_id', animalId).order('date_seance', { ascending: false });
+      setRapports((data ?? []) as { id: string; date_seance: string; contenu: string; exercices_conseilles: string | null }[]);
+      setRapportContenu(''); setRapportExercices(''); setShowAddRapport(false);
+    } finally {
+      setSavingRapport(false);
     }
   }
 
@@ -663,6 +706,59 @@ export default function PatientDetailPage() {
               <span>📖</span><span>Données renseignées par le propriétaire — lecture seule</span>
             </div>
             <EmptyState text="Plan alimentaire non renseigné par le propriétaire" />
+          </Card>
+        )}
+
+        {/* ── Éducation (rapports de séance + exercices conseillés) ── */}
+        {tab === 'Éducation' && (
+          <Card title="🎓 Suivi de progression">
+            {hasWriteAccess && (
+              <button onClick={() => setShowAddRapport(v => !v)}
+                className="w-full text-white rounded-2xl py-3 font-semibold text-sm transition-colors flex items-center justify-center gap-2 mb-4"
+                style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
+                <span className="text-lg leading-none">+</span>
+                Ajouter un rapport de séance
+              </button>
+            )}
+            {showAddRapport && (
+              <div className="border border-gray-100 rounded-2xl p-4 mb-4 space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Compte rendu</label>
+                  <textarea value={rapportContenu} onChange={e => setRapportContenu(e.target.value)} rows={3}
+                    placeholder="Déroulé de la séance, observations, progrès…"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Exercices conseillés</label>
+                  <textarea value={rapportExercices} onChange={e => setRapportExercices(e.target.value)} rows={2}
+                    placeholder="Exercices à faire à la maison d'ici la prochaine séance…"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                </div>
+                <button onClick={soumettreRapport} disabled={savingRapport || !rapportContenu.trim()}
+                  className="w-full text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
+                  style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
+                  {savingRapport ? '…' : 'Envoyer au propriétaire'}
+                </button>
+              </div>
+            )}
+            {rapports.length === 0 ? (
+              <EmptyState text="Aucun rapport de séance pour l'instant" />
+            ) : (
+              <div className="space-y-3">
+                {rapports.map(r => (
+                  <div key={r.id} className="border border-gray-100 rounded-xl p-3">
+                    <p className="text-xs text-gray-400 mb-1">{fmtDateShort(r.date_seance)}</p>
+                    <p className="text-sm text-[#1F2A2E]">{r.contenu}</p>
+                    {r.exercices_conseilles && (
+                      <div className="mt-2 bg-[#EEF5EA] rounded-lg px-2.5 py-1.5">
+                        <p className="text-xs font-semibold text-[#4A7A32] mb-0.5">🏋️ Exercices conseillés</p>
+                        <p className="text-xs text-[#4A7A32]">{r.exercices_conseilles}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
         )}
 

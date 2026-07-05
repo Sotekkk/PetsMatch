@@ -4141,6 +4141,34 @@ supabase/migration_creneaux_type_prestation.sql    -- colonne type_prestation su
   l'instant.
 - GPS/trajet complet (Phase 2 éducateur item 5/5).
 
+## 22. Onglet "Éducation" dans la fiche animal + correctif agenda (session 2026-07-05)
+
+- **Fiche animal — onglet Éducation** : un éducateur/comportementaliste
+  consultant la fiche d'un animal client voyait jusqu'ici les mêmes onglets
+  génériques que n'importe quel autre pro non-vétérinaire, dont
+  "Consultations" (vaccins/visites/traitements — non pertinent pour ce
+  métier). Remplacé par un onglet dédié "Éducation" (app `animal_fiche.dart`
+  → `AnimalFichePage(educationMode: true)` déclenché depuis
+  `ProClientsPage._openAnimal()` ; web `mes-patients/[id]/page.tsx` via
+  `isEducation`) qui affiche l'historique des rapports de séance
+  (`education_progression`) avec un champ dédié **"Exercices conseillés"**,
+  distinct du compte rendu libre, affiché à part pour le propriétaire.
+  Rétro-compatible avec l'ancien point d'entrée rapide "Rapport de séance"
+  depuis la liste des clients (`pro_clients_page.dart::_addProgression`),
+  qui a aussi reçu le nouveau champ. Affichage côté propriétaire mis à jour
+  en conséquence (app `education_rapports_page.dart`, web
+  `mes-animaux/[id]/page.tsx`).
+- **Agenda web — bug vue Jour** : voir §21 modification du 2026-07-05 —
+  cliquer sur "Jour" réinitialisait toujours la date à aujourd'hui au lieu
+  de préserver le jour sélectionné en vue Mois, faisant "disparaître" un
+  RDV visible sur un autre jour. Corrigé (`agenda/page.tsx`).
+
+### 22.1 — Migration à exécuter
+
+```
+supabase/migration_education_exercices_conseilles.sql  -- colonne exercices_conseilles sur education_progression
+```
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

@@ -378,6 +378,7 @@ class _ProClientsPageState extends State<ProClientsPage>
         animalId: animalId,
         readOnly: true,
         vetMode: User_Info.catPro == 'sante' || User_Info.catPro == 'veterinaire',
+        educationMode: User_Info.catPro == 'education',
       ),
     ));
   }
@@ -399,6 +400,7 @@ class _ProClientsPageState extends State<ProClientsPage>
   Future<void> _addProgression(Map<String, dynamic> animal) async {
     final animalNom = animal['nom']?.toString() ?? 'Animal';
     final contenuCtrl = TextEditingController();
+    final exercicesCtrl = TextEditingController();
 
     final ok = await showModalBottomSheet<bool>(
       context: context,
@@ -419,6 +421,19 @@ class _ProClientsPageState extends State<ProClientsPage>
             style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
             decoration: InputDecoration(
               hintText: 'Compte rendu de la séance, exercices réalisés, progrès observés…',
+              hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              contentPadding: const EdgeInsets.all(12),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: exercicesCtrl,
+            maxLines: 2,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              labelText: 'Exercices conseillés',
+              hintText: 'Exercices à faire à la maison…',
               hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
               contentPadding: const EdgeInsets.all(12),
@@ -455,6 +470,7 @@ class _ProClientsPageState extends State<ProClientsPage>
         'owner_uid':  animal['_owner_uid']?.toString(),
         'date_seance': DateTime.now().toIso8601String().substring(0, 10),
         'contenu':    contenuCtrl.text.trim(),
+        if (exercicesCtrl.text.trim().isNotEmpty) 'exercices_conseilles': exercicesCtrl.text.trim(),
       });
       // Envoi du rapport au propriétaire — notification in-app en 1 clic
       final ownerUid = animal['_owner_uid']?.toString();

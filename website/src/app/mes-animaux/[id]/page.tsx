@@ -1112,7 +1112,7 @@ export default function AnimalFichePage() {
   const [hasPensionUpdates, setHasPensionUpdates] = useState(false);
   const [hasEducationRapports, setHasEducationRapports] = useState(false);
   const [showEducationRapports, setShowEducationRapports] = useState(false);
-  const [educationRapports, setEducationRapports] = useState<{ id: string; date_seance: string; contenu: string }[]>([]);
+  const [educationRapports, setEducationRapports] = useState<{ id: string; date_seance: string; contenu: string; exercices_conseilles: string | null }[]>([]);
   const [showJournal, setShowJournal] = useState(false);
 
   // ── État repro
@@ -2395,7 +2395,7 @@ export default function AnimalFichePage() {
         {!isNew && hasEducationRapports && (
           <button onClick={() => {
             setShowEducationRapports(true);
-            supabase.from('education_progression').select('id, date_seance, contenu')
+            supabase.from('education_progression').select('id, date_seance, contenu, exercices_conseilles')
               .eq('animal_id', id).order('date_seance', { ascending: false })
               .then(({ data }) => setEducationRapports(data ?? []));
           }}
@@ -2426,6 +2426,12 @@ export default function AnimalFichePage() {
                       <div key={r.id} className="rounded-xl border border-gray-100 p-3">
                         <p className="text-xs font-galey text-gray-400 mb-1">{r.date_seance}</p>
                         <p className="text-sm font-galey text-gray-800">{r.contenu}</p>
+                        {r.exercices_conseilles && (
+                          <div className="mt-2 bg-[#EEF5EA] rounded-lg px-2.5 py-1.5">
+                            <p className="text-xs font-semibold font-galey text-[#4A7A32] mb-0.5">🏋️ Exercices conseillés</p>
+                            <p className="text-xs font-galey text-[#4A7A32]">{r.exercices_conseilles}</p>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

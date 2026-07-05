@@ -51,6 +51,7 @@ class AnimalFichePage extends StatefulWidget {
   final String? preselectedEspece;
   final bool readOnly;
   final bool vetMode;
+  final bool educationMode;
   final bool isAssociation;
   final bool showReproTab;
   final int? initialTabIndex;
@@ -65,6 +66,7 @@ class AnimalFichePage extends StatefulWidget {
     this.preselectedEspece,
     this.readOnly = false,
     this.vetMode = false,
+    this.educationMode = false,
     this.isAssociation = false,
     this.showReproTab = false,
     this.initialTabIndex,
@@ -1474,13 +1476,15 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
           tabs: widget.vetMode
               ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations')]
-              : widget.isAssociation
-                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')]
-                  : (_statut == 'sorti' && !_isNewOwner
-                      ? const [Tab(text: 'Identité'), Tab(text: 'Documents')]
-                      : (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab
-                          ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Documents')]
-                          : const [Tab(text: 'Identité'), Tab(text: 'Documents'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')])),
+              : widget.educationMode
+                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Éducation'), Tab(text: 'Documents')]
+                  : widget.isAssociation
+                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')]
+                      : (_statut == 'sorti' && !_isNewOwner
+                          ? const [Tab(text: 'Identité'), Tab(text: 'Documents')]
+                          : (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab
+                              ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Documents')]
+                              : const [Tab(text: 'Identité'), Tab(text: 'Documents'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')])),
         ),
       ),
       body: TabBarView(
@@ -1493,7 +1497,14 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
                 _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
               ]
-            : widget.isAssociation
+            : widget.educationMode
+                ? [
+                    _IdentiteTab(this),
+                    _CarnetSanteTab(animalId: widget.animalId),
+                    _EducationTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text),
+                    _DocumentsTab(animalId: widget.animalId ?? ''),
+                  ]
+                : widget.isAssociation
                 ? [
                     _IdentiteTab(this),
                     _CarnetSanteTab(animalId: widget.animalId),
@@ -9557,6 +9568,156 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
 }
 
 // ─── Onglet Consultations (vue propriétaire) ─────────────────────────────────
+
+// ── Éducateur/comportementaliste : suivi de progression + exercices ─────────
+
+class _EducationTab extends StatefulWidget {
+  final String? animalId;
+  final String? ownerUid;
+  final String animalNom;
+  const _EducationTab({required this.animalId, required this.ownerUid, required this.animalNom});
+
+  @override
+  State<_EducationTab> createState() => _EducationTabState();
+}
+
+class _EducationTabState extends State<_EducationTab> {
+  static const _purple = Color(0xFF7B5EA7);
+  final _supa = Supabase.instance.client;
+
+  bool _loading = true;
+  bool _saving = false;
+  bool _showAdd = false;
+  List<Map<String, dynamic>> _rapports = [];
+  final _contenuCtrl = TextEditingController();
+  final _exercicesCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _contenuCtrl.dispose();
+    _exercicesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    if (widget.animalId == null) { setState(() => _loading = false); return; }
+    try {
+      final rows = await _supa.from('education_progression').select()
+          .eq('animal_id', widget.animalId!).order('date_seance', ascending: false);
+      if (mounted) setState(() { _rapports = List<Map<String, dynamic>>.from(rows as List); _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _soumettre() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || widget.animalId == null || _contenuCtrl.text.trim().isEmpty) return;
+    setState(() => _saving = true);
+    try {
+      await _supa.from('education_progression').insert({
+        'pro_uid': uid,
+        'animal_id': widget.animalId,
+        'owner_uid': widget.ownerUid,
+        'date_seance': DateTime.now().toIso8601String().substring(0, 10),
+        'contenu': _contenuCtrl.text.trim(),
+        if (_exercicesCtrl.text.trim().isNotEmpty) 'exercices_conseilles': _exercicesCtrl.text.trim(),
+      });
+      if (widget.ownerUid != null) {
+        final proNom = User_Info.nameElevage.isNotEmpty
+            ? User_Info.nameElevage
+            : '${User_Info.firstname} ${User_Info.lastname}'.trim();
+        try {
+          await _supa.from('notifications').insert({
+            'uid': widget.ownerUid,
+            'type': 'education_rapport',
+            'title': 'Rapport de séance — ${widget.animalNom}',
+            'body': '${proNom.isNotEmpty ? proNom : 'Votre éducateur'} a envoyé un rapport de séance pour ${widget.animalNom}.',
+            'data': <String, dynamic>{'animalId': widget.animalId, 'animalNom': widget.animalNom},
+            'read': false,
+          });
+        } catch (_) {}
+      }
+      _contenuCtrl.clear();
+      _exercicesCtrl.clear();
+      setState(() => _showAdd = false);
+      await _load();
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: _purple));
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => setState(() => _showAdd = !_showAdd),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Ajouter un rapport de séance', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            style: OutlinedButton.styleFrom(foregroundColor: _purple, side: const BorderSide(color: _purple)),
+          ),
+        ),
+        if (_showAdd) ...[
+          const SizedBox(height: 12),
+          TextField(controller: _contenuCtrl, maxLines: 3, decoration: const InputDecoration(
+              labelText: 'Compte rendu', hintText: 'Déroulé de la séance, observations, progrès…', border: OutlineInputBorder())),
+          const SizedBox(height: 10),
+          TextField(controller: _exercicesCtrl, maxLines: 2, decoration: const InputDecoration(
+              labelText: 'Exercices conseillés', hintText: 'Exercices à faire à la maison…', border: OutlineInputBorder())),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _saving ? null : _soumettre,
+              style: ElevatedButton.styleFrom(backgroundColor: _purple, padding: const EdgeInsets.symmetric(vertical: 12)),
+              child: _saving
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Text('Envoyer au propriétaire', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        if (_rapports.isEmpty)
+          Text('Aucun rapport de séance pour l\'instant.', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500))
+        else
+          ..._rapports.map((r) => Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(r['date_seance']?.toString() ?? '', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+              const SizedBox(height: 6),
+              Text(r['contenu']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
+              if ((r['exercices_conseilles']?.toString() ?? '').isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(8)),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('🏋️ Exercices conseillés', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 11, color: Color(0xFF4A7A32))),
+                    const SizedBox(height: 2),
+                    Text(r['exercices_conseilles'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF4A7A32))),
+                  ]),
+                ),
+              ],
+            ]),
+          )),
+      ]),
+    );
+  }
+}
 
 class _ConsultationsOwnerTab extends StatefulWidget {
   final String? animalId;
