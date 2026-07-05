@@ -249,6 +249,7 @@ const MENU_EDUCATION = [
       { href: '/mes-rdv',            label: 'Gérer mes RDV',      icon: '🗓️' },
       { href: '/pro/creneaux',       label: 'Mes créneaux',       icon: '⏰' },
       { href: '/agenda',             label: 'Mon agenda',         icon: '📅' },
+      { href: '/mes-patients',       label: 'Mes élèves',         icon: '🐾' },
     ],
   },
   {

@@ -815,6 +815,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [durees, setDurees] = useState<Record<string, number>>({});
   const [tarifsLogements, setTarifsLogements] = useState<Record<string, number>>({});
   const [tarifsEducation, setTarifsEducation] = useState<Record<string, number>>({});
+  const [educationBilanRequis, setEducationBilanRequis] = useState(true);
   const [forfaits, setForfaits] = useState<{ id: string; nom: string; nb_seances: number; prix: number }[]>([]);
   const [loadingForfaits, setLoadingForfaits] = useState(false);
   const [showForfaitModal, setShowForfaitModal] = useState(false);
@@ -872,6 +873,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         if (r.tarifs_education && typeof r.tarifs_education === 'object') {
           setTarifsEducation(r.tarifs_education as Record<string, number>);
         }
+        setEducationBilanRequis((r.education_bilan_requis as boolean) ?? true);
         setArrhesPourcentage(((r.arrhes_pourcentage as number) ?? 0));
         setLoading(false);
         if (cat === 'education') loadForfaits();
@@ -927,7 +929,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         ? { tarifs_logements: tarifsLogements, arrhes_pourcentage: arrhesPourcentage }
         : {}),
       ...((data?.profile_type ?? data?.cat_pro) === 'education'
-        ? { tarifs_education: tarifsEducation }
+        ? { tarifs_education: tarifsEducation, education_bilan_requis: educationBilanRequis }
         : {}),
     };
 
@@ -1175,6 +1177,23 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                     className={inputCls} />
                 </div>
               ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Bilan préalable obligatoire (éducateur) */}
+        {catPro === 'education' && (
+          <Card title="Exiger un bilan avant les cours">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-xs text-gray-500 flex-1">
+                Un nouveau client ne pourra réserver qu&apos;un bilan tant qu&apos;il n&apos;a pas eu de séance confirmée avec vous.
+              </p>
+              <button type="button" onClick={() => setEducationBilanRequis(v => !v)}
+                className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+                style={{ backgroundColor: educationBilanRequis ? '#7B5EA7' : '#D1D5DB' }}>
+                <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
+                  style={{ transform: educationBilanRequis ? 'translateX(20px)' : 'translateX(0)' }} />
+              </button>
             </div>
           </Card>
         )}

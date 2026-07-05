@@ -20,6 +20,7 @@ interface ProData {
   rayon: number; cat_pro: string; profileTableId?: string;
   statut_pro?: string; siret?: string; is_premium?: boolean;
   tarifs_education?: Record<string, number>;
+  education_bilan_requis?: boolean;
 }
 interface Slot { date: string; heureDebut: string; heureFin: string; }
 interface Animal { id: number; nom: string; espece: string; }
@@ -124,6 +125,7 @@ function ProDetailContent() {
   const [inscriptionCours, setInscriptionCours] = useState<CoursCollectif | null>(null);
   const [inscriptionAnimalId, setInscriptionAnimalId] = useState<number | null>(null);
   const [inscrivant, setInscrivant] = useState(false);
+  const [isFirstTimeEducationClient, setIsFirstTimeEducationClient] = useState(false);
 
   useEffect(() => { loadPro(); }, [uid]);
 
@@ -148,6 +150,7 @@ function ProDetailContent() {
           rayon: data.rayon_intervention || 0,
           cat_pro: data.profile_type || data.cat_pro || '',
           tarifs_education: (data.tarifs_education as Record<string, number>) ?? {},
+          education_bilan_requis: (data.education_bilan_requis as boolean) ?? true,
         };
       } else {
         const { data } = await supabase.from('users').select('*').eq('uid', uid).maybeSingle();
@@ -272,6 +275,16 @@ function ProDetailContent() {
       supabase.from('animaux_proprietes').select('animal_id')
         .eq('uid_proprio', user.uid).is('date_fin', null),
     ]);
+
+    // Éducateur : un nouveau client ne peut réserver qu'un bilan tant qu'il
+    // n'a pas eu de séance confirmée avec ce pro (sauf si le pro désactive
+    // cette exigence dans son profil).
+    if (pro?.cat_pro === 'education') {
+      const { data: priorRdv } = await supabase.from('rdv').select('id')
+        .eq('client_uid', user.uid).eq('pro_uid', uid).eq('pro_profile_id', profileId)
+        .in('statut', ['confirme', 'termine']).limit(1);
+      setIsFirstTimeEducationClient((priorRdv ?? []).length === 0);
+    }
     const rawSlots = (slotsRes.data ?? []) as { date: string; heure_debut: string; heure_fin: string }[];
     setSlots(rawSlots.map(s => ({ date: s.date, heureDebut: s.heure_debut, heureFin: s.heure_fin })));
 
@@ -331,7 +344,10 @@ function ProDetailContent() {
   }, {});
   const availableDates = Object.keys(slotsByDate).sort();
 
-  const motifs = MOTIFS_BY_CAT[pro?.cat_pro ?? ''] ?? DEFAULT_MOTIFS;
+  const requiresBilanFirst = pro?.cat_pro === 'education' && pro.education_bilan_requis !== false && isFirstTimeEducationClient;
+  const motifs = requiresBilanFirst
+    ? (MOTIFS_BY_CAT.education ?? []).filter(m => m.key === 'evaluation')
+    : MOTIFS_BY_CAT[pro?.cat_pro ?? ''] ?? DEFAULT_MOTIFS;
   const isVet  = pro?.cat_pro === 'veterinaire' || pro?.cat_pro === 'sante';
   const catColor = CAT_COLORS[pro?.cat_pro ?? ''] ?? '#0C5C6C';
 
@@ -648,6 +664,11 @@ function ProDetailContent() {
                   <div>
                     <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5"
                       style={{ fontFamily: 'Galey, sans-serif' }}>Motif *</p>
+                    {requiresBilanFirst && (
+                      <p className="text-xs text-gray-500 mb-2.5">
+                        Premier rendez-vous avec ce professionnel : un bilan est requis avant de réserver un cours.
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 gap-2">
                       {motifs.map(m => (
                         <button key={m.key} onClick={() => setMotifKey(m.key)}

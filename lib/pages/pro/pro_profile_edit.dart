@@ -87,6 +87,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   // Éducateur/comportementaliste : forfaits (packs de séances)
   List<Map<String, dynamic>> _forfaits = [];
   bool _loadingForfaits = false;
+  bool _educationBilanRequis = true;
 
   static const _defaultDureesByCatPro = <String, Map<String, int>>{
     'veterinaire': {'consultation': 30, 'vaccination': 20, 'bilan': 45, 'urgence': 60, 'chirurgie': 120, 'autre': 30},
@@ -221,6 +222,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
             (row['tarifs_education'] as Map).map((k, v) =>
                 MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)));
         }
+        _educationBilanRequis = row['education_bilan_requis'] as bool? ?? true;
         _arrhesPourcentage = (row['arrhes_pourcentage'] as num?)?.toInt() ?? 0;
         if (row['horaires'] is Map) {
           for (final j in _jours) {
@@ -471,6 +473,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
+          if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           'rue':                _rueCtrl.text.trim(),
           'ville':              _villeCtrl.text.trim(),
           'code_postal':        _cpCtrl.text.trim(),
@@ -510,6 +513,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
+          if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           'rue_elevage':          _rueCtrl.text.trim(),
           'ville_elevage':        _villeCtrl.text.trim(),
           'code_postal_elevage':  _cpCtrl.text.trim(),
@@ -860,6 +864,24 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                         ),
                       ]),
                     )),
+                  ],
+
+                  // ── Bilan préalable obligatoire (éducateur) ───────────────
+                  if (_catPro == 'education') ...[
+                    const SizedBox(height: 24),
+                    Row(children: [
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        _sectionTitle('Exiger un bilan avant les cours'),
+                        const SizedBox(height: 4),
+                        Text('Un nouveau client ne pourra réserver qu\'un bilan tant qu\'il n\'a pas eu de séance confirmée avec vous.',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+                      ])),
+                      Switch(
+                        value: _educationBilanRequis,
+                        activeThumbColor: const Color(0xFF7B5EA7),
+                        onChanged: (v) => setState(() => _educationBilanRequis = v),
+                      ),
+                    ]),
                   ],
 
                   // ── Forfaits éducateur/comportementaliste ─────────────────

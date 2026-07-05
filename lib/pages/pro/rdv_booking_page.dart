@@ -77,6 +77,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   String _catPro = '';
   String? _selectedMotifKey; // pour les pros autres que vet/pension
 
+  // Éducateur : un nouveau client ne peut réserver qu'un bilan tant qu'il
+  // n'a pas eu de séance confirmée avec ce pro (sauf si le pro désactive
+  // cette exigence dans son profil).
+  bool _educationBilanRequis = true;
+  bool _isFirstTimeEducationClient = false;
+
   static const _motifLabels = <String, String>{
     'consultation': 'Consultation', 'vaccination': 'Vaccination',
     'bilan': 'Bilan annuel', 'urgence': 'Urgence', 'chirurgie': 'Chirurgie',
@@ -177,7 +183,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final row = (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
           ? await Supabase.instance.client
               .from('user_profiles')
-              .select('durees_motifs, profile_type, cat_pro')
+              .select('durees_motifs, profile_type, cat_pro, education_bilan_requis')
               .eq('id', widget.proProfileId!)
               .maybeSingle()
           : await Supabase.instance.client
@@ -199,6 +205,30 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           _dureesMotifs = Map<String, int>.from(
               _defaultDureesByCatPro[cat] ?? {'consultation': 30, 'autre': 30});
         }
+        _educationBilanRequis = row['education_bilan_requis'] as bool? ?? true;
+        if (_catPro == 'education') await _checkFirstTimeEducationClient();
+      }
+    } catch (_) {}
+  }
+
+  // Un client est "nouveau" s'il n'a jamais eu de séance confirmée/terminée
+  // avec ce pro — tant que le pro exige un bilan préalable, ses choix de
+  // motif sont alors restreints à l'évaluation seule.
+  Future<void> _checkFirstTimeEducationClient() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      var q = Supabase.instance.client.from('rdv').select('id')
+          .eq('client_uid', uid).eq('pro_uid', widget.proUid)
+          .inFilter('statut', ['confirme', 'termine']);
+      if (widget.proProfileId != null && widget.proProfileId!.isNotEmpty) {
+        q = q.eq('pro_profile_id', widget.proProfileId!);
+      }
+      final rows = await q.limit(1);
+      _isFirstTimeEducationClient = (rows as List).isEmpty;
+      if (_educationBilanRequis && _isFirstTimeEducationClient && _dureesMotifs.containsKey('evaluation')) {
+        _dureesMotifs = {'evaluation': _dureesMotifs['evaluation'] ?? 45};
+        _selectedMotifKey = 'evaluation';
       }
     } catch (_) {}
   }
@@ -877,6 +907,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     if (_dureesMotifs.isEmpty) return _buildStandardMotif();
     return [
       _sectionTitle('Type de prestation *'),
+      if (_catPro == 'education' && _educationBilanRequis && _isFirstTimeEducationClient) ...[
+        const SizedBox(height: 6),
+        Text('Premier rendez-vous avec ce professionnel : un bilan est requis avant de réserver un cours.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+      ],
       const SizedBox(height: 10),
       Wrap(
         spacing: 8, runSpacing: 8,

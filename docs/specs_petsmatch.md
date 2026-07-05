@@ -4037,6 +4037,25 @@ voir §20.2.
   - Stripe : `/api/stripe/checkout` était déjà générique par
     `profil_type` (confirmé dans le code) — aucune modification de code
     nécessaire côté paiement, juste le seed de `plans_tarifaires`.
+- **Bilan préalable obligatoire pour les nouveaux clients** (session 2026-07-05) :
+  un nouveau client ne peut réserver qu'un bilan (évaluation) tant qu'il n'a
+  pas eu de séance confirmée/terminée avec ce pro — configurable par
+  l'éducateur (certains acceptent la prise de cours directement). Nouveau
+  toggle "Exiger un bilan avant les cours" dans le profil (app + web,
+  colonne `user_profiles.education_bilan_requis`, défaut `true`). Le flux
+  de réservation (`RdvBookingPage` app, `services/pro/[uid]/page.tsx` web)
+  vérifie si le client a déjà un RDV `confirme`/`termine` avec ce pro ;
+  si non et que l'exigence est active, seul le motif "Évaluation" est
+  proposé, avec un message explicatif.
+- **Lien "Mes élèves" manquant dans le menu web éducateur** : la page
+  `/mes-patients` (déjà générique, déjà labellisée "Mes élèves" pour
+  `cat_pro = 'education'`) n'était pas dans `MENU_EDUCATION` — ajouté.
+- **Bug critique découvert et corrigé — colonne `rdv.notes_annulation`
+  inexistante** : référencée dans 5 fichiers (app + web) pour stocker le
+  motif de refus/annulation, mais jamais créée en base. Toute requête
+  `SELECT` la nommant explicitement échouait (erreur Postgres 42703),
+  cassant l'affichage complet de "Mes RDV" pour **tous les profils**, pas
+  seulement éducateur. Migration ajoutée pour créer la colonne manquante.
 
 ### 20.2 — Reste à faire 🔨 (Phase 2, explicitement différé)
 
@@ -4063,6 +4082,10 @@ supabase/migration_education_cours_collectifs.sql -- cours_collectifs,
 supabase/migration_education_plans_tarifaires.sql -- 3 formules éducateur dans plans_tarifaires
 supabase/migration_education_forfaits.sql         -- table forfaits_education,
                                                    -- colonne prix sur cours_collectifs_participants
+supabase/migration_education_bilan_requis.sql     -- colonne education_bilan_requis sur user_profiles
+supabase/migration_rdv_notes_annulation.sql        -- IMPORTANT (bug critique) : colonne
+                                                   -- notes_annulation manquante sur rdv,
+                                                   -- cassait "Mes RDV" pour tous les profils
 ```
 
 ---
