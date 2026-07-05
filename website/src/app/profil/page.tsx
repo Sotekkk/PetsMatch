@@ -815,6 +815,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [durees, setDurees] = useState<Record<string, number>>({});
   const [tarifsLogements, setTarifsLogements] = useState<Record<string, number>>({});
   const [tarifsEducation, setTarifsEducation] = useState<Record<string, number>>({});
+  const [forfaits, setForfaits] = useState<{ id: string; nom: string; nb_seances: number; prix: number }[]>([]);
+  const [loadingForfaits, setLoadingForfaits] = useState(false);
+  const [showForfaitModal, setShowForfaitModal] = useState(false);
   const [arrhesPourcentage, setArrhesPourcentage] = useState(0);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -871,8 +874,31 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         }
         setArrhesPourcentage(((r.arrhes_pourcentage as number) ?? 0));
         setLoading(false);
+        if (cat === 'education') loadForfaits();
       });
-  }, [profileId]);
+  }, [profileId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function loadForfaits() {
+    setLoadingForfaits(true);
+    const { data: rows } = await supabase.from('forfaits_education')
+      .select('id, nom, nb_seances, prix').eq('pro_uid', uid).eq('actif', true).order('created_at');
+    setForfaits((rows ?? []) as { id: string; nom: string; nb_seances: number; prix: number }[]);
+    setLoadingForfaits(false);
+  }
+
+  async function ajouterForfait(nom: string, nbSeances: number, prix: number, description: string) {
+    await supabase.from('forfaits_education').insert({
+      pro_uid: uid, pro_profile_id: profileId, nom, nb_seances: nbSeances, prix,
+      description: description || null,
+    });
+    setShowForfaitModal(false);
+    loadForfaits();
+  }
+
+  async function supprimerForfait(id: string) {
+    await supabase.from('forfaits_education').update({ actif: false }).eq('id', id);
+    loadForfaits();
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -1153,6 +1179,35 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </Card>
         )}
 
+        {/* Forfaits éducateur/comportementaliste */}
+        {catPro === 'education' && (
+          <Card title="Forfaits (packs de séances)">
+            {loadingForfaits ? (
+              <p className="text-sm text-gray-400">Chargement…</p>
+            ) : forfaits.length === 0 ? (
+              <p className="text-sm text-gray-400 mb-3">Aucun forfait pour l&apos;instant.</p>
+            ) : (
+              <div className="space-y-2 mb-3">
+                {forfaits.map(f => (
+                  <div key={f.id} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
+                    <div>
+                      <p className="text-sm font-semibold text-[#1E2025]">{f.nom}</p>
+                      <p className="text-xs text-gray-500">{f.nb_seances} séances — {f.prix} €</p>
+                    </div>
+                    <button onClick={() => supprimerForfait(f.id)} className="text-red-400 hover:text-red-600 text-sm">
+                      Supprimer
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={() => setShowForfaitModal(true)}
+              className="text-sm font-semibold text-[#7B5EA7] hover:underline">
+              + Ajouter un forfait
+            </button>
+          </Card>
+        )}
+
         {/* Certifications */}
         <Card title="Certifications & diplômes">
           {certifications.map((c, i) => (
@@ -1194,6 +1249,50 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             {saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>
           {saved && <span className="text-[#6E9E57] text-sm font-medium">✓ Profil mis à jour</span>}
+        </div>
+      </div>
+
+      {showForfaitModal && (
+        <ForfaitModal onClose={() => setShowForfaitModal(false)} onSave={ajouterForfait} />
+      )}
+    </div>
+  );
+}
+
+function ForfaitModal({ onClose, onSave }: {
+  onClose: () => void;
+  onSave: (nom: string, nbSeances: number, prix: number, description: string) => void;
+}) {
+  const [nom, setNom] = useState('');
+  const [nbSeances, setNbSeances] = useState('5');
+  const [prix, setPrix] = useState('');
+  const [description, setDescription] = useState('');
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+        <h3 className="font-bold text-base mb-4 text-[#1E2025]">Nouveau forfait</h3>
+        <div className="space-y-3">
+          <input value={nom} onChange={e => setNom(e.target.value)} placeholder="Nom du forfait (ex : Pack 5 séances)"
+            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
+          <div className="grid grid-cols-2 gap-3">
+            <input type="number" value={nbSeances} onChange={e => setNbSeances(e.target.value)} placeholder="Nb séances"
+              className="px-3 py-2 border border-gray-200 rounded-xl text-sm" />
+            <input type="number" value={prix} onChange={e => setPrix(e.target.value)} placeholder="Prix (€)"
+              className="px-3 py-2 border border-gray-200 rounded-xl text-sm" />
+          </div>
+          <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optionnel)" rows={2}
+            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-none" />
+        </div>
+        <div className="flex gap-3 mt-4">
+          <button onClick={onClose} className="flex-1 border border-gray-200 rounded-xl py-2.5 text-sm font-semibold">
+            Annuler
+          </button>
+          <button
+            onClick={() => nom.trim() && onSave(nom.trim(), parseInt(nbSeances, 10) || 1, parseFloat(prix) || 0, description.trim())}
+            className="flex-1 text-white rounded-xl py-2.5 text-sm font-semibold" style={{ backgroundColor: '#7B5EA7' }}>
+            Créer
+          </button>
         </div>
       </div>
     </div>

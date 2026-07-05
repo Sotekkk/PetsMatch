@@ -84,6 +84,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     ('domicile_supplement', 'Supplément à domicile'),
   ];
 
+  // Éducateur/comportementaliste : forfaits (packs de séances)
+  List<Map<String, dynamic>> _forfaits = [];
+  bool _loadingForfaits = false;
+
   static const _defaultDureesByCatPro = <String, Map<String, int>>{
     'veterinaire': {'consultation': 30, 'vaccination': 20, 'bilan': 45, 'urgence': 60, 'chirurgie': 120, 'autre': 30},
     'pension':     {'visite': 30, 'arrivee': 60, 'depart': 30, 'autre': 30},
@@ -240,6 +244,80 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       }
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
+    if (_catPro == 'education') await _loadForfaits();
+  }
+
+  Future<void> _loadForfaits() async {
+    setState(() => _loadingForfaits = true);
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid;
+      final rows = await _supa.from('forfaits_education').select()
+          .eq('pro_uid', uid).eq('actif', true).order('created_at');
+      if (mounted) setState(() => _forfaits = List<Map<String, dynamic>>.from(rows as List));
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _loadingForfaits = false);
+    }
+  }
+
+  Future<void> _ajouterForfait() async {
+    final nomCtrl = TextEditingController();
+    final seancesCtrl = TextEditingController(text: '5');
+    final prixCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Nouveau forfait', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 16),
+          TextField(controller: nomCtrl, decoration: const InputDecoration(
+              labelText: 'Nom du forfait', hintText: 'Ex : Pack 5 séances', border: OutlineInputBorder())),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: TextField(controller: seancesCtrl, keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Nb séances', border: OutlineInputBorder()))),
+            const SizedBox(width: 8),
+            Expanded(child: TextField(controller: prixCtrl, keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Prix (€)', border: OutlineInputBorder()))),
+          ]),
+          const SizedBox(height: 12),
+          TextField(controller: descCtrl, maxLines: 2, decoration: const InputDecoration(
+              labelText: 'Description (optionnel)', border: OutlineInputBorder())),
+          const SizedBox(height: 20),
+          SizedBox(width: double.infinity, child: ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7B5EA7), padding: const EdgeInsets.symmetric(vertical: 14)),
+            child: const Text('Créer le forfait', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
+          )),
+        ]),
+      ),
+    );
+    if (result != true || nomCtrl.text.trim().isEmpty) return;
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid;
+      await _supa.from('forfaits_education').insert({
+        'pro_uid': uid,
+        if (widget.secondaryProfileId != null) 'pro_profile_id': widget.secondaryProfileId,
+        'nom': nomCtrl.text.trim(),
+        'nb_seances': int.tryParse(seancesCtrl.text.trim()) ?? 1,
+        'prix': double.tryParse(prixCtrl.text.trim()) ?? 0,
+        if (descCtrl.text.trim().isNotEmpty) 'description': descCtrl.text.trim(),
+      });
+      await _loadForfaits();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      }
+    }
+  }
+
+  Future<void> _supprimerForfait(String id) async {
+    await _supa.from('forfaits_education').update({'actif': false}).eq('id', id);
+    await _loadForfaits();
   }
 
   // ── Geocoding ─────────────────────────────────────────────────────────────────
@@ -782,6 +860,42 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                         ),
                       ]),
                     )),
+                  ],
+
+                  // ── Forfaits éducateur/comportementaliste ─────────────────
+                  if (_catPro == 'education') ...[
+                    const SizedBox(height: 24),
+                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                      _sectionTitle('Forfaits (packs de séances)'),
+                      TextButton.icon(
+                        onPressed: _ajouterForfait,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                        style: TextButton.styleFrom(foregroundColor: const Color(0xFF7B5EA7)),
+                      ),
+                    ]),
+                    const SizedBox(height: 8),
+                    if (_loadingForfaits)
+                      const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Center(child: CircularProgressIndicator()))
+                    else if (_forfaits.isEmpty)
+                      Text('Aucun forfait pour l\'instant.', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500))
+                    else
+                      ..._forfaits.map((f) => Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(color: const Color(0xFFF8F8F6), borderRadius: BorderRadius.circular(12)),
+                        child: Row(children: [
+                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(f['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+                            Text('${f['nb_seances']} séances — ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €',
+                                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                          ])),
+                          IconButton(
+                            onPressed: () => _supprimerForfait(f['id'] as String),
+                            icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
+                          ),
+                        ]),
+                      )),
                   ],
 
                   // ── Horaires ──────────────────────────────────────────────

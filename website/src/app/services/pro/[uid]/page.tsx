@@ -19,6 +19,7 @@ interface ProData {
   tarifs: string; site_web: string; instagram: string; facebook: string;
   rayon: number; cat_pro: string; profileTableId?: string;
   statut_pro?: string; siret?: string; is_premium?: boolean;
+  tarifs_education?: Record<string, number>;
 }
 interface Slot { date: string; heureDebut: string; heureFin: string; }
 interface Animal { id: number; nom: string; espece: string; }
@@ -146,6 +147,7 @@ function ProDetailContent() {
           instagram: data.instagram || '', facebook: data.facebook || '',
           rayon: data.rayon_intervention || 0,
           cat_pro: data.profile_type || data.cat_pro || '',
+          tarifs_education: (data.tarifs_education as Record<string, number>) ?? {},
         };
       } else {
         const { data } = await supabase.from('users').select('*').eq('uid', uid).maybeSingle();
@@ -216,11 +218,13 @@ function ProDetailContent() {
         setInscriptionCours(null);
         return;
       }
+      const prixCours = pro.tarifs_education?.cours_collectif;
       await supabase.from('cours_collectifs_participants').insert({
         cours_id: inscriptionCours.id,
         client_uid: user.uid,
         ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
         animal_id: inscriptionAnimalId || null,
+        ...(prixCours ? { prix: prixCours } : {}),
       });
       const animalNom = animaux.find(a => a.id === inscriptionAnimalId)?.nom ?? 'son animal';
       const { data: userData } = await supabase.from('users').select('firstname, lastname').eq('uid', user.uid).maybeSingle();
@@ -499,6 +503,11 @@ function ProDetailContent() {
                           <p className={`text-xs ${complet ? 'text-orange-600' : 'text-gray-400'}`}>
                             {complet ? 'Complet' : `${inscrits} / ${c.capacite_max} places`}
                           </p>
+                          {!!pro.tarifs_education?.cours_collectif && (
+                            <p className="text-xs font-bold" style={{ color: '#7B5EA7' }}>
+                              {pro.tarifs_education.cours_collectif} €
+                            </p>
+                          )}
                         </div>
                         <button onClick={() => openInscription(c)} disabled={complet}
                           className="px-3.5 py-2 rounded-full text-xs font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"

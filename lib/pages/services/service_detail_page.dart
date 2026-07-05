@@ -151,11 +151,14 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
         }
         return;
       }
+      final tarifs = _proData?['tarifs_education'];
+      final prix = tarifs is Map ? (tarifs['cours_collectif'] as num?) : null;
       await _supa.from('cours_collectifs_participants').insert({
         'cours_id': coursId,
         'client_uid': uid,
         if (User_Info.activeProfileId.isNotEmpty) 'client_profile_id': User_Info.activeProfileId,
         'animal_id': animal['id']?.toString(),
+        if (prix != null) 'prix': prix,
       });
       final clientName = FirebaseAuth.instance.currentUser?.displayName?.isNotEmpty == true
           ? FirebaseAuth.instance.currentUser!.displayName!
@@ -561,6 +564,8 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                   final inscrits = _participantsCount[c['id']] ?? 0;
                   final capacite = c['capacite_max'] as int? ?? 0;
                   final complet = inscrits >= capacite;
+                  final tarifs = _proData?['tarifs_education'];
+                  final prixCours = tarifs is Map ? (tarifs['cours_collectif'] as num?) : null;
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.all(12),
@@ -579,6 +584,9 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                         Text(complet ? 'Complet' : '$inscrits / $capacite places',
                             style: TextStyle(fontFamily: 'Galey', fontSize: 11,
                                 color: complet ? Colors.orange.shade700 : Colors.grey.shade500)),
+                        if (prixCours != null && prixCours > 0)
+                          Text('${prixCours.toStringAsFixed(0)} €',
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF7B5EA7))),
                       ])),
                       const SizedBox(width: 8),
                       ElevatedButton(

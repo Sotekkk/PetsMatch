@@ -4048,7 +4048,7 @@ automatisée + forfaits → devis auto → notification avant séance → GPS/é
 | Réservation en ligne des cours collectifs | ✅ Livré (session 2026-07-04) : le client parcourt les cours collectifs à venir d'un pro directement sur sa fiche publique (app `service_detail_page.dart`, web `services/pro/[uid]/page.tsx`), choisit l'animal concerné, s'inscrit avec vérification de capacité (refus si complet), et le pro reçoit une notification (`type: 'cours_collectif_inscription'`, cliquable vers le planning). | Livré |
 | Cours à domicile + GPS/trajet | Aucune API d'itinéraire n'existe dans le projet (seulement distance à vol d'oiseau via `Geolocator.distanceBetween`). Nécessite l'intégration d'une API Directions/Distance Matrix. | Non commencé |
 | Équipe d'intervenants | Le système `employes` ne gère que des permissions d'accès aux fonctionnalités, pas d'assignation à un RDV/cours précis. Nécessiterait une colonne/table d'assignation (`instructeur_profile_id` ou table de jointure). | Non commencé |
-| Tarification automatisée + forfaits | Tarifs actuels = prix fixe par prestation, saisis manuellement. Pas de calcul automatique (poids animal, etc.) ni de concept de forfait (pack de N séances). | Non commencé |
+| Tarification automatisée + forfaits | ✅ Livré (session 2026-07-05) : (1) forfaits — le pro crée des packs de séances nommés (nom, nb séances, prix) dans son profil (`forfaits_education` table), affichés publiquement sur sa fiche pro (informationnel, pas de suivi de crédit/solde automatisé, même logique que `tarifs_education`) ; (2) tarification automatisée — le prix du cours collectif (`tarifs_education['cours_collectif']`) s'affiche désormais automatiquement au client lors de la réservation en ligne et est figé sur la ligne `cours_collectifs_participants.prix` au moment de l'inscription (pour référence/facturation même si le tarif change plus tard). Pas de calcul selon poids animal — jugé hors scope pour un éducateur (pertinent surtout pour la pension). | Livré |
 | Devis automatique | Aucun système de devis n'existe dans le projet (seulement contrats/factures). À construire à partir de zéro, probablement comme étape avant `contrats`/`factures`. | Non commencé |
 | Emails automatiques devis/contrats/factures | Dépend du devis (ci-dessus) ; contrats/factures existent déjà mais sans envoi email automatique dédié à l'éducateur. | Non commencé |
 | Notification avant séance + SMS | Notification in-app faisable (pattern déjà en place) ; SMS non implémenté nulle part dans le projet actuellement. | Non commencé |
@@ -4061,6 +4061,8 @@ supabase/migration_education_cours_collectifs.sql -- cours_collectifs,
                                                    -- cours_collectifs_participants,
                                                    -- tarifs_education sur user_profiles
 supabase/migration_education_plans_tarifaires.sql -- 3 formules éducateur dans plans_tarifaires
+supabase/migration_education_forfaits.sql         -- table forfaits_education,
+                                                   -- colonne prix sur cours_collectifs_participants
 ```
 
 ---
