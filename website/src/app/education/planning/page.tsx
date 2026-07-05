@@ -204,17 +204,30 @@ function CreateCoursModal({ proUid, proProfileId, onClose, onSaved }: {
     setSaving(true);
     setError('');
     const dateHeure = new Date(`${date}T${heure}:00`);
-    const { error: err } = await supabase.from('cours_collectifs').insert({
+    const dureeMinutes = parseInt(duree, 10) || 90;
+    const { data: inserted, error: err } = await supabase.from('cours_collectifs').insert({
       pro_uid: proUid,
       pro_profile_id: proProfileId,
       titre: titre.trim(),
       date_heure: dateHeure.toISOString(),
-      duree_minutes: parseInt(duree, 10) || 90,
+      duree_minutes: dureeMinutes,
       capacite_max: parseInt(capacite, 10) || 6,
       lieu: lieu.trim() || null,
       notes: notes.trim() || null,
-    });
+    }).select('id').single();
     if (err) { setError(err.message); setSaving(false); return; }
+    // Visible dans "Mon agenda" (même mécanisme que les RDV confirmés).
+    try {
+      await supabase.from('agenda_events').insert({
+        uid: proUid,
+        titre: `👥 ${titre.trim()}`,
+        type: 'cours_collectif',
+        date_debut: dateHeure.toISOString(),
+        duree_minutes: dureeMinutes,
+        couleur: `cours:${inserted?.id}`,
+        pro_profile_id: proProfileId,
+      });
+    } catch { /* ignore */ }
     onSaved();
   }
 
@@ -258,6 +271,7 @@ function CreateCoursModal({ proUid, proProfileId, onClose, onSaved }: {
 }
 
 function CoursDetailModal({ cours, onClose, onChanged }: { cours: Cours; onClose: () => void; onChanged: () => void }) {
+  const router = useRouter();
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -321,13 +335,21 @@ function CoursDetailModal({ cours, onClose, onChanged }: { cours: Cours; onClose
                     <p className="text-sm font-galey font-semibold">{p.client_nom}</p>
                     {p.animal_nom && <p className="text-xs font-galey text-gray-500">{p.animal_nom}</p>}
                   </div>
-                  <select value={p.statut} onChange={e => updateStatut(p.id, e.target.value)}
-                    className="text-xs font-galey border border-gray-200 rounded-lg px-2 py-1">
-                    <option value="inscrit">Inscrit</option>
-                    <option value="present">Présent</option>
-                    <option value="absent">Absent</option>
-                    <option value="annule">Retirer</option>
-                  </select>
+                  <div className="flex items-center gap-2">
+                    {p.animal_id && (
+                      <button onClick={() => router.push(`/mes-patients/${p.animal_id}?tab=Éducation`)}
+                        title="Ajouter un rapport" className="text-lg" style={{ color: PURPLE }}>
+                        🎓
+                      </button>
+                    )}
+                    <select value={p.statut} onChange={e => updateStatut(p.id, e.target.value)}
+                      className="text-xs font-galey border border-gray-200 rounded-lg px-2 py-1">
+                      <option value="inscrit">Inscrit</option>
+                      <option value="present">Présent</option>
+                      <option value="absent">Absent</option>
+                      <option value="annule">Retirer</option>
+                    </select>
+                  </div>
                 </div>
               ))}
             </div>

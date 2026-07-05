@@ -25,6 +25,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   late TabController _tabCtrl;
   bool _loading = true;
   List<Map<String, dynamic>> _rdvs = [];
+  List<Map<String, dynamic>> _aujourdhui = [];
 
   // AG08 — créneaux
   late DateTime _weekStart;
@@ -53,12 +54,36 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     _loadRdvs();
     _loadCreneaux();
     _loadDureesMotifs();
+    _loadAujourdhui();
     User_Info.profileNotifier.addListener(_onProfileChange);
   }
 
   void _onProfileChange() {
     _loadRdvs();
     _loadCreneaux();
+    _loadAujourdhui();
+  }
+
+  // Séances du jour (RDV + cours collectifs confondus, via agenda_events).
+  Future<void> _loadAujourdhui() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day);
+    final end = start.add(const Duration(days: 1));
+    try {
+      var q = Supabase.instance.client
+          .from('agenda_events')
+          .select()
+          .eq('uid', uid)
+          .gte('date_debut', start.toIso8601String())
+          .lt('date_debut', end.toIso8601String());
+      if (User_Info.activeProfileId.isNotEmpty) {
+        q = q.eq('pro_profile_id', User_Info.activeProfileId);
+      }
+      final rows = await q.order('date_debut');
+      if (mounted) setState(() => _aujourdhui = List<Map<String, dynamic>>.from(rows));
+    } catch (_) {}
   }
 
   Future<void> _loadDureesMotifs() async {
@@ -1272,19 +1297,59 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _teal))
-          : RefreshIndicator(
-              onRefresh: _loadRdvs,
-              color: _teal,
-              child: TabBarView(
-                controller: _tabCtrl,
-                children: [
-                  _buildList(_demandes, showActions: true),
-                  _buildList(_avenir, showCancel: true),
-                  _buildList(_historique, showDelete: true),
-                  _buildCreneauxTab(),
-                ],
+          : Column(children: [
+              if (_aujourdhui.isNotEmpty) _buildAujourdhuiCard(),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () async { await Future.wait([_loadRdvs(), _loadAujourdhui()]); },
+                  color: _teal,
+                  child: TabBarView(
+                    controller: _tabCtrl,
+                    children: [
+                      _buildList(_demandes, showActions: true),
+                      _buildList(_avenir, showCancel: true),
+                      _buildList(_historique, showDelete: true),
+                      _buildCreneauxTab(),
+                    ],
+                  ),
+                ),
               ),
-            ),
+            ]),
+    );
+  }
+
+  Widget _buildAujourdhuiCard() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _teal.withValues(alpha: 0.2)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('📅 Aujourd\'hui (${_aujourdhui.length})',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _teal)),
+        const SizedBox(height: 8),
+        ..._aujourdhui.map((e) {
+          final dh = DateTime.tryParse(e['date_debut']?.toString() ?? '')?.toLocal();
+          final heure = dh != null ? '${dh.hour.toString().padLeft(2, "0")}h${dh.minute.toString().padLeft(2, "0")}' : '';
+          final estCollectif = e['type'] == 'cours_collectif';
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(children: [
+              Container(width: 6, height: 6, margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(color: estCollectif ? const Color(0xFF7B5EA7) : _teal, shape: BoxShape.circle)),
+              Text(heure, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(e['titre']?.toString() ?? '',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.black87),
+                  overflow: TextOverflow.ellipsis)),
+            ]),
+          );
+        }),
+      ]),
     );
   }
 

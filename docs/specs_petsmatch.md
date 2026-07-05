@@ -4169,6 +4169,27 @@ supabase/migration_creneaux_type_prestation.sql    -- colonne type_prestation su
 supabase/migration_education_exercices_conseilles.sql  -- colonne exercices_conseilles sur education_progression
 ```
 
+## 23. Séances du jour + raccourci rapport depuis le planning (session 2026-07-05)
+
+- **Cours collectifs visibles dans l'agenda** : la création d'un cours
+  collectif (app `education_planning_page.dart`, web
+  `education/planning/page.tsx`) synchronise désormais aussi une entrée
+  `agenda_events` pour le pro (même mécanisme que les RDV confirmés,
+  `type: 'cours_collectif'`, `couleur: 'cours:<id>'`) — jusqu'ici un cours
+  collectif n'apparaissait nulle part dans l'agenda du pro qui l'avait créé.
+- **"Aujourd'hui" en tête d'agenda** : pas de page d'accueil dédiée
+  éducateur, donc résumé ajouté directement en tête de "Mon agenda"
+  (app `ProAgendaPage`, web `mes-rdv/page.tsx`) — liste compacte des
+  séances du jour (RDV confirmés + cours collectifs confondus, lues via
+  `agenda_events`), pastille violette pour les cours collectifs vs teal
+  pour les RDV individuels.
+- **Raccourci "Ajouter un rapport" depuis le planning** : dans le détail
+  d'un cours collectif (app + web), un bouton 🎓 par participant ouvre
+  directement l'onglet Éducation de la fiche de l'animal
+  (`AnimalFichePage(initialTabIndex: 2)` côté app,
+  `/mes-patients/[id]?tab=Éducation` côté web — nouveau support du
+  paramètre `?tab=` sur cette page).
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

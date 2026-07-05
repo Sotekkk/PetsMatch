@@ -900,6 +900,8 @@ export default function MesRdvPage() {
   const [modalModifier, setModalModifier] = useState<Rdv | null>(null);
   const [modalAnnuler, setModalAnnuler]   = useState<Rdv | null>(null);
 
+  const [aujourdhui, setAujourdhui] = useState<{ id: string; titre: string; date_debut: string; type: string }[]>([]);
+
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
   }, [loading, user, router]);
@@ -976,6 +978,22 @@ export default function MesRdvPage() {
   }, [user, activeProfileId]);
 
   useEffect(() => { fetchRdvs(); }, [fetchRdvs]);
+
+  const fetchAujourdhui = useCallback(async () => {
+    if (!user) return;
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const end = new Date(start); end.setDate(end.getDate() + 1);
+    try {
+      let q = supabase.from('agenda_events').select('id, titre, date_debut, type')
+        .eq('uid', user.uid)
+        .gte('date_debut', start.toISOString()).lt('date_debut', end.toISOString());
+      if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId);
+      const { data } = await q.order('date_debut');
+      setAujourdhui((data ?? []) as { id: string; titre: string; date_debut: string; type: string }[]);
+    } catch { /* ignore */ }
+  }, [user, activeProfileId]);
+
+  useEffect(() => { fetchAujourdhui(); }, [fetchAujourdhui]);
 
   async function marquerTermine(rdv: Rdv) {
     await supabase.from('rdv').update({ statut: 'termine' }).eq('id', rdv.id);
@@ -1072,6 +1090,29 @@ export default function MesRdvPage() {
       </div>
 
       <div className="max-w-3xl mx-auto px-4 py-6">
+        {/* Séances du jour (RDV + cours collectifs confondus) */}
+        {aujourdhui.length > 0 && (
+          <div className="bg-white rounded-2xl border p-4 mb-4" style={{ borderColor: `${TEAL}33` }}>
+            <p className="text-xs font-bold uppercase tracking-wide mb-2.5" style={{ fontFamily: 'Galey, sans-serif', color: TEAL }}>
+              📅 Aujourd&apos;hui ({aujourdhui.length})
+            </p>
+            <div className="space-y-1.5">
+              {aujourdhui.map(e => {
+                const dh = new Date(e.date_debut);
+                const heure = `${String(dh.getHours()).padStart(2, '0')}h${String(dh.getMinutes()).padStart(2, '0')}`;
+                const estCollectif = e.type === 'cours_collectif';
+                return (
+                  <div key={e.id} className="flex items-center gap-2 text-sm">
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: estCollectif ? '#7B5EA7' : TEAL }} />
+                    <span className="font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>{heure}</span>
+                    <span className="text-gray-600 truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{e.titre}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Onglet créneaux */}
         {activeTab === 'creneaux' && user && (
           <CreneauxTab uid={user.uid} profileId={activeProfileId ?? ''} />

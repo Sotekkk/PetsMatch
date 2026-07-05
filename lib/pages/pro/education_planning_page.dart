@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 
 const _kEducationTeal = Color(0xFF0C5C6C);
 const _kEducationPurple = Color(0xFF7B5EA7);
@@ -252,16 +253,30 @@ class _CoursCollectifSheetState extends State<_CoursCollectifSheet> {
     setState(() => _saving = true);
     try {
       final dateHeure = DateTime(_date.year, _date.month, _date.day, _heure.hour, _heure.minute);
-      await _supa.from('cours_collectifs').insert({
+      final dureeMinutes = int.tryParse(_dureeCtrl.text.trim()) ?? 90;
+      final titre = _titreCtrl.text.trim();
+      final inserted = await _supa.from('cours_collectifs').insert({
         'pro_uid': uid,
         'pro_profile_id': User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-        'titre': _titreCtrl.text.trim(),
+        'titre': titre,
         'date_heure': dateHeure.toIso8601String(),
-        'duree_minutes': int.tryParse(_dureeCtrl.text.trim()) ?? 90,
+        'duree_minutes': dureeMinutes,
         'capacite_max': int.tryParse(_capaciteCtrl.text.trim()) ?? 6,
         'lieu': _lieuCtrl.text.trim().isEmpty ? null : _lieuCtrl.text.trim(),
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-      });
+      }).select('id').single();
+      // Visible dans "Mon agenda" (même mécanisme que les RDV confirmés).
+      try {
+        await _supa.from('agenda_events').insert({
+          'uid': uid,
+          'titre': '👥 $titre',
+          'type': 'cours_collectif',
+          'date_debut': dateHeure.toIso8601String(),
+          'duree_minutes': dureeMinutes,
+          'couleur': 'cours:${inserted['id']}',
+          'pro_profile_id': User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+        });
+      } catch (_) {}
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
@@ -450,6 +465,19 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
                           if ((p['_animal_nom'] as String).isNotEmpty)
                             Text(p['_animal_nom'] as String, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
                         ])),
+                        if (p['animal_id'] != null)
+                          IconButton(
+                            icon: const Icon(Icons.school_outlined, size: 20, color: _kEducationPurple),
+                            tooltip: 'Ajouter un rapport',
+                            onPressed: () => Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => AnimalFichePage(
+                                animalId: p['animal_id'].toString(),
+                                readOnly: true,
+                                educationMode: true,
+                                initialTabIndex: 2,
+                              ),
+                            )),
+                          ),
                         PopupMenuButton<String>(
                           onSelected: (v) => _updateStatut(p['id'] as String, v),
                           itemBuilder: (_) => const [

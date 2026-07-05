@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
@@ -118,11 +118,12 @@ export default function PatientDetailPage() {
   const { user, userData } = useAuth();
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const animalId = params.id as string;
   const activeProfileId = useActiveProfile();
 
   const [catPro, setCatPro] = useState('');
-  const [tab, setTab] = useState('Identité');
+  const [tab, setTab] = useState(searchParams.get('tab') ?? 'Identité');
   const [animal, setAnimal] = useState<Animal | null>(null);
   const [owner, setOwner] = useState<Owner | null>(null);
   const [grant, setGrant] = useState<Grant | null>(null);
