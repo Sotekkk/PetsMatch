@@ -2673,7 +2673,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
         invitingProfileIds.isEmpty
             ? Future.value(<Map<String, dynamic>>[])
             : _supa.from('user_profiles')
-                .select('id, nom, name_elevage, avatar_url, profile_type')
+                .select('id, nom, avatar_url, profile_type')
                 .inFilter('id', invitingProfileIds),
         _supa.from('animaux')
             .select('id, nom, espece, race, photo_url, uid_eleveur')
@@ -2750,9 +2750,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
         final invitingProfileId = e['eleveur_profile_id'] as String?;
         final invitingProfile = invitingProfileId != null ? invitingProfileById[invitingProfileId] : null;
         if (invitingProfile != null) {
-          final nom = (invitingProfile['nom'] as String?)?.isNotEmpty == true
-              ? invitingProfile['nom'] as String
-              : (invitingProfile['name_elevage'] as String?) ?? '';
+          final nom = (invitingProfile['nom'] as String?) ?? '';
           if (nom.isNotEmpty) {
             u['name_elevage'] = nom;
             u['is_elevage'] = true;

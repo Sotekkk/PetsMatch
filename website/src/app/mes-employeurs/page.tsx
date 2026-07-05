@@ -168,11 +168,11 @@ export default function MesEmployeursPage() {
 
     // Profils user_profiles précis utilisés à l'invitation (peut différer du
     // compte principal — ex : invité depuis un profil pension secondaire).
-    type InvitingProfile = { id: string; nom: string | null; name_elevage: string | null; avatar_url: string | null };
+    type InvitingProfile = { id: string; nom: string | null; avatar_url: string | null };
     let invitingProfileById: Record<string, InvitingProfile> = {};
     if (allProfileIds.length > 0) {
       const { data: invitingProfiles } = await supabase.from('user_profiles')
-        .select('id, nom, name_elevage, avatar_url')
+        .select('id, nom, avatar_url')
         .in('id', allProfileIds) as unknown as { data: InvitingProfile[] | null };
       invitingProfileById = Object.fromEntries((invitingProfiles ?? []).map(p => [p.id, p]));
     }
@@ -264,7 +264,7 @@ export default function MesEmployeursPage() {
       // Si l'invitation vient d'un profil secondaire (ex : pension), afficher
       // le nom de CE profil plutôt que celui du compte principal.
       const invitingProfile = eleveurProfileId ? invitingProfileById[eleveurProfileId] : null;
-      const invitingNom = invitingProfile?.nom || invitingProfile?.name_elevage || '';
+      const invitingNom = invitingProfile?.nom || '';
       const nameOverride = invitingNom
         ? { name_elevage: invitingNom, is_elevage: true, profile_picture_url_elevage: invitingProfile?.avatar_url || u.profile_picture_url_elevage }
         : {};
