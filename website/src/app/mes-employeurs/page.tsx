@@ -166,6 +166,17 @@ export default function MesEmployeursPage() {
         : supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigned_to', user.uid).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue')) as unknown as Promise<{ data: PlanRow[] | null }>,
     ]);
 
+    // Profils user_profiles précis utilisés à l'invitation (peut différer du
+    // compte principal — ex : invité depuis un profil pension secondaire).
+    type InvitingProfile = { id: string; nom: string | null; name_elevage: string | null; avatar_url: string | null };
+    let invitingProfileById: Record<string, InvitingProfile> = {};
+    if (allProfileIds.length > 0) {
+      const { data: invitingProfiles } = await supabase.from('user_profiles')
+        .select('id, nom, name_elevage, avatar_url')
+        .in('id', allProfileIds) as unknown as { data: InvitingProfile[] | null };
+      invitingProfileById = Object.fromEntries((invitingProfiles ?? []).map(p => [p.id, p]));
+    }
+
     // Charger inventaire séparément pour éviter les problèmes de typage Promise.all
     let inventaireRaw: InvRow[] = [];
     if (allProfileIds.length > 0) {
@@ -250,8 +261,17 @@ export default function MesEmployeursPage() {
         return true;
       });
 
+      // Si l'invitation vient d'un profil secondaire (ex : pension), afficher
+      // le nom de CE profil plutôt que celui du compte principal.
+      const invitingProfile = eleveurProfileId ? invitingProfileById[eleveurProfileId] : null;
+      const invitingNom = invitingProfile?.nom || invitingProfile?.name_elevage || '';
+      const nameOverride = invitingNom
+        ? { name_elevage: invitingNom, is_elevage: true, profile_picture_url_elevage: invitingProfile?.avatar_url || u.profile_picture_url_elevage }
+        : {};
+
       return {
         ...u,
+        ...nameOverride,
         eleveur_profile_id: eleveurProfileId,
         perms,
         animaux: allAnimaux,

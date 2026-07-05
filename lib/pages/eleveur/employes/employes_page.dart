@@ -47,6 +47,23 @@ import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 
+// ─── Libellé de structure pour les notifications d'invitation ────────────────
+
+const _structureLabels = <String, String>{
+  'eleveur':          'un élevage',
+  'pension':          'une pension',
+  'education':        'un cabinet d\'éducation/comportementaliste',
+  'veterinaire':      'un cabinet vétérinaire',
+  'sante':            'une structure de santé animale',
+  'garde':            'une structure de garde d\'animaux',
+  'toilettage':       'un salon de toilettage',
+  'photographe':      'un studio photo animalier',
+  'marechal_ferrant': 'une forge',
+  'restauration':     'un établissement pet-friendly',
+};
+
+String _structureLabelFor(String catPro) => _structureLabels[catPro] ?? 'un élevage';
+
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 class EmployesPage extends StatefulWidget {
@@ -631,10 +648,11 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
 
     // Notification in-app (cloche)
     final nomElevage = widget.nomElevage;
+    final structureLabel = widget.isAssociation ? 'une association' : _structureLabelFor(User_Info.catPro);
     await _supa.from('notifications').insert({
       'uid':   uid,
       'type':  'employee_invite',
-      'title': 'Invitation à rejoindre un élevage',
+      'title': 'Invitation à rejoindre $structureLabel',
       'body':  'Vous avez été ajouté à l\'équipe de $nomElevage',
       'data':  {'eleveurUid': widget.uid, 'eleveurNom': nomElevage},
       'read':  false,
@@ -2640,10 +2658,23 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
       final planAssigneFilter   = myProfileId != null ? 'assigned_profile_id' : 'assigned_to';
       final planAssigneValue    = myProfileId ?? _uid;
 
+      // Profils user_profiles précis utilisés à l'invitation (peut différer du
+      // profil principal — ex : invité depuis un profil pension secondaire).
+      final invitingProfileIds = emplois
+          .map((e) => e['eleveur_profile_id'] as String?)
+          .whereType<String>()
+          .toSet()
+          .toList();
+
       final results = await Future.wait([
         _supa.from('users')
             .select('uid, firstname, lastname, name_elevage, is_elevage, cat_pro, profile_picture_url, profile_picture_url_elevage')
             .inFilter('uid', uids),
+        invitingProfileIds.isEmpty
+            ? Future.value(<Map<String, dynamic>>[])
+            : _supa.from('user_profiles')
+                .select('id, nom, name_elevage, avatar_url, profile_type')
+                .inFilter('id', invitingProfileIds),
         _supa.from('animaux')
             .select('id, nom, espece, race, photo_url, uid_eleveur')
             .inFilter('uid_eleveur', uids).eq('statut', 'present').order('nom'),
@@ -2656,10 +2687,15 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
             .gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue'),
       ]);
 
-      final users      = results[0] as List;
-      final animaux    = results[1] as List;
-      final taches     = results[2] as List;
-      final planTaches = results[3] as List;
+      final users            = results[0] as List;
+      final invitingProfiles = results[1] as List;
+      final animaux          = results[2] as List;
+      final taches           = results[3] as List;
+      final planTaches       = results[4] as List;
+
+      final invitingProfileById = <String, Map<String, dynamic>>{
+        for (final p in invitingProfiles) (p as Map)['id'] as String: Map<String, dynamic>.from(p),
+      };
 
       // Charger les permissions granulaires depuis employe_permissions
       Map<String, Set<String>> permsMap = {};
@@ -2706,8 +2742,25 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
       final result = <Map<String, dynamic>>[];
       for (final e in emplois) {
         final uid = e['uid_eleveur'] as String;
-        final u = users.firstWhere((u) => u['uid'] == uid, orElse: () => <String, dynamic>{});
-        if ((u as Map).isEmpty) continue;
+        final primaryUser = users.firstWhere((u) => u['uid'] == uid, orElse: () => <String, dynamic>{});
+        if ((primaryUser as Map).isEmpty) continue;
+        var u = Map<String, dynamic>.from(primaryUser);
+        // Si l'invitation vient d'un profil secondaire (ex : pension), afficher
+        // le nom de CE profil plutôt que celui du compte principal.
+        final invitingProfileId = e['eleveur_profile_id'] as String?;
+        final invitingProfile = invitingProfileId != null ? invitingProfileById[invitingProfileId] : null;
+        if (invitingProfile != null) {
+          final nom = (invitingProfile['nom'] as String?)?.isNotEmpty == true
+              ? invitingProfile['nom'] as String
+              : (invitingProfile['name_elevage'] as String?) ?? '';
+          if (nom.isNotEmpty) {
+            u['name_elevage'] = nom;
+            u['is_elevage'] = true;
+          }
+          if ((invitingProfile['avatar_url'] as String?)?.isNotEmpty == true) {
+            u['profile_picture_url_elevage'] = invitingProfile['avatar_url'];
+          }
+        }
         // Fusionner animaux réguliers + animaux association
         final regularAnims = animaux.where((a) => a['uid_eleveur'] == uid).toList();
         final assocAnims = assocAnimalsByUid[uid] ?? [];
