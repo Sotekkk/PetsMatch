@@ -4090,4 +4090,48 @@ supabase/migration_rdv_notes_annulation.sql        -- IMPORTANT (bug critique) :
 
 ---
 
+## 21. Système RDV — Modification, lieu & rappels (session 2026-07-05)
+
+Fonctionnalités génériques (tous types de pro), pas spécifiques à l'éducateur,
+demandées pendant les tests du module éducateur.
+
+- **Modifier un RDV confirmé** : nouveau bouton "✏️ Modifier" dans l'onglet
+  "À venir" de "Mes RDV" (web `mes-rdv/page.tsx`) — permet de changer
+  date/heure/durée/motif/lieu/notes sur un RDV déjà confirmé (jusqu'ici seul
+  Terminé/Annuler existait). Synchronise `agenda_events` (pro + client),
+  notifie le client (`type: 'rdv_modifie'`), et réinitialise les 4 flags de
+  rappel (`reminder_48h_sent`/`24h`/`1h`/`15min`) pour qu'ils se redéclenchent
+  sur la nouvelle date. **Non fait côté app (Flutter)** — seul le web a le
+  bouton Modifier pour l'instant.
+- **Lieu du RDV** : nouveau champ texte libre `rdv.lieu` (au cabinet, au
+  domicile du client, personnalisé) éditable via "Modifier". Le calcul de
+  trajet/GPS complet (Directions API, distance, alerte retard) reste en
+  backlog Phase 2 éducateur item 5/5 — ici c'est juste un texte informatif.
+- **Rappels de RDV** : les colonnes `reminder_48h_sent`/`24h`/`1h`/`15min`
+  existaient sur `rdv` depuis longtemps mais **rien ne les envoyait jamais**
+  (seulement réinitialisées à `false` lors d'un changement d'heure). Nouvelle
+  Netlify Scheduled Function `send-rdv-reminders.mts` (tourne toutes les
+  15 min) : pour chaque palier, sélectionne les RDV `confirme` dont l'heure
+  approche et dont le flag n'est pas encore passé à `true`, envoie une
+  notification (`type: 'rdv_rappel'`) **au pro ET au client**, puis marque
+  le flag comme envoyé.
+- **Agenda multi-profil** : vérifié en détail (app `agenda_page.dart`, web
+  `agenda/page.tsx`) — la synchronisation `agenda_events` scopée par
+  `pro_profile_id`/profil actif existait déjà et fonctionne correctement
+  (y compris avec "Modifier" ci-dessus). Aucun changement de code nécessaire.
+
+### 21.1 — Migration à exécuter
+
+```
+supabase/migration_rdv_lieu.sql -- colonne lieu (texte) sur rdv
+```
+
+### 21.2 — Reste à faire
+
+- Bouton "Modifier" côté app (Flutter) — `ProAgendaPage` n'a pas encore
+  l'équivalent du bouton web.
+- GPS/trajet complet (Phase 2 éducateur item 5/5).
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

@@ -146,8 +146,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage()));
       return;
     }
-    if (type == 'rdv_confirme' || type == 'rdv_refuse' || type == 'rdv_annule') {
+    if (type == 'rdv_confirme' || type == 'rdv_refuse' || type == 'rdv_annule' || type == 'rdv_modifie') {
       await Navigator.push(context, MaterialPageRoute(builder: (_) => const AgendaPage()));
+      return;
+    }
+    if (type == 'rdv_rappel') {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => User_Info.isPro ? const ProAgendaPage() : const AgendaPage(),
+      ));
       return;
     }
 
@@ -564,6 +570,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'cours_collectif_inscription': return Icons.groups_outlined;
       case 'rdv_demande':            return Icons.event_note_outlined;
       case 'rdv_confirme':           return Icons.event_available_outlined;
+      case 'rdv_modifie':            return Icons.edit_calendar_outlined;
+      case 'rdv_rappel':             return Icons.alarm_outlined;
       case 'rdv_refuse':             return Icons.event_busy_outlined;
       case 'rdv_annule':
       case 'rdv_annule_client':      return Icons.cancel_outlined;
@@ -608,6 +616,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'rdv_demande':
       case 'rdv_contre_proposition': return _teal;
       case 'rdv_confirme':           return const Color(0xFF6E9E57);
+      case 'rdv_modifie':            return const Color(0xFF0C5C6C);
+      case 'rdv_rappel':             return const Color(0xFFFF9800);
       case 'rdv_refuse':
       case 'rdv_annule':
       case 'rdv_annule_client':      return Colors.redAccent;

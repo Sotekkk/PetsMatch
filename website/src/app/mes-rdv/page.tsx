@@ -52,6 +52,7 @@ interface Rdv {
   notes_pro?: string | null;
   duree_minutes?: number | null;
   premiere_visite?: boolean | null;
+  lieu?: string | null;
   clientName?: string;
   animalNom?: string;
   visitCount?: number;
@@ -213,6 +214,140 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
   );
 }
 
+// ── Modal Modifier (RDV confirmé) ───────────────────────────────────────────────
+
+function ModifierModal({ rdv, proName, onClose, onDone }: {
+  rdv: Rdv; proName: string; onClose: () => void; onDone: () => void;
+}) {
+  const [date, setDate]     = useState(rdv.date_heure.slice(0, 10));
+  const [hour, setHour]     = useState(new Date(rdv.date_heure).getHours());
+  const [minute, setMinute] = useState(new Date(rdv.date_heure).getMinutes());
+  const [duree, setDuree]   = useState(rdv.duree_minutes ?? 60);
+  const [motif, setMotif]   = useState(rdv.motif ?? '');
+  const [lieu, setLieu]     = useState(rdv.lieu ?? '');
+  const [notes, setNotes]   = useState(rdv.notes_pro ?? '');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit() {
+    setSaving(true);
+    try {
+      const newDt = new Date(`${date}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`);
+
+      await supabase.from('rdv').update({
+        date_heure: newDt.toISOString(), duree_minutes: duree,
+        motif: motif.trim() || null, lieu: lieu.trim() || null,
+        notes_pro: notes.trim() || null,
+        reminder_48h_sent: false, reminder_24h_sent: false,
+        reminder_1h_sent: false, reminder_15min_sent: false,
+      }).eq('id', rdv.id);
+
+      await supabase.from('agenda_events').upsert({
+        uid: rdv.client_uid,
+        titre: `RDV${rdv.animalNom ? ` — ${rdv.animalNom}` : ''}`,
+        type: 'rdv', date_debut: newDt.toISOString(),
+        duree_minutes: duree, rdv_id: rdv.id,
+        animal_id: rdv.animal_id ?? null,
+      }, { onConflict: 'rdv_id' });
+
+      await supabase.from('agenda_events').delete()
+        .eq('uid', rdv.pro_uid).eq('couleur', `rdv:${rdv.id}`);
+      await supabase.from('agenda_events').insert({
+        uid: rdv.pro_uid,
+        titre: `RDV avec ${rdv.clientName ?? 'Client'}`,
+        type: 'rdv', date_debut: newDt.toISOString(),
+        duree_minutes: duree, couleur: `rdv:${rdv.id}`,
+        animal_id: rdv.animal_id ?? null,
+      });
+
+      await supabase.from('notifications').insert({
+        uid: rdv.client_uid, type: 'rdv_modifie',
+        title: `RDV modifié par ${proName}`,
+        body: `Votre rendez-vous a été mis à jour : ${fmtDate(newDt.toISOString())} à ${fmtHeure(newDt.toISOString())}${lieu.trim() ? ` — ${lieu.trim()}` : ''}`,
+        data: { rdv_id: rdv.id }, read: false,
+      });
+      onDone();
+    } catch { /* ignore */ } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4" onClick={onClose}>
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <h2 className="font-bold text-lg text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>Modifier le RDV</h2>
+
+        <div className="bg-gray-50 rounded-xl p-3 text-sm text-gray-600">
+          <p className="font-semibold">{rdv.clientName ?? '—'}{rdv.animalNom ? ` · ${rdv.animalNom}` : ''}</p>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</label>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none" />
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Heure</label>
+          <div className="flex gap-2 mt-2">
+            <select value={hour} onChange={e => setHour(Number(e.target.value))}
+              className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
+              {Array.from({ length: 14 }, (_, i) => i + 7).map(h => (
+                <option key={h} value={h}>{String(h).padStart(2, '0')}h</option>
+              ))}
+            </select>
+            <select value={minute} onChange={e => setMinute(Number(e.target.value))}
+              className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
+              {[0, 15, 30, 45].map(m => (
+                <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Durée</label>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {[15, 30, 45, 60, 90, 120].map(d => (
+              <button key={d} onClick={() => setDuree(d)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors"
+                style={{ background: duree === d ? TEAL : 'white', color: duree === d ? 'white' : '#1E2025', borderColor: duree === d ? TEAL : '#e5e7eb', fontFamily: 'Galey, sans-serif' }}>
+                {d < 60 ? `${d} min` : d === 60 ? '1 h' : `${d / 60} h`}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Motif</label>
+          <input value={motif} onChange={e => setMotif(e.target.value)}
+            className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none" />
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Lieu</label>
+          <input value={lieu} onChange={e => setLieu(e.target.value)} placeholder="Au cabinet, au domicile du client…"
+            className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none" />
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes (optionnel)</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+            className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none resize-none" />
+        </div>
+
+        <div className="flex gap-3 pt-1">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 font-semibold">
+            Annuler
+          </button>
+          <button onClick={handleSubmit} disabled={saving}
+            className="flex-1 py-2.5 rounded-xl text-sm text-white font-semibold disabled:opacity-50"
+            style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
+            {saving ? '…' : '✓ Enregistrer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Modal Refuser / Annuler ────────────────────────────────────────────────────
 
 function RefuserModal({ rdv, label, type, onClose, onDone }: {
@@ -265,7 +400,7 @@ function RefuserModal({ rdv, label, type, onClose, onDone }: {
 
 // ── Carte RDV ──────────────────────────────────────────────────────────────────
 
-function RdvCard({ rdv, tab, isVet, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal }: {
+function RdvCard({ rdv, tab, isVet, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier }: {
   rdv: Rdv;
   tab: 'demandes' | 'a_venir' | 'historique';
   isVet: boolean;
@@ -275,6 +410,7 @@ function RdvCard({ rdv, tab, isVet, onAccepter, onRefuser, onAnnuler, onTerminer
   onTerminer?: () => void;
   onDelete?: () => void;
   onOpenAnimal?: (id: string) => void;
+  onModifier?: () => void;
 }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const st      = STATUT_STYLE[rdv.statut] ?? { bg: '#F5F5F5', color: '#757575', label: rdv.statut };
@@ -303,6 +439,7 @@ function RdvCard({ rdv, tab, isVet, onAccepter, onRefuser, onAnnuler, onTerminer
             <p className="text-xs text-gray-400">⏱ {rdv.duree_minutes} min</p>
           )}
           {rdv.motif && <p className="text-xs text-gray-400 mt-0.5 truncate">Motif : {rdv.motif}</p>}
+          {rdv.lieu && <p className="text-xs text-gray-400 mt-0.5 truncate">📍 {rdv.lieu}</p>}
           {rdv.notes_annulation && <p className="text-xs text-red-400 mt-0.5">Note : {rdv.notes_annulation}</p>}
         </div>
         <span className="text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0"
@@ -335,6 +472,11 @@ function RdvCard({ rdv, tab, isVet, onAccepter, onRefuser, onAnnuler, onTerminer
                 🐾 Fiche animal
               </button>
             )}
+            <button onClick={onModifier}
+              className="text-xs font-semibold px-3 py-2 rounded-xl border"
+              style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
+              ✏️ Modifier
+            </button>
             <button onClick={onTerminer}
               className="flex-1 min-w-[80px] text-xs font-semibold px-3 py-2 rounded-xl text-white"
               style={{ background: GREEN, fontFamily: 'Galey, sans-serif' }}>
@@ -755,6 +897,7 @@ export default function MesRdvPage() {
 
   const [modalAccepter, setModalAccepter] = useState<Rdv | null>(null);
   const [modalRefuser, setModalRefuser]   = useState<Rdv | null>(null);
+  const [modalModifier, setModalModifier] = useState<Rdv | null>(null);
   const [modalAnnuler, setModalAnnuler]   = useState<Rdv | null>(null);
 
   useEffect(() => {
@@ -787,7 +930,7 @@ export default function MesRdvPage() {
     try {
       const { data } = await supabase
         .from('rdv')
-        .select('id, pro_uid, client_uid, animal_id, date_heure, motif, statut, notes_annulation, notes_pro, duree_minutes, premiere_visite')
+        .select('id, pro_uid, client_uid, animal_id, date_heure, motif, statut, notes_annulation, notes_pro, duree_minutes, premiere_visite, lieu')
         .eq('pro_uid', user.uid)
         .eq('pro_profile_id', activeProfileId)
         .order('date_heure', { ascending: true });
@@ -960,6 +1103,7 @@ export default function MesRdvPage() {
                   onTerminer={() => marquerTermine(rdv)}
                   onDelete={() => deleteRdv(rdv.id)}
                   onOpenAnimal={openAnimalFiche}
+                  onModifier={() => setModalModifier(rdv)}
                 />
               ))}
             </div>
@@ -971,6 +1115,11 @@ export default function MesRdvPage() {
         <AccepterModal rdv={modalAccepter} proName={proName}
           onClose={() => setModalAccepter(null)}
           onDone={() => { setModalAccepter(null); fetchRdvs(); }} />
+      )}
+      {modalModifier && (
+        <ModifierModal rdv={modalModifier} proName={proName}
+          onClose={() => setModalModifier(null)}
+          onDone={() => { setModalModifier(null); fetchRdvs(); }} />
       )}
       {modalRefuser && (
         <RefuserModal rdv={modalRefuser} label="Refuser" type="refuse"

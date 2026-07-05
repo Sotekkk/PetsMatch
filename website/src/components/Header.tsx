@@ -478,8 +478,10 @@ function getNotifUrl(n: Notif): string | null {
     case 'rdv_annule_client':
       return '/mes-rdv';
     case 'rdv_confirme':
+    case 'rdv_modifie':
     case 'rdv_refuse':
     case 'rdv_annule':
+    case 'rdv_rappel':
       return '/agenda';
     case 'promenade_join':
     case 'promenade_accepte':
@@ -932,6 +934,8 @@ export default function Header() {
                               : n.type === 'cession_signee_acquereur' || n.type === 'cession_signe_acquereur' ? '🔔'
                               : n.type?.startsWith('cession') ? '🤝'
                               : n.type === 'rdv_confirme' ? '✅'
+                              : n.type === 'rdv_modifie' ? '✏️'
+                              : n.type === 'rdv_rappel' ? '⏰'
                               : n.type === 'rdv_refuse' || n.type?.includes('annule') ? '❌'
                               : n.type?.startsWith('rdv') ? '📅'
                               : n.type === 'employee_invite' ? '🤝'
