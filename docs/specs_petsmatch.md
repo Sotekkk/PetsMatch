@@ -4101,8 +4101,8 @@ demandées pendant les tests du module éducateur.
   Terminé/Annuler existait). Synchronise `agenda_events` (pro + client),
   notifie le client (`type: 'rdv_modifie'`), et réinitialise les 4 flags de
   rappel (`reminder_48h_sent`/`24h`/`1h`/`15min`) pour qu'ils se redéclenchent
-  sur la nouvelle date. **Non fait côté app (Flutter)** — seul le web a le
-  bouton Modifier pour l'instant.
+  sur la nouvelle date. **Livré aussi côté app** (`pro_agenda.dart` —
+  `_showModifierDialog`/`_modifierRdv`, même logique de synchronisation).
 - **Lieu du RDV** : nouveau champ texte libre `rdv.lieu` (au cabinet, au
   domicile du client, personnalisé) éditable via "Modifier". Le calcul de
   trajet/GPS complet (Directions API, distance, alerte retard) reste en
@@ -4120,16 +4120,25 @@ demandées pendant les tests du module éducateur.
   `pro_profile_id`/profil actif existait déjà et fonctionne correctement
   (y compris avec "Modifier" ci-dessus). Aucun changement de code nécessaire.
 
-### 21.1 — Migration à exécuter
+- **Créneaux réservés individuel/collectif** (éducateur) : quand le pro
+  crée une plage "Disponible" dans "Mes créneaux" (web), il peut la marquer
+  "🎓 Individuel" / "👥 Collectif" / "Les deux" (`creneaux_pro.type_prestation`).
+  Un créneau marqué "collectif" n'est plus proposé au client lors d'une
+  réservation de RDV individuel (`services/pro/[uid]/page.tsx`) — il reste
+  réservé à la planification des cours collectifs du pro. **Web
+  uniquement** pour l'instant, pas encore côté app.
+
+### 21.1 — Migrations à exécuter
 
 ```
-supabase/migration_rdv_lieu.sql -- colonne lieu (texte) sur rdv
+supabase/migration_rdv_lieu.sql                    -- colonne lieu (texte) sur rdv
+supabase/migration_creneaux_type_prestation.sql    -- colonne type_prestation sur creneaux_pro
 ```
 
 ### 21.2 — Reste à faire
 
-- Bouton "Modifier" côté app (Flutter) — `ProAgendaPage` n'a pas encore
-  l'équivalent du bouton web.
+- Créneaux individuel/collectif côté app (Flutter) — web uniquement pour
+  l'instant.
 - GPS/trajet complet (Phase 2 éducateur item 5/5).
 
 ---

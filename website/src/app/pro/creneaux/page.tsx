@@ -36,25 +36,28 @@ function snapTo15(t: string): string {
 }
 
 type SlotStatus = 'disponible' | 'bloque';
-interface SlotRange { start: string; end: string; statut: SlotStatus; }
+type TypePrestation = 'individuel' | 'collectif' | null;
+interface SlotRange { start: string; end: string; statut: SlotStatus; type?: TypePrestation; }
 
-function groupRanges(slotsForDate: { time: string; statut: SlotStatus }[]): SlotRange[] {
+function groupRanges(slotsForDate: { time: string; statut: SlotStatus; type?: TypePrestation }[]): SlotRange[] {
   const sorted = [...slotsForDate].sort((a, b) => a.time.localeCompare(b.time));
   if (!sorted.length) return [];
   const ranges: SlotRange[] = [];
   let rStart = sorted[0].time;
   let prevMins = timeToMins(sorted[0].time);
   let curStatut = sorted[0].statut;
+  let curType = sorted[0].type ?? null;
   for (let i = 1; i < sorted.length; i++) {
     const curMins = timeToMins(sorted[i].time);
-    if (sorted[i].statut === curStatut && curMins === prevMins + 15) {
+    const t = sorted[i].type ?? null;
+    if (sorted[i].statut === curStatut && t === curType && curMins === prevMins + 15) {
       prevMins = curMins;
     } else {
-      ranges.push({ start: rStart, end: minsToTime(prevMins + 15), statut: curStatut });
-      rStart = sorted[i].time; prevMins = curMins; curStatut = sorted[i].statut;
+      ranges.push({ start: rStart, end: minsToTime(prevMins + 15), statut: curStatut, type: curType });
+      rStart = sorted[i].time; prevMins = curMins; curStatut = sorted[i].statut; curType = t;
     }
   }
-  ranges.push({ start: rStart, end: minsToTime(prevMins + 15), statut: curStatut });
+  ranges.push({ start: rStart, end: minsToTime(prevMins + 15), statut: curStatut, type: curType });
   return ranges;
 }
 
@@ -76,10 +79,19 @@ export default function ProCreneauxPage() {
   const [addMode, setAddMode]               = useState<SlotStatus>('disponible');
   const [addStart, setAddStart]             = useState('09:00');
   const [addEnd, setAddEnd]                 = useState('10:00');
+  const [addType, setAddType]               = useState<TypePrestation>(null);
+  const [slotTypes, setSlotTypes]           = useState<Record<string, TypePrestation>>({});
+  const [catPro, setCatPro]                 = useState('');
 
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
   }, [loading, user, router]);
+
+  useEffect(() => {
+    if (!activeProfileId) return;
+    supabase.from('user_profiles').select('profile_type, cat_pro').eq('id', activeProfileId).single()
+      .then(({ data }) => setCatPro((data?.profile_type ?? data?.cat_pro ?? '') as string));
+  }, [activeProfileId]);
 
   const loadSlots = useCallback(async () => {
     if (!user) return;
@@ -89,18 +101,22 @@ export default function ProCreneauxPage() {
     try {
       const { data } = await supabase
         .from('creneaux_pro')
-        .select('date, heure_debut, statut')
+        .select('date, heure_debut, statut, type_prestation')
         .eq('pro_uid', user.uid)
         .eq('pro_profile_id', activeProfileId)
         .in('statut', ['disponible', 'bloque'])
         .gte('date', toDateStr(weekStart))
         .lte('date', toDateStr(end));
       const map: Record<string, SlotStatus> = {};
-      for (const r of (data ?? []) as { date: string; heure_debut: string; statut: SlotStatus }[]) {
+      const typeMap: Record<string, TypePrestation> = {};
+      for (const r of (data ?? []) as { date: string; heure_debut: string; statut: SlotStatus; type_prestation: TypePrestation }[]) {
         const hhmm = r.heure_debut.substring(0, 5);
-        map[`${r.date}_${hhmm}`] = r.statut;
+        const key = `${r.date}_${hhmm}`;
+        map[key] = r.statut;
+        if (r.type_prestation) typeMap[key] = r.type_prestation;
       }
       setSlots(map);
+      setSlotTypes(typeMap);
     } catch { /* ignore */ }
     setLoadingSlots(false);
   }, [user, activeProfileId, weekStart]);
@@ -113,7 +129,7 @@ export default function ProCreneauxPage() {
 
   const slotsForDay = Object.entries(slots)
     .filter(([k]) => k.startsWith(`${dateStr}_`))
-    .map(([k, statut]) => ({ time: k.slice(dateStr.length + 1), statut }));
+    .map(([k, statut]) => ({ time: k.slice(dateStr.length + 1), statut, type: slotTypes[k] ?? null }));
   const ranges = groupRanges(slotsForDay);
 
   // Recalcule le résumé "Horaires" (page profil) à partir des créneaux
@@ -136,23 +152,27 @@ export default function ProCreneauxPage() {
     } catch { /* ignore — résumé informatif, pas bloquant */ }
   }
 
-  async function applyRange(start: string, end: string, statut: SlotStatus) {
+  async function applyRange(start: string, end: string, statut: SlotStatus, type: TypePrestation = null) {
     if (!user || saving) return;
     setSaving(true);
     let cur = timeToMins(start);
     const endM = timeToMins(end);
     const newSlots: Record<string, SlotStatus> = {};
+    const newTypes: Record<string, TypePrestation> = {};
     const rows: Record<string, unknown>[] = [];
     while (cur < endM) {
       const hhmm = minsToTime(cur);
       const fin  = minsToTime(cur + 15);
-      newSlots[`${dateStr}_${hhmm}`] = statut;
+      const key = `${dateStr}_${hhmm}`;
+      newSlots[key] = statut;
+      if (type) newTypes[key] = type;
       rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, date: dateStr,
-        heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut });
+        heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut, type_prestation: type });
       cur += 15;
     }
     const merged = { ...slots, ...newSlots };
     setSlots(merged);
+    setSlotTypes(prev => ({ ...prev, ...newTypes }));
     try {
       await supabase.from('creneaux_pro').upsert(rows, { onConflict: 'pro_uid,pro_profile_id,date,heure_debut' });
       await syncHorairesSummary(merged);
@@ -325,6 +345,12 @@ export default function ProCreneauxPage() {
                     style={{ background: isDisp ? `${GREEN}22` : '#FFF3E0', color: isDisp ? '#4A7A32' : '#E65100' }}>
                     {isDisp ? '✓ Disponible' : '🚫 Bloqué'}
                   </span>
+                  {r.type && (
+                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full mt-1 ml-1.5 inline-block"
+                      style={{ background: '#7B5EA722', color: '#7B5EA7' }}>
+                      {r.type === 'individuel' ? '🎓 Individuel' : '👥 Collectif'}
+                    </span>
+                  )}
                 </div>
                 <button onClick={() => deleteRange(r)}
                   className="p-2.5 rounded-xl hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors">
@@ -388,6 +414,29 @@ export default function ProCreneauxPage() {
               <p className="text-xs text-red-500">L&apos;heure de fin doit être après l&apos;heure de début.</p>
             )}
 
+            {/* Type de prestation (éducateur/comportementaliste uniquement) */}
+            {catPro === 'education' && addMode === 'disponible' && (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
+                  Réservé à
+                </label>
+                <div className="flex gap-2">
+                  {([['individuel', '🎓 Individuel'], ['collectif', '👥 Collectif'], [null, 'Les deux']] as const).map(([v, label]) => (
+                    <button key={label} onClick={() => setAddType(v)}
+                      className="flex-1 py-2 rounded-xl text-xs font-semibold border-2 transition-all"
+                      style={{
+                        background: addType === v ? '#7B5EA718' : 'white',
+                        borderColor: addType === v ? '#7B5EA7' : '#e5e7eb',
+                        color: addType === v ? '#7B5EA7' : '#6B7280',
+                        fontFamily: 'Galey, sans-serif',
+                      }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button onClick={() => setShowAddModal(false)}
                 className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500">
@@ -397,7 +446,8 @@ export default function ProCreneauxPage() {
                 onClick={async () => {
                   if (timeToMins(addEnd) <= timeToMins(addStart)) return;
                   setShowAddModal(false);
-                  await applyRange(addStart, addEnd, addMode);
+                  await applyRange(addStart, addEnd, addMode, addMode === 'disponible' ? addType : null);
+                  setAddType(null);
                 }}
                 disabled={saving || timeToMins(addEnd) <= timeToMins(addStart)}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"

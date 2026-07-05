@@ -260,7 +260,7 @@ function ProDetailContent() {
     setSlotsLoading(true);
     const profileId = profileTableId ?? '';
     const [slotsRes, animauxRes, ownRes] = await Promise.all([
-      supabase.from('creneaux_pro').select('date, heure_debut, heure_fin')
+      supabase.from('creneaux_pro').select('date, heure_debut, heure_fin, type_prestation')
         .eq('pro_uid', uid)
         .eq('statut', 'disponible')
         .eq('pro_profile_id', profileId)
@@ -285,8 +285,13 @@ function ProDetailContent() {
         .in('statut', ['confirme', 'termine']).limit(1);
       setIsFirstTimeEducationClient((priorRdv ?? []).length === 0);
     }
-    const rawSlots = (slotsRes.data ?? []) as { date: string; heure_debut: string; heure_fin: string }[];
-    setSlots(rawSlots.map(s => ({ date: s.date, heureDebut: s.heure_debut, heureFin: s.heure_fin })));
+    const rawSlots = (slotsRes.data ?? []) as { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null }[];
+    // Un créneau marqué "collectif" par l'éducateur est réservé à ses cours
+    // collectifs (planifiés séparément) — non proposé ici pour un RDV individuel.
+    const individualSlots = pro?.cat_pro === 'education'
+      ? rawSlots.filter(s => s.type_prestation !== 'collectif')
+      : rawSlots;
+    setSlots(individualSlots.map(s => ({ date: s.date, heureDebut: s.heure_debut, heureFin: s.heure_fin })));
 
     const direct = (animauxRes.data ?? []) as Animal[];
     const cessionIds = [...new Set((ownRes.data ?? []).map(r => r.animal_id as string))];

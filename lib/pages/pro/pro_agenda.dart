@@ -655,6 +655,164 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }
   }
 
+  Future<void> _showModifierDialog(Map<String, dynamic> rdv) async {
+    final currentDh = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal() ?? DateTime.now();
+    DateTime date = DateTime(currentDh.year, currentDh.month, currentDh.day);
+    int hour = currentDh.hour;
+    int minute = currentDh.minute;
+    int duree = (rdv['duree_minutes'] as num?)?.toInt() ?? 60;
+    final motifCtrl = TextEditingController(text: rdv['motif']?.toString() ?? '');
+    final lieuCtrl = TextEditingController(text: rdv['lieu']?.toString() ?? '');
+    final notesCtrl = TextEditingController(text: rdv['notes_pro']?.toString() ?? '');
+
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => Padding(
+          padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+              const Text('Modifier le RDV', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+              const SizedBox(height: 16),
+              GestureDetector(
+                onTap: () async {
+                  final picked = await showDatePicker(context: ctx, initialDate: date,
+                      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                      lastDate: DateTime.now().add(const Duration(days: 365)), locale: const Locale('fr'));
+                  if (picked != null) setModal(() => date = picked);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(color: Colors.white, border: Border.all(color: _teal), borderRadius: BorderRadius.circular(10)),
+                  child: Row(children: [
+                    const Icon(Icons.calendar_today_outlined, color: _teal, size: 18),
+                    const SizedBox(width: 10),
+                    Text('${date.day.toString().padLeft(2, "0")}/${date.month.toString().padLeft(2, "0")}/${date.year}',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: _teal)),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(children: [
+                Expanded(child: DropdownButtonFormField<int>(
+                  initialValue: hour,
+                  decoration: const InputDecoration(labelText: 'Heure', border: OutlineInputBorder()),
+                  items: List.generate(14, (i) => i + 7).map((h) => DropdownMenuItem(value: h, child: Text('${h}h'))).toList(),
+                  onChanged: (v) => setModal(() => hour = v ?? hour),
+                )),
+                const SizedBox(width: 8),
+                Expanded(child: DropdownButtonFormField<int>(
+                  initialValue: minute,
+                  decoration: const InputDecoration(labelText: 'Minutes', border: OutlineInputBorder()),
+                  items: const [0, 15, 30, 45].map((m) => DropdownMenuItem(value: m, child: Text(m.toString().padLeft(2, '0')))).toList(),
+                  onChanged: (v) => setModal(() => minute = v ?? minute),
+                )),
+              ]),
+              const SizedBox(height: 14),
+              const Text('Durée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, children: [15, 30, 45, 60, 90, 120].map((d) {
+                final sel = duree == d;
+                return GestureDetector(
+                  onTap: () => setModal(() => duree = d),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: sel ? _teal : Colors.white,
+                      border: Border.all(color: sel ? _teal : Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(d < 60 ? '$d min' : d == 60 ? '1 h' : '${d ~/ 60} h',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: sel ? Colors.white : Colors.black87)),
+                  ),
+                );
+              }).toList()),
+              const SizedBox(height: 14),
+              TextField(controller: motifCtrl, decoration: const InputDecoration(labelText: 'Motif', border: OutlineInputBorder())),
+              const SizedBox(height: 12),
+              TextField(controller: lieuCtrl, decoration: const InputDecoration(
+                  labelText: 'Lieu', hintText: 'Au cabinet, au domicile du client…', border: OutlineInputBorder())),
+              const SizedBox(height: 12),
+              TextField(controller: notesCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Notes (optionnel)', border: OutlineInputBorder())),
+              const SizedBox(height: 20),
+              SizedBox(width: double.infinity, child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14)),
+                child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              )),
+            ]),
+          ),
+        ),
+      ),
+    );
+
+    if (result != true) return;
+    final newDh = DateTime(date.year, date.month, date.day, hour, minute);
+    await _modifierRdv(rdv, newDh, duree, motifCtrl.text.trim(), lieuCtrl.text.trim(), notesCtrl.text.trim());
+  }
+
+  Future<void> _modifierRdv(Map<String, dynamic> rdv, DateTime newDh, int duree, String motif, String lieu, String notes) async {
+    try {
+      final supa = Supabase.instance.client;
+      final rdvId = rdv['id'].toString();
+      await supa.from('rdv').update({
+        'date_heure': newDh.toIso8601String(),
+        'duree_minutes': duree,
+        'motif': motif.isNotEmpty ? motif : null,
+        'lieu': lieu.isNotEmpty ? lieu : null,
+        'notes_pro': notes.isNotEmpty ? notes : null,
+        'reminder_48h_sent': false, 'reminder_24h_sent': false,
+        'reminder_1h_sent': false, 'reminder_15min_sent': false,
+      }).eq('id', rdvId);
+
+      final clientUid = rdv['client_uid'] as String?;
+      final proUid = FirebaseAuth.instance.currentUser?.uid;
+      final proName = User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : 'Le professionnel';
+      final clientName = rdv['_client_name']?.toString() ?? 'Client';
+
+      if (clientUid != null) {
+        await supa.from('agenda_events').upsert({
+          'uid': clientUid, 'titre': 'RDV avec $proName', 'type': 'rdv',
+          'date_debut': newDh.toIso8601String(), 'animal_id': rdv['animal_id'],
+          'notes': motif, 'rdv_id': rdvId, 'duree_minutes': duree,
+        }, onConflict: 'rdv_id');
+        await supa.from('notifications').insert({
+          'uid': clientUid, 'type': 'rdv_modifie',
+          'title': 'RDV modifié par $proName',
+          'body': 'Votre rendez-vous a été mis à jour : ${newDh.day.toString().padLeft(2, "0")}/${newDh.month.toString().padLeft(2, "0")} à ${newDh.hour.toString().padLeft(2, "0")}h${newDh.minute.toString().padLeft(2, "0")}${lieu.isNotEmpty ? " — $lieu" : ""}',
+          'data': {'rdv_id': rdvId}, 'read': false,
+        });
+      }
+      if (proUid != null) {
+        await supa.from('agenda_events').delete().eq('uid', proUid).eq('couleur', 'rdv:$rdvId');
+        await supa.from('agenda_events').insert({
+          'uid': proUid, 'titre': 'RDV avec $clientName', 'type': 'rdv',
+          'date_debut': newDh.toIso8601String(), 'animal_id': rdv['animal_id'],
+          'notes': motif, 'duree_minutes': duree, 'couleur': 'rdv:$rdvId',
+          'pro_profile_id': User_Info.activeProfileId,
+        });
+      }
+      await _loadRdvs();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('RDV modifié.', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Color(0xFF6E9E57), behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
   Future<void> _updateStatut(String rdvId, String statut,
       {int? dureeMinutes, String? motifAnnulation}) async {
     try {
@@ -1828,6 +1986,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           onDecline: () => _showCancelDialog(rdv, isRefus: true),
           onCancel:  () => _showCancelDialog(rdv),
           onContact: showCancel ? () => _contactClient(rdv) : null,
+          onModifier: showCancel ? () => _showModifierDialog(rdv) : null,
           onDelete: showDelete ? () async {
             final ok = await showDialog<bool>(
               context: context,
@@ -1924,6 +2083,7 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback? onCompteRendu;
   final VoidCallback? onContact;
   final VoidCallback? onDelete;
+  final VoidCallback? onModifier;
 
   const _RdvCard({
     required this.rdv,
@@ -1938,6 +2098,7 @@ class _RdvCard extends StatelessWidget {
     this.onCompteRendu,
     this.onContact,
     this.onDelete,
+    this.onModifier,
   });
 
   @override
@@ -2143,6 +2304,15 @@ class _RdvCard extends StatelessWidget {
                   ),
                 ],
                 const Spacer(),
+                if (onModifier != null)
+                  IconButton(
+                    onPressed: onModifier,
+                    icon: const Icon(Icons.edit_calendar_outlined, size: 20, color: Color(0xFF0C5C6C)),
+                    tooltip: 'Modifier le RDV',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                const SizedBox(width: 4),
                 TextButton(
                   onPressed: onDone,
                   style: TextButton.styleFrom(foregroundColor: const Color(0xFF6E9E57)),
