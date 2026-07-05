@@ -647,6 +647,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'notes':         rdv['motif'],
           'rdv_id':        rdv['id'],
           'duree_minutes': dureeMinutes,
+          'pro_profile_id': rdv['client_profile_id'],
         }, onConflict: 'rdv_id');
         // Notify client
         await supa.from('notifications').insert({
@@ -814,6 +815,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'uid': clientUid, 'titre': 'RDV avec $proName', 'type': 'rdv',
           'date_debut': newDh.toIso8601String(), 'animal_id': rdv['animal_id'],
           'notes': motif, 'rdv_id': rdvId, 'duree_minutes': duree,
+          'pro_profile_id': rdv['client_profile_id'],
         }, onConflict: 'rdv_id');
         await supa.from('notifications').insert({
           'uid': clientUid, 'type': 'rdv_modifie',
@@ -881,6 +883,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'animal_id':     rdv['animal_id'],
           'notes':         rdv['motif'],
           'rdv_id':        rdv['id'],
+          'pro_profile_id': rdv['client_profile_id'],
           if (dureeMinutes != null) 'duree_minutes': dureeMinutes,
         }, onConflict: 'rdv_id');
         // Agenda pension — couleur trick (no unique constraint needed)

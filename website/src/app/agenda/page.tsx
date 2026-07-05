@@ -367,7 +367,7 @@ export default function AgendaPage() {
   const [events, setEvents]   = useState<AgendaEvent[]>([]);
   const [tasks, setTasks]     = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pendingRdvs, setPendingRdvs] = useState<{id:string;date_debut:string;motif:string|null;client_uid:string;animal_id:number|null}[]>([]);
+  const [pendingRdvs, setPendingRdvs] = useState<{id:string;date_debut:string;motif:string|null;client_uid:string;client_profile_id:string|null;animal_id:number|null}[]>([]);
   const [view, setView]       = useState<'calendar' | 'day' | 'list'>('calendar');
   const [focusedMonth, setFocusedMonth] = useState(() => {
     const n = new Date(); return { year: n.getFullYear(), month: n.getMonth() };
@@ -399,7 +399,7 @@ export default function AgendaPage() {
     // Si profil pro secondaire actif : charger aussi les RDV en attente
     if (activeProfileId && uid) {
       const { data: rdvData } = await supabase.from('rdv')
-        .select('id, date_debut, motif, client_uid, animal_id')
+        .select('id, date_debut, motif, client_uid, client_profile_id, animal_id')
         .eq('pro_uid', uid).eq('pro_profile_id', activeProfileId)
         .eq('statut', 'en_attente').order('date_debut');
       setPendingRdvs((rdvData ?? []) as typeof pendingRdvs);
@@ -650,7 +650,7 @@ export default function AgendaPage() {
       </div>
 
       {showAdd && uid && (
-        <AddModal uid={uid} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
+        <AddModal uid={uid} profileId={activeProfileId} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
       )}
 
       {modalAnnuler && (
@@ -668,7 +668,7 @@ export default function AgendaPage() {
 // ── PendingRdvCard ─────────────────────────────────────────────────────────────
 
 function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
-  rdv: { id: string; date_debut: string; motif: string | null; client_uid: string; animal_id: number | null };
+  rdv: { id: string; date_debut: string; motif: string | null; client_uid: string; client_profile_id: string | null; animal_id: number | null };
   proUid: string; proProfileId: string;
   onDone: () => void;
 }) {
@@ -696,6 +696,15 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
       rdv_id: rdv.id,
       pro_profile_id: proProfileId,
     });
+    await supabase.from('agenda_events').upsert({
+      uid: rdv.client_uid,
+      titre: `RDV${rdv.motif ? ` — ${rdv.motif}` : ''}`,
+      type: 'rdv',
+      date_debut: rdv.date_debut,
+      rdv_id: rdv.id,
+      animal_id: rdv.animal_id,
+      pro_profile_id: rdv.client_profile_id ?? null,
+    }, { onConflict: 'rdv_id' });
     await supabase.from('notifications').insert({
       uid: rdv.client_uid,
       type: 'rdv_confirme',
@@ -1362,7 +1371,7 @@ function DayView({ date, events, tasks, onNavigate, onDelete, onAnnuler, onModif
 
 // ── AddModal ──────────────────────────────────────────────────────────────────
 
-function AddModal({ uid, onClose, onSaved }: { uid: string; onClose: () => void; onSaved: () => void }) {
+function AddModal({ uid, profileId, onClose, onSaved }: { uid: string; profileId: string; onClose: () => void; onSaved: () => void }) {
   const [titre, setTitre]   = useState('');
   const [type, setType]     = useState('autre');
   const [date, setDate]     = useState(() => new Date().toISOString().slice(0, 16));
@@ -1378,6 +1387,7 @@ function AddModal({ uid, onClose, onSaved }: { uid: string; onClose: () => void;
       type,
       date_debut: new Date(date).toISOString(),
       notes: notes.trim() || null,
+      pro_profile_id: profileId || null,
     });
     setSaving(false);
     onSaved();

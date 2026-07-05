@@ -44,6 +44,8 @@ interface Rdv {
   id: string;
   pro_uid: string;
   client_uid: string;
+  pro_profile_id?: string | null;
+  client_profile_id?: string | null;
   animal_id?: string | null;
   date_heure: string;
   motif?: string | null;
@@ -109,6 +111,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
           type: 'rdv', date_debut: newDt.toISOString(),
           duree_minutes: duree, rdv_id: rdv.id,
           animal_id: rdv.animal_id ?? null,
+          pro_profile_id: rdv.client_profile_id ?? null,
         }, { onConflict: 'rdv_id' });
 
         await supabase.from('agenda_events').delete()
@@ -119,6 +122,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
           type: 'rdv', date_debut: newDt.toISOString(),
           duree_minutes: duree, couleur: `rdv:${rdv.id}`,
           animal_id: rdv.animal_id ?? null,
+          pro_profile_id: rdv.pro_profile_id ?? null,
         });
 
         await supabase.from('notifications').insert({
@@ -247,6 +251,7 @@ function ModifierModal({ rdv, proName, onClose, onDone }: {
         type: 'rdv', date_debut: newDt.toISOString(),
         duree_minutes: duree, rdv_id: rdv.id,
         animal_id: rdv.animal_id ?? null,
+        pro_profile_id: rdv.client_profile_id ?? null,
       }, { onConflict: 'rdv_id' });
 
       await supabase.from('agenda_events').delete()
@@ -257,6 +262,7 @@ function ModifierModal({ rdv, proName, onClose, onDone }: {
         type: 'rdv', date_debut: newDt.toISOString(),
         duree_minutes: duree, couleur: `rdv:${rdv.id}`,
         animal_id: rdv.animal_id ?? null,
+        pro_profile_id: rdv.pro_profile_id ?? null,
       });
 
       await supabase.from('notifications').insert({
@@ -932,7 +938,7 @@ export default function MesRdvPage() {
     try {
       const { data } = await supabase
         .from('rdv')
-        .select('id, pro_uid, client_uid, animal_id, date_heure, motif, statut, notes_annulation, notes_pro, duree_minutes, premiere_visite, lieu')
+        .select('id, pro_uid, client_uid, pro_profile_id, client_profile_id, animal_id, date_heure, motif, statut, notes_annulation, notes_pro, duree_minutes, premiere_visite, lieu')
         .eq('pro_uid', user.uid)
         .eq('pro_profile_id', activeProfileId)
         .order('date_heure', { ascending: true });

@@ -11,6 +11,8 @@ interface Rdv {
   id: string;
   pro_uid: string;
   client_uid: string;
+  pro_profile_id?: string | null;
+  client_profile_id?: string | null;
   animal_id?: string | null;
   date_heure: string;
   motif?: string | null;
@@ -75,6 +77,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
           date_debut: newDt.toISOString(),
           duree_minutes: duree,
           rdv_id: rdv.id,
+          pro_profile_id: rdv.client_profile_id ?? null,
         }, { onConflict: 'rdv_id' });
 
         // Agenda pension — couleur trick
@@ -87,6 +90,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
           date_debut: newDt.toISOString(),
           duree_minutes: duree,
           couleur: `rdv:${rdv.id}`,
+          pro_profile_id: rdv.pro_profile_id ?? null,
         });
 
         // Notification client

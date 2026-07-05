@@ -4206,6 +4206,38 @@ supabase/migration_education_exercices_conseilles.sql  -- colonne exercices_cons
   (quitte l'agenda) peu importe la vue active. Corrigé pour repasser
   d'abord en vue Mois si on n'y est pas déjà, avant de quitter la page.
 
+## 25. Fuite cross-profil côté CLIENT dans agenda_events (session 2026-07-05)
+
+- **Cause racine identifiée** : quand un pro confirme un RDV, une entrée
+  `agenda_events` miroir est créée côté CLIENT pour qu'il voie le RDV dans
+  "Mon agenda". Cette synchronisation renseignait bien `pro_profile_id`
+  côté PRO, mais **jamais côté CLIENT** — laissée NULL. Résultat : dès que
+  le client consultait un profil dont `activeProfileId` tombe dans le cas
+  "legacy" (règle de compatibilité pour les événements d'avant le
+  multi-profil), CE RDV apparaissait — même s'il avait été réservé depuis
+  un tout autre profil (ex : RDV pension réservé depuis le profil éleveur,
+  visible depuis n'importe quel autre profil du même compte).
+- **Corrigé sur tous les points de synchronisation trouvés** : chaque
+  upsert `agenda_events` côté client renseigne désormais
+  `pro_profile_id: rdv.client_profile_id` (au lieu de rien) :
+  - App : `lib/pages/pro/pro_agenda.dart` (3 endroits — confirmation,
+    modification, confirmation avec heure précise).
+  - Web : `agenda/page.tsx` (accepter une demande depuis Mon Agenda),
+    `mes-rdv/page.tsx` (AccepterModal + ModifierModal),
+    `pension/rdv/page.tsx` (page dédiée pension, confirmée comme étant
+    la source exacte du cas signalé).
+  - Web : le modal générique "+ Ajouter" (`agenda/page.tsx::AddModal`)
+    ne renseignait PAS DU TOUT `pro_profile_id` sur les événements créés
+    manuellement — corrigé aussi (accepte maintenant `profileId` en prop).
+- **Backfill nécessaire** : les entrées déjà créées AVANT ce correctif
+  restent mal taguées (NULL) tant que la migration n'est pas exécutée.
+
+### 25.1 — Migration à exécuter
+
+```
+supabase/migration_backfill_agenda_events_client_profile.sql
+```
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*
