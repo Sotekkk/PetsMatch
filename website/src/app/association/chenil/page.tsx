@@ -42,6 +42,9 @@ const STATUT_COLORS: Record<string, string> = {
   present: 'bg-gray-100 text-gray-600',
 };
 
+// Un animal déjà sorti du refuge ne doit plus pouvoir être placé dans un enclos/box.
+const STATUTS_SORTIS = new Set(['adopte', 'transfere', 'decede']);
+
 function daysSince(dateStr: string | null): number | null {
   if (!dateStr) return null;
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
@@ -81,7 +84,8 @@ function EnclosCard({
     ? { label: `Il y a ${jours}j`, cls: 'bg-amber-100 text-amber-700' }
     : { label: `Il y a ${jours}j`, cls: 'bg-red-100 text-red-600' };
 
-  const unassigned = allAnimaux.filter(a => !a.enclos_id || a.enclos_id === enclos.id);
+  const unassigned = allAnimaux.filter(a =>
+    (!a.enclos_id || a.enclos_id === enclos.id) && !STATUTS_SORTIS.has(a.statut ?? ''));
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -330,6 +334,13 @@ export default function ChenilWebPage() {
   }
 
   async function handleAssign(enclosId: string, animalId: string, assign: boolean) {
+    if (assign) {
+      const animal = animaux.find(a => a.id === animalId);
+      if (animal && STATUTS_SORTIS.has(animal.statut ?? '')) {
+        window.alert('Impossible : cet animal est adopté/transféré/décédé.');
+        return;
+      }
+    }
     await supabase.from('animaux').update({ enclos_id: assign ? enclosId : null }).eq('id', animalId);
     setAnimaux(prev => prev.map(a => a.id === animalId ? { ...a, enclos_id: assign ? enclosId : null } : a));
   }

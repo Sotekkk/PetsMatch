@@ -812,7 +812,16 @@ class _PlaceAnimalSheetState extends State<_PlaceAnimalSheet> {
     }
   }
 
+  static const _statutsSortis = {'adopte', 'transfere', 'decede'};
+
   Future<void> _place(Map<String, dynamic> animal) async {
+    if (_statutsSortis.contains(animal['statut']?.toString())) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Impossible : cet animal est adopté/transféré/décédé.'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
     setState(() => _placing = animal['id']);
     try {
       await _supa.from('animaux').update({

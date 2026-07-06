@@ -8,6 +8,10 @@ extension _Capitalize on String {
   String capitalize() => isEmpty ? this : '${this[0].toUpperCase()}${substring(1)}';
 }
 
+// Un animal déjà sorti du refuge (adopté/transféré/décédé) ne doit plus
+// pouvoir être placé dans un enclos/box.
+const _kStatutsSortis = {'adopte', 'transfere', 'decede'};
+
 class ChenilPlanningPage extends StatefulWidget {
   const ChenilPlanningPage({super.key});
   @override
@@ -152,6 +156,13 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
 
   Future<void> _assignEnclos(Map<String, dynamic> animal) async {
     if (_enclos.isEmpty) return;
+    if (_kStatutsSortis.contains(animal['statut']?.toString())) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Impossible : cet animal est adopté/transféré/décédé.'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
     await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -715,7 +726,9 @@ class _EnclosCard extends StatelessWidget {
               const SizedBox(height: 10),
               GestureDetector(
                 onTap: () {
-                  final available = allAnimaux.where((a) => a['enclos_id'] == null).toList();
+                  final available = allAnimaux.where((a) =>
+                      a['enclos_id'] == null &&
+                      !_kStatutsSortis.contains(a['statut']?.toString())).toList();
                   if (available.isEmpty) return;
                   // Ouvre le sheet avec filtre pour cet enclos
                   onAssign(available.first);
