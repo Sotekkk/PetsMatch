@@ -673,7 +673,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             'notes':          rdv['motif'],
             'duree_minutes':  dureeMinutes,
             'couleur':        'rdv:${rdv['id']}',
-            'pro_profile_id': User_Info.activeProfileId,
+            'pro_profile_id': rdv['pro_profile_id'],
           });
         } catch (_) {}
       }
@@ -830,7 +830,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'uid': proUid, 'titre': 'RDV avec $clientName', 'type': 'rdv',
           'date_debut': newDh.toIso8601String(), 'animal_id': rdv['animal_id'],
           'notes': motif, 'duree_minutes': duree, 'couleur': 'rdv:$rdvId',
-          'pro_profile_id': User_Info.activeProfileId,
+          'pro_profile_id': rdv['pro_profile_id'],
         });
       }
       await _loadRdvs();
@@ -900,7 +900,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               'notes':          rdv['motif'],
               if (dureeMinutes != null) 'duree_minutes': dureeMinutes,
               'couleur':        'rdv:${rdv['id']}',
-              'pro_profile_id': User_Info.activeProfileId,
+              'pro_profile_id': rdv['pro_profile_id'],
             });
           } catch (_) {}
         }

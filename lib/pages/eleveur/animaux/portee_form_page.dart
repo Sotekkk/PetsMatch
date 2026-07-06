@@ -321,9 +321,11 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
       }
       if (mounted) setState(() => _uploadingPhotoIdx = null);
 
+      final activeProfileId = User_Info.activeProfileId;
       final rows = _animaux.asMap().entries.map((e) => {
         'id':                  '${porteeId}_${e.key}',
         'uid_eleveur':         uid,
+        if (activeProfileId.isNotEmpty) 'profile_id': activeProfileId,
         'portee_id':           porteeId,
         'espece':              _espece,
         'race':                _raceCtrl.text.trim(),
@@ -358,6 +360,22 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
       }).toList();
 
       await _supa.from('animaux').upsert(rows);
+
+      // Initialise animaux_proprietes pour chaque nouveau-né (même logique
+      // que animal_fiche.dart) — sans quoi les animaux restent invisibles
+      // dans "Mes animaux" (filtré par profile_id_proprio).
+      try {
+        final dateStr = _dateNaissance!.toIso8601String().split('T').first;
+        await _supa.from('animaux_proprietes').upsert(
+          _animaux.asMap().entries.map((e) => {
+            'animal_id':   '${porteeId}_${e.key}',
+            'uid_proprio': uid,
+            'date_debut':  dateStr,
+            if (activeProfileId.isNotEmpty) 'profile_id_proprio': activeProfileId,
+          }).toList(),
+          onConflict: 'animal_id,uid_proprio',
+        );
+      } catch (_) {}
 
       // Protocoles automatiques pour chaque nouveau-né
       try {
