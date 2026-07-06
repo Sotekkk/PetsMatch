@@ -44,7 +44,7 @@ const STATUT_MAP = Object.fromEntries([...DETENUS_STATUTS, ...ANCIEN_STATUTS].ma
 const ASSIGNABLE_STATUTS = ['en_soin', 'disponible', 'adopte', 'transfere', 'decede'];
 
 export default function AnimauxAssoPage() {
-  const { user } = useAuth();
+  const { user, activeProfileId } = useAuth();
   const router = useRouter();
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [filtered, setFiltered] = useState<Animal[]>([]);
@@ -58,19 +58,49 @@ export default function AnimauxAssoPage() {
     if (!user) return;
     setMyUid(user.uid);
     const cols = 'id, nom, espece, race, sexe, statut, fa_id, date_naissance, age_estime, photo_url, date_entree, uid_eleveur';
-    Promise.all([
-      supabase.from('animaux').select(cols)
-        .eq('uid_eleveur', user.uid).eq('is_association', true).order('nom'),
-      supabase.from('animaux').select(cols)
-        .eq('uid_acquereur', user.uid).order('date_entree', { ascending: false }),
-    ]).then(([owned, received]) => {
-      const ownedList = (owned.data ?? []) as Animal[];
+
+    async function load() {
+      const uid = user!.uid;
+      const { data: ownedData } = await supabase.from('animaux').select(cols)
+        .eq('uid_eleveur', uid).eq('is_association', true).order('nom');
+      const ownedList = (ownedData ?? []) as Animal[];
       const ownedIds = new Set(ownedList.map(a => a.id));
-      const receivedList = ((received.data ?? []) as Animal[]).filter(a => !ownedIds.has(a.id));
+
+      // Cessions reçues : un même uid Firebase peut porter plusieurs profils
+      // (élevage + association). On ne garde que les animaux réellement reçus
+      // par CE profil (animaux_proprietes.profile_id_proprio), sinon un animal
+      // cédé au profil élevage apparaît aussi dans l'association.
+      let receivedList: Animal[] = [];
+      if (activeProfileId) {
+        const { data: check } = await supabase.from('animaux_proprietes')
+          .select('animal_id').eq('uid_proprio', uid)
+          .not('profile_id_proprio', 'is', null).limit(1);
+        if ((check ?? []).length > 0) {
+          const { data: byProfile } = await supabase.from('animaux_proprietes')
+            .select('animal_id').eq('uid_proprio', uid).eq('profile_id_proprio', activeProfileId);
+          const ids = [...new Set((byProfile ?? []).map(r => r.animal_id as string))];
+          if (ids.length > 0) {
+            const { data } = await supabase.from('animaux').select(cols)
+              .in('id', ids).order('date_entree', { ascending: false });
+            receivedList = (data ?? []) as Animal[];
+          }
+        } else {
+          const { data } = await supabase.from('animaux').select(cols)
+            .eq('uid_acquereur', uid).order('date_entree', { ascending: false });
+          receivedList = (data ?? []) as Animal[];
+        }
+      } else {
+        const { data } = await supabase.from('animaux').select(cols)
+          .eq('uid_acquereur', uid).order('date_entree', { ascending: false });
+        receivedList = (data ?? []) as Animal[];
+      }
+
+      receivedList = receivedList.filter(a => !ownedIds.has(a.id));
       setAnimaux([...ownedList, ...receivedList]);
       setLoading(false);
-    });
-  }, [user]);
+    }
+    load();
+  }, [user, activeProfileId]);
 
   useEffect(() => {
     const statuts = tab === 'detenus' ? DETENUS_STATUTS : ANCIEN_STATUTS;

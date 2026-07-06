@@ -2,6 +2,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart' show speciesIcon, speciesColor, speciesLabel;
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -70,17 +71,56 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
     _myUid = uid;
     try {
       const cols = 'id,nom,espece,race,sexe,statut,fa_id,date_naissance,age_estime,photo_url,date_entree,date_sortie,uid_eleveur';
-      final results = await Future.wait([
-        _supa.from('animaux').select(cols)
-            .eq('uid_eleveur', uid).eq('is_association', true).order('nom'),
-        _supa.from('animaux').select(cols)
-            .eq('uid_acquereur', uid).order('date_sortie', ascending: false),
-      ]);
-      final owned = List<Map<String, dynamic>>.from(results[0] as List);
-      final receivedIds = owned.map((a) => a['id']).toSet();
-      final received = List<Map<String, dynamic>>.from(results[1] as List)
-          .where((a) => !receivedIds.contains(a['id']))
-          .toList();
+      final owned = List<Map<String, dynamic>>.from(
+        await _supa.from('animaux').select(cols)
+            .eq('uid_eleveur', uid).eq('is_association', true).order('nom') as List,
+      );
+
+      // Cessions reçues : un même uid Firebase peut porter plusieurs profils
+      // (élevage + association). On ne garde que les animaux réellement reçus
+      // par CE profil (animaux_proprietes.profile_id_proprio), sinon un animal
+      // cédé au profil élevage apparaît aussi dans l'association.
+      final activeProfileId = User_Info.activeProfileId;
+      List<Map<String, dynamic>> received = [];
+      if (activeProfileId.isNotEmpty) {
+        final migrated = await _supa.from('animaux_proprietes')
+            .select('animal_id')
+            .eq('uid_proprio', uid)
+            .not('profile_id_proprio', 'is', null)
+            .limit(1);
+        if ((migrated as List).isNotEmpty) {
+          final ownRows = await _supa.from('animaux_proprietes')
+              .select('animal_id')
+              .eq('uid_proprio', uid)
+              .eq('profile_id_proprio', activeProfileId);
+          final ids = List<Map<String, dynamic>>.from(ownRows as List)
+              .map((r) => r['animal_id']?.toString() ?? '')
+              .where((id) => id.isNotEmpty)
+              .toSet()
+              .toList();
+          if (ids.isNotEmpty) {
+            received = List<Map<String, dynamic>>.from(
+              await _supa.from('animaux').select(cols)
+                  .inFilter('id', ids).order('date_sortie', ascending: false) as List,
+            );
+          }
+        } else {
+          // Migration profile_id_proprio pas encore jouée → rétrocompat sur l'uid seul
+          received = List<Map<String, dynamic>>.from(
+            await _supa.from('animaux').select(cols)
+                .eq('uid_acquereur', uid).order('date_sortie', ascending: false) as List,
+          );
+        }
+      } else {
+        received = List<Map<String, dynamic>>.from(
+          await _supa.from('animaux').select(cols)
+              .eq('uid_acquereur', uid).order('date_sortie', ascending: false) as List,
+        );
+      }
+
+      final ownedIds = owned.map((a) => a['id']).toSet();
+      received = received.where((a) => !ownedIds.contains(a['id'])).toList();
+
       if (mounted) {
         setState(() {
           _animaux = [...owned, ...received];
@@ -90,6 +130,19 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _deleteAnimal(String id) async {
+    try {
+      await _supa.from('animaux').delete().eq('id', id);
+      if (mounted) _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur lors de la suppression : $e')),
+        );
+      }
     }
   }
 
@@ -244,6 +297,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
                             animal: a,
                             age: _age(a['date_naissance'], a['age_estime']),
                             isCession: isCession,
+                            onDelete: isCession ? null : () => _deleteAnimal(a['id'].toString()),
                             onTap: () async {
                               await Navigator.push(context, MaterialPageRoute(
                                 builder: (_) => AnimalFichePage(
@@ -277,6 +331,7 @@ class _AnimalCard extends StatelessWidget {
   final bool isCession;
   final VoidCallback onTap;
   final VoidCallback onAddAnnonce;
+  final VoidCallback? onDelete;
 
   const _AnimalCard({
     required this.animal,
@@ -284,6 +339,7 @@ class _AnimalCard extends StatelessWidget {
     required this.onTap,
     required this.onAddAnnonce,
     this.isCession = false,
+    this.onDelete,
   });
 
   static const _statutColors = <String, Color>{
@@ -321,6 +377,66 @@ class _AnimalCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onDelete == null ? null : () {
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: Colors.transparent,
+          builder: (_) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: 40, height: 4,
+                  decoration: BoxDecoration(color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 14),
+              Text(nom, style: const TextStyle(fontFamily: 'Galey',
+                  fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
+              const SizedBox(height: 6),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                title: const Text('Supprimer',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 15,
+                        color: Colors.redAccent)),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      title: const Text('Supprimer cet animal ?',
+                          style: TextStyle(fontFamily: 'Galey',
+                              fontWeight: FontWeight.w700)),
+                      content: Text(
+                          'La fiche de $nom sera définitivement supprimée.',
+                          style: const TextStyle(fontFamily: 'Galey')),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Annuler',
+                              style: TextStyle(fontFamily: 'Galey')),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Supprimer',
+                              style: TextStyle(fontFamily: 'Galey',
+                                  color: Colors.redAccent,
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirm == true) onDelete!();
+                },
+              ),
+            ]),
+          ),
+        );
+      },
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
