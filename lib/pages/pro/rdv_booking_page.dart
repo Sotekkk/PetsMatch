@@ -292,7 +292,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final results = await Future.wait([
         Supabase.instance.client
             .from('creneaux_pro')
-            .select('date, heure_debut, heure_fin')
+            .select('date, heure_debut, heure_fin, type_prestation')
             .eq('pro_uid', widget.proUid)
             .eq('statut', 'disponible')
             .eq('pro_profile_id', profileId)
@@ -332,8 +332,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     final nowMinutes = now.hour * 60 + now.minute + 30; // marge 30 min
 
     // 1. Grouper les creneaux_pro par date
+    // Un créneau marqué "collectif" par un éducateur est réservé à ses cours
+    // collectifs (planifiés séparément) — non proposé ici pour un RDV individuel.
     final creneauxByDate = <String, List<({int startMin, int endMin})>>{};
     for (final slot in _availableSlots) {
+      if (_catPro == 'education' && slot['type_prestation'] == 'collectif') continue;
       final date = slot['date'] as String;
       final sp = (slot['heure_debut'] as String).split(':');
       final ep = (slot['heure_fin']   as String).split(':');
