@@ -2788,6 +2788,15 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
     final animalNom = _selectedAnimaux.isEmpty
         ? null
         : _selectedAnimaux.map((a) => a['nom']?.toString() ?? '').join(', ');
+    // Résout le profil (particulier principal) de l'employé assigné — sans
+    // ça, assigne_profile_id reste null et la tâche n'apparaît jamais dans
+    // l'agenda de l'employé (filtré par assigne_profile_id = activeProfileId).
+    String? assigneProfileId;
+    if (_selectedEmployeUid != null) {
+      final assigneProfileData = await supa.from('user_profiles')
+          .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+      assigneProfileId = assigneProfileData?['id'] as String?;
+    }
     await supa.from('taches_elevage').insert({
       'uid_eleveur': widget.uid,
       'titre': _titreCtrl.text.trim(),
@@ -2800,6 +2809,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
       if (profileIdTache.isNotEmpty) 'eleveur_profile_id': profileIdTache,
       'assigne_a': _selectedEmployeUid,
       'assignes_a': _selectedEmployeUid != null ? [_selectedEmployeUid] : null,
+      if (assigneProfileId != null) 'assigne_profile_id': assigneProfileId,
       if (animalNom != null) 'animal_nom': animalNom,
     });
     if (_selectedEmployeUid != null) {
@@ -3003,12 +3013,19 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
     final supa = Supabase.instance.client;
     final prevAssigne = widget.tache['assigne_a'] as String?;
     final newAssigne = _selectedEmployeUid;
+    String? newAssigneProfileId;
+    if (newAssigne != null) {
+      final assigneProfileData = await supa.from('user_profiles')
+          .select('id').eq('uid', newAssigne).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+      newAssigneProfileId = assigneProfileData?['id'] as String?;
+    }
     await supa.from('taches_elevage').update({
       'titre': _titreCtrl.text.trim(),
       'heure': heureStr,
       'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       'assigne_a': newAssigne,
       'assignes_a': newAssigne != null ? [newAssigne] : null,
+      'assigne_profile_id': newAssigneProfileId,
     }).eq('id', widget.tache['id'] as String);
     if (newAssigne != null && newAssigne != prevAssigne) {
       try {
