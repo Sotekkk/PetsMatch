@@ -429,7 +429,8 @@ class User_Info {
           .select()
           .eq('uid', firebaseUid)
           .order('is_main', ascending: false)
-          .order('created_at', ascending: true);
+          .order('created_at', ascending: true)
+          .timeout(const Duration(seconds: 10));
       final profiles = List<Map<String, dynamic>>.from(rows as List);
       availableProfiles = profiles;
       if (profiles.isEmpty) return;
