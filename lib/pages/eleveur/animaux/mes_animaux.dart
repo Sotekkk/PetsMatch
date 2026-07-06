@@ -4,6 +4,7 @@ import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_poids_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_soin_sheet.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/portee_edit_sheet.dart';
 import 'package:PetsMatch/services/chaleurs_notif_service.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:cached_network_image/cached_network_image.dart';
@@ -1273,6 +1274,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         final dn       = DateTime.tryParse(first['date_naissance'] as String? ?? '');
         final race     = (first['race'] as String?) ?? '';
         final espece   = (first['espece'] as String?) ?? '';
+        final nomMere  = ((first['nom_mere'] as String?) ?? '').trim();
 
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           if (gi > 0) const SizedBox(height: 20),
@@ -1292,13 +1294,16 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(
                     [
-                      'Portée',
-                      if (race.isNotEmpty) race,
+                      nomMere.isNotEmpty ? 'Portée de $nomMere' : 'Portée',
                       if (espece.isNotEmpty) '· ${speciesLabel(espece)}',
                     ].join(' '),
                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                         fontSize: 13, color: _teal),
                   ),
+                  if (race.isNotEmpty)
+                    Text(race,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                            color: Color(0xFF5F9EAA))),
                   if (dn != null)
                     Text('Nés le ${fmt.format(dn)}',
                         style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
@@ -1316,6 +1321,22 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                         fontSize: 13, color: _teal)),
               ),
               const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () async {
+                  final ok = await PorteeEditSheet.show(context, members);
+                  if (ok && mounted) _loadAnimaux();
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: _teal.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: _teal.withOpacity(0.3)),
+                  ),
+                  child: const Icon(Icons.edit_outlined, size: 18, color: _teal),
+                ),
+              ),
+              const SizedBox(width: 4),
               GestureDetector(
                 onTap: () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => PorteePoidsPage(

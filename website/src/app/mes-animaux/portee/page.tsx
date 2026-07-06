@@ -651,29 +651,49 @@ function AnimalPickerList({ animals, isLoading, onSelect }: {
   isLoading: boolean;
   onSelect: (a: ExistingAnimal) => void;
 }) {
+  const [search, setSearch] = useState('');
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? animals.filter(a =>
+        (a.nom ?? '').toLowerCase().includes(q) ||
+        (a.race ?? '').toLowerCase().includes(q))
+    : animals;
+
   return (
-    <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-52 overflow-y-auto">
-      {isLoading ? (
-        <p className="text-sm text-gray-400 text-center py-4">Chargement…</p>
-      ) : animals.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-4">Aucun animal trouvé</p>
-      ) : animals.map(a => (
-        <button key={a.id} type="button" onClick={() => onSelect(a)}
-          className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[#E8F4F6] text-left border-b border-gray-50 last:border-0 transition-colors">
-          <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
-            {a.photo_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={tUrl(a.photo_url)} alt="" className="w-full h-full object-contain" />
-            ) : (
-              <span className="text-gray-300 text-lg">🐾</span>
-            )}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-800 truncate">{a.nom || 'Sans nom'}</p>
-            {a.race && <p className="text-xs text-gray-400 truncate">{a.race}</p>}
-          </div>
-        </button>
-      ))}
+    <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+      <div className="p-2 border-b border-gray-100">
+        <input
+          type="text"
+          autoFocus
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Rechercher par nom…"
+          className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]"
+        />
+      </div>
+      <div className="max-h-52 overflow-y-auto">
+        {isLoading ? (
+          <p className="text-sm text-gray-400 text-center py-4">Chargement…</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">Aucun animal trouvé</p>
+        ) : filtered.map(a => (
+          <button key={a.id} type="button" onClick={() => onSelect(a)}
+            className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[#E8F4F6] text-left border-b border-gray-50 last:border-0 transition-colors">
+            <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
+              {a.photo_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={tUrl(a.photo_url)} alt="" className="w-full h-full object-contain" />
+              ) : (
+                <span className="text-gray-300 text-lg">🐾</span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-800 truncate">{a.nom || 'Sans nom'}</p>
+              {a.race && <p className="text-xs text-gray-400 truncate">{a.race}</p>}
+            </div>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -1135,8 +1135,10 @@ export default function AnimalFichePage() {
   const [adresseElevage, setAdresseElevage] = useState('');
   const [mesFemelles, setMesFemelles] = useState<{id:string;nom:string;identification?:string;race?:string;photo_url?:string;date_naissance?:string}[]>([]);
   const [showMerePicker, setShowMerePicker] = useState(false);
+  const [mereSearch, setMereSearch] = useState('');
   const [mesMales, setMesMales] = useState<{id:string;nom:string;identification?:string;race?:string;photo_url?:string}[]>([]);
   const [showPerePicker, setShowPerePicker] = useState(false);
+  const [pereSearch, setPereSearch] = useState('');
 
   // ── Chargement
   const loadAnimal = useCallback(async () => {
@@ -2719,20 +2721,28 @@ export default function AnimalFichePage() {
 
       {showPerePicker && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
-          onClick={() => setShowPerePicker(false)}>
+          onClick={() => { setShowPerePicker(false); setPereSearch(''); }}>
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[70vh] overflow-hidden shadow-2xl"
             onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b border-gray-100">
               <h3 className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Choisir le père</h3>
             </div>
+            <div className="p-3 border-b border-gray-100">
+              <input type="text" autoFocus value={pereSearch} onChange={e => setPereSearch(e.target.value)}
+                placeholder="Rechercher par nom…"
+                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+            </div>
             <div className="overflow-y-auto max-h-[55vh]">
-              {mesMales.map(m => (
+              {mesMales
+                .filter(m => m.nom?.toLowerCase().includes(pereSearch.trim().toLowerCase()))
+                .map(m => (
                 <button key={m.id} type="button"
                   onClick={() => {
                     set('nom_pere', m.nom);
                     set('puce_pere', m.identification ?? '');
                     set('race_pere', m.race ?? '');
                     setShowPerePicker(false);
+                    setPereSearch('');
                   }}
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-blue-50 transition-colors text-left border-b border-gray-50">
                   <div className="w-10 h-10 rounded-xl overflow-hidden bg-blue-50 flex-shrink-0 flex items-center justify-center">
@@ -2753,14 +2763,21 @@ export default function AnimalFichePage() {
 
       {showMerePicker && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4"
-          onClick={() => setShowMerePicker(false)}>
+          onClick={() => { setShowMerePicker(false); setMereSearch(''); }}>
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[70vh] overflow-hidden shadow-2xl"
             onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b border-gray-100">
               <h3 className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Choisir la mère</h3>
             </div>
+            <div className="p-3 border-b border-gray-100">
+              <input type="text" autoFocus value={mereSearch} onChange={e => setMereSearch(e.target.value)}
+                placeholder="Rechercher par nom…"
+                className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+            </div>
             <div className="overflow-y-auto max-h-[55vh]">
-              {mesFemelles.map(f => (
+              {mesFemelles
+                .filter(f => f.nom?.toLowerCase().includes(mereSearch.trim().toLowerCase()))
+                .map(f => (
                 <button key={f.id} type="button"
                   onClick={() => {
                     set('nom_mere', f.nom);
@@ -2768,6 +2785,7 @@ export default function AnimalFichePage() {
                     set('race_mere', f.race ?? '');
                     if (f.date_naissance) set('date_naissance_mere', f.date_naissance.substring(0, 10));
                     setShowMerePicker(false);
+                    setMereSearch('');
                   }}
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#F0F8EE] transition-colors text-left border-b border-gray-50">
                   <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#EEF5EA] flex-shrink-0 flex items-center justify-center">

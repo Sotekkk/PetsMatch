@@ -1489,7 +1489,14 @@ export default function AgendaElevagePage() {
 
       {/* Header + toggle vue */}
       <div className="flex items-center justify-between mb-5">
-        <h1 className="text-2xl font-bold text-gray-800" style={{ fontFamily: 'Galey, sans-serif' }}>Agenda</h1>
+        <div className="flex items-center gap-3">
+          <button onClick={() => router.back()} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
+            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <h1 className="text-2xl font-bold text-gray-800" style={{ fontFamily: 'Galey, sans-serif' }}>Agenda</h1>
+        </div>
         <div className="flex bg-gray-100 rounded-xl p-1 gap-0.5">
           {(['mois', 'semaine', 'jour'] as ViewMode[]).map(v => (
             <button key={v} onClick={() => setViewMode(v)}

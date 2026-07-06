@@ -441,7 +441,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
         const SizedBox(width: 12),
         _StatCard(
           value: _rdvTodayCount.toString(), label: 'RDV aujourd\'hui', icon: Icons.calendar_today_outlined,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AgendaPage(initialViewMode: 1))),
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AgendaPage(initialViewMode: 1, onBack: () => Navigator.pop(context)))),
         ),
         const SizedBox(width: 12),
         _StatCard(

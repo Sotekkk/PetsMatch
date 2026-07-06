@@ -2539,71 +2539,101 @@ class _IdentiteTab extends StatelessWidget {
     TextEditingController puceCtrl, {
     bool isMere = false,
   }) {
+    final searchCtrl = TextEditingController();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.5,
-        maxChildSize: 0.85,
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
         builder: (_, sc) => Container(
           decoration: const BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
-          child: Column(children: [
-            const SizedBox(height: 10),
-            Container(width: 40, height: 4,
-              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 14),
-            Text('Choisir la ${isMere ? 'mère' : 'père'}',
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
-            const SizedBox(height: 8),
-            if (animaux.isEmpty)
-              const Expanded(child: Center(child: Text('Aucun animal trouvé', style: TextStyle(color: Colors.grey))))
-            else
-              Expanded(
-                child: ListView.separated(
-                  controller: sc,
-                  itemCount: animaux.length,
-                  separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade100),
-                  itemBuilder: (_, i) {
-                    final a = animaux[i];
-                    final photoUrl = a['photo_url'] as String?;
-                    final subtitle = [a['race'], a['identification'] != null ? '#${a['identification']}' : null]
-                        .whereType<String>().join(' · ');
-                    return ListTile(
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: photoUrl != null
-                            ? CachedNetworkImage(imageUrl: photoUrl, width: 40, height: 40, fit: BoxFit.cover)
-                            : Container(width: 40, height: 40,
-                                decoration: BoxDecoration(
-                                  color: isMere ? const Color(0xFFEEF5EA) : const Color(0xFFE8F4F8),
-                                  borderRadius: BorderRadius.circular(8)),
-                                child: Icon(Icons.pets, color: isMere ? const Color(0xFF6E9E57) : const Color(0xFF0C5C6C), size: 20)),
-                      ),
-                      title: Text(a['nom'] ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
-                      subtitle: subtitle.isNotEmpty ? Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF6F767B))) : null,
-                      onTap: () {
-                        nomCtrl.text = a['nom'] ?? '';
-                        puceCtrl.text = a['identification'] ?? '';
-                        if (isMere) {
-                          final dn = a['date_naissance'] as String?;
-                          final race = a['race'] as String?;
-                          s.setState(() {
-                            if (dn != null && dn.isNotEmpty) s._dateNaissanceMere = DateTime.tryParse(dn);
-                            if (race != null && race.isNotEmpty) s._raceMereCtrl.text = race;
-                          });
-                        }
-                        Navigator.pop(context);
-                      },
-                    );
-                  },
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
+              final q = searchCtrl.text.trim().toLowerCase();
+              final filtered = q.isEmpty
+                  ? animaux
+                  : animaux.where((a) {
+                      final nom  = (a['nom'] as String? ?? '').toLowerCase();
+                      final race = (a['race'] as String? ?? '').toLowerCase();
+                      return nom.contains(q) || race.contains(q);
+                    }).toList();
+              return Column(children: [
+                const SizedBox(height: 10),
+                Container(width: 40, height: 4,
+                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+                const SizedBox(height: 14),
+                Text('Choisir la ${isMere ? 'mère' : 'père'}',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: TextField(
+                    controller: searchCtrl,
+                    autofocus: true,
+                    onChanged: (_) => setModalState(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'Rechercher par nom…',
+                      hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      filled: true, fillColor: Colors.grey.shade100,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+                    ),
+                  ),
                 ),
-              ),
-          ]),
+                const SizedBox(height: 8),
+                if (filtered.isEmpty)
+                  const Expanded(child: Center(child: Text('Aucun animal trouvé', style: TextStyle(color: Colors.grey))))
+                else
+                  Expanded(
+                    child: ListView.separated(
+                      controller: sc,
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade100),
+                      itemBuilder: (_, i) {
+                        final a = filtered[i];
+                        final photoUrl = a['photo_url'] as String?;
+                        final subtitle = [a['race'], a['identification'] != null ? '#${a['identification']}' : null]
+                            .whereType<String>().join(' · ');
+                        return ListTile(
+                          leading: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: photoUrl != null
+                                ? CachedNetworkImage(imageUrl: photoUrl, width: 40, height: 40, fit: BoxFit.cover)
+                                : Container(width: 40, height: 40,
+                                    decoration: BoxDecoration(
+                                      color: isMere ? const Color(0xFFEEF5EA) : const Color(0xFFE8F4F8),
+                                      borderRadius: BorderRadius.circular(8)),
+                                    child: Icon(Icons.pets, color: isMere ? const Color(0xFF6E9E57) : const Color(0xFF0C5C6C), size: 20)),
+                          ),
+                          title: Text(a['nom'] ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                          subtitle: subtitle.isNotEmpty ? Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF6F767B))) : null,
+                          onTap: () {
+                            nomCtrl.text = a['nom'] ?? '';
+                            puceCtrl.text = a['identification'] ?? '';
+                            if (isMere) {
+                              final dn = a['date_naissance'] as String?;
+                              final race = a['race'] as String?;
+                              s.setState(() {
+                                if (dn != null && dn.isNotEmpty) s._dateNaissanceMere = DateTime.tryParse(dn);
+                                if (race != null && race.isNotEmpty) s._raceMereCtrl.text = race;
+                              });
+                            }
+                            Navigator.pop(context);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ]);
+            },
+          ),
         ),
       ),
     );
