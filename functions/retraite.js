@@ -126,7 +126,10 @@ exports.sendRetraiteReminders = functions
     .onRun(async () => {
         // Utilise l'heure locale Paris pour éviter les décalages UTC minuit
         const now = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Paris"}));
-        const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+        const y = now.getFullYear();
+        const mo = String(now.getMonth() + 1).padStart(2, "0");
+        const d = String(now.getDate()).padStart(2, "0");
+        const todayStr = `${y}-${mo}-${d}`;
         let sent = 0;
 
         // Femelles actives, non stérilisées, avec date de naissance
