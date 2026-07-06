@@ -24,6 +24,17 @@ class BottomNav extends StatefulWidget {
   _BottomNavState createState() => _BottomNavState();
 }
 
+// Types de profils "pro" (hors éleveur/association/particulier) — même liste
+// que User_Info.applyProfile(). Aucun profil n'a littéralement profile_type
+// == 'pro' : le bouton "Professionnel" doit matcher n'importe lequel de ces
+// types, sinon le switch échoue silencieusement (activeProfileId reste sur
+// l'ancien profil).
+const _kProTypes = {
+  'veterinaire', 'para_medical', 'education', 'petsitter',
+  'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+  'restauration',
+};
+
 class _BottomNavState extends State<BottomNav> {
   int _selectedIndex = 0;
   // '' = rôles réels, 'eleveur', 'pro', 'particulier'
@@ -50,7 +61,10 @@ class _BottomNavState extends State<BottomNav> {
       if (main.isNotEmpty) User_Info.applyProfile(main);
     } else {
       final match = profiles.firstWhere(
-        (p) => (p['profile_type'] as String? ?? '') == role,
+        (p) {
+          final type = p['profile_type'] as String? ?? '';
+          return role == 'pro' ? _kProTypes.contains(type) : type == role;
+        },
         orElse: () => <String, dynamic>{},
       );
       print('[SWITCH] match found=${match.isNotEmpty} id=${match["id"]}');
@@ -65,7 +79,7 @@ class _BottomNavState extends State<BottomNav> {
 
   bool get _asElevage =>
       !_asAssociation && (
-        _previewRole == 'eleveur' ||
+        _previewRole == 'eleveur' || _previewRole == 'pro' ||
         (_previewRole.isEmpty && (User_Info.isElevage || User_Info.isPro))
       );
 
