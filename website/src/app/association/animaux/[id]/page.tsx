@@ -12,7 +12,7 @@ import AlimentationTab from '@/app/mes-animaux/[id]/AlimentationTab';
 
 interface Animal {
   id: string; nom?: string; espece?: string; race?: string; sexe?: string;
-  date_naissance?: string; date_entree?: string; statut?: string;
+  date_naissance?: string; age_estime?: boolean; date_entree?: string; statut?: string;
   photo_url?: string; poids?: string; description?: string;
   vaccins?: boolean; vaccines?: boolean; vermifuge?: boolean;
   identification?: string | boolean; sterilise?: boolean;
@@ -45,13 +45,17 @@ function fmtDate(d?: string | null): string {
   if (!d) return '–';
   return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 }
-function age(dn?: string | null): string {
+function age(dn?: string | null, estime?: boolean): string {
   if (!dn) return '';
   const m = Math.floor((Date.now() - new Date(dn).getTime()) / (1000 * 60 * 60 * 24 * 30));
-  if (m < 1) return "< 1 mois";
-  if (m < 12) return `${m} mois`;
-  const a = Math.floor(m / 12); const r = m % 12;
-  return r ? `${a} an${a > 1 ? 's' : ''} ${r} mois` : `${a} an${a > 1 ? 's' : ''}`;
+  let txt: string;
+  if (m < 1) txt = "< 1 mois";
+  else if (m < 12) txt = `${m} mois`;
+  else {
+    const a = Math.floor(m / 12); const r = m % 12;
+    txt = r ? `${a} an${a > 1 ? 's' : ''} ${r} mois` : `${a} an${a > 1 ? 's' : ''}`;
+  }
+  return estime ? `Environ ${txt} (né(e) vers ${new Date(dn).getFullYear()})` : txt;
 }
 function fmtDateShort(d?: string | null): string {
   if (!d) return '';
@@ -346,7 +350,7 @@ export default function AnimalAssoFichePage() {
                 { label: 'Espèce',   value: animal.espece },
                 { label: 'Race',     value: animal.race ?? '–' },
                 { label: 'Sexe',     value: animal.sexe === 'male' ? 'Mâle' : animal.sexe === 'femelle' ? 'Femelle' : '–' },
-                { label: 'Âge',      value: age(animal.date_naissance) || '–' },
+                { label: 'Âge',      value: age(animal.date_naissance, animal.age_estime) || '–' },
                 { label: 'Entrée',   value: fmtDate(animal.date_entree) },
                 { label: 'Poids',    value: animal.poids ? `${animal.poids} kg` : '–' },
               ].map(({ label, value }) => (
@@ -356,6 +360,11 @@ export default function AnimalAssoFichePage() {
                 </div>
               ))}
             </div>
+            {animal.age_estime && (
+              <p className="px-4 pb-3 text-xs text-amber-700 italic">
+                ⚠ Âge estimé — date de naissance exacte inconnue
+              </p>
+            )}
           </div>
 
           {/* Statut */}

@@ -151,6 +151,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   final _clubRegistreCtrl   = TextEditingController();
   final _pedigreeNumeroCtrl = TextEditingController();
   DateTime? _dateNaissance;
+  bool _ageEstime = false;
+  final _ageEstimeAnneesCtrl = TextEditingController();
   String? _photoUrl;
   File? _photoFile;
   String? _pedigreeUrl;
@@ -816,6 +818,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           nomVal: raw['nom'] ?? '', telVal: raw['tel'] ?? ''));
     }
     _dateNaissance = _parseDate(d['date_naissance']);
+    _ageEstime = d['age_estime'] as bool? ?? false;
+    if (_ageEstime && _dateNaissance != null) {
+      _ageEstimeAnneesCtrl.text =
+          ((DateTime.now().difference(_dateNaissance!).inDays) / 365).round().toString();
+    }
     // Registre E/S
     _statut = (d['statut'] as String?) ?? 'present';
     _provenanceNomCtrl.text     = (d['provenance_nom'] as String?) ?? '';
@@ -860,6 +867,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       _provenanceNomCtrl, _provenanceAdresseCtrl, _importationRefCtrl,
       _raceMereCtrl, _destinataireNomCtrl, _destinataireAdresseCtrl]) { c.dispose(); }
     for (final c in _contactsUrgence) c.dispose();
+    _ageEstimeAnneesCtrl.dispose();
     super.dispose();
   }
 
@@ -916,6 +924,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'documents':           _documents,
         'photo_url':           uploadedUrl,
         'date_naissance':      _dateNaissance?.toIso8601String(),
+        'age_estime':          widget.isAssociation ? _ageEstime : false,
         'statut':              _statut,
         'is_retraite':         _isRetraite,
         'date_entree':         _dateEntree?.toIso8601String(),
@@ -1283,6 +1292,25 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       ),
     );
     if (picked != null) setState(() => _dateNaissance = picked);
+  }
+
+  void _toggleAgeEstime(bool value) {
+    setState(() {
+      _ageEstime = value;
+      if (!value) {
+        _ageEstimeAnneesCtrl.clear();
+      }
+    });
+  }
+
+  void _applyAgeEstimeAnnees(String value) {
+    final annees = int.tryParse(value.trim());
+    if (annees == null || annees < 0) {
+      setState(() => _dateNaissance = null);
+      return;
+    }
+    final now = DateTime.now();
+    setState(() => _dateNaissance = DateTime(now.year - annees, now.month, now.day));
   }
 
   Future<void> _pickDocument(String nom, String type) async {
@@ -2092,26 +2120,102 @@ class _IdentiteTab extends StatelessWidget {
   }
 
   Widget _dateField(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: GestureDetector(
-        onTap: s._pickDate,
-        child: InputDecorator(
-          decoration: InputDecoration(
-            labelText: 'Date de naissance',
-            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            isDense: true,
-            suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF6E9E57)),
-          ),
-          child: Text(
-            s._dateNaissance != null ? DateFormat('dd/MM/yyyy').format(s._dateNaissance!) : 'Sélectionner',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 14,
-                color: s._dateNaissance != null ? const Color(0xFF1F2A2E) : Colors.grey),
+    // Option "Âge estimé" réservée aux associations : pour les chiens recueillis
+    // dont la date de naissance exacte est inconnue.
+    if (!s.widget.isAssociation) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: GestureDetector(
+          onTap: s._pickDate,
+          child: InputDecorator(
+            decoration: InputDecoration(
+              labelText: 'Date de naissance',
+              labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              isDense: true,
+              suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF6E9E57)),
+            ),
+            child: Text(
+              s._dateNaissance != null ? DateFormat('dd/MM/yyyy').format(s._dateNaissance!) : 'Sélectionner',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                  color: s._dateNaissance != null ? const Color(0xFF1F2A2E) : Colors.grey),
+            ),
           ),
         ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!s._ageEstime)
+            GestureDetector(
+              onTap: s._pickDate,
+              child: InputDecorator(
+                decoration: InputDecoration(
+                  labelText: 'Date de naissance',
+                  labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  isDense: true,
+                  suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF6E9E57)),
+                ),
+                child: Text(
+                  s._dateNaissance != null ? DateFormat('dd/MM/yyyy').format(s._dateNaissance!) : 'Sélectionner',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                      color: s._dateNaissance != null ? const Color(0xFF1F2A2E) : Colors.grey),
+                ),
+              ),
+            )
+          else
+            TextFormField(
+              controller: s._ageEstimeAnneesCtrl,
+              keyboardType: TextInputType.number,
+              onChanged: s._applyAgeEstimeAnnees,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(
+                labelText: 'Âge approximatif (années)',
+                hintText: 'Ex : 3',
+                labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                isDense: true,
+              ),
+            ),
+          if (s._ageEstime && s._dateNaissance != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Estimation : né(e) vers ${s._dateNaissance!.year}',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFB45309), fontStyle: FontStyle.italic),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              children: [
+                Switch(
+                  value: s._ageEstime,
+                  activeColor: const Color(0xFF6E9E57),
+                  onChanged: s._toggleAgeEstime,
+                ),
+                const Expanded(
+                  child: Text(
+                    'Date de naissance inconnue — indiquer un âge estimé',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

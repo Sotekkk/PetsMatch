@@ -15,6 +15,7 @@ interface Animal {
   statut: string;
   fa_id?: string | null;
   date_naissance?: string | null;
+  age_estime?: boolean;
   photo_url?: string | null;
   date_entree?: string | null;
   uid_eleveur?: string | null;
@@ -56,7 +57,7 @@ export default function AnimauxAssoPage() {
   useEffect(() => {
     if (!user) return;
     setMyUid(user.uid);
-    const cols = 'id, nom, espece, race, sexe, statut, fa_id, date_naissance, photo_url, date_entree, uid_eleveur';
+    const cols = 'id, nom, espece, race, sexe, statut, fa_id, date_naissance, age_estime, photo_url, date_entree, uid_eleveur';
     Promise.all([
       supabase.from('animaux').select(cols)
         .eq('uid_eleveur', user.uid).eq('is_association', true).order('nom'),
@@ -90,10 +91,11 @@ export default function AnimauxAssoPage() {
     );
   }, [animaux, tab, filterStatut, search]);
 
-  const age = (dn: string | null | undefined) => {
+  const age = (dn: string | null | undefined, estime?: boolean) => {
     if (!dn) return '';
     const mois = Math.floor((Date.now() - new Date(dn).getTime()) / (1000 * 60 * 60 * 24 * 30));
-    return mois < 12 ? `${mois}m` : `${Math.floor(mois / 12)}a`;
+    const val = mois < 12 ? `${mois}m` : `${Math.floor(mois / 12)}a`;
+    return estime ? `~${val} (estimation)` : val;
   };
 
   const handleChangeStatut = async (animalId: string, newStatut: string) => {
@@ -191,7 +193,7 @@ export default function AnimauxAssoPage() {
                   <div className="p-3">
                     <div className="flex items-center justify-between">
                       <p className="font-bold font-galey text-sm text-gray-900 truncate">{a.nom}</p>
-                      {age(a.date_naissance) && <span className="text-xs text-gray-400">{age(a.date_naissance)}</span>}
+                      {age(a.date_naissance, a.age_estime) && <span className="text-xs text-gray-400">{age(a.date_naissance, a.age_estime)}</span>}
                     </div>
                     {(a.race || a.espece) && (
                       <p className="text-xs text-gray-500 font-galey truncate">{a.race || a.espece}</p>

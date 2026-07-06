@@ -69,7 +69,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
     if (uid == null) return;
     _myUid = uid;
     try {
-      const cols = 'id,nom,espece,race,sexe,statut,fa_id,date_naissance,photo_url,date_entree,date_sortie,uid_eleveur';
+      const cols = 'id,nom,espece,race,sexe,statut,fa_id,date_naissance,age_estime,photo_url,date_entree,date_sortie,uid_eleveur';
       final results = await Future.wait([
         _supa.from('animaux').select(cols)
             .eq('uid_eleveur', uid).eq('is_association', true).order('nom'),
@@ -109,14 +109,15 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
     }).toList();
   }
 
-  String _age(dynamic dateNaissance) {
+  String _age(dynamic dateNaissance, [dynamic ageEstime]) {
     if (dateNaissance == null) return '';
     try {
       final dn = DateTime.parse(dateNaissance.toString());
       final diff = DateTime.now().difference(dn);
       final mois = (diff.inDays / 30).floor();
-      if (mois < 12) return '${mois}m';
-      return '${(mois / 12).floor()}a';
+      final suffixe = ageEstime == true ? ' (est.)' : '';
+      if (mois < 12) return '${mois}m$suffixe';
+      return '${(mois / 12).floor()}a$suffixe';
     } catch (_) {
       return '';
     }
@@ -241,7 +242,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
                           final isCession = _myUid != null && a['uid_eleveur'] != _myUid;
                           return _AnimalCard(
                             animal: a,
-                            age: _age(a['date_naissance']),
+                            age: _age(a['date_naissance'], a['age_estime']),
                             isCession: isCession,
                             onTap: () async {
                               await Navigator.push(context, MaterialPageRoute(

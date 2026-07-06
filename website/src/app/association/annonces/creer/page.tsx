@@ -42,6 +42,8 @@ export default function CreerAnnonceAssoPage() {
   const [contratAdoption, setContratAdoption] = useState(true);
   const [linkedAnimalId, setLinkedAnimalId] = useState<string | null>(animalIdParam);
   const [linkedAnimalNom, setLinkedAnimalNom] = useState<string | null>(null);
+  const [linkedAnimalDateNaissance, setLinkedAnimalDateNaissance] = useState<string | null>(null);
+  const [linkedAnimalAgeEstime, setLinkedAnimalAgeEstime] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [existingPhotoUrls, setExistingPhotoUrls] = useState<string[]>([]);
@@ -57,7 +59,7 @@ export default function CreerAnnonceAssoPage() {
   useEffect(() => {
     if (!user) return;
     supabase.from('animaux')
-      .select('id, nom, espece, race, sexe, statut, photo_url')
+      .select('id, nom, espece, race, sexe, statut, photo_url, date_naissance, age_estime')
       .eq('uid_eleveur', user.uid)
       .eq('is_association', true)
       .in('statut', ['disponible', 'en_soin'])
@@ -88,6 +90,8 @@ export default function CreerAnnonceAssoPage() {
           setSterilise(data.sterilise ?? false);
           setContratAdoption(data.contrat_adoption ?? true);
           if (data.animal_id) setLinkedAnimalId(data.animal_id);
+          setLinkedAnimalDateNaissance(data.date_naissance_animal ?? null);
+          setLinkedAnimalAgeEstime(data.age_estime ?? false);
           const existingPhotos = (data.photos as string[]) ?? [];
           setExistingPhotoUrls(existingPhotos);
         }
@@ -99,7 +103,7 @@ export default function CreerAnnonceAssoPage() {
   useEffect(() => {
     if (!animalIdParam || !user || editId) return;
     supabase.from('animaux')
-      .select('nom, espece, race, sexe, photo_url')
+      .select('nom, espece, race, sexe, photo_url, date_naissance, age_estime')
       .eq('id', animalIdParam).single()
       .then(({ data }) => { if (data) prefillAnimal(data, animalIdParam); });
   }, [animalIdParam, user]);
@@ -114,6 +118,8 @@ export default function CreerAnnonceAssoPage() {
   function prefillAnimal(data: any, id: string) {
     setLinkedAnimalId(id);
     setLinkedAnimalNom(data.nom ?? null);
+    setLinkedAnimalDateNaissance(data.date_naissance ?? null);
+    setLinkedAnimalAgeEstime(data.age_estime ?? false);
     if (data.nom && !editId) setTitre(`${data.nom} cherche une famille`);
     if (data.espece) setEspece(data.espece);
     if (data.race) { setRace(data.race); setRaceQuery(data.race); }
@@ -176,6 +182,8 @@ export default function CreerAnnonceAssoPage() {
           sterilise,
           contrat_adoption: contratAdoption,
           animal_id: linkedAnimalId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(linkedAnimalId) ? linkedAnimalId : null,
+          date_naissance_animal: linkedAnimalDateNaissance,
+          age_estime: linkedAnimalAgeEstime,
         }).eq('id', editId).eq('uid_eleveur', user.uid);
       } else {
         // Mode création — INSERT
@@ -215,6 +223,8 @@ export default function CreerAnnonceAssoPage() {
           sterilise,
           contrat_adoption: contratAdoption,
           animal_id: linkedAnimalId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(linkedAnimalId) ? linkedAnimalId : null,
+          date_naissance_animal: linkedAnimalDateNaissance,
+          age_estime: linkedAnimalAgeEstime,
           prix: null,
           created_at: new Date().toISOString(),
           expires_at: new Date(Date.now() + 60 * 86400000).toISOString(),

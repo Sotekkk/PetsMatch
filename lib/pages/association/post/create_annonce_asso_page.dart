@@ -61,6 +61,8 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
   // Animal sélectionné dans mes animaux
   String? _linkedAnimalId;
   String? _linkedAnimalNom;
+  String? _linkedAnimalDateNaissance;
+  bool _linkedAnimalAgeEstime = false;
 
   // Animaux association pour le picker
   List<Map<String, dynamic>> _mesAnimaux = [];
@@ -92,6 +94,8 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
   void _prefillFromAnimal(Map<String, dynamic> a) {
     _linkedAnimalId  = a['id']?.toString() ?? widget.animalId;
     _linkedAnimalNom = a['nom']?.toString();
+    _linkedAnimalDateNaissance = a['date_naissance']?.toString();
+    _linkedAnimalAgeEstime = a['age_estime'] as bool? ?? false;
     _espece = a['espece']?.toString() ?? 'chien';
     _raceCtrl.text = a['race']?.toString() ?? '';
     _sexe = a['sexe']?.toString() ?? 'inconnu';
@@ -115,6 +119,8 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
     _sterilise      = d['sterilise'] ?? false;
     _contratAdoption = d['contrat_adoption'] ?? true;
     _linkedAnimalId = d['animal_id']?.toString();
+    _linkedAnimalDateNaissance = d['date_naissance_animal']?.toString();
+    _linkedAnimalAgeEstime = d['age_estime'] as bool? ?? false;
   }
 
   Future<void> _loadMesAnimaux() async {
@@ -123,7 +129,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
     try {
       final data = await Supabase.instance.client
           .from('animaux')
-          .select('id,nom,espece,race,sexe,statut,photo_url')
+          .select('id,nom,espece,race,sexe,statut,photo_url,date_naissance,age_estime')
           .eq('uid_eleveur', uid)
           .inFilter('statut', ['disponible', 'en_soin'])
           .order('nom');
@@ -250,6 +256,8 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
         'sterilise':           _sterilise,
         'contrat_adoption':    _contratAdoption,
         'animal_id':           _toUuidOrNull(_linkedAnimalId),
+        'date_naissance_animal': _linkedAnimalDateNaissance,
+        'age_estime':          _linkedAnimalAgeEstime,
         'updated_at':          now,
       };
 

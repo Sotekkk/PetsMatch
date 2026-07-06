@@ -100,6 +100,7 @@ CREATE TABLE animaux (
   notes                 TEXT,
   description           TEXT,
   date_naissance        DATE,
+  age_estime            BOOLEAN DEFAULT FALSE,
   sterilise             BOOLEAN DEFAULT FALSE,
   type_poil             TEXT,
   -- Pedigree / registre
@@ -157,6 +158,7 @@ CREATE TABLE annonces (
   -- Animal
   date_naissance        DATE,
   date_naissance_animal DATE,
+  age_estime            BOOLEAN DEFAULT FALSE,
   sexe                  TEXT,
   couleur               TEXT,
   sterilise             BOOLEAN DEFAULT FALSE,

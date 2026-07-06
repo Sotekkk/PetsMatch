@@ -39,6 +39,7 @@ interface Annonce {
   registre_type?: string;
   date_naissance?: string;
   date_naissance_animal?: string;
+  age_estime?: boolean;
   saillie_conditions?: string;
   mere_nom?: string; mere_puce?: string; mere_race?: string;
   mere_photo_url?: string; mere_couleur?: string; mere_description?: string; mere_registre?: string;
@@ -736,10 +737,14 @@ export default function AnnonceDetailPage() {
 
             {/* ── DATE DE NAISSANCE ── */}
             {ageLabel(dateNaissStr) && (
-              <Chip icon="🎂" label={ageLabel(dateNaissStr)!} />
+              <Chip icon="🎂" label={annonce.age_estime ? `Environ ${ageLabel(dateNaissStr)!}` : ageLabel(dateNaissStr)!} />
             )}
             {fmtDate(dateNaissStr) && (
-              <Chip icon="📅" label={`Né(e) le ${fmtDate(dateNaissStr)}`} color="#4B5563" />
+              <Chip icon="📅"
+                label={annonce.age_estime
+                  ? `Né(e) vers ${new Date(dateNaissStr!).getFullYear()}`
+                  : `Né(e) le ${fmtDate(dateNaissStr)}`}
+                color="#4B5563" />
             )}
 
             {isPortee && annonce.nb_nes != null && (
@@ -749,6 +754,11 @@ export default function AnnonceDetailPage() {
               <Chip icon="⏳" label={`${annonce.nb_attendu} attendu${annonce.nb_attendu > 1 ? 's' : ''}`} color="#64748B" />
             )}
           </div>
+          {annonce.age_estime && (
+            <p className="text-xs text-amber-700 italic">
+              ⚠ Âge estimé par l'association — la date de naissance exacte de cet animal n'est pas connue.
+            </p>
+          )}
 
           {/* Prix */}
           {!isPortee && !isSaillie && annonce.prix != null && (

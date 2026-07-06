@@ -1158,6 +1158,7 @@ class _AnimalCard extends StatelessWidget {
     final couleur    = (data['couleur'] as String?) ?? '';
     final dateNaiss  = data['dateNaissanceAnimal'] as Timestamp?;
     final sterilise  = data['sterilise'] as bool? ?? false;
+    final ageEstime  = data['age_estime'] as bool? ?? false;
 
     String ageStr = '';
     if (dateNaiss != null) {
@@ -1167,6 +1168,7 @@ class _AnimalCard extends StatelessWidget {
       ageStr = years > 0
           ? '$years an${years > 1 ? 's' : ''}'
           : months > 0 ? '$months mois' : '${age.inDays} jours';
+      if (ageEstime) ageStr = 'Environ $ageStr';
     }
 
     return _sectionCard('Animal', Icons.cruelty_free_outlined, [
@@ -1178,10 +1180,20 @@ class _AnimalCard extends StatelessWidget {
         if (couleur.isNotEmpty) _InfoChip(Icons.palette_outlined, couleur),
         if (ageStr.isNotEmpty) _InfoChip(Icons.cake_outlined, ageStr),
         if (dateNaiss != null)
-          _InfoChip(Icons.calendar_today_outlined,
-              'Né(e) le ${DateFormat('dd/MM/yyyy').format(dateNaiss.toDate())}'),
+          _InfoChip(Icons.calendar_today_outlined, ageEstime
+              ? 'Né(e) vers ${dateNaiss.toDate().year}'
+              : 'Né(e) le ${DateFormat('dd/MM/yyyy').format(dateNaiss.toDate())}'),
         if (sterilise) _InfoChip(Icons.cut_outlined, 'Stérilisé(e)', Colors.orange),
       ]),
+      if (ageEstime)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            "⚠ Âge estimé par l'association — date de naissance exacte inconnue",
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+          ),
+        ),
     ]);
   }
 }
