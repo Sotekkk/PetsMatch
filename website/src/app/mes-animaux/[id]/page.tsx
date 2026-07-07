@@ -584,6 +584,7 @@ function DocumentsAnimalTab({ animalId }: { animalId: string }) {
     contrat_saillie: 'Contrat de saillie',
     contrat_adoption: 'Contrat d\'adoption',
     certificat_cession: 'Certificat de cession',
+    devis: 'Devis (éducateur)',
   };
   const typeIcon: Record<string,string> = {
     contrat_vente: '🤝',
@@ -591,11 +592,14 @@ function DocumentsAnimalTab({ animalId }: { animalId: string }) {
     contrat_saillie: '💞',
     contrat_adoption: '🏡',
     certificat_cession: '📋',
+    devis: '🧾',
   };
   const statutBadge = (statut: string) => {
     const cfg: Record<string,[string,string]> = {
       signe: ['bg-green-100 text-green-800', 'Signé'],
       archive: ['bg-gray-100 text-gray-600', 'Archivé'],
+      en_attente: ['bg-blue-100 text-blue-700', 'En attente de réponse'],
+      refuse: ['bg-red-100 text-red-600', 'Refusé'],
     };
     const [cls, label] = cfg[statut] ?? ['bg-yellow-100 text-yellow-800', 'Brouillon'];
     return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;

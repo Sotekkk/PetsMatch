@@ -18,6 +18,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/cession_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
+import 'package:PetsMatch/pages/pro/animal_devis_page.dart';
 import 'package:PetsMatch/pages/pro/education_rapports_page.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
@@ -92,6 +93,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   List<Map<String, dynamic>> _pensionAcces = [];
   bool _hasPensionUpdates = false;
   bool _hasEducationRapports = false;
+  bool _hasDevis = false;
   // Registre mouvements (plusieurs E/S par animal)
   List<Map<String, dynamic>> _mouvements = [];
   // Vet access (visible au propriétaire)
@@ -323,6 +325,10 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     try {
       final rapports = await _supa.from('education_progression').select('id').eq('animal_id', widget.animalId!).limit(1);
       if (mounted) setState(() => _hasEducationRapports = (rapports as List).isNotEmpty);
+    } catch (_) {}
+    try {
+      final devis = await _supa.from('devis').select('id').eq('animal_id', widget.animalId!).limit(1);
+      if (mounted) setState(() => _hasDevis = (devis as List).isNotEmpty);
     } catch (_) {}
   }
 
@@ -1725,6 +1731,29 @@ class _IdentiteTab extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF7B5EA7),
                   side: const BorderSide(color: Color(0xFF7B5EA7)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ],
+          if (s._hasDevis && !s.widget.vetMode) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => AnimalDevisPage(
+                    animalId: s.widget.animalId,
+                    animalNom: s._nomCtrl.text.isEmpty ? 'Animal' : s._nomCtrl.text,
+                  ),
+                )),
+                icon: const Icon(Icons.request_quote_outlined, size: 16),
+                label: const Text('🧾 Devis reçu(s)',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF0C5C6C),
+                  side: const BorderSide(color: Color(0xFF0C5C6C)),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
@@ -11463,6 +11492,7 @@ class _DocumentsTabState extends State<_DocumentsTab> {
       case 'contrat_vente': return Icons.handshake_outlined;
       case 'contrat_reservation': return Icons.bookmark_border;
       case 'certificat_cession': return Icons.assignment_turned_in_outlined;
+      case 'devis': return Icons.request_quote_outlined;
       default: return Icons.description_outlined;
     }
   }
@@ -11474,6 +11504,7 @@ class _DocumentsTabState extends State<_DocumentsTab> {
       case 'contrat_saillie': return 'Contrat de saillie';
       case 'certificat_cession': return 'Certificat de cession';
       case 'contrat_adoption': return 'Contrat d\'adoption';
+      case 'devis': return 'Devis (éducateur)';
       default: return 'Document';
     }
   }

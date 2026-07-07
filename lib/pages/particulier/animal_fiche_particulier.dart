@@ -16,6 +16,7 @@ import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/pages/pro/education_rapports_page.dart';
+import 'package:PetsMatch/pages/pro/animal_devis_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -83,6 +84,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   List<Map<String, dynamic>> _pensionAcces = [];
   bool _hasPensionUpdates = false;
   bool _hasEducationRapports = false;
+  bool _hasDevis = false;
 
   // Health records
   bool _loadingHealth = false;
@@ -155,6 +157,10 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     try {
       final rapports = await _supa.from('education_progression').select('id').eq('animal_id', _animalId!).limit(1);
       if (mounted) setState(() => _hasEducationRapports = (rapports as List).isNotEmpty);
+    } catch (_) {}
+    try {
+      final devis = await _supa.from('devis').select('id').eq('animal_id', _animalId!).limit(1);
+      if (mounted) setState(() => _hasDevis = (devis as List).isNotEmpty);
     } catch (_) {}
   }
 
@@ -646,6 +652,31 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF7B5EA7),
                   side: const BorderSide(color: Color(0xFF7B5EA7)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ),
+        ],
+        if (_hasDevis) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => AnimalDevisPage(
+                    animalId: _animalId,
+                    animalNom: _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text,
+                  ),
+                )),
+                icon: const Icon(Icons.request_quote_outlined, size: 16),
+                label: const Text('🧾 Devis reçu(s)',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF0C5C6C),
+                  side: const BorderSide(color: Color(0xFF0C5C6C)),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
