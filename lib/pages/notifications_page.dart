@@ -157,6 +157,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
       ));
       return;
     }
+    if (type == 'cours_collectif_rappel') {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => User_Info.catPro == 'education' ? const EducationPlanningPage() : const AgendaPage(),
+      ));
+      return;
+    }
 
     if (type == 'vet_access_demande') {
       final vetId     = data is Map ? data['vet_id']    as String? : null;
@@ -591,6 +597,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'rdv_confirme':           return Icons.event_available_outlined;
       case 'rdv_modifie':            return Icons.edit_calendar_outlined;
       case 'rdv_rappel':             return Icons.alarm_outlined;
+      case 'cours_collectif_rappel': return Icons.alarm_outlined;
       case 'rdv_refuse':             return Icons.event_busy_outlined;
       case 'rdv_annule':
       case 'rdv_annule_client':      return Icons.cancel_outlined;
@@ -640,6 +647,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'rdv_confirme':           return const Color(0xFF6E9E57);
       case 'rdv_modifie':            return const Color(0xFF0C5C6C);
       case 'rdv_rappel':             return const Color(0xFFFF9800);
+      case 'cours_collectif_rappel': return const Color(0xFF7B5EA7);
       case 'rdv_refuse':
       case 'rdv_annule':
       case 'rdv_annule_client':      return Colors.redAccent;

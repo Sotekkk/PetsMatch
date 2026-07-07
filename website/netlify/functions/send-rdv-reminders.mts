@@ -28,6 +28,14 @@ interface RdvRow {
   animal_id: string | null;
 }
 
+interface CoursRow {
+  id: string;
+  pro_uid: string;
+  titre: string;
+  date_heure: string;
+  lieu: string | null;
+}
+
 async function sendRdvReminders() {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -106,6 +114,68 @@ async function sendRdvReminders() {
 
     totalSent += ids.length;
     console.log(`send-rdv-reminders: sent ${ids.length} reminder(s) for tier ${tier.label}`);
+  }
+
+  // ── Cours collectifs (éducateur) — même mécanique, un cours a plusieurs
+  // participants inscrits en plus du pro, contrairement à un rdv individuel.
+  for (const tier of TIERS) {
+    const threshold = new Date(now.getTime() + tier.hoursBefore * 3600_000);
+
+    const { data: rows, error } = await supabase.from('cours_collectifs')
+      .select('id, pro_uid, titre, date_heure, lieu')
+      .eq('statut', 'planifie')
+      .eq(tier.column, false)
+      .gt('date_heure', now.toISOString())
+      .lte('date_heure', threshold.toISOString());
+
+    if (error) {
+      console.error(`send-rdv-reminders: cours_collectifs select failed for tier ${tier.label}`, error);
+      continue;
+    }
+    if (!rows || rows.length === 0) continue;
+
+    const coursRows = rows as CoursRow[];
+    const coursIds = coursRows.map(c => c.id);
+
+    const { data: participants } = await supabase.from('cours_collectifs_participants')
+      .select('cours_id, client_uid').in('cours_id', coursIds).eq('statut', 'inscrit');
+    const participantsByCourse: Record<string, string[]> = {};
+    for (const p of (participants ?? []) as { cours_id: string; client_uid: string }[]) {
+      (participantsByCourse[p.cours_id] ??= []).push(p.client_uid);
+    }
+
+    const notifRows: Record<string, unknown>[] = [];
+    for (const cours of coursRows) {
+      const dt = new Date(cours.date_heure);
+      const heureStr = dt.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Paris' });
+      const lieuTxt = cours.lieu ? ` (${cours.lieu})` : '';
+
+      notifRows.push({
+        uid: cours.pro_uid, type: 'cours_collectif_rappel',
+        title: `Rappel de cours ${tier.label}`,
+        body: `"${cours.titre}"${lieuTxt} est prévu le ${heureStr}.`,
+        data: { cours_id: cours.id }, read: false,
+      });
+      for (const clientUid of participantsByCourse[cours.id] ?? []) {
+        notifRows.push({
+          uid: clientUid, type: 'cours_collectif_rappel',
+          title: `Rappel de cours ${tier.label}`,
+          body: `"${cours.titre}"${lieuTxt} est prévu le ${heureStr}.`,
+          data: { cours_id: cours.id }, read: false,
+        });
+      }
+    }
+
+    if (notifRows.length > 0) {
+      const { error: insErr } = await supabase.from('notifications').insert(notifRows);
+      if (insErr) console.error(`send-rdv-reminders: cours_collectifs notification insert failed for tier ${tier.label}`, insErr);
+    }
+
+    const { error: updErr } = await supabase.from('cours_collectifs').update({ [tier.column]: true }).in('id', coursIds);
+    if (updErr) console.error(`send-rdv-reminders: cours_collectifs update failed for tier ${tier.label}`, updErr);
+
+    totalSent += notifRows.length;
+    console.log(`send-rdv-reminders: sent ${notifRows.length} cours_collectifs reminder(s) for tier ${tier.label}`);
   }
 
   return new Response(JSON.stringify({ rdvRemindered: totalSent }), { status: 200 });
