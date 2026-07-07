@@ -121,8 +121,16 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
       else if (c.types.contains('administrative_area_level_2') && ville.isEmpty) ville = c.longName;
     }
     final loc = det.result.geometry?.location;
+    // Certaines adresses rurales/isolées n'ont pas de composant street_number/route
+    // chez Google (lieu-dit, hameau…) — on retombe sur l'adresse formatée complète
+    // plutôt que de laisser le champ vide alors que le lieu est bien géolocalisé.
+    var rue = [num, route].where((s) => s.isNotEmpty).join(' ');
+    if (rue.isEmpty) {
+      rue = (det.result.formattedAddress ?? p.description ?? '')
+          .split(',').first.trim();
+    }
     setState(() {
-      _rueCtrl.text   = [num, route].where((s) => s.isNotEmpty).join(' ');
+      _rueCtrl.text   = rue;
       _cpCtrl.text    = cp;
       _villeCtrl.text = ville;
       if (loc != null) { _lat = loc.lat; _lng = loc.lng; }

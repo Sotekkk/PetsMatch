@@ -87,13 +87,24 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
                 .not('profile_id_proprio', 'is', null).limit(1)
           else
             Future.value(<dynamic>[]),
-          supa.from('annonces').select('id')
-              .eq('uid_eleveur', uid).inFilter('statut', ['disponible', 'reserve']),
-          supa.from('annonces')
-              .select('id, titre, espece, race, photos, statut, vues, created_at')
-              .eq('uid_eleveur', uid)
-              .inFilter('statut', ['disponible', 'reserve', 'pause'])
-              .order('created_at', ascending: false).limit(3),
+          activeProfileId.isNotEmpty
+              ? supa.from('annonces').select('id')
+                  .eq('uid_eleveur', uid).eq('profile_id', activeProfileId)
+                  .inFilter('statut', ['disponible', 'reserve'])
+              : supa.from('annonces').select('id')
+                  .eq('uid_eleveur', uid).neq('profil_source', 'association')
+                  .inFilter('statut', ['disponible', 'reserve']),
+          activeProfileId.isNotEmpty
+              ? supa.from('annonces')
+                  .select('id, titre, espece, race, photos, statut, vues, created_at')
+                  .eq('uid_eleveur', uid).eq('profile_id', activeProfileId)
+                  .inFilter('statut', ['disponible', 'reserve', 'pause'])
+                  .order('created_at', ascending: false).limit(3)
+              : supa.from('annonces')
+                  .select('id, titre, espece, race, photos, statut, vues, created_at')
+                  .eq('uid_eleveur', uid).neq('profil_source', 'association')
+                  .inFilter('statut', ['disponible', 'reserve', 'pause'])
+                  .order('created_at', ascending: false).limit(3),
           PlanService.getPlanCode(uid),
           PlanService.countActiveAnnonces(uid),
         ]);

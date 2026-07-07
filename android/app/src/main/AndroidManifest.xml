@@ -76,4 +76,25 @@
             android:name="flutterEmbedding"
             android:value="2"/>
     </application>
+    <!-- Android 11+ (API 30+) : sans ces déclarations, l'app ne peut pas
+         détecter/lancer Waze ou une app de navigation externe (canLaunchUrl
+         retourne systématiquement false même si l'app est installée). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="waze"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="geo"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="tel"/>
+        </intent>
+    </queries>
 </manifest>
