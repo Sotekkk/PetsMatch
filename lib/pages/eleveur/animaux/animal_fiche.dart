@@ -1505,7 +1505,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           tabs: widget.vetMode
               ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations')]
               : widget.educationMode
-                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Éducation'), Tab(text: 'Documents')]
+                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Éducation')]
                   : widget.isAssociation
                       ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')]
                       : (_statut == 'sorti' && !_isNewOwner
@@ -1530,7 +1530,6 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                     _IdentiteTab(this),
                     _CarnetSanteTab(animalId: widget.animalId),
                     _EducationTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text),
-                    _DocumentsTab(animalId: widget.animalId ?? ''),
                   ]
                 : widget.isAssociation
                 ? [

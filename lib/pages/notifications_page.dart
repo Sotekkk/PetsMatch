@@ -15,6 +15,7 @@ import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/pages/pro/education_rapports_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
+import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
@@ -272,6 +273,21 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (type == 'cours_collectif_inscription') {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => const EducationPlanningPage(),
+      ));
+      return;
+    }
+    // Devis reçu par le client — ouvre le lien d'acceptation dans le navigateur
+    if (type == 'devis_recu') {
+      final token = data is Map ? data['token'] as String? : null;
+      if (token != null) {
+        await launchUrl(Uri.parse('$kSiteBaseUrl/devis/$token'), mode: LaunchMode.externalApplication);
+      }
+      return;
+    }
+    // Devis accepté/refusé par le client — reçu par le pro
+    if (type == 'devis_accepte' || type == 'devis_refuse') {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => const EducationDevisPage(),
       ));
       return;
     }
@@ -568,6 +584,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'pension_journal_reply': return Icons.photo_camera_back_outlined;
       case 'education_rapport':     return Icons.school_outlined;
       case 'cours_collectif_inscription': return Icons.groups_outlined;
+      case 'devis_recu':             return Icons.request_quote_outlined;
+      case 'devis_accepte':          return Icons.check_circle_outline;
+      case 'devis_refuse':           return Icons.cancel_outlined;
       case 'rdv_demande':            return Icons.event_note_outlined;
       case 'rdv_confirme':           return Icons.event_available_outlined;
       case 'rdv_modifie':            return Icons.edit_calendar_outlined;
@@ -613,6 +632,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'pension_journal_reply': return const Color(0xFF6E9E57);
       case 'education_rapport':     return const Color(0xFF7B5EA7);
       case 'cours_collectif_inscription': return const Color(0xFF7B5EA7);
+      case 'devis_recu':             return const Color(0xFF0C5C6C);
+      case 'devis_accepte':          return const Color(0xFF6E9E57);
+      case 'devis_refuse':           return Colors.redAccent;
       case 'rdv_demande':
       case 'rdv_contre_proposition': return _teal;
       case 'rdv_confirme':           return const Color(0xFF6E9E57);

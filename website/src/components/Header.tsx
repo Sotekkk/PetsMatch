@@ -249,7 +249,7 @@ const MENU_EDUCATION = [
       { href: '/mes-rdv',            label: 'Gérer mes RDV',      icon: '🗓️' },
       { href: '/pro/creneaux',       label: 'Mes créneaux',       icon: '⏰' },
       { href: '/agenda',             label: 'Mon agenda',         icon: '📅' },
-      { href: '/mes-patients',       label: 'Mes élèves',         icon: '🐾' },
+      { href: '/mes-patients',       label: 'Mes animaux suivis', icon: '🐾' },
     ],
   },
   {
@@ -259,6 +259,7 @@ const MENU_EDUCATION = [
       { href: '/profil',     label: 'Modifier mon profil', icon: '✏️' },
       { href: '/employes',   label: 'Mes employés',        icon: '👥' },
       { href: '/mes-taches', label: 'Mes tâches',          icon: '✅' },
+      { href: '/education/devis',    label: 'Devis',       icon: '📋' },
       { href: '/elevage/facturation', label: 'Facturation', icon: '🧾' },
       { href: '/education/abonnement', label: 'Mon abonnement', icon: '💳' },
     ],
@@ -473,6 +474,11 @@ function getNotifUrl(n: Notif): string | null {
       return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
     case 'cours_collectif_inscription':
       return '/education/planning';
+    case 'devis_recu':
+      return d.token ? `/devis/${d.token}` : '/education/devis';
+    case 'devis_accepte':
+    case 'devis_refuse':
+      return '/education/devis';
     case 'rdv_demande':
     case 'rdv_contre_proposition':
     case 'rdv_annule_client':
@@ -923,6 +929,9 @@ export default function Header() {
                               : n.type === 'pension_journal' || n.type === 'pension_journal_reply' ? '📸'
                               : n.type === 'education_rapport' ? '🐾'
                               : n.type === 'cours_collectif_inscription' ? '👥'
+                              : n.type === 'devis_recu' ? '📋'
+                              : n.type === 'devis_accepte' ? '✅'
+                              : n.type === 'devis_refuse' ? '❌'
                               : n.type === 'contrat_saillie_invite' ? '💞'
                               : n.type === 'contrat_signe_complet' ? '✅'
                               : n.type === 'contrat_signe_acquereur' || n.type === 'contrat_signe_eleveur' ? '✍️'
