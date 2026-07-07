@@ -727,7 +727,7 @@ class _EleveurNavState extends State<EleveurNav> {
                     ));
                   },
                 ),
-                if (User_Info.isPro) ...[
+                if (User_Info.catPro == 'restauration' || User_Info.catPro == 'pension') ...[
                   const Divider(height: 8),
                   _DrawerItem(
                     icon: Icons.store_outlined,

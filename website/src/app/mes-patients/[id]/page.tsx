@@ -147,6 +147,8 @@ export default function PatientDetailPage() {
   const [rapportContenu, setRapportContenu] = useState('');
   const [rapportExercices, setRapportExercices] = useState('');
   const [savingRapport, setSavingRapport] = useState(false);
+  const [editingRapportId, setEditingRapportId] = useState<string | null>(null);
+  const [deleteRapportConfirmId, setDeleteRapportConfirmId] = useState<string | null>(null);
 
   // Add entry form
   type AddType = null | 'vaccin' | 'visite' | 'traitement' | 'ordonnance' | 'radio' | 'cr' | 'mesure';
@@ -186,6 +188,10 @@ export default function PatientDetailPage() {
     : grant?.statut === 'active_write';
   const writeRequested = grant?.statut === 'write_requested';
   const isPending = grant?.statut === 'pending';
+  // Les rapports de séance sont le contenu propre de l'éducateur (ses notes de
+  // séance), pas une modification de la fiche du propriétaire — n'importe quel
+  // accès accordé (lecture ou écriture) suffit pour les gérer, comme côté app.
+  const hasReportAccess = grant?.statut === 'active' || grant?.statut === 'active_write';
 
   const TABS: string[] = isPensionType
     ? ['Identité', 'Santé', 'Alimentation', 'Propriétaire']
@@ -354,6 +360,36 @@ export default function PatientDetailPage() {
     } finally {
       setSavingRapport(false);
     }
+  }
+
+  function startEditRapport(r: { id: string; contenu: string; exercices_conseilles: string | null }) {
+    setEditingRapportId(r.id);
+    setRapportContenu(r.contenu);
+    setRapportExercices(r.exercices_conseilles ?? '');
+    setShowAddRapport(false);
+  }
+
+  async function saveEditRapport() {
+    if (!editingRapportId || !rapportContenu.trim()) return;
+    setSavingRapport(true);
+    try {
+      await supabase.from('education_progression').update({
+        contenu: rapportContenu.trim(),
+        exercices_conseilles: rapportExercices.trim() || null,
+      }).eq('id', editingRapportId);
+      setRapports(prev => prev.map(r => r.id === editingRapportId
+        ? { ...r, contenu: rapportContenu.trim(), exercices_conseilles: rapportExercices.trim() || null }
+        : r));
+      setEditingRapportId(null); setRapportContenu(''); setRapportExercices('');
+    } finally {
+      setSavingRapport(false);
+    }
+  }
+
+  async function deleteRapport(id: string) {
+    await supabase.from('education_progression').delete().eq('id', id);
+    setRapports(prev => prev.filter(r => r.id !== id));
+    setDeleteRapportConfirmId(null);
   }
 
   async function requestWriteAccess() {
@@ -713,7 +749,7 @@ export default function PatientDetailPage() {
         {/* ── Éducation (rapports de séance + exercices conseillés) ── */}
         {tab === 'Éducation' && (
           <Card title="🎓 Suivi de progression">
-            {hasWriteAccess && (
+            {hasReportAccess && (
               <button onClick={() => setShowAddRapport(v => !v)}
                 className="w-full text-white rounded-2xl py-3 font-semibold text-sm transition-colors flex items-center justify-center gap-2 mb-4"
                 style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
@@ -742,13 +778,54 @@ export default function PatientDetailPage() {
                 </button>
               </div>
             )}
+            {editingRapportId && (
+              <div className="border border-[#0C5C6C]/30 rounded-2xl p-4 mb-4 space-y-3 bg-[#E8F4F6]/30">
+                <p className="text-xs font-semibold text-[#0C5C6C] uppercase tracking-wide">Modifier le rapport</p>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Compte rendu</label>
+                  <textarea value={rapportContenu} onChange={e => setRapportContenu(e.target.value)} rows={3}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Exercices conseillés</label>
+                  <textarea value={rapportExercices} onChange={e => setRapportExercices(e.target.value)} rows={2}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => { setEditingRapportId(null); setRapportContenu(''); setRapportExercices(''); }}
+                    className="flex-1 border border-gray-200 text-gray-600 rounded-xl py-2.5 text-sm font-semibold">
+                    Annuler
+                  </button>
+                  <button onClick={saveEditRapport} disabled={savingRapport || !rapportContenu.trim()}
+                    className="flex-1 text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
+                    style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
+                    {savingRapport ? '…' : 'Enregistrer'}
+                  </button>
+                </div>
+              </div>
+            )}
             {rapports.length === 0 ? (
               <EmptyState text="Aucun rapport de séance pour l'instant" />
             ) : (
               <div className="space-y-3">
                 {rapports.map(r => (
                   <div key={r.id} className="border border-gray-100 rounded-xl p-3">
-                    <p className="text-xs text-gray-400 mb-1">{fmtDateShort(r.date_seance)}</p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs text-gray-400">{fmtDateShort(r.date_seance)}</p>
+                      {hasReportAccess && (
+                        <div className="flex gap-2">
+                          <button onClick={() => startEditRapport(r)} className="text-gray-400 hover:text-[#0C5C6C] text-xs">✏️</button>
+                          {deleteRapportConfirmId === r.id ? (
+                            <span className="flex gap-1">
+                              <button onClick={() => deleteRapport(r.id)} className="text-red-600 font-semibold text-xs">Confirmer</button>
+                              <button onClick={() => setDeleteRapportConfirmId(null)} className="text-gray-400 text-xs">✕</button>
+                            </span>
+                          ) : (
+                            <button onClick={() => setDeleteRapportConfirmId(r.id)} className="text-gray-400 hover:text-red-500 text-xs">🗑️</button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <p className="text-sm text-[#1F2A2E]">{r.contenu}</p>
                     {r.exercices_conseilles && (
                       <div className="mt-2 bg-[#EEF5EA] rounded-lg px-2.5 py-1.5">

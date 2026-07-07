@@ -91,13 +91,21 @@ class _ProClientsPageState extends State<ProClientsPage>
     try {
       final supa = Supabase.instance.client;
 
-      // Profil pro actif
-      final proProfile = await supa.from('user_profiles')
-          .select('id').eq('uid', proUid).eq('is_main', true).maybeSingle();
-      final proProfileId = proProfile?['id'] as String?;
+      // Profil pro actif — un même uid peut porter plusieurs profils pro
+      // (ex : éducateur + vétérinaire), il faut donc résoudre le profil
+      // RÉELLEMENT actif plutôt que le profil principal (is_main), sinon
+      // on cherche les accès du mauvais profil.
+      String proProfileId = User_Info.activeProfileId;
+      if (proProfileId.isEmpty && User_Info.availableProfiles.isNotEmpty) {
+        final proProfile = User_Info.availableProfiles.firstWhere(
+          (p) => p['profile_type'] != 'particulier',
+          orElse: () => User_Info.availableProfiles.first,
+        );
+        proProfileId = proProfile['id']?.toString() ?? '';
+      }
 
       // Accès accordés via animal_access
-      if (proProfileId == null) {
+      if (proProfileId.isEmpty) {
         if (mounted) setState(() { _animals = []; _loading = false; });
         return;
       }
@@ -109,10 +117,13 @@ class _ProClientsPageState extends State<ProClientsPage>
           .order('granted_at', ascending: false);
 
       // Compléter avec les animaux des RDVs qui n'ont pas encore d'accès accordé
+      // — filtré par pro_profile_id pour éviter une fuite cross-profil si le
+      // même uid a des RDV pris depuis un autre profil pro.
       final rdvAnimals = await supa
           .from('rdv')
           .select('animal_id, client_uid, date_heure')
           .eq('pro_uid', proUid)
+          .eq('pro_profile_id', proProfileId)
           .inFilter('statut', ['confirme', 'termine'])
           .not('animal_id', 'is', null);
 

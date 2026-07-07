@@ -82,13 +82,31 @@ export default function MesPatientsPage() {
         setLoading(false);
         return;
       }
-      if (!grantRows || grantRows.length === 0) {
+
+      // Complète avec les animaux des RDV confirmés/terminés qui n'ont pas
+      // encore d'accès explicite (même logique que l'app) — filtré par
+      // pro_profile_id pour éviter une fuite cross-profil.
+      const seenIds = new Set((grantRows ?? []).map(g => g.animal_id));
+      const { data: rdvRows } = await supabase
+        .from('rdv')
+        .select('animal_id')
+        .eq('pro_uid', user!.uid)
+        .eq('pro_profile_id', activeProfileId)
+        .in('statut', ['confirme', 'termine'])
+        .not('animal_id', 'is', null);
+      const extraIds = [...new Set((rdvRows ?? []).map(r => r.animal_id).filter((id) => id && !seenIds.has(id)))];
+      const extraGrants: Grant[] = extraIds.map(id => ({
+        id: `rdv-${id}`, animal_id: id, statut: 'active', granted_at: '', animal: null,
+      }));
+      const allGrants = [...(grantRows ?? []), ...extraGrants];
+
+      if (allGrants.length === 0) {
         console.log('[mes-patients] no grants for profile:', activeProfileId);
         setLoading(false);
         return;
       }
 
-      const animalIds = grantRows.map(g => g.animal_id).filter(Boolean);
+      const animalIds = allGrants.map(g => g.animal_id).filter(Boolean);
       const { data: animalRows, error: animalErr } = await supabase
         .from('animaux')
         .select('id, nom, espece, race, date_naissance, photo_url')
@@ -97,7 +115,7 @@ export default function MesPatientsPage() {
       if (animalErr) console.error('[mes-patients] animaux error:', animalErr);
 
       const animalMap = new Map((animalRows ?? []).map(a => [a.id, a]));
-      const merged = grantRows.map(g => ({
+      const merged = allGrants.map(g => ({
         ...g,
         animal: animalMap.get(g.animal_id) ?? null,
       }));

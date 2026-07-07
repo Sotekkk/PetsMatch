@@ -9786,6 +9786,75 @@ class _EducationTabState extends State<_EducationTab> {
     }
   }
 
+  Future<void> _editRapport(Map<String, dynamic> r) async {
+    final contenuCtrl = TextEditingController(text: r['contenu']?.toString() ?? '');
+    final exercicesCtrl = TextEditingController(text: r['exercices_conseilles']?.toString() ?? '');
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+          const Text('Modifier le rapport', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 16),
+          TextField(controller: contenuCtrl, maxLines: 5, style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.all(12))),
+          const SizedBox(height: 12),
+          TextField(controller: exercicesCtrl, maxLines: 2, style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(labelText: 'Exercices conseillés',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.all(12))),
+          const SizedBox(height: 16),
+          SizedBox(width: double.infinity, child: ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: _purple, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+          )),
+        ]),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await _supa.from('education_progression').update({
+        'contenu': contenuCtrl.text.trim(),
+        'exercices_conseilles': exercicesCtrl.text.trim().isEmpty ? null : exercicesCtrl.text.trim(),
+      }).eq('id', r['id']);
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey'))));
+      }
+    }
+  }
+
+  Future<void> _deleteRapport(String id) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Supprimer ce rapport ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('Cette action est irréversible.', style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _supa.from('education_progression').delete().eq('id', id);
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey'))));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: _purple));
@@ -9830,7 +9899,19 @@ class _EducationTabState extends State<_EducationTab> {
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.grey.shade200)),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(r['date_seance']?.toString() ?? '', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+              Row(children: [
+                Expanded(child: Text(r['date_seance']?.toString() ?? '',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500))),
+                GestureDetector(
+                  onTap: () => _editRapport(r),
+                  child: Icon(Icons.edit_outlined, size: 16, color: Colors.grey.shade400),
+                ),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () => _deleteRapport(r['id'].toString()),
+                  child: Icon(Icons.delete_outline, size: 16, color: Colors.grey.shade400),
+                ),
+              ]),
               const SizedBox(height: 6),
               Text(r['contenu']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
               if ((r['exercices_conseilles']?.toString() ?? '').isNotEmpty) ...[

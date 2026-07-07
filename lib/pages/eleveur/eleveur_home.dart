@@ -73,60 +73,66 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
     if (uid == null) return;
     final supa = Supabase.instance.client;
     try {
-      final alertes = await supa.from('alertes_perdus')
+      final alertesFuture = supa.from('alertes_perdus')
           .select().eq('uid_proprietaire', uid).eq('statut', 'perdu');
 
       if (!User_Info.isPro) {
         // Éleveur : animaux présents (date_fin IS NULL, filtrés par profil actif)
         final activeProfileId = User_Info.activeProfileId;
+        final results = await Future.wait([
+          alertesFuture,
+          if (activeProfileId.isNotEmpty)
+            supa.from('animaux_proprietes')
+                .select('animal_id').eq('uid_proprio', uid)
+                .not('profile_id_proprio', 'is', null).limit(1)
+          else
+            Future.value(<dynamic>[]),
+          supa.from('annonces').select('id')
+              .eq('uid_eleveur', uid).inFilter('statut', ['disponible', 'reserve']),
+          supa.from('annonces')
+              .select('id, titre, espece, race, photos, statut, vues, created_at')
+              .eq('uid_eleveur', uid)
+              .inFilter('statut', ['disponible', 'reserve', 'pause'])
+              .order('created_at', ascending: false).limit(3),
+          PlanService.getPlanCode(uid),
+          PlanService.countActiveAnnonces(uid),
+        ]);
+        final alertes = results[0] as List;
+        final profileMigrated = (results[1] as List).isNotEmpty;
+        final annonces = results[2] as List;
+        final recent = results[3] as List;
+        final planCode = results[4] as String;
+        final activeCount = results[5] as int;
+
         int animalCount;
-        if (activeProfileId.isNotEmpty) {
-          final check = await supa.from('animaux_proprietes')
+        if (activeProfileId.isNotEmpty && profileMigrated) {
+          final rows = await supa.from('animaux_proprietes')
               .select('animal_id').eq('uid_proprio', uid)
-              .not('profile_id_proprio', 'is', null).limit(1);
-          if ((check as List).isNotEmpty) {
-            final rows = await supa.from('animaux_proprietes')
-                .select('animal_id').eq('uid_proprio', uid)
-                .eq('profile_id_proprio', activeProfileId)
-                .isFilter('date_fin', null);
-            animalCount = (rows as List).length;
-          } else {
-            final rows = await supa.from('animaux_proprietes')
-                .select('animal_id').eq('uid_proprio', uid)
-                .isFilter('date_fin', null);
-            animalCount = (rows as List).length;
-          }
+              .eq('profile_id_proprio', activeProfileId)
+              .isFilter('date_fin', null);
+          animalCount = (rows as List).length;
         } else {
           final rows = await supa.from('animaux_proprietes')
               .select('animal_id').eq('uid_proprio', uid)
               .isFilter('date_fin', null);
           animalCount = (rows as List).length;
         }
-        final annonces = await supa.from('annonces').select('id')
-            .eq('uid_eleveur', uid).inFilter('statut', ['disponible', 'reserve']);
-        final recent = await supa.from('annonces')
-            .select('id, titre, espece, race, photos, statut, vues, created_at')
-            .eq('uid_eleveur', uid)
-            .inFilter('statut', ['disponible', 'reserve', 'pause'])
-            .order('created_at', ascending: false).limit(3);
-        final planCode    = await PlanService.getPlanCode(uid);
-        final activeCount = await PlanService.countActiveAnnonces(uid);
         if (!mounted) return;
         setState(() {
           _animalCount = animalCount;
-          _postCount = (annonces as List).length;
+          _postCount = annonces.length;
           _recentAnnonces = List<Map<String, dynamic>>.from(recent);
-          _mesAlertes = List<Map<String, dynamic>>.from(alertes as List);
+          _mesAlertes = List<Map<String, dynamic>>.from(alertes);
           _planCode    = planCode;
           _activeCount = activeCount;
           _loading = false;
         });
       } else {
-        // Pro : stats spécifiques selon catPro
-        await _loadProStats(uid, supa);
+        // Pro : stats spécifiques selon catPro (en parallèle avec les alertes)
+        final results = await Future.wait([alertesFuture, _loadProStats(uid, supa)]);
         if (!mounted) return;
         setState(() {
-          _mesAlertes = List<Map<String, dynamic>>.from(alertes as List);
+          _mesAlertes = List<Map<String, dynamic>>.from(results[0] as List);
           _loading = false;
         });
       }
