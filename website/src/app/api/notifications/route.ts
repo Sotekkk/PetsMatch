@@ -6,9 +6,10 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// GET /api/notifications?uid=xxx
+// GET /api/notifications?uid=xxx&profileId=yyy
 export async function GET(req: NextRequest) {
   const uid = req.nextUrl.searchParams.get('uid');
+  const profileId = req.nextUrl.searchParams.get('profileId');
   if (!uid) return NextResponse.json([]);
 
   const { data } = await supabase
@@ -17,9 +18,18 @@ export async function GET(req: NextRequest) {
     .eq('uid', uid)
     .eq('read', false)
     .order('created_at', { ascending: false })
-    .limit(20);
+    .limit(50);
 
-  return NextResponse.json(data ?? []);
+  // profile_id est la source la plus fiable (multi-profil) — s'il est
+  // renseigné sur la notif, il prime sur profile_type (souvent absent à
+  // la création). Sans ce filtre, une notif destinée à un autre profil du
+  // même compte (ex. éleveur) apparaît aussi côté particulier/association.
+  const filtered = (data ?? []).filter((n) => {
+    if (n.profile_id) return n.profile_id === profileId;
+    return true;
+  }).slice(0, 20);
+
+  return NextResponse.json(filtered);
 }
 
 // PATCH /api/notifications — marquer tout comme lu

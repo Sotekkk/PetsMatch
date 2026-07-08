@@ -688,7 +688,9 @@ export default function Header() {
 
     // Via API route (service role) pour contourner les RLS avec Firebase Auth
     const fetchNotifs = async () => {
-      const res = await fetch(`/api/notifications?uid=${encodeURIComponent(user.uid)}`);
+      const qs = new URLSearchParams({ uid: user.uid });
+      if (activeProfileId) qs.set('profileId', activeProfileId);
+      const res = await fetch(`/api/notifications?${qs.toString()}`);
       if (res.ok) setNotifs(await res.json() as Notif[]);
     };
 

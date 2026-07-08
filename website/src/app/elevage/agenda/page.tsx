@@ -29,6 +29,7 @@ interface TacheManuelle {
   date: string;
   statut: string;
   uid_eleveur: string;
+  eleveur_profile_id?: string | null;
   heure?: string | null;
   assigne_a?: string | null;
   assignes_a?: string[] | null;
@@ -1209,7 +1210,7 @@ export default function AgendaElevagePage() {
         .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_at')
         .eq('assigned_to', user.uid).eq('date_prevue', selectedDate),
       withProfileFilter(supabase.from('taches_elevage')
-        .select('id,titre,date,statut,heure,uid_eleveur,assigne_a,assignes_a,fait_par,notes')
+        .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,assigne_a,assignes_a,fait_par,notes')
         .eq('uid_eleveur', user.uid).eq('date', selectedDate)),
     ]);
     const seen = new Set<string>();
@@ -1289,6 +1290,7 @@ export default function AgendaElevagePage() {
           body:  `${nomEmploye} a terminé : ${t.titre}`,
           data:  { tacheId: t.id, eleveurUid: t.uid_eleveur },
           read:  false,
+          ...(t.eleveur_profile_id ? { profile_id: t.eleveur_profile_id } : {}),
         });
       } catch (_) {}
     }

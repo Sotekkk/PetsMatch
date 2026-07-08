@@ -3244,6 +3244,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
         'body':  '$nomEmploye a terminé : ${t['label']}',
         'data':  {'tacheId': t['id'].toString(), 'eleveurUid': widget.eleveurUid},
         'read':  false,
+        if (widget.eleveurProfileId != null) 'profile_id': widget.eleveurProfileId,
       });
     } catch (_) {}
   }
@@ -3297,6 +3298,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
         'body':  '$nomEmploye a terminé : ${t['titre']}',
         'data':  {'tacheId': t['id'].toString(), 'eleveurUid': widget.eleveurUid},
         'read':  false,
+        if (widget.eleveurProfileId != null) 'profile_id': widget.eleveurProfileId,
       });
     } catch (_) {}
 

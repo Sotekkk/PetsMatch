@@ -12,6 +12,7 @@ interface Task {
   date: string;
   statut: 'a_faire' | 'fait';
   uid_eleveur: string;
+  eleveur_profile_id?: string | null;
   assigne_a: string | null;
   notes: string | null;
   animal_nom?: string;
@@ -98,6 +99,7 @@ export default function MesTachesPage() {
           body:  `${nomEmploye} a terminé : ${t.titre}`,
           data:  { tacheId: t.id, eleveurUid: t.uid_eleveur },
           read:  false,
+          ...(t.eleveur_profile_id ? { profile_id: t.eleveur_profile_id } : {}),
         });
       } catch (_) {}
     }
