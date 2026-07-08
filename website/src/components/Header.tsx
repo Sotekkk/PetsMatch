@@ -83,7 +83,7 @@ const NAV_ASSOCIATION = [
   { href: '/association/annonces',     label: 'Mes Annonces' },
   { href: '/association/planning',     label: 'Planning' },
   { href: '/animaux-perdus',           label: 'Animaux perdus' },
-  { href: '/messages',                 label: 'Messages' },
+  { href: '/services',                 label: 'Annuaire des professionnels' },
 ];
 
 // ── Menu drawer items (miroir des drawers de l'app) ──────────────────────────
