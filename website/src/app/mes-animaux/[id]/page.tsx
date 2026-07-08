@@ -18,7 +18,7 @@ import { PensionJournal } from '@/components/PensionJournal';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Animal {
-  id: string; nom?: string; espece?: string; race?: string; sexe?: string;
+  id: string; nom?: string; espece?: string; espece_autre?: string; race?: string; sexe?: string;
   date_naissance?: string; couleur?: string; identification?: string;
   sterilise?: boolean; description?: string; notes?: string; photo_url?: string;
   statut?: string; passeport_europeen?: string; type_poil?: string; taille?: string; poids?: string;
@@ -1355,7 +1355,9 @@ export default function AnimalFichePage() {
     setSaving(true);
     try {
       const payload: Partial<Animal> = {
-        nom: animal.nom?.trim(), espece: animal.espece, race: animal.race, sexe: animal.sexe,
+        nom: animal.nom?.trim(), espece: animal.espece,
+        espece_autre: animal.espece === 'autre' ? (animal.espece_autre || undefined) : undefined,
+        race: animal.race, sexe: animal.sexe,
         date_naissance: animal.date_naissance || undefined, couleur: animal.couleur,
         identification: animal.identification, sterilise: animal.sterilise,
         description: animal.description, notes: animal.notes,
@@ -1697,7 +1699,7 @@ export default function AnimalFichePage() {
           </h1>
           {!isNew && (
             <p className="text-sm text-gray-500">
-              {[animal.espece && ESPECE_EMOJI[animal.espece], animal.race || animal.espece, animal.date_naissance && age(animal.date_naissance)].filter(Boolean).join(' · ')}
+              {[animal.espece && ESPECE_EMOJI[animal.espece], animal.race || (animal.espece === 'autre' ? animal.espece_autre : animal.espece) || animal.espece, animal.date_naissance && age(animal.date_naissance)].filter(Boolean).join(' · ')}
             </p>
           )}
         </div>
@@ -1947,6 +1949,9 @@ export default function AnimalFichePage() {
                 <Field label="Nom" value={animal.nom??''} onChange={v=>set('nom',v)} required />
                 <SelectField label="Espèce" value={animal.espece??'chien'} onChange={v=>set('espece',v)}
                   options={ESPECES.map(e=>({ value:e, label:e.charAt(0).toUpperCase()+e.slice(1) }))} />
+                {animal.espece === 'autre' && (
+                  <Field label="Préciser l'espèce" value={animal.espece_autre??''} onChange={v=>set('espece_autre',v)} />
+                )}
                 <div>
                   <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Race</label>
                   <input list={`breeds-${id}`} value={animal.race??''} onChange={e=>set('race',e.target.value)}
@@ -1986,7 +1991,7 @@ export default function AnimalFichePage() {
               <div className="space-y-2">
                 {[
                   { label:'Nom', value:animal.nom },
-                  { label:'Espèce', value:animal.espece },
+                  { label:'Espèce', value: animal.espece === 'autre' && animal.espece_autre ? animal.espece_autre : animal.espece },
                   { label:'Race', value:animal.race },
                   { label:'Sexe', value:animal.sexe==='male'?'♂ Mâle':animal.sexe==='femelle'?'♀ Femelle':'Inconnu' },
                   { label:'Naissance', value:fmtDate(animal.date_naissance) + (animal.date_naissance ? ` (${age(animal.date_naissance)})` : '') },

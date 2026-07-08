@@ -116,6 +116,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   final _puceMereCtrl = TextEditingController();
 
   String _espece = 'chien';
+  final _especeAutreCtrl = TextEditingController();
   String _sexe = 'male';
   bool _sterilise = false;
   String? _typePoil;
@@ -786,6 +787,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     if (d == null) return;
     _ownerUid = (d['uid_eleveur'] ?? d['uid_proprietaire'])?.toString();
     _espece = d['espece'] ?? _espece;
+    _especeAutreCtrl.text = (d['espece_autre'] as String?) ?? '';
     _descriptionCtrl.text = d['description'] ?? '';
     _nomCtrl.text   = d['nom'] ?? '';
     _raceCtrl.text  = d['race'] ?? '';
@@ -874,6 +876,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       _raceMereCtrl, _destinataireNomCtrl, _destinataireAdresseCtrl]) { c.dispose(); }
     for (final c in _contactsUrgence) c.dispose();
     _ageEstimeAnneesCtrl.dispose();
+    _especeAutreCtrl.dispose();
     super.dispose();
   }
 
@@ -902,6 +905,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         if (activeProfileId.isNotEmpty && widget.animalId == null)
           'profile_id': activeProfileId,
         'espece':              _espece,
+        'espece_autre':        _espece == 'autre' ? _especeAutreCtrl.text.trim() : null,
         'description':         _descriptionCtrl.text.trim(),
         'nom':                 _nomCtrl.text.trim(),
         'race':                _raceCtrl.text.trim(),
@@ -1649,6 +1653,10 @@ class _IdentiteTab extends StatelessWidget {
                 _card([_field('Description', s._descriptionCtrl, maxLines: 4)]),
                 const SizedBox(height: 16),
                 _especeDropdown(context),
+                if (s._espece == 'autre') ...[
+                  const SizedBox(height: 10),
+                  _field('Préciser l\'espèce', s._especeAutreCtrl),
+                ],
                 const SizedBox(height: 16),
                 _card([
                   _field('Nom', s._nomCtrl, required: true),

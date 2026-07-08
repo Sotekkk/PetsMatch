@@ -66,6 +66,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   final _poidsCtrl    = TextEditingController();
 
   String _espece = 'chien';
+  final _especeAutreCtrl = TextEditingController();
   String _sexe = 'male';
   bool _sterilise = false;
   DateTime? _dateNaissance;
@@ -118,6 +119,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   void dispose() {
     _tabs.dispose();
     _nomCtrl.dispose();
+    _especeAutreCtrl.dispose();
     _raceCtrl.dispose();
     _couleurCtrl.dispose();
     _identCtrl.dispose();
@@ -217,6 +219,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           nomVal: raw['nom'] ?? '', telVal: raw['tel'] ?? ''));
     }
     _espece    = d['espece'] ?? 'chien';
+    _especeAutreCtrl.text = d['espece_autre'] ?? '';
     _sexe      = d['sexe'] ?? 'male';
     _sterilise = d['sterilise'] ?? false;
     _photoUrl  = d['photo_url'];
@@ -298,6 +301,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       final data = {
         'nom': nom,
         'espece': _espece,
+        'espece_autre': _espece == 'autre' ? _especeAutreCtrl.text.trim() : null,
         'race': _raceCtrl.text.trim().isEmpty ? null : _raceCtrl.text.trim(),
         'sexe': _sexe,
         'sterilise': _sterilise,
@@ -871,6 +875,13 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
             onChanged: (v) => setState(() { _espece = v; _raceCtrl.clear(); }),
           ),
           const SizedBox(height: 18),
+
+          if (_espece == 'autre') ...[
+            _FLabel('Préciser l\'espèce'),
+            const SizedBox(height: 6),
+            _FField(controller: _especeAutreCtrl, hint: 'Ex: Furet, Tortue...'),
+            const SizedBox(height: 18),
+          ],
 
           _FLabel('Race'),
           const SizedBox(height: 6),

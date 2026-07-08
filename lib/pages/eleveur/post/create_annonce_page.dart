@@ -39,6 +39,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
 
   // ── Espèce & Race ─────────────────────────────────────────────────────────────
   String _espece = 'chien';
+  final _especeAutreCtrl = TextEditingController();
   final _raceCtrl      = TextEditingController();
   final _raceFocusNode = FocusNode();
 
@@ -170,6 +171,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _type      = d['type'] ?? 'portee';
     _typeVente = d['type_vente'] ?? d['typeVente'] ?? 'vente';
     _espece    = d['espece'] ?? 'chien';
+    _especeAutreCtrl.text = d['espece_autre'] ?? '';
     _raceCtrl.text = d['race'] ?? '';
     _photosUrls = List<String>.from(d['photos'] ?? []);
     _titreCtrl.text = d['titre'] ?? '';
@@ -229,6 +231,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   void dispose() {
     _raceFocusNode.dispose();
     for (final c in [
+      _especeAutreCtrl,
       _raceCtrl, _titreCtrl, _descCtrl, _prixCtrl,
       _mereNomCtrl, _merePuceCtrl, _mereRaceCtrl, _mereCouleurCtrl, _mereDescCtrl,
       _pereNomCtrl, _perePuceCtrl, _pereRaceCtrl, _pereCouleurCtrl, _pereDescCtrl,
@@ -635,6 +638,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         'type':                 _type,
         'type_vente':           _typeVente,
         'espece':               _espece,
+        'espece_autre':         _espece == 'autre' ? _especeAutreCtrl.text.trim() : null,
         'race':                 _raceCtrl.text.trim(),
         'titre':                _titreCtrl.text.trim(),
         'description':          _descCtrl.text.trim(),
@@ -1167,6 +1171,11 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
           ),
         )).toList(),
       ),
+      if (_espece == 'autre') ...[
+        const SizedBox(height: 12),
+        _label('Préciser l\'espèce'),
+        _textField(_especeAutreCtrl, 'Ex: Furet, Tortue...'),
+      ],
       const SizedBox(height: 12),
       _label('Race'),
       _raceField(),

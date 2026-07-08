@@ -21,6 +21,7 @@ interface Annonce {
   id: string;
   titre?: string;
   espece?: string;
+  espece_autre?: string;
   race?: string;
   type?: string;
   type_vente?: string;
@@ -88,13 +89,14 @@ function ageLabel(dateStr?: string): string | null {
   return m <= 1 ? '1 mois' : `${m} mois`;
 }
 
-function especeLabel(e?: string) {
+function especeLabel(e?: string, especeAutre?: string) {
   const map: Record<string, string> = {
     chien: '🐕 Chien', chat: '🐈 Chat', lapin: '🐇 Lapin',
     oiseau: '🐦 Oiseau', reptile: '🦎 Reptile', cheval: '🐴 Cheval',
     ane: '🫏 Âne', ovin: '🐑 Ovin', caprin: '🐐 Caprin',
     porcin: '🐷 Porcin', nac: '🐾 NAC', poule: '🐓 Poule',
   };
+  if (e?.toLowerCase() === 'autre' && especeAutre) return `🐾 ${especeAutre}`;
   return e ? (map[e.toLowerCase()] ?? `🐾 ${e}`) : '';
 }
 
@@ -664,7 +666,7 @@ export default function AnnonceDetailPage() {
   const bebes = (annonce.animaux_portee ?? []) as Bebe[];
   const isPortee = annonce.type === 'portee';
   const isSaillie = annonce.type_vente === 'saillie';
-  const titre = annonce.titre || annonce.race || especeLabel(annonce.espece) || 'Annonce';
+  const titre = annonce.titre || annonce.race || especeLabel(annonce.espece, annonce.espece_autre) || 'Annonce';
   const dateNaissStr = isPortee ? annonce.date_naissance : annonce.date_naissance_animal;
 
   return (
@@ -710,7 +712,7 @@ export default function AnnonceDetailPage() {
         <div className="bg-white rounded-2xl p-5 shadow-sm">
           <h1 className="font-['Galey'] font-bold text-xl text-[#1E2025] mb-3">{titre}</h1>
           <div className="flex flex-wrap gap-2">
-            {annonce.espece && <Chip icon="🐾" label={especeLabel(annonce.espece)} />}
+            {annonce.espece && <Chip icon="🐾" label={especeLabel(annonce.espece, annonce.espece_autre)} />}
             {annonce.race && annonce.race !== annonce.espece && <Chip icon="🏷️" label={annonce.race} />}
             {annonce.registre_type && !annonce.registre_type.startsWith('Non ') &&
               <Chip icon="📜" label={annonce.registre_type} color="#6E9E57" />}

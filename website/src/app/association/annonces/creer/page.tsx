@@ -30,6 +30,7 @@ export default function CreerAnnonceAssoPage() {
 
   const [titre, setTitre] = useState('');
   const [espece, setEspece] = useState('');
+  const [especeAutre, setEspeceAutre] = useState('');
   const [race, setRace] = useState('');
   const [raceQuery, setRaceQuery] = useState('');
   const [breeds, setBreeds] = useState<string[]>([]);
@@ -59,7 +60,7 @@ export default function CreerAnnonceAssoPage() {
   useEffect(() => {
     if (!user) return;
     supabase.from('animaux')
-      .select('id, nom, espece, race, sexe, statut, photo_url, date_naissance, age_estime')
+      .select('id, nom, espece, espece_autre, race, sexe, statut, photo_url, date_naissance, age_estime')
       .eq('uid_eleveur', user.uid)
       .eq('is_association', true)
       .in('statut', ['disponible', 'en_soin'])
@@ -80,6 +81,7 @@ export default function CreerAnnonceAssoPage() {
         if (data) {
           setTitre(data.titre ?? '');
           setEspece(data.espece ?? '');
+          setEspeceAutre(data.espece_autre ?? '');
           setRace(data.race ?? '');
           setRaceQuery(data.race ?? '');
           setSexe(data.sexe ?? '');
@@ -103,7 +105,7 @@ export default function CreerAnnonceAssoPage() {
   useEffect(() => {
     if (!animalIdParam || !user || editId) return;
     supabase.from('animaux')
-      .select('nom, espece, race, sexe, photo_url, date_naissance, age_estime')
+      .select('nom, espece, espece_autre, race, sexe, photo_url, date_naissance, age_estime')
       .eq('id', animalIdParam).single()
       .then(({ data }) => { if (data) prefillAnimal(data, animalIdParam); });
   }, [animalIdParam, user]);
@@ -122,6 +124,7 @@ export default function CreerAnnonceAssoPage() {
     setLinkedAnimalAgeEstime(data.age_estime ?? false);
     if (data.nom && !editId) setTitre(`${data.nom} cherche une famille`);
     if (data.espece) setEspece(data.espece);
+    setEspeceAutre(data.espece_autre ?? '');
     if (data.race) { setRace(data.race); setRaceQuery(data.race); }
     if (data.sexe) setSexe(data.sexe);
     if (data.photo_url && !editId) setExistingPhotoUrls([data.photo_url]);
@@ -172,6 +175,7 @@ export default function CreerAnnonceAssoPage() {
         await supabase.from('annonces').update({
           titre: titre || `${ESPECE_LABEL[espece] ?? espece} cherche une famille`,
           espece,
+          espece_autre: espece === 'autre' ? (especeAutre.trim() || null) : null,
           race: race || null,
           sexe: sexe || null,
           description: description || null,
@@ -209,6 +213,7 @@ export default function CreerAnnonceAssoPage() {
           pays_eleveur: userData?.pays_elevage ?? 'France',
           titre: titre || `${ESPECE_LABEL[espece] ?? espece} cherche une famille`,
           espece,
+          espece_autre: espece === 'autre' ? (especeAutre.trim() || null) : null,
           race: race || null,
           sexe: sexe || null,
           type: 'animal',
@@ -332,6 +337,11 @@ export default function CreerAnnonceAssoPage() {
               </button>
             ))}
           </div>
+          {espece === 'autre' && (
+            <input value={especeAutre} onChange={e => setEspeceAutre(e.target.value)}
+              placeholder="Préciser l'espèce (ex : Furet, Tortue...)"
+              className="mt-2 w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-teal-400" />
+          )}
         </div>
 
         {/* Race / Sexe */}

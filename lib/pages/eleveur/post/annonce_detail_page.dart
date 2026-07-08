@@ -367,6 +367,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     final isOwner   = FirebaseAuth.instance.currentUser?.uid == data['uidEleveur'];
     final photos    = List<String>.from(data['photos'] ?? []);
     final espece    = (data['espece'] as String?) ?? '';
+    final especeAutre = (data['espece_autre'] as String?) ?? '';
     final race      = (data['race'] as String?) ?? '';
     final titre     = (data['titre'] as String?) ?? '';
     final type      = (data['type'] as String?) ?? 'animal';
@@ -374,7 +375,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     final desc      = (data['description'] as String?) ?? '';
     final registreType = (data['registreType'] as String?) ?? '';
     final displayTitle = titre.isNotEmpty ? titre
-        : race.isNotEmpty ? race : speciesLabel(espece);
+        : race.isNotEmpty ? race
+        : (espece == 'autre' && especeAutre.isNotEmpty) ? especeAutre : speciesLabel(espece);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F0),
@@ -621,6 +623,8 @@ class _HeaderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final espece    = (data['espece'] as String?) ?? '';
+    final especeAutre = (data['espece_autre'] as String?) ?? '';
+    final especeDisplay = (espece == 'autre' && especeAutre.isNotEmpty) ? especeAutre : speciesLabel(espece);
     final race      = (data['race'] as String?) ?? '';
     final titre     = (data['titre'] as String?) ?? '';
     final type      = (data['type'] as String?) ?? 'animal';
@@ -639,7 +643,7 @@ class _HeaderCard extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           speciesIcon(espece, 13, _teal), const SizedBox(width: 5),
-          Text(race.isNotEmpty ? race : speciesLabel(espece),
+          Text(race.isNotEmpty ? race : especeDisplay,
               style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
                   color: _teal, fontWeight: FontWeight.w600)),
           const Spacer(),
@@ -655,7 +659,7 @@ class _HeaderCard extends StatelessWidget {
                     color: Colors.grey.shade400)),
         ]),
         const SizedBox(height: 8),
-        Text(titre.isNotEmpty ? titre : race.isNotEmpty ? race : speciesLabel(espece),
+        Text(titre.isNotEmpty ? titre : race.isNotEmpty ? race : especeDisplay,
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800,
                 fontSize: 20, color: _dark)),
         const SizedBox(height: 10),
