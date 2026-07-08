@@ -825,7 +825,7 @@ export default function Header() {
         <nav className="hidden md:flex items-center gap-1 flex-1 justify-center">
           {navLinks.map((l) => (
             <Link key={l.href} href={l.href}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded-full text-sm font-medium text-center transition-colors ${
                 isActive(l.href)
                   ? 'bg-white/20 text-white'
                   : 'text-white/75 hover:text-white hover:bg-white/10'
