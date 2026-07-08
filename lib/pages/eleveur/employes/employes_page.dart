@@ -45,6 +45,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 
 // ─── Libellé de structure pour les notifications d'invitation ────────────────
@@ -608,10 +609,17 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
     final employeProfileId = user['_profile_id'] as String?;
     final profilSource = widget.isAssociation ? 'association' : 'eleveur';
 
-    // Résoudre le profile_id de l'employeur
-    final eleveurProfileData = await _supa.from('user_profiles')
-        .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
-    final eleveurProfileId = eleveurProfileData?['id'] as String?;
+    // Résoudre le profile_id de l'employeur — le profil ACTIF, pas le profil
+    // "is_main" du compte : sinon un employé ajouté depuis le profil
+    // éducateur/pension se retrouve rattaché au profil éleveur du même
+    // compte (bug constaté : un employé de l'éleveur comptait dans la
+    // limite du forfait éducateur).
+    var eleveurProfileId = User_Info.activeProfileId;
+    if (eleveurProfileId.isEmpty) {
+      final eleveurProfileData = await _supa.from('user_profiles')
+          .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
+      eleveurProfileId = eleveurProfileData?['id'] as String? ?? '';
+    }
 
     // Cherche uniquement dans le profil courant (élevage OU association, pas les deux)
     var q = _supa.from('employes').select()
@@ -622,7 +630,42 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
     } else {
       q = q.or('profil_source.is.null,profil_source.eq.eleveur');
     }
+    q = q.eq('eleveur_profile_id', eleveurProfileId);
     final existing = await q.maybeSingle();
+
+    // Limite d'employés par forfait (éducateur/pension) — la page d'abonnement
+    // annonce ces limites mais rien ne les appliquait jusqu'ici.
+    if (existing == null || existing['actif'] != true) {
+      final catPro = User_Info.catPro;
+      int maxEmployes = -1;
+      if (catPro == 'education') {
+        final planCode = await PlanService.getEducationPlanCode(widget.uid);
+        maxEmployes = PlanService.getEducationConfig(planCode).maxEmployes;
+      } else if (catPro == 'pension') {
+        final planCode = await PlanService.getPensionPlanCode(widget.uid);
+        maxEmployes = PlanService.getPensionConfig(planCode).maxEmployes;
+      }
+      if (maxEmployes != -1) {
+        // Scoper par eleveur_profile_id précis : profil_source ne distingue
+        // que association vs "le reste", donc les employés d'un AUTRE profil
+        // non-association du même compte (ex. éleveur) seraient sinon
+        // comptés à tort dans la limite du profil éducateur/pension.
+        final activeEmployes = await _supa.from('employes').select('id')
+            .eq('uid_eleveur', widget.uid).eq('actif', true)
+            .eq('eleveur_profile_id', eleveurProfileId);
+        if (activeEmployes.length >= maxEmployes) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(maxEmployes == 0
+                  ? 'Votre formule actuelle ne permet pas d\'ajouter d\'employé. Passez à une formule supérieure.'
+                  : 'Limite de $maxEmployes employé(s) atteinte pour votre formule. Passez à une formule supérieure pour en ajouter plus.'),
+              backgroundColor: Colors.orange,
+            ));
+          }
+          return;
+        }
+      }
+    }
 
     if (existing != null) {
       if (existing['actif'] == true) {

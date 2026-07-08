@@ -285,10 +285,48 @@ function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: 
   async function ajouter(u: UserProfile) {
     setAdding(u.uid);
     try {
-      // Cherche uniquement dans le profil élevage (pas association)
-      const { data: existing } = await supabase.from('employes')
+      // Cherche uniquement dans le profil courant — scoper par profileId, pas
+      // seulement profil_source : sinon un employé d'un AUTRE profil non-
+      // association du même compte (ex. éleveur) serait compté/retrouvé à
+      // tort dans le profil éducateur/pension actif.
+      let existingQ = supabase.from('employes')
         .select().eq('uid_eleveur', uid).eq('uid_employe', u.uid)
-        .or('profil_source.is.null,profil_source.eq.eleveur').maybeSingle();
+        .or('profil_source.is.null,profil_source.eq.eleveur');
+      if (profileId) existingQ = existingQ.eq('eleveur_profile_id', profileId);
+      const { data: existing } = await existingQ.maybeSingle();
+
+      // Limite d'employés par forfait (éducateur/pension) — la page
+      // d'abonnement annonce ces limites mais rien ne les appliquait jusqu'ici.
+      if (!existing || !existing.actif) {
+        const catPro = profileId
+          ? (await supabase.from('user_profiles').select('profile_type').eq('id', profileId).maybeSingle()).data?.profile_type
+          : (await supabase.from('users').select('cat_pro').eq('uid', uid).maybeSingle()).data?.cat_pro;
+        if (catPro === 'education' || catPro === 'pension') {
+          const { data: abo } = await supabase.from('abonnements')
+            .select('plan_code').eq('uid', uid).eq('profil_type', catPro).eq('statut', 'actif')
+            .order('created_at', { ascending: false }).limit(1).maybeSingle();
+          const planCode = abo?.plan_code ?? 'free';
+          const { data: planRow } = await supabase.from('plans_tarifaires')
+            .select('features').eq('profil_type', catPro).eq('plan_code', planCode).maybeSingle();
+          const fallbackMax: Record<string, number> = { free: 0, pro: 3, premium: -1 };
+          const features = (planRow?.features ?? {}) as Record<string, unknown>;
+          const maxEmployes = typeof features.maxEmployes === 'number' ? features.maxEmployes : (fallbackMax[planCode] ?? 0);
+          if (maxEmployes !== -1) {
+            let countQ = supabase.from('employes').select('id', { count: 'exact', head: true })
+              .eq('uid_eleveur', uid).eq('actif', true)
+              .or('profil_source.is.null,profil_source.eq.eleveur');
+            if (profileId) countQ = countQ.eq('eleveur_profile_id', profileId);
+            const { count } = await countQ;
+            if ((count ?? 0) >= maxEmployes) {
+              alert(maxEmployes === 0
+                ? 'Votre formule actuelle ne permet pas d\'ajouter d\'employé. Passez à une formule supérieure.'
+                : `Limite de ${maxEmployes} employé(s) atteinte pour votre formule. Passez à une formule supérieure pour en ajouter plus.`);
+              return;
+            }
+          }
+        }
+      }
+
       if (existing) {
         if (existing.actif) { alert('Cette personne est déjà dans votre équipe.'); return; }
         await supabase.from('employes').update({ actif: true }).eq('id', existing.id);
