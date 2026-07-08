@@ -72,14 +72,10 @@ const NAV_VET = [
 const NAV_PARTICULIER = [
   { href: '/',                     label: 'Accueil' },
   { href: '/mes-animaux',          label: 'Mes Animaux' },
-  { href: '/agenda',               label: 'Agenda' },
   { href: '/annonces',             label: 'Annonces' },
-  { href: '/adoptions', label: '💚 Adoptions' },
   { href: '/animaux-perdus',       label: 'Animaux perdus' },
-  { href: '/services',             label: 'Annuaire' },
   { href: '/communaute',           label: 'Communauté' },
-  { href: '/marketplace',          label: 'Marketplace' },
-  { href: '/messages',             label: 'Messages' },
+  { href: '/services',             label: 'Annuaire des professionnels' },
 ];
 
 const NAV_ASSOCIATION = [
