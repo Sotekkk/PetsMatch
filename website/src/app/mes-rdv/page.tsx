@@ -55,9 +55,17 @@ interface Rdv {
   duree_minutes?: number | null;
   premiere_visite?: boolean | null;
   lieu?: string | null;
+  lieu_lat?: number | null;
+  lieu_lng?: number | null;
+  instructeur_profile_id?: string | null;
   clientName?: string;
   animalNom?: string;
   visitCount?: number;
+}
+
+interface Employe {
+  profileId: string;
+  nom: string;
 }
 
 type SlotStatus = 'disponible' | 'bloque';
@@ -220,8 +228,8 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
 
 // ── Modal Modifier (RDV confirmé) ───────────────────────────────────────────────
 
-function ModifierModal({ rdv, proName, onClose, onDone }: {
-  rdv: Rdv; proName: string; onClose: () => void; onDone: () => void;
+function ModifierModal({ rdv, proName, activeProfileId, onClose, onDone }: {
+  rdv: Rdv; proName: string; activeProfileId: string; onClose: () => void; onDone: () => void;
 }) {
   const [date, setDate]     = useState(rdv.date_heure.slice(0, 10));
   const [hour, setHour]     = useState(new Date(rdv.date_heure).getHours());
@@ -230,17 +238,67 @@ function ModifierModal({ rdv, proName, onClose, onDone }: {
   const [motif, setMotif]   = useState(rdv.motif ?? '');
   const [lieu, setLieu]     = useState(rdv.lieu ?? '');
   const [notes, setNotes]   = useState(rdv.notes_pro ?? '');
+  const [instructeurProfileId, setInstructeurProfileId] = useState(rdv.instructeur_profile_id ?? '');
+  const [employes, setEmployes] = useState<Employe[]>([]);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!activeProfileId) return;
+    (async () => {
+      const { data: emps } = await supabase.from('employes')
+        .select('uid_employe, employe_profile_id').eq('eleveur_profile_id', activeProfileId).eq('actif', true);
+      if (!emps || emps.length === 0) return;
+      const profileIds = emps.map(e => (e as { employe_profile_id: string | null }).employe_profile_id).filter(Boolean) as string[];
+      if (profileIds.length === 0) return;
+      const { data: profs } = await supabase.from('user_profiles').select('id, uid').in('id', profileIds);
+      const uidByProfileId: Record<string, string> = {};
+      for (const p of (profs ?? [])) {
+        const rec = p as { id: string; uid: string };
+        uidByProfileId[rec.id] = rec.uid;
+      }
+      const uids = Object.values(uidByProfileId);
+      if (uids.length === 0) return;
+      const { data: users } = await supabase.from('users').select('uid, firstname, lastname').in('uid', uids);
+      const nameByUid: Record<string, string> = {};
+      for (const u of (users ?? [])) {
+        const rec = u as { uid: string; firstname?: string; lastname?: string };
+        nameByUid[rec.uid] = `${rec.firstname ?? ''} ${rec.lastname ?? ''}`.trim();
+      }
+      const result: Employe[] = profileIds.map(pid => ({
+        profileId: pid,
+        nom: nameByUid[uidByProfileId[pid]] || 'Employé',
+      }));
+      setEmployes(result);
+    })();
+  }, [activeProfileId]);
 
   async function handleSubmit() {
     setSaving(true);
     try {
       const newDt = new Date(`${date}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`);
 
+      // Ne re-géocode que si le lieu a changé, pour éviter un appel réseau
+      // inutile à chaque modification qui ne touche pas l'adresse.
+      let lieuLat = rdv.lieu_lat ?? null;
+      let lieuLng = rdv.lieu_lng ?? null;
+      const lieuTrimmed = lieu.trim();
+      if (lieuTrimmed && lieuTrimmed !== (rdv.lieu ?? '')) {
+        try {
+          const res = await fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(lieuTrimmed)}&limit=1`);
+          const json = await res.json();
+          const coords = json?.features?.[0]?.geometry?.coordinates;
+          if (coords) { lieuLng = coords[0]; lieuLat = coords[1]; } else { lieuLat = null; lieuLng = null; }
+        } catch { lieuLat = null; lieuLng = null; }
+      } else if (!lieuTrimmed) {
+        lieuLat = null; lieuLng = null;
+      }
+
       await supabase.from('rdv').update({
         date_heure: newDt.toISOString(), duree_minutes: duree,
-        motif: motif.trim() || null, lieu: lieu.trim() || null,
+        motif: motif.trim() || null, lieu: lieuTrimmed || null,
+        lieu_lat: lieuLat, lieu_lng: lieuLng,
         notes_pro: notes.trim() || null,
+        instructeur_profile_id: instructeurProfileId || null,
         reminder_48h_sent: false, reminder_24h_sent: false,
         reminder_1h_sent: false, reminder_15min_sent: false,
       }).eq('id', rdv.id);
@@ -332,6 +390,17 @@ function ModifierModal({ rdv, proName, onClose, onDone }: {
           <input value={lieu} onChange={e => setLieu(e.target.value)} placeholder="Au cabinet, au domicile du client…"
             className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none" />
         </div>
+
+        {employes.length > 0 && (
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Intervenant assigné</label>
+            <select value={instructeurProfileId} onChange={e => setInstructeurProfileId(e.target.value)}
+              className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
+              <option value="">Moi</option>
+              {employes.map(e => <option key={e.profileId} value={e.profileId}>{e.nom}</option>)}
+            </select>
+          </div>
+        )}
 
         <div>
           <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes (optionnel)</label>
@@ -938,7 +1007,7 @@ export default function MesRdvPage() {
     try {
       const { data } = await supabase
         .from('rdv')
-        .select('id, pro_uid, client_uid, pro_profile_id, client_profile_id, animal_id, date_heure, motif, statut, notes_annulation, notes_pro, duree_minutes, premiere_visite, lieu')
+        .select('id, pro_uid, client_uid, pro_profile_id, client_profile_id, animal_id, date_heure, motif, statut, notes_annulation, notes_pro, duree_minutes, premiere_visite, lieu, lieu_lat, lieu_lng, instructeur_profile_id')
         .eq('pro_uid', user.uid)
         .eq('pro_profile_id', activeProfileId)
         .order('date_heure', { ascending: true });
@@ -1167,7 +1236,7 @@ export default function MesRdvPage() {
           onDone={() => { setModalAccepter(null); fetchRdvs(); }} />
       )}
       {modalModifier && (
-        <ModifierModal rdv={modalModifier} proName={proName}
+        <ModifierModal rdv={modalModifier} proName={proName} activeProfileId={activeProfileId ?? ''}
           onClose={() => setModalModifier(null)}
           onDone={() => { setModalModifier(null); fetchRdvs(); }} />
       )}

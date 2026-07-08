@@ -4065,13 +4065,13 @@ automatisée + forfaits → devis auto → notification avant séance → GPS/é
 | Item | Détail | Statut |
 |---|---|---|
 | Réservation en ligne des cours collectifs | ✅ Livré (session 2026-07-04) : le client parcourt les cours collectifs à venir d'un pro directement sur sa fiche publique (app `service_detail_page.dart`, web `services/pro/[uid]/page.tsx`), choisit l'animal concerné, s'inscrit avec vérification de capacité (refus si complet), et le pro reçoit une notification (`type: 'cours_collectif_inscription'`, cliquable vers le planning). | Livré |
-| Cours à domicile + GPS/trajet | Aucune API d'itinéraire n'existe dans le projet (seulement distance à vol d'oiseau via `Geolocator.distanceBetween`). Nécessite l'intégration d'une API Directions/Distance Matrix. | Non commencé |
-| Équipe d'intervenants | Le système `employes` ne gère que des permissions d'accès aux fonctionnalités, pas d'assignation à un RDV/cours précis. Nécessiterait une colonne/table d'assignation (`instructeur_profile_id` ou table de jointure). | Non commencé |
 | Tarification automatisée + forfaits | ✅ Livré (session 2026-07-05) : (1) forfaits — le pro crée des packs de séances nommés (nom, nb séances, prix) dans son profil (`forfaits_education` table), affichés publiquement sur sa fiche pro (informationnel, pas de suivi de crédit/solde automatisé, même logique que `tarifs_education`) ; (2) tarification automatisée — le prix du cours collectif (`tarifs_education['cours_collectif']`) s'affiche désormais automatiquement au client lors de la réservation en ligne et est figé sur la ligne `cours_collectifs_participants.prix` au moment de l'inscription (pour référence/facturation même si le tarif change plus tard). Pas de calcul selon poids animal — jugé hors scope pour un éducateur (pertinent surtout pour la pension). | Livré |
-| Devis automatique | Aucun système de devis n'existe dans le projet (seulement contrats/factures). À construire à partir de zéro, probablement comme étape avant `contrats`/`factures`. | Non commencé |
-| Emails automatiques devis/contrats/factures | Dépend du devis (ci-dessus) ; contrats/factures existent déjà mais sans envoi email automatique dédié à l'éducateur. | Non commencé |
-| Notification avant séance + SMS | Notification in-app faisable (pattern déjà en place) ; SMS non implémenté nulle part dans le projet actuellement. | Non commencé |
-| Agenda dynamique avec temps de trajet + alerte retard | Dépend du GPS/trajet (ci-dessus). | Non commencé |
+| Devis automatique | ✅ Livré (session 2026-07-06) : nouvelle table `devis` (numéro, lignes, statut brouillon/envoyé/accepté/refusé/expiré, token d'acceptation public). Le pro sélectionne le client via recherche PetsMatch ou saisie libre. Web : `education/devis/page.tsx` (liste + création) + `devis/[token]/page.tsx` (page publique d'acceptation client, sans compte). App : `education_devis_page.dart`. Le devis se lie à l'animal concerné et apparaît dans ses documents, visible côté client uniquement si un devis/rapport éducateur existe réellement pour cet animal. Après acceptation : simple changement de statut, pas de génération automatique de facture. | Livré |
+| Notification avant séance | ✅ Livré (session 2026-07-06), **in-app uniquement** (SMS explicitement écarté par l'utilisateur pour l'instant). Système de rappel existant (`rdv.reminder_48h/24h/1h/15min_sent`, Netlify function `send-rdv-reminders.mts`) étendu pour couvrir aussi `cours_collectifs` (nouvelles colonnes identiques + notification à chaque participant inscrit). | Livré |
+| Cours à domicile + GPS/trajet | ✅ Livré (session 2026-07-08), **approche à vol d'oiseau** (pas d'API Directions payante — cohérent avec le choix initial `Geolocator.distanceBetween`). Géocodage automatique du champ `rdv.lieu` (texte libre) en coordonnées GPS via le package `geocoding` (app, déjà utilisé ailleurs) / `api-adresse.data.gouv.fr` (web, gratuit) au moment de l'enregistrement — nouvelles colonnes `rdv.lieu_lat`/`lieu_lng`. | Livré |
+| Équipe d'intervenants | ✅ Livré (session 2026-07-08) : nouvelle colonne `instructeur_profile_id` sur `rdv` et `cours_collectifs` (référence `user_profiles`). Sélecteur "Intervenant assigné" dans le formulaire de modification du RDV (app `pro_agenda.dart`, web `mes-rdv/page.tsx::ModifierModal`), liste chargée depuis la table `employes` existante (aucune permission supplémentaire, juste une assignation). | Livré |
+| Agenda dynamique avec temps de trajet + alerte retard | ✅ Livré (session 2026-07-08) : pour deux RDV confirmés le même jour, tous deux géocodés, dont l'écart entre fin du premier et début du second est inférieur au temps de trajet estimé (distance à vol d'oiseau ÷ 30 km/h), un bandeau "⚠️ Risque de retard" s'affiche — app (carte "Aujourd'hui" de `pro_agenda.dart`) et web (haut de `agenda/page.tsx`). | Livré |
+| Emails automatiques devis/contrats/factures | Dépend du devis (ci-dessus, maintenant livré) ; contrats/factures existent déjà mais sans envoi email automatique dédié à l'éducateur. Décision explicite de l'utilisateur : reste en attente, l'in-app est privilégié partout ailleurs dans le module. | Non commencé |
 
 ### 20.3 — Migration à exécuter
 
@@ -4236,6 +4236,92 @@ supabase/migration_education_exercices_conseilles.sql  -- colonne exercices_cons
 
 ```
 supabase/migration_backfill_agenda_events_client_profile.sql
+```
+
+---
+
+## 26. Module Éducateur/Comportementaliste — Phase 2 complétée (sessions 2026-07-06 / 2026-07-08)
+
+Les 5 items du backlog Phase 2 (§20.2) sont désormais tous livrés, dans
+l'ordre validé. Détail des trois derniers :
+
+- **Devis automatique** : nouvelle table `devis` (`numero_devis`,
+  `date_devis`, `date_validite`, client PetsMatch ou saisie libre,
+  `lignes` JSONB, `total_ttc`, `statut` brouillon/envoyé/accepté/refusé/
+  expiré, `token_acceptation`). Le client accepte/refuse sans compte via
+  un lien public (`/devis/[token]`, même pattern que `/certificat/[token]`
+  déjà existant). Après acceptation : simple changement de statut — pas
+  de génération automatique de facture (décision explicite). Le devis se
+  lie à l'animal concerné (`documents_animaux`, visible côté client
+  uniquement si un devis/rapport éducateur existe réellement pour cet
+  animal).
+- **Rappels avant séance** : le système de rappel existant sur `rdv`
+  (`reminder_48h/24h/1h/15min_sent`, Netlify function
+  `send-rdv-reminders.mts` toutes les 15 min) a été étendu pour couvrir
+  aussi `cours_collectifs` — mêmes colonnes de rappel, notification
+  envoyée au pro et à chaque participant inscrit (`cours_collectifs_participants`).
+- **GPS/trajet + équipe d'intervenants + agenda dynamique** : approche à
+  vol d'oiseau assumée dès le départ (pas d'intégration d'API Directions
+  payante). `rdv.lieu` (texte libre) est géocodé automatiquement à
+  l'enregistrement en `rdv.lieu_lat`/`lieu_lng` (package `geocoding` déjà
+  utilisé ailleurs côté app, `api-adresse.data.gouv.fr` gratuit côté web).
+  Nouvelle colonne `instructeur_profile_id` sur `rdv`/`cours_collectifs`
+  pour assigner un employé (réutilise la table `employes` existante, pas
+  de nouvelle notion de permission). Quand deux RDV confirmés le même jour
+  sont tous deux géocodés et que l'écart entre la fin du premier et le
+  début du second est inférieur au temps de trajet estimé (distance à vol
+  d'oiseau ÷ 30 km/h), un bandeau "⚠️ Risque de retard" s'affiche — carte
+  "Aujourd'hui" de l'agenda pro app, haut de l'agenda pro web.
+
+### 26.1 — Bugs corrigés au passage (découverts en testant le module)
+
+- **Notifications qui fuitent entre profils** : le filtre d'affichage
+  (app `notifications_page.dart`, web `/api/notifications`) ne se basait
+  que sur `profile_type` (souvent absent à la création), jamais sur
+  `profile_id` pourtant bien renseigné sur la ligne — une notif destinée
+  à un profil apparaissait aussi sur les autres profils du même compte.
+  `profile_id` prime désormais quand présent. Idem pour les notifications
+  `tache_validee` (3 points de création, app + web) qui n'écrivaient
+  jamais `profile_id`.
+- **`agenda_events.pro_profile_id` vide** (rappels chaleurs/mise-bas) :
+  `User_Info.activeProfileId` pouvait être lu vide au moment de la
+  création du rappel, écrivant une chaîne vide au lieu d'un profil
+  valide — invisible dans les vues filtrées par profil. Repli sur le
+  profil principal ajouté ; 111 lignes existantes corrigées en base.
+- **Annonce visible/modifiable depuis le mauvais profil** : la page
+  d'accueil éleveur et le contrôle de propriété d'une annonce (bouton
+  "Modifier") ne vérifiaient que l'uid Firebase (partagé entre profils
+  d'un même compte), pas le `profile_id` actif — une annonce créée
+  depuis le profil association restait modifiable depuis le profil
+  éleveur du même compte.
+- **Messagerie "Contacter" silencieuse** : la table `conversations` n'a
+  jamais eu de colonne `categorie` alors que le code la lit/écrit depuis
+  longtemps — toute création de nouvelle conversation échouait
+  silencieusement (PGRST204), masqué tant qu'une conversation existait
+  déjà entre les deux participants.
+- **Itinéraire Waze cassé** (lieux pet-friendly) : lien au format invalide
+  (`waze://ul?...` au lieu de `waze://?...`), adresse jamais transmise
+  (seulement les coordonnées brutes), et absence de `<queries>` dans le
+  manifeste Android (obligatoire dès Android 11 pour détecter une app de
+  navigation externe).
+- **Carte des professionnels vide côté web** : la requête des profils pro
+  secondaires demandait une colonne `name_elevage` inexistante sur
+  `user_profiles` (réservée à `users`), faisant échouer toute la requête
+  et excluant tous les pros secondaires de la carte. Par ailleurs, la
+  création d'un profil pro secondaire (app `add_profile_page.dart`, web
+  `profil/ajouter/page.tsx`) enregistrait les coordonnées GPS seulement
+  si déjà résolues, sans filet de sécurité comme à l'édition — un pro qui
+  tape son adresse sans sélectionner une suggestion restait invisible sur
+  la carte pour toujours (4 profils existants sur 8 concernés, corrigés
+  en base).
+
+### 26.2 — Migrations à exécuter
+
+```
+supabase/migration_education_devis.sql
+supabase/migration_cours_collectifs_reminders.sql
+supabase/migration_education_intervenants_trajet.sql
+supabase/migration_conversations_categorie.sql
 ```
 
 ---

@@ -551,6 +551,34 @@ export default function AgendaPage() {
     setEvents(prev => prev.filter(e => e.id !== id));
   }
 
+  // Agenda dynamique — alerte retard : pour des séances à domicile
+  // consécutives et géocodées le même jour, estime si le temps entre les
+  // deux (fin de la 1re → début de la 2e) suffit à parcourir la distance à
+  // vol d'oiseau (heuristique 30 km/h, pas d'API Directions payante).
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayRdvs = events
+    .filter(e => e.type === 'rdv' && e.rdv?.statut === 'confirme' && e.date_debut.slice(0, 10) === todayStr)
+    .sort((a, b) => a.date_debut.localeCompare(b.date_debut));
+  const travelWarnings: string[] = [];
+  for (let i = 0; i < todayRdvs.length - 1; i++) {
+    const a = todayRdvs[i], b = todayRdvs[i + 1];
+    const aLat = a.rdv?.lieu_lat, aLng = a.rdv?.lieu_lng;
+    const bLat = b.rdv?.lieu_lat, bLng = b.rdv?.lieu_lng;
+    if (aLat == null || aLng == null || bLat == null || bLng == null) continue;
+    const aDuree = a.duree_minutes ?? a.rdv?.duree_minutes ?? 30;
+    const aEnd = new Date(new Date(a.date_debut).getTime() + aDuree * 60000);
+    const bStart = new Date(b.date_debut);
+    const gapMin = Math.round((bStart.getTime() - aEnd.getTime()) / 60000);
+    const dLat = (bLat - aLat) * Math.PI / 180;
+    const dLng = (bLng - aLng) * Math.PI / 180;
+    const hs = Math.sin(dLat / 2) ** 2 + Math.cos(aLat * Math.PI / 180) * Math.cos(bLat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    const distKm = 6371 * 2 * Math.atan2(Math.sqrt(hs), Math.sqrt(1 - hs));
+    const travelMin = Math.ceil(distKm / 30 * 60);
+    if (gapMin < travelMin) {
+      travelWarnings.push(`Risque de retard pour le RDV de ${fmtTime(b.date_debut)} : ~${distKm.toFixed(1)} km à parcourir en ${gapMin} min seulement.`);
+    }
+  }
+
   if (!uid) return (
     <div className="min-h-screen bg-[#F8F8F8] flex items-center justify-center">
       <p className="text-gray-400 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -594,6 +622,17 @@ export default function AgendaPage() {
       </div>
 
       <div className="max-w-3xl mx-auto px-4 py-6">
+        {travelWarnings.length > 0 && (
+          <div className="mb-6 space-y-2">
+            {travelWarnings.map((w, i) => (
+              <div key={i} className="flex items-start gap-2 bg-orange-50 border border-orange-200 rounded-xl px-3 py-2">
+                <span className="text-orange-600">⚠️</span>
+                <p className="text-xs text-orange-800" style={{ fontFamily: 'Galey, sans-serif' }}>{w}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* RDV en attente — visible uniquement pour un profil pro secondaire */}
         {activeProfileId && pendingRdvs.length > 0 && (
           <div className="mb-6">
