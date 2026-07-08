@@ -362,8 +362,19 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
       'description': _descCtrl.text.trim(),
       'site_web':    _siteCtrl.text.trim(),
     };
+    // Filet de sécurité : si l'utilisateur a tapé une adresse sans jamais
+    // sélectionner une suggestion (ou géolocalisé), _lat/_lng restent nuls
+    // et le profil pro devient invisible sur la carte des professionnels.
+    if ((_lat == null || _lng == null) && _addressSearchCtrl.text.trim().isNotEmpty) {
+      try {
+        final locs = await geo.locationFromAddress(_addressSearchCtrl.text.trim());
+        if (locs.isNotEmpty) { _lat = locs.first.latitude; _lng = locs.first.longitude; }
+      } catch (_) {}
+    }
     if (_lat != null) data['latitude']  = _lat;
     if (_lng != null) data['longitude'] = _lng;
+    if (_lat != null) data['lat']       = _lat;
+    if (_lng != null) data['lng']       = _lng;
 
     if (_isParticulierType) {
       data['firstname'] = User_Info.firstname;

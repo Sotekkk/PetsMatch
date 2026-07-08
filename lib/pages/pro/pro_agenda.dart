@@ -1486,16 +1486,30 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           final dh = DateTime.tryParse(e['date_debut']?.toString() ?? '')?.toLocal();
           final heure = dh != null ? '${dh.hour.toString().padLeft(2, "0")}h${dh.minute.toString().padLeft(2, "0")}' : '';
           final estCollectif = e['type'] == 'cours_collectif';
+          final rdvId = e['rdv_id']?.toString();
+          final lieu = rdvId != null
+              ? (_rdvs.firstWhere((r) => r['id']?.toString() == rdvId,
+                  orElse: () => const {})['lieu']?.toString() ?? '')
+              : '';
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 3),
             child: Row(children: [
-              Container(width: 6, height: 6, margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(color: estCollectif ? const Color(0xFF7B5EA7) : _teal, shape: BoxShape.circle)),
-              Text(heure, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
+              Row(children: [
+                Container(width: 6, height: 6, margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(color: estCollectif ? const Color(0xFF7B5EA7) : _teal, shape: BoxShape.circle)),
+                Text(heure, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
+              ]),
               const SizedBox(width: 8),
               Expanded(child: Text(e['titre']?.toString() ?? '',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.black87),
                   overflow: TextOverflow.ellipsis)),
+              if (lieu.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Icon(Icons.place_outlined, size: 12, color: Colors.grey.shade500),
+                const SizedBox(width: 2),
+                Text(lieu, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600),
+                    overflow: TextOverflow.ellipsis),
+              ],
             ]),
           );
         }),
@@ -2316,7 +2330,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     rdvId: rdv['id']?.toString(),
                   )))
               : null,
-          onCompteRendu: showProTools
+          // CR / Ordonnance est un flux médical (vétérinaire, pension…) — sans
+          // objet pour l'éducateur, qui a son propre rapport de séance
+          // (lié à l'animal, voir animal_fiche.dart / education_devis_page.dart).
+          onCompteRendu: (showProTools && User_Info.catPro != 'education')
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => CompteRenduPage(
                     rdv: rdv,
@@ -2395,6 +2412,7 @@ class _RdvCard extends StatelessWidget {
     final clientName = rdv['_client_name']?.toString() ?? 'Client';
     final animalNom = rdv['_animal_nom']?.toString() ?? '';
     final motif = rdv['motif']?.toString() ?? '';
+    final lieu = rdv['lieu']?.toString() ?? '';
     final duree = (rdv['duree_minutes'] as num?)?.toInt();
     final notes = rdv['notes_pro']?.toString() ?? '';
     final statut = rdv['statut']?.toString() ?? '';
@@ -2482,9 +2500,18 @@ class _RdvCard extends StatelessWidget {
               ],
               const SizedBox(height: 8),
 
-              // Motif + durée
+              // Motif + lieu + durée
               if (motif.isNotEmpty)
                 Text(motif, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF555F6A))),
+              if (lieu.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Row(children: [
+                  const Icon(Icons.place_outlined, size: 14, color: Color(0xFF0C5C6C)),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(lieu, style: const TextStyle(fontFamily: 'Galey',
+                      fontSize: 13, color: Color(0xFF0C5C6C)))),
+                ]),
+              ],
               const SizedBox(height: 4),
               Text(
                 duree != null

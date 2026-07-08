@@ -1876,7 +1876,7 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
     if (rdvId == null) { setState(() => _loading = false); return; }
     try {
       final rdvRows = await _supa.from('rdv')
-          .select('id, pro_uid, client_uid, animal_id, date_heure, motif, statut, duree_minutes, notes_client')
+          .select('id, pro_uid, client_uid, animal_id, date_heure, motif, statut, duree_minutes, notes_client, lieu, lieu_lat, lieu_lng')
           .eq('id', rdvId).maybeSingle();
       if (rdvRows == null) { setState(() => _loading = false); return; }
       _rdv = Map<String, dynamic>.from(rdvRows);
@@ -1923,8 +1923,10 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
   }
 
   Future<void> _openNav() async {
-    final lat = (_pro?['lat'] as num?)?.toDouble();
-    final lng = (_pro?['lng'] as num?)?.toDouble();
+    // Priorité au lieu précis du RDV (ex. visite à domicile) sur l'adresse
+    // fixe du cabinet du pro, sinon on navigue au mauvais endroit.
+    final lat = (_rdv?['lieu_lat'] as num?)?.toDouble() ?? (_pro?['lat'] as num?)?.toDouble();
+    final lng = (_rdv?['lieu_lng'] as num?)?.toDouble() ?? (_pro?['lng'] as num?)?.toDouble();
     if (lat == null || lng == null) return;
 
     await showModalBottomSheet(
@@ -2048,14 +2050,19 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
                   const Divider(),
                   const SizedBox(height: 12),
                   _InfoRow(icon: Icons.person_outlined, text: _proName(), bold: true),
-                  if ((_pro?['adress_elevage']?.toString() ?? '').isNotEmpty) ...[
+                  if ((_rdv?['lieu']?.toString() ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _InfoRow(icon: Icons.location_on_outlined,
+                        text: _rdv!['lieu'].toString()),
+                  ] else if ((_pro?['adress_elevage']?.toString() ?? '').isNotEmpty) ...[
                     const SizedBox(height: 8),
                     _InfoRow(icon: Icons.location_on_outlined,
                         text: _pro!['adress_elevage'].toString()),
                   ],
 
                   // ── Bouton GPS ────────────────────────────────────────────
-                  if (_pro?['lat'] != null && _pro?['lng'] != null) ...[
+                  if ((_rdv?['lieu_lat'] != null && _rdv?['lieu_lng'] != null) ||
+                      (_pro?['lat'] != null && _pro?['lng'] != null)) ...[
                     const SizedBox(height: 14),
                     SizedBox(
                       width: double.infinity,

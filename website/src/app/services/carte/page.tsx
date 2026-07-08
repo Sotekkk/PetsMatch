@@ -87,7 +87,7 @@ function ServicesCarteContent() {
       // Profils secondaires (user_profiles) — latitude/longitude OU lat/lng
       const { data: secondaryData } = await supabase
         .from('user_profiles')
-        .select('id, uid, profile_type, nom, name_elevage, avatar_url, banner_url, profession_pro, ville, ville_pro, especes_acceptees, accept_new_clients, latitude, longitude, lat, lng, rayon_intervention')
+        .select('id, uid, profile_type, nom, avatar_url, banner_url, profession_pro, ville, ville_pro, especes_acceptees, accept_new_clients, latitude, longitude, lat, lng, rayon_intervention')
         .not('profile_type', 'is', null)
         .in('statut_pro', ['actif', 'validated']);
 
@@ -123,7 +123,7 @@ function ServicesCarteContent() {
         items.push({
           uid:                row.uid,
           profileTableId:     row.id,
-          name:               row.nom || row.name_elevage || 'Professionnel',
+          name:               row.nom || 'Professionnel',
           photo:              row.avatar_url,
           banner:             row.banner_url,
           profession:         row.profession_pro,

@@ -16,6 +16,9 @@ interface RdvInfo {
   duree_minutes?: number | null;
   motif?: string | null;
   client_uid?: string | null;
+  lieu?: string | null;
+  lieu_lat?: number | null;
+  lieu_lng?: number | null;
 }
 
 interface AgendaEvent {
@@ -413,7 +416,7 @@ export default function AgendaPage() {
     const rdvIds = list.map(e => e.rdv_id).filter(Boolean) as string[];
     if (rdvIds.length > 0) {
       const { data: rdvsData } = await supabase
-        .from('rdv').select('id, pro_uid, statut, animal_id, duree_minutes, motif, client_uid').in('id', rdvIds);
+        .from('rdv').select('id, pro_uid, statut, animal_id, duree_minutes, motif, client_uid, lieu, lieu_lat, lieu_lng').in('id', rdvIds);
       const rdvMap: Record<string, RdvInfo> = {};
       for (const r of (rdvsData ?? [])) {
         const rec = r as RdvInfo;
@@ -1199,6 +1202,14 @@ function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnim
   const isRdv  = !!e.rdv_id;
   const plus24h = isRdv && new Date(e.date_debut).getTime() - Date.now() > 24 * 3600 * 1000;
   const animalId = e.animal_id ?? e.rdv?.animal_id;
+  const lieu = e.rdv?.lieu;
+  const lieuLat = e.rdv?.lieu_lat;
+  const lieuLng = e.rdv?.lieu_lng;
+  const itineraireHref = lieuLat != null && lieuLng != null
+    ? `https://www.google.com/maps/dir/?api=1&destination=${lieuLat},${lieuLng}`
+    : lieu
+      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(lieu)}`
+      : null;
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 px-4 py-3 space-y-2"
@@ -1209,11 +1220,20 @@ function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnim
           <p className="font-bold text-sm text-[#1E2025] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{e.titre}</p>
           <p className="text-xs text-gray-400">{fmtTime(e.date_debut)} · {TYPE_LABEL[e.type] ?? e.type}</p>
           {e.notes && <p className="text-xs text-gray-400 truncate">{e.notes}</p>}
+          {lieu && <p className="text-xs text-gray-400 truncate">📍 {lieu}</p>}
         </div>
         {!isRdv && (
           <button onClick={() => onDelete(e.id)} className="text-gray-300 hover:text-red-400 transition-colors text-lg flex-shrink-0">×</button>
         )}
       </div>
+
+      {itineraireHref && (
+        <a href={itineraireHref} target="_blank" rel="noopener noreferrer"
+          className="block w-full text-center text-xs font-semibold py-1.5 rounded-lg border border-[#0C5C6C]/20 hover:border-[#0C5C6C] text-[#0C5C6C] transition-colors"
+          style={{ fontFamily: 'Galey, sans-serif' }}>
+          🧭 Itinéraire
+        </a>
+      )}
 
       {animalId && (
         <button onClick={() => onNavigateToAnimal(animalId)}
