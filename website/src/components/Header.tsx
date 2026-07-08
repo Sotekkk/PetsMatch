@@ -58,11 +58,7 @@ const NAV_ELEVEUR = [
 // NAV spécifique profils pro secondaires (pas d'élevage)
 const NAV_PRO = [
   { href: '/',                     label: 'Accueil' },
-  { href: '/adoptions', label: '💚 Adoptions' },
-  { href: '/agenda',               label: 'Agenda' },
-  { href: '/services',             label: 'Annuaire' },
   { href: '/communaute',           label: 'Communauté' },
-  { href: '/messages',             label: 'Messages' },
 ];
 
 const NAV_VET = [
