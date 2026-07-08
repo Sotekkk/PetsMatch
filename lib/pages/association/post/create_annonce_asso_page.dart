@@ -47,6 +47,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
   final _raceCtrl  = TextEditingController();
 
   String _espece = 'chien';
+  final _especeAutreCtrl = TextEditingController();
   String _sexe   = 'inconnu';
 
   List<String> _photosUrls  = [];
@@ -97,6 +98,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
     _linkedAnimalDateNaissance = a['date_naissance']?.toString();
     _linkedAnimalAgeEstime = a['age_estime'] as bool? ?? false;
     _espece = a['espece']?.toString() ?? 'chien';
+    _especeAutreCtrl.text = a['espece_autre']?.toString() ?? '';
     _raceCtrl.text = a['race']?.toString() ?? '';
     _sexe = a['sexe']?.toString() ?? 'inconnu';
     final photo = a['photo_url']?.toString() ?? '';
@@ -110,6 +112,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
     _titreCtrl.text = d['titre'] ?? '';
     _descCtrl.text  = d['description'] ?? '';
     _espece = d['espece'] ?? 'chien';
+    _especeAutreCtrl.text = d['espece_autre'] ?? '';
     _raceCtrl.text = d['race'] ?? '';
     _sexe = d['sexe'] ?? 'inconnu';
     _photosUrls = List<String>.from(d['photos'] ?? []);
@@ -129,7 +132,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
     try {
       final data = await Supabase.instance.client
           .from('animaux')
-          .select('id,nom,espece,race,sexe,statut,photo_url,date_naissance,age_estime')
+          .select('id,nom,espece,espece_autre,race,sexe,statut,photo_url,date_naissance,age_estime')
           .eq('uid_eleveur', uid)
           .inFilter('statut', ['disponible', 'en_soin'])
           .order('nom');
@@ -242,6 +245,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
         'type_vente':          'adoption',
         'profil_source':       'association',
         'espece':              _espece,
+        'espece_autre':        _espece == 'autre' ? _especeAutreCtrl.text.trim() : null,
         'race':                _raceCtrl.text.trim(),
         'titre':               _titreCtrl.text.trim(),
         'description':         _descCtrl.text.trim(),
@@ -352,6 +356,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
     _titreCtrl.dispose();
     _descCtrl.dispose();
     _raceCtrl.dispose();
+    _especeAutreCtrl.dispose();
     super.dispose();
   }
 
@@ -416,6 +421,22 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
               }).toList(),
             ),
           ),
+
+          if (_espece == 'autre') ...[
+            const SizedBox(height: 12),
+            _Section(
+              title: 'Préciser l\'espèce',
+              child: TextField(
+                controller: _especeAutreCtrl,
+                decoration: const InputDecoration(
+                  hintText: 'Ex : Furet, Tortue...',
+                  hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey),
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+            ),
+          ],
 
           const SizedBox(height: 16),
 

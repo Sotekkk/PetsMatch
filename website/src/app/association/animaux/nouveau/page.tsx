@@ -42,6 +42,7 @@ export default function NouvelAnimalAssoPage() {
   const router = useRouter();
 
   const [espece,        setEspece]        = useState('chien');
+  const [especeAutre,   setEspeceAutre]   = useState('');
   const [nom,           setNom]           = useState('');
   const [sexe,          setSexe]          = useState<'male' | 'femelle'>('male');
   const [race,          setRace]          = useState('');
@@ -114,6 +115,7 @@ export default function NouvelAnimalAssoPage() {
       const row: Record<string, unknown> = {
         id,
         espece,
+        espece_autre:      espece === 'autre' ? (especeAutre.trim() || null) : null,
         sexe,
         nom:               nom.trim()           || null,
         race:              race.trim()          || null,
@@ -229,6 +231,11 @@ export default function NouvelAnimalAssoPage() {
               </button>
             ))}
           </div>
+          {espece === 'autre' && (
+            <input className={`${iCls} mt-2`} value={especeAutre}
+              onChange={e => setEspeceAutre(e.target.value)}
+              placeholder="Préciser l'espèce (ex: Furet, Tortue...)" />
+          )}
         </div>
 
         {/* ── Nom ── */}

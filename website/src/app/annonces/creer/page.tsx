@@ -88,6 +88,7 @@ function CreerAnnoncePageInner() {
   // ── Infos communes
   const [titre, setTitre] = useState('');
   const [espece, setEspece] = useState('Chien');
+  const [especeAutre, setEspeceAutre] = useState('');
   const [race, setRace] = useState('');
   const [breeds, setBreeds] = useState<string[]>([]);
   const [description, setDescription] = useState('');
@@ -723,6 +724,7 @@ function CreerAnnoncePageInner() {
         suspect_reasons: suspectReasons,
         titre: titre || `${espece} ${race}`.trim(),
         espece: ESPECE_DB[espece] ?? espece.toLowerCase(), race,
+        espece_autre: espece === 'Autre' ? (especeAutre.trim() || null) : null,
         type: type === 'portee' ? 'portee' : 'animal',
         type_vente: type === 'saillie' ? 'saillie' : type === 'retraite' ? 'retraite' : cession,
         photos: photoUrls, statut: annonceStatut, expire_at: expireAt, description,
@@ -946,6 +948,10 @@ function CreerAnnoncePageInner() {
               <select value={espece} onChange={e => setEspece(e.target.value)} className={iCls}>
                 {ESPECES.map(e => <option key={e}>{e}</option>)}
               </select>
+              {espece === 'Autre' && (
+                <input value={especeAutre} onChange={e => setEspeceAutre(e.target.value)}
+                  placeholder="Préciser l'espèce (ex: Furet, Tortue...)" className={`${iCls} mt-2`} />
+              )}
             </div>
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">Race</label>

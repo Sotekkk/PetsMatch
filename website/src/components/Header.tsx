@@ -50,19 +50,14 @@ const NAV_ELEVEUR = [
   { href: '/mes-animaux',             label: 'Mes Animaux' },
   { href: '/mes-annonces',            label: 'Mes Annonces' },
   { href: '/abonnement',              label: 'Abonnement' },
-  { href: '/services',                label: 'Annuaire' },
   { href: '/communaute',              label: 'Communauté' },
-  { href: '/marketplace',             label: 'Marketplace' },
+  { href: '/services',                label: 'Annuaire des professionnels' },
 ];
 
 // NAV spécifique profils pro secondaires (pas d'élevage)
 const NAV_PRO = [
   { href: '/',                     label: 'Accueil' },
-  { href: '/adoptions', label: '💚 Adoptions' },
-  { href: '/agenda',               label: 'Agenda' },
-  { href: '/services',             label: 'Annuaire' },
   { href: '/communaute',           label: 'Communauté' },
-  { href: '/messages',             label: 'Messages' },
 ];
 
 const NAV_VET = [
@@ -76,14 +71,10 @@ const NAV_VET = [
 const NAV_PARTICULIER = [
   { href: '/',                     label: 'Accueil' },
   { href: '/mes-animaux',          label: 'Mes Animaux' },
-  { href: '/agenda',               label: 'Agenda' },
   { href: '/annonces',             label: 'Annonces' },
-  { href: '/adoptions', label: '💚 Adoptions' },
   { href: '/animaux-perdus',       label: 'Animaux perdus' },
-  { href: '/services',             label: 'Annuaire' },
   { href: '/communaute',           label: 'Communauté' },
-  { href: '/marketplace',          label: 'Marketplace' },
-  { href: '/messages',             label: 'Messages' },
+  { href: '/services',             label: 'Annuaire des professionnels' },
 ];
 
 const NAV_ASSOCIATION = [
@@ -92,7 +83,7 @@ const NAV_ASSOCIATION = [
   { href: '/association/annonces',     label: 'Mes Annonces' },
   { href: '/association/planning',     label: 'Planning' },
   { href: '/animaux-perdus',           label: 'Animaux perdus' },
-  { href: '/messages',                 label: 'Messages' },
+  { href: '/services',                 label: 'Annuaire des professionnels' },
 ];
 
 // ── Menu drawer items (miroir des drawers de l'app) ──────────────────────────
@@ -833,7 +824,7 @@ export default function Header() {
         <nav className="hidden md:flex items-center gap-1 flex-1 justify-center">
           {navLinks.map((l) => (
             <Link key={l.href} href={l.href}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded-full text-sm font-medium text-center transition-colors ${
                 isActive(l.href)
                   ? 'bg-white/20 text-white'
                   : 'text-white/75 hover:text-white hover:bg-white/10'
