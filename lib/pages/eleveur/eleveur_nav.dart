@@ -38,6 +38,8 @@ import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart';
+import 'package:PetsMatch/pages/pro/pension_factures_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
@@ -72,6 +74,7 @@ class _EleveurNavState extends State<EleveurNav> {
   bool _isBenevole   = false;
   String _planCode   = 'free';
   String _pensionPlanCode = 'free';
+  String _educationPlanCode = 'free';
 
   static const _green = Color(0xFF6E9E57);
   static const _teal = Color(0xFF0C5C6C);
@@ -105,6 +108,11 @@ class _EleveurNavState extends State<EleveurNav> {
     if (User_Info.catPro == 'pension') {
       final code = await PlanService.getPensionPlanCode(uid);
       if (mounted) setState(() => _pensionPlanCode = code);
+      return;
+    }
+    if (User_Info.catPro == 'education') {
+      final code = await PlanService.getEducationPlanCode(uid);
+      if (mounted) setState(() => _educationPlanCode = code);
       return;
     }
     final code = await PlanService.getPlanCode(uid);
@@ -592,6 +600,19 @@ class _EleveurNavState extends State<EleveurNav> {
                     },
                   ),
                   if (User_Info.catPro == 'education') _DrawerItem(
+                    icon: Icons.groups_outlined,
+                    label: 'Mes Employés',
+                    locked: _educationPlanCode == 'free',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => _educationPlanCode == 'free'
+                            ? const EducationAbonnementPage()
+                            : const EmployesPage(),
+                      ));
+                    },
+                  ),
+                  if (User_Info.catPro == 'education') _DrawerItem(
                     icon: Icons.workspace_premium_outlined,
                     label: 'Mon abonnement',
                     onTap: () {
@@ -690,6 +711,26 @@ class _EleveurNavState extends State<EleveurNav> {
                       },
                     ),
                     _DrawerItem(
+                      icon: Icons.euro_outlined,
+                      label: 'Tarifs',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PensionTarifsPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Mes Factures',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PensionFacturesPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
                       icon: Icons.groups_outlined,
                       label: 'Mes Employés',
                       locked: _pensionPlanCode == 'free',
@@ -727,7 +768,7 @@ class _EleveurNavState extends State<EleveurNav> {
                     ));
                   },
                 ),
-                if (User_Info.catPro == 'restauration' || User_Info.catPro == 'pension') ...[
+                if (User_Info.catPro == 'restauration') ...[
                   const Divider(height: 8),
                   _DrawerItem(
                     icon: Icons.store_outlined,

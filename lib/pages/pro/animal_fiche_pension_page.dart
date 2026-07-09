@@ -43,6 +43,11 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
   // Alimentation
   Map<String, dynamic>? _alimentation;
 
+  // Propriétaire réel (animaux_proprietes → user_profiles) + séjour en cours
+  // (pension_entrees) — au lieu du texte libre saisi manuellement à l'entrée.
+  Map<String, dynamic>? _proprietaire;
+  Map<String, dynamic>? _sejourActuel;
+
   @override
   void initState() {
     super.initState();
@@ -83,9 +88,55 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
         _alimentation     = results[8] as Map<String, dynamic>?;
         _loading          = false;
       });
+
+      // Propriétaire réel + séjour en cours — chargés à part, ne doivent pas
+      // bloquer l'affichage du reste de la fiche s'ils échouent.
+      _loadProprietaireEtSejour();
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _loadProprietaireEtSejour() async {
+    try {
+      final lien = await _supa.from('animaux_proprietes').select()
+          .eq('animal_id', widget.animalId).isFilter('date_fin', null)
+          .order('date_debut', ascending: false).limit(1).maybeSingle();
+
+      Map<String, dynamic>? profil;
+      if (lien != null) {
+        final profileId = lien['profile_id_proprio'] as String?;
+        if (profileId != null && profileId.isNotEmpty) {
+          profil = await _supa.from('user_profiles').select()
+              .eq('id', profileId).maybeSingle();
+        }
+        // Repli : uid seul (données antérieures au multi-profil) → profil principal.
+        profil ??= await _supa.from('user_profiles').select()
+            .eq('uid', lien['uid_proprio']).eq('is_main', true).maybeSingle();
+
+        // Repli téléphone : user_profiles.phone_number contient parfois le
+        // placeholder "0000000000" jamais mis à jour depuis users (vraie donnée
+        // saisie à l'inscription).
+        final tel = (profil?['phone_number'] as String?)?.trim() ?? '';
+        if (profil != null && (tel.isEmpty || tel == '0000000000')) {
+          try {
+            final u = await _supa.from('users').select('phone_number')
+                .eq('uid', lien['uid_proprio']).maybeSingle();
+            final uTel = (u?['phone_number'] as String?)?.trim() ?? '';
+            if (uTel.isNotEmpty) profil = {...profil, 'phone_number': uTel};
+          } catch (_) {}
+        }
+      }
+
+      final sejour = await _supa.from('pension_entrees').select()
+          .eq('animal_id', widget.animalId).eq('statut', 'en_pension')
+          .order('date_entree', ascending: false).limit(1).maybeSingle();
+
+      if (mounted) setState(() {
+        _proprietaire = profil;
+        _sejourActuel = sejour;
+      });
+    } catch (_) {}
   }
 
   List<Map<String, dynamic>> _toList(dynamic raw) =>
@@ -151,7 +202,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
               _ReadOnlyBanner(espece: espece, photoUrl: photoUrl),
               Expanded(
                 child: TabBarView(controller: _tabs, children: [
-                  _IdentiteTab(animal: _animal),
+                  _IdentiteTab(animal: _animal, proprietaire: _proprietaire, sejourActuel: _sejourActuel),
                   _SanteTab(
                     vaccinations: _vaccinations,
                     vermifuges: _vermifuges,
@@ -228,8 +279,28 @@ class _ReadOnlyBanner extends StatelessWidget {
 
 class _IdentiteTab extends StatelessWidget {
   final Map<String, dynamic>? animal;
+  final Map<String, dynamic>? proprietaire;
+  final Map<String, dynamic>? sejourActuel;
 
-  const _IdentiteTab({required this.animal});
+  const _IdentiteTab({required this.animal, this.proprietaire, this.sejourActuel});
+
+  // Le nom d'affichage diffère selon le type de profil propriétaire :
+  // un éleveur/asso a un nom d'établissement (colonne "nom"), un particulier
+  // un nom de personne (souvent aussi dans "nom", sinon firstname/lastname).
+  static String _ownerName(Map<String, dynamic> p) {
+    final nom = (p['nom'] as String?)?.trim();
+    if (nom != null && nom.isNotEmpty) return nom;
+    final label = (p['profile_label'] as String?)?.trim();
+    if (label != null && label.isNotEmpty) return label;
+    final full = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+    return full.isNotEmpty ? full : 'Propriétaire';
+  }
+
+  static String? _ownerPhone(Map<String, dynamic> p) =>
+      (p['phone_number'] as String?)?.trim().isNotEmpty == true ? p['phone_number'] as String
+      : (p['phone'] as String?)?.trim().isNotEmpty == true ? p['phone'] as String
+      : (p['telephone'] as String?)?.trim().isNotEmpty == true ? p['telephone'] as String
+      : null;
 
   static String _fmt(String? iso) {
     if (iso == null || iso.isEmpty) return '';
@@ -262,6 +333,23 @@ class _IdentiteTab extends StatelessWidget {
     final urgList = contacts is List ? contacts : [];
 
     return ListView(padding: const EdgeInsets.fromLTRB(16, 20, 16, 40), children: [
+      if (proprietaire != null) ...[
+        _Section(title: 'Propriétaire', children: [
+          _Row(proprietaire!['profile_type'] == 'eleveur' || proprietaire!['profile_type'] == 'association'
+              ? 'Établissement' : 'Nom', _ownerName(proprietaire!)),
+          _Row('Téléphone', _ownerPhone(proprietaire!)),
+          _Row('Email', proprietaire!['email_contact']?.toString()),
+        ]),
+        const SizedBox(height: 16),
+      ],
+      if (sejourActuel != null) ...[
+        _Section(title: 'Séjour en cours', children: [
+          _Row('Entré le', _fmt(sejourActuel!['date_entree']?.toString())),
+          _Row('Sortie prévue', _fmt(sejourActuel!['date_sortie_prevue']?.toString())),
+          _Row('Logement', sejourActuel!['logement_id']?.toString()),
+        ]),
+        const SizedBox(height: 16),
+      ],
       _Section(title: 'Informations générales', children: [
         _Row('Espèce',      _capitalise(d['espece']?.toString())),
         _Row('Race',        d['race']?.toString()),

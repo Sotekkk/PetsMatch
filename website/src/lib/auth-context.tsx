@@ -81,9 +81,27 @@ const PRO_TYPES = new Set([
   'pension', 'promeneur', 'photographe', 'marechal_ferrant',
 ]);
 
-// Supabase user_profiles snake_case → web camelCase
-function mapProfile(d: Record<string, unknown>): UserData {
+// Supabase user_profiles snake_case → web camelCase.
+// `fallback` = ligne users (source primaire, historique) — utilisée quand la
+// colonne équivalente sur user_profiles est vide (jamais synchronisée) ou
+// vaut le placeholder "0000000000" laissé par d'anciens flux de création.
+// Même logique de repli que l'app (main.dart::applyProfile), qui affiche
+// correctement ces infos alors que le web (sans ce repli) les montrait vides.
+function mapProfile(d: Record<string, unknown>, fallback?: Record<string, unknown> | null): UserData {
   const type = (d.profile_type as string | undefined) ?? '';
+  const f = fallback ?? {};
+  const pick = (profileVal: unknown, fallbackVal: unknown): string | undefined => {
+    const p = (profileVal as string | undefined)?.trim();
+    if (p && p.length > 0) return p;
+    const fb = (fallbackVal as string | undefined)?.trim();
+    return fb && fb.length > 0 ? fb : undefined;
+  };
+  const pickPhone = (profileVal: unknown, fallbackVal: unknown): string | undefined => {
+    const p = (profileVal as string | undefined)?.trim();
+    if (p && p.length > 0 && p !== '0000000000') return p;
+    const fb = (fallbackVal as string | undefined)?.trim();
+    return fb && fb.length > 0 ? fb : (p || undefined);
+  };
 
   // especes_elevees peut être stocké soit en objets {espece, races} (éleveur),
   // soit en simples chaînes ["chien", "chat"] (autres profils pro) — on normalise.
@@ -136,13 +154,13 @@ function mapProfile(d: Record<string, unknown>): UserData {
     paysElevage:           (d.pays_pro as string | undefined) ?? (d.pays as string | undefined),
     adressElevage:         (d.rue_pro as string | undefined) ?? (d.rue as string | undefined),
     rueElevage:            (d.rue_pro as string | undefined) ?? (d.rue as string | undefined),
-    profilePictureUrl:     (d.avatar_url as string | undefined),
-    profilePictureUrlElevage: (d.profile_picture_url_pro as string | undefined) ?? (d.avatar_url as string | undefined),
-    descriptionElevage:    d.description as string | undefined,
-    descEntreprise:        d.description as string | undefined,
-    phone:                 d.phone_number as string | undefined,
-    siret:                 d.siret as string | undefined,
-    numeroElevage:         d.numero_elevage as string | undefined,
+    profilePictureUrl:     pick(d.avatar_url, f.profile_picture_url),
+    profilePictureUrlElevage: pick(d.profile_picture_url_pro, f.profile_picture_url_elevage) ?? pick(d.avatar_url, f.profile_picture_url),
+    descriptionElevage:    pick(d.description, pick(d.desc_entreprise, f.bio)),
+    descEntreprise:        pick(d.description, pick(d.desc_entreprise, f.bio)),
+    phone:                 pickPhone(d.phone_number, f.phone_number),
+    siret:                 pick(d.siret, f.siret),
+    numeroElevage:         pick(d.numero_elevage, f.numero_elevage),
     isDog:                 d.is_dog as boolean | undefined,
     isCat:                 d.is_cat as boolean | undefined,
     dogBreeds,
@@ -150,7 +168,7 @@ function mapProfile(d: Record<string, unknown>): UserData {
     especesElevees,
     lat:                   d.lat as number | undefined,
     lng:                   d.lng as number | undefined,
-    bannerUrl:             d.banner_url as string | undefined,
+    bannerUrl:             pick(d.banner_url, f.banner_url),
     acacedDateObtention:   d.acaced_date_obtention as string | undefined,
     acacedDateRenewal:     d.acaced_date_renewal as string | undefined,
     acaced:                d.acaced as string | undefined,
@@ -160,9 +178,9 @@ function mapProfile(d: Record<string, unknown>): UserData {
     isPremium:             d.is_premium as boolean | undefined,
     kbisUrl:               d.kbis_url as string | undefined,
     acacedDocUrl:          d.diplome_url as string | undefined,
-    instagram:             d.instagram   as string | undefined,
-    facebook:              d.facebook    as string | undefined,
-    siteWeb:               d.site_web    as string | undefined,
+    instagram:             pick(d.instagram, f.instagram),
+    facebook:              pick(d.facebook, f.facebook),
+    siteWeb:               pick(d.site_web, f.site_web),
     numeroTva:             d.numero_tva  as string | undefined,
     especes,
     races,
@@ -195,10 +213,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [availableProfiles, setAvailableProfiles] = useState<Profile[]>([]);
   const [activeProfileId, setActiveProfileIdState] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  // cgu_accepted_at est dans `users`, pas dans user_profiles — on le cache au premier fetch
-  const [cachedCguAcceptedAt, setCachedCguAcceptedAt] = useState<string | null>(null);
-  // Ref pour éviter les closures périmées dans fetchProfiles
-  const cachedCguRef = useRef<string | null>(null);
+  // Ligne `users` complète (source primaire, historique) — sert de repli pour
+  // les champs jamais synchronisés vers user_profiles (bio, banner_url,
+  // phone_number...). Ref pour éviter les closures périmées dans fetchProfiles.
+  const cachedUserRowRef = useRef<Record<string, unknown> | null>(null);
 
   const fetchProfiles = useCallback(async (uid: string) => {
     try {
@@ -206,13 +224,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         supabase.from('user_profiles').select('*').eq('uid', uid)
           .order('is_main', { ascending: false })
           .order('created_at', { ascending: true }),
-        supabase.from('users').select('cgu_accepted_at').eq('uid', uid).maybeSingle(),
+        supabase.from('users')
+          .select('cgu_accepted_at, bio, banner_url, phone_number, siret, instagram, facebook, site_web, numero_elevage, profile_picture_url, profile_picture_url_elevage')
+          .eq('uid', uid).maybeSingle(),
       ]);
 
       const profiles = (profilesRes.data ?? []) as Profile[];
-      const cguAcceptedAt = (userRes.data as { cgu_accepted_at?: string } | null)?.cgu_accepted_at ?? null;
-      cachedCguRef.current = cguAcceptedAt;
-      setCachedCguAcceptedAt(cguAcceptedAt);
+      const userRow = (userRes.data as Record<string, unknown> | null) ?? null;
+      cachedUserRowRef.current = userRow;
+      const cguAcceptedAt = (userRow?.cgu_accepted_at as string | undefined) ?? null;
 
       setAvailableProfiles(profiles);
 
@@ -226,7 +246,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(ACTIVE_PROFILE_TYPE_KEY, active.profile_type ?? '');
       window.dispatchEvent(new Event(PROFILE_CHANGE_EVENT));
       setActiveProfileIdState(active.id);
-      setUserData(mapProfile({ ...(active as unknown as Record<string, unknown>), cgu_accepted_at: cguAcceptedAt }));
+      setUserData(mapProfile({ ...(active as unknown as Record<string, unknown>), cgu_accepted_at: cguAcceptedAt }, userRow));
     } catch {
       setUserData(null);
     }
@@ -239,7 +259,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(ACTIVE_PROFILE_TYPE_KEY, profile?.profile_type ?? '');
       window.dispatchEvent(new Event(PROFILE_CHANGE_EVENT));
       setActiveProfileIdState(id);
-      if (profile) setUserData(mapProfile({ ...(profile as unknown as Record<string, unknown>), cgu_accepted_at: cachedCguRef.current }));
+      if (profile) setUserData(mapProfile({ ...(profile as unknown as Record<string, unknown>), cgu_accepted_at: cachedUserRowRef.current?.cgu_accepted_at }, cachedUserRowRef.current));
       return prev;
     });
   }, []);

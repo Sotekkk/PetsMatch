@@ -172,10 +172,16 @@ class _EmployesTabState extends State<_EmployesTab> {
           ? profile!['name_elevage'] as String
           : '${profile?['firstname'] ?? ''} ${profile?['lastname'] ?? ''}'.trim();
 
-      // Résoudre le profile_id de l'employeur
-      final eleveurProfileData = await _supa.from('user_profiles')
-          .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
-      final eleveurProfileId = eleveurProfileData?['id'] as String?;
+      // Résoudre le profile_id de l'employeur — le profil ACTIF, pas le
+      // profil "is_main" du compte (sinon la liste affiche les employés
+      // d'un AUTRE profil non-association du même compte, ex. éleveur
+      // vu depuis le profil éducateur).
+      String? eleveurProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      if (eleveurProfileId == null) {
+        final eleveurProfileData = await _supa.from('user_profiles')
+            .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+        eleveurProfileId = eleveurProfileData?['id'] as String?;
+      }
 
       dynamic rows;
       if (eleveurProfileId != null) {
@@ -872,10 +878,15 @@ class _TachesTabState extends State<_TachesTab> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      // Résoudre le profile_id de l'employeur
-      final eleveurProfileData = await _supa.from('user_profiles')
-          .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
-      final eleveurProfileId = eleveurProfileData?['id'] as String?;
+      // Résoudre le profile_id de l'employeur — le profil ACTIF, pas le
+      // profil "is_main" du compte (voir _EmployesTabState._load pour le
+      // même correctif et son explication).
+      String? eleveurProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      if (eleveurProfileId == null) {
+        final eleveurProfileData = await _supa.from('user_profiles')
+            .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+        eleveurProfileId = eleveurProfileData?['id'] as String?;
+      }
 
       dynamic tachesQ = _supa.from('taches_elevage').select();
       tachesQ = eleveurProfileId != null
@@ -1910,10 +1921,15 @@ class _CreateTacheSheetState extends State<_CreateTacheSheet> {
           : null;
       final titre = _titreCtrl.text.trim();
 
-      // Résoudre les profile_ids pour l'employeur et l'assigné
-      final eleveurProfileData = await _supa.from('user_profiles')
-          .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
-      final eleveurProfileId = eleveurProfileData?['id'] as String?;
+      // Résoudre les profile_ids pour l'employeur et l'assigné — le profil
+      // ACTIF pour l'employeur, pas son profil "is_main" (voir
+      // _EmployesTabState._load pour le même correctif et son explication).
+      String? eleveurProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      if (eleveurProfileId == null) {
+        final eleveurProfileData = await _supa.from('user_profiles')
+            .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
+        eleveurProfileId = eleveurProfileData?['id'] as String?;
+      }
 
       String? assigneProfileId;
       if (_selectedEmployeUid != null) {

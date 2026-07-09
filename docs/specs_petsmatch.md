@@ -3746,10 +3746,10 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
 
 | Item | Détail | Statut |
 |---|---|---|
-| Réservation intelligente | Algorithme d'allocation optimale entre logements de même catégorie selon les dates demandées | Non commencé |
-| Tarification automatisée | Prix calculé automatiquement selon poids animal, individuel/collectif, arrivée/départ en début de journée, réductions séjour long | Non commencé |
-| Alertes facturation | Notification si séjour non facturé ou client débiteur | Non commencé |
-| Export facturation par plage de dates | Export CSV actuel = tout l'historique filtré par statut, pas de sélecteur de dates dédié | Non commencé |
+| Réservation intelligente | ✅ Livré (session 2026-07-09), app + web : bannière "animal(aux) à placer" sur les entrées "en_pension" sans logement, suggestion automatique du meilleur logement compatible (espèce acceptée, place disponible, best-fit — le plus petit logement qui convient en premier). Bouton "Tout placer auto" pour traiter plusieurs animaux d'un coup. Scope volontairement limité à l'allocation temps réel (pas de pré-réservation à dates futures, ce concept n'existe pas encore dans le modèle de données). | Livré |
+| Tarification automatisée | ✅ Livré (session 2026-07-09), app uniquement (web = lecture seule sur l'abonnement, la facturation elle-même n'existe que côté app) : config par tranches de poids (prix seul/partagé) + réductions séjour long dans une nouvelle page "Tarifs" ; pré-remplit automatiquement le tarif/nuit à la facturation. | Livré |
+| Alertes facturation | ✅ Livré (session 2026-07-09), app uniquement : nouvelle table `pension_factures` traçant chaque facture envoyée (avant : rien n'était persisté, PDF généré à la volée). Bandeau "séjours non facturés" + "factures impayées depuis >15j" en haut du registre, bouton "Marquer facturé (sans envoi)" pour les factures remises en main propre. | Livré |
+| Export facturation par plage de dates | ✅ Livré (session 2026-07-09), app uniquement, dans la nouvelle page "Mes Factures" : sélecteur de plage de dates + export PDF (total facturé/payé/restant dû). | Livré |
 | Paiement en ligne pension (Stripe) | Plomberie corrigée (2026-07-03, commits `a9a3152e`/`7c823f31`) : `/api/stripe/checkout`/`activate`/`portal` sont profil_type-aware, price ID lu depuis `plans_tarifaires`. **Plus besoin d'ouvrir le dashboard Stripe** : `/admin` → Tarification crée désormais automatiquement le produit + prix Stripe dès qu'un tarif > 0 est saisi et enregistré (`getOrCreatePlanProduct` dans `api/admin/tarification/route.ts`). Reste : aller dans `/admin` et saisir les prix pension pour déclencher la création | Prêt — reste juste à saisir les prix dans /admin |
 | Paiement en ligne (lien email/SMS) | Explicitement V2 par l'utilisateur, avec frais de service/transaction optionnels | Non commencé |
 | États de nettoyage des logements | ✅ Livré (session 2026-07-03) : suivi jour par jour via `pension_nettoyages`, ligne dédiée dans le planning. Reste : pas d'état "hors service" (logement indisponible temporairement, hors nettoyage) | Partiel — nettoyage fait, "hors service" restant |
@@ -4137,9 +4137,8 @@ supabase/migration_creneaux_type_prestation.sql    -- colonne type_prestation su
 
 ### 21.2 — Reste à faire
 
-- Créneaux individuel/collectif côté app (Flutter) — web uniquement pour
-  l'instant.
-- GPS/trajet complet (Phase 2 éducateur item 5/5).
+- ✅ Créneaux individuel/collectif côté app (Flutter) — livré, voir §20.
+- ✅ GPS/trajet complet (Phase 2 éducateur item 5/5) — livré, voir §26.
 
 ## 22. Onglet "Éducation" dans la fiche animal + correctif agenda (session 2026-07-05)
 
@@ -4323,6 +4322,52 @@ supabase/migration_cours_collectifs_reminders.sql
 supabase/migration_education_intervenants_trajet.sql
 supabase/migration_conversations_categorie.sql
 ```
+
+---
+
+## 27. Module Pension — Phase 2 complétée (session 2026-07-09) + chantier prioritaire suivant
+
+Les 4 items de la Phase 2 Pension (§19.2) sont livrés — détail dans le tableau
+mis à jour ci-dessus. Repère utile pour les tests : `enclos_chenil` (logements),
+`pension_entrees` (registre), `pension_factures` (nouvelle table, historique +
+statut de paiement), `tarifs_pension` (nouvelle colonne JSONB sur `user_profiles`).
+
+### 27.1 — Bug corrigé au passage : `users` / `user_profiles` désynchronisés
+
+En creusant un problème de téléphone/description manquants pour un profil
+éleveur, découverte d'un problème plus large :
+
+- **Web sans repli** : `useAuth()` (web) ne lisait que `user_profiles`, sans
+  jamais retomber sur `users` (table primaire historique) quand le champ est
+  vide — contrairement à l'app qui a déjà cette logique de repli
+  (`main.dart::applyProfile`). Corrigé dans `auth-context.tsx` : `mapProfile()`
+  accepte désormais une ligne `users` de secours pour bio/banner/téléphone/
+  siret/réseaux sociaux/photos, avec traitement spécial du placeholder
+  téléphone `"0000000000"` laissé par d'anciens flux de création.
+- **Écriture app perdue silencieusement** : la description et le téléphone
+  élevage n'étaient enregistrés que dans **Firestore** (`profil_eleveur_edit.dart`),
+  plus lu nulle part depuis la migration Supabase — toute modification depuis
+  l'app se perdait. Corrigé : écriture désormais dans `users` ET `user_profiles`
+  (colonnes `bio`/`description`, `numero_elevage`/`phone_number`).
+- **Bug multi-profil dans la gestion des employés** (`employes_page.dart`) :
+  la résolution du "profil employeur" se basait sur un champ `is_main` figé
+  sur le profil éleveur du compte au lieu du profil réellement actif — un
+  employé ajouté depuis n'importe quel profil (éducateur, pension…) se
+  retrouvait toujours rattaché au profil éleveur. Corrigé (4 endroits) pour
+  utiliser `User_Info.activeProfileId`.
+
+### 27.2 — Chantier prioritaire pour la prochaine session
+
+L'utilisateur a validé la direction : **`users` doit devenir purement
+l'identité d'authentification (uid, email, préférences globales), toutes les
+données de profil doivent vivre dans `user_profiles`** (une ligne par profil).
+C'est déjà la direction du code ("Sync user_profiles (source V2)" en
+commentaire à plusieurs endroits), mais la bascule n'est que partielle.
+
+**Ne pas se lancer sans cadrage** : chantier transverse à haut risque, touche
+chaque lecture/écriture de profil (cartes, annonces, fiches, création,
+édition) sur les 2 plateformes. Repartir de l'audit fait en §27.1 avant
+d'étendre à d'autres profils (association, éducateur, pension, vétérinaire…).
 
 ---
 

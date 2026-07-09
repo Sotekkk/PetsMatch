@@ -120,6 +120,85 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
     _load();
   }
 
+  // Réservation intelligente (Phase 2 item 4/4) — suggère le logement optimal
+  // pour un animal non assigné : catégorie compatible (espèce), de la place
+  // disponible, en privilégiant le plus petit logement qui convient (garde
+  // les grands logements libres pour les besoins qui en ont vraiment besoin).
+  Map<String, dynamic>? _suggestLogement(Map<String, dynamic> entree) {
+    final espece = (entree['espece'] as String?) ?? '';
+    final especeLabel = espece.isNotEmpty
+        ? espece[0].toUpperCase() + espece.substring(1).toLowerCase()
+        : '';
+    final candidats = _logements.where((l) {
+      final especesLogement = List<String>.from(l['especes'] as List? ?? []);
+      final compatible = especesLogement.isEmpty || especesLogement.contains(especeLabel);
+      if (!compatible) return false;
+      final capacite = (l['capacite'] as int?) ?? 1;
+      final occupes = _occupants(l['id'] as String).length;
+      return occupes < capacite;
+    }).toList()
+      ..sort((a, b) {
+        final capA = (a['capacite'] as int?) ?? 1;
+        final capB = (b['capacite'] as int?) ?? 1;
+        if (capA != capB) return capA.compareTo(capB); // le plus petit d'abord (best fit)
+        final dispoA = capA - _occupants(a['id'] as String).length;
+        final dispoB = capB - _occupants(b['id'] as String).length;
+        return dispoA.compareTo(dispoB); // à capacité égale, le plus proche de plein
+      });
+    return candidats.isEmpty ? null : candidats.first;
+  }
+
+  Future<void> _autoAssign(Map<String, dynamic> entree) async {
+    final suggestion = _suggestLogement(entree);
+    if (suggestion == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'Aucun logement disponible pour ${_espLabel(entree['espece']?.toString())} pour le moment.',
+              style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.orange,
+        ));
+      }
+      return;
+    }
+    await _assign(entree['id'] as String, suggestion['id'] as String);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${entree['animal_nom'] ?? 'Animal'} placé dans ${suggestion['nom']} ✓',
+            style: const TextStyle(fontFamily: 'Galey')),
+        backgroundColor: const Color(0xFF6E9E57),
+      ));
+    }
+  }
+
+  Future<void> _assignAllAuto() async {
+    final todo = List<Map<String, dynamic>>.from(_nonAssignes);
+    var placed = 0;
+    for (final e in todo) {
+      final suggestion = _suggestLogement(e);
+      if (suggestion == null) continue;
+      await _supa.from('pension_entrees').update({'logement_id': suggestion['id']}).eq('id', e['id']);
+      placed++;
+      // Recharger localement pour que les occupations comptent dans les suggestions suivantes
+      _entrees = _entrees.map((x) => x['id'] == e['id'] ? {...x, 'logement_id': suggestion['id']} : x).toList();
+    }
+    await _load();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(placed == 0
+            ? 'Aucun placement possible pour le moment.'
+            : '$placed animal(aux) placé(s) automatiquement.',
+            style: const TextStyle(fontFamily: 'Galey')),
+        backgroundColor: placed == 0 ? Colors.orange : const Color(0xFF6E9E57),
+      ));
+    }
+  }
+
+  String _espLabel(String? e) {
+    if (e == null || e.isEmpty) return 'cet animal';
+    return e[0].toUpperCase() + e.substring(1).toLowerCase();
+  }
+
   void _showLogementSheet({Map<String, dynamic>? logement}) {
     if (logement == null && _planCode == 'free' && _logements.isNotEmpty) {
       Navigator.push(context, MaterialPageRoute(builder: (_) => const PensionAbonnementPage()));
@@ -282,6 +361,52 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
         label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
       ),
       body: Column(children: [
+          if (_nonAssignes.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Icon(Icons.auto_awesome_outlined, size: 16, color: Colors.orange.shade800),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('${_nonAssignes.length} animal(aux) à placer',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                          fontSize: 13, color: Colors.orange.shade900))),
+                  if (_nonAssignes.length > 1)
+                    TextButton(
+                      onPressed: _assignAllAuto,
+                      child: const Text('Tout placer auto',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+                    ),
+                ]),
+                const SizedBox(height: 6),
+                for (final e in _nonAssignes)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(children: [
+                      Expanded(child: Text(
+                          '${e['animal_nom'] ?? 'Animal'} (${_espLabel(e['espece']?.toString())})',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                      TextButton.icon(
+                        onPressed: () => _autoAssign(e),
+                        icon: const Icon(Icons.auto_awesome_outlined, size: 14),
+                        label: const Text('Placer', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                        style: TextButton.styleFrom(
+                          foregroundColor: _teal,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                    ]),
+                  ),
+              ]),
+            ),
           if (_logements.isNotEmpty)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

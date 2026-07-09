@@ -115,6 +115,58 @@ export default function PensionChenilPage() {
     load();
   };
 
+  // Réservation intelligente (Phase 2 item 4/4) — miroir de l'app : suggère
+  // le logement optimal (catégorie compatible, place disponible, le plus
+  // petit qui convient en premier).
+  const especeLabel = (e?: string | null) => e ? e[0].toUpperCase() + e.slice(1).toLowerCase() : 'cet animal';
+
+  const suggestLogement = (entree: Entree): Logement | null => {
+    const label = especeLabel(entree.espece);
+    const candidats = logements
+      .filter(l => {
+        const especesL = l.especes ?? [];
+        const compatible = especesL.length === 0 || especesL.includes(label);
+        if (!compatible) return false;
+        return occupants(l.id).length < l.capacite;
+      })
+      .sort((a, b) => {
+        if (a.capacite !== b.capacite) return a.capacite - b.capacite;
+        const dispoA = a.capacite - occupants(a.id).length;
+        const dispoB = b.capacite - occupants(b.id).length;
+        return dispoA - dispoB;
+      });
+    return candidats[0] ?? null;
+  };
+
+  const [autoMsg, setAutoMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
+  const autoAssign = async (entree: Entree) => {
+    const suggestion = suggestLogement(entree);
+    if (!suggestion) {
+      setAutoMsg({ text: `Aucun logement disponible pour ${especeLabel(entree.espece)} pour le moment.`, ok: false });
+      return;
+    }
+    await assign(entree.id, suggestion.id);
+    setAutoMsg({ text: `${entree.animal_nom} placé dans ${suggestion.nom} ✓`, ok: true });
+  };
+
+  const assignAllAuto = async () => {
+    let placed = 0;
+    let localEntrees = entrees;
+    for (const e of nonAssignes) {
+      const suggestion = suggestLogement(e);
+      if (!suggestion) continue;
+      await supabase.from('pension_entrees').update({ logement_id: suggestion.id }).eq('id', e.id);
+      placed++;
+      localEntrees = localEntrees.map(x => x.id === e.id ? { ...x, logement_id: suggestion.id } : x);
+      setEntrees(localEntrees);
+    }
+    await load();
+    setAutoMsg(placed === 0
+      ? { text: 'Aucun placement possible pour le moment.', ok: false }
+      : { text: `${placed} animal(aux) placé(s) automatiquement.`, ok: true });
+  };
+
   if (!user || !userData) return null;
 
   return (
@@ -214,6 +266,39 @@ export default function PensionChenilPage() {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {autoMsg && (
+        <div className={`rounded-xl px-4 py-2.5 text-sm font-galey font-semibold ${
+          autoMsg.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-orange-50 text-orange-700 border border-orange-200'
+        }`}>
+          {autoMsg.text}
+        </div>
+      )}
+
+      {nonAssignes.length > 0 && (
+        <div className="rounded-xl px-4 py-3 bg-orange-50 border border-orange-200 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-galey font-bold text-orange-900">
+              ✨ {nonAssignes.length} animal(aux) à placer
+            </p>
+            {nonAssignes.length > 1 && (
+              <button onClick={assignAllAuto}
+                className="text-xs font-galey font-semibold text-teal-700 hover:text-teal-900">
+                Tout placer auto
+              </button>
+            )}
+          </div>
+          {nonAssignes.map(e => (
+            <div key={e.id} className="flex items-center justify-between text-sm font-galey">
+              <span>{e.animal_nom} ({especeLabel(e.espece)})</span>
+              <button onClick={() => autoAssign(e)}
+                className="text-xs font-galey font-semibold text-teal-700 hover:text-teal-900 flex items-center gap-1">
+                ✨ Placer
+              </button>
+            </div>
+          ))}
         </div>
       )}
 

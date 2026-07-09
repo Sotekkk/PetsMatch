@@ -1,5 +1,4 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
@@ -41,6 +40,10 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
   String? _filterEspece;
   String? _filterStatut;
 
+  // Alertes facturation (Phase 2 item 2/4)
+  Set<String> _entreesFacturees            = {}; // entree_id ayant au moins une facture
+  List<Map<String, dynamic>> _debiteurs    = []; // factures envoyées non payées depuis >15j
+
   int get _activeFilters =>
       (_filterEspece != null ? 1 : 0) + (_filterStatut != null ? 1 : 0);
 
@@ -57,13 +60,23 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       var qEntrees = _supa.from('pension_entrees').select().eq('pro_uid', _uid);
       qEntrees = qEntrees.eq('pro_profile_id', pid);
       var qAcces = _supa.from('animal_access').select('animal_id').eq('pro_profile_id', pid).eq('statut', 'active');
+      var qFactures = _supa.from('pension_factures').select().eq('pro_uid', _uid).eq('pro_profile_id', pid);
       final results = await Future.wait([
         qEntrees.order('date_entree', ascending: false),
         qAcces,
+        qFactures,
       ]);
 
       final entrees  = List<Map<String, dynamic>>.from(results[0] as List);
       final approved = List<Map<String, dynamic>>.from(results[1] as List);
+      final factures = List<Map<String, dynamic>>.from(results[2] as List);
+      final entreesFacturees = factures.map((f) => f['entree_id'].toString()).toSet();
+      final seuil15j = DateTime.now().subtract(const Duration(days: 15));
+      final debiteurs = factures.where((f) {
+        if (f['statut'] != 'envoyee') return false;
+        final dEnvoi = DateTime.tryParse(f['date_envoi']?.toString() ?? '');
+        return dEnvoi != null && dEnvoi.isBefore(seuil15j);
+      }).toList();
       final animalIds = approved.map((a) => a['animal_id'] as String).toList();
 
       // Charge les puces + photos des animaux approuvés pour le lien "Voir fiche"
@@ -87,7 +100,9 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
 
       if (!mounted) return;
       setState(() {
-        _entrees        = entrees;
+        _entrees          = entrees;
+        _entreesFacturees = entreesFacturees;
+        _debiteurs        = debiteurs;
         _puceToAnimalId = puceToId;
         _puceToPhotoUrl = puceToPhoto;
         _loading        = false;
@@ -109,6 +124,13 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
     if (_filterStatut != null) list = list.where((d) => d['statut'] == _filterStatut).toList();
     return list;
   }
+
+  // Séjours terminés (sortie effective enregistrée) sans aucune facture liée.
+  List<Map<String, dynamic>> get _sejoursNonFactures => _entrees.where((e) {
+        final sortieEff = e['date_sortie_effective'];
+        if (sortieEff == null || (sortieEff as String).isEmpty) return false;
+        return !_entreesFacturees.contains(e['id'].toString());
+      }).toList();
 
   // ── Saisie manuelle puce ──────────────────────────────────────────────────
 
@@ -914,7 +936,9 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _teal))
-          : filtered.isEmpty
+          : Column(children: [
+              _buildAlertesFacturation(),
+              Expanded(child: filtered.isEmpty
               ? _buildEmpty()
               : RefreshIndicator(
                   onRefresh: _load,
@@ -960,6 +984,131 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                     },
                   ),
                 ),
+              ),
+            ]),
+    );
+  }
+
+  // Bandeau d'alerte facturation — séjours terminés non facturés + clients
+  // débiteurs (facture envoyée non payée depuis >15 jours).
+  Widget _buildAlertesFacturation() {
+    final nonFactures = _sejoursNonFactures;
+    if (nonFactures.isEmpty && _debiteurs.isEmpty) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (nonFactures.isNotEmpty)
+          Row(children: [
+            Icon(Icons.receipt_long_outlined, size: 16, color: Colors.orange.shade800),
+            const SizedBox(width: 8),
+            Expanded(child: Text(
+                '${nonFactures.length} séjour(s) terminé(s) non facturé(s)',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12.5,
+                    fontWeight: FontWeight.w600, color: Colors.orange.shade900))),
+          ]),
+        if (nonFactures.isNotEmpty && _debiteurs.isNotEmpty) const SizedBox(height: 6),
+        if (_debiteurs.isNotEmpty)
+          InkWell(
+            onTap: _showFacturesImpayees,
+            child: Row(children: [
+              Icon(Icons.warning_amber_rounded, size: 16, color: Colors.red.shade700),
+              const SizedBox(width: 8),
+              Expanded(child: Text(
+                  '${_debiteurs.length} facture(s) impayée(s) depuis plus de 15 jours',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12.5,
+                      fontWeight: FontWeight.w600, color: Colors.red.shade800))),
+              Icon(Icons.chevron_right, size: 18, color: Colors.red.shade700),
+            ]),
+          ),
+      ]),
+    );
+  }
+
+  Future<void> _marquerFacturePayee(String factureId) async {
+    await _supa.from('pension_factures').update({
+      'statut': 'payee',
+      'date_paiement': DateTime.now().toIso8601String(),
+    }).eq('id', factureId);
+    if (mounted) Navigator.pop(context);
+    _load();
+  }
+
+  Future<void> _showFacturesImpayees() async {
+    // Toutes les factures non payées (pas seulement celles >15j du bandeau)
+    final pid = User_Info.activeProfileId;
+    List<Map<String, dynamic>> impayees = [];
+    try {
+      final rows = await _supa.from('pension_factures').select()
+          .eq('pro_uid', _uid).eq('pro_profile_id', pid).eq('statut', 'envoyee')
+          .order('date_envoi');
+      impayees = List<Map<String, dynamic>>.from(rows as List);
+    } catch (_) {}
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 10),
+          Center(child: Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Factures impayées (${impayees.length})',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          ),
+          Flexible(
+            child: impayees.isEmpty
+                ? Padding(padding: const EdgeInsets.all(24),
+                    child: Text('Aucune facture impayée.',
+                        style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade400)))
+                : ListView.builder(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: impayees.length,
+                    itemBuilder: (_, i) {
+                      final f = impayees[i];
+                      final dEnvoi = DateTime.tryParse(f['date_envoi']?.toString() ?? '');
+                      final montant = (f['montant'] as num?)?.toDouble() ?? 0;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(color: const Color(0xFFF8F8F6), borderRadius: BorderRadius.circular(12)),
+                        child: Row(children: [
+                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text('${f['animal_nom'] ?? ''} — ${f['proprietaire_nom'] ?? ''}',
+                                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+                            const SizedBox(height: 2),
+                            Text(
+                                '${montant.toStringAsFixed(2)} € · envoyée le ${dEnvoi != null ? "${dEnvoi.day.toString().padLeft(2, "0")}/${dEnvoi.month.toString().padLeft(2, "0")}/${dEnvoi.year}" : "?"}',
+                                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                          ])),
+                          TextButton.icon(
+                            onPressed: () => _marquerFacturePayee(f['id'].toString()),
+                            icon: const Icon(Icons.check_circle_outline, size: 18, color: Color(0xFF6E9E57)),
+                            label: const Text('Marquer payée',
+                                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Color(0xFF6E9E57))),
+                          ),
+                        ]),
+                      );
+                    },
+                  ),
+          ),
+          SizedBox(height: MediaQuery.of(context).padding.bottom + 12),
+        ]),
+      ),
     );
   }
 
@@ -2092,8 +2241,9 @@ Future<Map<String, dynamic>> _lookupAnimalByChip(String chip) async {
 
       if (ownerUid != null && ownerUid.isNotEmpty) {
         try {
-          final doc = await FirebaseFirestore.instance.collection('users').doc(ownerUid).get();
-          final d = doc.data();
+          // Supabase, pas Firestore (obsolète depuis la migration — documents
+          // vides/périmés, ce qui laissait ces champs vides à l'admission).
+          final d = await supa.from('users').select().eq('uid', ownerUid).maybeSingle();
           if (d != null) {
             // Éleveur/pro → nom d'élevage + adresse pro en priorité, sinon nom perso.
             final nameElevage = (d['name_elevage'] as String?) ?? (d['nom'] as String?);
@@ -2738,6 +2888,7 @@ class _FacturationSheetState extends State<_FacturationSheet> {
   bool _avecTVA    = false;
   bool _generating = false;
   bool _sending    = false;
+  bool _marking    = false;
 
   @override
   void initState() {
@@ -2758,6 +2909,57 @@ class _FacturationSheetState extends State<_FacturationSheet> {
     _nbNuitsCtrl     = TextEditingController(text: '$nbNuits');
     _suppDescCtrl    = TextEditingController();
     _suppMontantCtrl = TextEditingController();
+    _suggererTarif();
+  }
+
+  // Tarification automatisée — pré-remplit le tarif/nuit suggéré à partir de
+  // la config du pro (tranches de poids + réduction séjour long), reste
+  // librement modifiable ensuite. N'écrase jamais une saisie déjà en cours.
+  Future<void> _suggererTarif() async {
+    final pid = User_Info.activeProfileId;
+    if (pid.isEmpty) return;
+    try {
+      final profil = await Supabase.instance.client.from('user_profiles')
+          .select('tarifs_pension').eq('id', pid).maybeSingle();
+      final config = profil?['tarifs_pension'];
+      if (config is! Map) return;
+      final tranches = (config['tranches_poids'] as List?) ?? [];
+      if (tranches.isEmpty) return;
+
+      final animalId = widget.entree['animal_id']?.toString();
+      double? poids;
+      if (animalId != null && animalId.isNotEmpty) {
+        final animal = await Supabase.instance.client.from('animaux')
+            .select('poids').eq('id', animalId).maybeSingle();
+        poids = (animal?['poids'] as num?)?.toDouble();
+      }
+      final seul = widget.entree['seul_dans_logement'] != false; // défaut: seul
+
+      Map? tranche;
+      for (final t in tranches) {
+        final m = t as Map;
+        final poidsMax = (m['poids_max'] as num?)?.toDouble();
+        if (poids == null || poidsMax == null || poids <= poidsMax) { tranche = m; break; }
+      }
+      tranche ??= tranches.last as Map;
+
+      final prixNuit = seul
+          ? (tranche['prix_seul'] as num?)?.toDouble() ?? 0
+          : (tranche['prix_partage'] as num?)?.toDouble() ?? 0;
+
+      double reductionPct = 0;
+      final reductions = (config['reductions_long_sejour'] as List?) ?? [];
+      for (final r in reductions) {
+        final m = r as Map;
+        final minNuits = (m['min_nuits'] as num?)?.toInt() ?? 0;
+        if (_nbNuits >= minNuits) reductionPct = (m['pourcentage'] as num?)?.toDouble() ?? 0;
+      }
+
+      final prixFinal = prixNuit * (1 - reductionPct / 100);
+      if (mounted && _tarifCtrl.text.isEmpty && prixFinal > 0) {
+        setState(() => _tarifCtrl.text = prixFinal.toStringAsFixed(2));
+      }
+    } catch (_) {}
   }
 
   @override
@@ -2957,6 +3159,26 @@ class _FacturationSheetState extends State<_FacturationSheet> {
                       side: const BorderSide(color: Color(0xFF0C5C6C)),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                // Facture remise en main propre / hors app — pas d'envoi ni de
+                // PDF stocké, juste tracée pour les alertes/l'historique.
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: _tarif > 0 && !_generating && !_sending && !_marking ? _marquerFacture : null,
+                    icon: _marking
+                        ? const SizedBox(width: 18, height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey))
+                        : const Icon(Icons.fact_check_outlined, size: 18),
+                    label: Text(_marking ? '...' : 'Marquer facturé (sans envoi)',
+                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey.shade700,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
                 ),
@@ -3204,6 +3426,43 @@ class _FacturationSheetState extends State<_FacturationSheet> {
     return Uint8List.fromList(await pdfDoc.save());
   }
 
+  // Facture remise en main propre / hors app (impression, chèque, espèces…) —
+  // aucun envoi ni PDF stocké, juste tracée pour les alertes et l'historique.
+  Future<void> _marquerFacture() async {
+    setState(() => _marking = true);
+    try {
+      final now    = DateTime.now();
+      final invNum = 'FACT-${DateFormat('yyyyMMdd-HHmm').format(now)}';
+      final uid    = FirebaseAuth.instance.currentUser?.uid ?? '';
+      await Supabase.instance.client.from('pension_factures').insert({
+        'pro_uid':          uid,
+        'pro_profile_id':   User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+        'entree_id':        widget.entree['id'],
+        'numero':           invNum,
+        'animal_nom':       widget.entree['animal_nom'],
+        'proprietaire_nom': widget.entree['proprietaire_nom'],
+        'montant':          _total,
+        'statut':           'envoyee',
+      });
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Séjour marqué comme facturé.', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Color(0xFF6E9E57),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _marking = false);
+    }
+  }
+
   Future<void> _genererPDF() async {
     setState(() => _generating = true);
     try {
@@ -3279,6 +3538,21 @@ class _FacturationSheetState extends State<_FacturationSheet> {
           'pension_nom': pensionNom,
         },
         'read': false,
+      });
+
+      // Persiste la facture — sans ça, impossible de savoir plus tard quel
+      // séjour est facturé ou quel client n'a pas encore payé (alertes).
+      await supa.from('pension_factures').insert({
+        'pro_uid':          uid,
+        'pro_profile_id':   User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+        'entree_id':        widget.entree['id'],
+        'numero':           invNum,
+        'animal_nom':       animalNom,
+        'proprietaire_nom': widget.entree['proprietaire_nom'],
+        'proprietaire_uid': ownerUid,
+        'montant':          _total,
+        'pdf_url':          dlUrl,
+        'statut':           'envoyee',
       });
 
       if (mounted) {
