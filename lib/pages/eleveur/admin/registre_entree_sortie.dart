@@ -712,16 +712,17 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
     if (uid == null) return;
     try {
       final profil = await Supabase.instance.client
-          .from('users')
-          .select('name_elevage, rue_elevage, ville_elevage')
+          .from('user_profiles')
+          .select('nom, rue_pro, ville_pro')
           .eq('uid', uid)
+          .eq('is_main', true)
           .maybeSingle();
       if (profil != null && mounted) {
-        final rue    = profil['rue_elevage']   as String? ?? '';
-        final ville  = profil['ville_elevage'] as String? ?? '';
+        final rue    = profil['rue_pro']   as String? ?? '';
+        final ville  = profil['ville_pro'] as String? ?? '';
         final adresse = [rue, ville].where((s) => s.isNotEmpty).join(', ');
         setState(() {
-          _nomElevage     = profil['name_elevage'] as String?;
+          _nomElevage     = profil['nom'] as String?;
           _adresseElevage = adresse.isNotEmpty ? adresse : null;
         });
       }

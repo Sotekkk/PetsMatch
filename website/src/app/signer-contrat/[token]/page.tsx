@@ -88,11 +88,19 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
 
       if (!data) { setStatus('not_found'); return; }
 
-      const { data: profil } = await supabase
-        .from('users')
-        .select('firstname,lastname,name_elevage,adress_elevage,adress,siret,numero_elevage,code_iso_elevage,email,ville_elevage,ville,phone_number,code_iso')
-        .eq('uid', data.uid_eleveur)
-        .maybeSingle();
+      const [{ data: cp }, { data: userRow }] = await Promise.all([
+        supabase.from('user_profiles')
+          .select('firstname,lastname,nom,adresse,siret,numero_elevage,ville_pro,ville,phone_number,email_contact')
+          .eq('uid', data.uid_eleveur).eq('is_main', true).maybeSingle(),
+        supabase.from('users').select('email').eq('uid', data.uid_eleveur).maybeSingle(),
+      ]);
+      const profil = cp ? {
+        firstname: cp.firstname, lastname: cp.lastname, name_elevage: cp.nom,
+        adress_elevage: cp.adresse, adress: cp.adresse, siret: cp.siret,
+        numero_elevage: cp.numero_elevage, code_iso_elevage: '+33',
+        email: userRow?.email || cp.email_contact || '',
+        ville_elevage: cp.ville_pro, ville: cp.ville, phone_number: cp.phone_number, code_iso: '+33',
+      } : null;
 
       const meta = (data.metadata ?? {}) as Record<string, string>;
       const elvNom  = profil?.name_elevage || `${profil?.firstname ?? ''} ${profil?.lastname ?? ''}`.trim() || 'Éleveur';

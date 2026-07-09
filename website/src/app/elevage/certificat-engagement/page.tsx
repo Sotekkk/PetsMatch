@@ -90,11 +90,16 @@ export default function CertificatEngagementPage() {
         return profilSource === 'association' ? q.eq('profil_source', 'association') : q.or('profil_source.is.null,profil_source.eq.eleveur'); })(),
       (() => { const q = supabaseAdmin.from('animaux').select('id,nom,espece,race,date_naissance,identification').eq('uid_eleveur', user.uid).order('nom');
         return profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false'); })(),
-      supabaseAdmin.from('users').select('name_elevage,siret,phone_number,rue_elevage,ville_elevage,code_postal_elevage,firstname,lastname').eq('uid', user.uid).maybeSingle(),
+      supabaseAdmin.from('user_profiles').select('nom,siret,phone_number,rue_pro,ville_pro,code_postal_pro,firstname,lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle(),
     ]).then(([certs, anim, prof]) => {
       setCertificats((certs.data ?? []) as Certificat[]);
       setAnimaux((anim.data ?? []) as Animal[]);
-      setProfile(prof.data as UserProfile | null);
+      const cp = prof.data;
+      setProfile(cp ? {
+        name_elevage: cp.nom, siret: cp.siret, phone_number: cp.phone_number,
+        rue_elevage: cp.rue_pro, ville_elevage: cp.ville_pro, code_postal_elevage: cp.code_postal_pro,
+        firstname: cp.firstname, lastname: cp.lastname,
+      } : null);
       setFetching(false);
     });
   }, [user]);
@@ -103,13 +108,28 @@ export default function CertificatEngagementPage() {
     setUserSearch(q);
     if (q.trim().length < 2) { setUserResults([]); return; }
     setUserSearchLoading(true);
-    const { data } = await supabaseAdmin
-      .from('users')
-      .select('uid,firstname,lastname,name_elevage,is_elevage,email,phone_number,rue,ville,code_postal,rue_elevage,ville_elevage,code_postal_elevage')
-      .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,email.ilike.%${q}%`)
-      .neq('uid', user?.uid ?? '')
-      .limit(6);
-    setUserResults((data ?? []) as typeof userResults);
+    const cpFields = 'uid,firstname,lastname,nom,profile_type,email_contact,phone_number,rue,ville,code_postal,rue_pro,ville_pro,code_postal_pro';
+    const toResult = (cp: Record<string, unknown>, email?: string) => ({
+      uid: cp.uid as string, firstname: cp.firstname as string, lastname: cp.lastname as string,
+      name_elevage: cp.nom as string | undefined, is_elevage: cp.profile_type === 'eleveur',
+      email: email || (cp.email_contact as string | undefined) || '',
+      phone_number: cp.phone_number as string | undefined,
+      rue: cp.rue as string | undefined, ville: cp.ville as string | undefined, code_postal: cp.code_postal as string | undefined,
+      rue_elevage: cp.rue_pro as string | undefined, ville_elevage: cp.ville_pro as string | undefined, code_postal_elevage: cp.code_postal_pro as string | undefined,
+    });
+    if (q.includes('@')) {
+      const { data: users } = await supabaseAdmin.from('users').select('uid,email').ilike('email', `%${q}%`).neq('uid', user?.uid ?? '').limit(6);
+      const uids = (users ?? []).map(u => u.uid);
+      const emailByUid = new Map((users ?? []).map(u => [u.uid, u.email as string]));
+      const { data: cps } = uids.length
+        ? await supabaseAdmin.from('user_profiles').select(cpFields).in('uid', uids).eq('is_main', true)
+        : { data: [] as Record<string, unknown>[] };
+      setUserResults((cps ?? []).map(cp => toResult(cp, emailByUid.get(cp.uid as string))));
+    } else {
+      const { data: cps } = await supabaseAdmin.from('user_profiles').select(cpFields)
+        .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%`).eq('is_main', true).neq('uid', user?.uid ?? '').limit(6);
+      setUserResults((cps ?? []).map(cp => toResult(cp)));
+    }
     setUserSearchLoading(false);
   }
 

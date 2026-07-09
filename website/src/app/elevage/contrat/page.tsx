@@ -175,14 +175,24 @@ export default function ContratsPage() {
   async function load() {
     if (!user) return;
     setFetching(true);
-    const [docsRes, animauxRes, profileRes] = await Promise.all([
+    const [docsRes, animauxRes, profileRes, userRowRes] = await Promise.all([
       supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).neq('type', 'contrat_adoption').order('created_at', { ascending: false }),
       supabase.from('animaux').select('id, nom, espece, race, identification, date_naissance, sexe, couleur, pedigree_numero, pedigree_lof, nom_pere, puce_pere, nom_mere, puce_mere').eq('uid_eleveur', user.uid).or('is_association.is.null,is_association.eq.false').not('statut', 'in', '(sorti,decede)').order('nom'),
-      supabase.from('users').select('firstname,lastname,name_elevage,is_elevage,adress_elevage,adress,rue,ville,ville_elevage,code_postal,siret,email,numero_elevage,code_iso_elevage,phone_number,code_iso').eq('uid', user.uid).maybeSingle(),
+      supabase.from('user_profiles').select('firstname,lastname,nom,profile_type,adresse,rue,ville,ville_pro,code_postal,siret,numero_elevage,phone_number,email_contact').eq('uid', user.uid).eq('is_main', true).maybeSingle(),
+      supabase.from('users').select('email').eq('uid', user.uid).maybeSingle(),
     ]);
     setDocs((docsRes.data ?? []) as DocAnimal[]);
     setAnimaux((animauxRes.data ?? []) as Animal[]);
-    setProfile(profileRes.data as UserProfile | null);
+    const cp = profileRes.data;
+    setProfile(cp ? {
+      firstname: cp.firstname, lastname: cp.lastname, name_elevage: cp.nom,
+      is_elevage: cp.profile_type === 'eleveur',
+      adress_elevage: cp.adresse, adress: cp.adresse,
+      rue: cp.rue, ville: cp.ville, ville_elevage: cp.ville_pro, code_postal: cp.code_postal,
+      siret: cp.siret, email: userRowRes.data?.email || cp.email_contact || '',
+      numero_elevage: cp.numero_elevage, code_iso_elevage: '+33',
+      phone_number: cp.phone_number, code_iso: '+33',
+    } : null);
     setFetching(false);
   }
 
@@ -190,11 +200,28 @@ export default function ContratsPage() {
     setUserSearch(q);
     if (q.length < 2) { setUserResults([]); return; }
     const isEmail = q.includes('@');
-    const fields = 'uid,firstname,lastname,name_elevage,is_elevage,email,phone_number,numero_elevage,code_iso_elevage,rue,ville,code_postal,adress_elevage,siret';
-    const { data } = isEmail
-      ? await supabase.from('users').select(fields).ilike('email', `%${q}%`).limit(5)
-      : await supabase.from('users').select(fields).or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,name_elevage.ilike.%${q}%`).limit(8);
-    setUserResults((data ?? []) as UserResult[]);
+    const cpFields = 'uid,firstname,lastname,nom,profile_type,email_contact,phone_number,numero_elevage,rue,ville,code_postal,adresse,siret';
+    const toResult = (cp: Record<string, unknown>, email?: string): UserResult => ({
+      uid: cp.uid as string, firstname: cp.firstname as string, lastname: cp.lastname as string,
+      name_elevage: cp.nom as string | undefined, is_elevage: cp.profile_type === 'eleveur',
+      email: email || (cp.email_contact as string | undefined) || '',
+      phone_number: cp.phone_number as string | undefined, numero_elevage: cp.numero_elevage as string | undefined,
+      code_iso_elevage: '+33', rue: cp.rue as string | undefined, ville: cp.ville as string | undefined,
+      code_postal: cp.code_postal as string | undefined, adress_elevage: cp.adresse as string | undefined,
+      siret: cp.siret as string | undefined,
+    });
+    if (isEmail) {
+      const { data: users } = await supabase.from('users').select('uid,email').ilike('email', `%${q}%`).limit(5);
+      const uids = (users ?? []).map(u => u.uid);
+      if (uids.length === 0) { setUserResults([]); return; }
+      const { data: cps } = await supabase.from('user_profiles').select(cpFields).in('uid', uids).eq('is_main', true);
+      const emailByUid = new Map((users ?? []).map(u => [u.uid, u.email as string]));
+      setUserResults((cps ?? []).map(cp => toResult(cp, emailByUid.get(cp.uid as string))));
+    } else {
+      const { data: cps } = await supabase.from('user_profiles').select(cpFields)
+        .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,nom.ilike.%${q}%`).eq('is_main', true).limit(8);
+      setUserResults((cps ?? []).map(cp => toResult(cp)));
+    }
   }
 
   function selectUser(u: UserResult) {

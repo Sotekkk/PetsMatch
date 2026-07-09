@@ -4473,12 +4473,32 @@ sa propre passe car certains champs legacy (`is_dog`/`dog_breeds`/
 `cat_breeds`) n'ont pas d'équivalent sur `user_profiles`.
 
 **Lots restants** (par ordre d'impact décroissant, voir audit complet
-dans l'historique de session) : documents légaux/financiers générés
-(contrats de cession, certificats d'engagement, devis, registre
-entrée-sortie — app + web, ~8 fichiers, risque juridique/financier si
-siret/adresse figés) ; pages agenda/planning pro (breeder + pension +
-éducation) ; pages association (bénévoles, familles d'accueil, groupes
-communauté) ; pages particulier (feed, animaux acquis/perdus, promenades).
+dans l'historique de session) : pages agenda/planning pro (breeder +
+pension + éducation) ; pages association (bénévoles, familles d'accueil,
+groupes communauté) ; pages particulier (feed, animaux acquis/perdus,
+promenades).
+
+### 27.7 — Phase 4 livrée (lot 2) : documents légaux/financiers vers user_profiles
+
+Ciblait la catégorie la plus à risque : `certificats_engagement`, `devis`,
+`documents_animaux` ne stockent jamais l'identité de l'émetteur à la
+création (seulement son `uid` en FK) — les pages publiques de signature
+(`certificat/[token]`, `devis/[token]`, `signer-contrat/[token]`) sont
+donc la source primaire, pas juste un affichage. Un siret/adresse figé y
+serait injecté tel quel dans un document signé, pas juste un avatar
+périmé.
+
+10 fichiers migrés (6 web, 4 app) selon 2 motifs : lecture directe du
+profil (FK connue ou profil courant) → bascule simple vers
+`user_profiles` (`is_main=true`) ; recherche live d'acquéreur/adoptant
+par nom OU email (pas de `profile_id` connu à l'avance, 5 fichiers) →
+recherche par nom bascule vers `user_profiles`, recherche par email garde
+`users.email` (seul champ légitimement d'identité, absent de
+`user_profiles`) puis enchaîne une requête `user_profiles` pour les
+champs de préremplissage (téléphone/adresse/siret). Vérifié en live :
+requêtes de recherche et de lookup par FK renvoient bien les champs à
+jour de `user_profiles` (siret, adresse pro complète, téléphone) pour un
+profil éleveur réel.
 
 ---
 

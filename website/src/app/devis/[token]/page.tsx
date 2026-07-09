@@ -57,10 +57,13 @@ export default function DevisPublicPage({ params }: { params: Promise<{ token: s
       .then(async ({ data }) => {
         if (!data) { setNotFound(true); setLoading(false); return; }
         setDevis(data as Devis);
-        const { data: p } = await supabase.from('users')
-          .select('name_elevage,firstname,lastname,profession_pro,phone_number,siret')
-          .eq('uid', data.pro_uid).maybeSingle();
-        setPro(p as Pro | null);
+        const { data: p } = await supabase.from('user_profiles')
+          .select('nom,firstname,lastname,profession_pro,phone_number,siret')
+          .eq('uid', data.pro_uid).eq('is_main', true).maybeSingle();
+        setPro(p ? {
+          name_elevage: p.nom, firstname: p.firstname, lastname: p.lastname,
+          profession_pro: p.profession_pro, phone_number: p.phone_number, siret: p.siret,
+        } : null);
         setLoading(false);
       });
   }, [token]);
