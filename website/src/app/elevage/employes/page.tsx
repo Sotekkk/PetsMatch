@@ -131,17 +131,18 @@ export default function EmployesPage() {
       const empsData: Employe[] = [];
       const uidToNom: Record<string, string> = {};
       for (const e of empsRaw ?? []) {
-        const { data: u } = await supabase.from('users')
-          .select('uid,firstname,lastname,name_elevage,is_elevage,profile_picture_url,profile_picture_url_elevage')
-          .eq('uid', e.uid_employe).maybeSingle();
+        const { data: u } = await supabase.from('user_profiles')
+          .select('uid,firstname,lastname,nom,profile_type,avatar_url,profile_picture_url_pro')
+          .eq('uid', e.uid_employe).eq('is_main', true).maybeSingle();
         if (u) {
-          const nom = u.is_elevage ? (u.name_elevage ?? 'Élevage') : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
+          const isElevage = u.profile_type === 'eleveur';
+          const nom = isElevage ? (u.nom ?? 'Élevage') : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
           uidToNom[u.uid] = nom;
           empsData.push({
             id: e.id.toString(),
             uid_employe: e.uid_employe,
             nom,
-            photo: u.is_elevage ? u.profile_picture_url_elevage : u.profile_picture_url,
+            photo: isElevage ? u.profile_picture_url_pro : u.avatar_url,
             employeProfileId: e.employe_profile_id as string | null,
             eleveurProfileId: e.eleveur_profile_id as string | null,
           });

@@ -56,11 +56,11 @@ export default function MesTachesPage() {
           const { data: a } = await supabase.from('animaux').select('nom').eq('id', t.animal_id).maybeSingle();
           animalNom = a?.nom ?? undefined;
         }
-        const { data: u } = await supabase.from('users')
-          .select('firstname, lastname, name_elevage, is_elevage')
-          .eq('uid', t.uid_eleveur).maybeSingle();
+        const { data: u } = await supabase.from('user_profiles')
+          .select('firstname, lastname, nom, profile_type')
+          .eq('uid', t.uid_eleveur).eq('is_main', true).maybeSingle();
         if (u) {
-          eleveurNom = u.is_elevage ? (u.name_elevage ?? 'Élevage') : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
+          eleveurNom = u.profile_type === 'eleveur' ? (u.nom ?? 'Élevage') : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
         }
         result.push({ ...t, animal_nom: animalNom, eleveur_nom: eleveurNom });
       }
@@ -85,11 +85,11 @@ export default function MesTachesPage() {
     // Notification à l'employeur quand l'employé valide
     if (newStatut === 'fait') {
       try {
-        const { data: moi } = await supabase.from('users')
-          .select('firstname, lastname, name_elevage, is_elevage')
-          .eq('uid', user!.uid).maybeSingle();
+        const { data: moi } = await supabase.from('user_profiles')
+          .select('firstname, lastname, nom, profile_type')
+          .eq('uid', user!.uid).eq('is_main', true).maybeSingle();
         const nomEmploye = moi
-          ? (moi.is_elevage ? (moi.name_elevage ?? 'Votre employé') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
+          ? (moi.profile_type === 'eleveur' ? (moi.nom ?? 'Votre employé') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
           : 'Votre employé';
 
         await supabase.from('notifications').insert({

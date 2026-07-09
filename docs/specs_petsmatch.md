@@ -4473,10 +4473,9 @@ sa propre passe car certains champs legacy (`is_dog`/`dog_breeds`/
 `cat_breeds`) n'ont pas d'équivalent sur `user_profiles`.
 
 **Lots restants** (par ordre d'impact décroissant, voir audit complet
-dans l'historique de session) : pages agenda/planning pro (breeder +
-pension + éducation) ; pages association (bénévoles, familles d'accueil,
-groupes communauté) ; pages particulier (feed, animaux acquis/perdus,
-promenades).
+dans l'historique de session) : pages association (bénévoles, familles
+d'accueil, groupes communauté) ; pages particulier (feed, animaux
+acquis/perdus, promenades).
 
 ### 27.7 — Phase 4 livrée (lot 2) : documents légaux/financiers vers user_profiles
 
@@ -4499,6 +4498,27 @@ champs de préremplissage (téléphone/adresse/siret). Vérifié en live :
 requêtes de recherche et de lookup par FK renvoient bien les champs à
 jour de `user_profiles` (siret, adresse pro complète, téléphone) pour un
 profil éleveur réel.
+
+### 27.8 — Phase 4 livrée (lot 3) : agenda/planning/employés vers user_profiles
+
+13 fichiers (9 web, 4 app dont `employes_page.dart` à elle seule 8 sites
+d'appel) — toutes des résolutions de nom d'affichage sur un `uid` déjà
+connu (assigné de tâche, employé, client de RDV, participant de cours,
+auteur de mouvement d'inventaire/commentaire), aucune recherche live.
+Web `elevage/agenda/page.tsx` : 6 lookups "mon propre nom" quasi
+identiques dédupliqués en une fonction module-level `resolveDisplayName()`
+réutilisée partout dans le fichier.
+
+Deux bugs préexistants corrigés au passage : `agenda/page.tsx` lisait
+`nom, prenom` sur `users` — colonnes qui n'existent pas (seuls
+`firstname`/`lastname` existent) — le nom du client RDV en attente
+retombait toujours sur "Client" ; `vet_patients_page.dart` lisait
+`client?['isElevage']`/`['isPro']` en camelCase sur un résultat Supabase
+snake_case, branche toujours morte empêchant l'affichage du nom
+d'élevage pour un client éleveur d'un vétérinaire. Les deux sont
+corrigés en même temps que la bascule, comportement visible amélioré.
+Exclu du lot : `pro_zone_page.dart` (lat/lng/rayon d'intervention, pas
+des données de profil affichées).
 
 ---
 

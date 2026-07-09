@@ -385,7 +385,7 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
       final names = <String, String>{};
       final animalNames = <String, String>{};
       if (clientUids.isNotEmpty) {
-        final users = await _supa.from('users').select('uid, firstname, lastname').inFilter('uid', clientUids);
+        final users = await _supa.from('user_profiles').select('uid, firstname, lastname').inFilter('uid', clientUids).eq('is_main', true);
         for (final u in users as List) {
           names[u['uid'] as String] = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
         }

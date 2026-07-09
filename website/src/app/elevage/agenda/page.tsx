@@ -6,6 +6,16 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 
+async function resolveDisplayName(uid: string, fallback: string): Promise<string> {
+  const { data } = await supabase.from('user_profiles')
+    .select('firstname,lastname,nom,profile_type').eq('uid', uid).eq('is_main', true).maybeSingle();
+  if (!data) return fallback;
+  const isElevage = data.profile_type === 'eleveur';
+  return isElevage
+    ? (data.nom || fallback)
+    : (`${data.firstname ?? ''} ${data.lastname ?? ''}`.trim() || fallback);
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type ViewMode = 'mois' | 'semaine' | 'jour';
@@ -129,11 +139,7 @@ function AddTacheModal({ selectedDate, uid, profilSource, activeProfileId, emplo
     });
     if (assigneUid) {
       try {
-        const { data: moi } = await supabase.from('users')
-          .select('firstname,lastname,name_elevage,is_elevage').eq('uid', uid).maybeSingle();
-        const nomEleveur = moi
-          ? (moi.is_elevage ? (moi.name_elevage ?? 'Votre éleveur') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
-          : 'Votre éleveur';
+        const nomEleveur = await resolveDisplayName(uid, 'Votre éleveur');
         await supabase.from('notifications').insert({
           uid: assigneUid, type: 'tache_assignee',
           title: 'Nouvelle tâche assignée 📋',
@@ -256,11 +262,7 @@ function AddProtocoleModal({ selectedDate, uid, profilSource, activeProfileId, e
     });
     if (assigneUid) {
       try {
-        const { data: moi } = await supabase.from('users')
-          .select('firstname,lastname,name_elevage,is_elevage').eq('uid', uid).maybeSingle();
-        const nomEleveur = moi
-          ? (moi.is_elevage ? (moi.name_elevage ?? 'Votre éleveur') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
-          : 'Votre éleveur';
+        const nomEleveur = await resolveDisplayName(uid, 'Votre éleveur');
         await supabase.from('notifications').insert({
           uid: assigneUid, type: 'tache_assignee',
           title: 'Nouveau protocole assigné 📋',
@@ -368,11 +370,7 @@ function EditTacheModal({ tache, employes, currentUid, onClose, onSaved }: {
     }).eq('id', tache.id);
     if (newAssigne && newAssigne !== prevAssigne) {
       try {
-        const { data: moi } = await supabase.from('users')
-          .select('firstname,lastname,name_elevage,is_elevage').eq('uid', currentUid).maybeSingle();
-        const nomEleveur = moi
-          ? (moi.is_elevage ? (moi.name_elevage ?? 'Votre éleveur') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
-          : 'Votre éleveur';
+        const nomEleveur = await resolveDisplayName(currentUid, 'Votre éleveur');
         await supabase.from('notifications').insert({
           uid: newAssigne, type: 'tache_assignee',
           title: 'Tâche assignée 📋',
@@ -463,11 +461,7 @@ function EditProtocoleModal({ groupe, employes, currentUid, onClose, onSaved }: 
       .in('id', groupe.routines.map(r => r.id));
     if (newAssigned && newAssigned !== prevAssigned) {
       try {
-        const { data: moi } = await supabase.from('users')
-          .select('firstname,lastname,name_elevage,is_elevage').eq('uid', currentUid).maybeSingle();
-        const nomEleveur = moi
-          ? (moi.is_elevage ? (moi.name_elevage ?? 'Votre éleveur') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
-          : 'Votre éleveur';
+        const nomEleveur = await resolveDisplayName(currentUid, 'Votre éleveur');
         await supabase.from('notifications').insert({
           uid: newAssigned, type: 'tache_assignee',
           title: 'Protocole assigné 📋',
@@ -564,12 +558,7 @@ function AttributionModal({ tache, employes, currentUid, onClose, onSaved }: {
     // Notifier chaque nouvel assigné
     if (newlyAssigned.length > 0) {
       try {
-        const { data: moi } = await supabase.from('users')
-          .select('firstname, lastname, name_elevage, is_elevage')
-          .eq('uid', currentUid).maybeSingle();
-        const nomEleveur = moi
-          ? (moi.is_elevage ? (moi.name_elevage ?? 'Votre éleveur') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
-          : 'Votre éleveur';
+        const nomEleveur = await resolveDisplayName(currentUid, 'Votre éleveur');
         await Promise.all(newlyAssigned.map(uid =>
           supabase.from('notifications').insert({
             uid,
@@ -1177,14 +1166,14 @@ export default function AgendaElevagePage() {
         .eq('actif', true);
       if (!emps?.length) return;
       const uids = emps.map((e: { uid_employe: string }) => e.uid_employe);
-      const { data: users } = await supabase
-        .from('users')
-        .select('uid, firstname, lastname, profile_picture_url')
-        .in('uid', uids);
-      setEmployes((users ?? []).map((u: { uid: string; firstname?: string; lastname?: string; profile_picture_url?: string }) => ({
+      const { data: profiles } = await supabase
+        .from('user_profiles')
+        .select('uid, firstname, lastname, avatar_url')
+        .in('uid', uids).eq('is_main', true);
+      setEmployes((profiles ?? []).map((u: { uid: string; firstname?: string; lastname?: string; avatar_url?: string }) => ({
         uid: u.uid,
         nom: `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim() || u.uid.slice(0, 8),
-        avatar: u.profile_picture_url ?? null,
+        avatar: u.avatar_url ?? null,
       })));
     } catch {}
   }, [user]);
@@ -1277,12 +1266,7 @@ export default function AgendaElevagePage() {
     // Notifier l'éleveur quand un employé valide la tâche
     if (newStatut === 'fait' && t.uid_eleveur && t.uid_eleveur !== user!.uid) {
       try {
-        const { data: moi } = await supabase.from('users')
-          .select('firstname, lastname, name_elevage, is_elevage')
-          .eq('uid', user!.uid).maybeSingle();
-        const nomEmploye = moi
-          ? (moi.is_elevage ? (moi.name_elevage ?? 'Votre employé') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
-          : 'Votre employé';
+        const nomEmploye = await resolveDisplayName(user!.uid, 'Votre employé');
         await supabase.from('notifications').insert({
           uid:   t.uid_eleveur,
           type:  'tache_validee',

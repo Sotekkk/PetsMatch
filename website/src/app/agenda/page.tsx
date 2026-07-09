@@ -460,13 +460,13 @@ export default function AgendaPage() {
     }
     if (taskUids.size > 0) {
       const { data: usersData } = await supabase
-        .from('users')
-        .select('uid,firstname,lastname,name_elevage,is_elevage')
-        .in('uid', [...taskUids]);
+        .from('user_profiles')
+        .select('uid,firstname,lastname,nom,profile_type')
+        .in('uid', [...taskUids]).eq('is_main', true);
       const nomMap: Record<string, string> = {};
-      for (const u of (usersData ?? []) as { uid: string; firstname?: string; lastname?: string; name_elevage?: string; is_elevage?: boolean }[]) {
-        const nom = (u.is_elevage && u.name_elevage)
-          ? u.name_elevage
+      for (const u of (usersData ?? []) as { uid: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string }[]) {
+        const nom = (u.profile_type === 'eleveur' && u.nom)
+          ? u.nom
           : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
         if (nom) nomMap[u.uid] = nom;
       }
@@ -718,11 +718,11 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
   const [clientName, setClientName] = useState('');
 
   useEffect(() => {
-    supabase.from('users').select('nom, prenom').eq('uid', rdv.client_uid).single()
+    supabase.from('user_profiles').select('firstname, lastname').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle()
       .then(({ data }) => {
         if (data) {
-          const d = data as { nom: string; prenom: string };
-          setClientName([d.prenom, d.nom].filter(Boolean).join(' '));
+          const d = data as { firstname: string; lastname: string };
+          setClientName([d.firstname, d.lastname].filter(Boolean).join(' '));
         }
       });
   }, [rdv.client_uid]);
@@ -918,10 +918,10 @@ function AssignerModal({ task, uid, onClose, onAssign }: { task: Task; uid: stri
       const { data: emps } = await supabase.from('employes').select('uid_employe').eq('uid_eleveur', uid).eq('actif', true);
       if (!emps?.length) return;
       const uids = (emps as { uid_employe: string }[]).map(e => e.uid_employe);
-      const { data: users } = await supabase.from('users').select('uid,firstname,lastname,name_elevage,is_elevage').in('uid', uids);
-      setMembers(((users ?? []) as { uid: string; firstname?: string; lastname?: string; name_elevage?: string; is_elevage?: boolean }[]).map(u => ({
+      const { data: users } = await supabase.from('user_profiles').select('uid,firstname,lastname,nom,profile_type').in('uid', uids).eq('is_main', true);
+      setMembers(((users ?? []) as { uid: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string }[]).map(u => ({
         uid: u.uid,
-        nom: (u.is_elevage && u.name_elevage) ? u.name_elevage : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim(),
+        nom: (u.profile_type === 'eleveur' && u.nom) ? u.nom : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim(),
       })));
     }
     load();

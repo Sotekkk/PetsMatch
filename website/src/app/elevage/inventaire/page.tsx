@@ -114,13 +114,13 @@ export default function InventairePage() {
     const uids = [...new Set(rows.map(r => r.uid_auteur))];
     if (uids.length) {
       const { data: users } = await supabase
-        .from('users')
-        .select('uid, firstname, lastname, name_elevage, is_elevage')
-        .in('uid', uids);
+        .from('user_profiles')
+        .select('uid, firstname, lastname, nom, profile_type')
+        .in('uid', uids).eq('is_main', true);
       const map: Record<string, string> = {};
       (users ?? []).forEach(u => {
-        map[u.uid] = u.is_elevage
-          ? (u.name_elevage ?? 'Élevage')
+        map[u.uid] = u.profile_type === 'eleveur'
+          ? (u.nom ?? 'Élevage')
           : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
       });
       rows.forEach(r => { r.auteur_nom = map[r.uid_auteur] ?? 'Inconnu'; });
