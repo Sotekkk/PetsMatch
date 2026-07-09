@@ -534,6 +534,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           if (photoUrl != null) 'profile_picture_url_pro': photoUrl,
           if (bannerUrl != null) 'banner_url': bannerUrl,
           'siret':          _siretCtrl.text.trim(),
+          'numero_tva':     _tvaCtrl.text.trim(),
+          'acaced':         _acacedCtrl.text.trim(),
           'instagram':      _instagramCtrl.text.trim(),
           'facebook':       _facebookCtrl.text.trim(),
           'site_web':       _siteWebCtrl.text.trim(),

@@ -1819,11 +1819,18 @@ export default function ProfilPage() {
         profileUpdate.pays_pro       = pays;
         profileUpdate.adresse        = [rue, cp, villeElevage, pays].filter(Boolean).join(', ');
         profileUpdate.siret          = siret.trim();
+        profileUpdate.numero_tva     = tva.trim();
+        profileUpdate.acaced         = acacedNum.trim();
+        profileUpdate.especes_elevees = especesElevees;
         profileUpdate.instagram      = instagram.trim();
         profileUpdate.facebook       = facebook.trim();
         profileUpdate.site_web       = siteWeb.trim();
         if (payload.banner_url) profileUpdate.banner_url = payload.banner_url;
         if (payload.profile_picture_url_elevage) profileUpdate.profile_picture_url_pro = payload.profile_picture_url_elevage;
+        if (payload.kbis_url) profileUpdate.kbis_url = payload.kbis_url;
+        if (payload.acaced_doc_url) profileUpdate.acaced_doc_url = payload.acaced_doc_url;
+        if (acacedDateObtention) profileUpdate.acaced_date_obtention = acacedDateObtention;
+        if (acacedDateRenewal) profileUpdate.acaced_date_renewal = acacedDateRenewal;
       }
       const profileQ = activeProfileId
         ? supabase.from('user_profiles').update(profileUpdate).eq('id', activeProfileId)
