@@ -57,10 +57,16 @@ export default function PublicProfilePage() {
   async function load() {
     setLoading(true);
     try {
-      const { data: p } = await supabase.from('users')
-        .select('uid, firstname, lastname, profile_picture_url, ville')
-        .eq('uid', targetUid).maybeSingle();
-      setProfile(p ?? null);
+      const { data: p } = await supabase.from('user_profiles')
+        .select('firstname, lastname, avatar_url, ville')
+        .eq('uid', targetUid).eq('is_main', true).maybeSingle();
+      setProfile(p ? {
+        uid: targetUid,
+        firstname: p.firstname,
+        lastname: p.lastname,
+        profile_picture_url: p.avatar_url,
+        ville: p.ville,
+      } : null);
 
       // Relation
       let rStatut: RelStatut = null, rDir: RelDir = null, rId: string | null = null;
@@ -105,7 +111,7 @@ export default function PublicProfilePage() {
         uid_demandeur: myUid, uid_recepteur: targetUid,
         statut: 'en_attente', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       }).select('id').single();
-      const { data: me } = await supabase.from('users').select('firstname, lastname').eq('uid', myUid).maybeSingle();
+      const { data: me } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', myUid).eq('is_main', true).maybeSingle();
       const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
       await supabase.from('notifications').insert({
         uid: targetUid, type: 'petfriend_request',
@@ -133,7 +139,7 @@ export default function PublicProfilePage() {
     await supabase.from('petfriends').update({
       statut: 'accepte', updated_at: new Date().toISOString()
     }).eq('id', relId);
-    const { data: me } = await supabase.from('users').select('firstname, lastname').eq('uid', myUid).maybeSingle();
+    const { data: me } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', myUid).eq('is_main', true).maybeSingle();
     const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
     await supabase.from('notifications').insert({
       uid: targetUid, type: 'petfriend_accepted',

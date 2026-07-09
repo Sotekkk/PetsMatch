@@ -4451,6 +4451,35 @@ Reste pour une passe future : la bascule complète (arrêter d'écrire sur
 booléens redondants avec `profile_type` — non traités, périmètre plus
 large qu'une session.
 
+### 27.6 — Phase 4 livrée (lot 1) : messagerie + profil public vers user_profiles
+
+Reste du risque inverse : ~62 fichiers lisent des données de profil
+directement sur `users` sans jamais consulter `user_profiles` — figées
+si on arrête un jour d'écrire les profils sur `users`. Audit fait,
+classé par risque/impact, trop large pour une session — traité par lots.
+
+**Lot 1 (ce lot)** : messagerie (`lib/utils/messaging_helper.dart`,
+`lib/pages/chatScreen.dart`, `lib/pages/message.dart` — 3 implémentations
+dupliquées du même calcul nom/photo, unifiées en une méthode partagée
+`MessagingHelper.getDisplayInfo()` qui lit `user_profiles`) + page de
+profil public web (`website/src/app/profil/[uid]/page.tsx`). Vérifié en
+live : résolution nom/photo correcte pour un profil éleveur (utilise
+`nom` de `user_profiles` plutôt que `name_elevage` de `users`).
+
+**Hors scope, flaggé pour un lot futur** : `chatScreen.dart::_navigateToUser`
+(fiche complète éleveur/pro ouverte depuis le chat) recouvre le même
+territoire que `user_elevage_feed.dart`/`UserDetailPageFeed` — nécessite
+sa propre passe car certains champs legacy (`is_dog`/`dog_breeds`/
+`cat_breeds`) n'ont pas d'équivalent sur `user_profiles`.
+
+**Lots restants** (par ordre d'impact décroissant, voir audit complet
+dans l'historique de session) : documents légaux/financiers générés
+(contrats de cession, certificats d'engagement, devis, registre
+entrée-sortie — app + web, ~8 fichiers, risque juridique/financier si
+siret/adresse figés) ; pages agenda/planning pro (breeder + pension +
+éducation) ; pages association (bénévoles, familles d'accueil, groupes
+communauté) ; pages particulier (feed, animaux acquis/perdus, promenades).
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

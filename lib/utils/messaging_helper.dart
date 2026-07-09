@@ -6,6 +6,36 @@ class MessagingHelper {
 
   static String get _myUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
+  static const _proTypes = {
+    'veterinaire', 'para_medical', 'education', 'petsitter',
+    'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+    'restauration',
+  };
+
+  /// Résout nom + photo d'affichage depuis le profil principal
+  /// (`user_profiles`, `is_main=true`, toujours présent grâce au trigger
+  /// de création automatique à l'inscription).
+  static Future<Map<String, dynamic>> getDisplayInfo(String uid) async {
+    final p = await _supa.from('user_profiles')
+        .select('firstname, lastname, avatar_url, profile_type, nom')
+        .eq('uid', uid).eq('is_main', true).maybeSingle();
+    if (p == null) {
+      return {'name': 'Utilisateur', 'photo': null, 'isElevage': false, 'isPro': false};
+    }
+    final type = p['profile_type'] as String?;
+    final isElevage = type == 'eleveur';
+    final isPro = type != null && _proTypes.contains(type);
+    final name = isElevage && (p['nom'] as String?)?.isNotEmpty == true
+        ? p['nom'] as String
+        : '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+    return {
+      'name': name.isEmpty ? 'Utilisateur' : name,
+      'photo': (p['avatar_url'] as String?)?.isNotEmpty == true ? p['avatar_url'] : null,
+      'isElevage': isElevage,
+      'isPro': isPro,
+    };
+  }
+
   /// Trouve ou crée une conversation Supabase entre [myUid] et [otherUid].
   /// Retourne le `conversationId`.
   static Future<String> openOrCreateConversation({
@@ -30,26 +60,17 @@ class MessagingHelper {
     if (existing != null) return existing['id'].toString();
 
     // Créer une nouvelle conversation
-    final myData    = await _supa.from('users')
-        .select('firstname, lastname, profile_picture_url, is_elevage, name_elevage')
-        .eq('uid', myUid).maybeSingle();
-    final otherData = await _supa.from('users')
-        .select('firstname, lastname, profile_picture_url, is_elevage, name_elevage')
-        .eq('uid', otherUid).maybeSingle();
-
-    final myName    = _resolveName(myData);
-    final otherName = _resolveName(otherData);
+    final myData    = await getDisplayInfo(myUid);
+    final otherData = await getDisplayInfo(otherUid);
 
     final participantsInfo = <String, dynamic>{
       myUid: {
-        'name': myName,
-        if ((myData?['profile_picture_url'] as String?)?.isNotEmpty == true)
-          'photo': myData!['profile_picture_url'],
+        'name': myData['name'],
+        if (myData['photo'] != null) 'photo': myData['photo'],
       },
       otherUid: {
-        'name': otherName,
-        if ((otherData?['profile_picture_url'] as String?)?.isNotEmpty == true)
-          'photo': otherData!['profile_picture_url'],
+        'name': otherData['name'],
+        if (otherData['photo'] != null) 'photo': otherData['photo'],
       },
     };
 
@@ -67,14 +88,5 @@ class MessagingHelper {
     }).select('id').single();
 
     return created['id'].toString();
-  }
-
-  static String _resolveName(Map<String, dynamic>? data) {
-    if (data == null) return 'Utilisateur';
-    if (data['is_elevage'] == true && (data['name_elevage'] as String?)?.isNotEmpty == true) {
-      return data['name_elevage'] as String;
-    }
-    final full = '${data['firstname'] ?? ''} ${data['lastname'] ?? ''}'.trim();
-    return full.isEmpty ? 'Utilisateur' : full;
   }
 }
