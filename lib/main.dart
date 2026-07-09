@@ -34,6 +34,10 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 GlobalKey<ScaffoldState> drawerKey = GlobalKey<ScaffoldState>();
+// Permet aux écrans persistants (ex. accueil pro) de savoir quand ils
+// redeviennent visibles après un Navigator.pop, pour se recharger sans
+// dépendre d'un pull-to-refresh manuel.
+final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
 
 void _handleNotifNavigation(Map<String, dynamic> data) {
   final ctx = navigatorKey.currentState;
@@ -633,6 +637,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
           navigatorKey: navigatorKey,
+          navigatorObservers: [routeObserver],
           locale:
               Locale('fr', 'FR'), // Force l'application à utiliser le français
           supportedLocales: [

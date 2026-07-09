@@ -43,7 +43,7 @@ class EleveurHomePage extends StatefulWidget {
   State<EleveurHomePage> createState() => _EleveurHomePageState();
 }
 
-class _EleveurHomePageState extends State<EleveurHomePage> {
+class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
   int _animalCount = 0;
   int _postCount = 0;
   int _rdvTodayCount = 0;
@@ -65,6 +65,28 @@ class _EleveurHomePageState extends State<EleveurHomePage> {
   @override
   void initState() {
     super.initState();
+    _loadData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context) as PageRoute);
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  // Recharge les stats (pensionnaires, RDV, logements...) quand on revient
+  // sur l'accueil après avoir modifié quelque chose sur un autre écran
+  // (ex. placer un animal en pension) — sans ça, les chiffres restaient
+  // figés à l'état du dernier chargement, seul le pull-to-refresh les mettait
+  // à jour.
+  @override
+  void didPopNext() {
     _loadData();
   }
 
