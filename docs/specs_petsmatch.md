@@ -4404,6 +4404,53 @@ réellement) dans `website/src/app/associations/[id]/page.tsx` et
 répercuté sur `user_profiles` dans 2 écrans web) — plus invasif
 (cross-table), non traité dans cette phase.
 
+### 27.4 — Phase 2 livrée : complétude des écritures vers user_profiles
+
+Audit champ par champ des ~11 sites d'écriture (voir §27.3) : `numero_tva`,
+`acaced`, `kbis_url`, `acaced_doc_url`, `especes_elevees`,
+`acaced_date_obtention`, `acaced_date_renewal` manquaient côté
+`user_profiles` dans 3 fichiers (`profil_eleveur_edit.dart`,
+`profil/page.tsx`, `elevage/profil/edit/page.tsx`) alors qu'ils étaient
+bien écrits sur `users` — confirmé en base sur un profil réel (3 espèces
+sur `users.especes_elevees`, tableau vide sur `user_profiles`). Un 4e
+fichier (`inscription_restauration_pro_page.dart`) ne synchronisait pas
+`firstname`/`lastname`/`phone_number`. Corrigé par ajout des champs
+manquants aux objets d'écriture existants, sans nouvelle logique.
+
+**Trouvé au passage, hors scope de cette phase** : aucun compte n'obtenait
+de ligne `user_profiles` à l'inscription (`verifemail.dart`,
+`inscription/page.tsx` n'écrivent que sur `users`) — traité en Phase 3.
+
+### 27.5 — Phase 3 livrée : ligne user_profiles automatique à l'inscription
+
+`is_main = true` est lu par ~90 endroits du code pour résoudre "le profil
+principal du compte", la plupart sans repli — un compte sans aucune ligne
+`is_main=true` (le cas de tout nouveau compte avant Phase 3, tant qu'il
+n'a pas explicitement ajouté un profil) cassait silencieusement l'agenda,
+la pension, les employés, Stripe, les fiches animaux, etc.
+
+Corrigé via `supabase/migration_auto_create_main_profile.sql` : trigger
+`AFTER INSERT ON users` qui crée automatiquement une ligne `user_profiles`
+(`is_main=true`) avec le `profile_type` déduit des colonnes déjà connues
+à l'inscription (`is_association`/`is_elevage`/`is_pro`+`cat_pro`). Filet
+de sécurité à deux niveaux (repli `particulier` minimal, puis silence
+total) pour ne jamais bloquer une inscription si le type déduit posait
+problème. Idempotent (`ON CONFLICT (uid, profile_type) DO NOTHING`) —
+si l'utilisateur complète ensuite son profil via "ajouter un profil",
+l'upsert met à jour la ligne déjà créée au lieu d'en dupliquer une, et
+`is_main` reste intact. Backfill défensif inclus (0 compte orphelin
+constaté). Vérifié en live avec 3 types de compte (particulier, éleveur,
+vétérinaire) : ligne créée avec le bon `profile_type` et `is_main=true`
+à chaque fois.
+
+**Chantier §27.2 maintenant sur une base saine** : `user_profiles` a
+toujours une ligne principale dès l'inscription, complète pour tous les
+champs connus, et synchronisée sans divergence de nommage avec `users`.
+Reste pour une passe future : la bascule complète (arrêter d'écrire sur
+`users`), et le nettoyage du modèle d'adresse à 3 variantes / des
+booléens redondants avec `profile_type` — non traités, périmètre plus
+large qu'une session.
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*
