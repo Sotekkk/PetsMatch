@@ -4369,6 +4369,41 @@ chaque lecture/écriture de profil (cartes, annonces, fiches, création,
 édition) sur les 2 plateformes. Repartir de l'audit fait en §27.1 avant
 d'étendre à d'autres profils (association, éducateur, pension, vétérinaire…).
 
+### 27.3 — Phase 1 livrée : colonnes synonymes désynchronisées
+
+Audit complet (session suivante) : `users` a ~90 colonnes de profil, la
+quasi-totalité dupliquée sur `user_profiles` via ~10 migrations
+incrémentales, avec des incohérences de nommage réelles causant des pertes
+de données actives (l'app et le site ne lisaient pas les mêmes colonnes
+pour un même concept) :
+
+- N° ACACED : `acaced_numero` (lu par l'app) vs `acaced` (lu par le web) —
+  `acaced` n'était jamais écrit par aucun code vivant.
+- Doc ACACED : `acaced_doc_url` (écrit partout) vs `diplome_url` (seule
+  colonne lue par le web) — `diplome_url` n'était jamais écrit.
+- Téléphone : `phone` / `phone_number` / `telephone` sur `user_profiles`,
+  chaque écran n'en écrivant qu'un ou deux à la fois.
+
+Corrigé via `supabase/migration_sync_profile_synonyms.sql` : trigger
+Postgres (`BEFORE INSERT OR UPDATE`) qui recopie automatiquement toute
+écriture sur une de ces colonnes vers ses synonymes (sur `user_profiles`
+et sur `users` pour `acaced_numero`/`acaced`), + backfill ponctuel des
+lignes déjà divergentes. Approche DB plutôt que retouche des ~15 sites
+d'écriture recensés : transparente pour tout code existant, futur-proof
+contre un nouveau site d'écriture qui oublierait une colonne. Vérifié en
+live : écriture sur une seule colonne → synonymes mis à jour
+automatiquement.
+
+Corrigé au passage : deux lectures mortes de colonnes inexistantes sur
+`users` (`users.phone`, `users.telephone` — seule `phone_number` existe
+réellement) dans `website/src/app/associations/[id]/page.tsx` et
+`website/src/app/elevages/[id]/page.tsx`, redirigées vers `phone_number`.
+
+**Reste pour une Phase 2** : synchronisation *entre* `users` et
+`user_profiles` (`numero_elevage` notamment, écrit sur `users` sans être
+répercuté sur `user_profiles` dans 2 écrans web) — plus invasif
+(cross-table), non traité dans cette phase.
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

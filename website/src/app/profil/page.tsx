@@ -1811,6 +1811,7 @@ export default function ProfilPage() {
       if (isEleveur) {
         profileUpdate.nom            = nameElevage;
         profileUpdate.phone_number   = phoneElevage;
+        profileUpdate.numero_elevage = phoneElevage;
         profileUpdate.desc_entreprise = description;
         profileUpdate.rue_pro        = rue;
         profileUpdate.code_postal_pro = cp;

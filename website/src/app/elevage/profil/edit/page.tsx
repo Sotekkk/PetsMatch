@@ -559,6 +559,7 @@ export default function EleveurProfilEditPage() {
         date_of_birth: dob,
         nom: nameElevage,
         phone_number: phoneElevage,
+        numero_elevage: phoneElevage,
         desc_entreprise: description,
         rue_pro: rue,
         code_postal_pro: cp,

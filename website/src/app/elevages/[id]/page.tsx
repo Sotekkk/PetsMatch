@@ -111,7 +111,7 @@ function fromSupabase(uid: string, d: Record<string, unknown>): EleveurData {
     statutPro: (d['statut_pro'] as string) || '',
     isPremium: !!(d['is_premium']),
     isValidate: !!(d['is_validate']),
-    telephone: (d['telephone'] as string) || '',
+    telephone: (d['phone_number'] as string) || '',
     siteWeb: (d['site_web'] as string) || '',
     facebook: (d['facebook'] as string) || '',
     instagram: (d['instagram'] as string) || '',
