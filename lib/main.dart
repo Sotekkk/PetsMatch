@@ -347,8 +347,10 @@ class User_Info {
     final av    = p['avatar_url']?.toString() ?? '';
     final avPro = p['profile_picture_url_pro']?.toString() ?? '';
     if (av.isNotEmpty) profilePictureUrl = av;
-    // photo pro (logo élevage / cabinet) distincte de l'avatar personnel
-    profilePictureUrlElevage = avPro.isNotEmpty ? avPro : (av.isNotEmpty ? av : profilePictureUrlElevage);
+    // photo pro (logo élevage / cabinet) distincte de l'avatar personnel —
+    // écrasement inconditionnel : sinon la photo du profil précédemment
+    // actif reste affichée quand le profil nouvellement actif n'en a pas.
+    profilePictureUrlElevage = avPro.isNotEmpty ? avPro : av;
 
     // Adresse pro (remplace les deux adresses)
     adress        = p['adresse']?.toString() ?? '';
@@ -388,19 +390,15 @@ class User_Info {
     acacedNumero   = p['acaced_numero']?.toString() ?? '';
     especesElevees = _safeStringList(p['especes_elevees'], []);
 
-    // Pro avancé — n'écrase que si user_profiles a une valeur non vide
-    final _desc = p['description']?.toString() ?? '';
-    if (_desc.isNotEmpty) desc = _desc;
-    final _siret = p['siret']?.toString() ?? '';
-    if (_siret.isNotEmpty) siret = _siret;
-    final _siteWeb = p['site_web']?.toString() ?? '';
-    if (_siteWeb.isNotEmpty) siteWeb = _siteWeb;
-    final _instagram = p['instagram']?.toString() ?? '';
-    if (_instagram.isNotEmpty) instagram = _instagram;
-    final _facebook = p['facebook']?.toString() ?? '';
-    if (_facebook.isNotEmpty) facebook = _facebook;
-    final newBanner = p['banner_url']?.toString() ?? '';
-    if (newBanner.isNotEmpty) bannerUrl = newBanner;
+    // Pro avancé — écrasement inconditionnel : un changement de profil
+    // actif doit refléter fidèlement le nouveau profil, y compris vide,
+    // sinon la valeur du profil précédemment actif reste affichée.
+    desc      = p['description']?.toString() ?? '';
+    siret     = p['siret']?.toString() ?? '';
+    siteWeb   = p['site_web']?.toString() ?? '';
+    instagram = p['instagram']?.toString() ?? '';
+    facebook  = p['facebook']?.toString() ?? '';
+    bannerUrl = p['banner_url']?.toString() ?? '';
     verificationStatus = p['verification_status']?.toString() ?? 'none';
     kbisUrl = p['kbis_url']?.toString() ?? '';
     tarifs  = p['tarifs']?.toString() ?? '';
