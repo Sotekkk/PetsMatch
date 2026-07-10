@@ -745,6 +745,8 @@ class _PorteeCard extends StatelessWidget {
   final String? uidEleveur;
   const _PorteeCard({required this.data, required this.annonceId, this.uidEleveur});
 
+  String? get _annonceProfileId => data['profile_id']?.toString();
+
   @override
   Widget build(BuildContext context) {
     final dateNaissance = data['dateNaissance'] as Timestamp?;
@@ -801,7 +803,7 @@ class _PorteeCard extends StatelessWidget {
             crossAxisCount: 2, crossAxisSpacing: 10,
             mainAxisSpacing: 10, childAspectRatio: 0.60),
           itemCount: animaux.length,
-          itemBuilder: (_, i) => _BabyCard(animal: animaux[i], annonceId: annonceId, bebeIndex: i, uidEleveur: uidEleveur),
+          itemBuilder: (_, i) => _BabyCard(animal: animaux[i], annonceId: annonceId, bebeIndex: i, uidEleveur: uidEleveur, annonceProfileId: _annonceProfileId),
         ),
       ],
     ]);
@@ -813,7 +815,8 @@ class _BabyCard extends StatefulWidget {
   final String annonceId;
   final int bebeIndex;
   final String? uidEleveur;
-  const _BabyCard({required this.animal, required this.annonceId, required this.bebeIndex, this.uidEleveur});
+  final String? annonceProfileId;
+  const _BabyCard({required this.animal, required this.annonceId, required this.bebeIndex, this.uidEleveur, this.annonceProfileId});
   @override
   State<_BabyCard> createState() => _BabyCardState();
 }
@@ -871,6 +874,7 @@ class _BabyCardState extends State<_BabyCard> {
             'body': 'Quelqu\'un a aimé un bébé de votre portée',
             'data': {'annonceId': widget.annonceId, 'bebeIndex': widget.bebeIndex},
             'read': false,
+            if ((widget.annonceProfileId ?? '').isNotEmpty) 'profile_id': widget.annonceProfileId,
             if (User_Info.activeProfileId.isNotEmpty) 'sender_profile_id': User_Info.activeProfileId,
           });
         }

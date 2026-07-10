@@ -157,6 +157,17 @@ exports.sendSanteReminders = functions
                     const produit = row[nomField] || label;
                     const dedupKey = `sante_${table}_${palierKey}_${row.id}`;
 
+                    // Résolution du profil propriétaire courant (animaux.profile_id n'est pas
+                    // fiable — voir migration_fix_animaux_proprietes_unique_constraint.sql)
+                    let profileId = null;
+                    try {
+                        const propRows = await supabaseGet(
+                            `animaux_proprietes?animal_id=eq.${row.animal_id}&uid_proprio=eq.${uid}` +
+                            `&date_fin=is.null&select=profile_id_proprio&limit=1`,
+                        );
+                        if (Array.isArray(propRows) && propRows[0]) profileId = propRows[0].profile_id_proprio;
+                    } catch (_) {/* pas bloquant */}
+
                     // Dédup
                     const existing = await supabaseGet(
                         `notifs_sent?key=eq.${encodeURIComponent(dedupKey)}`,
@@ -181,6 +192,7 @@ exports.sendSanteReminders = functions
                             body,
                             data: {animalId: String(row.animal_id), table, palier: palierKey},
                             read: false,
+                            ...(profileId ? {profile_id: profileId} : {}),
                         }]);
                     } catch (e) {
                         console.error(`notifications insert error (${table} ${row.id}):`, e.message);

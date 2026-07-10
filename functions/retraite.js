@@ -139,6 +139,17 @@ exports.sendRetraiteReminders = functions
             "&statut=not.in.(sorti,decede)" +
             "&date_naissance=not.is.null");
 
+        // Résolution du profil propriétaire courant (animaux.profile_id n'est pas fiable —
+        // voir migration_fix_animaux_proprietes_unique_constraint.sql)
+        const profileIdByAnimal = {};
+        if (animaux.length) {
+            const proprietesRaw = await supabaseSelect("animaux_proprietes",
+                `animal_id=in.(${animaux.map((a) => a.id).join(",")})&date_fin=is.null`);
+            for (const p of proprietesRaw) {
+                if (p.profile_id_proprio) profileIdByAnimal[p.animal_id] = p.profile_id_proprio;
+            }
+        }
+
         for (const animal of animaux) {
             if (!animal.uid_eleveur || !animal.date_naissance) continue;
 
@@ -203,6 +214,7 @@ exports.sendRetraiteReminders = functions
                     title, body,
                     data: {animalId: String(animal.id)},
                     read: false,
+                    ...(profileIdByAnimal[animal.id] ? {profile_id: profileIdByAnimal[animal.id]} : {}),
                 }]);
             } catch (e) {
                 console.error(`notifications insert error for animal ${animal.id}:`, e.message);

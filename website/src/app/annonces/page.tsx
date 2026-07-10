@@ -37,6 +37,7 @@ interface Annonce {
   created_at?: string;
   statut?: string;
   uid_eleveur?: string;
+  profile_id?: string;
   animaux_portee?: RawBebe[];
   profil_source?: string;
 }
@@ -98,7 +99,7 @@ export default function AnnoncesPage() {
   useEffect(() => {
     supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at, uid_eleveur, animaux_portee, profil_source')
+      .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at, uid_eleveur, profile_id, animaux_portee, profil_source')
       .eq('statut', 'disponible')
       .order('created_at', { ascending: false })
       .then(async ({ data }) => {
@@ -139,7 +140,7 @@ export default function AnnoncesPage() {
       });
   }, [user]);
 
-  async function toggleLike(annonceId: string, bebeIndex: number | null, uidEleveur?: string) {
+  async function toggleLike(annonceId: string, bebeIndex: number | null, uidEleveur?: string, annonceProfileId?: string) {
     if (!user) return;
     const key = `${annonceId}_${bebeIndex ?? 'null'}`;
     const wasLiked = likedKeys.has(key);
@@ -158,6 +159,7 @@ export default function AnnoncesPage() {
             body: 'Quelqu\'un a aimé votre annonce',
             data: { annonceId, bebeIndex },
             read: false,
+            ...(annonceProfileId ? { profile_id: annonceProfileId } : {}),
             ...(activeProfileId ? { sender_profile_id: activeProfileId } : {}),
           }).then(() => {});
         }
@@ -473,16 +475,17 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
 }
 
 function BabyPhotoCard({
-  baby: b, fallbackPhoto, annonceId, uidEleveur, bebeIndex, isLiked, likeCount, onToggleLike, currentUser,
+  baby: b, fallbackPhoto, annonceId, uidEleveur, annonceProfileId, bebeIndex, isLiked, likeCount, onToggleLike, currentUser,
 }: {
   baby: RawBebe;
   fallbackPhoto?: string;
   annonceId: string;
   uidEleveur?: string;
+  annonceProfileId?: string;
   bebeIndex: number;
   isLiked: boolean;
   likeCount: number;
-  onToggleLike: (annonceId: string, bebeIndex: number | null, uidEleveur?: string) => void;
+  onToggleLike: (annonceId: string, bebeIndex: number | null, uidEleveur?: string, annonceProfileId?: string) => void;
   currentUser: { uid: string } | null;
 }) {
   const [idx, setIdx] = useState(0);
@@ -537,7 +540,7 @@ function BabyPhotoCard({
           </div>
         )}
         <button
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleLike(annonceId, bebeIndex, uidEleveur); }}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleLike(annonceId, bebeIndex, uidEleveur, annonceProfileId); }}
           disabled={!currentUser}
           className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/40 flex items-center justify-center text-xs transition-transform hover:scale-110 active:scale-95 disabled:opacity-50">
           {isLiked ? '❤️' : '🤍'}
@@ -564,7 +567,7 @@ function AnnonceCard({
   verif?: EleveurVerif;
   likedKeys: Set<string>;
   likeCounts: Record<string, number>;
-  onToggleLike: (annonceId: string, bebeIndex: number | null, uidEleveur?: string) => void;
+  onToggleLike: (annonceId: string, bebeIndex: number | null, uidEleveur?: string, annonceProfileId?: string) => void;
   currentUser: { uid: string; profileType?: string } | null;
 }) {
   const [showBabies, setShowBabies] = useState(false);
@@ -603,7 +606,7 @@ function AnnonceCard({
           {isAsso ? '💚 Adoption' : isSaillie ? 'Saillie' : isPortee ? 'Portée' : 'Compagnon'}
         </span>
         <button
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleLike(a.id, null, a.uid_eleveur); }}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleLike(a.id, null, a.uid_eleveur, a.profile_id); }}
           disabled={!currentUser}
           className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center transition-transform hover:scale-110 active:scale-95 disabled:opacity-50"
           title={currentUser ? (isLiked ? 'Retirer le like' : 'Aimer') : 'Connectez-vous pour liker'}
@@ -647,6 +650,7 @@ function AnnonceCard({
                       fallbackPhoto={photo}
                       annonceId={a.id}
                       uidEleveur={a.uid_eleveur}
+                      annonceProfileId={a.profile_id}
                       bebeIndex={i}
                       isLiked={likedKeys.has(bKey)}
                       likeCount={likeCounts[bKey] ?? 0}

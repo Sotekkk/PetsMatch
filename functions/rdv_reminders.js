@@ -145,7 +145,7 @@ exports.sendRdvReminders = functions
                     `&date_heure=gte.${encodeURIComponent(win.from)}` +
                     `&date_heure=lte.${encodeURIComponent(win.to)}` +
                     `&${win.sentField}=eq.false` +
-                    `&select=id,client_uid,pro_uid,motif,date_heure`;
+                    `&select=id,client_uid,client_profile_id,pro_uid,motif,date_heure`;
                 rdvs = await supabaseGet(`rdv?${qs}`);
             } catch (e) {
                 console.error(`sendRdvReminders [${win.label}] fetch error:`, e);
@@ -176,6 +176,7 @@ exports.sendRdvReminders = functions
                         body: body,
                         data: {rdv_id: rdv.id},
                         read: false,
+                        ...(rdv.client_profile_id ? {profile_id: rdv.client_profile_id} : {}),
                     }]);
 
                     // Push FCM

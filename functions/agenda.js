@@ -405,6 +405,15 @@ exports.sendMiseBasReminders = functions
                 const animal = animals[0];
                 if (!animal || !animal.uid_eleveur) continue;
 
+                // Résolution du profil propriétaire courant (animaux.profile_id n'est pas
+                // fiable — voir migration_fix_animaux_proprietes_unique_constraint.sql)
+                let profileId = null;
+                try {
+                    const propRows = await supabaseSelect("animaux_proprietes",
+                        `animal_id=eq.${g.animal_id}&uid_proprio=eq.${animal.uid_eleveur}&date_fin=is.null`);
+                    if (propRows[0]) profileId = propRows[0].profile_id_proprio;
+                } catch (_) {/* pas bloquant */}
+
                 const animalNom = animal.nom || "votre femelle";
                 const miseBas = new Date(g.date_prevue).toLocaleDateString("fr-FR", {
                     day: "numeric", month: "long",
@@ -428,6 +437,7 @@ exports.sendMiseBasReminders = functions
                         body,
                         data: {animalId: String(g.animal_id)},
                         read: false,
+                        ...(profileId ? {profile_id: profileId} : {}),
                     }]);
                 } catch (e) {
                     console.error(`notifications insert error for gestation ${g.id}:`, e.message);

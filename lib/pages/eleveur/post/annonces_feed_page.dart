@@ -36,6 +36,7 @@ class _FeedItem {
   final String? description;
   final String? ville;
   final String? uidEleveur;
+  final String? profileId;
   final String? nomEleveur;
   final String? photoEleveur;
   final bool pedigree;
@@ -50,7 +51,7 @@ class _FeedItem {
     required this.photos, required this.nom,
     this.race, this.espece, this.sexe, this.prix,
     this.statut, this.description, this.ville,
-    this.uidEleveur, this.nomEleveur, this.photoEleveur,
+    this.uidEleveur, this.profileId, this.nomEleveur, this.photoEleveur,
     this.pedigree = false, this.dateNaissance,
     this.typeVente,
     this.eleveurVerifie = false, this.eleveurPremium = false,
@@ -61,6 +62,7 @@ class _FeedItem {
     annonceId: annonceId, bebeIndex: bebeIndex, photos: photos, nom: nom,
     race: race, espece: espece, sexe: sexe, prix: prix, statut: statut,
     description: description, ville: ville, uidEleveur: uidEleveur,
+    profileId: profileId,
     nomEleveur: nomEleveur, photoEleveur: p, pedigree: pedigree,
     dateNaissance: dateNaissance, typeVente: typeVente,
     eleveurVerifie: eleveurVerifie, eleveurPremium: eleveurPremium,
@@ -71,6 +73,7 @@ class _FeedItem {
     annonceId: annonceId, bebeIndex: bebeIndex, photos: photos, nom: nom,
     race: race, espece: espece, sexe: sexe, prix: prix, statut: statut,
     description: description, ville: ville, uidEleveur: uidEleveur,
+    profileId: profileId,
     nomEleveur: nomEleveur, photoEleveur: photoEleveur, pedigree: pedigree,
     dateNaissance: dateNaissance, typeVente: typeVente,
     eleveurVerifie: verifie, eleveurPremium: premium,
@@ -112,6 +115,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
     final aPhotos    = List<String>.from(a['photos'] ?? []);
     final bebes      = List<Map<String, dynamic>>.from(a['animaux_portee'] ?? []);
     final uid        = a['uid_eleveur'] as String?;
+    final pid        = a['profile_id'] as String?;
     final nomEleveur = a['nom_eleveur'] as String?;
     final isAsso     = a['profil_source'] == 'association';
 
@@ -136,7 +140,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
           statut: b['statut'] as String?,
           description: b['description'] as String?,
           ville: a['ville_eleveur'] as String?,
-          uidEleveur: uid, nomEleveur: nomEleveur,
+          uidEleveur: uid, profileId: pid, nomEleveur: nomEleveur,
           pedigree: b['pedigree'] == true,
           dateNaissance: dateNaissancePortee,
           typeVente: a['type_vente'] as String?,
@@ -158,7 +162,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
           return rt is String && rt.isNotEmpty && !rt.startsWith('Non ');
         }(),
         ville: a['ville_eleveur'] as String?,
-        uidEleveur: uid, nomEleveur: nomEleveur,
+        uidEleveur: uid, profileId: pid, nomEleveur: nomEleveur,
         dateNaissance: dateNaissanceAnimal,
         typeVente: a['type_vente'] as String?,
         isAssociation: isAsso,
@@ -274,7 +278,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
     try {
       var q = Supabase.instance.client
           .from('annonces')
-          .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur, uid_eleveur, description, registre_type, date_naissance, date_naissance_animal, profil_source')
+          .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur, uid_eleveur, profile_id, description, registre_type, date_naissance, date_naissance_animal, profil_source')
           .eq('statut', 'disponible');
       if (widget.isAssociationFeed) {
         q = q.eq('profil_source', 'association');
@@ -357,7 +361,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
                   photos: i.photos, nom: i.nom, race: i.race, espece: i.espece,
                   sexe: i.sexe, prix: i.prix, statut: i.statut,
                   description: i.description, ville: i.ville,
-                  uidEleveur: i.uidEleveur, nomEleveur: name,
+                  uidEleveur: i.uidEleveur, profileId: i.profileId, nomEleveur: name,
                   photoEleveur: photo, pedigree: i.pedigree,
                   dateNaissance: i.dateNaissance, typeVente: i.typeVente,
                   eleveurVerifie: i.eleveurVerifie, eleveurPremium: i.eleveurPremium,
@@ -471,6 +475,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
             'body': '$name a aimé "${item.nom}"',
             'data': {'annonceId': item.annonceId, 'bebeIndex': item.bebeIndex, 'fromUid': uid},
             'read': false,
+            if ((item.profileId ?? '').isNotEmpty) 'profile_id': item.profileId,
             if (User_Info.activeProfileId.isNotEmpty) 'sender_profile_id': User_Info.activeProfileId,
           });
           // Push via Firebase Cloud Functions (même infra que les alertes)
