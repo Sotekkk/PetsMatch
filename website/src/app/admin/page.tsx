@@ -34,7 +34,7 @@ interface Stats {
 
 interface Signalement {
   id: string; reporter_uid: string;
-  target_type: 'user' | 'annonce' | 'profil_pro';
+  target_type: 'user' | 'annonce' | 'profil_pro' | 'balade_ludique';
   target_id: string; raison: string; description?: string;
   statut: 'en_attente' | 'traite' | 'rejete';
   admin_note?: string; created_at: string; handled_at?: string; handled_by?: string;
@@ -88,7 +88,7 @@ const RAISON_LABELS: Record<string, string> = {
 };
 
 const TARGET_LABELS: Record<string, string> = {
-  user: 'Utilisateur', annonce: 'Annonce', profil_pro: 'Profil pro',
+  user: 'Utilisateur', annonce: 'Annonce', profil_pro: 'Profil pro', balade_ludique: 'Balade ludique',
 };
 
 // ─── Page principale ──────────────────────────────────────────────────────────
@@ -1017,7 +1017,7 @@ export default function AdminPage() {
                   >
                     <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-lg"
                       style={{ background: '#fee2e2' }}>
-                      {sig.target_type === 'annonce' ? '📋' : sig.target_type === 'user' ? '👤' : '💼'}
+                      {sig.target_type === 'annonce' ? '📋' : sig.target_type === 'user' ? '👤' : sig.target_type === 'balade_ludique' ? '🧭' : '💼'}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -1033,6 +1033,13 @@ export default function AdminPage() {
                             onClick={e => e.stopPropagation()}
                             className="text-xs text-[#0C5C6C] hover:underline">
                             Voir l'annonce ↗
+                          </Link>
+                        )}
+                        {sig.target_type === 'balade_ludique' && (
+                          <Link href={`/balades-ludiques/${sig.target_id}`} target="_blank"
+                            onClick={e => e.stopPropagation()}
+                            className="text-xs text-[#0C5C6C] hover:underline">
+                            Voir le parcours ↗
                           </Link>
                         )}
                       </div>

@@ -39,6 +39,7 @@ class _SignalementsAdminState extends State<SignalementsAdmin>
     'user': 'Utilisateur',
     'annonce': 'Annonce',
     'profil_pro': 'Profil pro',
+    'balade_ludique': 'Balade ludique',
   };
 
   @override
@@ -414,6 +415,7 @@ class _SignalementList extends StatelessWidget {
                           child: Text(
                             sig['target_type'] == 'annonce' ? '📋'
                                 : sig['target_type'] == 'user' ? '👤'
+                                : sig['target_type'] == 'balade_ludique' ? '🧭'
                                 : '💼',
                             style: const TextStyle(fontSize: 18),
                           ),

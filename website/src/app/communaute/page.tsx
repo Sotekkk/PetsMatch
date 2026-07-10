@@ -25,6 +25,14 @@ const ITEMS: CommunauteItem[] = [
     authRequired: false,
   },
   {
+    label: 'Balades ludiques',
+    subtitle: 'Chasses au trésor et parcours à défis avec votre animal',
+    icon: '🧭',
+    color: '#C2410C',
+    href: '/balades-ludiques',
+    authRequired: false,
+  },
+  {
     label: 'Forum',
     subtitle: 'Échangez avec la communauté sur tous les sujets',
     icon: '💬',
