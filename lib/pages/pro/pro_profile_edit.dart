@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart' as geo;
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_webservice/places.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
@@ -61,6 +62,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   String _catPro = '';
   String _siret = '';
   String _ordreVeterinaire = '';
+
+  // ACACED — obligatoire pour garde (petsitter/promeneur) et éducateur
+  final _acacedCtrl = TextEditingController();
+  File?   _acacedDocFile;
+  String? _acacedDocUrl;
 
   static const _especesList = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
   List<String> _especesAcceptees = [];
@@ -170,6 +176,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         _rayonKm               = (row['rayon_intervention'] as num?)?.toInt() ?? 20;
         _acceptNewClients      = row['accept_new_clients'] ?? true;
         _urgences24h           = row['urgences_24h'] ?? false;
+
+        _acacedCtrl.text = row['acaced_numero'] ?? row['acaced'] ?? '';
+        _acacedDocUrl    = row['acaced_doc_url'] as String?;
 
         if (isSecondary) {
           _lat = (row['latitude'] as num?)?.toDouble() ?? (row['lat'] as num?)?.toDouble();
@@ -441,6 +450,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       if (_bannerFile != null) {
         bannerUrl = await uploadPhoto(_bannerFile!, 'profiles/$uid/banner.jpg');
       }
+      String? acacedDocUrl = _acacedDocUrl;
+      if (_acacedDocFile != null) {
+        acacedDocUrl = await uploadPhoto(_acacedDocFile!, 'profiles/$uid/acaced.jpg');
+      }
 
       final horairesMap = {
         for (final j in _jours)
@@ -475,6 +488,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
+          if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
+          if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
+          if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
+            'acaced_doc_url': acacedDocUrl,
           'rue':                _rueCtrl.text.trim(),
           'ville':              _villeCtrl.text.trim(),
           'code_postal':        _cpCtrl.text.trim(),
@@ -515,6 +532,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
+          if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
+          if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
+            'acaced_doc_url': acacedDocUrl,
           'rue_elevage':          _rueCtrl.text.trim(),
           'ville_elevage':        _villeCtrl.text.trim(),
           'code_postal_elevage':  _cpCtrl.text.trim(),
@@ -549,6 +569,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
+          if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
+          if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
+          if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
+            'acaced_doc_url': acacedDocUrl,
           'rue_pro':            _rueCtrl.text.trim(),
           'ville_pro':          _villeCtrl.text.trim(),
           'code_postal_pro':    _cpCtrl.text.trim(),
@@ -855,6 +879,67 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     ]),
                   ],
 
+                  // ── ACACED — obligatoire pour garde et éducateur ──────────
+                  if (_catPro == 'garde' || _catPro == 'education') ...[
+                    const SizedBox(height: 24),
+                    _sectionTitle('ACACED *'),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Attestation de connaissances obligatoire pour cette activité (Code rural, art. L214-6-1).',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _acacedCtrl,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                      decoration: InputDecoration(
+                        labelText: 'N° ACACED',
+                        hintText: 'Ex : 2022/9fd5-fd12',
+                        filled: true, fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    InkWell(
+                      onTap: _pickAcacedDoc,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFDDDDDD)),
+                        ),
+                        child: Row(children: [
+                          Icon(
+                            (_acacedDocFile != null || (_acacedDocUrl?.isNotEmpty ?? false))
+                                ? Icons.check_circle_outline : Icons.upload_file_outlined,
+                            color: (_acacedDocFile != null || (_acacedDocUrl?.isNotEmpty ?? false))
+                                ? const Color(0xFF6E9E57) : Colors.grey.shade500,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _acacedDocFile != null
+                                  ? 'Nouveau justificatif sélectionné'
+                                  : (_acacedDocUrl?.isNotEmpty ?? false)
+                                      ? 'Justificatif ACACED envoyé'
+                                      : 'Ajouter le justificatif ACACED',
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1E2025)),
+                            ),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  ],
+
                   // ── Tarifs éducateur/comportementaliste ───────────────────
                   if (_catPro == 'education') ...[
                     const SizedBox(height: 24),
@@ -1147,6 +1232,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   Future<void> _pickPhoto() async {
     final file = await pickAndCropSquare();
     if (file != null && mounted) setState(() => _photoFile = file);
+  }
+
+  Future<void> _pickAcacedDoc() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 90);
+    if (picked != null && mounted) setState(() => _acacedDocFile = File(picked.path));
   }
 
   // ── Address block ─────────────────────────────────────────────────────────────

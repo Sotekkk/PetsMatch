@@ -4935,6 +4935,44 @@ créneaux horaires configurables dédiés, paiement en ligne des prestations
 `onboarding_pension.dart`) également non traité — profils `garde` créés via
 le flux d'inscription générique existant (`add_profile_page.dart`).
 
+### 28.5 — ACACED manquant à l'inscription et à la validation, corrigé
+
+Signalé par l'utilisateur après coup : le formulaire d'inscription
+(`add_profile_page.dart`) n'avait **aucun champ ACACED pour `garde`** (seul
+`education` l'avait, obligatoire) — le numéro n'était même pas envoyé en
+base pour un profil garde. Pire, **aucune page n'avait d'upload du
+justificatif ACACED pour un type pro** (`pro_profile_edit.dart`/web
+`SecondaryProEdit`) — seul l'éleveur avait cette UI. `education` avait donc
+déjà ce trou en prod avant cette session (champ obligatoire à l'inscription,
+mais nulle part où uploader le document ensuite). Obligation légale (Code
+rural, art. L214-6-1), pas une simple recommandation — corrigé pour les
+deux types d'un coup plutôt que de dupliquer le trou pour garde :
+
+- **Inscription** (`add_profile_page.dart`) : champ ACACED désormais
+  obligatoire pour `garde` en plus de `education` (même traitement,
+  `data['acaced_numero']` envoyé pour les deux).
+- **Édition + upload du justificatif** — nouveau, n'existait pour aucun
+  type pro avant cette session : section ACACED (numéro + upload
+  image/PDF) ajoutée dans `pro_profile_edit.dart` (app) gated
+  `catPro == 'garde' || catPro == 'education'`, écrite dans les 3 blocs
+  d'écriture existants (secondaire→`user_profiles`, principal→`users`,
+  principal→`user_profiles` sync). Web : même section dans
+  `SecondaryProEdit` (`profil/page.tsx`) — **scope limité aux profils
+  secondaires** (paramétré par `profileId`), le cas profil pro *primaire*
+  côté web n'a pas été audité/couvert par ce correctif, à vérifier si des
+  comptes garde/éducateur primaires existent.
+  Écrit sur les deux colonnes `acaced`/`acaced_numero` (doublon déjà
+  présent en base, `admin/page.tsx` lit `acaced`, l'inscription écrit
+  `acaced_numero` — pas unifié, juste rendu cohérent sur les deux).
+- Pas de reprise de la piste avancée de l'éleveur (dates d'obtention/
+  renouvellement, statut d'expiration coloré) — numéro + justificatif
+  suffisent pour que l'admin puisse valider, le suivi d'expiration reste
+  pour une itération ultérieure si demandé.
+
+Vérifié : `flutter analyze` (0 nouveau problème sur les 2 fichiers app),
+`tsc --noEmit` + `eslint` sur `profil/page.tsx` (0 problème avant/après),
+`next build` production complet réussi.
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*
