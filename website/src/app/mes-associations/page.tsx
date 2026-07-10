@@ -125,7 +125,7 @@ export default function MesAssociationsPage() {
       { data: tachesRaw },
       { data: planTachesRaw },
     ] = await Promise.all([
-      supabase.from('users').select('uid, firstname, lastname, name_elevage, profile_picture_url, ville').in('uid', uids) as unknown as Promise<{ data: Record<string, unknown>[] | null }>,
+      supabase.from('user_profiles').select('uid, firstname, lastname, profile_picture_url:avatar_url, ville').eq('is_main', true).in('uid', uids) as unknown as Promise<{ data: Record<string, unknown>[] | null }>,
       (profileId
         ? supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_profile_id', profileId).neq('statut', 'fait').order('date')
         : supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_a', user.uid).neq('statut', 'fait').order('date')) as unknown as Promise<{ data: TacheRow[] | null }>,

@@ -4649,6 +4649,49 @@ n'a jamais eu ce filtre côté recherche (contrairement à l'app) — un
 compte pro apparaît dans "ajouter un ami" sur le site mais pas dans
 l'app. Même famille que l'incohérence notée au lot 6.
 
+### 27.13 — Phase 4 livrée (lot 8) : annuaire associations/élevages + état réel du chantier
+
+3 fichiers migrés (lookups directs par liste d'uid connue, dérivée de
+`employes`) : `mes_associations_benevole.dart`, `mes-associations/page.tsx`
+(déjà partiellement migré), `mes-employeurs/page.tsx`.
+`associations_list_page.dart` + son équivalent web `associations/page.tsx`
+se sont révélés être — comme au lot 5 — des pages à fusion
+`users`+`user_profiles` avec dédoublonnage par uid, pas une bascule
+simple : ajoutés à la catégorie B (restructuration future), pas traités.
+
+**Audit de vérification fait avant ce lot — l'état réel du chantier est
+plus large que ce que les lots précédents laissaient penser.** Plusieurs
+fichiers de catégories considérées "terminées" ont en fait des lectures
+`users` jamais basculées, jamais identifiées dans l'audit initial de ces
+lots :
+- Messagerie (lot 1) : `chat_profile_page.dart`, `petfriend_chat_page.dart`,
+  `petfriends/chat/[convId]/page.tsx`, `website/src/app/messages/page.tsx`.
+- Agenda (lot 3) : `lib/pages/agenda/agenda_page.dart` (fichier distinct
+  de celui déjà migré).
+- Employés (lot 3) : `website/src/app/association/equipe/page.tsx`.
+
+Plus ~13 lookups simples isolés jamais couverts par aucun lot
+(`chip_scanner_service.dart`, `lieu_detail_page.dart`,
+`portee_form_page.dart`, `pro_clients_page.dart`,
+`animal_fiche_pension_page.dart`, `fiches_pension_page.dart`,
+`registre_pension_page.dart`, `animal_fiche.dart` — partiellement fait —,
+`mes-animaux/[id]/page.tsx`, `ProDashboard.tsx`, `elevages/[id]/page.tsx` —
+jamais aligné sur son équivalent pro `services/pro/[uid]/page.tsx` déjà
+migré au lot 5, `profil/page.tsx` §agrement/capacite/email), et 4 sites
+de recherche live par email sans équivalent `user_profiles`
+(`cession_sheet.dart`, `CessionModal.tsx`, `education_devis_page.dart`,
+`education/devis/page.tsx`) qui nécessitent une conception dédiée (motif
+B des lots précédents).
+
+**Conclusion pour la suite** : le chantier `users`→`user_profiles` en
+lecture n'est pas fini, malgré 8 lots livrés (Phases 1-4). Périmètre
+restant estimé : ~13 lookups simples (bascule directe, motif connu),
+~7 fichiers de "catégories terminées" à vérifier/compléter, 4 sites de
+recherche par email (motif B), et 7 pages à fusion users+user_profiles
+(catégorie B, restructuration de dédoublonnage). Décision prise en fin
+de session : pause sur ce chantier, reprise dans une session dédiée
+plutôt que de continuer à la volée sans cadrage frais.
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

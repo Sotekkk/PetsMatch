@@ -93,9 +93,9 @@ class _MesAssociationsBenevoleState extends State<MesAssociationsBenevole> {
       final planAssigneValue    = myProfileId ?? _uid;
 
       final results = await Future.wait([
-        _supa.from('users')
-            .select('uid, firstname, lastname, name_elevage, profile_picture_url, ville')
-            .inFilter('uid', uids),
+        _supa.from('user_profiles')
+            .select('uid, firstname, lastname, name_elevage:nom, profile_picture_url:avatar_url, ville')
+            .inFilter('uid', uids).eq('is_main', true),
         _supa.from('taches_elevage')
             .select('id, titre, date, statut, animal_id, uid_eleveur')
             .inFilter('uid_eleveur', uids).eq(tachesAssigneFilter, tachesAssigneValue).neq('statut', 'fait').order('date'),
