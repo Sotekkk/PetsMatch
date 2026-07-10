@@ -5162,6 +5162,53 @@ confirmé par recherche, donc aucune contrepartie web à créer ici.
 Vérifié : `flutter analyze` sur les 2 fichiers touchés (0 nouveau
 problème, comparaison `git stash` avant/après).
 
+### 28.10 — Phase 2b/2c livrée (session 2026-07-10) : RDV clients récurrents
+
+**Cadrage revu en cours de route** : la demande initiale "services
+récurrents + créneaux configurables" s'est révélée déjà largement
+couverte — `creneaux_pro` (grille hebdo + "Répliquer" sur N semaines/fin
+d'année/date perso) existe déjà en app (`pro_agenda.dart`) **et** web
+(`/pro/creneaux`), générique à tous les types de pro dont garde, déjà
+relié dans `MENU_GARDE`. Fausse piste initiale de ma part (recherche par
+nom de fichier `*creneau*`, qui ne matche pas `pro_agenda.dart` où c'est
+implémenté) — corrigée après remarque de l'utilisatrice. Le vrai trou
+identifié après clarification : la **récurrence côté RDV client** (ex.
+« promenade tous les mardis avec Mme Dupont ») n'existait nulle part —
+seule la disponibilité du pro pouvait être répliquée, pas une réservation
+répétée automatiquement pour un client donné.
+
+- **App** (`rdv_booking_page.dart`, flux client→pro déclenché depuis
+  `service_detail_page.dart`) : nouveau champ `isGarde`, toggle « Répéter
+  ce RDV chaque semaine » (4/8/12 semaines) visible une fois un créneau
+  choisi. À la soumission, calcule les dates hebdomadaires suivantes et
+  ne retient que celles réellement disponibles
+  (`_isDateSlotAvailable` : tous les créneaux 15 min de `creneaux_pro`
+  couvrant la durée + absence de chevauchement avec un RDV existant),
+  insère une ligne `rdv` par occurrence valide, une seule notification
+  agrégée au pro, retour utilisateur explicite si certaines dates n'ont
+  pas pu être honorées (ex. "6/8 RDV créés").
+- **Web** (`services/pro/[uid]/page.tsx`) — porté à la demande de
+  l'utilisatrice après cadrage initial "app d'abord". **Découverte en
+  l'explorant** : ce flux web utilise un schéma `rdv` différent de l'app
+  (`date_debut`/`date_fin` au lieu de `date_heure`/`duree_minutes`, pas
+  de vérification de conflit avec les RDV existants — juste
+  `creneaux_pro.statut` immédiatement basculé sur `'reserve'` à la
+  réservation) — écart pré-existant entre les deux plateformes, non
+  corrigé (hors scope d'un ajout de récurrence, risque de casser un flux
+  déjà en prod). La récurrence web reprend donc fidèlement ce même
+  schéma plutôt que d'introduire celui de l'app, pour rester cohérente
+  avec le comportement déjà en place. Disponibilité vérifiée par
+  appartenance à la liste `slots` déjà chargée (requête sans limite de
+  date supérieure côté web, contrairement à l'app plafonnée à 3 mois).
+- Pas de nouvelle table ni migration — entièrement bâti sur `rdv` et
+  `creneaux_pro` existants.
+
+Vérifié : `flutter analyze` sur les 2 fichiers app touchés (0 nouveau
+problème), `tsc --noEmit` (0 nouvelle erreur), `eslint` (0 nouveau
+problème — même compte d'erreurs pré-existantes qu'avant sur
+`services/pro/[uid]/page.tsx`, confirmé par `git stash`), `next build`
+production complet réussi.
+
 ---
 
 ## 29. Module "Balades ludiques" (collègue) — correctif fuite cross-profil (session 2026-07-10)

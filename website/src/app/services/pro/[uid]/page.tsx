@@ -118,6 +118,12 @@ function ProDetailContent() {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [rdvSuccess, setRdvSuccess] = useState(false);
+  const [rdvCount, setRdvCount] = useState(1);
+
+  // Garde uniquement : RDV récurrent (visites/promenades hebdomadaires)
+  const [recurrent, setRecurrent] = useState(false);
+  const [occurrences, setOccurrences] = useState(4);
+  const OCCURRENCE_CHOICES = [4, 8, 12];
 
   // Cours collectifs (éducateur/comportementaliste)
   const [coursCollectifs, setCoursCollectifs] = useState<CoursCollectif[]>([]);
@@ -258,6 +264,8 @@ function ProDetailContent() {
     setSelectedSlot(null);
     setSelectedAnimalId(null);
     setNotes('');
+    setRecurrent(false);
+    setOccurrences(4);
     setSlotsLoading(true);
     const profileId = profileTableId ?? '';
     const [slotsRes, animauxRes, ownRes] = await Promise.all([
@@ -306,35 +314,62 @@ function ProDetailContent() {
     setSlotsLoading(false);
   }
 
+  // Récurrence (garde uniquement) : même jour de semaine + heure, sur les
+  // semaines suivantes, en ne retenant que celles où le créneau apparaît
+  // encore comme disponible dans les données déjà chargées.
+  function occurrenceSlots(): Slot[] {
+    if (!selectedSlot) return [];
+    if (pro?.cat_pro !== 'garde' || !recurrent) return [selectedSlot];
+    const result: Slot[] = [selectedSlot];
+    const base = new Date(`${selectedSlot.date}T00:00:00`);
+    for (let i = 1; i < occurrences; i++) {
+      const d = new Date(base);
+      d.setDate(base.getDate() + 7 * i);
+      const dateStr = toDateStr(d);
+      const match = slots.find(s => s.date === dateStr && s.heureDebut === selectedSlot.heureDebut);
+      if (match) result.push(match);
+    }
+    return result;
+  }
+
   async function confirmRdv() {
     if (!selectedSlot || !motifKey || !user || !pro) return;
     if (pro.cat_pro === 'veterinaire' && premiereVisite === null) return;
     setSaving(true);
     try {
-      const dateDebut = new Date(`${selectedSlot.date}T${selectedSlot.heureDebut}`);
-      const dateFin   = new Date(`${selectedSlot.date}T${selectedSlot.heureFin}`);
       const motifInfo = (MOTIFS_BY_CAT[pro.cat_pro] ?? DEFAULT_MOTIFS).find(m => m.key === motifKey);
       const motifLabel = motifInfo?.label ?? motifKey;
-      await supabase.from('rdv').insert({
-        pro_uid: pro.uid, client_uid: user.uid,
-        animal_id: selectedAnimalId || null,
-        date_debut: dateDebut.toISOString(), date_fin: dateFin.toISOString(),
-        statut: 'en_attente',
-        motif: premiereVisite !== null ? `${motifLabel}${premiereVisite ? ' (1ère visite)' : ''}` : motifLabel,
-        notes: notes || null,
-        pro_profile_id: pro.profileTableId || null,
-        ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
-      });
-      await supabase.from('creneaux_pro').update({ statut: 'reserve' })
-        .eq('pro_uid', pro.uid)
-        .eq('date', selectedSlot.date)
-        .eq('heure_debut', selectedSlot.heureDebut);
+      const targetSlots = occurrenceSlots();
+
+      for (const slot of targetSlots) {
+        const dateDebut = new Date(`${slot.date}T${slot.heureDebut}`);
+        const dateFin   = new Date(`${slot.date}T${slot.heureFin}`);
+        await supabase.from('rdv').insert({
+          pro_uid: pro.uid, client_uid: user.uid,
+          animal_id: selectedAnimalId || null,
+          date_debut: dateDebut.toISOString(), date_fin: dateFin.toISOString(),
+          statut: 'en_attente',
+          motif: premiereVisite !== null ? `${motifLabel}${premiereVisite ? ' (1ère visite)' : ''}` : motifLabel,
+          notes: notes || null,
+          pro_profile_id: pro.profileTableId || null,
+          ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
+        });
+        await supabase.from('creneaux_pro').update({ statut: 'reserve' })
+          .eq('pro_uid', pro.uid)
+          .eq('date', slot.date)
+          .eq('heure_debut', slot.heureDebut);
+      }
+
+      const isSerie = targetSlots.length > 1;
       await supabase.from('notifications').insert({
         uid: pro.uid, type: 'rdv_demande',
-        title: 'Nouvelle demande de RDV',
-        body: `Demande pour le ${fmtDate(selectedSlot.date)} à ${fmtTime(selectedSlot.heureDebut)} — ${motifLabel}.`,
+        title: isSerie ? 'Nouvelle série de RDV récurrents' : 'Nouvelle demande de RDV',
+        body: isSerie
+          ? `Demande de ${targetSlots.length} RDV récurrents à partir du ${fmtDate(selectedSlot.date)} à ${fmtTime(selectedSlot.heureDebut)} — ${motifLabel}.`
+          : `Demande pour le ${fmtDate(selectedSlot.date)} à ${fmtTime(selectedSlot.heureDebut)} — ${motifLabel}.`,
         data: { pro_uid: pro.uid },
       });
+      setRdvCount(targetSlots.length);
       setRdvSuccess(true);
     } catch {
       alert('Erreur lors de la réservation. Veuillez réessayer.');
@@ -648,9 +683,11 @@ function ProDetailContent() {
               {rdvSuccess ? (
                 <div className="flex flex-col items-center gap-4 py-8 text-center">
                   <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center text-3xl">✅</div>
-                  <p className="font-bold text-[#1E2025] text-lg" style={{ fontFamily: 'Galey, sans-serif' }}>Demande envoyée !</p>
+                  <p className="font-bold text-[#1E2025] text-lg" style={{ fontFamily: 'Galey, sans-serif' }}>
+                    {rdvCount > 1 ? `${rdvCount} demandes envoyées !` : 'Demande envoyée !'}
+                  </p>
                   <p className="text-sm text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>
-                    {pro.name} recevra votre demande et vous confirmera le rendez-vous.
+                    {pro.name} recevra {rdvCount > 1 ? 'vos demandes' : 'votre demande'} et vous confirmera {rdvCount > 1 ? 'les rendez-vous' : 'le rendez-vous'}.
                   </p>
                   <button onClick={() => setShowRdv(false)}
                     className="mt-2 px-6 py-2.5 rounded-2xl text-white font-semibold text-sm"
@@ -808,6 +845,44 @@ function ProDetailContent() {
                     </>
                   )}
 
+                  {/* Récurrence (garde uniquement) */}
+                  {pro.cat_pro === 'garde' && selectedSlot && (
+                    <div className="border border-gray-200 rounded-2xl p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          🔁 Répéter ce RDV chaque semaine
+                        </p>
+                        <button type="button" onClick={() => setRecurrent(v => !v)}
+                          className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+                          style={{ backgroundColor: recurrent ? catColor : '#D1D5DB' }}>
+                          <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
+                            style={{ transform: recurrent ? 'translateX(20px)' : 'translateX(0)' }} />
+                        </button>
+                      </div>
+                      {recurrent && (
+                        <>
+                          <p className="text-xs text-gray-400 mt-1.5 mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>
+                            Idéal pour une promenade ou une visite régulière.
+                          </p>
+                          <div className="flex gap-2">
+                            {OCCURRENCE_CHOICES.map(n => (
+                              <button key={n} onClick={() => setOccurrences(n)}
+                                className="flex-1 py-2 rounded-xl text-xs font-semibold border transition-all"
+                                style={{
+                                  fontFamily: 'Galey, sans-serif',
+                                  borderColor: occurrences === n ? catColor : '#E5E7EB',
+                                  backgroundColor: occurrences === n ? `${catColor}15` : 'white',
+                                  color: occurrences === n ? catColor : '#6B7280',
+                                }}>
+                                {n} semaines
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
                   {/* Notes */}
                   <div>
                     <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2"
@@ -834,6 +909,11 @@ function ProDetailContent() {
                       {selectedAnimalId && (
                         <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
                           🐾 {animaux.find(a => a.id === selectedAnimalId)?.nom}
+                        </p>
+                      )}
+                      {pro.cat_pro === 'garde' && recurrent && (
+                        <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          🔁 {occurrenceSlots().length}/{occurrences} semaines disponibles
                         </p>
                       )}
                     </div>
