@@ -5051,4 +5051,159 @@ dans ce projet), `next build` production complet réussi (routes
 
 ---
 
+## 29. Module "Balades ludiques" (collègue) — correctif fuite cross-profil (session 2026-07-10)
+
+**Contexte** : module de geocaching/chasse au trésor développé par une
+collègue sans accès Supabase (branche mergée via `git pull --no-rebase`,
+commit `97b267f9`), distinct des "promenades" collectives. À la relecture de
+`supabase/migration_balades_ludiques.sql`, l'utilisatrice a repéré l'absence
+totale de `profile_id` sur les 9 nouvelles tables — uniquement scopées par
+`*_uid` (Firebase uid) — soit exactement la classe de bug cross-profil déjà
+corrigée ailleurs dans le projet cette session (le uid seul ne distingue pas
+un profil élevage d'un profil association/pension d'un même compte). Demande
+explicite : **tout doit fonctionner via `profile_id`, pas seulement le
+créateur** — cohérent avec la convention établie partout ailleurs dans
+l'app (`User_Info.activeProfileId` côté app, `activeProfileId` de
+`useAuth()` côté web).
+
+**Migration n'ayant jamais été exécutée en production** (colonne
+`profile_id` absente du schéma réel) : schéma redessiné directement dans le
+fichier plutôt que par `ALTER TABLE` a posteriori — sûr, aucune donnée
+existante à migrer.
+
+**Tables corrigées** (`supabase/migration_balades_ludiques.sql`) :
+- `balades_ludiques` : + `createur_profile_id` (nullable, `ON DELETE SET
+  NULL`, la ligne reste identifiable par uid même si le profil est
+  supprimé) + index.
+- `balades_ludiques_progressions` : `joueur_uid` → + `joueur_profile_id`
+  (NOT NULL), contrainte unique migrée de `(balade_id, joueur_uid)` vers
+  `(balade_id, joueur_profile_id)`, policy INSERT exige les deux.
+- `balades_ludiques_validations` : + `joueur_profile_id` (nullable).
+- `balades_ludiques_avis` : `user_uid` → + `profile_id` (NOT NULL),
+  contrainte unique migrée vers `(balade_id, profile_id)`.
+- `balades_ludiques_favoris` : `user_uid` → + `profile_id` (NOT NULL), clé
+  primaire migrée de `(user_uid, balade_id)` vers `(profile_id, balade_id)`.
+- `badges_obtenus` : + `profile_id` (NOT NULL), contrainte unique migrée
+  vers `(profile_id, badge_id, balade_id)`.
+- `joueurs_xp` : clé primaire migrée de `user_uid` vers `profile_id`
+  (`user_uid` conservé en colonne simple + index, pour affichage/debug).
+
+Toutes les policies RLS INSERT concernées mises à jour pour exiger
+`*_profile_id IS NOT NULL` en plus du uid existant.
+
+**Fichiers applicatifs corrigés** (tous les points de lecture/écriture
+touchant ces tables, identifiés par grep exhaustif sur
+`createur_uid|joueur_uid|user_uid` dans les deux arborescences) :
+
+*Web* (5 fichiers) : `balades-ludiques/creer/page.tsx`,
+`balades-ludiques/mes-parcours/page.tsx`, `balades-ludiques/[id]/page.tsx`,
+`balades-ludiques/[id]/jouer/page.tsx`, `balades-ludiques/classement/page.tsx`
+— ce dernier entièrement réécrit : l'ancien code affichait `Créateur
+{uid.slice(0,6)}` (fragment de uid brut) faute de pouvoir résoudre un nom ;
+désormais résolution des noms d'affichage via une requête batch
+`user_profiles` (nom > profile_label > firstname+lastname > "Utilisateur").
+
+*App* (6 fichiers) : `creation/creation_flow_page.dart`,
+`mes_parcours_page.dart`, `mes_badges_page.dart`, `classement_page.dart`
+(même réécriture de résolution de nom que le web), `balade_ludique_jouer_page.dart`,
+`balade_ludique_detail_page.dart`. Pattern uniforme : ajout de
+`User_Info.activeProfileId` (app) / `activeProfileId` de `useAuth()` (web)
+sur chaque lecture/écriture de progression, favoris, avis, XP et badges ;
+`_isOwner`/`isOwner` comparent désormais `createur_profile_id`, plus
+`createur_uid`.
+
+Fichiers du module sans dépendance `profile_id` (widgets défis, hub, filtres,
+carte, étapes de création, stats de parcours) : audités, aucun changement
+nécessaire — ils ne lisent/écrivent que des données non scopées par
+utilisateur (points, défis, filtres publics).
+
+**Package manquant** : `qrcode.react` déclaré par la collègue dans
+`package.json` mais absent de `node_modules` (écart d'environnement
+pré-existant, sans lien avec le correctif) — corrigé par `npm install`.
+
+**Migration à exécuter manuellement** avant mise en service (n'a jamais
+été appliquée en production, donc aucune donnée à migrer, mais toujours
+un script à exécuter à la main dans le SQL Editor Supabase comme toutes
+les migrations de ce projet) : `migration_balades_ludiques.sql` (version
+corrigée).
+
+Vérifié : `flutter analyze` sur tout `lib/pages/balades_ludiques` (0 nouveau
+problème — seulement du bruit `withOpacity`/`onReorder` déjà présent avant
+correctif, confirmé par comparaison `git stash`), `tsc --noEmit` et `eslint`
+sur `website/src/app/balades-ludiques` (mêmes erreurs pré-existantes
+qu'avant correctif, confirmé par `git stash` ; le correctif de
+`classement/page.tsx` a même supprimé une erreur TS pré-existante au
+passage).
+
+---
+
+## 30. Notifications cross-profil — likes + rappels serveur (session 2026-07-10)
+
+**Contexte** : la collègue signale voir des notifications élevage (like,
+tâche validée, annonce expirant) sur son profil association. Investigation :
+3 causes distinctes, toutes de la même famille que le chantier `profile_id`
+de cette session.
+
+- **Like sur annonce** (`annonce_detail_page.dart`, `annonces_feed_page.dart`,
+  `website/src/app/annonces/feed/page.tsx`, `website/src/app/annonces/page.tsx`) :
+  la notification envoyée au propriétaire de l'annonce ne renseignait que
+  `sender_profile_id` (profil de la personne qui like), jamais `profile_id`
+  (profil cible = destinataire) — elle tombait donc systématiquement dans le
+  fallback "aucun profil connu → afficher sur tous les profils" de
+  `notifications_page.dart`. Corrigé en propageant le `profile_id` de
+  l'annonce (colonne déjà présente sur `annonces`) jusqu'à l'insert de la
+  notification, sur les 4 fichiers (à noter : sur `annonces/page.tsx`, la
+  prop a dû être filée à travers 3 composants imbriqués
+  `AnnonceCard` → `BabyPhotoCard` → `toggleLike`).
+- **Tâche validée** : déjà correctement scopée par `profile_id` depuis le
+  correctif du 2026-07-08 (commit `54c1323d`) — la notification vue par la
+  collègue datait d'avant ce correctif (donnée historique, pas un bug actif).
+- **Annonce expirant** — cause racine différente et plus grave : la Cloud
+  Function planifiée `functions/annonces.js`
+  (`sendAnnonceExpirationReminders`, tourne tous les jours à 7h) n'a jamais
+  renseigné `profile_id` du tout sur ses insertions dans `notifications`.
+  Contrairement aux bugs "app", celui-ci n'a **aucun lien avec la version de
+  l'app installée** : il fuit en continu côté serveur, indépendamment de ce
+  que la collègue a sur son téléphone.
+
+**Audit étendu** : le même trou (zéro `profile_id`) a été trouvé dans 7
+autres Cloud Functions programmées qui insèrent dans `notifications` :
+`chaleurs.js`, `retraite.js`, `sante.js`, `agenda.js` (rappels mise-bas),
+`vet_notifications.js`, `rdv_reminders.js`. Toutes corrigées (confirmation
+utilisatrice de traiter les 7 en plus des 3 signalées à l'origine).
+
+**Découverte clé** : `animaux.profile_id` n'est **pas fiable** (déjà
+documenté dans `migration_fix_animaux_proprietes_unique_constraint.sql` —
+jamais renseigné par certains flux comme `portee_form_page.dart`). La
+source fiable du profil propriétaire courant est
+`animaux_proprietes.profile_id_proprio` avec `date_fin IS NULL` (= ligne de
+propriété active), même pattern que celui déjà utilisé côté app dans
+`mes_animaux.dart`. Chaque Cloud Function concernée résout donc désormais
+le `profile_id` via une requête (batchée quand plusieurs animaux, sinon
+par ligne) sur `animaux_proprietes` plutôt que de lire une colonne
+`profile_id` directement sur `animaux`. Seul `rdv_reminders.js` fait
+exception : `rdv.client_profile_id` existe et est fiable (renseigné par le
+correctif RDV du 07-08), donc lu directement.
+
+**`alertes.js` volontairement non touché** : ses notifications
+(`notifyUsersNearLostAnimal`, `notifyNearFoundAnimal`, `notifyAnimalOwner`)
+sont des alertes de sécurité communautaire (animal perdu/trouvé à
+proximité), pertinentes pour la personne quel que soit son profil actif —
+contrairement aux notifications "business" d'un profil pro (élevage,
+association…), les scoper par profil irait à l'encontre du besoin.
+
+Vérifié : `flutter analyze` (0 nouveau problème sur les 2 fichiers app),
+`tsc --noEmit` + `eslint` sur les 4 fichiers web (0 nouvelle erreur,
+comparaison `git stash` : même compte avant/après), `eslint --fix` sur les
+7 fichiers Cloud Functions (quelques erreurs `block-spacing`/`max-len`
+introduites par le nouveau code, corrigées), chargement Node de chacun des
+7 fichiers confirmé sans erreur de syntaxe.
+
+**À faire après déploiement** : `firebase deploy --only functions` est
+nécessaire pour que le correctif des 7 fonctions programmées prenne effet
+— contrairement au reste de cette session, un rebuild/réinstall de l'app
+seul ne suffit pas ici.
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

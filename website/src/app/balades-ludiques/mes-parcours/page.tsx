@@ -14,16 +14,16 @@ const STATUT_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 export default function MesParcoursPage() {
-  const { user } = useAuth();
+  const { user, activeProfileId } = useAuth();
   const [parcours, setParcours] = useState<Balade[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) { setLoading(false); return; }
+    if (!user || !activeProfileId) { setLoading(false); return; }
     supabase.from('balades_ludiques').select('id, titre, statut, cover_url, nb_joueurs')
-      .eq('createur_uid', user.uid).neq('statut', 'supprime').order('created_at', { ascending: false })
+      .eq('createur_profile_id', activeProfileId).neq('statut', 'supprime').order('created_at', { ascending: false })
       .then(({ data }) => { setParcours((data ?? []) as Balade[]); setLoading(false); });
-  }, [user]);
+  }, [user, activeProfileId]);
 
   return (
     <div className="min-h-screen bg-[#F8F8F6]">

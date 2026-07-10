@@ -135,6 +135,7 @@ class _CreationFlowPageState extends State<CreationFlowPage> {
       final premierPoint = points.first;
       final row = <String, dynamic>{
         'createur_uid': uid,
+        'createur_profile_id': User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
         'titre': titreCtrl.text.trim(),
         'description': descriptionCtrl.text.trim().isEmpty ? null : descriptionCtrl.text.trim(),
         'cover_url': finalCoverUrl,
@@ -187,23 +188,25 @@ class _CreationFlowPageState extends State<CreationFlowPage> {
         });
       }
 
-      if (!isEdit) {
+      if (!isEdit && User_Info.activeProfileId.isNotEmpty) {
         try {
-          final existing = await _supa.from('joueurs_xp').select().eq('user_uid', uid).maybeSingle();
+          final pid = User_Info.activeProfileId;
+          final existing = await _supa.from('joueurs_xp').select().eq('profile_id', pid).maybeSingle();
           final nouveauNbCrees = ((existing?['nb_parcours_crees'] as int?) ?? 0) + 1;
           await _supa.from('joueurs_xp').upsert({
+            'profile_id': pid,
             'user_uid': uid,
             'xp_total': existing?['xp_total'] ?? 0,
             'nb_parcours_completes': existing?['nb_parcours_completes'] ?? 0,
             'nb_parcours_crees': nouveauNbCrees,
             'updated_at': DateTime.now().toIso8601String(),
-          }, onConflict: 'user_uid');
+          }, onConflict: 'profile_id');
 
           if (nouveauNbCrees == 1) {
             final badge = await _supa.from('badges').select().eq('code', 'createur_premier').maybeSingle();
             if (badge != null) {
               try {
-                await _supa.from('badges_obtenus').insert({'user_uid': uid, 'badge_id': badge['id'], 'balade_id': id});
+                await _supa.from('badges_obtenus').insert({'user_uid': uid, 'profile_id': pid, 'badge_id': badge['id'], 'balade_id': id});
               } catch (_) {} // déjà obtenu
             }
           }

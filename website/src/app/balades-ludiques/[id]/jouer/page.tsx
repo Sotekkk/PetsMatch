@@ -27,7 +27,7 @@ function distanceMetres(lat1: number, lng1: number, lat2: number, lng2: number) 
 
 export default function JouerPage() {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, activeProfileId } = useAuth();
   const router = useRouter();
 
   const [balade, setBalade] = useState<Balade | null>(null);
@@ -45,13 +45,13 @@ export default function JouerPage() {
   const [termine, setTermine] = useState<{ xp: number; badges: string[] } | null>(null);
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!user || !activeProfileId) return;
     setLoading(true);
     const { data: b } = await supabase.from('balades_ludiques').select('*').eq('id', id).single();
     const { data: pts } = await supabase.from('balades_ludiques_points').select('*').eq('balade_id', id).order('ordre');
-    let { data: prog } = await supabase.from('balades_ludiques_progressions').select('*').eq('balade_id', id).eq('joueur_uid', user.uid).maybeSingle();
+    let { data: prog } = await supabase.from('balades_ludiques_progressions').select('*').eq('balade_id', id).eq('joueur_profile_id', activeProfileId).maybeSingle();
     if (!prog) {
-      const { data: inserted } = await supabase.from('balades_ludiques_progressions').insert({ balade_id: id, joueur_uid: user.uid }).select().single();
+      const { data: inserted } = await supabase.from('balades_ludiques_progressions').insert({ balade_id: id, joueur_uid: user.uid, joueur_profile_id: activeProfileId }).select().single();
       prog = inserted;
     }
     setBalade(b as Balade);
@@ -60,7 +60,7 @@ export default function JouerPage() {
     setShowIndice(false);
     setReponse(''); setErreurReponse(false); setCodeQr(''); setErreurQr(false); setGpsMessage(null);
     setLoading(false);
-  }, [id, user]);
+  }, [id, user, activeProfileId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -68,22 +68,22 @@ export default function JouerPage() {
   const currentPoint = idx < points.length ? points[idx] : null;
 
   async function onCompletion() {
-    if (!user || !balade) return;
+    if (!user || !balade || !activeProfileId) return;
     const xp = balade.xp_recompense ?? 0;
 
     const { count } = await supabase.from('balades_ludiques_progressions').select('*', { count: 'exact', head: true }).eq('balade_id', id).eq('statut', 'termine');
     await supabase.from('balades_ludiques').update({ nb_completions: count ?? 0 }).eq('id', id);
 
-    const { data: existingXp } = await supabase.from('joueurs_xp').select('*').eq('user_uid', user.uid).maybeSingle();
+    const { data: existingXp } = await supabase.from('joueurs_xp').select('*').eq('profile_id', activeProfileId).maybeSingle();
     const nouveauXp = (existingXp?.xp_total ?? 0) + xp;
     const nouveauNb = (existingXp?.nb_parcours_completes ?? 0) + 1;
     await supabase.from('joueurs_xp').upsert({
-      user_uid: user.uid, xp_total: nouveauXp, nb_parcours_completes: nouveauNb, updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_uid' });
+      profile_id: activeProfileId, user_uid: user.uid, xp_total: nouveauXp, nb_parcours_completes: nouveauNb, updated_at: new Date().toISOString(),
+    }, { onConflict: 'profile_id' });
 
     const badgesDebloquees: string[] = [];
     const { data: catalogue } = await supabase.from('badges').select('*').eq('actif', true);
-    const { data: deja } = await supabase.from('badges_obtenus').select('badge_id').eq('user_uid', user.uid);
+    const { data: deja } = await supabase.from('badges_obtenus').select('badge_id').eq('profile_id', activeProfileId);
     const dejaIds = new Set((deja ?? []).map((r: { badge_id: string }) => r.badge_id));
     for (const badge of catalogue ?? []) {
       if (dejaIds.has(badge.id)) continue;
@@ -91,7 +91,7 @@ export default function JouerPage() {
       if (badge.condition_type === 'nb_parcours_completes') obtenu = nouveauNb >= (badge.condition_valeur?.seuil ?? Infinity);
       if (badge.condition_type === 'nb_xp') obtenu = nouveauXp >= (badge.condition_valeur?.seuil ?? Infinity);
       if (obtenu) {
-        await supabase.from('badges_obtenus').insert({ user_uid: user.uid, badge_id: badge.id, balade_id: id });
+        await supabase.from('badges_obtenus').insert({ user_uid: user.uid, profile_id: activeProfileId, badge_id: badge.id, balade_id: id });
         badgesDebloquees.push(`${badge.icone_url ?? '🏅'} ${badge.nom}`);
       }
     }
@@ -106,11 +106,11 @@ export default function JouerPage() {
   async function validerEtape(payload: Partial<{
     type_preuve: string; preuve_photo_url: string; preuve_texte: string; preuve_lat: number; preuve_lng: number; distance_calculee_m: number;
   }>) {
-    if (!user || !progression || !currentPoint) return;
+    if (!user || !activeProfileId || !progression || !currentPoint) return;
     setBusy(true);
     try {
       await supabase.from('balades_ludiques_validations').insert({
-        progression_id: progression.id, point_id: currentPoint.id, joueur_uid: user.uid, ...payload,
+        progression_id: progression.id, point_id: currentPoint.id, joueur_uid: user.uid, joueur_profile_id: activeProfileId, ...payload,
       });
     } catch { /* déjà validée */ }
 
