@@ -44,38 +44,25 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     if (!mounted) return;
     setState(() => _loading = true);
 
-    // Étape 1 : profil (chaque source dans son try indépendant)
+    // Étape 1 : profil
     Map<String, dynamic>? profileData;
     try {
-      final p = await _supa
-          .from('users')
-          .select('uid, firstname, lastname, profile_picture_url, ville, profile_type')
+      final up = await _supa
+          .from('user_profiles')
+          .select('uid, firstname, lastname, avatar_url, ville')
           .eq('uid', widget.targetUid)
+          .eq('is_main', true)
           .maybeSingle();
-      if (p != null) profileData = Map<String, dynamic>.from(p);
+      if (up != null) {
+        profileData = {
+          'uid':                 up['uid'],
+          'firstname':           up['firstname'],
+          'lastname':            up['lastname'],
+          'profile_picture_url': up['avatar_url'],
+          'ville':               up['ville'],
+        };
+      }
     } catch (_) {}
-
-    if (profileData == null) {
-      try {
-        final up = await _supa
-            .from('user_profiles')
-            .select('uid, firstname, lastname, avatar_url, ville, profile_type')
-            .eq('uid', widget.targetUid)
-            .order('is_main', ascending: false)
-            .limit(1)
-            .maybeSingle();
-        if (up != null) {
-          profileData = {
-            'uid':                 up['uid'],
-            'firstname':           up['firstname'],
-            'lastname':            up['lastname'],
-            'profile_picture_url': up['avatar_url'],
-            'ville':               up['ville'],
-            'profile_type':        up['profile_type'],
-          };
-        }
-      } catch (_) {}
-    }
 
     // Affiche le profil dès qu'on l'a, sans attendre le reste
     if (mounted) setState(() => _profile = profileData);
@@ -147,9 +134,10 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
 
       // Notifier la cible
       final me = await _supa
-          .from('users')
+          .from('user_profiles')
           .select('firstname, lastname')
           .eq('uid', _myUid)
+          .eq('is_main', true)
           .maybeSingle();
       final nom = me != null
           ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim()
@@ -193,7 +181,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     }).eq('id', _relId!);
 
     // Notifier le demandeur
-    final me = await _supa.from('users').select('firstname, lastname').eq('uid', _myUid).maybeSingle();
+    final me = await _supa.from('user_profiles').select('firstname, lastname').eq('uid', _myUid).eq('is_main', true).maybeSingle();
     final nom = me != null ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim() : 'Quelqu\'un';
     await _supa.from('notifications').insert({
       'uid': widget.targetUid,
@@ -227,12 +215,12 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
       convId = existing['id'].toString();
     } else {
       // Créer la conversation DM dans Supabase
-      final myData = await _supa.from('users')
-          .select('firstname, lastname, profile_picture_url')
-          .eq('uid', _myUid).maybeSingle();
-      final otherData = await _supa.from('users')
-          .select('firstname, lastname, profile_picture_url')
-          .eq('uid', widget.targetUid).maybeSingle();
+      final myData = await _supa.from('user_profiles')
+          .select('firstname, lastname, profile_picture_url:avatar_url')
+          .eq('uid', _myUid).eq('is_main', true).maybeSingle();
+      final otherData = await _supa.from('user_profiles')
+          .select('firstname, lastname, profile_picture_url:avatar_url')
+          .eq('uid', widget.targetUid).eq('is_main', true).maybeSingle();
       final myName    = '${myData?['firstname'] ?? ''} ${myData?['lastname'] ?? ''}'.trim();
       final otherName = '${otherData?['firstname'] ?? ''} ${otherData?['lastname'] ?? ''}'.trim();
 

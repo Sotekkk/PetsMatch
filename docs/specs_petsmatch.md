@@ -4633,6 +4633,22 @@ association que son équivalent Flutter (`annonces_feed_page.dart`) a
 déjà — les annonces association affichent la photo personnelle de
 l'éleveur plutôt que celle de l'association sur le feed web.
 
+### 27.12 — Phase 4 livrée (lot 7) : PetFriends
+
+3 fichiers (2 app, 1 web) — tous des lookups directs par uid connu, un
+seul cas structurel : `public_profile_page.dart` interrogeait `users`
+en source primaire et `user_profiles` seulement en repli (si `users` ne
+renvoyait rien) — inversé, `user_profiles` (`is_main=true`) devient la
+seule source, le repli `users` supprimé (devenu inutile). Le filtre
+`is_elevage`/`is_pro` de la recherche d'amis (colonnes sans équivalent
+direct) remplacé par `.eq('profile_type', 'particulier')`, l'équivalent
+le plus direct pour une fonctionnalité particulier↔particulier.
+
+Incohérence préexistante notée, non corrigée : `website/src/app/petfriends/page.tsx`
+n'a jamais eu ce filtre côté recherche (contrairement à l'app) — un
+compte pro apparaît dans "ajouter un ami" sur le site mais pas dans
+l'app. Même famille que l'incohérence notée au lot 6.
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

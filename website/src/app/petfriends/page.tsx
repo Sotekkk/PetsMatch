@@ -92,8 +92,8 @@ export default function PetFriendsPage() {
       const uids = Object.keys(byUid);
       if (uids.length === 0) { setFriends([]); setReceived([]); setSent([]); return; }
 
-      const { data: profiles } = await supabase.from('users')
-        .select('uid, firstname, lastname, profile_picture_url, ville').in('uid', uids);
+      const { data: profiles } = await supabase.from('user_profiles')
+        .select('uid, firstname, lastname, profile_picture_url:avatar_url, ville').in('uid', uids).eq('is_main', true);
       const profMap: Record<string, { firstname?: string; lastname?: string; profile_picture_url?: string; ville?: string }> = {};
       for (const p of profiles ?? []) profMap[p.uid] = p;
 
@@ -139,8 +139,8 @@ export default function PetFriendsPage() {
 
   useEffect(() => {
     if (!myUid) return;
-    supabase.from('users').select('uid, firstname, lastname, profile_picture_url, ville')
-      .neq('uid', myUid).limit(500)
+    supabase.from('user_profiles').select('uid, firstname, lastname, profile_picture_url:avatar_url, ville')
+      .neq('uid', myUid).eq('is_main', true).limit(500)
       .then(({ data }) => { setAllUsers((data ?? []) as SearchUser[]); setLoadingUsers(false); });
   }, [myUid]);
 
@@ -186,7 +186,7 @@ export default function PetFriendsPage() {
       ...(tgPid ? { recepteur_profile_id: tgPid } : {}),
       statut: 'en_attente', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     });
-    const { data: me } = await supabase.from('users').select('firstname, lastname').eq('uid', myUid).maybeSingle();
+    const { data: me } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', myUid).eq('is_main', true).maybeSingle();
     const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
     await supabase.from('notifications').insert({
       uid: targetUid, type: 'petfriend_request',
@@ -198,7 +198,7 @@ export default function PetFriendsPage() {
 
   async function accept(row: FriendRow) {
     await supabase.from('petfriends').update({ statut: 'accepte', updated_at: new Date().toISOString() }).eq('id', row.relId);
-    const { data: me } = await supabase.from('users').select('firstname, lastname').eq('uid', myUid).maybeSingle();
+    const { data: me } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', myUid).eq('is_main', true).maybeSingle();
     const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
     await supabase.from('notifications').insert({
       uid: row.uid, type: 'petfriend_accepted',
@@ -228,10 +228,10 @@ export default function PetFriendsPage() {
     if (existing) {
       convId = existing.id;
     } else {
-      const { data: otherData } = await supabase.from('users')
-        .select('firstname, lastname, profile_picture_url').eq('uid', friendRow.uid).maybeSingle();
-      const { data: myData } = await supabase.from('users')
-        .select('firstname, lastname, profile_picture_url').eq('uid', myUid).maybeSingle();
+      const { data: otherData } = await supabase.from('user_profiles')
+        .select('firstname, lastname, profile_picture_url:avatar_url').eq('uid', friendRow.uid).eq('is_main', true).maybeSingle();
+      const { data: myData } = await supabase.from('user_profiles')
+        .select('firstname, lastname, profile_picture_url:avatar_url').eq('uid', myUid).eq('is_main', true).maybeSingle();
       const myName    = `${myData?.firstname ?? ''} ${myData?.lastname ?? ''}`.trim() || 'Utilisateur';
       const otherName = `${otherData?.firstname ?? ''} ${otherData?.lastname ?? ''}`.trim() || 'Utilisateur';
       const participantsInfo: Record<string, unknown> = {
@@ -263,16 +263,16 @@ export default function PetFriendsPage() {
     setCreatingGroupe(true);
     try {
       const members = [myUid, ...selectedGroupeUids];
-      const { data: myData } = await supabase.from('users')
-        .select('firstname, lastname, profile_picture_url').eq('uid', myUid).maybeSingle();
+      const { data: myData } = await supabase.from('user_profiles')
+        .select('firstname, lastname, profile_picture_url:avatar_url').eq('uid', myUid).eq('is_main', true).maybeSingle();
       const myName = `${myData?.firstname ?? ''} ${myData?.lastname ?? ''}`.trim() || 'Utilisateur';
       const participantsInfo: Record<string, unknown> = {
         [myUid]: { name: myName, ...(myData?.profile_picture_url ? { photo: myData.profile_picture_url } : {}) },
       };
       // Infos des autres membres
       if (selectedGroupeUids.size > 0) {
-        const { data: others } = await supabase.from('users')
-          .select('uid, firstname, lastname, profile_picture_url').in('uid', [...selectedGroupeUids]);
+        const { data: others } = await supabase.from('user_profiles')
+          .select('uid, firstname, lastname, profile_picture_url:avatar_url').in('uid', [...selectedGroupeUids]).eq('is_main', true);
         for (const o of others ?? []) {
           const oName = `${o.firstname ?? ''} ${o.lastname ?? ''}`.trim() || 'Utilisateur';
           participantsInfo[o.uid] = { name: oName, ...(o.profile_picture_url ? { photo: o.profile_picture_url } : {}) };
